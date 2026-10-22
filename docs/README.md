@@ -1,6 +1,17 @@
 # SpeechNexus 文档
 
-当前文档为设计提案；接口、部署和运行行为以未来通过验证的实现及对应契约为准。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.3.0。设计规定目标行为，仓库尚无可运行服务或 WebUI；接口、性能与容量不得据此标为已实现。文档版本独立于软件版本。
 
-- [产品与架构设计](specs/2026-10-22-speechnexus-product-architecture-design.md)（`proposed`，2026-10-22）：产品工作流、统一 ASR/TTS 接口、场景参数预设、企业权限、资源调度、SpeechRail 复用与 P0–P5 实施计划。
-- [项目说明](../README.md)。
+| 文档 | 职责 |
+| --- | --- |
+| [产品与架构设计](speechnexus-product-architecture.md) | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收 |
+| [语音接口](architecture/speech-api.md) | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例 |
+| [资源治理与持久化](architecture/runtime-governance.md) | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除 |
+| [SpeechRail 复用边界](architecture/speechrail-reuse.md) | 固定来源、可提取规则、需重写的基础设施和许可证 |
+| [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md) | P0–P5、退出条件、工作包、交接产物与预算假设 |
+| [设计审查记录](audits/2026-10-22-speechnexus-design-review.md) | 已发现问题、修正裁决、来源核验、文档检查与未验证项 |
+| [架构决策](decisions/README.md) | 已确认范围、决策原因和影响 |
+
+领域设计使用稳定文件名持续维护；实施计划与审查保留日期；ADR 以四位编号记录决定。协议 / 数据规则分别在其负责文档集中维护，主文档给出职责与入口。冲突需修订设计，不能以工作记录或历史材料静默覆盖公共语义。
+
+[架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

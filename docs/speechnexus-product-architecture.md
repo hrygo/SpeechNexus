@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 产品与架构设计"
 status: active
-version: "0.3.0"
+version: "0.4.0"
 date: 2026-10-22
 audience: "产品负责人、架构师、Web 与语音服务开发者、平台运维、验收人员"
 ---
@@ -10,7 +10,7 @@ audience: "产品负责人、架构师、Web 与语音服务开发者、平台�
 
 SpeechNexus 是面向 Linux 的企业级语音服务底座，采用 OpenAI 兼容的 ASR/TTS 子集及音色创作等增强协议。WebUI 包含 AdminUI 与个人语音工作台；首期不建设用户身份认证体系，采用可信共享部署。
 
-本文是 SpeechNexus 独立项目的主设计，定义产品范围、职责边界、技术基线与验收要求。[语音接口](architecture/speech-api.md)负责公共协议细节，[资源治理](architecture/runtime-governance.md)负责调度、持久化与数据生命周期；三者共同构成后续实现依据。已确认产品边界见 [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)。存在冲突时先修订设计与决策，不以偶然实现替代契约。
+本文是 SpeechNexus 独立项目的主设计，定义产品范围、职责边界、技术基线与验收要求。[语音接口](architecture/speech-api.md)负责公共协议细节，[资源治理](architecture/runtime-governance.md)负责调度、持久化与数据生命周期；三者共同构成后续实现依据。已确认产品边界见 [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)，模型、引擎与加载策略见 [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)。存在冲突时先修订设计与决策，不以偶然实现替代契约。
 
 **实现状态：仓库已建立工程骨架与运营健康检查，尚未实现语音业务 API 或真实工作台。** `active` 表示本文是当前维护的设计基线，不表示语音、音色、模型能力或服务指标已经实现。参数是初始设计值；性能、质量、容量及恢复指标须在目标部署验证。文档版本独立于未来软件版本。
 
@@ -149,6 +149,10 @@ flowchart TD
     J --> C
     C --> Q["准入与调度\n工作空间 / 请求类别、容量租约"]
     Q --> G["受控执行网关\nsubmit intent、最终 fencing"]
+    Q -. "已预留预算的准备 / 回收意图" .-> LC["受限部署控制器\nCompose / 运维基础设施启停"]
+    LC -. "实例生命周期" .-> V
+    LC -. "实例生命周期" .-> T
+    LC -. "实例生命周期" .-> X
     G --> B["后端适配器\n协议、校验、取消证据"]
     B --> V["ASR vLLM"]
     B --> T["TTS / 音色 vLLM-Omni"]
@@ -174,9 +178,10 @@ flowchart TD
 | 实时网关 | 音频时钟、段身份、连接、背压 | 永久 PCM、客户端播放完成事实 |
 | 作业执行器 / 调度器 | 步骤、恢复、资源向量、配额、租约和发布 | 任意绕过网关的模型调用 |
 | 受控执行网关 / adapter | 最终提交屏障、引擎 request_id、协议转换、完成 / abort 证据 | 人员角色或工作台项目编辑 |
+| 受限部署控制器 | 按已预留预算的意图启停批准实例、报告启动 / 停止事实 | 推理提交、业务发布、任意容器管理或资源准入裁决 |
 | 推理运行时 | 计算、内部 batching、模型 / codec 状态 | 业务数据库和产品访问策略 |
 
-语音底座首版执行角色为 `api`、`realtime-gateway`、`job-worker`、`scheduler`；可先同镜像分进程运行。工作台应用是可选模块，可与 API 同镜像，但通过公开 DTO / SDK 调用语音 API，不导入 vendor 代码或共写语音持久化表。工作台需要导出时增加受限 workbench-export-worker，不写底座 JobStep。开发者可以只部署底座，不启动 WebUI、工作台模块或 LLM。
+语音底座首版执行角色为 `api`、`realtime-gateway`、`job-worker`、`scheduler`、`execution-gateway`；应用角色可共用镜像，backend 与 execution-gateway 独立部署。受限部署控制器属于部署基础设施，承担自动按需启停。工作台应用是可选模块，可与 API 同镜像，但通过公开 DTO / SDK 调用语音 API，不导入 vendor 代码或共写语音持久化表。工作台需要导出时增加受限 workbench-export-worker，不写底座 JobStep。开发者可以只部署底座，不启动 WebUI、工作台模块或 LLM。
 
 两类 schema 可使用同一 PostgreSQL 实例，凭据与写入权按模块职责分开；这属于组件边界，不是用户隔离。推理使用独立镜像和网络边界。所有引擎调用经过受控执行网关，API 和工作台没有可绕过网关的网络入口或凭据。vLLM batching 优化已获准请求，平台调度控制进入量、期限与预算。
 
@@ -350,13 +355,17 @@ Job 使用 at-least-once 执行、步骤去重和幂等发布。输出先写私�
 
 ### 8.2 初始后端路线
 
-ASR 首先验证 Qwen3-ASR 的 vLLM 路径，分别验证文件与实时模型 / 架构；官方列表中的实时支持不意味着每个 ASR checkpoint 都具备同样的流式能力。TTS 首先验证 vLLM-Omni + Qwen3-TTS，CustomVoice、Base、VoiceDesign 分别对应正确 checkpoint 与能力；每个实例运行的模型和 stage 配置由绑定明确声明。[vLLM 模型列表](https://docs.vllm.ai/en/stable/models/supported_models/)、[vLLM-Omni TTS 示例](https://docs.vllm.ai/projects/vllm-omni/en/stable/user_guide/examples/online_serving/text_to_speech/)
+首选验证路径已由 [ADR 0002](decisions/0002-speech-models-engines-and-loading.md#1-模型与推理引擎)确认并集中维护完整模型标识：文件 / 完整段复核使用 Qwen3-ASR-1.7B，实时使用 Qwen3-ASR-0.6B，均经 vLLM；TTS 使用 vLLM-Omni，CustomVoice 负责预设音色，VoiceDesign 负责描述设计，Base 负责样本克隆与创作音色的后续复用合成，三者均选 12Hz / 1.7B checkpoint。每个实例的模型和 stage 配置由绑定明确声明，流式能力逐绑定验证。[vLLM 模型列表](https://docs.vllm.ai/en/stable/models/supported_models/)、[vLLM-Omni TTS 示例](https://docs.vllm.ai/projects/vllm-omni/en/stable/user_guide/examples/online_serving/text_to_speech/)
 
-时间对齐、分人和 VAD 是独立能力；它们可以使用经过资格验证的 GPU / CPU 运行时，不强迫所有模型都经 vLLM 执行。SpeechRail 的 MLX、CoreML、Swift worker 和模型制品不能直接充当 Linux 实现。是否增加 Whisper 等后端由准确率、语言和延迟证据决定，不把多后端数量当作首版目标。
+辅助能力独立执行：官方 Silero VAD ONNX 使用 ONNX Runtime CPU；Qwen3-ForcedAligner-0.6B 使用官方 `qwen_asr` / PyTorch CUDA；`nvidia/Nemotron-3-Diarization` 使用 NeMo / PyTorch CUDA，首轮验证实时 / 离线最多八位说话人的范围，更大人数后端尚未选择。具体制品、版本、精度与容量仍待锁定和资格验证，不因选型而声明生产可用。
+
+音色设计必须验证“描述 → VoiceDesign 候选 / 参考 → Base 克隆与复用校验 → 显式发布不可变 VoiceRevision → 后续 Base 合成”；仅有试听音频的候选保持 preview_only。样本克隆、再生成、试听、校验、发布与后续生命周期均属于首版范围。SpeechRail 的 MLX、CoreML、Swift worker 和模型制品不能直接充当 Linux 实现；是否增加其他后端由资格证据决定。
 
 ### 8.3 运行与发布
 
-绑定的状态为 `registered → preparing → validating → ready → draining → retired`，失败为 `unavailable`。准备模型、加载、热身与资格验证是受控部署动作，不发生在公共用户请求路径。实时生产绑定应在 ready 时已经具备可服务引擎；冷启动只对明确允许等待的后台作业开放。
+绑定的状态为 `registered → preparing → validating → ready → draining → retired`，失败为 `unavailable`。准备、加载和热身由平台自动协调，实际进程 / 容器启停交给受限部署控制器；资格验证仍是受控发布门禁。已启用的实时 ASR 及承担实时合成的 CustomVoice / Base 必须预加载、热身并常驻，实例就绪后才能准入；公共实时请求不等待模型冷启动。
+
+VoiceDesign 随允许等待的音色创作任务按需加载并在空闲时回收，克隆 / 校验优先按受控预算复用 Base；VAD 在 CPU 常驻且会话状态隔离。文件与其他辅助绑定的加载策略由部署资格分别确定。使用预先锁定的本地权重，不在推理请求中下载。调度器先预留加载、热身和完整阶段峰值预算；不足时创建任务排队，不借用实时保留。回收先封锁新分派并协调在途执行，确认停止才释放预算，未知清理保持 quarantine；见[按需加载与实例回收](architecture/runtime-governance.md#16-按需加载与实例回收)。卸载不退役绑定或删除音色资产与版本，再次加载重新核对实例 readiness。
 
 应用依赖、推理依赖和模型文件分别锁定与构建。vLLM-Omni 要求与匹配主、次版本的 vLLM 组合安装，发布时核对正式发布制品，不能混用 latest 文档中的实验配置和旧镜像。[上游版本关系](https://docs.vllm.ai/projects/vllm-omni/en/stable/getting_started/installation/)
 
@@ -433,14 +442,14 @@ ASR 首先验证 Qwen3-ASR 的 vLLM 路径，分别验证文件与实时模型 /
 
 ### 11.2 初始服务目标与口径
 
-下表是 P0/P1 用于设计与容量资格的候选目标。只有在指定 binding、语言、输入类型和已验证混合负载下通过，才能给对应部署发布容量；不能由本文直接声明性能已达标。
+首轮在当前 Linux ARM64 / NVIDIA GB10 部署验证至少同时运行 1 路实时 ASR + 1 路实时 TTS；硬件属于部署资格，不进入公共协议。该混合负载下的 ASR 首预览与 TTS 首音频要求已经确认，其余性能数值仍为 P0/P1 候选目标。所有指标均须在指定 binding、语言、输入类型和负载下取得证据，不能由本文直接声明已达标。
 
-| 指标 | 初始候选目标 / 口径 |
+| 指标 | 验收要求 / 候选目标与口径 |
 | --- | --- |
-| ASR 预览 | 满足最低识别窗且对应音频进入服务后，首个有效预览 P95 ≤1000 ms |
+| ASR 预览 | 已确认首轮要求：满足最低识别窗且对应音频进入服务后，首个有效预览 P95 ≤1000 ms |
 | 字幕显示延迟 | 客户端可对齐采样时钟后的有效字词显示滞后 P95 ≤1500 ms |
 | ASR 正文 final | segment_closed 到正文 completed / failed 的 P95 ≤2000 ms；包含最终复核等待；required 辅助另报延迟 |
-| 实时 TTS | 冻结文本获接受到首可播放 PCM 的 P95 ≤800 ms；网络与播放另报 |
+| 实时 TTS | 已确认首轮要求：冻结文本获接受到首可播放 PCM 的 P95 ≤800 ms；网络与播放另报 |
 | TTS 连续性 | 正常网络与已资格负载下无持续 buffer underrun；报告音频 gap 分布与次数 |
 | 控制 API | 无大文件传输的常规读写 P95 ≤300 ms，排队 / 推理不混入此口径 |
 | 组件与资源边界 | 无 WebUI 依赖；引擎不能绕过准入；错误 workspace 引用、旧 attempt 与内部路径不进入有效结果 |
@@ -449,14 +458,17 @@ ASR 首先验证 Qwen3-ASR 的 vLLM 路径，分别验证文件与实时模型 /
 
 普通文件吞吐、并发会话数和最大 TTS 持续生成速率保留在每部署 CapacityManifest，不在未指定硬件时给出虚构数字。超负载测试应显示受控拒绝与有界延迟，而非靠降低准确率、丢音或增加无限队列“通过”。
 
+必须另测 VoiceDesign 冷加载、热身、执行和回收与实时服务共存时的延迟、峰值资源和排队行为。1+1 性能通过不能替代完整音色创作验收，也不能证明更高并发、质量或长时稳定性已通过。
+
 ### 11.3 最小充分的验证层级
 
 | 层级 | 核心验收 | 依赖 |
 | --- | --- | --- |
 | 契约 / fake | REST、WS、Job、MCP 对相同命令参数域与错误一致；预览修订、空成功、唯一终态 | 不加载模型、不用私人音频 |
 | 访问与数据边界 | 无登录启动、两个视图不伪装权限；Host / Origin、可选共享密钥、workspace 引用、内部字段、禁用 / 发布竞争 | 测试数据库、对象存储与明确的入口配置 |
-| 音色增强 | 描述 / 样本 → 候选 → 试听 / 校验 → 发布 → 固定 voice 的 TTS；能力缺失与 preview_only 明确拒绝发布 | fake voice adapter，随后在获准环境验证真实路径 |
+| 音色增强 | 描述 → VoiceDesign 候选 / 参考 → Base 克隆与复用校验 → 显式发布 → 后续 Base TTS；另验样本克隆、再生成、试听及退役 / 禁用 / 删除；preview_only 拒绝发布 | fake voice adapter，随后在获准环境验证真实路径 |
 | 调度与故障注入 | 并发抢槽、双工原子预留、旧 fencing、未知取消、断电后恢复与去重 | fake engine 与可控故障 |
+| 实例生命周期 | 实时预热、VoiceDesign 按需加载、完整阶段峰值预留、预算不足排队、drain / 确认停止后回收、未知清理隔离 | fake controller / engine，随后验证目标部署与实时共存 |
 | 引擎集成 | 文件 / 流式实际能力、采样率、辅助结果、文本分段、abort 确认 | 选定版本与获准运行环境 |
 | 语音质量 / 混合负载 | 代表性语言 / 噪声 / 长语音 / 数字，实时与后台同时执行，长会话资源曲线 | 经授权语料与独立运行许可 |
 | Web 端到端 | 实际采集 / 播放 / 权限拒绝 / 网络断开 / 稿件跟随 / 有声书续作 | 获准浏览器与 UI 自动化范围 |
@@ -493,7 +505,7 @@ ASR 首先验证 Qwen3-ASR 的 vLLM 路径，分别验证文件与实时模型 /
 | 未来用户体系 | 等实际隔离 / 角色 / 个人配额需求出现后独立立项，不作为 P0–P5 前置 |
 | 公共 SaaS / 多地域 | 不在首版，需要另做运营、身份、隔离与容灾设计 |
 
-[ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)记录产品边界和身份范围；技术细节以本文和配套设计为基线。P0 将协议子集、资源 / 取消、持久任务 / 发布、版本 / 保留转为机器契约与相应 ADR；不把未来身份方案引入当前依赖。
+[ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)记录产品边界和身份范围，[ADR 0002](decisions/0002-speech-models-engines-and-loading.md)记录模型、引擎、加载策略与首轮验收范围；技术细节以本文和配套设计为基线。P0 将协议子集、资源 / 取消、持久任务 / 发布、版本 / 保留转为机器契约与相应 ADR；不把选型决定当作机器契约冻结或资格通过，也不把未来身份方案引入当前依赖。
 
 ## 13. 实施路线与配套文档
 

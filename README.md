@@ -20,6 +20,8 @@ SpeechNexus 的后端定位为企业级语音服务底座，以 Linux 上的 vLL
 - [已确认产品定位与身份范围](docs/decisions/0001-product-boundaries-and-authentication-scope.md)。
 - [分阶段实施计划](docs/plans/2026-10-22-speechnexus-implementation-plan.md)：P0 契约、P1 独立语音底座、P2 两类 WebUI、P3 实时应用、P4 有声书、P5 生产验收；身份体系后续独立立项。
 - [方案审查记录](docs/audits/2026-10-22-speechnexus-design-review.md)：问题裁决、上游依据、文档核验与待实测项。
+- [开发与测试环境](docs/development-environment.md)：本机工具链、独立数据库与对象存储、媒体和浏览器自检、启动命令。
+- [开发环境就绪审查](docs/audits/2026-10-22-development-environment-readiness.md)：已验证能力、隔离边界与推理环境剩余缺口。
 - [文档入口](docs/README.md)。
 
 SpeechNexus 由 [SpeechRail](https://github.com/hrygo/SpeechRail) 的产品与架构经验启发，作为独立项目演进。代码复用需按[复用边界](docs/architecture/speechrail-reuse.md)和原始许可证逐项核对。

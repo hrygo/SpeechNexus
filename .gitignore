@@ -21,6 +21,9 @@ dist/
 build/
 coverage/
 .vite/
+playwright-report/
+test-results/
+.playwright/
 
 # Runtime, models and user artifacts
 .runtime/

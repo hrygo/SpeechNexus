@@ -1,0 +1,59 @@
+[project]
+name = "speechnexus"
+version = "0.0.0"
+description = "Enterprise speech service with OpenAI-compatible and enhanced APIs"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+  "av>=19,<20",
+  "cryptography>=44,<47",
+  "httpx>=0.28,<1",
+  "imageio-ffmpeg>=0.6,<1",
+  "jsonschema>=4.23,<5",
+  "minio>=7.2,<8",
+  "mypy>=1.14,<2",
+  "numpy>=2.2,<3",
+  "openapi-spec-validator>=0.7,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "pytest-cov>=6,<8",
+  "pyyaml>=6,<7",
+  "ruff>=0.9,<1",
+  "soundfile>=0.14,<1",
+  "types-jsonschema>=4.23,<5",
+  "types-pyyaml>=6,<7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["backend", "execution-gateway", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "ASYNC", "RUF", "PTH", "RET"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+show_error_codes = true
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["imageio_ffmpeg", "soundfile"]
+ignore_missing_imports = true

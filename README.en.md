@@ -20,6 +20,8 @@ Current stage: **design and repository initialization**. No runnable service or 
 - [Confirmed product boundaries and identity scope (Chinese)](docs/decisions/0001-product-boundaries-and-authentication-scope.md).
 - [Phased implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md): P0 contracts, P1 independent foundation, P2 both WebUI surfaces, P3 real-time applications, P4 audiobooks and P5 production qualification. Identity is a separate future initiative.
 - [Design review record (Chinese)](docs/audits/2026-10-22-speechnexus-design-review.md): issue decisions, upstream evidence, documentation checks and remaining runtime validation.
+- [Development environment (Chinese)](docs/development-environment.md): local toolchain, isolated services, media and headless browser checks.
+- [Development environment readiness review (Chinese)](docs/audits/2026-10-22-development-environment-readiness.md): verified capabilities, isolation boundary and remaining inference gaps.
 - [Documentation index](docs/README.md).
 
 SpeechNexus is an independent project inspired by the product and architecture experience of [SpeechRail](https://github.com/hrygo/SpeechRail). Any source reuse must be reviewed against the [reuse boundaries (Chinese)](docs/architecture/speechrail-reuse.md) and the original license.

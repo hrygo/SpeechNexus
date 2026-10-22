@@ -1,0 +1,33 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Web and build outputs
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# Runtime, models and user artifacts
+.runtime/
+artifacts/
+models/
+data/
+logs/
+
+# OS
+.DS_Store

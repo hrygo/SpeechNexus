@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.1.0"
+version: "0.2.0"
 date: 2026-10-22
 ---
 
@@ -86,7 +86,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
   → 应用用例 → adapter → 契约测试 → 真实环境资格
 ```
 
-当前 `contracts/operations.openapi.yaml` 是运营健康检查的权威定义。P0 需新增语音兼容子集、增强资源、Realtime 事件、工作台、预设、音色和容量 manifest 契约。以下规则适用于每个新契约：
+当前 `contracts/operations.openapi.yaml` 是运营健康检查的权威定义。P0 需新增语音兼容子集、增强资源、Realtime 事件、工作台、预设、音色和容量 manifest 契约，并补齐 execution-gateway 与部署控制器的内部协议、实例与资格契约。公共和内部协议分目录组织，完整交接清单见[整体技术方案](technical-blueprint.md#3-契约与类型生成)。以下规则适用于每个新契约：
 
 1. 先定义路径、字段、状态、默认值、单位与稳定错误码。
 2. 为正例、未知字段、非法枚举和状态竞争提供样例。
@@ -120,5 +120,11 @@ make verify
 ```
 
 只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试。
+
+## 8. 后续工程交接
+
+[整体技术方案](technical-blueprint.md)确定显式 SQL / 有界连接池、版本化迁移、契约类型生成、内部 HTTP / WS 控制与数据流、受限实例控制器、Web 服务端缓存及部署内观测。它们是后续实施基线，不表示当前目录已有相应实现；新增工具应在对应工作包中锁定版本并验证现有 Python / Node 工具链兼容。
+
+公共协议、内部协议、领域对象和 vendor DTO 分别维护边界转换；生成类型不进入 domain。迁移、事务 / 故障样例、fake controller 与资格包是可交接产物，不能以新建占位目录作为完成证据。工作台 LLM 仅使用本机 / 内网服务，业务内容不得出网，详见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)。
 
 [架构文档](README.md) · [项目主设计](../speechnexus-product-architecture.md) · [开发环境](../development-environment.md)

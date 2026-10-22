@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.3.0"
+version: "0.4.0"
 date: 2026-10-22
 ---
 
@@ -123,6 +123,8 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 ### 1.5 能力协商与版本
 
 能力快照包含 `snapshot_id`、`catalog_revision`、`policy_revision`、生成时间、逻辑模型绑定、参数域、音色 revision、预设 revision、格式、辅助能力及限制。readiness 分别报告配置完整、引擎就绪、质量资格、当前可准入状态；`available` 不等于业务生产质量已通过。
+
+绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
 快照按部署、工作空间、catalog 与功能策略生成；ETag 与缓存键包含这些 revision，不混用不同部署配置。配置了外部网关或共享服务密钥时，入口检查先于 304。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 

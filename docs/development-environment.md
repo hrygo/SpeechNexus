@@ -39,7 +39,7 @@ make verify
 
 `make dev-bootstrap` 会安装锁定的 Python / Node 工具链和 Chromium，校验发行包摘要，初始化本地数据目录，建立 `speechnexus_dev` / `speechnexus_test` 数据库和 `speechnexus-dev` / `speechnexus-test` bucket，然后运行健康检查。重复执行会复用已有数据与浏览器缓存。
 
-Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端与执行网关是 workspace 成员。首次初始化后使用 `uv sync --all-packages --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
+Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端与执行网关是 workspace 成员。首次初始化后使用 `uv sync --locked --all-packages --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
 
 当前 shell 需要数据库与对象存储地址时运行：
 
@@ -49,7 +49,7 @@ source scripts/dev-env/activate.sh
 
 `make verify` 运行服务健康检查、Shell / JavaScript 语法检查、Ruff、mypy、契约检查、PCM / WAV / MP3 解码检查、Chromium 虚拟麦克风与 Web Audio 冒烟检查、WebSocket 文本和二进制往返，并在已有 Python 测试时执行 pytest。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
 
-P0 建立 `contracts/` 后，`make contracts-check` 会校验 OpenAPI 文档和 JSON Schema 的规范结构。当前没有契约文件时明确显示跳过；该检查不替代语义负例、状态机或真实 API 测试。
+`make contracts-check` 当前校验已有运营健康检查 OpenAPI 的规范结构；语音业务和内部执行 / 实例控制契约仍待 P0 交付。校验器在没有文件时会明确显示跳过，跳过不算通过；结构检查不替代语义负例、事件序列、状态机或真实 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
 
 无头 Chromium 使用合成音频设备，适合自动验证采集权限、MediaRecorder 与播放缓冲路径；本机未发现采集声卡，真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
 

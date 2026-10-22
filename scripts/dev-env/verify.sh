@@ -12,17 +12,21 @@ bash -n scripts/dev-env/*.sh
 node --check scripts/dev-env/browser-smoke.mjs
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy scripts/dev-env/*.py
+uv run mypy
+uv run lint-imports
 uv run python scripts/dev-env/validate-contracts.py
+uv run pytest --cov --cov-report=term-missing
 uv run python scripts/dev-env/media-smoke.py
 pnpm exec playwright install --dry-run chromium >/dev/null
 node scripts/dev-env/browser-smoke.mjs
-
-if find tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-  uv run pytest
-else
-  printf 'skip pytest (no Python tests yet)\n'
-fi
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+uv build --all-packages --out-dir dist/python
+docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml config --quiet
+./scripts/dev-env/service-smoke.sh
 
 git diff --check
 printf 'SpeechNexus verification: passed\n'

@@ -1,36 +1,87 @@
-# Local configuration and credentials
+# Secrets and local environment
 .env
 .env.*
-!.env.example
+*.env
+!*.env.example
+.envrc
+.direnv/
+secrets/
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.netrc
+.pgpass
 
-# Python
+# Python and type/test tooling
 .venv/
+venv/
 __pycache__/
 *.py[cod]
+*$py.class
+.eggs/
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.import_linter_cache/
+.hypothesis/
+.tox/
+.nox/
+.pytype/
+.pyre/
+.dmypy.json
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+*.prof
+*.tsbuildinfo
 
-# Web and build outputs
+# Node, web and build outputs
 node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.pnp.*
+.eslintcache
+.turbo/
+*.log
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 dist/
 build/
 coverage/
+.nyc_output/
 .vite/
+storybook-static/
 playwright-report/
 test-results/
 .playwright/
 
 # Runtime, models and user artifacts
 .runtime/
+.cache/
 artifacts/
 models/
 data/
 logs/
+tmp/
+*.pid
+*.sock
 
-# OS
+# Editors and operating systems
+.idea/
+.vscode/
+.fleet/
+.history/
+*.swp
+*~
+*.code-workspace
 .DS_Store
+Thumbs.db
+Desktop.ini

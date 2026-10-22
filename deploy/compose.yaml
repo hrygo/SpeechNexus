@@ -1,0 +1,152 @@
+name: speechnexus
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-speechnexus}
+      POSTGRES_USER: ${POSTGRES_USER:-speechnexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-speechnexus}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/images/python.Dockerfile
+    command: ["speechnexus-api"]
+    environment:
+      SPEECHNEXUS_ENVIRONMENT: development
+      SPEECHNEXUS_HOST: 0.0.0.0
+      SPEECHNEXUS_PORT: "8000"
+      SPEECHNEXUS_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}
+      SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      SPEECHNEXUS_OBJECT_STORAGE_HEALTHCHECK_URL: http://minio:9000/minio/health/live
+      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: speechnexus-dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/images/python.Dockerfile
+    command: ["speechnexus-gateway"]
+    environment:
+      SPEECHNEXUS_GATEWAY_ENVIRONMENT: development
+      SPEECHNEXUS_GATEWAY_HOST: 0.0.0.0
+      SPEECHNEXUS_GATEWAY_PORT: "8010"
+      SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}
+    ports:
+      - "127.0.0.1:8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/readyz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ..
+      dockerfile: deploy/images/web.Dockerfile
+      args:
+        APP_NAME: admin
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  workbench:
+    build:
+      context: ..
+      dockerfile: deploy/images/web.Dockerfile
+      args:
+        APP_NAME: workbench
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  minio-data:

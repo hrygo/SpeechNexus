@@ -1,30 +1,36 @@
 [project]
 name = "speechnexus"
-version = "0.0.0"
+version = "0.1.0.dev0"
 description = "Enterprise speech service with OpenAI-compatible and enhanced APIs"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+dependencies = []
 
 [tool.uv]
 package = false
 
+[tool.uv.workspace]
+members = ["backend", "execution-gateway"]
+
 [dependency-groups]
 dev = [
   "av>=19,<20",
+  "coverage[toml]>=7.16.2,<8",
   "cryptography>=44,<47",
-  "httpx>=0.28,<1",
+  "httpx>=0.28.1,<0.29",
   "imageio-ffmpeg>=0.6,<1",
+  "import-linter>=2.15,<3",
   "jsonschema>=4.23,<5",
   "minio>=7.2,<8",
-  "mypy>=1.14,<2",
+  "mypy>=2.4,<3",
   "numpy>=2.2,<3",
   "openapi-spec-validator>=0.7,<1",
   "psycopg[binary]>=3.2,<4",
-  "pytest>=8.3,<9",
-  "pytest-asyncio>=0.24,<1",
-  "pytest-cov>=6,<8",
+  "pytest>=9.1.1,<10",
+  "pytest-asyncio>=1.4,<2",
+  "pytest-cov>=7.1,<8",
   "pyyaml>=6,<7",
-  "ruff>=0.9,<1",
+  "ruff>=0.17.1,<1",
   "soundfile>=0.14,<1",
   "types-jsonschema>=4.23,<5",
   "types-pyyaml>=6,<7",
@@ -32,28 +38,82 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "-ra --strict-config --strict-markers"
+asyncio_mode = "auto"
+pythonpath = ["."]
+markers = [
+  "integration: requires the isolated PostgreSQL and object-storage services",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "backend/src/speechnexus_backend",
+  "execution-gateway/src/speechnexus_gateway",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+skip_covered = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["backend", "execution-gateway", "tests"]
+src = ["backend/src", "execution-gateway/src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "ASYNC", "RUF", "PTH", "RET"]
+ignore = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+warn_unreachable = true
 disallow_untyped_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 show_error_codes = true
-exclude = ["tests/"]
+files = ["backend/src", "execution-gateway/src", "tests", "scripts/dev-env"]
+exclude = ["(?x)(^|/)(\\.venv|node_modules)/"]
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["imageio_ffmpeg", "soundfile"]
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_packages = ["speechnexus_backend", "speechnexus_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "Speech backend dependency direction"
+type = "layers"
+layers = [
+  "speechnexus_backend.speech.interfaces",
+  "speechnexus_backend.speech.infrastructure",
+  "speechnexus_backend.speech.application",
+  "speechnexus_backend.speech.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Workbench backend dependency direction"
+type = "layers"
+layers = [
+  "speechnexus_backend.workbench.interfaces",
+  "speechnexus_backend.workbench.infrastructure",
+  "speechnexus_backend.workbench.application",
+  "speechnexus_backend.workbench.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Execution gateway dependency direction"
+type = "layers"
+layers = [
+  "speechnexus_gateway.interfaces",
+  "speechnexus_gateway.infrastructure",
+  "speechnexus_gateway.application",
+  "speechnexus_gateway.domain",
+]

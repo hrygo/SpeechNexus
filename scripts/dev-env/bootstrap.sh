@@ -208,7 +208,7 @@ for database in speechnexus_dev speechnexus_test; do
 done
 
 cd "$repo_root"
-uv sync --all-groups
+uv sync --all-packages --all-groups
 uv run python - <<'PY'
 import os
 from pathlib import Path

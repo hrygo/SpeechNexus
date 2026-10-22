@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 from jsonschema.validators import validator_for
-from openapi_spec_validator import validate_spec
+from openapi_spec_validator import validate
 
 
 def load_yaml(path: Path) -> Any:
@@ -20,7 +20,7 @@ def load_yaml(path: Path) -> Any:
 def validate_contract(path: Path, root: Path) -> None:
     relative = path.relative_to(root)
     if path.suffix in {".yaml", ".yml"}:
-        validate_spec(load_yaml(path))
+        validate(load_yaml(path))
         print(f"ok   OpenAPI {relative}")
         return
 

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$repo_root"
+# shellcheck disable=SC1091
+source scripts/dev-env/activate.sh
+
+export SPEECHNEXUS_DATABASE_URL="${DATABASE_URL_DEV:?missing DATABASE_URL_DEV}"
+export SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT="${S3_ENDPOINT:?missing S3_ENDPOINT}"
+export SPEECHNEXUS_OBJECT_STORAGE_HEALTHCHECK_URL="${S3_ENDPOINT}/minio/health/live"
+export SPEECHNEXUS_OBJECT_STORAGE_BUCKET="${S3_DEV_BUCKET:?missing S3_DEV_BUCKET}"
+
+exec uv run speechnexus-api "$@"

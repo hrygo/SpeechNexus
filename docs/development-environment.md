@@ -37,7 +37,7 @@ make verify
 
 `make dev-bootstrap` 会安装锁定的 Python / Node 工具链和 Chromium，校验发行包摘要，初始化本地数据目录，建立 `speechnexus_dev` / `speechnexus_test` 数据库和 `speechnexus-dev` / `speechnexus-test` bucket，然后运行健康检查。重复执行会复用已有数据与浏览器缓存。
 
-Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定。首次初始化后使用 `uv sync --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
+Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端与执行网关是 workspace 成员。首次初始化后使用 `uv sync --all-packages --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
 
 当前 shell 需要数据库与对象存储地址时运行：
 

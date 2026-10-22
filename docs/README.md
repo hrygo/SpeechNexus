@@ -1,10 +1,11 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.3.0。设计规定目标行为，仓库尚无可运行服务或 WebUI；接口、性能与容量不得据此标为已实现。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.3.0。设计规定目标行为；仓库已建立可构建的 FastAPI / 执行网关与两个 Web 入口外壳，但尚未实现语音或工作台业务，接口、性能与容量不得据此标为已实现。文档版本独立于软件版本。
 
 | 文档 | 职责 |
 | --- | --- |
 | [产品与架构设计](speechnexus-product-architecture.md) | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收 |
+| [工程目录与依赖边界](architecture/repository-layout.md) | Python / Web workspace、模块方向、契约生命周期、测试层级与部署入口 |
 | [语音接口](architecture/speech-api.md) | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例 |
 | [资源治理与持久化](architecture/runtime-governance.md) | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md) | 固定来源、可提取规则、需重写的基础设施和许可证 |

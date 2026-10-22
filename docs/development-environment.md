@@ -10,16 +10,18 @@ date: 2026-10-22
 
 ## 运行组件
 
-| 组件 | 本机版本 / 地址 | 用途 |
+| 组件 | 当前基线 / 地址 | 用途 |
 | --- | --- | --- |
-| Python | 3.12，由 `uv` 管理 | FastAPI、领域 / 契约测试与 fake |
-| Node.js | 22，`pnpm` 10 | React / TypeScript 工作台 |
+| Python | 3.14.9，由 `uv` 管理 | FastAPI、领域 / 契约测试与 fake |
+| Node.js | 26.12.1，`pnpm` 12.14.0 | React / TypeScript 工作台 |
 | 无头浏览器 | Playwright 1.64.1 + Chromium 156 | 浏览器采集、Web Audio、MediaRecorder 与 WebSocket 冒烟验证 |
 | 媒体工具 | PyAV 19、imageio-ffmpeg 0.6、soundfile 0.14 | 24 kHz PCM16、16 kHz ASR 重采样、WAV、MP3 编解码与测试音频生成 |
 | PostgreSQL | 16.15，`127.0.0.1:55432` | 任务、幂等、outbox、配额与事务测试 |
 | MinIO | 2025-09-07，`127.0.0.1:59000` | 私有 staging 与 Artifact 集成测试 |
 | RTK | 1.0.1 | Codex 命令输出压缩 |
 | codebase-memory-mcp | 0.12.1 | 本地结构查询与索引覆盖检查 |
+
+Node 版本以 `.nvmrc` 的 `26.12.1` 为准；切换本机 shell 后，`make dev-status` 会校验 Node 与 pnpm 的精确版本。
 
 PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保存在被 Git 忽略的 `.runtime/`。服务只绑定回环地址；PostgreSQL 仅允许本机连接。`DATABASE_URL_DEV`、`DATABASE_URL_TEST`、`S3_ENDPOINT` 等非秘密地址位于 `.runtime/config/dev.env`，MinIO 凭据位于权限为 `0600` 的 `.runtime/config/minio.env`。
 

@@ -31,7 +31,7 @@ make web-dev
 
 ## 工程基线
 
-- Python 3.12 使用 `uv` workspace，后端与应用网关分别拥有 `src/` 包、严格类型检查、分层依赖契约和独立入口。
+- Python 3.14 使用 `uv` workspace，后端与应用网关分别拥有 `src/` 包、严格类型检查、分层依赖契约和独立入口。
 - React 19 + TypeScript 6 + Vite 8 使用 `pnpm` workspace；AdminUI、工作台与共享组件分别构建，版本集中在 catalog。
 - 公共契约位于 `contracts/`；当前只冻结运营健康检查，不提前伪造尚未评审的语音协议。
 - 单元、契约、fake 与集成测试目录已分离；CI 执行 Python、前端和 Compose 配置门禁。

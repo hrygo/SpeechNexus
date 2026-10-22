@@ -20,7 +20,8 @@ check() {
 }
 
 check "uv" uv --version
-check "pnpm" pnpm --version
+check "Node 26.12.1" bash -c '[[ "$(node --version)" == "v26.12.1" ]]'
+check "pnpm 12.14.0" bash -c '[[ "$(pnpm --version)" == "12.14.0" ]]'
 check "user session persistence" bash -c \
   '[[ "$(loginctl show-user "$USER" -p Linger --value)" == "yes" ]]'
 check "credential file permissions" bash -c \
@@ -40,7 +41,8 @@ check "test schema access" env LD_LIBRARY_PATH="$postgres_lib" \
   "$postgres_bin/psql" -h 127.0.0.1 -p 55432 -U speechnexus -d speechnexus_test -Atqc \
   'select 1'
 check "MinIO health" curl -fsS --max-time 2 http://127.0.0.1:59000/minio/health/live
-check "Python environment" uv run --directory "$repo_root" python --version
+check "Python 3.14.9" bash -c \
+  '[[ "$(uv run --directory "$1" python --version)" == "Python 3.14.9" ]]' _ "$repo_root"
 check "contract toolchain" uv run --directory "$repo_root" python -c \
   'import jsonschema, openapi_spec_validator, psycopg; print("ready")'
 check "media libraries" uv run --directory "$repo_root" python -c \

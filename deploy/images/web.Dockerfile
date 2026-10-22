@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.18
-FROM node:22.23.2-bookworm-slim AS build
+FROM node:26.12.1-bookworm-slim AS build
 
 ARG APP_NAME=admin
 
-RUN corepack enable && corepack prepare pnpm@10.34.7 --activate
+RUN npm install --global --allow-scripts=pnpm pnpm@12.14.0
 
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./

@@ -29,7 +29,7 @@ entries in separate terminals with `make api-dev`, `make gateway-dev`, and
 
 ## Engineering baseline
 
-- Python 3.12 uses a `uv` workspace with separate `src/` packages, strict typing,
+- Python 3.14 uses a `uv` workspace with separate `src/` packages, strict typing,
   enforced dependency direction, and independent entry points for the backend
   and execution gateway.
 - React 19, TypeScript 6, and Vite 8 use a `pnpm` workspace. AdminUI, workbench,

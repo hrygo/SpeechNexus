@@ -31,8 +31,8 @@
 
 ## 工具链与验证
 
-- Python 3.12 由 `uv` 管理；workspace 必须从根目录运行 `uv sync --locked --all-packages --all-groups`、`uv run ...`，并提交 `uv.lock`。
-- Node 22 / `pnpm` 10。`web/admin`、`web/workbench`、`web/shared` 是 workspace 成员；版本集中定义在 `pnpm-workspace.yaml` catalog，并提交 `pnpm-lock.yaml`。
+- Python 3.14 由 `uv` 管理；workspace 必须从根目录运行 `uv sync --locked --all-packages --all-groups`、`uv run ...`，并提交 `uv.lock`。
+- Node 26 / `pnpm` 12。`web/admin`、`web/workbench`、`web/shared` 是 workspace 成员；版本集中定义在 `pnpm-workspace.yaml` catalog，并提交 `pnpm-lock.yaml`。
 - 修改后至少运行与风险匹配的测试；完整本地门禁为 `make verify`。涉及服务启动时使用隔离的 `.runtime` PostgreSQL / MinIO，不访问同机共享实例。
 - 确定性测试使用 fake adapter，不下载模型、不使用私人音频。真实引擎、质量与负载验证必须另记版本、绑定、拓扑和证据。
 - 自动化检查不得把跳过伪装为通过。尚不存在的契约或测试应明确报告缺少覆盖。

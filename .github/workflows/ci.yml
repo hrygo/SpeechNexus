@@ -14,7 +14,7 @@ concurrency:
 
 env:
   UV_VERSION: "0.13.5"
-  PNPM_VERSION: "10.34.7"
+  PNPM_VERSION: "12.14.0"
 
 jobs:
   python:
@@ -81,8 +81,7 @@ jobs:
 
       - name: Activate pnpm
         run: |
-          corepack enable
-          corepack prepare pnpm@${PNPM_VERSION} --activate
+          npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile

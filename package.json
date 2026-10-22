@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.7",
+  "packageManager": "pnpm@12.14.0",
   "engines": {
-    "node": ">=22.12 <23"
+    "node": ">=26 <27"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @speechnexus/admin --filter @speechnexus/workbench dev",

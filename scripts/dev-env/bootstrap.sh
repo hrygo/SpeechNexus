@@ -12,6 +12,8 @@ user_bin="$HOME/.local/bin"
 postgres_version="16.15-0ubuntu0.24.04.1"
 minio_version="RELEASE.2025-09-07T16-13-09Z"
 uv_version="0.13.5"
+node_version="26.12.1"
+pnpm_version="12.14.0"
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "aarch64" ]]; then
   echo "This bootstrap is pinned to the current Linux ARM64 development host." >&2
@@ -49,9 +51,40 @@ fi
 ln -sfn "$bin_dir/uv" "$user_bin/uv"
 ln -sfn "$bin_dir/uvx" "$user_bin/uvx"
 
-if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != 10.* ]]; then
-  corepack enable --install-directory "$user_bin" pnpm
-  corepack prepare pnpm@10 --activate
+node_dist="node-v${node_version}-linux-arm64"
+node_root="$runtime/node"
+node_bin="$node_root/$node_dist/bin"
+if [[ ! -x "$node_bin/node" ]] || [[ "$("$node_bin/node" --version)" != "v$node_version" ]]; then
+  node_archive="$node_dist.tar.gz"
+  curl -fL --retry 3 --max-time 300 \
+    "https://nodejs.org/dist/v$node_version/$node_archive" \
+    -o "$downloads/$node_archive"
+  curl -fL --retry 3 --max-time 30 \
+    "https://nodejs.org/dist/v$node_version/SHASUMS256.txt" \
+    -o "$downloads/node-SHASUMS256.txt"
+  expected="$(awk -v archive="$node_archive" '$2 == archive {print $1}' \
+    "$downloads/node-SHASUMS256.txt")"
+  actual="$(sha256sum "$downloads/$node_archive" | cut -d' ' -f1)"
+  [[ -n "$expected" && "$expected" == "$actual" ]] || {
+    echo "Node.js checksum mismatch" >&2
+    exit 1
+  }
+  mkdir -p "$node_root"
+  tar -xzf "$downloads/$node_archive" -C "$node_root"
+fi
+ln -sfn "$node_bin/node" "$user_bin/node"
+ln -sfn "$node_bin/npm" "$user_bin/npm"
+ln -sfn "$node_bin/npx" "$user_bin/npx"
+export PATH="$user_bin:$PATH"
+hash -r
+
+if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != "$pnpm_version" ]]; then
+  if command -v corepack >/dev/null; then
+    corepack enable --install-directory "$user_bin" pnpm
+    corepack prepare "pnpm@$pnpm_version" --activate
+  else
+    npm install --global --allow-scripts=pnpm --prefix "$HOME/.local" "pnpm@$pnpm_version"
+  fi
 fi
 
 postgres_root="$runtime/postgres"

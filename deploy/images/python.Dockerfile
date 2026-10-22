@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.18
 FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
 
-FROM python:3.12.11-slim-bookworm AS builder
+FROM python:3.14.7-slim-bookworm AS builder
 COPY --from=uv /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -16,7 +16,7 @@ COPY execution-gateway/src execution-gateway/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --all-packages --no-dev --no-editable
 
-FROM python:3.12.11-slim-bookworm AS runtime
+FROM python:3.14.7-slim-bookworm AS runtime
 
 RUN groupadd --gid 10001 speechnexus \
     && useradd --uid 10001 --gid speechnexus --no-create-home --shell /usr/sbin/nologin speechnexus

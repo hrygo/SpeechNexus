@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.18
-FROM node:22.23.2-bookworm-slim AS build
+FROM node:26.11.1-bookworm-slim AS build
 
 ARG APP_NAME=admin
 

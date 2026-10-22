@@ -7,15 +7,27 @@ error codes.
 
 ## Current scope
 
-`operations.openapi.yaml` defines the liveness and readiness protocol shared by
-the speech API, execution gateway, and deployment probes. It contains no
-speech business capability.
+- `operations.openapi.yaml`: Liveness and readiness protocol shared by the
+  speech API, execution gateway, and deployment probes. It contains no speech
+  business capability.
+- `capacity-manifest.schema.json`: P0-A hardware-neutral capacity, execution
+  stage graph, loading peak, resident/incremental resource vector,
+  cancellation/fencing capability, and qualification manifest bound to an
+  immutable `ModelBindingRevision`.
+- `internal/execution-control.openapi.yaml`: P0-A internal
+  `ExecutionControlPort` protocol between the scheduler / workers / realtime
+  gateway and `execution-gateway` (fenced two-phase submit intent barrier,
+  execution status & output watermark query, verified abort vs quarantine,
+  gateway takeover fencing barrier, and instance drain).
+- `internal/runtime-control.openapi.yaml`: P0-A internal
+  `RuntimeLifecycleControlPort` protocol between the scheduler and the
+  node-scoped deployment controller (`node-controller`) for fenced prepare/stop
+  intents and verified container/process stop evidence.
 
-The P0 speech, realtime, workbench, scenario profile, voice resource, and
-capacity manifest contracts are not yet frozen. Internal execution control,
-execution streams, runtime lifecycle control, and binding/instance qualification
-contracts are also pending; public and internal protocols will be organized in
-separate directories. Their responsibilities are documented in the
+The remaining P0 public speech, realtime, workbench, scenario profile, and
+voice resource contracts, as well as internal execution stream and
+binding/instance qualification schemas, are still pending. Their
+responsibilities are documented in the
 [technical blueprint](../docs/architecture/technical-blueprint.md);
 empty placeholders are deliberately
 not created because an empty file could be mistaken for a delivered contract.

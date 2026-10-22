@@ -9,7 +9,7 @@ date: 2026-10-22
 
 本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义仍由语音协议及后续机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-**当前实现仅包含工程骨架、运营健康检查与两个 Web 外壳。** 下文新增工具、控制协议、迁移、调度、音色、LLM 和观测路径均待实现；模型选型不等于运行资格。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)。
+**当前实现仅包含工程骨架、运营健康检查与两个 Web 外壳。** 下文新增工具、控制协议、迁移、调度、音色、LLM 和观测路径均待实现；模型选型不等于运行资格。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 ## 1. 技术基线与职责
 
@@ -31,7 +31,7 @@ date: 2026-10-22
 
 ## 2. 进程、网络与所有权
 
-首轮部署使用单节点 Compose / 运维基础设施，应用角色按职责分进程，backend 与 execution-gateway 独立部署。单节点验收覆盖受控故障与恢复，不声称节点级高可用；扩容先增加已资格化实例，再验证全局预算与 owner 路由。
+首轮部署使用单节点 Compose / 运维基础设施，架构层面遵循 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的集群原生同构原则（单节点为 `Node=1, Replica=1` 特例）：应用角色按职责分进程，每个进程显式声明 `node_id`、`process_role` 与唯一实例身份（`instance_id` / `gateway_id`），backend 与 execution-gateway 独立部署，禁止使用单进程内存态或共享本地目录传递业务状态。单节点验收覆盖受控故障与恢复，不声称节点级高可用；扩容先增加已资格化节点与实例，再验证按节点划分的父物理预算与 owner 路由。
 
 ```mermaid
 flowchart LR

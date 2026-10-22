@@ -120,6 +120,7 @@ See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implem
 | Native development and testing       | [Development environment (Chinese)](docs/development-environment.md)      |
 | Architecture and implementation      | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md) |
 | All designs and decisions            | [Documentation index (Chinese)](docs/README.md)                           |
+| Cluster architecture and single-node MVP | [Cluster-ready deployment decision (Chinese)](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
 
 ## Contributing
 

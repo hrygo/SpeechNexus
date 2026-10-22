@@ -9,6 +9,7 @@
 | [工程目录与依赖边界](architecture/repository-layout.md) | Python / Web workspace、模块方向、契约生命周期、测试层级与部署入口 |
 | [语音接口](architecture/speech-api.md) | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例 |
 | [资源治理与持久化](architecture/runtime-governance.md) | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除 |
+| [分布式协调与容量治理 Schema（P0-B 草案）](architecture/distributed-coordination-schema.md) | 三级资源拓扑表、分池租约、网关提交屏障、全局锁顺序与六大原子事务模板 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md) | 固定来源、可提取规则、需重写的基础设施和许可证 |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md) | P0–P5、退出条件、工作包、交接产物与预算假设 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md) | 已发现问题、修正裁决、来源核验、文档检查与未验证项 |
@@ -17,6 +18,7 @@
 | [架构决策](decisions/README.md) | 已确认范围、决策原因和影响 |
 | [语音模型、推理引擎与加载策略](decisions/0002-speech-models-engines-and-loading.md) | 已接受的首选验证矩阵、常驻 / 按需加载、音色创作闭环与待验证范围 |
 | [工作台 LLM 与业务内容的网络边界](decisions/0003-workbench-llm-network-boundary.md) | 仅本机 / 内网 LLM、内容不出网、可选集成与部署责任 |
+| [集群就绪架构与单机 MVP 同构部署](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) | 架构层集群原生、三级资源拓扑、分池租约、节点控制器与单机 MVP 演进边界 |
 
 领域设计使用稳定文件名持续维护；实施计划与审查保留日期；ADR 以四位编号记录决定。协议 / 数据规则分别在其负责文档集中维护，主文档给出职责与入口。冲突需修订设计，不能以工作记录或历史材料静默覆盖公共语义。
 

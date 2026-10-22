@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=64,
     )
+    node_id: str = Field(default="node-local-1", min_length=1, max_length=128)
     gateway_id: str = Field(default="gateway-1", min_length=1, max_length=128)
     host: str = "127.0.0.1"
     port: int = Field(default=8010, ge=1, le=65535)

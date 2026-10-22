@@ -13,7 +13,7 @@ date: 2026-10-22
 
 ### 1.1 逻辑资源池与容量声明
 
-资源池按能力与服务类别组织，例如 `asr-realtime`、`tts-realtime`、`asr-batch`、`tts-batch`、`voice-creation`、`auxiliary`；它们是逻辑隔离边界，部署时可以映射到同机或不同节点。映射到同一物理设备的池必须共享父级物理预算，不能各自把整卡容量算作可用。
+资源池按能力与服务类别组织，例如 `asr-realtime`、`tts-realtime`、`asr-batch`、`tts-batch`、`voice-creation`、`auxiliary`；它们是逻辑隔离边界，部署时可以映射到同机或不同节点。物理与虚拟算力节点以 `HostNode`（`host_node_id`）建模，映射到同一 `host_node_id` 物理设备的池与运行实例必须共享该节点的父级物理预算，不能各自把整卡或整机统一内存容量算作可用；不同 `host_node_id` 节点的父物理预算彼此独立，单机 MVP 部署对应仅注册一个节点的同构特例（见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)）。
 
 已有 vLLM 接入分为 managed 和 external：managed 要求平台能够控制入口、统计整个池预算并执行取消 / 封锁屏障，是首版生产资源治理的默认前提；external 仅能限制 SpeechNexus 自己的在途请求，不能证明服务中其他调用方的占用。没有提供隔离容量与取消证据的 external 绑定只能发布为 best_effort / experimental，不能沿用 managed 的实时 SLO、全局容量或故障接管承诺。
 

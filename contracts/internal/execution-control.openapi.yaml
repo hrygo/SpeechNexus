@@ -1,0 +1,679 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus internal execution control API
+  version: 0.1.0.dev0
+  description: |
+    Authoritative internal ExecutionControlPort protocol between the scheduler /
+    workers / realtime gateway and the execution-gateway. Every engine submission,
+    status query, abort request, gateway takeover barrier, and instance drain is
+    serialized through this protocol and bound to explicit node, instance,
+    reservation, attempt, and fencing identities.
+paths:
+  /internal/v1/executions/submit:
+    post:
+      operationId: submitExecution
+      summary: Validate lease/fencing and persist a unique submit intent before engine dispatch
+      parameters:
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitExecutionRequest"
+      responses:
+        "200":
+          description: Submit intent recorded and execution accepted or replayed idempotently.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitExecutionResponse"
+        "409":
+          description: Fencing token stale, gateway barrier fenced, instance generation mismatch, or conflicting submit intent.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Request payload failed schema or capability validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/executions/{submit_intent_id}:
+    get:
+      operationId: getExecution
+      summary: Query authoritative submit intent, engine execution state, output watermark, and cleanup evidence
+      parameters:
+        - $ref: "#/components/parameters/SubmitIntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: Authoritative execution state and cleanup evidence.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatusResponse"
+        "404":
+          description: Submit intent not found on this gateway control store.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/executions/{submit_intent_id}/abort:
+    post:
+      operationId: abortExecution
+      summary: Request engine abort and return verified stop or quarantine cleanup evidence
+      parameters:
+        - $ref: "#/components/parameters/SubmitIntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbortExecutionRequest"
+      responses:
+        "200":
+          description: Abort processed; returns observed execution state and cleanup evidence (never fabricates stop evidence).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatusResponse"
+        "404":
+          description: Submit intent not found.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "409":
+          description: Stale fencing token or incompatible execution state transition.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/gateways/{gateway_id}/fencing-barrier:
+    post:
+      operationId: enforceGatewayFencingBarrier
+      summary: Seal a gateway pool ingress against stale fencing tokens prior to owner takeover
+      parameters:
+        - $ref: "#/components/parameters/GatewayIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayFencingBarrierRequest"
+      responses:
+        "200":
+          description: Ingress barrier recorded and active/submitting intents enumerated for reconciliation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayFencingBarrierResponse"
+        "409":
+          description: Supplied fencing token is lower than the gateway's already-enforced barrier token.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/instances/{instance_id}/drain:
+    post:
+      operationId: drainEngineInstance
+      summary: Stop new dispatches to a specific engine instance generation and reconcile in-flight intents
+      parameters:
+        - $ref: "#/components/parameters/InstanceIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DrainInstanceRequest"
+      responses:
+        "200":
+          description: Instance drain state and in-flight execution summary returned.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrainInstanceResponse"
+        "409":
+          description: Stale fencing token or instance generation mismatch.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+components:
+  headers:
+    XRequestId:
+      description: Correlation request ID propagated across control plane hops.
+      schema:
+        type: string
+  parameters:
+    XRequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    SubmitIntentIdPath:
+      name: submit_intent_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    GatewayIdPath:
+      name: gateway_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    InstanceIdPath:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+  schemas:
+    Identifier:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
+      minLength: 3
+      maxLength: 128
+    Sha256Digest:
+      type: string
+      pattern: "^sha256:[0-9a-f]{64}$"
+    PoolId:
+      type: string
+      enum:
+        - asr-realtime
+        - tts-realtime
+        - asr-batch
+        - tts-batch
+        - voice-creation
+        - auxiliary
+    ExecutionState:
+      type: string
+      enum:
+        - submitting
+        - executing
+        - stopping
+        - succeeded
+        - failed
+        - aborted
+        - unknown_quarantined
+      description: |
+        Authoritative execution state on the gateway. `submitting` and `unknown_quarantined`
+        continue to hold reserved capacity until stop evidence is confirmed.
+    CleanupState:
+      type: string
+      enum:
+        - not_required
+        - pending
+        - complete
+        - quarantined
+    StopEvidenceKind:
+      type: string
+      enum:
+        - none
+        - engine_abort_ack
+        - engine_terminal_response
+        - instance_terminated_by_controller
+        - unconfirmed_timeout
+    ExecutionErrorCode:
+      type: string
+      enum:
+        - stale_fencing_token
+        - gateway_barrier_fenced
+        - submit_intent_conflict
+        - instance_generation_mismatch
+        - instance_draining
+        - lease_not_active
+        - policy_or_resource_disabled
+        - engine_transport_unknown
+        - cancellation_unconfirmed
+        - execution_cleanup_pending
+        - invalid_execution_request
+    ArtifactStorageReference:
+      type: object
+      additionalProperties: false
+      required:
+        - asset_or_artifact_id
+        - workspace_id
+        - storage_bucket
+        - object_key
+        - content_sha256
+        - byte_length
+      properties:
+        asset_or_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        storage_bucket:
+          type: string
+          minLength: 1
+          maxLength: 128
+        object_key:
+          type: string
+          minLength: 1
+          maxLength: 512
+        content_sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        byte_length:
+          type: integer
+          minimum: 1
+    OutputWatermark:
+      type: object
+      additionalProperties: false
+      required:
+        - output_stream_id
+        - generated_pcm_samples
+        - sample_rate_hz
+        - generated_audio_ms
+        - hard_output_ceiling_samples
+      properties:
+        output_stream_id:
+          $ref: "#/components/schemas/Identifier"
+        generated_pcm_samples:
+          type: integer
+          minimum: 0
+        sample_rate_hz:
+          type: integer
+          enum: [16000, 24000, 48000]
+        generated_audio_ms:
+          type: integer
+          minimum: 0
+        hard_output_ceiling_samples:
+          type: [integer, "null"]
+          minimum: 1
+    SubmitExecutionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - workspace_id
+        - pool_id
+        - host_node_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - fencing_token
+        - command_digest
+        - deadline_at
+        - max_output_audio_ms
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        fencing_token:
+          type: integer
+          minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        input_asset_ref:
+          anyOf:
+            - $ref: "#/components/schemas/ArtifactStorageReference"
+            - type: "null"
+        staging_output_prefix:
+          type: [string, "null"]
+          maxLength: 512
+        deadline_at:
+          type: string
+          format: date-time
+        max_output_audio_ms:
+          type: integer
+          minimum: 100
+    SubmitExecutionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - instance_id
+        - instance_generation
+        - fencing_token
+        - execution_state
+        - cleanup_state
+        - idempotent_replay
+        - recorded_at
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        fencing_token:
+          type: integer
+          minimum: 1
+        engine_request_id:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 256
+        execution_state:
+          $ref: "#/components/schemas/ExecutionState"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        idempotent_replay:
+          type: boolean
+        recorded_at:
+          type: string
+          format: date-time
+    AbortExecutionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation_id
+        - attempt_id
+        - fencing_token
+        - reason
+        - wait_timeout_ms
+      properties:
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          enum:
+            - client_cancelled
+            - deadline_exceeded
+            - quota_exceeded
+            - resource_force_disabled
+            - gateway_takeover_reconcile
+            - stream_disconnected
+        wait_timeout_ms:
+          type: integer
+          minimum: 100
+          maximum: 60000
+    ExecutionStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - host_node_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - fencing_token
+        - execution_state
+        - cleanup_state
+        - stop_evidence_kind
+        - updated_at
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        fencing_token:
+          type: integer
+          minimum: 1
+        engine_request_id:
+          type: [string, "null"]
+        execution_state:
+          $ref: "#/components/schemas/ExecutionState"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        stop_evidence_kind:
+          $ref: "#/components/schemas/StopEvidenceKind"
+        output_watermark:
+          anyOf:
+            - $ref: "#/components/schemas/OutputWatermark"
+            - type: "null"
+        staging_artifact_ref:
+          anyOf:
+            - $ref: "#/components/schemas/ArtifactStorageReference"
+            - type: "null"
+        error_code:
+          anyOf:
+            - $ref: "#/components/schemas/ExecutionErrorCode"
+            - type: "null"
+        updated_at:
+          type: string
+          format: date-time
+    GatewayFencingBarrierRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pool_id
+        - new_owner_scheduler_id
+        - min_accepted_fencing_token
+        - abort_in_flight
+      properties:
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        new_owner_scheduler_id:
+          $ref: "#/components/schemas/Identifier"
+        min_accepted_fencing_token:
+          type: integer
+          minimum: 1
+        abort_in_flight:
+          type: boolean
+    GatewayFencingBarrierResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - gateway_id
+        - pool_id
+        - enforced_min_fencing_token
+        - barrier_sealed
+        - submitting_intent_ids
+        - executing_intent_ids
+        - quarantined_intent_ids
+        - enforced_at
+      properties:
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        enforced_min_fencing_token:
+          type: integer
+          minimum: 1
+        barrier_sealed:
+          type: boolean
+        submitting_intent_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        executing_intent_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        quarantined_intent_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        enforced_at:
+          type: string
+          format: date-time
+    DrainInstanceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - host_node_id
+        - pool_id
+        - instance_generation
+        - fencing_token
+        - max_drain_wait_ms
+      properties:
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        instance_generation:
+          type: integer
+          minimum: 1
+        fencing_token:
+          type: integer
+          minimum: 1
+        max_drain_wait_ms:
+          type: integer
+          minimum: 100
+          maximum: 120000
+    DrainInstanceResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - instance_generation
+        - drain_state
+        - active_intent_count
+        - submitting_intent_count
+        - quarantined_intent_count
+        - safe_to_stop_instance
+        - updated_at
+      properties:
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        drain_state:
+          type: string
+          enum: [draining, drained, quarantined]
+        active_intent_count:
+          type: integer
+          minimum: 0
+        submitting_intent_count:
+          type: integer
+          minimum: 0
+        quarantined_intent_count:
+          type: integer
+          minimum: 0
+        safe_to_stop_instance:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+    ExecutionControlErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - retryable
+          properties:
+            code:
+              $ref: "#/components/schemas/ExecutionErrorCode"
+            message:
+              type: string
+              minLength: 1
+            retryable:
+              type: boolean
+            observed_fencing_token:
+              type: [integer, "null"]
+            submit_intent_id:
+              type: [string, "null"]

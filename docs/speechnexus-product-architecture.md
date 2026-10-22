@@ -10,7 +10,7 @@ audience: "产品负责人、架构师、Web 与语音服务开发者、平台�
 
 SpeechNexus 是面向 Linux 的企业级语音服务底座，采用 OpenAI 兼容的 ASR/TTS 子集及音色创作等增强协议。WebUI 包含 AdminUI 与个人语音工作台；首期不建设用户身份认证体系，采用可信共享部署。
 
-本文是 SpeechNexus 独立项目的主设计，定义产品范围、职责边界、技术基线与验收要求。[整体技术方案](architecture/technical-blueprint.md)负责工程选型与组件协作，[语音接口](architecture/speech-api.md)负责公共协议细节，[资源治理](architecture/runtime-governance.md)负责调度、持久化与数据生命周期；共同构成后续实现依据。已确认产品边界见 [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)，模型、引擎与加载策略见 [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)，内网 LLM 与内容网络边界见 [ADR 0003](decisions/0003-workbench-llm-network-boundary.md)。存在冲突时先修订设计与决策，不以偶然实现替代契约。
+本文是 SpeechNexus 独立项目的主设计，定义产品范围、职责边界、技术基线与验收要求。[整体技术方案](architecture/technical-blueprint.md)负责工程选型与组件协作，[语音接口](architecture/speech-api.md)负责公共协议细节，[资源治理](architecture/runtime-governance.md)负责调度、持久化与数据生命周期；共同构成后续实现依据。已确认产品边界见 [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)，模型、引擎与加载策略见 [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)，内网 LLM 与内容网络边界见 [ADR 0003](decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。存在冲突时先修订设计与决策，不以偶然实现替代契约。
 
 **实现状态：仓库已建立工程骨架与运营健康检查，尚未实现语音业务 API 或真实工作台。** `active` 表示本文是当前维护的设计基线，不表示语音、音色、模型能力或服务指标已经实现。参数是初始设计值；性能、质量、容量及恢复指标须在目标部署验证。文档版本独立于未来软件版本。
 

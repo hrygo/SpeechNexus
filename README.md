@@ -120,6 +120,7 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml down
 | 本机开发与测试             | [开发环境](docs/development-environment.md)          |
 | 架构与工程实现             | [技术方案](docs/architecture/technical-blueprint.md) |
 | 全部设计与决策记录         | [文档索引](docs/README.md)                           |
+| 集群架构与单机 MVP | [集群就绪与部署决策](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
 
 ## 参与贡献
 

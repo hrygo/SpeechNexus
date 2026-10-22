@@ -1,0 +1,370 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus internal runtime lifecycle control API
+  version: 0.1.0.dev0
+  description: |
+    Internal RuntimeLifecycleControlPort protocol between the scheduler and the
+    node-scoped deployment controller (`node-controller`). The controller only
+    accepts approved runtime templates, immutable instance generations, and
+    fenced prepare/stop intents for its own `node_id`. It never accepts arbitrary
+    container images, host volume mounts, or shell commands.
+paths:
+  /internal/v1/nodes/{node_id}/instance-intents:
+    post:
+      operationId: submitRuntimeInstanceIntent
+      summary: Submit an approved instance prepare or stop intent to a target host node
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeInstanceIntentRequest"
+      responses:
+        "200":
+          description: Runtime instance intent accepted or replayed idempotently.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "409":
+          description: Target node mismatch, stale fencing token, stale instance generation, or conflicting intent.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/instance-intents/{intent_id}:
+    get:
+      operationId: getRuntimeInstanceIntent
+      summary: Query observed container/process lifecycle state and verified stop evidence
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/IntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: Current runtime instance intent status and stop/readiness evidence.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "404":
+          description: Runtime instance intent not found on this node controller.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/reconcile:
+    post:
+      operationId: reconcileNodeInstances
+      summary: Report observed local runtime instances and container exit facts for node reconciliation
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeReconcileRequest"
+      responses:
+        "200":
+          description: Node reconciliation snapshot processed.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeReconcileResponse"
+components:
+  headers:
+    XRequestId:
+      description: Correlation request ID propagated across control plane hops.
+      schema:
+        type: string
+  parameters:
+    XRequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    NodeIdPath:
+      name: node_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    IntentIdPath:
+      name: intent_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+  schemas:
+    Identifier:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
+      minLength: 3
+      maxLength: 128
+    Sha256Digest:
+      type: string
+      pattern: "^sha256:[0-9a-f]{64}$"
+    PoolId:
+      type: string
+      enum:
+        - asr-realtime
+        - tts-realtime
+        - asr-batch
+        - tts-batch
+        - voice-creation
+        - auxiliary
+    RuntimeActionKind:
+      type: string
+      enum: [prepare, stop]
+    RuntimeIntentState:
+      type: string
+      enum:
+        - pending
+        - reconciling
+        - succeeded
+        - failed
+        - quarantined
+    ObservedInstanceState:
+      type: string
+      enum:
+        - absent
+        - loading
+        - warming_up
+        - ready
+        - draining
+        - stopping
+        - stopped
+        - unknown_quarantined
+    RuntimeStopEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - process_or_container_exited
+        - resources_released_confirmed
+        - verified_at
+      properties:
+        process_or_container_exited:
+          type: boolean
+        resources_released_confirmed:
+          type: boolean
+        exit_code:
+          type: [integer, "null"]
+        runtime_container_id:
+          type: [string, "null"]
+          maxLength: 128
+        verified_at:
+          type: string
+          format: date-time
+    RuntimeInstanceIntentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - intent_id
+        - target_node_id
+        - pool_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - approved_template_id
+        - binding_revision_id
+        - manifest_id
+        - config_digest
+        - action
+        - fencing_token
+        - reserved_peak_unified_bytes
+        - reserved_steady_unified_bytes
+        - deadline_at
+      properties:
+        intent_id:
+          $ref: "#/components/schemas/Identifier"
+        target_node_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        manifest_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        action:
+          $ref: "#/components/schemas/RuntimeActionKind"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reserved_peak_unified_bytes:
+          type: integer
+          minimum: 0
+        reserved_steady_unified_bytes:
+          type: integer
+          minimum: 0
+        deadline_at:
+          type: string
+          format: date-time
+    RuntimeInstanceIntentResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - intent_id
+        - target_node_id
+        - instance_id
+        - instance_generation
+        - action
+        - fencing_token
+        - intent_state
+        - observed_instance_state
+        - updated_at
+      properties:
+        intent_id:
+          $ref: "#/components/schemas/Identifier"
+        target_node_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        action:
+          $ref: "#/components/schemas/RuntimeActionKind"
+        fencing_token:
+          type: integer
+          minimum: 1
+        intent_state:
+          $ref: "#/components/schemas/RuntimeIntentState"
+        observed_instance_state:
+          $ref: "#/components/schemas/ObservedInstanceState"
+        stop_evidence:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeStopEvidence"
+            - type: "null"
+        observed_peak_unified_bytes:
+          type: [integer, "null"]
+          minimum: 0
+        error_code:
+          type: [string, "null"]
+        updated_at:
+          type: string
+          format: date-time
+    ObservedNodeInstanceFact:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - instance_generation
+        - approved_template_id
+        - config_digest
+        - observed_instance_state
+      properties:
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        observed_instance_state:
+          $ref: "#/components/schemas/ObservedInstanceState"
+        stop_evidence:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeStopEvidence"
+            - type: "null"
+    NodeReconcileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - controller_id
+        - fencing_token
+        - reported_at
+        - instances
+      properties:
+        controller_id:
+          $ref: "#/components/schemas/Identifier"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reported_at:
+          type: string
+          format: date-time
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObservedNodeInstanceFact"
+    NodeReconcileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+        - accepted_at
+        - quarantined_instance_ids
+      properties:
+        node_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted_at:
+          type: string
+          format: date-time
+        quarantined_instance_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+    RuntimeControlErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - retryable
+          properties:
+            code:
+              type: string
+              enum:
+                - target_node_mismatch
+                - unapproved_runtime_template
+                - stale_fencing_token
+                - stale_instance_generation
+                - gateway_drain_incomplete
+                - runtime_controller_unavailable
+            message:
+              type: string
+              minLength: 1
+            retryable:
+              type: boolean

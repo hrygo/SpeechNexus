@@ -43,3 +43,15 @@ async def test_gateway_readiness_fails_closed() -> None:
 
     assert response.status_code == 503
     assert response.json()["status"] == "unready"
+
+
+def test_gateway_settings_expose_node_and_gateway_identity() -> None:
+    settings = Settings(
+        service_name="speechnexus-gateway-test",
+        node_id="node-gpu-01",
+        gateway_id="gateway-node-01",
+        control_database_url=SecretStr("postgresql://unused@127.0.0.1/unused"),
+    )
+
+    assert settings.node_id == "node-gpu-01"
+    assert settings.gateway_id == "gateway-node-01"

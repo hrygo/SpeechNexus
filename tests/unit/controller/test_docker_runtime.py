@@ -18,6 +18,7 @@ from speechnexus_node_controller.domain.intents import (
     IntentConflictError,
     ObservedInstanceState,
     RuntimeActionKind,
+    RuntimeControllerUnavailableError,
     UnapprovedRuntimeTemplateError,
 )
 from speechnexus_node_controller.domain.templates import (
@@ -263,3 +264,34 @@ def test_inspect_of_a_running_container_reports_the_ready_state() -> None:
     assert observation is not None
     assert observation.observed_instance_state is ObservedInstanceState.READY
     assert observation.observed_peak_memory is not None
+
+
+def test_a_silent_daemon_never_becomes_a_prepared_instance() -> None:
+    engine = _engine(daemon_unavailable=True)
+
+    with pytest.raises(RuntimeControllerUnavailableError):
+        _runtime(engine).prepare(build_request(), build_template())
+
+    assert engine.created == []
+
+
+def test_a_silent_daemon_never_becomes_stop_evidence() -> None:
+    engine = _engine()
+    runtime = _runtime(engine)
+    runtime.prepare(build_request(), build_template())
+    prepared = engine.created[0]
+    assert prepared.running is True
+
+    engine.daemon_unavailable = True
+    with pytest.raises(RuntimeControllerUnavailableError):
+        runtime.stop(
+            build_request(
+                intent_id="intent-stop-1",
+                action=RuntimeActionKind.STOP,
+                fencing_token=2,
+            ),
+            build_template(),
+        )
+
+    assert prepared.running is True
+    assert engine.removed == []

@@ -12,15 +12,18 @@ needs before releasing reserved capacity.
 from __future__ import annotations
 
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from functools import wraps
+from typing import Any, Final, ParamSpec, TypeVar
 
 from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
     IntentConflictError,
     MemoryArchitecture,
     ObservedInstanceState,
+    RuntimeControllerUnavailableError,
     RuntimeInstanceIntentRequest,
     RuntimeMemoryVector,
     RuntimeStopEvidence,
@@ -36,6 +39,34 @@ from speechnexus_node_controller.infrastructure.docker_api import (
     DockerEngineApi,
     DockerUnavailableError,
 )
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _runtime_action(action: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    """Report a daemon failure as an incomplete action instead of a success.
+
+    The controller must never turn an unanswered daemon into a prepared or
+    stopped instance, so an infrastructure failure leaves the caller's intent
+    unresolved and retryable. Domain refusals raised inside the action (an
+    unapproved template or a conflicting instance identity) are not translated.
+    """
+
+    def decorate(function: Callable[_P, _R]) -> Callable[_P, _R]:
+        @wraps(function)
+        def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            try:
+                return function(*args, **kwargs)
+            except (DockerUnavailableError, DockerApiError) as error:
+                raise RuntimeControllerUnavailableError(
+                    f"the node runtime did not complete {action}: {type(error).__name__}"
+                ) from error
+
+        return wrapped
+
+    return decorate
+
 
 MANAGED_BY_LABEL: Final = "nexus.managed-by"
 MANAGED_BY_VALUE: Final = "speechnexus-node-controller"
@@ -76,6 +107,7 @@ class DockerNodeRuntime:
         self._node_id = node_id
         self._settings = settings or DockerRuntimeSettings()
 
+    @_runtime_action("prepare")
     def prepare(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
@@ -99,6 +131,7 @@ class DockerNodeRuntime:
             raise DockerUnavailableError("container disappeared right after start")
         return self._observation(request, template, state)
 
+    @_runtime_action("stop")
     def stop(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
@@ -147,6 +180,7 @@ class DockerNodeRuntime:
             ),
         )
 
+    @_runtime_action("inspect")
     def inspect(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation | None:

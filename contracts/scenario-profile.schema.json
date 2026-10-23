@@ -9,6 +9,7 @@
     "schema_version",
     "profile_id",
     "revision",
+    "display_name",
     "kind",
     "release_tier",
     "execution_classes",

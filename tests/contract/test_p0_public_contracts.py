@@ -489,6 +489,10 @@ def test_scenario_profile_positive_and_negative_examples() -> None:
     unknown_field["priority"] = 10
     with pytest.raises(ValidationError):
         validator.validate(unknown_field)
+    missing_display_name = copy.deepcopy(examples[0])
+    del missing_display_name["display_name"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_display_name)
 
     wrong_kind = copy.deepcopy(examples[0])
     wrong_kind["parameters"]["tts"] = copy.deepcopy(examples[1]["parameters"]["tts"])
@@ -2384,6 +2388,18 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     }
     operation_validator = _component_validator(speech, "Operation")
     operation_validator.validate(operation)
+    job_operation = copy.deepcopy(operation)
+    job_operation["job_id"] = "job-demo"
+    job_operation["session_id"] = None
+    operation_validator.validate(job_operation)
+    session_operation = copy.deepcopy(operation)
+    session_operation["job_id"] = None
+    session_operation["session_id"] = "session-demo"
+    operation_validator.validate(session_operation)
+    dual_owned_operation = copy.deepcopy(job_operation)
+    dual_owned_operation["session_id"] = "session-demo"
+    with pytest.raises(ValidationError):
+        operation_validator.validate(dual_owned_operation)
     failed_operation = copy.deepcopy(operation)
     failed_operation["status"] = "failed"
     failed_operation["error"] = None

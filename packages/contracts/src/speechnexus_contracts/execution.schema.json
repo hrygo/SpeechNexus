@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExecutionContracts",
-  "x-nexus-bindings-version": "0.3.0.dev0",
+  "x-nexus-bindings-version": "0.4.0.dev0",
   "x-nexus-entrypoints": [
     "SubmitExecutionRequest",
     "SubmitExecutionResponse",
@@ -1336,6 +1336,9 @@
         "execution_state": {
           "$ref": "#/$defs/ExecutionState"
         },
+        "stop_evidence_kind": {
+          "$ref": "#/$defs/StopEvidenceKind"
+        },
         "cleanup_state": {
           "$ref": "#/$defs/CleanupState"
         },
@@ -1371,6 +1374,17 @@
         "unknown_quarantined"
       ],
       "description": "Authoritative execution state on the gateway. `submitting` and `unknown_quarantined`\ncontinue to hold reserved capacity until stop evidence is confirmed.\n"
+    },
+    "StopEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "none",
+        "engine_abort_ack",
+        "engine_terminal_response",
+        "instance_terminated_by_controller",
+        "operator_verified_instance_terminated",
+        "unconfirmed_timeout"
+      ]
     },
     "CleanupState": {
       "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
@@ -1502,7 +1516,7 @@
     },
     "ExecutionDispatchEvidenceInvariants": {
       "type": "object",
-      "description": "Submission is persisted before an engine request. Active execution,\nsuccessful completion, and verified abort therefore require an observed\ndispatch time. `submitting` and a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way.\n",
+      "description": "Submission is persisted before an engine request. Active execution,\nand successful completion require an observed dispatch time. `submitting`\nand a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way. An abort with\nno observed dispatch time is allowed only with verified whole-instance\ntermination evidence; recovery must not invent a dispatch time.\n",
       "allOf": [
         {
           "if": {
@@ -1526,7 +1540,7 @@
           "if": {
             "properties": {
               "execution_state": {
-                "enum": ["executing", "stopping", "succeeded", "aborted"]
+                "enum": ["executing", "stopping", "succeeded"]
               }
             },
             "required": ["execution_state"]
@@ -1539,6 +1553,43 @@
                 "format": "date-time"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["dispatched_at"],
+                "properties": {
+                  "dispatched_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              {
+                "required": ["dispatched_at", "stop_evidence_kind"],
+                "properties": {
+                  "dispatched_at": {
+                    "type": "null"
+                  },
+                  "stop_evidence_kind": {
+                    "enum": [
+                      "instance_terminated_by_controller",
+                      "operator_verified_instance_terminated"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         {
@@ -1724,17 +1775,6 @@
         {
           "$ref": "#/$defs/ExecutionDispatchEvidenceInvariants"
         }
-      ]
-    },
-    "StopEvidenceKind": {
-      "type": "string",
-      "enum": [
-        "none",
-        "engine_abort_ack",
-        "engine_terminal_response",
-        "instance_terminated_by_controller",
-        "operator_verified_instance_terminated",
-        "unconfirmed_timeout"
       ]
     },
     "OutputWatermark": {
@@ -2063,7 +2103,8 @@
                     "control_store_unavailable",
                     "control_outcome_unknown",
                     "control_reconciliation_required",
-                    "control_state_conflict"
+                    "control_state_conflict",
+                    "control_execution_not_found"
                   ]
                 }
               ]
@@ -2101,7 +2142,8 @@
                       "control_store_unavailable",
                       "control_outcome_unknown",
                       "control_reconciliation_required",
-                      "control_state_conflict"
+                      "control_state_conflict",
+                      "control_execution_not_found"
                     ]
                   }
                 },
@@ -2187,6 +2229,26 @@
                   },
                   "recovery": {
                     "const": "query_current_authority"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_execution_not_found"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "none"
                   }
                 }
               }

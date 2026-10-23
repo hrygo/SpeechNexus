@@ -1,0 +1,64 @@
+{
+  "examples": [
+    {
+      "id": "unknown-observation-valid",
+      "schema": "mark_execution_unknown",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "engine_transport_unknown",
+        "observed_at_us": 1792713600000000
+      }
+    },
+    {
+      "id": "unknown-observation-boolean-time",
+      "schema": "mark_execution_unknown",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "engine_transport_unknown",
+        "observed_at_us": true
+      }
+    },
+    {
+      "id": "unknown-observation-unsafe-time",
+      "schema": "mark_execution_unknown",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "engine_transport_unknown",
+        "observed_at_us": 9007199254740992
+      }
+    },
+    {
+      "id": "unknown-observation-undeclared-reason",
+      "schema": "mark_execution_unknown",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "made_up",
+        "observed_at_us": 1792713600000000
+      }
+    },
+    {
+      "id": "unknown-observation-extra-field",
+      "schema": "mark_execution_unknown",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "engine_transport_unknown",
+        "observed_at_us": 1792713600000000,
+        "release_budget": true
+      }
+    },
+    {
+      "id": "unknown-observation-missing-time",
+      "schema": "mark_execution_unknown",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "reason_code": "engine_transport_unknown"
+      }
+    }
+  ]
+}

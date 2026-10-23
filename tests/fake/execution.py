@@ -14,6 +14,7 @@ from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
+from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     DispatchResult,
@@ -41,7 +42,21 @@ class InMemorySubmissionLedger:
         stored = self._intents.get(submit_intent_id)
         return copy.deepcopy(stored) if stored is not None else None
 
+    def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
+        intent = self.get(submit_intent_id)
+        return None if intent is None else ExecutionSnapshot(intent)
+
+    def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
+        current = self.get(request.submit_intent_id)
+        if current is None:
+            raise InvalidExecutionRequestError("unknown submit intent")
+        updated = request.apply(current, at=self._now())
+        self._intents[request.submit_intent_id] = copy.deepcopy(updated)
+        return updated
+
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
+        if intent.generated_pcm_samples != 0:
+            raise InvalidExecutionRequestError("a new submission has not generated output")
         barrier = self._barriers.get((intent.identity.gateway_id, intent.identity.pool_id))
         if barrier is not None and intent.identity.fencing_token < barrier.min_fencing_token:
             raise GatewayBarrierFencedError("durable barrier rejects stale submit")
@@ -59,6 +74,8 @@ class InMemorySubmissionLedger:
             raise ValueError(f"submit intent {key} is not stored")
         if stored.version != expected_version:
             raise ValueError(f"submit intent {key} version conflict")
+        if stored.generated_pcm_samples != intent.generated_pcm_samples:
+            raise InvalidExecutionRequestError("observations cannot rewrite metering facts")
         if intent.cleanup_state is CleanupState.COMPLETE or stored.execution_state.is_terminal:
             raise ExecutionCleanupPendingError("terminal writes require record_stop")
         self._intents[key] = copy.deepcopy(intent)

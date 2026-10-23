@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Protocol
 
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
     EngineObservedState,
@@ -85,3 +86,11 @@ class IngressOwnership(Protocol):
 
 class BarrierLedger(Protocol):
     def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot: ...
+
+
+class ExecutionRecoveryLedger(Protocol):
+    def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent: ...
+
+
+class ExecutionQueryPort(Protocol):
+    def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None: ...

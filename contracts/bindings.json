@@ -26,7 +26,8 @@
       "renew_owner",
       "activate_owner",
       "query_outcome",
-      "claim_job"
+      "claim_job",
+      "mark_execution_unknown"
     ]
   },
   "profiles": {

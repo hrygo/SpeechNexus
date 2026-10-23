@@ -82,6 +82,14 @@ type ExternalSharedSpeechOverridesSchemaJsonSilenceDurationMs = int
 type ExecutionState = Literal[
     "submitting", "executing", "stopping", "succeeded", "failed", "aborted", "unknown_quarantined"
 ]
+type StopEvidenceKind = Literal[
+    "none",
+    "engine_abort_ack",
+    "engine_terminal_response",
+    "instance_terminated_by_controller",
+    "operator_verified_instance_terminated",
+    "unconfirmed_timeout",
+]
 type ExternalSharedOperationStatesSchemaJsonCleanupState = Literal[
     "not_required", "pending", "complete", "quarantined"
 ]
@@ -99,14 +107,6 @@ class ExecutionDispatchEvidenceInvariants(TypedDict):
     pass
 
 
-type StopEvidenceKind = Literal[
-    "none",
-    "engine_abort_ack",
-    "engine_terminal_response",
-    "instance_terminated_by_controller",
-    "operator_verified_instance_terminated",
-    "unconfirmed_timeout",
-]
 type ArtifactStorageReference = ExternalInternalExecutionCommandSchemaJsonArtifactStorageReference
 type ExecutionErrorCode = Literal[
     "stale_fencing_token",
@@ -136,6 +136,7 @@ class Error(TypedDict):
             "control_outcome_unknown",
             "control_reconciliation_required",
             "control_state_conflict",
+            "control_execution_not_found",
         ]
     )
     message: str
@@ -288,6 +289,7 @@ class SubmitExecutionResponse(TypedDict):
     sample_rate_hz: Literal[16000, 24000, 48000] | None
     engine_request_id: NotRequired[str | None]
     execution_state: ExecutionState
+    stop_evidence_kind: NotRequired[StopEvidenceKind]
     cleanup_state: CleanupState
     idempotent_replay: bool
     recorded_at: str

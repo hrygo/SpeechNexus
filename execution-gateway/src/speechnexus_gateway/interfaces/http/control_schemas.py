@@ -44,3 +44,8 @@ GatewayBarrierResponse = Annotated[
     BeforeValidator(lambda value: parse("GatewayFencingBarrierResponse", value)),
     WithJsonSchema(wire_schema("GatewayFencingBarrierResponse")),
 ]
+ExecutionStatus = Annotated[
+    models.ExecutionStatusResponse,
+    BeforeValidator(lambda value: parse("ExecutionStatusResponse", value)),
+    WithJsonSchema(wire_schema("ExecutionStatusResponse")),
+]

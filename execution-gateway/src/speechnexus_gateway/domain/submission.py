@@ -483,6 +483,7 @@ class SubmissionIntent:
     stop_evidence_kind: StopEvidenceKind = StopEvidenceKind.NONE
     stop_evidence_digest: str | None = None
     terminated_at: datetime | None = None
+    generated_pcm_samples: int = 0
     version: int = field(default=1)
 
     def __post_init__(self) -> None:
@@ -494,6 +495,17 @@ class SubmissionIntent:
             raise ValueError("request_digest must be sha256:<64 lowercase hex>")
         if (self.output_stream_id is None) != (self.identity.sample_rate_hz is None):
             raise ValueError("output_stream_id is required exactly when sample_rate_hz is set")
+        ceiling = hard_output_ceiling_samples(
+            max_output_audio_ms=self.identity.max_output_audio_ms,
+            sample_rate_hz=self.identity.sample_rate_hz,
+        )
+        if (
+            type(self.generated_pcm_samples) is not int
+            or self.generated_pcm_samples < 0
+            or (ceiling is None and self.generated_pcm_samples != 0)
+            or (ceiling is not None and self.generated_pcm_samples > ceiling)
+        ):
+            raise ValueError("generated samples contradict the frozen output budget")
         allowed = _CLEANUP_BY_STATE[self.execution_state]
         if self.cleanup_state not in allowed:
             raise ValueError(
@@ -505,18 +517,34 @@ class SubmissionIntent:
             ExecutionState.EXECUTING,
             ExecutionState.STOPPING,
             ExecutionState.SUCCEEDED,
-            ExecutionState.ABORTED,
         }
         if self.execution_state in dispatched_states and self.dispatched_at is None:
             raise ValueError(f"{self.execution_state} requires a dispatch time")
+        if (
+            self.execution_state is ExecutionState.ABORTED
+            and self.dispatched_at is None
+            and (
+                self.stop_evidence_kind
+                not in {
+                    StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
+                    StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
+                }
+                or self.stop_evidence_digest is None
+                or self.terminated_at is None
+            )
+        ):
+            raise ValueError("unobserved dispatch requires durable instance termination evidence")
         if self.execution_state is ExecutionState.FAILED:
             if self.error_code is None:
                 raise ValueError("failed intent carries a stable error code")
             if self.cleanup_state is CleanupState.NOT_REQUIRED and (
-                self.dispatched_at is not None or self.engine_request_id is not None
+                self.dispatched_at is not None
+                or self.engine_request_id is not None
+                or self.generated_pcm_samples != 0
             ):
                 raise ValueError(
-                    "cleanup_state not_required requires no dispatch time and no engine request"
+                    "cleanup_state not_required requires no dispatch time, "
+                    "no engine request and no generated output"
                 )
             if self.cleanup_state is CleanupState.COMPLETE and self.dispatched_at is None:
                 raise ValueError("failed-with-cleanup intent requires a dispatch time")
@@ -571,7 +599,15 @@ class SubmissionIntent:
         RecordStop(evidence, terminal_state, error_code)
         if self.execution_state.is_terminal:
             raise ExecutionCleanupPendingError("a terminal execution cannot be reversed")
-        if self.dispatched_at is None:
+        if self.dispatched_at is None and not (
+            self.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+            and terminal_state is ExecutionState.ABORTED
+            and evidence.evidence_kind
+            in {
+                StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
+                StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
+            }
+        ):
             raise ExecutionCleanupPendingError("stop evidence requires a dispatched intent")
         if (
             self.execution_state is ExecutionState.UNKNOWN_QUARANTINED
@@ -581,7 +617,8 @@ class SubmissionIntent:
         observed_at = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(
             microseconds=evidence.observed_at_us
         )
-        if observed_at > at or observed_at < self.dispatched_at or at < self.updated_at:
+        earliest = self.dispatched_at or self.recorded_at
+        if observed_at > at or observed_at < earliest or at < self.updated_at:
             raise ExecutionCleanupPendingError("stop observation contradicts execution time")
         if self.version >= _MAX_INT64:
             raise ExecutionCleanupPendingError("execution version is exhausted")

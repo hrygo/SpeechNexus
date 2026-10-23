@@ -69,13 +69,16 @@ Job events, cancellation, Assets, Artifacts, Operations and public errors.
 Python additionally exposes `validation.validate_coordination` for the first
 internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
-The coordination bundle also validates owner acquire/renew/activate and
-`query_outcome` requests. The production owner boundary implements the pool
-target only. The coordination bundle additionally validates `claim_job`; the
-production claim boundary handles Job current-authority queries. An unclaimed
-row returns unknown, and an expired/later claim snapshot neither proves that an
-earlier write rolled back nor permits redispatch. Remaining query targets stay
-with their fact owners.
+The coordination bundle also validates owner acquire/renew/activate,
+`claim_job`, `query_outcome` and `mark_execution_unknown` requests. The production
+owner boundary implements the pool target, the claim boundary handles Job
+current-authority queries, and the gateway implements its own submit snapshot.
+An unclaimed Job row returns unknown, and an expired/later claim snapshot neither
+proves that an earlier write rolled back nor permits redispatch.
+Remaining query targets stay with their fact owners. The shared
+`execution-recovery.json` corpus checks the new coordination entry against the
+source schema, packaged Python validator and TypeScript bundle parser; this
+does not add a public TypeScript coordination API.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.
@@ -137,12 +140,18 @@ deployment URL, do not retry, and do not automatically validate responses.
 The default and workbench parsers reject internal protocol names. A separate
 profile is an import/API namespace, not an authorization mechanism.
 
-Execution control `0.3.0.dev0` adds barrier and error parser entrypoints. Control
+Execution control `0.4.0.dev0` includes barrier and error parser entrypoints. Control
 failures carry a constrained recovery hint: a lost commit acknowledgment is
 `control_outcome_unknown` / `query_original` with `retryable=false`, while a
 bounded unavailable transaction uses `retry_transaction`. Upgrade strict error
 consumers together with this bundle; older error vocabularies cannot validate
 the added codes. These control errors are not persisted engine execution errors.
+An aborted execution may retain a null dispatch time only with controller/operator
+whole-instance termination evidence. Submit replay must include `stop_evidence_kind`
+in that branch. Read-only GET uses the existing status parser; the new
+`control_execution_not_found` is fixed to `retryable=false/recovery=none`.
+Old strict consumers reject these new state/error combinations and must upgrade
+with the producer. The public speech contract is unchanged.
 
 All profile outputs (including `*_models.py`, profile parsers and schema bundles)
 are generated and checked by the same drift gate. Python static projection

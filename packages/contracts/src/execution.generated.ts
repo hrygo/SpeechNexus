@@ -235,12 +235,14 @@ export interface components {
     ExecutionCleanupEvidenceInvariants: unknown;
     /**
      * @description Submission is persisted before an engine request. Active execution,
-     *     successful completion, and verified abort therefore require an observed
-     *     dispatch time. `submitting` and a failure that never dispatched require
+     *     and successful completion require an observed dispatch time. `submitting`
+     *     and a failure that never dispatched require
      *     it to be null. An unknown quarantined execution may have an ambiguous
-     *     dispatch outcome and keeps capacity quarantined either way.
+     *     dispatch outcome and keeps capacity quarantined either way. An abort with
+     *     no observed dispatch time is allowed only with verified whole-instance
+     *     termination evidence; recovery must not invent a dispatch time.
      */
-    ExecutionDispatchEvidenceInvariants: unknown & unknown & unknown;
+    ExecutionDispatchEvidenceInvariants: unknown & unknown & unknown & unknown;
     SubmitExecutionResponse: {
       submit_intent_id: components["schemas"]["Identifier"];
       lease_id: components["schemas"]["Identifier"];
@@ -270,6 +272,7 @@ export interface components {
       sample_rate_hz: 16000 | 24000 | 48000 | null;
       engine_request_id?: string | null;
       execution_state: components["schemas"]["ExecutionState"];
+      stop_evidence_kind?: components["schemas"]["StopEvidenceKind"];
       cleanup_state: components["schemas"]["CleanupState"];
       idempotent_replay: boolean;
       /** Format: date-time */
@@ -381,6 +384,7 @@ export interface components {
               | "control_outcome_unknown"
               | "control_reconciliation_required"
               | "control_state_conflict"
+              | "control_execution_not_found"
             );
         message: string;
         retryable: boolean;
@@ -389,7 +393,7 @@ export interface components {
           "none" | "retry_transaction" | "query_original" | "query_current_authority" | "reconcile";
         observed_fencing_token?: number | null;
         submit_intent_id?: string | null;
-      } & (unknown & unknown & unknown & unknown & unknown);
+      } & (unknown & unknown & unknown & unknown & unknown & unknown);
     };
     /** @description Monotonic decimal revision represented as a string. */
     Revision: string;
@@ -766,6 +770,16 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       /** @description Submit intent not found on this gateway control store. */
       404: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      /** @description Invalid submit identity or correlation header. */
+      422: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;

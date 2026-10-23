@@ -1,4 +1,4 @@
-"""The served barrier preserves frozen constraints and safe consumer recovery."""
+"""Served control routes preserve frozen constraints and safe consumer recovery."""
 
 from pathlib import Path
 from typing import Any, cast
@@ -23,6 +23,7 @@ from tests.unit.gateway.test_barrier_http import BODY, HEADERS, PATH, app_for
 
 DOCUMENT = _resolved_yaml(_CONTRACTS / "internal" / "execution-control.openapi.yaml")
 PATH_TEMPLATE = "/internal/v1/gateways/{gateway_id}/fencing-barrier"
+QUERY_PATH = "/internal/v1/executions/{submit_intent_id}"
 
 
 def frozen_schema(node: Any) -> Any:
@@ -46,23 +47,27 @@ def frozen_schema(node: Any) -> Any:
     return expand(node, root)
 
 
-def test_served_barrier_declares_the_frozen_security_statuses_and_full_constraints(
-    tmp_path: Path,
+@pytest.mark.parametrize("path,method", [(PATH_TEMPLATE, "post"), (QUERY_PATH, "get")])
+def test_served_control_declares_the_frozen_security_statuses_and_full_constraints(
+    tmp_path: Path, path: str, method: str
 ) -> None:
     app, _ = app_for(tmp_path)
     actual = app.openapi()
-    operation = actual["paths"][PATH_TEMPLATE]["post"]
-    expected = DOCUMENT["paths"][PATH_TEMPLATE]["post"]
+    operation = actual["paths"][path][method]
+    expected = DOCUMENT["paths"][path][method]
     assert operation["operationId"] == expected["operationId"]
     assert operation["summary"] == expected["summary"]
     assert operation["security"] == [{"ComponentBearer": []}]
     assert actual["components"]["securitySchemes"]["ComponentBearer"]["scheme"] == "bearer"
-    _assert_schema_guarantees(
-        _resolved_schema(
-            frozen_schema(expected["requestBody"]["content"]["application/json"]["schema"]), {}
-        ),
-        _resolved_schema(operation["requestBody"]["content"]["application/json"]["schema"], actual),
-    )
+    if "requestBody" in expected:
+        _assert_schema_guarantees(
+            _resolved_schema(
+                frozen_schema(expected["requestBody"]["content"]["application/json"]["schema"]), {}
+            ),
+            _resolved_schema(
+                operation["requestBody"]["content"]["application/json"]["schema"], actual
+            ),
+        )
     assert set(expected["responses"]) <= set(operation["responses"])
     served_parameters = {item["name"]: item for item in operation["parameters"]}
     for parameter in expected["parameters"]:
@@ -88,7 +93,8 @@ def test_served_barrier_declares_the_frozen_security_statuses_and_full_constrain
             _resolved_schema(served["content"]["application/json"]["schema"], actual),
         )
     assert {path for path in actual["paths"] if path.startswith("/internal/")} == {
-        PATH_TEMPLATE
+        PATH_TEMPLATE,
+        QUERY_PATH,
     }  # No placeholder submit, abort or drain routes.
 
 

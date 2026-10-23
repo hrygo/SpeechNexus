@@ -32,6 +32,22 @@ _OPENAI_PATHS = {
     "/v1/realtime",
 }
 _COMPONENT_SECTIONS = ("schemas", "parameters", "headers", "requestBodies", "responses")
+_OPENAI_REALTIME_DEFS = {
+    "SessionUpdate",
+    "InputAudioBufferAppend",
+    "InputAudioBufferCommit",
+    "InputAudioBufferClear",
+    "SessionCreated",
+    "SessionUpdated",
+    "InputAudioBufferCommitted",
+    "InputAudioBufferCleared",
+    "InputAudioBufferSpeechStarted",
+    "InputAudioBufferSpeechStopped",
+    "TranscriptionDelta",
+    "TranscriptionCompleted",
+    "TranscriptionFailed",
+    "ErrorEvent",
+}
 
 
 def _mapping(value: object) -> Mapping[str, Any] | None:
@@ -480,6 +496,75 @@ def _compare_json_schema(
     return issues
 
 
+def _collect_local_def_refs(node: object, references: set[str]) -> None:
+    mapping = _mapping(node)
+    if mapping is not None:
+        ref = mapping.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            references.add(ref.rsplit("/", 1)[-1])
+        for value in mapping.values():
+            _collect_local_def_refs(value, references)
+        return
+    for value in _sequence(node) or []:
+        _collect_local_def_refs(value, references)
+
+
+def _reachable_defs(document: Mapping[str, Any], roots: set[str]) -> set[str]:
+    definitions = _mapping(document.get("$defs")) or {}
+    pending = set(roots)
+    seen: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        definition = definitions.get(name)
+        if definition is not None:
+            _collect_local_def_refs(definition, pending)
+    return seen
+
+
+def _compare_realtime_events_schema(
+    base: Mapping[str, Any], current: Mapping[str, Any], path: str
+) -> list[str]:
+    issues: list[str] = []
+    base_defs = _mapping(base.get("$defs")) or {}
+    current_defs = _mapping(current.get("$defs")) or {}
+    standard_roots = _OPENAI_REALTIME_DEFS & set(base_defs)
+    current_union_refs: set[str] = set()
+    _collect_local_def_refs(current.get("oneOf"), current_union_refs)
+    for name in sorted(standard_roots):
+        pointer = f"{path}:$defs/{name}"
+        if name not in current_union_refs:
+            _issue(issues, pointer, "standard event removed from public union")
+        if name not in current_defs:
+            _issue(issues, pointer, "standard event definition removed")
+
+    reachable_base = _reachable_defs(base, standard_roots)
+    reachable_current = _reachable_defs(current, standard_roots)
+    for name in sorted(reachable_base):
+        pointer = f"{path}:$defs/{name}"
+        base_definition = base_defs.get(name)
+        if base_definition is None:
+            continue
+        if name not in current_defs:
+            if name not in standard_roots:
+                _issue(issues, pointer, "referenced schema definition removed")
+            continue
+        _compare_schema(base_definition, current_defs[name], pointer, issues)
+
+    base_types = _collect_event_types(
+        {"$defs": {name: base_defs[name] for name in reachable_base if name in base_defs}}
+    )
+    current_subset = {
+        "$defs": {name: current_defs[name] for name in reachable_current if name in current_defs}
+    }
+    removed_event_types = base_types - _collect_event_types(current_subset)
+    if removed_event_types:
+        _issue(issues, path, f"standard event types removed: {sorted(removed_event_types)}")
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True, help="Git ref for the compatibility baseline")
@@ -507,6 +592,8 @@ def main() -> int:
             continue
         if path.endswith("openapi.yaml"):
             issues.extend(_compare_openapi(base_document, current_document, path))
+        elif path.endswith("realtime-events.schema.json"):
+            issues.extend(_compare_realtime_events_schema(base_document, current_document, path))
         else:
             issues.extend(_compare_json_schema(base_document, current_document, path))
 

@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.5.7"
+version: "0.5.8"
 date: 2026-10-23
 ---
 
@@ -174,7 +174,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
 
-同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及成功 receipt，绝不再次执行。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
+同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
 
 作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 创建新 Job 与新 key，旧 Job 保持原终态。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
 

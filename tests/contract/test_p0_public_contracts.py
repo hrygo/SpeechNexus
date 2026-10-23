@@ -754,6 +754,10 @@ def test_realtime_events_positive_and_negative_examples() -> None:
         validator.validate(missing_content_index)
 
     operation_done = copy.deepcopy(next(e for e in examples if e["type"] == "nexus.operation.done"))
+    missing_success_receipt = copy.deepcopy(operation_done)
+    missing_success_receipt["receipt"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(missing_success_receipt)
     operation_done["status"] = "failed"
     operation_done["error"] = None
     operation_done["reason"] = None
@@ -2554,12 +2558,24 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
         "status": "succeeded",
         "cleanup_state": "not_required",
         "execution_revision": "1",
+        "receipt": {
+            "receipt_id": "receipt-demo",
+            "requested": {"language": "zh"},
+            "effective": {"language": "zh"},
+            "observed": {"sample_rate_hz": 24000},
+            "missing": [],
+            "unknown": [],
+        },
         "error": None,
         "created_at": "2026-10-22T00:00:00Z",
         "updated_at": "2026-10-22T00:00:01Z",
     }
     operation_validator = _component_validator(speech, "Operation")
     operation_validator.validate(operation)
+    operation_without_receipt = copy.deepcopy(operation)
+    operation_without_receipt["receipt"] = None
+    with pytest.raises(ValidationError):
+        operation_validator.validate(operation_without_receipt)
     job_operation = copy.deepcopy(operation)
     job_operation["job_id"] = "job-demo"
     job_operation["session_id"] = None

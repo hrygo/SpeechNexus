@@ -2034,11 +2034,17 @@
         },
         {
           "if": {
-            "properties": {"status": {"enum": ["succeeded", "cancelled"]}},
+            "properties": {"status": {"const": "succeeded"}},
             "required": ["status"]
           },
           "then": {
-            "properties": {"error": {"type": "null"}}
+            "required": ["receipt"],
+            "properties": {
+              "receipt": {
+                "not": {"type": "null"}
+              },
+              "error": {"type": "null"}
+            }
           }
         },
         {
@@ -2048,6 +2054,7 @@
           },
           "then": {
             "properties": {
+              "error": {"type": "null"},
               "cleanup_state": {
                 "enum": ["not_required", "complete"]
               }

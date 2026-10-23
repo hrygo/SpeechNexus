@@ -107,7 +107,8 @@ variant rather than putting arbitrary keys in `data`.
 An Operation result is terminal (`succeeded` / `failed` / `cancelled`) and is
 reported separately from `cleanup_state`. In particular, cancellation with
 unverified cleanup is `failed` plus `cleanup_state=quarantined`; `quarantined`
-is not an Operation result status.
+is not an Operation result status. A succeeded Operation requires a non-null
+execution receipt on both the REST projection and `nexus.operation.done`.
 
 Verified terminal execution, controller termination, and independently
 verified operator termination are cleanup evidence. They can close quarantined
@@ -172,13 +173,14 @@ and resolves local file references relative to the containing document.
 cross-protocol invariants. It also rejects duplicate inline schema definitions
 so shared domains cannot drift back into independent copies.
 `make contracts-compat` compares the OpenAI-standard paths in the public speech
-OpenAPI, every component schema reachable from those paths, the Realtime event
-schema, and the public `shared/` domains they reference with a Git baseline. It
-rejects removed standard paths, operations, fields, response statuses, event
-types, enum values, or newly required request/response fields. Nexus-only paths
-and components remain governed by their own positive / negative examples rather
-than being misreported as OpenAI breakage. Pull requests run this check against
-the target branch. Database coordination checks are separate:
+OpenAPI and every component schema reachable from those paths, the declared
+standard Realtime event definitions and their reachable definitions, and the
+public `shared/` domains they reference with a Git baseline. It rejects removed
+standard paths, operations, fields, response statuses, event types, enum values,
+or newly required request/response fields. Nexus-only paths, components, and
+events remain governed by their own positive / negative examples rather than
+being misreported as OpenAI breakage. Pull requests run this check against the
+target branch. Database coordination checks are separate:
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \

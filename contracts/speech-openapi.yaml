@@ -3608,6 +3608,17 @@ components:
         - if:
             properties:
               status:
+                const: succeeded
+            required: [status]
+          then:
+            required: [receipt]
+            properties:
+              receipt:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
                 enum: [succeeded, cancelled]
             required: [status]
           then:

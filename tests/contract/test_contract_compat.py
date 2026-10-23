@@ -228,3 +228,42 @@ def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
     assert any(
         "components/schemas/ModelList: new required fields: ['data']" in issue for issue in issues
     )
+
+
+def test_realtime_compat_gate_checks_only_standard_event_definitions() -> None:
+    module = _load_compat_module()
+    compare_realtime = cast(Any, module._compare_realtime_events_schema)
+    base: dict[str, Any] = {
+        "oneOf": [
+            {"$ref": "#/$defs/SessionUpdate"},
+            {"$ref": "#/$defs/NexusOperationDone"},
+        ],
+        "$defs": {
+            "SessionUpdate": {
+                "type": "object",
+                "required": ["type"],
+                "properties": {"type": {"const": "session.update"}},
+            },
+            "NexusOperationDone": {
+                "allOf": [
+                    {"type": "object", "properties": {"type": {"const": "nexus.operation.done"}}}
+                ]
+            },
+        },
+    }
+    current = copy.deepcopy(base)
+    current["$defs"]["NexusOperationDone"]["allOf"].append(
+        {"type": "object", "required": ["receipt"]}
+    )
+
+    issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
+    assert not issues
+
+    current["oneOf"] = [{"$ref": "#/$defs/NexusOperationDone"}]
+    issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
+    assert any("standard event removed from public union" in issue for issue in issues)
+
+    current = copy.deepcopy(base)
+    del current["$defs"]["SessionUpdate"]
+    issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
+    assert any("standard event definition removed" in issue for issue in issues)

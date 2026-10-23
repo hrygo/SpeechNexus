@@ -688,10 +688,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
     session_event: dict[str, Any] = {
         "type": "session.created",
         "event_id": "evt_created",
-        "session_id": "sess_demo",
-        "seq": 0,
-        "stream_epoch": 1,
-        "sent_at": "2026-10-22T00:00:00Z",
         "session": {
             "id": "sess_demo",
             "object": "realtime.transcription_session",
@@ -725,10 +721,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
     committed_event = {
         "type": "input_audio_buffer.committed",
         "event_id": "evt_committed",
-        "session_id": "sess_demo",
-        "seq": 2,
-        "stream_epoch": 1,
-        "sent_at": "2026-10-22T00:00:01Z",
         "item_id": "item_1",
         "previous_item_id": None,
     }
@@ -740,7 +732,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
         **session_event,
         "type": "session.updated",
         "event_id": "evt_updated",
-        "seq": 3,
     }
     validator.validate(session_updated_event)
     SessionUpdatedEvent.model_validate(session_updated_event)
@@ -750,10 +741,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
             {
                 "type": "input_audio_buffer.cleared",
                 "event_id": "evt_cleared",
-                "session_id": "sess_demo",
-                "seq": 4,
-                "stream_epoch": 1,
-                "sent_at": "2026-10-22T00:00:02Z",
             },
             InputAudioBufferClearedEvent,
         ),
@@ -761,10 +748,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
             {
                 "type": "input_audio_buffer.speech_started",
                 "event_id": "evt_speech_started",
-                "session_id": "sess_demo",
-                "seq": 5,
-                "stream_epoch": 1,
-                "sent_at": "2026-10-22T00:00:03Z",
                 "item_id": "item_1",
                 "audio_start_ms": 100,
             },
@@ -774,10 +757,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
             {
                 "type": "input_audio_buffer.speech_stopped",
                 "event_id": "evt_speech_stopped",
-                "session_id": "sess_demo",
-                "seq": 6,
-                "stream_epoch": 1,
-                "sent_at": "2026-10-22T00:00:04Z",
                 "item_id": "item_1",
                 "audio_end_ms": 900,
             },
@@ -787,13 +766,10 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
             {
                 "type": "conversation.item.input_audio_transcription.delta",
                 "event_id": "evt_delta",
-                "session_id": "sess_demo",
-                "seq": 7,
-                "stream_epoch": 1,
-                "sent_at": "2026-10-22T00:00:05Z",
                 "item_id": "item_1",
                 "content_index": 0,
                 "delta": "hel",
+                "logprobs": [{"token": "hel", "bytes": [104, 101, 108], "logprob": -0.1}],
             },
             ConversationItemInputAudioTranscriptionDeltaEvent,
         ),
@@ -801,10 +777,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
             {
                 "type": "conversation.item.input_audio_transcription.failed",
                 "event_id": "evt_failed",
-                "session_id": "sess_demo",
-                "seq": 8,
-                "stream_epoch": 1,
-                "sent_at": "2026-10-22T00:00:06Z",
                 "item_id": "item_1",
                 "content_index": 0,
                 "error": {
@@ -824,14 +796,11 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
     completed_event = {
         "type": "conversation.item.input_audio_transcription.completed",
         "event_id": "evt_completed",
-        "session_id": "sess_demo",
-        "seq": 12,
-        "stream_epoch": 1,
-        "sent_at": "2026-10-22T00:00:10Z",
         "item_id": "item_1",
         "content_index": 0,
         "transcript": "hello",
         "usage": {"type": "duration", "seconds": 1.0},
+        "logprobs": [{"token": "hello", "bytes": [104, 101, 108, 108, 111], "logprob": -0.1}],
     }
     validator.validate(completed_event)
     completed = ConversationItemInputAudioTranscriptionCompletedEvent.model_validate(
@@ -843,10 +812,6 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
     error_event = {
         "type": "error",
         "event_id": "evt_error",
-        "session_id": "sess_demo",
-        "seq": 13,
-        "stream_epoch": 1,
-        "sent_at": "2026-10-22T00:00:11Z",
         "error": {
             "type": "invalid_request_error",
             "code": "invalid_event",
@@ -859,6 +824,13 @@ def test_openai_realtime_sdk_events_match_declared_contract() -> None:
     validator.validate(error_event)
     parsed_error = RealtimeErrorEvent.model_validate(error_event)
     assert parsed_error.error.code == "invalid_event"
+
+    polluted_standard_event = {
+        **committed_event,
+        "session_id": "sess_demo",
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(polluted_standard_event)
 
 
 def test_binding_instance_and_qualification_positive_and_negative_examples() -> None:

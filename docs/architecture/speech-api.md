@@ -297,11 +297,11 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态及未成功 operation 的引用 |
 
-所有 server event 附 `event_id`、连接内递增 `seq`、`session_id`、`stream_epoch` 和时间；与命令有关的事件附 `client_event_id`，与执行有关的事件附 `operation_id`。nexus 客户端命令必带 event_id；标准 ASR 事件可省略，但省略时不能安全重发 append。带 event_id 的命令在会话生命周期内唯一，重复同内容返回原接受结果，重复不同内容拒绝。术语 `S→C` 和 `C→S` 只描述传输方向。
+标准 OpenAI ASR server event 只保留 OpenAI 声明的字段（`event_id`、`item_id`、`content_index` 等），不附加 SpeechNexus 私有 envelope；客户端用 `item_id` 关联同一段的 completed / failed，通过 `nexus.operation.done` 取得整体 Operation 身份。所有 `nexus.*` server event 附 `event_id`、连接内递增 `seq`、`session_id`、`stream_epoch` 和时间；与命令有关的事件附 `client_event_id`，与执行有关的事件附 `operation_id`。nexus 客户端命令必带 event_id；标准 ASR 事件的 event_id 可省略，但省略时不能安全重发 append。带 event_id 的命令在会话生命周期内唯一，重复同内容返回原接受结果，重复不同内容拒绝。术语 `S→C` 和 `C→S` 只描述传输方向。
 
 标准 `conversation.item.input_audio_transcription.completed` 携带 OpenAI 形状的 `usage`：默认使用已接受段的样本时长生成 `{"type":"duration","seconds":...}`；只有绑定提供真实 token 证据时才允许 `{"type":"tokens",...}`。不得用估算 token 数或虚构 logprob 填充。`delta` 仅在具备稳定前缀证据时发送；`nexus.transcription.hypothesis` 才是可替换的完整预览。
 
-ASR 的正文终态与整个 Operation 终态分层：completed / failed 只确定该 segment 的声学正文；`nexus.operation.done` 确定含 required 辅助工作的整体执行。SDK 用 operation_id / item_id 关联，不能把“正文已定稿”直接当作“所有所需结果已完成”。ASR 取消使用 `nexus.operation.done(cancelled)`；已经发布的正文成功事实保留，不再补发与其矛盾的 transcription.failed。ASR 标准事件必须包含与扩展 segment 对应的 item_id 和 content_index。
+ASR 的正文终态与整个 Operation 终态分层：completed / failed 只确定该 segment 的声学正文；`nexus.operation.done` 确定含 required 辅助工作的整体执行。标准事件通过 item_id 关联，nexus 客户端再用 `nexus.operation.done` 的 operation_id 关联整体执行，不能把“正文已定稿”直接当作“所有所需结果已完成”。ASR 取消使用 `nexus.operation.done(cancelled)`；已经发布的正文成功事实保留，不再补发与其矛盾的 transcription.failed。ASR 标准事件必须包含与扩展 segment 对应的 item_id 和 content_index。
 
 同一会话最多有一个活跃 TTS utterance；它可以包含多个冻结文本单元，但各单元必须按文本顺序交付音频。新 start 须等待前一 utterance 的 operation.done；取消后可立即停止浏览器播放，新的计算仍须等待旧租约确认释放。utterance 状态为 `accepting → rendering → draining → completed`，任意未终结状态可进入 `stopping → cancelled/failed`。重复相同 text_seq / 内容去重，不连续序号或同序号不同内容返回冲突。
 

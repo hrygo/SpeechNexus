@@ -10,7 +10,7 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["backend", "execution-gateway", "packages/contracts"]
+members = ["backend", "execution-gateway", "node-controller", "packages/contracts"]
 
 [dependency-groups]
 dev = [
@@ -56,6 +56,7 @@ branch = true
 source = [
   "backend/src/speechnexus_backend",
   "execution-gateway/src/speechnexus_gateway",
+  "node-controller/src/speechnexus_node_controller",
   "packages/contracts/src/speechnexus_contracts",
 ]
 
@@ -67,7 +68,7 @@ skip_covered = true
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["backend/src", "execution-gateway/src", "tests"]
+src = ["backend/src", "execution-gateway/src", "node-controller/src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "ASYNC", "RUF", "PTH", "RET"]
@@ -84,7 +85,14 @@ check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 show_error_codes = true
-files = ["backend/src", "execution-gateway/src", "tests", "scripts/dev-env", "packages/contracts/src"]
+files = [
+  "backend/src",
+  "execution-gateway/src",
+  "node-controller/src",
+  "tests",
+  "scripts/dev-env",
+  "packages/contracts/src",
+]
 exclude = ["(?x)(^|/)(\\.venv|node_modules)/"]
 plugins = ["pydantic.mypy"]
 
@@ -93,7 +101,12 @@ module = ["imageio_ffmpeg", "soundfile"]
 ignore_missing_imports = true
 
 [tool.importlinter]
-root_packages = ["speechnexus_backend", "speechnexus_gateway", "speechnexus_contracts"]
+root_packages = [
+  "speechnexus_backend",
+  "speechnexus_gateway",
+  "speechnexus_contracts",
+  "speechnexus_node_controller",
+]
 
 [[tool.importlinter.contracts]]
 name = "Speech backend dependency direction"
@@ -123,14 +136,23 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Node controller dependency direction"
+type = "layers"
+layers = [
+  "speechnexus_node_controller.interfaces | speechnexus_node_controller.infrastructure",
+  "speechnexus_node_controller.application",
+  "speechnexus_node_controller.domain",
+]
+
+[[tool.importlinter.contracts]]
 name = "Speech and workbench consume public protocols only"
 type = "independence"
 modules = ["speechnexus_backend.speech", "speechnexus_backend.workbench"]
 
 [[tool.importlinter.contracts]]
-name = "Backend and execution gateway are independent deployments"
+name = "Backend, execution gateway and node controller are independent deployments"
 type = "independence"
-modules = ["speechnexus_backend", "speechnexus_gateway"]
+modules = ["speechnexus_backend", "speechnexus_gateway", "speechnexus_node_controller"]
 
 [[tool.importlinter.contracts]]
 name = "Domains never depend on generated boundary contracts"
@@ -139,5 +161,6 @@ source_modules = [
   "speechnexus_backend.speech.domain",
   "speechnexus_backend.workbench.domain",
   "speechnexus_gateway.domain",
+  "speechnexus_node_controller.domain",
 ]
 forbidden_modules = ["speechnexus_contracts"]

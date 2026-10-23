@@ -39,6 +39,8 @@ date: 2026-10-23
 │       └── workbench/           可选工作台应用模块
 ├── execution-gateway/           独立引擎执行网关
 │   └── src/speechnexus_gateway/
+├── node-controller/              受限节点控制器（批准模板的实例生命周期）
+│   └── src/speechnexus_node_controller/
 ├── web/
 │   ├── admin/                   AdminUI Vite 应用
 │   ├── workbench/               个人语音工作台 Vite 应用
@@ -59,12 +61,13 @@ date: 2026-10-23
 
 ## 2. Python 工作区
 
-根 `pyproject.toml` 是虚拟 `uv` workspace，成员为 `backend` 与 `execution-gateway`。两个成员使用 `src/` 布局、独立包名、独立入口点与 `py.typed` 标记：
+根 `pyproject.toml` 是虚拟 `uv` workspace，成员为 `backend`、`execution-gateway`、`node-controller` 与 `packages/contracts`。成员使用 `src/` 布局、独立包名与 `py.typed` 标记，已实现进程入口的成员声明独立入口点：
 
 | 包 | 入口 | 当前职责 |
 | --- | --- | --- |
 | `speechnexus-backend` | `speechnexus-api` | 语音底座 HTTP 外壳；`/healthz`、`/readyz` |
 | `speechnexus-execution-gateway` | `speechnexus-gateway` | 执行网关 HTTP 外壳与控制库就绪检查 |
+| `speechnexus-node-controller` | 无（HTTP 外壳待交付） | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则；持久化与容器 adapter 待交付 |
 
 依赖图由 `import-linter` 检查：
 
@@ -76,7 +79,7 @@ infrastructure ─┘
 composition root ──> any layer
 ```
 
-上层可以依赖下层，下层不得导入上层；interfaces 与 infrastructure 为独立同层，互不导入。speech 与 workbench、backend 与 gateway 由 independence 门禁约束；工作台仅使用公开协议客户端，不能导入 speech 内部模块。`app.py` 是例外组合根；它装配接口、readiness 服务和基础设施 adapter，但不承载业务规则。
+上层可以依赖下层，下层不得导入上层；interfaces 与 infrastructure 为独立同层，互不导入。speech 与 workbench、backend 与 gateway、node-controller 由 independence 门禁约束；工作台仅使用公开协议客户端，不能导入 speech 内部模块。`app.py` 是例外组合根；它装配接口、readiness 服务和基础设施 adapter，但不承载业务规则。
 
 配置由 `pydantic-settings` 验证。缺少 PostgreSQL、对象存储探针或桶配置时进程启动失败，避免以未声明的本地路径或共享服务地址静默运行。
 

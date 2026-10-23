@@ -8,6 +8,7 @@ members = [
     "speechnexus-backend",
     "speechnexus-contracts",
     "speechnexus-execution-gateway",
+    "speechnexus-node-controller",
 ]
 
 [[package]]
@@ -1687,6 +1688,11 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.16.1,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<0.55" },
 ]
+
+[[package]]
+name = "speechnexus-node-controller"
+version = "0.1.0.dev0"
+source = { editable = "node-controller" }
 
 [[package]]
 name = "sqlalchemy"

@@ -14,6 +14,7 @@
 | [数据删除与依赖裁决](architecture/data-deletion.md)                                                 | 预检、明确级联、独立副本、异步清理和恢复账本                                    |
 | [精简分布式协调 Schema](architecture/distributed-coordination-schema.md)                            | 普通约束、当前指针、表所有权与历史原型隔离                                      |
 | [应用事务方案与契约](architecture/coordination-transactions.md)                                     | 程序职责、原子步骤、锁序、预算、幂等/未知恢复及业务编码交接                     |
+| [受限节点控制器](architecture/node-controller.md)                                                   | 批准模板的 prepare / stop、generation / fencing、drain 门与停止证据规则         |
 | [契约与事务所有权](architecture/contract-ownership.md)                                              | 18 端口/表归属、快照恢复映射与首批生成契约包交接                                |
 | [UI/UX 设计框架与设计 Token 系统](architecture/ui-ux-design-framework-and-tokens.md)                | 2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系          |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |

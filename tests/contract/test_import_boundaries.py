@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -62,11 +63,12 @@ def test_each_architecture_guard_rejects_real_graph_violation(config: dict[str, 
                 assert not _check(config, source + ".values", forbidden + ".models")
         assert _check(config, "speechnexus_backend.speech.interfaces", "speechnexus_contracts")
     else:
-        first, second = config["modules"]
-        assert not _check(config, first, second)
-        assert not _check(config, second, first)
+        modules = config["modules"]
+        for first, second in itertools.combinations(modules, 2):
+            assert not _check(config, first, second)
+            assert not _check(config, second, first)
         # The application composition root is outside the bounded contexts.
-        assert _check(config, first + ".app", first + ".domain")
+        assert _check(config, modules[0] + ".app", modules[0] + ".domain")
 
 
 def test_public_client_import_stays_outside_speech_implementation() -> None:

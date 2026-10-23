@@ -2644,6 +2644,7 @@ components:
         - execution_revision
         - progress
         - artifacts
+        - result
         - operations
         - effective_configuration
         - created_at
@@ -2680,6 +2681,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JobArtifact"
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/JobResult"
+            - type: "null"
         operations:
           type: array
           items:
@@ -2717,6 +2722,167 @@ components:
             properties:
               error:
                 type: "null"
+        - if:
+            properties:
+              status:
+                const: succeeded
+            required: [status]
+          then:
+            required: [result]
+            properties:
+              result:
+                not:
+                  type: "null"
+              artifacts:
+                minItems: 1
+        - if:
+            properties:
+              status:
+                not:
+                  const: succeeded
+            required: [status]
+          then:
+            properties:
+              result:
+                type: "null"
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: asr
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: transcript
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: asr
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: tts
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: audio
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: tts
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: voice_design
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: preview
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: voice_design
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: voice_clone
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: preview
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: voice_clone
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: voice_preview
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: preview
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: voice_preview
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: succeeded
+                required: [status]
+              - properties:
+                  kind:
+                    const: voice_validation
+                required: [kind]
+          then:
+            properties:
+              artifacts:
+                contains:
+                  type: object
+                  properties:
+                    kind:
+                      const: validation_report
+                  required: [kind]
+              result:
+                properties:
+                  kind:
+                    const: voice_validation
         - if:
             properties:
               status:
@@ -2776,6 +2942,97 @@ components:
             - type: string
               format: date-time
             - type: "null"
+    JobResult:
+      description: |
+        Structured successful outcome of a durable Job. `kind` must equal the
+        owning Job kind. Artifact identifiers in the result must identify the
+        corresponding entries in `Job.artifacts`; the service validates that
+        cross-array identity before committing `succeeded`.
+      oneOf:
+        - $ref: "#/components/schemas/AsrJobResult"
+        - $ref: "#/components/schemas/TtsJobResult"
+        - $ref: "#/components/schemas/VoiceDraftJobResult"
+        - $ref: "#/components/schemas/VoicePreviewJobResult"
+        - $ref: "#/components/schemas/VoiceValidationJobResult"
+      discriminator:
+        propertyName: kind
+        mapping:
+          asr: "#/components/schemas/AsrJobResult"
+          tts: "#/components/schemas/TtsJobResult"
+          voice_design: "#/components/schemas/VoiceDraftJobResult"
+          voice_clone: "#/components/schemas/VoiceDraftJobResult"
+          voice_preview: "#/components/schemas/VoicePreviewJobResult"
+          voice_validation: "#/components/schemas/VoiceValidationJobResult"
+    AsrJobResult:
+      type: object
+      additionalProperties: false
+      required: [kind, transcript_artifact_id, receipt_id]
+      properties:
+        kind:
+          const: asr
+        transcript_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
+    TtsJobResult:
+      type: object
+      additionalProperties: false
+      required: [kind, audio_artifact_id, receipt_id]
+      properties:
+        kind:
+          const: tts
+        audio_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
+    VoiceDraftJobResult:
+      type: object
+      additionalProperties: false
+      required: [kind, voice_draft_id, draft_revision, preview_artifact_ids, receipt_id]
+      properties:
+        kind:
+          type: string
+          enum: [voice_design, voice_clone]
+        voice_draft_id:
+          $ref: "#/components/schemas/Identifier"
+        draft_revision:
+          $ref: "#/components/schemas/Revision"
+        preview_artifact_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
+    VoicePreviewJobResult:
+      type: object
+      additionalProperties: false
+      required: [kind, voice_draft_id, draft_revision, preview_artifact_id, receipt_id]
+      properties:
+        kind:
+          const: voice_preview
+        voice_draft_id:
+          $ref: "#/components/schemas/Identifier"
+        draft_revision:
+          $ref: "#/components/schemas/Revision"
+        preview_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
+    VoiceValidationJobResult:
+      type: object
+      additionalProperties: false
+      required: [kind, validation, validation_report_artifact_id, receipt_id]
+      properties:
+        kind:
+          const: voice_validation
+        validation:
+          $ref: "./voice-resource.schema.json#/$defs/VoiceValidation"
+        validation_report_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
     OperationReference:
       type: object
       additionalProperties: false

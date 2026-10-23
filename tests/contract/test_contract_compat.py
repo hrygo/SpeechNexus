@@ -169,3 +169,62 @@ def test_compat_gate_rejects_changed_public_defaults_and_formats() -> None:
     del current["properties"]["response_format"]["default"]
     issues = compare_json_schema(base, current, "speech-openapi.yaml")
     assert any("default presence changed" in issue for issue in issues)
+
+
+def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
+    module = _load_compat_module()
+    compare_openapi = cast(Any, module._compare_openapi)
+    base: dict[str, Any] = {
+        "paths": {
+            "/v1/models": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ModelList"}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/v1/nexus/jobs": {
+                "post": {
+                    "responses": {
+                        "202": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/Job"}}
+                            }
+                        }
+                    }
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "ModelList": {
+                    "type": "object",
+                    "required": ["object"],
+                    "properties": {"object": {"const": "list"}},
+                },
+                "Job": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": {"kind": {"type": "string"}},
+                },
+            }
+        },
+    }
+    current = copy.deepcopy(base)
+    current["paths"].pop("/v1/nexus/jobs")
+    current["components"]["schemas"]["Job"]["required"].append("result")
+
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert not issues
+
+    current["components"]["schemas"]["ModelList"]["required"].append("data")
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert any(
+        "components/schemas/ModelList: new required fields: ['data']" in issue for issue in issues
+    )

@@ -24,6 +24,14 @@ _PUBLIC_CONTRACTS = (
     "contracts/shared/references.schema.json",
 )
 _HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+_OPENAI_PATHS = {
+    "/v1/models",
+    "/v1/models/{model}",
+    "/v1/audio/transcriptions",
+    "/v1/audio/speech",
+    "/v1/realtime",
+}
+_COMPONENT_SECTIONS = ("schemas", "parameters", "headers", "requestBodies", "responses")
 
 
 def _mapping(value: object) -> Mapping[str, Any] | None:
@@ -247,11 +255,53 @@ def _compare_parameters(
         )
 
 
+def _collect_local_component_refs(node: object, references: set[tuple[str, str]]) -> None:
+    mapping = _mapping(node)
+    if mapping is not None:
+        ref = mapping.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/"):
+            parts = ref.split("/")
+            if len(parts) == 4 and parts[2] in _COMPONENT_SECTIONS:
+                references.add((parts[2], parts[3]))
+        for value in mapping.values():
+            _collect_local_component_refs(value, references)
+        return
+    for value in _sequence(node) or []:
+        _collect_local_component_refs(value, references)
+
+
+def _reachable_components(document: Mapping[str, Any]) -> dict[str, set[str]]:
+    paths = _mapping(document.get("paths")) or {}
+    components = _mapping(document.get("components")) or {}
+    pending: set[tuple[str, str]] = set()
+    for path_name, path_item in paths.items():
+        if path_name in _OPENAI_PATHS:
+            _collect_local_component_refs(path_item, pending)
+
+    seen: set[tuple[str, str]] = set()
+    while pending:
+        section, name = pending.pop()
+        if (section, name) in seen:
+            continue
+        seen.add((section, name))
+        section_values = _mapping(components.get(section)) or {}
+        component = section_values.get(name)
+        if component is not None:
+            _collect_local_component_refs(component, pending)
+
+    reachable: dict[str, set[str]] = {section: set() for section in _COMPONENT_SECTIONS}
+    for section, name in seen:
+        reachable[section].add(name)
+    return reachable
+
+
 def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: str) -> list[str]:
     issues: list[str] = []
     base_paths = _mapping(base.get("paths")) or {}
     current_paths = _mapping(current.get("paths")) or {}
     for path_name, base_path_item in base_paths.items():
+        if path_name not in _OPENAI_PATHS:
+            continue
         current_path_item = current_paths.get(path_name)
         if current_path_item is None:
             _issue(issues, f"{path}:paths/{path_name}", "path removed")
@@ -335,9 +385,13 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
 
     base_components = _mapping(base.get("components")) or {}
     current_components = _mapping(current.get("components")) or {}
+    reachable = _reachable_components(base)
     base_schemas = _mapping(base_components.get("schemas")) or {}
     current_schemas = _mapping(current_components.get("schemas")) or {}
-    for name, base_schema in base_schemas.items():
+    for name in sorted(reachable["schemas"]):
+        base_schema = base_schemas.get(name)
+        if base_schema is None:
+            continue
         component_pointer = f"{path}:components/schemas/{name}"
         if name not in current_schemas:
             _issue(issues, component_pointer, "component schema removed")
@@ -347,7 +401,10 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
     for section in ("parameters", "headers"):
         base_section = _mapping(base_components.get(section)) or {}
         current_section = _mapping(current_components.get(section)) or {}
-        for name, base_value in base_section.items():
+        for name in sorted(reachable[section]):
+            base_value = base_section.get(name)
+            if base_value is None:
+                continue
             component_pointer = f"{path}:components/{section}/{name}"
             if name not in current_section:
                 _issue(issues, component_pointer, f"component {section} entry removed")
@@ -367,7 +424,10 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
     for section in ("requestBodies", "responses"):
         base_section = _mapping(base_components.get(section)) or {}
         current_section = _mapping(current_components.get(section)) or {}
-        for name, base_value in base_section.items():
+        for name in sorted(reachable[section]):
+            base_value = base_section.get(name)
+            if base_value is None:
+                continue
             component_pointer = f"{path}:components/{section}/{name}"
             if name not in current_section:
                 _issue(issues, component_pointer, f"component {section} entry removed")

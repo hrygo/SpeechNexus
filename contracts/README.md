@@ -13,7 +13,9 @@ of defaults, units, enum domains, or stable error codes.
   transcription-only realtime compatibility mode, and the `nexus` speech
   execution surface: capabilities, profiles, jobs, operations, assets,
   artifacts, realtime sessions, voices, pronunciation sets, and voice
-  design / clone / preview / validation / publication.
+  design / clone / preview / validation / publication. A successful durable
+  Job carries a kind-discriminated structured result tied to its committed
+  artifacts and receipt; non-success states carry no result.
 - `workbench-openapi.yaml`: optional workbench application resources: projects,
   transcripts, meetings, assistant turns, teleprompter state, audiobooks,
   saved assets, export jobs, and export events. It does not claim OpenAI
@@ -163,12 +165,14 @@ and resolves local file references relative to the containing document.
 `tests/contract` validates examples, negative examples, OpenAI SDK parity, and
 cross-protocol invariants. It also rejects duplicate inline schema definitions
 so shared domains cannot drift back into independent copies.
-`make contracts-compat` compares the OpenAI public speech OpenAPI, Realtime
-event schema, and the public `shared/` domains they reference with a Git
-baseline. It rejects removed paths, operations, fields, response statuses,
-event types, enum values, or newly required request/response fields. Pull
-requests run this check against the target branch. Database coordination checks
-are separate:
+`make contracts-compat` compares the OpenAI-standard paths in the public speech
+OpenAPI, every component schema reachable from those paths, the Realtime event
+schema, and the public `shared/` domains they reference with a Git baseline. It
+rejects removed standard paths, operations, fields, response statuses, event
+types, enum values, or newly required request/response fields. Nexus-only paths
+and components remain governed by their own positive / negative examples rather
+than being misreported as OpenAI breakage. Pull requests run this check against
+the target branch. Database coordination checks are separate:
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \

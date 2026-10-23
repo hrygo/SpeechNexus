@@ -2395,7 +2395,21 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
         "workspace_id": "ws-default",
         "execution_revision": "1",
         "progress": {"unit": "audio_ms", "completed": 1, "total": 1},
-        "artifacts": [],
+        "artifacts": [
+            {
+                "artifact_id": "artifact-demo",
+                "kind": "transcript",
+                "media_type": "application/json",
+                "bytes": 128,
+                "sha256": "sha256:" + "a" * 64,
+                "receipt_id": "receipt-demo",
+            }
+        ],
+        "result": {
+            "kind": "asr",
+            "transcript_artifact_id": "artifact-demo",
+            "receipt_id": "receipt-demo",
+        },
         "operations": [],
         "effective_configuration": {
             "models": {"asr": {"id": "asr-quality", "revision": "1"}},
@@ -2408,8 +2422,31 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     }
     job_validator = _component_validator(speech, "Job")
     job_validator.validate(job)
+
+    queued_job = copy.deepcopy(job)
+    queued_job["status"] = "queued"
+    queued_job["result"] = None
+    queued_job["artifacts"] = []
+    job_validator.validate(queued_job)
+
+    succeeded_without_result = copy.deepcopy(job)
+    succeeded_without_result["result"] = None
+    with pytest.raises(ValidationError):
+        job_validator.validate(succeeded_without_result)
+
+    succeeded_without_artifact = copy.deepcopy(job)
+    succeeded_without_artifact["artifacts"] = []
+    with pytest.raises(ValidationError):
+        job_validator.validate(succeeded_without_artifact)
+
+    mismatched_result_kind = copy.deepcopy(job)
+    mismatched_result_kind["kind"] = "tts"
+    with pytest.raises(ValidationError):
+        job_validator.validate(mismatched_result_kind)
+
     failed_job = copy.deepcopy(job)
     failed_job["status"] = "failed"
+    failed_job["result"] = None
     failed_job["error"] = None
     with pytest.raises(ValidationError):
         job_validator.validate(failed_job)
@@ -2419,11 +2456,12 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
         "retryable": False,
     }
     job_validator.validate(failed_job)
-    failed_job["status"] = "succeeded"
+    failed_job["result"] = job["result"]
     with pytest.raises(ValidationError):
         job_validator.validate(failed_job)
     cancelled_job = copy.deepcopy(job)
     cancelled_job["status"] = "cancelled"
+    cancelled_job["result"] = None
     cancelled_job["cleanup_state"] = "quarantined"
     with pytest.raises(ValidationError):
         job_validator.validate(cancelled_job)
@@ -2431,11 +2469,57 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     job_validator.validate(cancelled_job)
     expired_job = copy.deepcopy(job)
     expired_job["status"] = "expired"
+    expired_job["result"] = None
     expired_job["cleanup_state"] = "pending"
     with pytest.raises(ValidationError):
         job_validator.validate(expired_job)
     expired_job["cleanup_state"] = "not_required"
     job_validator.validate(expired_job)
+
+    result_validator = _component_validator(speech, "JobResult")
+    result_validator.validate(
+        {
+            "kind": "voice_design",
+            "voice_draft_id": "draft-demo",
+            "draft_revision": "2",
+            "preview_artifact_ids": ["preview-demo"],
+            "receipt_id": "receipt-demo",
+        }
+    )
+    result_validator.validate(
+        {
+            "kind": "voice_preview",
+            "voice_draft_id": "draft-demo",
+            "draft_revision": "2",
+            "preview_artifact_id": "preview-demo",
+            "receipt_id": "receipt-demo",
+        }
+    )
+    validation_example = copy.deepcopy(
+        next(
+            example
+            for example in cast(list[dict[str, Any]], _load_json(_VOICE_SCHEMA)["examples"])
+            if example["resource_type"] == "voice_validation"
+        )
+    )
+    result_validator.validate(
+        {
+            "kind": "voice_validation",
+            "validation": validation_example,
+            "validation_report_artifact_id": "validation-report-demo",
+            "receipt_id": "receipt-demo",
+        }
+    )
+    with pytest.raises(ValidationError):
+        result_validator.validate(
+            {
+                "kind": "voice_design",
+                "voice_draft_id": "draft-demo",
+                "draft_revision": "2",
+                "preview_artifact_ids": [],
+                "receipt_id": "receipt-demo",
+            }
+        )
 
     operation: dict[str, Any] = {
         "id": "op-demo",

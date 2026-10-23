@@ -157,10 +157,10 @@
   --status-planned-bg: color-mix(in oklch, var(--surface) 60%, transparent);
   --status-planned-border: var(--line);
 
-  --shadow-sm: 0 1px 3px rgba(31, 43, 37, 0.04);
-  --shadow-md: 0 4px 12px rgba(31, 43, 37, 0.06);
-  --shadow: 0 12px 36px rgba(31, 43, 37, 0.07);
-  --shadow-lg: 0 20px 50px rgba(31, 43, 37, 0.1);
+  --shadow-sm: 0 1px 3px color-mix(in oklch, var(--ink) 5%, transparent);
+  --shadow-md: 0 4px 12px color-mix(in oklch, var(--ink) 6%, transparent);
+  --shadow: 0 12px 36px color-mix(in oklch, var(--ink) 7%, transparent);
+  --shadow-lg: 0 20px 50px color-mix(in oklch, var(--ink) 11%, transparent);
 
   /* Audio, Karaoke & Multi-Speaker Semantics */
   --waveform-wave: var(--nexus-color-sand-300);
@@ -222,10 +222,10 @@
     --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
     --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
 
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
-    --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-    --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
+    --shadow-sm: 0 1px 3px color-mix(in oklch, oklch(0 0 0) 35%, transparent);
+    --shadow-md: 0 6px 18px color-mix(in oklch, oklch(0 0 0) 50%, transparent);
+    --shadow: 0 16px 48px color-mix(in oklch, oklch(0 0 0) 45%, transparent);
+    --shadow-lg: 0 24px 64px color-mix(in oklch, oklch(0 0 0) 65%, transparent);
 
     --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
     --waveform-progress: var(--accent);
@@ -259,10 +259,10 @@
   --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
   --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
-  --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
+  --shadow-sm: 0 1px 3px color-mix(in oklch, oklch(0 0 0) 35%, transparent);
+  --shadow-md: 0 6px 18px color-mix(in oklch, oklch(0 0 0) 50%, transparent);
+  --shadow: 0 16px 48px color-mix(in oklch, oklch(0 0 0) 45%, transparent);
+  --shadow-lg: 0 24px 64px color-mix(in oklch, oklch(0 0 0) 65%, transparent);
 
   --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
   --waveform-progress: var(--accent);
@@ -376,9 +376,9 @@ a {
 .skip-link {
   position: fixed;
   z-index: 50;
-  top: 14px;
-  left: 14px;
-  padding: 10px 16px;
+  top: var(--nexus-space-4);
+  left: var(--nexus-space-4);
+  padding: var(--nexus-space-2) var(--nexus-space-4);
   color: var(--surface-strong);
   background: var(--ink);
   border-radius: var(--radius-sm);
@@ -416,7 +416,7 @@ a {
 
 .brand {
   display: inline-flex;
-  gap: 14px;
+  gap: var(--nexus-space-3);
   align-items: center;
   font-size: var(--nexus-text-md);
   font-weight: 700;
@@ -459,7 +459,7 @@ a {
   display: inline-flex;
   align-items: center;
   gap: var(--nexus-space-2);
-  padding: 6px 12px;
+  padding: var(--nexus-space-1) var(--nexus-space-3);
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -478,8 +478,8 @@ a {
 .airgap-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: var(--nexus-space-2);
+  padding: var(--nexus-space-1) var(--nexus-space-3);
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
@@ -496,13 +496,13 @@ a {
    Hero Section & Status Gauge
    ========================================================================== */
 main {
-  padding-top: clamp(48px, 6vw, 76px);
+  padding-top: clamp(var(--nexus-space-12), 6vw, 76px);
 }
 
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.32fr);
-  gap: 40px;
+  gap: var(--nexus-space-8);
   align-items: end;
 }
 
@@ -532,13 +532,13 @@ h1 {
   max-width: 700px;
   margin-bottom: 0;
   color: var(--muted);
-  font-size: clamp(1rem, 1.8vw, 1.18rem);
+  font-size: clamp(var(--nexus-text-md), 1.8vw, var(--nexus-text-lg));
   line-height: 1.72;
 }
 
 .hero-status {
   display: flex;
-  gap: 14px;
+  gap: var(--nexus-space-3);
   align-items: flex-start;
   padding: var(--nexus-space-5);
   background: var(--surface-glass);
@@ -556,21 +556,21 @@ h1 {
 }
 
 .hero-status strong {
-  margin-bottom: 5px;
-  font-size: 0.92rem;
+  margin-bottom: var(--nexus-space-1);
+  font-size: var(--nexus-text-base);
   letter-spacing: -0.01em;
 }
 
 .hero-status small {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--nexus-text-xs);
   line-height: 1.5;
 }
 
 .status-dot {
   width: 10px;
   height: 10px;
-  margin-top: 5px;
+  margin-top: var(--nexus-space-1);
   background: var(--accent);
   border-radius: var(--radius-full);
   box-shadow:
@@ -613,9 +613,9 @@ h1 {
 .boundary-note {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 18px;
-  margin: 44px 0 28px;
-  padding: 18px 22px;
+  gap: var(--nexus-space-4);
+  margin: var(--nexus-space-12) 0 var(--nexus-space-6);
+  padding: var(--nexus-space-4) var(--nexus-space-5);
   background: var(--warning-soft);
   border: 1px solid var(--warning-border);
   border-radius: var(--radius-medium);
@@ -676,7 +676,7 @@ h1 {
   gap: var(--nexus-space-3);
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 38px;
+  margin-bottom: var(--nexus-space-8);
 }
 
 .card-label {
@@ -684,7 +684,7 @@ h1 {
 }
 
 .card-state {
-  padding: 5px 10px;
+  padding: var(--nexus-space-1) var(--nexus-space-3);
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -714,7 +714,7 @@ h1 {
 
 .capability-card h2 {
   margin-bottom: var(--nexus-space-3);
-  font-size: 1.25rem;
+  font-size: var(--nexus-text-lg);
   letter-spacing: -0.025em;
   font-weight: 650;
 }
@@ -733,7 +733,7 @@ footer {
   display: flex;
   gap: var(--nexus-space-4);
   justify-content: space-between;
-  margin-top: 68px;
+  margin-top: var(--nexus-space-16);
   padding-top: var(--nexus-space-6);
   color: var(--muted);
   border-top: 1px solid var(--line);
@@ -787,7 +787,7 @@ footer {
 
 @media (max-width: 560px) {
   .app-shell {
-    width: min(100% - 28px, var(--page-width));
+    width: min(100% - var(--nexus-space-6), var(--page-width));
   }
 
   .site-header {
@@ -802,8 +802,8 @@ footer {
 
   .surface-label,
   .airgap-badge {
-    padding: 4px 10px;
-    font-size: 0.68rem;
+    padding: var(--nexus-space-1) var(--nexus-space-2);
+    font-size: var(--nexus-text-xs);
   }
 
   .boundary-note {
@@ -814,6 +814,19 @@ footer {
   footer {
     flex-direction: column;
     gap: var(--nexus-space-2);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --muted: var(--ink);
+    --muted-subtle: var(--ink);
+    --line: var(--line-strong);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
   }
 }
 

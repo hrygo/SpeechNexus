@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { STATE_LABELS, type CapabilityState } from "../tokens";
 
 export type CapabilityCardProps = {
@@ -8,15 +9,17 @@ export type CapabilityCardProps = {
 };
 
 export function CapabilityCard({ label, title, description, state }: CapabilityCardProps) {
+  const headingId = useId();
+
   return (
-    <article className="capability-card">
+    <article className="capability-card" aria-labelledby={headingId}>
       <div className="card-heading">
         <span className="card-label">{label}</span>
         <span className="card-state" data-state={state}>
           {STATE_LABELS[state]}
         </span>
       </div>
-      <h2>{title}</h2>
+      <h2 id={headingId}>{title}</h2>
       <p>{description}</p>
     </article>
   );

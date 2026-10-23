@@ -1,6 +1,9 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { ContractValidationError } from "./errors.mjs";
 import bundle from "./speechnexus_contracts/file.schema.json" with { type: "json" };
+
+export { ContractValidationError } from "./errors.mjs";
 
 // Type generators cannot encode if/then, oneOf exclusivity, or numeric bounds.
 // Keep the schema authoritative and disable all data-changing Ajv features.
@@ -18,13 +21,6 @@ const validators = new Map(
     ajv.compile({ $ref: `#/$defs/${name}`, $defs: bundle.$defs }),
   ]),
 );
-
-export class ContractValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ContractValidationError";
-  }
-}
 
 export function parse(name, value) {
   const validate = validators.get(name);

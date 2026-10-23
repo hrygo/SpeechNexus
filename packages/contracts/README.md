@@ -97,3 +97,52 @@ ADR and coordinated consumer updates; this pre-release package does not imply
 stable compatibility for every admin/workbench/internal contract. Extending
 runtime entrypoints requires shared acceptance/rejection examples for each
 new entry. Do not expand the OpenAI compatibility promise through this package.
+
+## Explicit consumer profiles
+
+Four opt-in profiles extend the default file workflow. Each includes Python
+TypedDicts, a typed parser, an offline schema bundle, and TypeScript OpenAPI
+types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
+
+| Profile     | Runtime entrypoints                                                  |
+| ----------- | -------------------------------------------------------------------- |
+| `admin`     | Workspace create and metadata CAS patch                              |
+| `workbench` | Project create and metadata CAS patch                                |
+| `execution` | Submit request/receipt, execution status, abort request              |
+| `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
+
+```python
+from speechnexus_contracts.execution import parse
+
+request = parse("SubmitExecutionRequest", untrusted_json)
+```
+
+```ts
+import { parse, createClient, ContractValidationError } from "@speechnexus/contracts/execution";
+
+const request = parse("SubmitExecutionRequest", untrustedJson);
+const client = createClient(deploymentBaseUrl);
+```
+
+Import the corresponding profile instead of the default package entry. These
+are boundary DTOs, not domain values. Typed HTTP clients require an explicit
+deployment URL, do not retry, and do not automatically validate responses.
+The default and workbench parsers reject internal protocol names. A separate
+profile is an import/API namespace, not an authorization mechanism.
+
+All profile outputs (including `*_models.py`, profile parsers and schema bundles)
+are generated and checked by the same drift gate. Python static projection
+revision 1 retains base field shapes when nested `allOf` refinements would cause
+the pinned generator to replace required fields with optional partial objects.
+It omits conditional refinements from static generation only. The packaged
+runtime schema remains complete and authoritative in both languages. Consumers
+must validate before using typed data; cross-record facts, digests, memory
+inequalities, event sequences and actual transport behavior still need their
+own application checks.
+
+Both runtimes consume the synthetic `consumer-profiles.json` corpus, including
+all nine effective command kinds and rejected cleanup/stop combinations.
+Python compares each case with the original schema and TypeScript compile tests
+cover parser results and client path restrictions. This is the first profile
+slice; full admin/workbench runtime coverage, streaming protocols and actual
+B/C consumer integration remain pending in A00.

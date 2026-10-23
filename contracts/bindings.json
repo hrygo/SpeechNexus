@@ -20,5 +20,32 @@
     "definitions_prefix": "/$defs/",
     "title": "CoordinationJobContract",
     "schemas": ["create_job", "TransactionResult"]
+  },
+  "profiles": {
+    "admin": {
+      "source": "admin-openapi.yaml",
+      "schemas": ["WorkspaceCreateRequest", "WorkspacePatch"]
+    },
+    "workbench": {
+      "source": "workbench-openapi.yaml",
+      "schemas": ["ProjectCreateRequest", "ProjectPatch"]
+    },
+    "execution": {
+      "source": "internal/execution-control.openapi.yaml",
+      "schemas": [
+        "SubmitExecutionRequest",
+        "SubmitExecutionResponse",
+        "ExecutionStatusResponse",
+        "AbortExecutionRequest"
+      ]
+    },
+    "runtime": {
+      "source": "internal/runtime-control.openapi.yaml",
+      "schemas": [
+        "RuntimeInstanceIntentRequest",
+        "RuntimeInstanceIntentResponse",
+        "NodeReconcileRequest"
+      ]
+    }
   }
 }

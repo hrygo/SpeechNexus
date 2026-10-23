@@ -129,16 +129,111 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def generate(destination: Path) -> list[Path]:
-    manifest = json.loads((CONTRACTS / "bindings.json").read_text())
+def generate_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
+    """One producer/consumer namespace; internal protocols are never default exports."""
+    document = yaml.safe_load((CONTRACTS / config["source"]).read_text())
+    names = config["schemas"]
+    manifest = {
+        **config,
+        "schemas": names,
+        "version": document.get("info", {}).get("version")
+        or document.get("x-speechnexus-schema-version", "1.0.0"),
+        "definitions_prefix": "/components/schemas/",
+        "title": name.title().replace("_", "") + "Contracts",
+    }
+    bundle = bundle_contracts(manifest)
     python = destination / "src/speechnexus_contracts"
-    python.mkdir(parents=True, exist_ok=True)
-    schema = python / "file.schema.json"
-    schema.write_text(json.dumps(bundle_contracts(manifest), ensure_ascii=False, indent=2) + "\n")
-    coordination = python / "coordination.schema.json"
-    coordination.write_text(
-        json.dumps(bundle_contracts(manifest["coordination"]), ensure_ascii=False, indent=2) + "\n"
+    schema = python / f"{name}.schema.json"
+    schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
+    generate_python_models(schema, python / f"{name}_models.py", static_projection=True)
+    parser = (
+        '"""Generated from contracts/bindings.json; do not edit."""\n'
+        "from typing import Any, Literal, overload\n"
+        f"from . import {name}_models as models\n"
+        "from .validation import validate_profile\n\n"
     )
+    for entry in names:
+        model = entry if entry[0].isupper() else "".join(word.title() for word in entry.split("_"))
+        parser += (
+            f"@overload\ndef parse(name: Literal[{entry!r}], value: Any) -> models.{model}: ...\n\n"
+        )
+    parser += (
+        f"def parse(name: str, value: Any) -> Any:\n"
+        f"    return validate_profile({name!r}, name, value)\n"
+    )
+    (python / f"{name}.py").write_text(parser)
+    types = destination / f"src/{name}.generated.ts"
+    source = CONTRACTS / config["source"]
+    subprocess.run(
+        ["pnpm", "exec", "openapi-typescript", str(source), "--output", str(types)],
+        cwd=ROOT,
+        check=True,
+    )
+    script = (
+        "// Generated from contracts/bindings.json; do not edit.\n"
+        'import { createProfileParser } from "./profile-runtime.mjs";\n'
+        'export { ContractValidationError } from "./errors.mjs";\n'
+        f'import bundle from "./speechnexus_contracts/{name}.schema.json" '
+        'with { type: "json" };\n'
+        f'import type {{ components }} from "./{name}.generated";\n'
+        f'export type {{ components }} from "./{name}.generated";\n'
+        'export type Contracts = Pick<components["schemas"], '
+        + " | ".join(json.dumps(entry) for entry in names)
+        + ">;\n"
+        "const parseValue = createProfileParser(bundle);\n"
+        "export function parse<K extends keyof Contracts>("
+        "name: K, value: unknown): Contracts[K] {\n"
+        "  return parseValue(name, value) as Contracts[K];\n}\n"
+    )
+    script += (
+        'import openapiFetch from "openapi-fetch";\n'
+        f'import type {{ paths }} from "./{name}.generated";\n'
+        f'export type {{ paths }} from "./{name}.generated";\n'
+        "export function createClient(baseUrl: string, fetch?: typeof globalThis.fetch) {\n"
+        "  return openapiFetch<paths>({ baseUrl, ...(fetch ? { fetch } : {}) });\n}\n"
+    )
+    (destination / f"src/{name}.ts").write_text(script)
+    return [
+        schema.relative_to(destination),
+        (python / f"{name}_models.py").relative_to(destination),
+        (python / f"{name}.py").relative_to(destination),
+        types.relative_to(destination),
+        Path(f"src/{name}.ts"),
+    ]
+
+
+def generate_python_models(schema: Path, output: Path, *, static_projection: bool = False) -> None:
+    if static_projection:
+        # Static projection revision 1. TypedDict cannot express conditionals
+        # or intersect nested field refinements. The pinned generator replaces
+        # required base fields with optional partial dictionaries in those cases.
+        # Keep the base shape for static typing; runtime validators retain every
+        # constraint in the unchanged authoritative bundle.
+        def project(node: Any) -> Any:
+            if isinstance(node, dict):
+                result = {
+                    key: project(value)
+                    for key, value in node.items()
+                    if key not in {"if", "then", "else", "dependentSchemas"}
+                }
+                base_fields = result.get("properties", {})
+                for branch in result.get("allOf", []):
+                    if isinstance(branch, dict) and "properties" in branch:
+                        branch["properties"] = {
+                            key: value
+                            for key, value in branch["properties"].items()
+                            if key not in base_fields
+                        }
+                        if not branch["properties"]:
+                            del branch["properties"]
+                return result
+            if isinstance(node, list):
+                return [project(value) for value in node]
+            return node
+
+        projection = output.with_suffix(".schema.json")
+        projection.write_text(json.dumps(project(json.loads(schema.read_text()))))
+        schema = projection
     subprocess.run(
         [
             sys.executable,
@@ -149,7 +244,7 @@ def generate(destination: Path) -> list[Path]:
             "--input-file-type",
             "jsonschema",
             "--output",
-            str(python / "models.py"),
+            str(output),
             "--output-model-type",
             "typing.TypedDict",
             "--target-python-version",
@@ -173,8 +268,21 @@ def generate(destination: Path) -> list[Path]:
         cwd=ROOT,
         check=True,
     )
+    flatten_typed_dicts(output)
+
+
+def generate(destination: Path) -> list[Path]:
+    manifest = json.loads((CONTRACTS / "bindings.json").read_text())
+    python = destination / "src/speechnexus_contracts"
+    python.mkdir(parents=True, exist_ok=True)
+    schema = python / "file.schema.json"
+    schema.write_text(json.dumps(bundle_contracts(manifest), ensure_ascii=False, indent=2) + "\n")
+    coordination = python / "coordination.schema.json"
+    coordination.write_text(
+        json.dumps(bundle_contracts(manifest["coordination"]), ensure_ascii=False, indent=2) + "\n"
+    )
+    generate_python_models(schema, python / "models.py")
     names = manifest["schemas"]
-    flatten_typed_dicts(python / "models.py")
     parsers = (
         '"""Generated from contracts/bindings.json; do not edit."""\n\n'
         "from typing import Any, Literal, overload\n\n"
@@ -188,6 +296,17 @@ def generate(destination: Path) -> list[Path]:
         "    return validate(name, value)\n"
     )
     (python / "parsers.py").write_text(parsers)
+    profile_outputs: list[Path] = []
+    for profile, config in manifest["profiles"].items():
+        profile_outputs.extend(generate_profile(profile, config, destination))
+    registry = python / "profile_registry.py"
+    registry.write_text(
+        '"""Generated profile allowlist; do not edit."""\n'
+        + "PROFILES = frozenset("
+        + repr(tuple(manifest["profiles"]))
+        + ")\n"
+    )
+    profile_outputs.append(registry.relative_to(destination))
     subprocess.run(
         [
             sys.executable,
@@ -258,6 +377,7 @@ def generate(destination: Path) -> list[Path]:
         Path("src/speech.generated.ts"),
         Path("src/file.generated.ts"),
     ]
+    outputs.extend(profile_outputs)
     inventory: dict[str, Any] = {}
     for path in sorted(CONTRACTS.rglob("*")):
         if path.name.endswith((".schema.json", ".yaml")):

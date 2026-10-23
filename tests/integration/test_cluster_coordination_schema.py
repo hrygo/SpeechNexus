@@ -202,6 +202,7 @@ def _insert_lease(
     lease_id: str,
     operation_id: str,
     attempt_id: str,
+    stage_id: str = "stage-main",
     host_node_id: str,
     instance_id: str,
     generation: int,
@@ -218,6 +219,7 @@ def _insert_lease(
             lease_id,
             operation_id,
             attempt_id,
+            stage_id,
             workspace_id,
             service_class,
             pool_id,
@@ -239,7 +241,7 @@ def _insert_lease(
             reserved_scratch_disk_bytes,
             deadline_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             CURRENT_TIMESTAMP + INTERVAL '1 hour'
         )
@@ -248,6 +250,7 @@ def _insert_lease(
             lease_id,
             operation_id,
             attempt_id,
+            stage_id,
             "ws-default",
             service_class,
             pool_id,
@@ -807,7 +810,6 @@ def test_service_class_and_submit_identity_cannot_drift(
             host_node_id="node-identity",
             instance_id="inst-identity",
             generation=1,
-            stage_id="stage-wrong-pool",
             pool_id="tts-batch",
         )
     with pytest.raises(ForeignKeyViolation), db.transaction():
@@ -820,7 +822,6 @@ def test_service_class_and_submit_identity_cannot_drift(
             host_node_id="node-identity",
             instance_id="inst-identity",
             generation=1,
-            stage_id="stage-wrong-workspace",
             workspace_id="ws-other",
         )
     with pytest.raises(ForeignKeyViolation), db.transaction():
@@ -833,7 +834,6 @@ def test_service_class_and_submit_identity_cannot_drift(
             host_node_id="node-identity-other",
             instance_id="inst-identity",
             generation=1,
-            stage_id="stage-wrong-host",
         )
     with pytest.raises(ForeignKeyViolation), db.transaction():
         _insert_submit_intent(
@@ -845,7 +845,6 @@ def test_service_class_and_submit_identity_cannot_drift(
             host_node_id="node-identity",
             instance_id="inst-identity",
             generation=1,
-            stage_id="stage-wrong-gateway",
             gateway_id="gateway-other",
         )
     with pytest.raises(ForeignKeyViolation), db.transaction():
@@ -858,8 +857,85 @@ def test_service_class_and_submit_identity_cannot_drift(
             host_node_id="node-identity",
             instance_id="inst-identity",
             generation=1,
-            stage_id="stage-wrong-binding",
             binding_revision_id="asr-quality@8",
+        )
+    with pytest.raises(ForeignKeyViolation), db.transaction():
+        _insert_submit_intent(
+            db,
+            submit_intent_id="intent-wrong-stage",
+            lease_id="lease-identity",
+            operation_id="op-identity",
+            attempt_id="att-identity",
+            host_node_id="node-identity",
+            instance_id="inst-identity",
+            generation=1,
+            stage_id="stage-other",
+        )
+
+
+def test_one_attempt_can_reserve_multiple_stages_in_the_same_pool(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-multi-stage")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-multi-stage",
+        generation=1,
+        host_node_id="node-multi-stage",
+        architecture="discrete_device_memory",
+    )
+    for stage_id, lease_id in (
+        ("stage-vad", "lease-stage-vad"),
+        ("stage-asr-preview", "lease-stage-asr-preview"),
+    ):
+        _insert_lease(
+            db,
+            lease_id=lease_id,
+            operation_id="op-multi-stage",
+            attempt_id="att-multi-stage",
+            stage_id=stage_id,
+            host_node_id="node-multi-stage",
+            instance_id="inst-multi-stage",
+            generation=1,
+        )
+        _insert_submit_intent(
+            db,
+            submit_intent_id=f"intent-{stage_id}",
+            lease_id=lease_id,
+            operation_id="op-multi-stage",
+            attempt_id="att-multi-stage",
+            stage_id=stage_id,
+            host_node_id="node-multi-stage",
+            instance_id="inst-multi-stage",
+            generation=1,
+        )
+
+    assert db.execute(
+        """
+        SELECT count(*)
+        FROM admission_leases
+        WHERE operation_id = 'op-multi-stage' AND attempt_id = 'att-multi-stage'
+        """
+    ).fetchone() == (2,)
+    assert db.execute(
+        """
+        SELECT count(*)
+        FROM submit_intents
+        WHERE operation_id = 'op-multi-stage' AND attempt_id = 'att-multi-stage'
+        """
+    ).fetchone() == (2,)
+
+    with pytest.raises(UniqueViolation), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-stage-vad-duplicate",
+            operation_id="op-multi-stage",
+            attempt_id="att-multi-stage",
+            stage_id="stage-vad",
+            host_node_id="node-multi-stage",
+            instance_id="inst-multi-stage",
+            generation=1,
         )
 
 
@@ -1196,6 +1272,14 @@ def test_output_intervals_are_non_overlapping_and_identity_bound(
             WHERE submit_intent_id = 'intent-metering'
             """
         )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET hard_output_ceiling_samples = 96000
+            WHERE submit_intent_id = 'intent-metering'
+            """
+        )
     with pytest.raises(ExclusionViolation), db.transaction():
         _insert_interval(
             db,
@@ -1268,3 +1352,56 @@ def test_output_intervals_are_non_overlapping_and_identity_bound(
         )
     with pytest.raises(CheckViolation), db.transaction():
         db.execute("DELETE FROM output_sample_intervals WHERE interval_id = 'interval-initial'")
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute("TRUNCATE output_sample_intervals")
+
+
+def test_output_ceiling_cannot_be_introduced_after_generated_output(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-late-ceiling")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-late-ceiling",
+        generation=1,
+        host_node_id="node-late-ceiling",
+        architecture="discrete_device_memory",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-late-ceiling",
+        operation_id="op-late-ceiling",
+        attempt_id="att-late-ceiling",
+        host_node_id="node-late-ceiling",
+        instance_id="inst-late-ceiling",
+        generation=1,
+    )
+    _insert_submit_intent(
+        db,
+        submit_intent_id="intent-late-ceiling",
+        lease_id="lease-late-ceiling",
+        operation_id="op-late-ceiling",
+        attempt_id="att-late-ceiling",
+        host_node_id="node-late-ceiling",
+        instance_id="inst-late-ceiling",
+        generation=1,
+    )
+    _insert_interval(
+        db,
+        interval_id="interval-before-ceiling",
+        submit_intent_id="intent-late-ceiling",
+        operation_id="op-late-ceiling",
+        attempt_id="att-late-ceiling",
+        sample_start=0,
+        sample_end=100,
+    )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET hard_output_ceiling_samples = 48000
+            WHERE submit_intent_id = 'intent-late-ceiling'
+            """
+        )

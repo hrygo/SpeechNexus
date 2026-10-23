@@ -25,6 +25,7 @@ from tests.integration.test_production_jobs import database as database
 
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     ExecutionCleanupPendingError,
     ExecutionState,
@@ -142,7 +143,6 @@ def service_for(
             ledger=ledger,
             dispatch=engine,
             observation=engine,
-            now=lambda: NOW,
         ),
         engine,
     )
@@ -267,9 +267,11 @@ def test_save_writes_conditions_on_the_version_the_caller_read(
     intent = ledger.get("intent-a")
     assert intent is not None
     read_version = intent.version
-    intent.mark_stopping(at=NOW + timedelta(seconds=1))
+    intent.mark_stopping(at=datetime.now(UTC))
 
-    ledger.save(intent, expected_version=read_version)
+    ledger.record_execution_observation(
+        RecordExecutionObservation.from_intent(intent, expected_version=read_version)
+    )
 
     row = foundation.database.query(
         "SELECT execution_state, cleanup_state, version FROM submit_intents "
@@ -283,9 +285,11 @@ def test_save_writes_conditions_on_the_version_the_caller_read(
     foundation.database.query(
         "UPDATE submit_intents SET version = version + 1 WHERE submit_intent_id = 'intent-a'"
     )
-    reread.mark_stopping(at=NOW + timedelta(seconds=2))
+    reread.mark_stopping(at=datetime.now(UTC))
     with pytest.raises(StaleSubmissionVersionError) as raised:
-        ledger.save(reread, expected_version=reread.version - 1)
+        ledger.record_execution_observation(
+            RecordExecutionObservation.from_intent(reread, expected_version=reread.version - 1)
+        )
 
     assert raised.value.code == "version_conflict"
     assert engine.dispatch_count == 1
@@ -300,10 +304,12 @@ def test_a_bare_success_cannot_bypass_record_stop(
     intent = ledger.get("intent-a")
     assert intent is not None
     version = intent.version
-    intent.complete_successfully(at=NOW + timedelta(seconds=1))
+    intent.complete_successfully(at=datetime.now(UTC))
 
     with pytest.raises(ExecutionCleanupPendingError):
-        ledger.save(intent, expected_version=version)
+        ledger.record_execution_observation(
+            RecordExecutionObservation.from_intent(intent, expected_version=version)
+        )
 
     stored = ledger.get("intent-a")
     assert stored is not None

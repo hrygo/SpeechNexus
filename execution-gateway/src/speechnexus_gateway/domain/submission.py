@@ -484,9 +484,30 @@ class SubmissionIntent:
     stop_evidence_digest: str | None = None
     terminated_at: datetime | None = None
     generated_pcm_samples: int = 0
+    has_staging_output: bool = False
     version: int = field(default=1)
 
     def __post_init__(self) -> None:
+        self.validate()
+
+    def validate_new(self) -> None:
+        """create_submit never imports an already observed or cleaned-up execution."""
+        if (
+            self.execution_state is not ExecutionState.SUBMITTING
+            or self.cleanup_state is not CleanupState.PENDING
+            or self.dispatched_at is not None
+            or self.engine_request_id is not None
+            or self.error_code is not None
+            or self.stop_evidence_kind is not StopEvidenceKind.NONE
+            or self.stop_evidence_digest is not None
+            or self.terminated_at is not None
+            or self.generated_pcm_samples != 0
+            or self.has_staging_output
+            or type(self.version) is not int
+            or self.version != 1
+            or self.updated_at != self.recorded_at
+        ):
+            raise InvalidExecutionRequestError("create_submit requires a new unobserved intent")
         self.validate()
 
     def validate(self) -> None:
@@ -506,6 +527,8 @@ class SubmissionIntent:
             or (ceiling is not None and self.generated_pcm_samples > ceiling)
         ):
             raise ValueError("generated samples contradict the frozen output budget")
+        if type(self.has_staging_output) is not bool:
+            raise ValueError("staging presence must be a boolean fact")
         allowed = _CLEANUP_BY_STATE[self.execution_state]
         if self.cleanup_state not in allowed:
             raise ValueError(
@@ -541,10 +564,11 @@ class SubmissionIntent:
                 self.dispatched_at is not None
                 or self.engine_request_id is not None
                 or self.generated_pcm_samples != 0
+                or self.has_staging_output
             ):
                 raise ValueError(
                     "cleanup_state not_required requires no dispatch time, "
-                    "no engine request and no generated output"
+                    "no engine request, no generated output and no staging output"
                 )
             if self.cleanup_state is CleanupState.COMPLETE and self.dispatched_at is None:
                 raise ValueError("failed-with-cleanup intent requires a dispatch time")
@@ -644,9 +668,14 @@ class SubmissionIntent:
         engine_state: EngineObservedState,
         at: datetime,
         error_code: ExecutionErrorCode | None = None,
+        dispatched_at: datetime | None = None,
     ) -> None:
         """Adopt an engine fact for a request the gateway already issued."""
-        self.dispatched_at = self.dispatched_at or at
+        if self.dispatched_at is not None and dispatched_at not in {None, self.dispatched_at}:
+            raise InvalidExecutionRequestError("observed dispatch time changes a frozen fact")
+        if self.dispatched_at is None and dispatched_at is None:
+            raise InvalidExecutionRequestError("engine observation has no actual dispatch time")
+        self.dispatched_at = self.dispatched_at or dispatched_at
         self.engine_request_id = engine_request_id
         if engine_state is EngineObservedState.EXECUTING:
             self.execution_state = ExecutionState.EXECUTING

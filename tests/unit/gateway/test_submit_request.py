@@ -97,10 +97,10 @@ def request_for(identity: SubmissionIdentity, **overrides: object) -> SubmitRequ
 
 
 def build_service() -> SubmitExecutionService:
-    engine = ScriptedEngine()
+    engine = ScriptedEngine(now=lambda: NOW)
     return SubmitExecutionService(
         ingress=fake_ingress(),
-        ledger=InMemorySubmissionLedger(),
+        ledger=InMemorySubmissionLedger(now=lambda: NOW),
         dispatch=engine,
         observation=engine,
         now=lambda: NOW,

@@ -30,6 +30,7 @@ from speechnexus_backend.speech.domain.owners import ActivateOwner, OwnerAuthori
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.fencing import BarrierRequest, IngressUnavailableError
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import BarrierLedger, DispatchOutcome, SubmissionLedger
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -319,8 +320,12 @@ def test_barrier_inventory_keeps_unknown_and_stopping_executions(
     ingress: GatewayIngress,
 ) -> None:
     seed_second_attempt(foundation)
-    engine = ScriptedEngine()
-    engine.script_outcome(DispatchOutcome(DispatchResult.RESPONSE_LOST, datetime.now(UTC)))
+
+    def lose_first_response(_: object) -> None:
+        if engine.dispatch_count == 1:
+            engine.script_outcome(DispatchOutcome(DispatchResult.RESPONSE_LOST, datetime.now(UTC)))
+
+    engine = ScriptedEngine(before_dispatch=lose_first_response)
     service = service_for(stop_ledger, ingress, engine)
     service.submit(request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a")))
     stopping = service.submit(
@@ -335,7 +340,9 @@ def test_barrier_inventory_keeps_unknown_and_stopping_executions(
     ).intent
     version = stopping.version
     stopping.mark_stopping(at=datetime.now(UTC))
-    stop_ledger.save(stopping, expected_version=version)
+    stop_ledger.record_execution_observation(
+        RecordExecutionObservation.from_intent(stopping, expected_version=version)
+    )
     before = counters(foundation)
     takeover(foundation)
     sealed = ingress.seal(REQUEST, cast(BarrierLedger, stop_ledger))

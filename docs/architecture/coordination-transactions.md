@@ -201,9 +201,11 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 实例基线预算仍须依据独立的 RuntimeStopEvidence 中进程/容器退出与资源释放两项事实归还。
 成功要求 terminal response；失败须稳定错误码；unknown 只能凭停止证据关闭为 aborted。
 从未外发的失败可按既有执行契约进入 `not_required`，但必须同时证明无 request ID、
-无 dispatch、无 staging、无生成样本；这条路径通过 `record_execution_observation`
-由未来 gateway 用例实现，当前停止原型
-只验证带确切停止事实的路径，不能伪造 stop 代替 pre-dispatch 失败。
+无 dispatch、无 staging、无生成样本；这条路径已通过 gateway 的
+`record_execution_observation` 窄事务实现，PG/InnoDB 共用规则。该端口仅允许 submitting
+确认未外发的失败，不能解除 unknown；成功和有清理的终态仍必须经确切停止事实关闭，
+不能伪造 stop 代替 pre-dispatch 失败。版本、时间与原外发关联的规则见
+[执行网关](execution-gateway.md#9-record_execution_observation)。
 
 gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃只会多占预算，不能提前释放。
 从未创建 submit 的 lease 可以在锁定 lease 后直接释放，后续 submit 必须拒绝。

@@ -26,6 +26,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
 
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import DispatchOutcome, SubmissionLedger
 from speechnexus_gateway.domain.submission import (
     CancellationUnconfirmedError,
@@ -80,9 +81,12 @@ def start_execution(
     unknown: bool = False,
 ) -> tuple[SubmitExecutionService, ScriptedEngine]:
     seed_second_attempt(foundation)
-    engine = ScriptedEngine()
-    if unknown:
-        engine.script_outcome(DispatchOutcome(DispatchResult.RESPONSE_LOST, datetime.now(UTC)))
+
+    def lose_response(_: SubmissionIntent) -> None:
+        if unknown:
+            engine.script_outcome(DispatchOutcome(DispatchResult.RESPONSE_LOST, datetime.now(UTC)))
+
+    engine = ScriptedEngine(before_dispatch=lose_response)
     service = SubmitExecutionService(
         ingress=fake_ingress(node_id="host-test", gateway_id="gateway-test"),
         ledger=ledger,
@@ -318,7 +322,9 @@ def test_closed_execution_cannot_be_resurrected_by_a_late_save(
     changed = replace(closed)
     changed.mark_dispatched("engine-request-ghost", at=datetime.now(UTC))
     with pytest.raises(ExecutionCleanupPendingError):
-        stop_ledger.save(changed, expected_version=closed.version)
+        stop_ledger.record_execution_observation(
+            RecordExecutionObservation.from_intent(changed, expected_version=closed.version)
+        )
     assert stop_ledger.get("intent-a") == closed
 
 

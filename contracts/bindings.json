@@ -29,7 +29,8 @@
       "claim_job",
       "mark_execution_unknown",
       "create_runtime_intent",
-      "observe_runtime"
+      "observe_runtime",
+      "record_execution_observation"
     ]
   },
   "profiles": {

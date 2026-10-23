@@ -7,6 +7,7 @@ from typing import TypeVar, cast
 import pymysql
 
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     RecordStop,
@@ -15,6 +16,9 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
 )
 from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.observation_sql import (
+    record_execution_observation_in_transaction,
+)
 from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
@@ -22,7 +26,6 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     create_submit_in_transaction,
     from_unix_micros,
     read_submit_intent,
-    save_submit_intent,
 )
 from tests.integration.test_coordination_foundation import Foundation
 
@@ -81,9 +84,11 @@ class MySQLSubmissionLedger:
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
         self._run(lambda cursor: create_submit_in_transaction(cursor, intent, request_document))
 
-    def save(self, intent: SubmissionIntent, *, expected_version: int) -> None:
-        self._run(
-            lambda cursor: save_submit_intent(cursor, intent, expected_version=expected_version)
+    def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
+        return self._run(
+            lambda cursor: record_execution_observation_in_transaction(
+                cursor, request, clock=lambda: self._clock(cursor)
+            )
         )
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:

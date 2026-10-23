@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Protocol
 
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -38,22 +39,27 @@ class EngineObservation:
     engine_request_id: str
     state: EngineObservedState
     error_code: ExecutionErrorCode | None = None
+    dispatched_at: datetime | None = None
 
 
-class SubmissionLedger(Protocol):
+class ExecutionObservationLedger(Protocol):
+    def record_execution_observation(
+        self, request: RecordExecutionObservation
+    ) -> SubmissionIntent: ...
+
+
+class SubmissionLedger(ExecutionObservationLedger, Protocol):
     """Durable intent store; the adapter owns the transaction and row version.
 
     ``add`` is the ``create_submit`` transaction: it re-reads the authoritative lease rows
     under lock, stores one intent plus the canonical request document, and fails rather than
     returning a pre-existing intent, so a caller never dispatches for a record it did not
-    just create. ``save`` is a conditional write on the version the caller read.
+    just create. Observations use a guarded, versioned transaction.
     """
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None: ...
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None: ...
-
-    def save(self, intent: SubmissionIntent, *, expected_version: int) -> None: ...
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:
         """Append immutable evidence and close the execution in one transaction."""

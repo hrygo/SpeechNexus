@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from speechnexus_contracts.execution import parse
 from speechnexus_contracts.validation import validate_coordination
 
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import (
     ExecutionObservationConflictError,
     ExecutionSnapshot,
@@ -76,7 +77,9 @@ def test_a_stale_unknown_observation_does_not_replace_a_newer_executing_fact() -
     ledger = InMemorySubmissionLedger(now=lambda: NOW + timedelta(seconds=3))
     intent = pending(ledger)
     intent.mark_dispatched("engine-request-1", at=NOW + timedelta(seconds=2))
-    ledger.save(intent, expected_version=1)
+    ledger.record_execution_observation(
+        RecordExecutionObservation.from_intent(intent, expected_version=1)
+    )
     with pytest.raises(InvalidExecutionRequestError):
         ledger.mark_execution_unknown(UNKNOWN)
     known = replace(UNKNOWN, observed_at_us=OBSERVED + 3_000_000)

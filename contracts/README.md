@@ -198,6 +198,11 @@ engine generation cannot retain an unreleased admission lease or a non-terminal
 submit intent. Once recorded, an admission lease's quarantine observation time
 and release evidence are immutable; a gateway fencing barrier is permanently
 sealed and its minimum accepted token cannot decrease.
+Host and instance capacity counters are transaction-end projections of the
+authoritative instance base budgets and admission-lease states. A committed
+transaction cannot leave reserved, incremental, or quarantined counters stale,
+and capacity-accounting history cannot be deleted or truncated to bypass that
+check.
 
 ## OpenAI compatibility
 

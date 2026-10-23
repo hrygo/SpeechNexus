@@ -69,7 +69,7 @@ erDiagram
 
 1. 锁定 `scheduler_pool_leases`，验证自身为当前 `active` Owner 且租期有效，读取当前 `fencing_token`。
 2. 按统一的 `resource_pools → scheduler_pool_leases → host_nodes → engine_instances` 顺序锁定所有涉及的行，校验每个 `instance_state = 'ready'`、剩余槽位及实时保留比例。
-3. 原子累加每个目标 `host_nodes` 的增量向量与每个 `engine_instances` 的 active slots；同一 stage 不得重复计费，跨 stage 共用实例时按各自 per-slot 预算累计。
+3. 原子累加每个目标 `host_nodes` 的增量向量与每个 `engine_instances` 的 active slots；同一 stage 不得重复计费，跨 stage 共用实例时按各自 per-slot 预算累计。事务结束时，延迟约束触发器必须确认 host / instance 的 reserved 与 quarantine 投影等于实例基础预算和全部 admission lease 的权威聚合，不能留下应用侧漏加或重复加的计数。
 4. 为每个 stage 插入一行 `admission_leases`（`lease_state = 'reserved'`, `cleanup_state = 'pending'`, 绑定 `stage_id`、`fencing_token` 与 `instance_generation`）；`(operation_id, attempt_id, stage_id)` 唯一。一个 stage 完成且停止证据成立后只释放该行预算，其他 stage 保持原租约。
 
 任一维度超出上限立即触发 `CHECK` 约束回滚，返回明确的容量或队列受限错误。
@@ -113,6 +113,6 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 
 ### 3.7 数据库行为门禁
 
-`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史与终态不可复活、实例 readiness / quarantine 原因证据、意图去重与终态不可变、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、已释放租约与预留向量不可改写、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。submit intent 不得插入已释放 / 已隔离租约；活动 submit intent 不得记录停止证据；租约不得在活动或未关闭 unknown 执行上释放；实例不得在仍有未释放租约或非终态执行时转为 `stopped`。标量 `generated_pcm_samples` 必须等于权威 generated 区间的最大终点，不能被直接推进。`runtime-control` 契约同时要求 peak 内存向量不小于 steady、succeeded 意图无错误码，并拒绝同一 `(instance_id, instance_generation)` 在一个协调快照中重复出现。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
+`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史与终态不可复活、实例 readiness / quarantine 原因证据、意图去重与终态不可变、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、已释放租约与预留向量不可改写、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。submit intent 不得插入已释放 / 已隔离租约；活动 submit intent 不得记录停止证据；租约不得在活动或未关闭 unknown 执行上释放；实例不得在仍有未释放租约或非终态执行时转为 `stopped`。事务提交时，host / instance 的 reserved、incremental 与 quarantine 计数必须等于由实例基础预算和 lease 状态推导的值；active 与 quarantine 槽位必须分别等于对应 lease 的 `reserved_slots` 之和。host、engine generation 与 admission lease 的会计历史不可删除或 truncate。标量 `generated_pcm_samples` 必须等于权威 generated 区间的最大终点，不能被直接推进。`runtime-control` 契约同时要求 peak 内存向量不小于 steady、succeeded 意图无错误码，并拒绝同一 `(instance_id, instance_generation)` 在一个协调快照中重复出现。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
 
 [架构索引](README.md) · [资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)

@@ -1239,6 +1239,11 @@ BEGIN
         RAISE EXCEPTION 'stopped engine-instance generation is immutable'
             USING ERRCODE = '23514';
     END IF;
+    IF OLD.instance_state = 'quarantined'
+        AND NEW.instance_state NOT IN ('quarantined', 'stopped') THEN
+        RAISE EXCEPTION 'quarantined engine-instance generation may only stop'
+            USING ERRCODE = '23514';
+    END IF;
     IF NEW.instance_id IS DISTINCT FROM OLD.instance_id
         OR NEW.instance_generation IS DISTINCT FROM OLD.instance_generation
         OR NEW.host_node_id IS DISTINCT FROM OLD.host_node_id
@@ -1251,6 +1256,26 @@ BEGIN
         OR NEW.config_digest IS DISTINCT FROM OLD.config_digest
         OR NEW.loading_policy IS DISTINCT FROM OLD.loading_policy
         OR NEW.management_mode IS DISTINCT FROM OLD.management_mode
+        OR NEW.resident_unified_memory_bytes
+            IS DISTINCT FROM OLD.resident_unified_memory_bytes
+        OR NEW.loading_peak_unified_memory_bytes
+            IS DISTINCT FROM OLD.loading_peak_unified_memory_bytes
+        OR NEW.per_slot_unified_memory_bytes
+            IS DISTINCT FROM OLD.per_slot_unified_memory_bytes
+        OR NEW.resident_device_memory_bytes
+            IS DISTINCT FROM OLD.resident_device_memory_bytes
+        OR NEW.loading_peak_device_memory_bytes
+            IS DISTINCT FROM OLD.loading_peak_device_memory_bytes
+        OR NEW.per_slot_device_memory_bytes
+            IS DISTINCT FROM OLD.per_slot_device_memory_bytes
+        OR NEW.resident_host_memory_bytes
+            IS DISTINCT FROM OLD.resident_host_memory_bytes
+        OR NEW.loading_peak_host_memory_bytes
+            IS DISTINCT FROM OLD.loading_peak_host_memory_bytes
+        OR NEW.per_slot_host_memory_bytes
+            IS DISTINCT FROM OLD.per_slot_host_memory_bytes
+        OR NEW.max_active_slots IS DISTINCT FROM OLD.max_active_slots
+        OR NEW.realtime_reserved_slots IS DISTINCT FROM OLD.realtime_reserved_slots
         OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'engine-instance generation identity is immutable'
             USING ERRCODE = '23514';
@@ -1470,6 +1495,405 @@ CREATE TRIGGER trg_submit_intents_live_lease
     BEFORE INSERT ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_live_lease();
 
+-- Aggregate capacity counters are projections of authoritative instance and
+-- lease rows. They are checked at transaction end so an admission transaction
+-- may update host and instance counters after inserting the complete stage
+-- recipe, while a committed transaction cannot leave a stale projection.
+CREATE FUNCTION assert_instance_slot_accounting(
+    target_instance_id TEXT,
+    target_instance_generation INTEGER
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    expected_reserved BIGINT;
+    expected_quarantined BIGINT;
+    actual_reserved BIGINT;
+    actual_quarantined BIGINT;
+BEGIN
+    SELECT
+        COALESCE(
+            SUM(reserved_slots) FILTER (
+                WHERE lease_state IN ('reserved', 'executing', 'stopping')
+            ),
+            0
+        ),
+        COALESCE(
+            SUM(reserved_slots) FILTER (WHERE lease_state = 'quarantined'),
+            0
+        )
+    INTO expected_reserved, expected_quarantined
+    FROM admission_leases
+    WHERE instance_id = target_instance_id
+      AND instance_generation = target_instance_generation;
+
+    SELECT reserved_active_slots, quarantined_slots
+    INTO actual_reserved, actual_quarantined
+    FROM engine_instances
+    WHERE instance_id = target_instance_id
+      AND instance_generation = target_instance_generation;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    IF actual_reserved IS DISTINCT FROM expected_reserved
+        OR actual_quarantined IS DISTINCT FROM expected_quarantined THEN
+        RAISE EXCEPTION
+            'instance slot counters do not match admission leases for %.%',
+            target_instance_id,
+            target_instance_generation
+            USING ERRCODE = '23514';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION assert_host_capacity_accounting(target_host_node_id TEXT)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    expected_resident_unified BIGINT;
+    expected_peak_loading_unified BIGINT;
+    expected_device_memory BIGINT;
+    expected_host_memory BIGINT;
+    expected_quarantined_unified BIGINT;
+    expected_quarantined_device BIGINT;
+    expected_quarantined_host BIGINT;
+    expected_incremental_unified BIGINT;
+    expected_cpu BIGINT;
+    expected_pcm BIGINT;
+    expected_scratch BIGINT;
+    expected_quarantined_cpu BIGINT;
+    expected_quarantined_pcm BIGINT;
+    expected_quarantined_scratch BIGINT;
+    actual_resident_unified BIGINT;
+    actual_peak_loading_unified BIGINT;
+    actual_incremental_unified BIGINT;
+    actual_device_memory BIGINT;
+    actual_host_memory BIGINT;
+    actual_cpu BIGINT;
+    actual_pcm BIGINT;
+    actual_scratch BIGINT;
+    actual_quarantined_unified BIGINT;
+    actual_quarantined_device BIGINT;
+    actual_quarantined_host BIGINT;
+    actual_quarantined_cpu BIGINT;
+    actual_quarantined_pcm BIGINT;
+    actual_quarantined_scratch BIGINT;
+BEGIN
+    WITH instance_totals AS (
+        SELECT
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'unified_memory'
+                            AND instance_state NOT IN ('stopped', 'quarantined')
+                            AND NOT peak_reservation_active
+                        THEN resident_unified_memory_bytes
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS resident_unified,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'unified_memory'
+                            AND instance_state NOT IN ('stopped', 'quarantined')
+                            AND peak_reservation_active
+                        THEN loading_peak_unified_memory_bytes
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS peak_loading_unified,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'discrete_device_memory'
+                            AND instance_state NOT IN ('stopped', 'quarantined')
+                        THEN CASE
+                            WHEN peak_reservation_active
+                            THEN loading_peak_device_memory_bytes
+                            ELSE resident_device_memory_bytes
+                        END
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS device_memory,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'discrete_device_memory'
+                            AND instance_state NOT IN ('stopped', 'quarantined')
+                        THEN CASE
+                            WHEN peak_reservation_active
+                            THEN loading_peak_host_memory_bytes
+                            ELSE resident_host_memory_bytes
+                        END
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS host_memory,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'unified_memory'
+                            AND instance_state = 'quarantined'
+                        THEN CASE
+                            WHEN peak_reservation_active
+                            THEN loading_peak_unified_memory_bytes
+                            ELSE resident_unified_memory_bytes
+                        END
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS quarantined_unified,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'discrete_device_memory'
+                            AND instance_state = 'quarantined'
+                        THEN CASE
+                            WHEN peak_reservation_active
+                            THEN loading_peak_device_memory_bytes
+                            ELSE resident_device_memory_bytes
+                        END
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS quarantined_device,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN memory_architecture = 'discrete_device_memory'
+                            AND instance_state = 'quarantined'
+                        THEN CASE
+                            WHEN peak_reservation_active
+                            THEN loading_peak_host_memory_bytes
+                            ELSE resident_host_memory_bytes
+                        END
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS quarantined_host
+        FROM engine_instances
+        WHERE host_node_id = target_host_node_id
+    ),
+    lease_totals AS (
+        SELECT
+            COALESCE(
+                SUM(reserved_unified_memory_bytes) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_unified,
+            COALESCE(
+                SUM(reserved_device_memory_bytes) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_device,
+            COALESCE(
+                SUM(reserved_host_memory_bytes) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_host,
+            COALESCE(
+                SUM(reserved_cpu_decode_millicores) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_cpu,
+            COALESCE(
+                SUM(reserved_host_pcm_buffer_bytes) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_pcm,
+            COALESCE(
+                SUM(reserved_scratch_disk_bytes) FILTER (
+                    WHERE lease_state IN ('reserved', 'executing', 'stopping')
+                ),
+                0
+            ) AS active_scratch,
+            COALESCE(
+                SUM(reserved_unified_memory_bytes) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_unified,
+            COALESCE(
+                SUM(reserved_device_memory_bytes) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_device,
+            COALESCE(
+                SUM(reserved_host_memory_bytes) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_host,
+            COALESCE(
+                SUM(reserved_cpu_decode_millicores) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_cpu,
+            COALESCE(
+                SUM(reserved_host_pcm_buffer_bytes) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_pcm,
+            COALESCE(
+                SUM(reserved_scratch_disk_bytes) FILTER (
+                    WHERE lease_state = 'quarantined'
+                ),
+                0
+            ) AS quarantined_scratch
+        FROM admission_leases
+        WHERE host_node_id = target_host_node_id
+    )
+    SELECT
+        instance_totals.resident_unified,
+        instance_totals.peak_loading_unified,
+        lease_totals.active_unified,
+        instance_totals.device_memory + lease_totals.active_device,
+        instance_totals.host_memory + lease_totals.active_host,
+        lease_totals.active_cpu,
+        lease_totals.active_pcm,
+        lease_totals.active_scratch,
+        instance_totals.quarantined_unified + lease_totals.quarantined_unified,
+        instance_totals.quarantined_device + lease_totals.quarantined_device,
+        instance_totals.quarantined_host + lease_totals.quarantined_host,
+        lease_totals.quarantined_cpu,
+        lease_totals.quarantined_pcm,
+        lease_totals.quarantined_scratch
+    INTO
+        expected_resident_unified,
+        expected_peak_loading_unified,
+        expected_incremental_unified,
+        expected_device_memory,
+        expected_host_memory,
+        expected_cpu,
+        expected_pcm,
+        expected_scratch,
+        expected_quarantined_unified,
+        expected_quarantined_device,
+        expected_quarantined_host,
+        expected_quarantined_cpu,
+        expected_quarantined_pcm,
+        expected_quarantined_scratch
+    FROM instance_totals
+    CROSS JOIN lease_totals;
+
+    SELECT
+        reserved_resident_unified_memory_bytes,
+        reserved_peak_loading_unified_memory_bytes,
+        reserved_incremental_unified_memory_bytes,
+        reserved_device_memory_bytes,
+        reserved_host_memory_bytes,
+        reserved_cpu_decode_millicores,
+        reserved_host_pcm_buffer_bytes,
+        reserved_scratch_disk_bytes,
+        quarantined_unified_memory_bytes,
+        quarantined_device_memory_bytes,
+        quarantined_host_memory_bytes,
+        quarantined_cpu_decode_millicores,
+        quarantined_host_pcm_buffer_bytes,
+        quarantined_scratch_disk_bytes
+    INTO
+        actual_resident_unified,
+        actual_peak_loading_unified,
+        actual_incremental_unified,
+        actual_device_memory,
+        actual_host_memory,
+        actual_cpu,
+        actual_pcm,
+        actual_scratch,
+        actual_quarantined_unified,
+        actual_quarantined_device,
+        actual_quarantined_host,
+        actual_quarantined_cpu,
+        actual_quarantined_pcm,
+        actual_quarantined_scratch
+    FROM host_nodes
+    WHERE host_node_id = target_host_node_id;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    IF actual_resident_unified IS DISTINCT FROM expected_resident_unified
+        OR actual_peak_loading_unified IS DISTINCT FROM expected_peak_loading_unified
+        OR actual_incremental_unified IS DISTINCT FROM expected_incremental_unified
+        OR actual_device_memory IS DISTINCT FROM expected_device_memory
+        OR actual_host_memory IS DISTINCT FROM expected_host_memory
+        OR actual_cpu IS DISTINCT FROM expected_cpu
+        OR actual_pcm IS DISTINCT FROM expected_pcm
+        OR actual_scratch IS DISTINCT FROM expected_scratch
+        OR actual_quarantined_unified IS DISTINCT FROM expected_quarantined_unified
+        OR actual_quarantined_device IS DISTINCT FROM expected_quarantined_device
+        OR actual_quarantined_host IS DISTINCT FROM expected_quarantined_host
+        OR actual_quarantined_cpu IS DISTINCT FROM expected_quarantined_cpu
+        OR actual_quarantined_pcm IS DISTINCT FROM expected_quarantined_pcm
+        OR actual_quarantined_scratch IS DISTINCT FROM expected_quarantined_scratch THEN
+        RAISE EXCEPTION
+            'host capacity counters do not match instances and leases for %',
+            target_host_node_id
+            USING ERRCODE = '23514';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION assert_engine_instance_capacity_accounting() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM assert_instance_slot_accounting(NEW.instance_id, NEW.instance_generation);
+    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION assert_admission_lease_capacity_accounting() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM assert_instance_slot_accounting(NEW.instance_id, NEW.instance_generation);
+    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION assert_host_node_capacity_accounting() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER trg_engine_instances_capacity_accounting
+    AFTER INSERT OR UPDATE ON engine_instances
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION assert_engine_instance_capacity_accounting();
+
+CREATE CONSTRAINT TRIGGER trg_admission_leases_capacity_accounting
+    AFTER INSERT OR UPDATE ON admission_leases
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION assert_admission_lease_capacity_accounting();
+
+CREATE CONSTRAINT TRIGGER trg_host_nodes_capacity_accounting
+    AFTER INSERT OR UPDATE ON host_nodes
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION assert_host_node_capacity_accounting();
+
 -- A lease releases capacity only after every execution intent attached to it
 -- has reached a terminal execution state. A quarantined lease may retain an
 -- unknown execution, but it cannot be marked released until that execution is
@@ -1616,6 +2040,37 @@ CREATE TRIGGER trg_submit_output_monotonic
 CREATE TRIGGER trg_submit_output_projection_insert
     BEFORE INSERT ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_output_monotonic();
+
+-- Capacity history is accounting evidence, not disposable cache. Deleting a
+-- host, instance generation, or lease would erase the rows against which the
+-- aggregate projections are checked and could otherwise clear quarantined
+-- capacity without stop evidence.
+CREATE FUNCTION reject_capacity_history_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'capacity accounting history is append-only'
+        USING ERRCODE = '23514';
+END;
+$$;
+
+CREATE TRIGGER trg_host_nodes_no_delete
+    BEFORE DELETE ON host_nodes
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_host_nodes_no_truncate
+    BEFORE TRUNCATE ON host_nodes
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_engine_instances_no_delete
+    BEFORE DELETE ON engine_instances
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_engine_instances_no_truncate
+    BEFORE TRUNCATE ON engine_instances
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_admission_leases_no_delete
+    BEFORE DELETE ON admission_leases
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_admission_leases_no_truncate
+    BEFORE TRUNCATE ON admission_leases
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
 
 -- Keep audit timestamps current even when application code forgets to set them.
 CREATE FUNCTION set_updated_at() RETURNS trigger

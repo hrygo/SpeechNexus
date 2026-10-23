@@ -491,6 +491,24 @@ def test_instance_generation_history_is_retained(
             """,
             ("sha256:" + "b" * 64,),
         )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET resident_device_memory_bytes = 0
+            WHERE instance_id = 'inst-generation'
+              AND instance_generation = 2
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET max_active_slots = 8
+            WHERE instance_id = 'inst-generation'
+              AND instance_generation = 2
+            """
+        )
 
 
 def test_instance_readiness_and_quarantine_reason_are_durable(
@@ -548,6 +566,16 @@ def test_instance_readiness_and_quarantine_reason_are_durable(
             """
             UPDATE engine_instances
             SET instance_state = 'stopping'
+            WHERE instance_id = 'inst-quarantined-without-reason'
+              AND instance_generation = 1
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET instance_state = 'stopping',
+                quarantine_reason = NULL
             WHERE instance_id = 'inst-quarantined-without-reason'
               AND instance_generation = 1
             """
@@ -779,6 +807,237 @@ def test_memory_architecture_counters_are_exclusive(
             host_node_id="node-unified",
             architecture="discrete_device_memory",
         )
+
+
+def test_capacity_aggregates_must_match_authoritative_rows(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-capacity-accounting")
+    _insert_pool(db, pool_id="capacity-accounting")
+    _insert_instance(
+        db,
+        instance_id="inst-capacity-accounting",
+        generation=1,
+        host_node_id="node-capacity-accounting",
+        architecture="discrete_device_memory",
+        pool_id="capacity-accounting",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-capacity-accounting",
+        operation_id="op-capacity-accounting",
+        attempt_id="att-capacity-accounting",
+        host_node_id="node-capacity-accounting",
+        instance_id="inst-capacity-accounting",
+        generation=1,
+        pool_id="capacity-accounting",
+    )
+
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET reserved_device_memory_bytes = 101,
+            reserved_host_memory_bytes = 101,
+            reserved_cpu_decode_millicores = 1,
+            reserved_host_pcm_buffer_bytes = 1,
+            reserved_scratch_disk_bytes = 1
+        WHERE host_node_id = 'node-capacity-accounting'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET reserved_active_slots = 1
+        WHERE instance_id = 'inst-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    db.commit()
+
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET reserved_device_memory_bytes = 100
+        WHERE host_node_id = 'node-capacity-accounting'
+        """
+    )
+    with pytest.raises(CheckViolation):
+        db.commit()
+    db.rollback()
+
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET reserved_active_slots = 0
+        WHERE instance_id = 'inst-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    with pytest.raises(CheckViolation):
+        db.commit()
+    db.rollback()
+
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'quarantined',
+            cleanup_state = 'quarantined',
+            quarantined_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-capacity-accounting'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET reserved_active_slots = 0,
+            quarantined_slots = 1
+        WHERE instance_id = 'inst-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET reserved_device_memory_bytes = 100,
+            reserved_host_memory_bytes = 100,
+            reserved_cpu_decode_millicores = 0,
+            reserved_host_pcm_buffer_bytes = 0,
+            reserved_scratch_disk_bytes = 0,
+            quarantined_device_memory_bytes = 1,
+            quarantined_host_memory_bytes = 1,
+            quarantined_cpu_decode_millicores = 1,
+            quarantined_host_pcm_buffer_bytes = 1,
+            quarantined_scratch_disk_bytes = 1
+        WHERE host_node_id = 'node-capacity-accounting'
+        """
+    )
+    db.commit()
+
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET quarantined_slots = 0
+        WHERE instance_id = 'inst-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    with pytest.raises(CheckViolation):
+        db.commit()
+    db.rollback()
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute("DELETE FROM admission_leases WHERE lease_id = 'lease-capacity-accounting'")
+
+
+def test_unified_capacity_aggregates_move_with_quarantine(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(
+        db,
+        "node-unified-capacity-accounting",
+        architecture="unified_memory",
+    )
+    _insert_pool(db, pool_id="unified-capacity-accounting")
+    _insert_instance(
+        db,
+        instance_id="inst-unified-capacity-accounting",
+        generation=1,
+        host_node_id="node-unified-capacity-accounting",
+        architecture="unified_memory",
+        pool_id="unified-capacity-accounting",
+        unified=(100, 100, 10),
+        device=(0, 0, 0),
+        host=(0, 0, 0),
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-unified-capacity-accounting",
+        operation_id="op-unified-capacity-accounting",
+        attempt_id="att-unified-capacity-accounting",
+        host_node_id="node-unified-capacity-accounting",
+        instance_id="inst-unified-capacity-accounting",
+        generation=1,
+        service_class="realtime",
+        pool_id="unified-capacity-accounting",
+        memory_architecture="unified_memory",
+    )
+
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET peak_reservation_active = FALSE
+        WHERE instance_id = 'inst-unified-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET reserved_resident_unified_memory_bytes = 100,
+            reserved_incremental_unified_memory_bytes = 1,
+            reserved_cpu_decode_millicores = 1,
+            reserved_host_pcm_buffer_bytes = 1,
+            reserved_scratch_disk_bytes = 1
+        WHERE host_node_id = 'node-unified-capacity-accounting'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET reserved_active_slots = 1
+        WHERE instance_id = 'inst-unified-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    db.commit()
+
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'quarantined',
+            cleanup_state = 'quarantined',
+            quarantined_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-unified-capacity-accounting'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET instance_state = 'quarantined',
+            quarantine_reason = 'synthetic unknown execution',
+            reserved_active_slots = 0,
+            quarantined_slots = 1
+        WHERE instance_id = 'inst-unified-capacity-accounting'
+          AND instance_generation = 1
+        """
+    )
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET reserved_resident_unified_memory_bytes = 0,
+            reserved_incremental_unified_memory_bytes = 0,
+            reserved_cpu_decode_millicores = 0,
+            reserved_host_pcm_buffer_bytes = 0,
+            reserved_scratch_disk_bytes = 0,
+            quarantined_unified_memory_bytes = 101,
+            quarantined_cpu_decode_millicores = 1,
+            quarantined_host_pcm_buffer_bytes = 1,
+            quarantined_scratch_disk_bytes = 1
+        WHERE host_node_id = 'node-unified-capacity-accounting'
+        """
+    )
+    db.commit()
+
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET quarantined_unified_memory_bytes = 100
+        WHERE host_node_id = 'node-unified-capacity-accounting'
+        """
+    )
+    with pytest.raises(CheckViolation):
+        db.commit()
+    db.rollback()
 
 
 def test_quarantine_is_counted_and_blocks_ready_state(

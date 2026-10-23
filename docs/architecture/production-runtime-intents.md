@@ -1,9 +1,10 @@
 # Runtime 意图存储与未观察快照
 
 属于 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)。本单元提供
-`0005_runtime_intents`、最小列授权和协调快照契约，作为后续
-`create_runtime_intent` / `observe_runtime` / 持久派发的准备。
-**这些生产事务、调度循环及控制器客户端尚未接入。** 存储正负例不代表实际准入、
+`0005_runtime_intents`、最小列授权、协调快照契约，以及独立的 PG
+`create_runtime_intent` / `query_outcome(runtime_intent)` 事务端口。
+**批准计划提供者、observe_runtime、调度循环和控制器客户端尚未接入运行进程。**
+端口验证不代表完整配方准入、
 物理停止、GPU 或多主机资格；实施顺序见 [runtime 单元计划](../plans/2026-10-24-a01-runtime-intent-unit.md)。
 兼容边界和消费者顺序由 [ADR 0008](../decisions/0008-runtime-intents-before-controller-observation.md)登记。
 
@@ -45,7 +46,7 @@ CHECK 拒绝未知 kind、混合目标和半个 runtime 身份；外键拒绝不
 intent。新索引支持按 kind/未投递状态/事件身份查询。记录不可被运行角色改换目标；
 仅 delivered_at_us 可按既有所有权更新。
 这只提供原子写入和后续轮询所需的存储形状，尚无生产派发进程；不宣称恰好一次外发。
-未来事务必须将完整冻结意图、预算与事件同事务写入，提交后才调用控制器，
+create 端口将完整冻结意图、预算与事件同事务写入；后续派发必须在提交后调用控制器，
 未知时查询原 node/intent，不能创建新 generation 或重新预留。
 
 ## 时间、旧记录与升级
@@ -56,9 +57,9 @@ recorded_at_us 不授予运行角色 UPDATE；观察正文与更新时间仍属�
 gateway 的窄 SELECT 不包含正文。
 
 迁移不为历史意图填入当前时间或编造观察。历史缺失记录保留三个 NULL，
-后续生产读取/恢复端口必须将它们识别为待核对历史，不能普通重放或派发；
+生产读取/恢复端口将它们识别为 reconciliation_required，不能普通重放或派发；
 受控 adoption 和旧 writer 隔离跟随 A07 交付。数据库不独立验证 JSON 语义或
-跨表资源规则；这些仍须由即将接入的领域/应用事务执行。
+跨表资源规则；这些由领域/应用事务执行，未接入的状态变更仍不得绕过规则。
 
 使用独立 owner 凭据运行既有迁移 CLI 到 head，再以 owner 审阅并安装
 `coordination_runtime_grants` 的新输出；API/worker 不执行 DDL 或 GRANT。
@@ -86,3 +87,51 @@ make integration-test
 
 ADR 0007：本单元补入协议/持久化约束，尚未迁入 runtime 状态、预算、停止与
 恢复的完整生产行为，旧机制的退出条件未满足，继续保留相关门禁。
+
+
+## 独立 create/query 事务端口
+
+`RuntimeService` 使用窄 `RuntimeTransactions` 端口。PG 适配器使用显式非 owner
+`speech_pool`；内部 `RuntimeTransactionBoundary` 接收组合根注入的机器契约 codec
+及服务端 owner_id，不接收客户端声明的 owner。当前没有新 HTTP 路由、默认批准
+计划或自动启动的控制循环，不能仅凭一个合法请求自行创建任意容器。
+
+prepare 要求服务端显式提供 `ApprovedRuntimePlan`：绑定、模板、manifest、配置
+摘要、拓扑与资格摘要、loading policy、slots、完整六维 peak/steady/per-slot。
+构造对象本身不证明模板获准或 GPU 资格；组合方必须从部署批准的权威来源取得这些
+不可变事实。catalog/资格提供者和实际进程装配继续待交付，不允许用客户端计划或
+当前可变默认值填补。stop 使用原 generation 保存的计划，不从新默认值重建。
+
+事务先只读定位，再按池、host、head、instance、intent、lease、gateway barrier、
+submit 的全局顺序锁定并重新核对作用域；跨节点/池替换会排序锁住旧、新父记录。
+锁等待结束后取 DB 时间，核对 owner_id、fencing、租约和请求期限。prepare 同一
+事务增加 host 全六维 held peak，建立 preparing generation/head、完整意图和 runtime
+outbox。隔离预算始终计入容量，不得因 TTL 或取消归还。资源计数限制在安全整数范围，
+版本使用契约规定的字符串表示，unified memory 不再重复计 host/device RAM。
+
+私有 request_document 使用受控 `record_version: 1` envelope，保存完整控制器请求、
+creator_id 和完整批准计划。请求摘要基于完整规范化 wire JSON，保留原 deadline
+文本的全部精度；事件身份固定原 node/intent。重放/查询核对正文摘要、不可变实例
+配置和 outbox 目标，不分配新预算，不重新解释批准计划。缺少完整 envelope、时间或
+相关证据的旧记录进入协调；不自动 adoption。
+
+stop 只将实例标为 draining 并记录原命令，不归还 host、base 或 slot 预算。
+普通 stop 要求没有 held lease、活动 submit 或未结束的 runtime intent。
+接管清理仅允许旧 fencing 的 quarantined lease，且必须已经有 B 的持久 sealed barrier
+覆盖当前 fencing；unknown_quarantined submit 不再活跃执行提交，但其物理预算仍保留。
+这些前提不证明引擎已停止。替换 generation 还要求原实例 stopped、base released、全部
+lease 已释放、原 stop 观察含退出与资源释放证据，且新 generation 大于历史高水位。
+既有 preparing/reconciling/quarantined 未决意图继续阻止普通新 stop/replacement，须经
+后续观察/协调路径处理。基础预算标签为 peak/steady/q_peak/q_steady/released，保留
+隔离前的资源依据；本单元不执行这些观察驱动的预算转换。
+
+PG 每个语句受剩余请求期限约束，提交确认后才返回 committed；仅确认死锁或序列化
+回滚后有限重试，抖动发生在释放连接之后。唯一冲突回滚后只读查询原身份；连接或
+提交确认中断返回 unknown/query_original，不自动再次写入。查询缺失也保持 unknown，
+不能据此假定前次未提交。无推理、HTTP 或对象写入占用数据库事务。
+
+新增双库测试使用相同生产 SQL/领域规则与非 owner 角色，覆盖共享容量竞争、跨主机
+同一 generation 竞争、末尾 outbox 失败整笔回滚、原身份冲突、锁后期限、停止不释放、
+隔离清理屏障及原记录损坏。真实 PG 提交后人为丢失确认，验证只读恢复且不重复写入。
+测试中的观察与释放事实由明确的合成 fixture 提供，不是 observe_runtime 的实现证据，
+也不证明真实 GPU、容器、模型或多主机资格。

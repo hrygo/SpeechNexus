@@ -164,7 +164,10 @@ of defaults, units, enum domains, or stable error codes.
   reservations require peak to be at least steady in every architecture-specific
   counter. A reconciliation snapshot may report each
   `(instance_id, instance_generation)` once, and stop evidence is present only
-  for a succeeded stop intent / stopped or absent observation.
+  for a succeeded stop intent / stopped or absent observation. An unanswered
+  node runtime is a retryable `503 runtime_controller_unavailable` that leaves
+  the intent unresolved, and an unknown intent identity is
+  `404 runtime_intent_not_found`.
 
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision

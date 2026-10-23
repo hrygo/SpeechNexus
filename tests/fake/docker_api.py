@@ -8,6 +8,7 @@ from typing import Any
 from speechnexus_node_controller.infrastructure.docker_api import (
     ContainerState,
     DockerApiError,
+    DockerUnavailableError,
     ImageIdentity,
 )
 
@@ -41,6 +42,7 @@ class FakeDockerEngine:
     fail_stop: bool = False
     fail_remove: bool = False
     fail_remove_and_keep: bool = False
+    daemon_unavailable: bool = False
 
     def __post_init__(self) -> None:
         self.containers: dict[str, FakeContainer] = {}
@@ -50,15 +52,17 @@ class FakeDockerEngine:
         self._sequence = 0
 
     def ping(self) -> None:
-        return None
+        self._require_available()
 
     def inspect_image(self, reference: str) -> ImageIdentity | None:
+        self._require_available()
         image_id = self.images.get(reference)
         if image_id is None:
             return None
         return ImageIdentity(image_id=image_id, repository_digests=(f"{reference}@{image_id}",))
 
     def find_container(self, labels: dict[str, str]) -> ContainerState | None:
+        self._require_available()
         for container in self.containers.values():
             if all(container.labels.get(key) == value for key, value in labels.items()):
                 return self._state(container)
@@ -73,6 +77,7 @@ class FakeDockerEngine:
         labels: dict[str, str],
         host_config: dict[str, Any],
     ) -> str:
+        self._require_available()
         if image_reference not in self.images:
             raise DockerApiError(404, "no such image")
         self._sequence += 1
@@ -92,16 +97,19 @@ class FakeDockerEngine:
         return container_id
 
     def start_container(self, container_id: str) -> None:
+        self._require_available()
         container = self._require(container_id)
         container.status = "running"
         container.running = True
         container.exit_code = None
 
     def inspect_container(self, container_id: str) -> ContainerState | None:
+        self._require_available()
         container = self.containers.get(container_id)
         return None if container is None else self._state(container)
 
     def wait_container(self, container_id: str, *, timeout_seconds: float) -> int:
+        self._require_available()
         container = self._require(container_id)
         if self.fail_wait:
             raise DockerApiError(500, "wait timed out")
@@ -112,6 +120,7 @@ class FakeDockerEngine:
         return self.exit_code
 
     def stop_container(self, container_id: str, *, timeout_seconds: float) -> None:
+        self._require_available()
         self._require(container_id)
         self.stopped.append(container_id)
         del timeout_seconds
@@ -119,6 +128,7 @@ class FakeDockerEngine:
             raise DockerApiError(500, "stop timed out")
 
     def remove_container(self, container_id: str) -> None:
+        self._require_available()
         container = self._require(container_id)
         if self.fail_remove:
             raise DockerApiError(409, "container is in use")
@@ -127,6 +137,10 @@ class FakeDockerEngine:
             return
         self.removed.append(container_id)
         del self.containers[container.container_id]
+
+    def _require_available(self) -> None:
+        if self.daemon_unavailable:
+            raise DockerUnavailableError("daemon socket did not answer")
 
     def _require(self, container_id: str) -> FakeContainer:
         container = self.containers.get(container_id)

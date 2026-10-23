@@ -49,7 +49,6 @@ class _TemplateModel(BaseModel):
     command: list[str] | None = None
     gpu_device_count: int = Field(default=0, ge=0)
     read_only_binds: list[_ReadOnlyBindModel] = Field(default_factory=list)
-    requires_warmup_before_ready: bool = True
 
 
 class _TemplateFileModel(BaseModel):
@@ -81,5 +80,4 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
         read_only_binds=tuple(
             ReadOnlyBind(source=bind.source, target=bind.target) for bind in model.read_only_binds
         ),
-        requires_warmup_before_ready=model.requires_warmup_before_ready,
     )

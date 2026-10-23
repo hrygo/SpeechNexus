@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
+
+from speechnexus_node_controller.app import create_app
+from speechnexus_node_controller.application.readiness import ReadinessService
 from speechnexus_node_controller.application.runtime_control import NodeRuntimeControlService
 from speechnexus_node_controller.domain.intents import (
     POOL_IDS,
@@ -14,10 +21,24 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeInstanceIntent,
     RuntimeInstanceIntentRequest,
     RuntimeIntentState,
-    RuntimeMemoryReservation,
-    RuntimeMemoryVector,
+)
+from speechnexus_node_controller.domain.payloads import (
+    intent_response_payload,
+    request_payload,
 )
 from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry
+from speechnexus_node_controller.interfaces.http.errors import _STATUS_BY_CODE
+from speechnexus_node_controller.interfaces.http.schemas import (
+    NodeReconcileRequestPayload,
+    NodeReconcileResponse,
+    ObservedNodeInstanceFactPayload,
+    RuntimeControlErrorDetail,
+    RuntimeControlErrorResponse,
+    RuntimeInstanceIntentRequestPayload,
+    RuntimeInstanceIntentResponse,
+    RuntimeStopEvidencePayload,
+)
+from speechnexus_node_controller.settings import Settings
 from tests.contract.test_p0_public_contracts import (
     _CONTRACTS,
     _component_validator,
@@ -33,6 +54,7 @@ from tests.fake.controller import (
     build_request,
     build_template,
 )
+from tests.fake.readiness import StaticProbe
 
 _DOCUMENT = _resolved_yaml(_CONTRACTS / "internal" / "runtime-control.openapi.yaml")
 _SCHEMAS: dict[str, Any] = _DOCUMENT["components"]["schemas"]
@@ -88,7 +110,7 @@ def test_every_producible_intent_validates_as_a_contract_response() -> None:
     }
     for intent in intents:
         for replay in (False, True):
-            _RESPONSE_VALIDATOR.validate(_response(intent, replay=replay))
+            _RESPONSE_VALIDATOR.validate(intent_response_payload(intent, idempotent_replay=replay))
 
 
 def test_stop_response_always_carries_both_stop_confirmations() -> None:
@@ -98,7 +120,7 @@ def test_stop_response_always_carries_both_stop_confirmations() -> None:
         if intent.action is RuntimeActionKind.STOP
         and intent.intent_state is RuntimeIntentState.SUCCEEDED
     )
-    response = _response(stop_intent, replay=False)
+    response = intent_response_payload(stop_intent, idempotent_replay=False)
     evidence = response["stop_evidence"]
     assert evidence["process_or_container_exited"] is True
     assert evidence["resources_released_confirmed"] is True
@@ -143,60 +165,171 @@ def _service(
     return service, runtime, store
 
 
-def _response(intent: RuntimeInstanceIntent, *, replay: bool) -> dict[str, Any]:
-    """Project one domain fact onto the contract response fields."""
-    request = intent.request
+_HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
+_COMPONENT_TOKEN = "contract-test-component-token"
+_HEADERS = {"Authorization": f"Bearer {_COMPONENT_TOKEN}"}
+_INTENTS_PATH = f"/internal/v1/nodes/{SAMPLE_NODE_ID}/instance-intents"
+_RECONCILE_PATH = f"/internal/v1/nodes/{SAMPLE_NODE_ID}/reconcile"
+
+
+def _controller_app(tmp_path: Path, *, runtime: ScriptedNodeRuntime | None = None) -> FastAPI:
+    """Build the served app with doubles, so the test never touches a daemon."""
+    service = NodeRuntimeControlService(
+        node_id=SAMPLE_NODE_ID,
+        templates=ApprovedTemplateRegistry((build_template(),)),
+        store=InMemoryIntentStore(),
+        runtime=runtime or ScriptedNodeRuntime(ready_on_prepare=True),
+        now=lambda: FIXED_NOW,
+    )
+    settings = Settings(
+        service_name="speechnexus-node-controller-contract",
+        node_id=SAMPLE_NODE_ID,
+        component_token=SecretStr(_COMPONENT_TOKEN),
+        approved_templates_file=tmp_path / "approved-templates.json",
+        intent_store_path=tmp_path / "runtime-intents.sqlite3",
+        docker_socket_path=tmp_path / "missing-docker.sock",
+    )
+    return create_app(
+        settings=settings,
+        service=service,
+        readiness=ReadinessService([StaticProbe("container_daemon")], timeout_seconds=1),
+    )
+
+
+def test_every_frozen_operation_is_served_with_the_frozen_identity(tmp_path: Path) -> None:
+    document = _controller_app(tmp_path).openapi()
+    served_paths = document["paths"]
+
+    for path, operations in _DOCUMENT["paths"].items():
+        assert path in served_paths, f"the controller does not serve {path}"
+        for method, operation in operations.items():
+            if method not in _HTTP_METHODS:
+                continue
+            served = served_paths[path].get(method)
+            assert served is not None, f"{method.upper()} {path} is not served"
+            assert served["operationId"] == operation["operationId"]
+            assert served["summary"] == operation["summary"]
+            for status_code, expected_response in operation["responses"].items():
+                assert status_code in served["responses"], (
+                    f"{method.upper()} {path} does not declare {status_code}"
+                )
+                expected_headers = {name.lower() for name in expected_response.get("headers", {})}
+                served_headers = {
+                    name.lower() for name in served["responses"][status_code].get("headers", {})
+                }
+                assert expected_headers <= served_headers
+
+
+def test_the_boundary_models_own_exactly_the_frozen_fields(tmp_path: Path) -> None:
+    document = _controller_app(tmp_path).openapi()
+    for name, model in (
+        ("RuntimeInstanceIntentRequest", RuntimeInstanceIntentRequestPayload),
+        ("RuntimeInstanceIntentResponse", RuntimeInstanceIntentResponse),
+        ("ObservedNodeInstanceFact", ObservedNodeInstanceFactPayload),
+        ("NodeReconcileRequest", NodeReconcileRequestPayload),
+        ("NodeReconcileResponse", NodeReconcileResponse),
+        ("RuntimeControlErrorResponse", RuntimeControlErrorResponse),
+        ("RuntimeStopEvidence", RuntimeStopEvidencePayload),
+    ):
+        expected = _SCHEMAS[name]
+        assert set(model.model_fields) == set(expected["properties"]), name
+        assert {
+            field for field, definition in model.model_fields.items() if definition.is_required()
+        } == set(expected["required"]), name
+    assert document["components"]["schemas"]
+
+
+def test_the_error_detail_requires_exactly_the_frozen_fields() -> None:
+    expected = _SCHEMAS["RuntimeControlErrorResponse"]["properties"]["error"]
+
+    assert set(RuntimeControlErrorDetail.model_fields) == set(expected["properties"])
+    assert {
+        field
+        for field, definition in RuntimeControlErrorDetail.model_fields.items()
+        if definition.is_required()
+    } == set(expected["required"])
+
+
+def test_every_contract_error_code_has_exactly_one_http_status() -> None:
+    assert set(_STATUS_BY_CODE) == set(RuntimeControlErrorCode)
+    assert _STATUS_BY_CODE[RuntimeControlErrorCode.COMPONENT_CREDENTIAL_INVALID] == 401
+    assert _STATUS_BY_CODE[RuntimeControlErrorCode.RUNTIME_INTENT_NOT_FOUND] == 404
+    assert _STATUS_BY_CODE[RuntimeControlErrorCode.RUNTIME_CONTROLLER_UNAVAILABLE] == 503
+
+
+def test_the_recorded_request_round_trips_through_the_shared_boundary_codec() -> None:
+    request = build_request()
+
+    payload = request_payload(request)
+
+    assert set(payload) == set(_SCHEMAS["RuntimeInstanceIntentRequest"]["required"])
+    assert payload["deadline_at"] == request.deadline_at.isoformat()
+    assert RuntimeInstanceIntentRequestPayload.model_validate(payload).to_domain() == request
+
+
+async def test_served_responses_validate_against_the_frozen_contract(tmp_path: Path) -> None:
+    error_validator = _component_validator(_DOCUMENT, "RuntimeControlErrorResponse")
+    async with AsyncClient(
+        transport=ASGITransport(app=_controller_app(tmp_path)), base_url="http://test"
+    ) as client:
+        unauthorized = await client.get(f"{_INTENTS_PATH}/intent-1")
+        body = request_payload(build_request())
+        recorded = await client.post(_INTENTS_PATH, json=body, headers=_HEADERS)
+        replayed = await client.post(_INTENTS_PATH, json=body, headers=_HEADERS)
+        missing = await client.get(f"{_INTENTS_PATH}/intent-unknown", headers=_HEADERS)
+        foreign = await client.get(
+            "/internal/v1/nodes/node-other/instance-intents/intent-1", headers=_HEADERS
+        )
+        malformed = await client.post(
+            _INTENTS_PATH, json={"intent_id": "intent-1"}, headers=_HEADERS
+        )
+        reconciled = await client.post(_RECONCILE_PATH, json=_reconcile_body(), headers=_HEADERS)
+
+    assert recorded.status_code == 200
+    assert replayed.status_code == 200
+    assert replayed.json()["idempotent_replay"] is True
+    for response in (recorded, replayed):
+        _RESPONSE_VALIDATOR.validate(response.json())
+
+    assert unauthorized.status_code == 401
+    for response, status_code in ((missing, 404), (foreign, 409), (malformed, 422)):
+        assert response.status_code == status_code
+        error_validator.validate(response.json())
+
+    assert reconciled.status_code == 200
+    _component_validator(_DOCUMENT, "NodeReconcileResponse").validate(reconciled.json())
+
+
+async def test_an_unavailable_node_runtime_answers_with_a_valid_retryable_error(
+    tmp_path: Path,
+) -> None:
+    runtime = ScriptedNodeRuntime()
+    runtime.unavailable = True
+    error_validator = _component_validator(_DOCUMENT, "RuntimeControlErrorResponse")
+    app = _controller_app(tmp_path, runtime=runtime)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            _INTENTS_PATH,
+            json=request_payload(
+                build_request(
+                    intent_id="intent-stop-silent",
+                    action=RuntimeActionKind.STOP,
+                    fencing_token=2,
+                )
+            ),
+            headers=_HEADERS,
+        )
+
+    assert response.status_code == 503
+    error_validator.validate(response.json())
+    assert response.json()["error"]["retryable"] is True
+
+
+def _reconcile_body() -> dict[str, Any]:
     return {
-        "intent_id": request.intent_id,
-        "target_node_id": request.target_node_id,
-        "pool_id": request.pool_id,
-        "gateway_id": request.gateway_id,
-        "approved_template_id": request.approved_template_id,
-        "binding_revision_id": request.binding_revision_id,
-        "manifest_id": request.manifest_id,
-        "config_digest": request.config_digest,
-        "instance_id": request.instance_id,
-        "instance_generation": request.instance_generation,
-        "action": request.action.value,
-        "fencing_token": request.fencing_token,
-        "intent_state": intent.intent_state.value,
-        "observed_instance_state": intent.observed_instance_state.value,
-        "reserved_memory": _reservation(request.reserved_memory),
-        "idempotent_replay": replay,
-        "stop_evidence": _stop_evidence(intent),
-        "observed_peak_memory": _vector(intent.observed_peak_memory),
-        "error_code": intent.error_code.value if intent.error_code is not None else None,
-        "created_at": intent.created_at.isoformat(),
-        "updated_at": intent.updated_at.isoformat(),
-    }
-
-
-def _reservation(reservation: RuntimeMemoryReservation) -> dict[str, Any]:
-    return {
-        "architecture": reservation.architecture.value,
-        "peak": _vector(reservation.peak),
-        "steady": _vector(reservation.steady),
-    }
-
-
-def _vector(vector: RuntimeMemoryVector | None) -> dict[str, int] | None:
-    if vector is None:
-        return None
-    return {
-        "unified_memory_bytes": vector.unified_memory_bytes,
-        "device_memory_bytes": vector.device_memory_bytes,
-        "host_memory_bytes": vector.host_memory_bytes,
-    }
-
-
-def _stop_evidence(intent: RuntimeInstanceIntent) -> dict[str, Any] | None:
-    evidence = intent.stop_evidence
-    if evidence is None:
-        return None
-    return {
-        "process_or_container_exited": evidence.process_or_container_exited,
-        "resources_released_confirmed": evidence.resources_released_confirmed,
-        "exit_code": evidence.exit_code,
-        "runtime_container_id": evidence.runtime_container_id,
-        "verified_at": evidence.verified_at.isoformat(),
+        "controller_id": SAMPLE_NODE_ID,
+        "fencing_token": 1,
+        "reported_at": FIXED_NOW.isoformat(),
+        "instances": [],
     }

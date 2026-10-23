@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +21,16 @@ from speechnexus_backend.speech.application.readiness import (
 from speechnexus_gateway.app import create_app as create_gateway_app
 from speechnexus_gateway.application.readiness import ReadinessService as GatewayReadiness
 from speechnexus_gateway.settings import Settings as GatewaySettings
+from speechnexus_node_controller.app import create_app as create_controller_app
+from speechnexus_node_controller.application.readiness import (
+    ReadinessService as ControllerReadiness,
+)
+from speechnexus_node_controller.application.runtime_control import (
+    NodeRuntimeControlService,
+)
+from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry
+from speechnexus_node_controller.settings import Settings as ControllerSettings
+from tests.fake.controller import InMemoryIntentStore, ScriptedNodeRuntime, build_template
 from tests.fake.readiness import StaticProbe
 
 _CONTRACT_PATH = Path(__file__).resolve().parents[2] / "contracts" / "operations.openapi.yaml"
@@ -43,6 +54,30 @@ def _gateway() -> FastAPI:
     )
     readiness = GatewayReadiness([StaticProbe("control_postgresql")], timeout_seconds=1)
     return create_gateway_app(settings=settings, readiness=readiness)
+
+
+def _controller() -> FastAPI:
+    """The node controller serves the shared operational contract next to its own routes."""
+    root = Path(tempfile.mkdtemp(prefix="speechnexus-operational-contract-"))
+    settings = ControllerSettings(
+        service_name="speechnexus-node-controller-test",
+        node_id="node-contract-test",
+        component_token=SecretStr("operational-contract-component-token"),
+        approved_templates_file=root / "approved-templates.json",
+        intent_store_path=root / "runtime-intents.sqlite3",
+        docker_socket_path=root / "missing-docker.sock",
+    )
+    service = NodeRuntimeControlService(
+        node_id="node-contract-test",
+        templates=ApprovedTemplateRegistry((build_template(),)),
+        store=InMemoryIntentStore(),
+        runtime=ScriptedNodeRuntime(),
+    )
+    return create_controller_app(
+        settings=settings,
+        service=service,
+        readiness=ControllerReadiness([StaticProbe("container_daemon")], timeout_seconds=1),
+    )
 
 
 def _object(value: object) -> dict[str, Any]:
@@ -96,14 +131,19 @@ def _assert_schema_guarantees(expected: Any, actual: Any) -> None:
         assert expected == actual
 
 
-def _assert_contract_matches(expected: dict[str, Any], actual: dict[str, Any]) -> None:
+def _assert_contract_matches(
+    expected: dict[str, Any], actual: dict[str, Any], *, require_exact_paths: bool = True
+) -> None:
     expected_info = _object(expected["info"])
     actual_info = _object(actual["info"])
     assert expected_info["version"] == actual_info["version"]
 
     expected_paths = _object(expected["paths"])
     actual_paths = _object(actual["paths"])
-    assert set(expected_paths) == set(actual_paths)
+    if require_exact_paths:
+        assert set(expected_paths) == set(actual_paths)
+    else:
+        assert set(expected_paths) <= set(actual_paths)
 
     for path, expected_path_value in expected_paths.items():
         expected_path = _object(expected_path_value)
@@ -159,6 +199,13 @@ def test_gateway_exposes_valid_operational_openapi() -> None:
     _assert_contract_matches(_load_contract(), document)
 
 
+def test_controller_exposes_valid_operational_openapi() -> None:
+    document = _controller().openapi()
+    validate(document)
+    assert {"/healthz", "/readyz"} <= set(document["paths"])
+    _assert_contract_matches(_load_contract(), document, require_exact_paths=False)
+
+
 @pytest.mark.parametrize(
     "component,field,keyword,value",
     [
@@ -189,7 +236,7 @@ def test_operational_parity_detects_removed_response_guarantee() -> None:
         _assert_contract_matches(_load_contract(), actual)
 
 
-@pytest.mark.parametrize("factory", [_backend, _gateway])
+@pytest.mark.parametrize("factory", [_backend, _gateway, _controller])
 async def test_operational_http_bodies_satisfy_resolved_contract(factory: Any) -> None:
     from httpx import ASGITransport, AsyncClient
     from jsonschema import Draft202012Validator

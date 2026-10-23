@@ -74,7 +74,6 @@ class ApprovedRuntimeTemplate:
     command: tuple[str, ...] | None = None
     gpu_device_count: int = 0
     read_only_binds: tuple[ReadOnlyBind, ...] = ()
-    requires_warmup_before_ready: bool = True
 
     def __post_init__(self) -> None:
         require_identifier(self.template_id, "template_id")

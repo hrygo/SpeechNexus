@@ -67,7 +67,7 @@ date: 2026-10-23
 | --- | --- | --- |
 | `speechnexus-backend` | `speechnexus-api` | 语音底座 HTTP 外壳；`/healthz`、`/readyz` |
 | `speechnexus-execution-gateway` | `speechnexus-gateway` | 执行网关 HTTP 外壳与控制库就绪检查 |
-| `speechnexus-node-controller` | 无（HTTP 外壳待交付） | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则；持久化与容器 adapter 待交付 |
+| `speechnexus-node-controller` | `speechnexus-node-controller` | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则，本地持久意图与容器 daemon adapter，`/healthz`、`/readyz` 与 `internal/runtime-control` 路由；部署单元待集成 |
 
 依赖图由 `import-linter` 检查：
 

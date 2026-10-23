@@ -33,6 +33,7 @@ class RuntimeControlErrorCode(StrEnum):
     GATEWAY_DRAIN_INCOMPLETE = "gateway_drain_incomplete"
     INTENT_CONFLICT = "intent_conflict"
     RUNTIME_CONTROLLER_UNAVAILABLE = "runtime_controller_unavailable"
+    RUNTIME_INTENT_NOT_FOUND = "runtime_intent_not_found"
     INVALID_RUNTIME_REQUEST = "invalid_runtime_request"
     COMPONENT_CREDENTIAL_INVALID = "component_credential_invalid"
 
@@ -147,6 +148,18 @@ class IntentConflictError(RuntimeControlRejectedError):
 class RuntimeControllerUnavailableError(RuntimeControlRejectedError):
     error_code = RuntimeControlErrorCode.RUNTIME_CONTROLLER_UNAVAILABLE
     retryable = True
+
+
+class RuntimeIntentNotFoundError(RuntimeControlRejectedError):
+    """No intent with that identity is recorded on this node controller."""
+
+    error_code = RuntimeControlErrorCode.RUNTIME_INTENT_NOT_FOUND
+
+
+class ComponentCredentialInvalidError(RuntimeControlRejectedError):
+    """The per-node component credential is missing or does not match."""
+
+    error_code = RuntimeControlErrorCode.COMPONENT_CREDENTIAL_INVALID
 
 
 def require_identifier(value: str, field_name: str) -> None:

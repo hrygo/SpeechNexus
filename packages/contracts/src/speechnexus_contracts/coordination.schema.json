@@ -402,6 +402,7 @@
         "gateway_drain_incomplete",
         "intent_conflict",
         "runtime_controller_unavailable",
+        "runtime_intent_not_found",
         "invalid_runtime_request",
         "component_credential_invalid"
       ]

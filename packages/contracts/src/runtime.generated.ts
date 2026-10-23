@@ -212,6 +212,7 @@ export interface components {
           | "gateway_drain_incomplete"
           | "intent_conflict"
           | "runtime_controller_unavailable"
+          | "runtime_intent_not_found"
           | "invalid_runtime_request"
           | "component_credential_invalid";
         message: string;
@@ -295,6 +296,21 @@ export interface operations {
       };
       /** @description Runtime intent request failed schema or approved-template validation. */
       422: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /**
+       * @description The node runtime did not let the controller complete or verify the
+       *     action, so a prepare or stop intent stays unresolved and the
+       *     controller never reports a stopped instance from an unanswered
+       *     daemon. Stable code: `runtime_controller_unavailable`.
+       */
+      503: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;

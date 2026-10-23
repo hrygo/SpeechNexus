@@ -32,7 +32,7 @@ REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官
 `token / bytes / logprob` 形状；P0 不接受 `include` 参数，因此不会为了展示效果虚构
 或默认填充该字段。
 
-TTS 的 `response_format` 基线为 `mp3`、`wav`、`pcm`。REST `pcm` 固定为无头、24 kHz、单声道、signed 16-bit little-endian。`speed`、`instructions` 和格式按绑定能力域收窄；请求超出实际域时返回 `422 unsupported_parameter`，不静默 clamp 或忽略。
+TTS 的 `response_format` 基线为 `mp3`、`wav`、`pcm`。REST `pcm` 固定为无头、24 kHz、单声道、signed 16-bit little-endian。`speed`、`instructions` 和格式按绑定能力域收窄；契约中的 `instructions` 上界保持官方 4096 字符，绑定只能在该标准域内进一步收窄。请求超出实际域时返回 `422 unsupported_parameter`，不静默 clamp 或忽略。
 
 ## 2. 官方 SDK 调用
 
@@ -134,7 +134,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 
 ### 3.2 与内部控制错误模型的边界
 
-公共入口的 `ErrorResponse` 必须保持 OpenAI 可解析的 `error.code/type/message/param` envelope，并只以可选扩展字段增加 `request_id`、`retryable` 与 `retry_after_ms`。speech、Realtime、admin 与 workbench 的公共错误统一引用 `contracts/shared/errors.schema.json`，避免各命名空间独立漂移。内部 `execution-control` / `runtime-control` 不是 OpenAI SDK 消费者，错误中还需要 fencing、generation、submit-intent 与清理证据等控制事实，因此不强制压成公共 envelope。两边可以复用稳定公共错误码的语义，但不能为了“形状统一”改变 OpenAI 标准错误的含义，也不能把内部端点、实例或 token 泄漏到公共响应。
+公共入口的 `ErrorResponse` 必须保持 OpenAI 可解析的 `error.code/type/message/param` envelope，并只以可选扩展字段增加 `request_id`、`retryable` 与 `retry_after_ms`。speech、Realtime、admin 与 workbench 的公共错误统一引用 `contracts/shared/errors.schema.json`，避免各命名空间独立漂移；该错误域包含官方 503 使用的 `service_unavailable_error`，并由契约测试验证。内部 `execution-control` / `runtime-control` 不是 OpenAI SDK 消费者，错误中还需要 fencing、generation、submit-intent 与清理证据等控制事实，因此不强制压成公共 envelope。两边可以复用稳定公共错误码的语义，但不能为了“形状统一”改变 OpenAI 标准错误的含义，也不能把内部端点、实例或 token 泄漏到公共响应。
 
 ## 4. 契约门禁
 

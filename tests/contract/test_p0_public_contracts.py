@@ -2059,6 +2059,35 @@ def test_public_errors_share_one_openai_compatible_envelope() -> None:
                 }
             )
 
+    service_unavailable = copy.deepcopy(sample)
+    service_unavailable["error"].update(
+        {
+            "code": "server_is_overloaded",
+            "type": "service_unavailable_error",
+            "message": "synthetic capacity is temporarily unavailable",
+            "retryable": True,
+            "retry_after_ms": 1000,
+        }
+    )
+    _validator({"$ref": "#/$defs/ErrorResponse", "$defs": shared["$defs"]}).validate(
+        service_unavailable
+    )
+    _component_validator(speech, "ErrorResponse").validate(service_unavailable)
+
+
+def test_standard_tts_instructions_keep_the_openai_domain() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    validator = _component_validator(speech, "SpeechRequest")
+    request = {
+        "model": "tts-interactive",
+        "input": "hello",
+        "voice": "narrator",
+        "instructions": "x" * 4096,
+    }
+    validator.validate(request)
+    with pytest.raises(ValidationError):
+        validator.validate({**request, "instructions": "x" * 4097})
+
 
 def test_audit_change_summary_records_field_names_without_payloads() -> None:
     admin = _resolved_yaml(_ADMIN_OPENAPI)

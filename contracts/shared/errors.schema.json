@@ -12,7 +12,8 @@
         "permission_error",
         "not_found_error",
         "rate_limit_error",
-        "api_error"
+        "api_error",
+        "service_unavailable_error"
       ]
     },
     "ErrorBody": {

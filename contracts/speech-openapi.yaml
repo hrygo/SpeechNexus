@@ -1945,7 +1945,7 @@ components:
           description: Published voice ID. OpenAI hosted voice names are not implied.
         instructions:
           type: string
-          maxLength: 2000
+          maxLength: 4096
         response_format:
           type: string
           enum: [mp3, wav, pcm]

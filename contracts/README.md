@@ -60,8 +60,10 @@ of defaults, units, enum domains, or stable error codes.
   limits, retire/disable commands, and the redacted execution receipt shared by
   REST Operation and `nexus.operation.done` projections. ASR and TTS override
   fields are also shared; transport-specific schemas may narrow a range but do
-  not redefine the same option. Public, admin, and internal contracts reference
-  these definitions instead of copying domains.
+  not redefine the same option. The public error envelope accepts the official
+  503 `service_unavailable_error` type in addition to the declared 4xx families.
+  Public, admin, and internal contracts reference these definitions instead of
+  copying domains.
 - `realtime-events.schema.json`: the public WebSocket event union. The
   standard transcription subset keeps OpenAI event names and shapes; TTS,
   hypotheses, metadata, credits, gaps, and operation terminals use `nexus.*`.

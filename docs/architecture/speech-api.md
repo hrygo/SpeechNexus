@@ -167,6 +167,8 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 `JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
+工作台终态还要求产物自洽：MinutesJob `succeeded` 至少提供非空 `minutes_text` 或 `artifact_id`；AssistantTurn `succeeded` 必须有非空 `output_text`；RenderUnit `generating` 必须带 `speech_job_id`，`ready` 还必须带 `source_artifact_id`；Meeting 的 `sealed` / `minutes_pending` / `minutes_ready` 必须带 seal revision 与结束时间，后两者还必须带 `minutes_id`。这些约束不替代跨资源校验，服务端仍须确认 MinutesJob 成功、单元副本已保存且版本一致后才能宣称整书可导出。
+
 创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
 
 同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及成功 receipt，绝不再次执行。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。

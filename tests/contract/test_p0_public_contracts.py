@@ -1621,6 +1621,107 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     }
     _component_validator(workbench, "ExportJob").validate(export_job)
 
+    minutes_job = copy.deepcopy(next(sample for name, sample in samples if name == "MinutesJob"))
+    minutes_job["status"] = "succeeded"
+    minutes_job["error"] = None
+    minutes_validator = _component_validator(workbench, "MinutesJob")
+    with pytest.raises(ValidationError):
+        minutes_validator.validate(minutes_job)
+    minutes_job["minutes_text"] = "Synthetic meeting minutes."
+    minutes_validator.validate(minutes_job)
+    minutes_job["minutes_text"] = ""
+    with pytest.raises(ValidationError):
+        minutes_validator.validate(minutes_job)
+    minutes_job["minutes_text"] = None
+    minutes_job["artifact_id"] = "artifact-minutes-demo"
+    minutes_validator.validate(minutes_job)
+
+    assistant_turn = copy.deepcopy(
+        next(sample for name, sample in samples if name == "AssistantTurn")
+    )
+    assistant_turn["status"] = "succeeded"
+    assistant_turn["error"] = None
+    turn_validator = _component_validator(workbench, "AssistantTurn")
+    with pytest.raises(ValidationError):
+        turn_validator.validate(assistant_turn)
+    assistant_turn["output_text"] = "Synthetic assistant response."
+    turn_validator.validate(assistant_turn)
+    assistant_turn["output_text"] = ""
+    with pytest.raises(ValidationError):
+        turn_validator.validate(assistant_turn)
+
+    render_unit = {
+        "id": "unit_demo",
+        "object": "nexus.render_unit",
+        "chapter_id": "chapter_demo",
+        "ordinal": 0,
+        "revision": "2",
+        "text": "Synthetic narration unit.",
+        "voice": {"id": "voice_demo", "revision": "1"},
+        "model": "tts-quality",
+        "status": "generating",
+        "speech_job_id": None,
+        "source_artifact_id": None,
+        "updated_at": "2026-10-23T00:00:00Z",
+    }
+    render_validator = _component_validator(workbench, "RenderUnit")
+    with pytest.raises(ValidationError):
+        render_validator.validate(render_unit)
+    render_unit["speech_job_id"] = "speech_job_demo"
+    render_validator.validate(render_unit)
+    render_unit["status"] = "ready"
+    with pytest.raises(ValidationError):
+        render_validator.validate(render_unit)
+    render_unit["source_artifact_id"] = "speech_artifact_demo"
+    render_validator.validate(render_unit)
+
+
+def test_workbench_meeting_terminal_states_are_consistent() -> None:
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    validator = _component_validator(workbench, "Meeting")
+    meeting: dict[str, Any] = {
+        "id": "meeting_demo",
+        "object": "nexus.meeting",
+        "project_id": "project_demo",
+        "display_name": "Weekly sync",
+        "status": "capturing",
+        "transcript_id": "transcript_demo",
+        "sealed_revision": None,
+        "minutes_id": None,
+        "save_audio": False,
+        "started_at": "2026-10-23T00:00:00Z",
+        "ended_at": None,
+    }
+    validator.validate(meeting)
+    capturing_with_seal = copy.deepcopy(meeting)
+    capturing_with_seal["sealed_revision"] = "1"
+    with pytest.raises(ValidationError):
+        validator.validate(capturing_with_seal)
+
+    sealed: dict[str, Any] = {
+        **meeting,
+        "status": "sealed",
+        "sealed_revision": "1",
+        "ended_at": "2026-10-23T00:30:00Z",
+    }
+    validator.validate(sealed)
+    sealed_with_minutes = copy.deepcopy(sealed)
+    sealed_with_minutes["minutes_id"] = "minutes_demo"
+    with pytest.raises(ValidationError):
+        validator.validate(sealed_with_minutes)
+
+    for status in ("minutes_pending", "minutes_ready"):
+        with_minutes: dict[str, Any] = {
+            **sealed,
+            "status": status,
+            "minutes_id": "minutes_demo",
+        }
+        validator.validate(with_minutes)
+        missing_minutes = copy.deepcopy(with_minutes)
+        missing_minutes["minutes_id"] = None
+        with pytest.raises(ValidationError):
+            validator.validate(missing_minutes)
+
 
 def test_transcription_logprobs_match_the_openai_sdk_shape() -> None:
     speech = _resolved_yaml(_SPEECH_OPENAPI)

@@ -1591,7 +1591,10 @@ components:
         - status
         - transcript_id
         - save_audio
+        - sealed_revision
+        - minutes_id
         - started_at
+        - ended_at
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
@@ -1626,6 +1629,50 @@ components:
             - type: string
               format: date-time
             - type: "null"
+      allOf:
+        - if:
+            properties:
+              status:
+                const: capturing
+            required: [status]
+          then:
+            properties:
+              sealed_revision:
+                type: "null"
+              minutes_id:
+                type: "null"
+              ended_at:
+                type: "null"
+        - if:
+            properties:
+              status:
+                const: sealed
+            required: [status]
+          then:
+            required: [sealed_revision, ended_at]
+            properties:
+              sealed_revision:
+                $ref: "#/components/schemas/Revision"
+              minutes_id:
+                type: "null"
+              ended_at:
+                type: string
+                format: date-time
+        - if:
+            properties:
+              status:
+                enum: [minutes_pending, minutes_ready]
+            required: [status]
+          then:
+            required: [sealed_revision, minutes_id, ended_at]
+            properties:
+              sealed_revision:
+                $ref: "#/components/schemas/Revision"
+              minutes_id:
+                $ref: "#/components/schemas/Identifier"
+              ended_at:
+                type: string
+                format: date-time
     MeetingCreateRequest:
       type: object
       additionalProperties: false
@@ -1705,6 +1752,7 @@ components:
           maxLength: 128
         minutes_text:
           type: [string, "null"]
+          minLength: 1
           maxLength: 1000000
         artifact_id:
           oneOf:
@@ -1742,6 +1790,22 @@ components:
             properties:
               error:
                 type: "null"
+        - if:
+            properties:
+              status:
+                const: succeeded
+            required: [status]
+          then:
+            anyOf:
+              - required: [minutes_text]
+                properties:
+                  minutes_text:
+                    type: string
+                    minLength: 1
+              - required: [artifact_id]
+                properties:
+                  artifact_id:
+                    $ref: "#/components/schemas/Identifier"
     MinutesCreateRequest:
       type: object
       additionalProperties: false
@@ -1780,6 +1844,7 @@ components:
           maxLength: 20000
         output_text:
           type: [string, "null"]
+          minLength: 1
           maxLength: 20000
         voice:
           type: object
@@ -1829,6 +1894,17 @@ components:
             properties:
               error:
                 type: "null"
+        - if:
+            properties:
+              status:
+                const: succeeded
+            required: [status]
+          then:
+            required: [output_text]
+            properties:
+              output_text:
+                type: string
+                minLength: 1
     AssistantTurnCreateRequest:
       type: object
       additionalProperties: false
@@ -2033,6 +2109,29 @@ components:
         updated_at:
           type: string
           format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: generating
+            required: [status]
+          then:
+            required: [speech_job_id]
+            properties:
+              speech_job_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              status:
+                const: ready
+            required: [status]
+          then:
+            required: [speech_job_id, source_artifact_id]
+            properties:
+              speech_job_id:
+                $ref: "#/components/schemas/Identifier"
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
     RenderUnitCreateRequest:
       type: object
       additionalProperties: false

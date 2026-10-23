@@ -564,6 +564,70 @@ def _openapi_with_schema(schema: dict[str, Any], direction: str) -> dict[str, An
     return {"paths": {"/v1/audio/speech": {"post": operation}}}
 
 
+def test_only_standard_paths_are_expanded(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_compat_module()
+
+    def unexpected_load(path: str, git_ref: str | None) -> None:
+        pytest.fail(f"Unrelated Nexus graph was expanded: {path} at {git_ref}")
+
+    monkeypatch.setattr(module, "_load_schema_document", unexpected_load)
+    document = _openapi_with_schema({"type": "string"}, "request")
+    document["paths"]["/v1/nexus/jobs"] = {"$ref": "unrelated.schema.json#/$defs/PrivateGraph"}
+    assert (
+        module._compare_openapi(document, copy.deepcopy(document), "contracts/speech-openapi.yaml")
+        == []
+    )
+
+
+def test_standard_paths_keep_complete_local_reference_context() -> None:
+    module = _load_compat_module()
+    base = _openapi_with_schema({"$ref": "#/components/schemas/Text"}, "request")
+    base["components"] = {"schemas": {"Text": {"type": "string"}}}
+    current = copy.deepcopy(base)
+    current["components"]["schemas"]["Text"]["maxLength"] = 3
+    assert module._compare_openapi(base, current, "contracts/speech-openapi.yaml")
+
+
+def test_reference_cache_is_bounded_to_each_comparison(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_compat_module()
+    loads: dict[tuple[str, str | None], int] = {}
+    current_shared: dict[str, Any] = {"type": "string"}
+
+    def load(path: str, git_ref: str | None) -> dict[str, Any]:
+        key = (path, git_ref)
+        loads[key] = loads.get(key, 0) + 1
+        return {"$defs": {"Text": {"type": "string"} if git_ref else copy.deepcopy(current_shared)}}
+
+    monkeypatch.setattr(module, "_load_schema_document", load)
+    document = _openapi_with_schema(
+        {
+            "type": "object",
+            "properties": {
+                f"field_{i}": {"$ref": "shared.schema.json#/$defs/Text"} for i in range(20)
+            },
+        },
+        "request",
+    )
+    assert (
+        module._compare_openapi(
+            document,
+            copy.deepcopy(document),
+            "contracts/speech-openapi.yaml",
+            base_git_ref="baseline",
+        )
+        == []
+    )
+    assert loads == {
+        ("contracts/shared.schema.json", "baseline"): 1,
+        ("contracts/shared.schema.json", None): 1,
+    }
+    current_shared["maxLength"] = 3
+    assert module._compare_openapi(
+        document, copy.deepcopy(document), "contracts/speech-openapi.yaml", base_git_ref="baseline"
+    ), "A later shared-schema edit must never be hidden by a stale cache"
+    assert set(loads.values()) == {2}
+
+
 @pytest.mark.parametrize("direction", ["request", "response"])
 def test_null_const_cannot_silently_remove_accepted_values(direction: str) -> None:
     module = _load_compat_module()

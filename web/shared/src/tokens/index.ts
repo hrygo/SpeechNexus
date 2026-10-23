@@ -6,6 +6,22 @@ export type NexusTone = "admin" | "workbench";
 
 export type CapabilityState = "ready" | "contract" | "planned";
 
+export interface BrandIdentity {
+  name: string;
+  cnName: string;
+  archetype: string;
+  sloganCn: string;
+  sloganEn: string;
+}
+
+export const BRAND_IDENTITY: BrandIdentity = {
+  name: "SpeechNexus",
+  cnName: "声枢",
+  archetype: "Acoustic Hub",
+  sloganCn: "自部署的语音服务与创作中枢",
+  sloganEn: "Self-Hosted Speech Engine & Studio",
+} as const;
+
 export interface ToneConfig {
   tone: NexusTone;
   name: string;

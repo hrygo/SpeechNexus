@@ -1,6 +1,8 @@
-# SpeechNexus
+# SpeechNexus · 声枢
 
-**自部署的语音服务与创作工作台**
+![SpeechNexus · 声枢 — 自部署的语音服务与创作中枢](web/shared/src/assets/brand-banner.svg)
+
+**自部署的语音服务与创作中枢**
 
 [English](README.en.md) · [功能与场景](#功能与场景) · [快速开始](#快速开始) · [文档](docs/README.md) · [反馈与建议](https://github.com/hrygo/SpeechNexus/issues)
 

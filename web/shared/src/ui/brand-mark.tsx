@@ -11,7 +11,7 @@ export function BrandMark({
   size = 36,
   tone = "workbench",
   className,
-  ariaLabel = "SpeechNexus",
+  ariaLabel = "SpeechNexus · 声枢",
 }: BrandMarkProps) {
   const gradientId = `sn-brand-accent-${tone}`;
   const accentStop1 = tone === "admin" ? "#087B62" : "#1D4ED8";
@@ -32,10 +32,10 @@ export function BrandMark({
       <defs>
         <linearGradient
           id={gradientId}
-          x1="4"
-          y1="4"
-          x2="32"
-          y2="32"
+          x1="5"
+          y1="5"
+          x2="31"
+          y2="31"
           gradientUnits="userSpaceOnUse"
         >
           <stop offset="0%" stopColor={accentStop1} />
@@ -57,34 +57,37 @@ export function BrandMark({
       {/* Base Squircle Container */}
       <rect width="36" height="36" rx="10" fill="url(#sn-brand-bg)" />
       <rect
-        width="36"
-        height="36"
-        rx="10"
-        stroke="var(--specular-line, rgba(255,255,255,0.12))"
+        x="0.5"
+        y="0.5"
+        width="35"
+        height="35"
+        rx="9.5"
+        stroke="var(--specular-line, rgba(255,255,255,0.14))"
         strokeWidth="1"
       />
 
-      {/* Acoustic Orbital Ring (Nexus Core) */}
+      {/* Acoustic Orbital Ring (声枢 Acoustic Hub) */}
       <circle
         cx="18"
         cy="18"
-        r="9"
+        r="10.5"
         stroke={`url(#${gradientId})`}
-        strokeWidth="2"
+        strokeWidth="2.2"
         strokeLinecap="round"
-        strokeDasharray="28 12"
+        strokeDasharray="48 18"
+        transform="rotate(-35 18 18)"
       />
 
-      {/* Soundwave Pulse Bars */}
+      {/* Symmetrical 5-Bar Soundwave Pulse */}
       <path
-        d="M12 18V18.01M15 15V21M18 12V24M21 15V21M24 18V18.01"
-        stroke="var(--surface-strong, #FFFFFF)"
+        d="M12 16.5V19.5M15 13.5V22.5M18 10.5V25.5M21 13.5V22.5M24 16.5V19.5"
+        stroke="var(--surface-strong, #F8FAFC)"
         strokeWidth="2.2"
         strokeLinecap="round"
       />
 
       {/* Nexus Satellite Node */}
-      <circle cx="24.5" cy="11.5" r="2" fill={satelliteColor} />
+      <circle cx="25.2" cy="10.8" r="2.2" fill={satelliteColor} />
     </svg>
   );
 }

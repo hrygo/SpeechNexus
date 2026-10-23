@@ -1,6 +1,8 @@
-# SpeechNexus
+# SpeechNexus · Acoustic Hub (声枢)
 
-**Self-hosted speech services and a voice creation workbench**
+![SpeechNexus · Acoustic Hub — Self-Hosted Speech Engine & Studio](web/shared/src/assets/brand-banner.svg)
+
+**Self-hosted speech engine and voice creation studio**
 
 [简体中文](README.md) · [Features](#features-and-use-cases) · [Quick start](#quick-start) · [Documentation](docs/README.md) · [Feedback](https://github.com/hrygo/SpeechNexus/issues)
 

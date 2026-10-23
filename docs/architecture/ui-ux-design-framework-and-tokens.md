@@ -54,8 +54,15 @@ SpeechNexus 是面向 Linux 原生环境的企业级自部署语音服务底座�
 
 ## 3. SpeechNexus 品牌特点与架构边界融合
 
-### 3.1 品牌核心理念：Nexus（枢纽与万物连结）
-“Nexus”象征模型与引擎的交汇点、标准与增强协议的枢纽、机器智能与声学艺术的连结。SpeechNexus 采用 **“同根双面，一脉相承”** 的双生色彩系统：
+### 3.1 品牌核心理念：SpeechNexus · 声枢（Acoustic Hub）
+“Nexus（声枢）”象征模型与引擎的交汇点、标准与增强协议的枢纽、机器智能与声学艺术的连结。品牌体系定名为 **SpeechNexus（中文品牌名：声枢）**，配定中文标语“**自部署的语音服务与创作中枢**”与英文标语“*Self-Hosted Speech Engine & Studio*”。
+
+图形标志（BrandMark）采用 **声波轨道环（Acoustic Orbital Ring）**：在 `36×36` 黑曜石微高光圆角方框（Squircle）内，以 `-35°` 开口谐振环包裹 5 柱对称圆角脉冲声波，并在右上轨道豁口处布置发光拓扑卫星节点（Nexus Satellite Node）。矢量品牌资产由以下文件统一承载：
+- `web/shared/src/assets/brand-mark.svg`：主品牌声枢徽标（翡翠绿至赛博蓝双色交汇轨道）；
+- `web/shared/src/assets/brand-banner.svg`：横版品牌字标与 Slogan 组合头图；
+- `web/admin/public/favicon.svg` 与 `web/workbench/public/favicon.svg`：两个入口各自匹配主题色（Emerald / Cobalt）的独立站点图标。
+
+SpeechNexus 采用 **“同根双面，一脉相承”** 的双生色彩系统：
 
 | 产品面 | 定位与意向 | 主题识别 | 品牌主色 (Primary / Accent) | 界面材质与氛围 |
 | :--- | :--- | :--- | :--- | :--- |

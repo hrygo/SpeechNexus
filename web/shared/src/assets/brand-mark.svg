@@ -1,29 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" fill="none" role="img" aria-label="SpeechNexus · 声枢">
   <defs>
-    <linearGradient id="sn-brand-grad-admin" x1="4" y1="4" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#087B62" />
-      <stop offset="100%" stop-color="#5EEAD4" />
-    </linearGradient>
-    <linearGradient id="sn-brand-grad-workbench" x1="4" y1="4" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1D4ED8" />
-      <stop offset="100%" stop-color="#60A5FA" />
-    </linearGradient>
-    <linearGradient id="sn-brand-surface" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+    <linearGradient id="sn-brand-bg" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#18201C" />
-      <stop offset="100%" stop-color="#0C120F" />
+      <stop offset="100%" stop-color="#0B0F17" />
+    </linearGradient>
+    <linearGradient id="sn-brand-ring" x1="5" y1="5" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#3B82F6" />
     </linearGradient>
   </defs>
-
-  <!-- Base Squircle Container -->
-  <rect width="36" height="36" rx="10" fill="url(#sn-brand-surface)" />
-  <rect width="36" height="36" rx="10" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
-
-  <!-- Acoustic Orbital Ring (Nexus Core) -->
-  <circle cx="18" cy="18" r="9" stroke="url(#sn-brand-grad-workbench)" stroke-width="2" stroke-linecap="round" stroke-dasharray="28 12" />
-
-  <!-- Soundwave Pulse Bars / Nodes -->
-  <path d="M12 18V18.01M15 15V21M18 12V24M21 15V21M24 18V18.01" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" />
-
-  <!-- Dynamic Nexus Intersection Satellite Node -->
-  <circle cx="24.5" cy="11.5" r="2" fill="#5EEAD4" />
+  <rect width="36" height="36" rx="10" fill="url(#sn-brand-bg)" />
+  <rect x="0.5" y="0.5" width="35" height="35" rx="9.5" stroke="rgba(255,255,255,0.14)" stroke-width="1" />
+  <circle cx="18" cy="18" r="10.5" stroke="url(#sn-brand-ring)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="48 18" transform="rotate(-35 18 18)" />
+  <path d="M12 16.5V19.5M15 13.5V22.5M18 10.5V25.5M21 13.5V22.5M24 16.5V19.5" stroke="#F8FAFC" stroke-width="2.2" stroke-linecap="round" />
+  <circle cx="25.2" cy="10.8" r="2.2" fill="#5EEAD4" />
 </svg>

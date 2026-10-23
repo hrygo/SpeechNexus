@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
+./scripts/dev-env/mysql-service.sh --local
 ./scripts/dev-env/check.sh
 systemd-analyze --user verify \
   "$HOME/.config/systemd/user/speechnexus-postgres.service" \

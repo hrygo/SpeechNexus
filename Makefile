@@ -1,6 +1,6 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-sdk-test \
-	service-smoke stack-config \
+	service-smoke stack-config mysql-service \
 	format lint typecheck test integration-test coordination-test python-build build verify
 
 install:
@@ -12,15 +12,20 @@ dev-bootstrap:
 
 dev-up:
 	systemctl --user start speechnexus-postgres.service speechnexus-minio.service
+	./scripts/dev-env/mysql-service.sh
 	./scripts/dev-env/check.sh
 
 dev-down:
 	systemctl --user stop speechnexus-minio.service speechnexus-postgres.service
+	./scripts/dev-env/mysql-service.sh stop
 
 dev-status:
 	./scripts/dev-env/check.sh
 
 dev-check: dev-status
+
+mysql-service:
+	./scripts/dev-env/mysql-service.sh
 
 api-dev:
 	./scripts/dev-env/run-api.sh
@@ -78,11 +83,13 @@ test:
 integration-test:
 	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \
 		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
+	./scripts/dev-env/mysql-service.sh
 	uv run pytest -m integration tests/integration -q
 
 coordination-test:
 	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \
 		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
+	./scripts/dev-env/mysql-service.sh
 	uv run pytest tests/contract/test_coordination_transactions.py \
 		tests/integration/test_coordination_transactions.py -q
 

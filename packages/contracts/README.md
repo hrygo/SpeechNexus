@@ -69,6 +69,9 @@ Job events, cancellation, Assets, Artifacts, Operations and public errors.
 Python additionally exposes `validation.validate_coordination` for the first
 internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
+The coordination bundle also validates owner acquire/renew/activate and
+`query_outcome` requests. The production owner boundary implements the pool
+target only; other query targets stay with their fact owners.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

@@ -99,6 +99,7 @@ coordination-test:
 	uv run pytest tests/contract/test_coordination_transactions.py \
 		tests/integration/test_coordination_transactions.py \
 		tests/integration/test_production_jobs.py \
+		tests/integration/test_production_owners.py \
 		tests/integration/test_coordination_foundation.py -q
 
 python-build:

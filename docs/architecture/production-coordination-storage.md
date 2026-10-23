@@ -54,7 +54,7 @@ statements = coordination_runtime_grants(
 此函数只生成 SQL，不创建身份、不连接数据库、不自动授予权限。现有 Job 创建者
 `job_runtime_grants` 保持原先更窄的权限。迁移不会自动扩大任何旧角色权限。
 
-- 运行角色无 schema CREATE、DDL、版本表权限、DELETE 或 TRUNCATE。
+- 运行角色无 schema CREATE、持久表 DDL、版本表权限、DELETE 或 TRUNCATE。
 - A 更新所属运行投影；池/配额/节点的控制面初始配置由独立部署/控制面身份写入，
   运行角色无这三表的 INSERT，也无配额上限、策略版本、拓扑、隔离阈值或容量配置 UPDATE。
 - B 更新所属运行投影；停止证据与样本区间只允许 B SELECT/INSERT，无 UPDATE/DELETE。
@@ -63,6 +63,9 @@ statements = coordination_runtime_grants(
   A 的 runtime 请求/停止文档。必要身份/状态使用列级 SELECT，不能用 SELECT * 绕过。
 
 这些授权必须在实际非 owner 连接验证；GRANT 列表不证明已有继承权限安全。
+PG 默认数据库级 PUBLIC TEMP 权限不由 schema GRANT 函数撤销，应在部署权限核对中
+单独确认。共享连接池将 `pg_temp` 显式放在路径末尾；回归验证同名临时表不能覆盖
+权威 owner 表的读取/写入。
 根目录 `coordination-grants.py` 仍服务于草案/测试，不作为这份生产迁移的安装入口。
 
 ## 保护范围与证据

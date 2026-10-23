@@ -2,7 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "CoordinationJobContract",
   "x-nexus-bindings-version": "1.0.0",
-  "x-nexus-entrypoints": ["create_job", "TransactionResult"],
+  "x-nexus-entrypoints": [
+    "create_job",
+    "TransactionResult",
+    "acquire_owner",
+    "renew_owner",
+    "activate_owner",
+    "query_outcome"
+  ],
   "$defs": {
     "create_job": {
       "type": "object",
@@ -1746,6 +1753,173 @@
           "format": "date-time"
         }
       }
+    },
+    "acquire_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool_id", "owner_id", "expected_version", "ttl_ms"],
+      "properties": {
+        "pool_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "owner_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "renew_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "expected_version", "ttl_ms"],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "activate_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "expected_version"],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "query_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "properties": {
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "pool_id"],
+              "properties": {
+                "kind": {
+                  "const": "pool"
+                },
+                "pool_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+                }
+              },
+              "x-nexus-result-kind": "OwnerSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "identity"],
+              "properties": {
+                "kind": {
+                  "const": "attempt"
+                },
+                "identity": {
+                  "$ref": "#/$defs/AttemptIdentity"
+                }
+              },
+              "x-nexus-result-kind": "AdmissionSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "job_id"],
+              "properties": {
+                "kind": {
+                  "const": "job"
+                },
+                "job_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                }
+              },
+              "x-nexus-result-kind": "ClaimSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "submit_intent_id"],
+              "properties": {
+                "kind": {
+                  "const": "submit"
+                },
+                "submit_intent_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                }
+              },
+              "x-nexus-result-kind": "ExecutionSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "lease_id"],
+              "properties": {
+                "kind": {
+                  "const": "lease"
+                },
+                "lease_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                }
+              },
+              "x-nexus-result-kind": "LeaseSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "interval_id"],
+              "properties": {
+                "kind": {
+                  "const": "interval"
+                },
+                "interval_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                }
+              },
+              "x-nexus-result-kind": "FactSnapshot"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "target_node_id", "intent_id"],
+              "properties": {
+                "kind": {
+                  "const": "runtime_intent"
+                },
+                "target_node_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                },
+                "intent_id": {
+                  "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+                }
+              },
+              "x-nexus-result-kind": "RuntimeSnapshot"
+            }
+          ]
+        },
+        "request_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      }
     }
   },
   "anyOf": [
@@ -1754,6 +1928,18 @@
     },
     {
       "$ref": "#/$defs/TransactionResult"
+    },
+    {
+      "$ref": "#/$defs/acquire_owner"
+    },
+    {
+      "$ref": "#/$defs/renew_owner"
+    },
+    {
+      "$ref": "#/$defs/activate_owner"
+    },
+    {
+      "$ref": "#/$defs/query_outcome"
     }
   ]
 }

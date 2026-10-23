@@ -60,14 +60,16 @@ uv run speechnexus-job-migrate --schema speech
 命令要求 `SPEECHNEXUS_MIGRATION_DATABASE_URL`；支持 `postgresql://` 或
 `postgresql+psycopg://`。安装 wheel 的迁移环境需带 backend 的 `migrations` extra。
 同一数据库/schema 的并发迁移以事务持有的 PG advisory lock 串行化；版本记录和
-DDL 同事务提交。默认应用镜像不安装 Alembic/SQLAlchemy，运行角色没有 DDL。
+DDL 同事务提交。默认应用镜像不安装 Alembic/SQLAlchemy，运行角色没有持久表 DDL。
 不支持破坏性 downgrade；回退应用或按明确恢复计划处理，不能删除幂等/执行证据。
 
 部署先创建不继承管理员权限、非 owner 的运行角色，再以迁移 owner 审阅/安装
 `job_schema.job_runtime_grants("speech", role)` 输出的 SQL。仅授予 schema USAGE、
-Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、DDL 或对版本表
+Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久表 DDL 或对版本表
 的权限。已有角色的继承/全局授权需另核对，不能把 GRANT 列表当作有效权限证明。
 池通过显式 schema 配置定位这些表，不接收客户端命名空间。
+数据库级 PUBLIC TEMP 与其他继承授权按[存储/角色基线](production-coordination-storage.md)
+单独核对；共享池显式将 `pg_temp` 置于末尾，防止同名临时表覆盖权威表。
 
 ## 证据与保护范围
 

@@ -13,6 +13,7 @@
 - [应用事务方案与契约](coordination-transactions.md)：程序职责、锁序、预算、恢复身份、旧规则映射和后续编码交接。
 - [受限节点控制器](node-controller.md)：批准模板的 prepare / stop 规则、generation / fencing 与停止证据，以及当前实现与待交付边界。
 - [生产协调存储基线](production-coordination-storage.md)：包内 `0002_coordination`、15 表、A/B 最小权限、升级回滚与迁移互斥证据；事务实现另行验收。
+- [生产 owner 任期事务](production-owners.md)：获取/续约/激活、完整当前权威查询、锁后数据库取时和未知提交恢复。
 - [集群协调与存储可移植性决定](../decisions/0006-cluster-coordination-and-storage-portability.md)：集群能力不降级、应用事务边界与数据库支持范围；[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)记录实际交付与待验收范围。
 - [UI/UX 设计框架与设计 Token 系统](ui-ux-design-framework-and-tokens.md)：2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系。
 - [SpeechRail 复用边界](speechrail-reuse.md)：领域经验、来源和移植条件。

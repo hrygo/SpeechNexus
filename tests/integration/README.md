@@ -47,6 +47,14 @@ and observed advisory-lock waits in two separate migration processes. Synthetic
 admin fixture rows do not qualify scheduling/admission/dispatch or cleanup
 ordering; those production transactions remain their owners' work.
 
+`test_production_owners.py` qualifies owner acquire/renew/activate and pool
+queries using the actual PG adapter and the same product SQL/domain rules on
+InnoDB. It observes both scheduler lock waits, then checks a single new epoch;
+renew/activate must reject a lease that expires while blocked. Barrier rows are
+synthetic owner fixture facts, not proof of real gateway fencing. PG-only tests
+exercise pre-commit termination and a synthetic lost reply after actual commit,
+with read-only current-authority recovery and no automatic new token.
+
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \
 SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \

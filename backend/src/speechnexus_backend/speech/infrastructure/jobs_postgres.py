@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import random
-import re
 import time
-from typing import Any, cast
+from typing import cast
 
 import psycopg
-from psycopg import IsolationLevel
-from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.domain.jobs import CreateJob, JobResult, unknown_result
 from speechnexus_backend.speech.infrastructure.jobs_sql import (
@@ -19,35 +16,18 @@ from speechnexus_backend.speech.infrastructure.jobs_sql import (
     recover_in_transaction,
 )
 
-type JobConnection = psycopg.Connection[dict[str, Any]]
-type JobPool = ConnectionPool[JobConnection]
+# Compatibility imports for the first Job unit; pool policy is shared.
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    SpeechConnection as JobConnection,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    SpeechPool as JobPool,
+)
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    speech_pool as job_pool,
+)
 
-
-def job_pool(
-    database_url: str, *, schema: str = "speech", max_size: int = 4, max_waiting: int = 16
-) -> JobPool:
-    if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
-        raise ValueError("Invalid speech schema")
-    if not 1 <= max_size <= 64 or not 1 <= max_waiting <= 1024:
-        raise ValueError("Job pool must be bounded")
-
-    def configure(connection: JobConnection) -> None:
-        connection.isolation_level = IsolationLevel.READ_COMMITTED
-        connection.execute("SELECT set_config('search_path', %s, false)", (schema + ",pg_catalog",))
-        connection.execute("SET TIME ZONE 'UTC'")
-        connection.commit()
-
-    return ConnectionPool[JobConnection](
-        database_url,
-        kwargs={"row_factory": dict_row, "connect_timeout": 3},
-        configure=configure,
-        name="speech-jobs",
-        min_size=0,
-        max_size=max_size,
-        max_waiting=max_waiting,
-        timeout=3,
-        open=False,
-    )
+__all__ = ["JobConnection", "JobPool", "PostgresJobTransactions", "job_pool"]
 
 
 class PostgresJobTransactions:

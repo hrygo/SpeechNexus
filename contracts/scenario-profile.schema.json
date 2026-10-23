@@ -64,6 +64,7 @@
     "required_capabilities": {
       "type": "array",
       "uniqueItems": true,
+      "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
       "items": {
         "$ref": "#/$defs/CapabilityRequirement"
       }
@@ -84,7 +85,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/OverrideRange"
       },
-      "description": "Allowed override ranges or enum domains. Every allowlisted path should have a range entry; absence means no narrowing beyond schema validation."
+      "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
     },
     "slo_ref": {
       "type": "string",
@@ -420,6 +421,7 @@
         "constraint": {
           "type": "object",
           "additionalProperties": false,
+          "minProperties": 1,
           "properties": {
             "minimum": {"type": "number"},
             "maximum": {"type": "number"},
@@ -429,7 +431,12 @@
               "uniqueItems": true,
               "items": {"type": ["string", "number", "boolean"]}
             }
-          }
+          },
+          "anyOf": [
+            {"required": ["minimum"]},
+            {"required": ["maximum"]},
+            {"required": ["enum"]}
+          ]
         }
       }
     },

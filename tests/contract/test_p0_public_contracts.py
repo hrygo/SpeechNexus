@@ -176,6 +176,39 @@ def _assert_qualification_semantics(report: dict[str, Any]) -> None:
             raise ValueError("qualified_at must precede expires_at")
 
 
+def _assert_scenario_profile_semantics(profile: dict[str, Any]) -> None:
+    """Executable parameter-domain rules that JSON Schema cannot compare by name."""
+    allowlist = set(cast(list[str], profile["override_allowlist"]))
+    ranges = cast(dict[str, dict[str, Any]], profile["override_ranges"])
+    unexpected_ranges = set(ranges) - allowlist
+    if unexpected_ranges:
+        raise ValueError(f"override ranges are not allowlisted: {sorted(unexpected_ranges)}")
+    for path, override_range in ranges.items():
+        minimum = override_range.get("minimum")
+        maximum = override_range.get("maximum")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(f"override range for {path} has minimum greater than maximum")
+
+    capabilities = cast(list[dict[str, Any]], profile["required_capabilities"])
+    capability_names = [cast(str, capability["capability"]) for capability in capabilities]
+    if len(capability_names) != len(set(capability_names)):
+        raise ValueError("required capability names must be unique")
+    for capability in capabilities:
+        constraint = cast(dict[str, Any] | None, capability.get("constraint"))
+        if constraint is None:
+            continue
+        minimum = constraint.get("minimum")
+        maximum = constraint.get("maximum")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(
+                f"constraint for {capability['capability']} has minimum greater than maximum"
+            )
+
+    asr = cast(dict[str, Any] | None, profile["parameters"].get("asr"))
+    if asr is not None and asr["max_segment_ms"] < asr["preview_interval_ms"]:
+        raise ValueError("max_segment_ms must be greater than or equal to preview_interval_ms")
+
+
 def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
     checks = cast(list[dict[str, Any]], validation["checks"])
     names = [cast(str, check["name"]) for check in checks]
@@ -588,6 +621,7 @@ def test_scenario_profile_positive_and_negative_examples() -> None:
     examples = cast(list[dict[str, Any]], schema["examples"])
     for example in examples:
         validator.validate(example)
+        _assert_scenario_profile_semantics(example)
 
     unknown_field = copy.deepcopy(examples[0])
     unknown_field["priority"] = 10
@@ -608,10 +642,53 @@ def test_scenario_profile_positive_and_negative_examples() -> None:
     with pytest.raises(ValidationError):
         validator.validate(experimental_production)
 
-    for example in examples:
-        asr = example.get("parameters", {}).get("asr")
-        if isinstance(asr, dict):
-            assert asr["max_segment_ms"] >= asr["preview_interval_ms"]
+    range_outside_allowlist = copy.deepcopy(examples[0])
+    range_outside_allowlist["override_ranges"]["tts.speed"] = {"minimum": 0.5, "maximum": 2.0}
+    validator.validate(range_outside_allowlist)
+    with pytest.raises(ValueError, match="not allowlisted"):
+        _assert_scenario_profile_semantics(range_outside_allowlist)
+
+    reversed_override_range = copy.deepcopy(examples[0])
+    reversed_override_range["override_ranges"]["asr.preview_interval_ms"] = {
+        "minimum": 1000,
+        "maximum": 300,
+    }
+    validator.validate(reversed_override_range)
+    with pytest.raises(ValueError, match="minimum greater than maximum"):
+        _assert_scenario_profile_semantics(reversed_override_range)
+
+    duplicate_capability = copy.deepcopy(examples[0])
+    duplicate_capability["required_capabilities"].append(
+        {
+            "capability": duplicate_capability["required_capabilities"][0]["capability"],
+            "required": False,
+            "constraint": {"maximum": 1},
+        }
+    )
+    validator.validate(duplicate_capability)
+    with pytest.raises(ValueError, match="capability names must be unique"):
+        _assert_scenario_profile_semantics(duplicate_capability)
+
+    empty_capability_constraint = copy.deepcopy(examples[0])
+    empty_capability_constraint["required_capabilities"][0]["constraint"] = {}
+    with pytest.raises(ValidationError):
+        validator.validate(empty_capability_constraint)
+
+    reversed_capability_constraint = copy.deepcopy(examples[0])
+    reversed_capability_constraint["required_capabilities"][0]["constraint"] = {
+        "minimum": 10,
+        "maximum": 1,
+    }
+    validator.validate(reversed_capability_constraint)
+    with pytest.raises(ValueError, match="minimum greater than maximum"):
+        _assert_scenario_profile_semantics(reversed_capability_constraint)
+
+    inverted_segment_bounds = copy.deepcopy(examples[0])
+    inverted_segment_bounds["parameters"]["asr"]["max_segment_ms"] = 1000
+    inverted_segment_bounds["parameters"]["asr"]["preview_interval_ms"] = 2000
+    validator.validate(inverted_segment_bounds)
+    with pytest.raises(ValueError, match="max_segment_ms"):
+        _assert_scenario_profile_semantics(inverted_segment_bounds)
 
 
 def test_voice_resource_positive_and_negative_examples() -> None:

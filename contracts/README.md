@@ -46,7 +46,10 @@ of defaults, units, enum domains, or stable error codes.
   hypotheses, metadata, credits, gaps, and operation terminals use `nexus.*`.
 - `scenario-profile.schema.json`: immutable profile revision, typed parameter
   domains, override allowlist and ranges, required capabilities, validation
-  evidence, and execution-class constraints.
+  evidence, and execution-class constraints. Producer validation rejects a
+  duplicate capability name, an empty/reversed capability constraint, a
+  reversed override range, an override range for a non-allowlisted path, and
+  `max_segment_ms < preview_interval_ms`.
 - `voice-resource.schema.json`: voice draft, draft revision, validation,
   publication, immutable VoiceRevision, and pronunciation revision. Draft
   revisions bind generation, validation, and publication references to their

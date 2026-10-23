@@ -144,6 +144,17 @@
           "quarantine_reason": {"type": "string", "minLength": 1}
         }
       }
+    },
+    {
+      "if": {
+        "properties": {"state": {"not": {"const": "quarantined"}}},
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "quarantine_reason": {"type": "null"}
+        }
+      }
     }
   ],
   "$defs": {

@@ -974,6 +974,20 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     ready_instance["readiness"]["accepting_new_work"] = False
     with pytest.raises(ValidationError):
         instance_validator.validate(ready_instance)
+    healthy_with_quarantine_reason = copy.deepcopy(
+        cast(list[dict[str, Any]], instance_schema["examples"])[0]
+    )
+    healthy_with_quarantine_reason["quarantine_reason"] = "not quarantined"
+    with pytest.raises(ValidationError):
+        instance_validator.validate(healthy_with_quarantine_reason)
+    quarantined_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
+    quarantined_instance["state"] = "quarantined"
+    quarantined_instance["readiness"]["accepting_new_work"] = False
+    quarantined_instance["quarantine_reason"] = "stop evidence unavailable"
+    instance_validator.validate(quarantined_instance)
+    quarantined_instance["quarantine_reason"] = None
+    with pytest.raises(ValidationError):
+        instance_validator.validate(quarantined_instance)
 
     qualification_schema = _load_json(_QUALIFICATION_SCHEMA)
     qualification_validator = _validator(qualification_schema)

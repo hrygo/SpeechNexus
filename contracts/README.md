@@ -44,7 +44,9 @@ of defaults, units, enum domains, or stable error codes.
   remains visible through its meeting's `minutes_pending` state instead of
   reclassifying the whole meeting as a capture failure. A non-succeeded
   MinutesJob may expose explicitly partial text but never a publishable
-  `artifact_id`.
+  `artifact_id`. A succeeded assistant turn records both generated output text
+  and the speech Job that renders it; a speech Job reference always has
+  generated text and can never be detached from it.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   and scenario-profile revision publication / activation / retirement,
   observed model instances, resource pools, policies,

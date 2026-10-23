@@ -1908,6 +1908,7 @@ components:
           enum: [queued, running, succeeded, failed, cancelled]
         input_text:
           type: string
+          minLength: 1
           maxLength: 20000
         output_text:
           type: [string, "null"]
@@ -1966,6 +1967,20 @@ components:
               status:
                 const: succeeded
             required: [status]
+          then:
+            required: [output_text, speech_job_id]
+            properties:
+              output_text:
+                type: string
+                minLength: 1
+              speech_job_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              speech_job_id:
+                not:
+                  type: "null"
+            required: [speech_job_id]
           then:
             required: [output_text]
             properties:

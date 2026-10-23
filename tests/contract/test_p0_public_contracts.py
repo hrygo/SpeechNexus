@@ -2956,7 +2956,18 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     with pytest.raises(ValidationError):
         turn_validator.validate(assistant_turn)
     assistant_turn["output_text"] = "Synthetic assistant response."
+    with pytest.raises(ValidationError):
+        turn_validator.validate(assistant_turn)
+    assistant_turn["speech_job_id"] = "speech_job_demo"
     turn_validator.validate(assistant_turn)
+    empty_input = copy.deepcopy(assistant_turn)
+    empty_input["input_text"] = ""
+    with pytest.raises(ValidationError):
+        turn_validator.validate(empty_input)
+    detached_job = copy.deepcopy(assistant_turn)
+    detached_job["output_text"] = None
+    with pytest.raises(ValidationError):
+        turn_validator.validate(detached_job)
     assistant_turn["output_text"] = ""
     with pytest.raises(ValidationError):
         turn_validator.validate(assistant_turn)

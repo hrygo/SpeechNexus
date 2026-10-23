@@ -425,6 +425,157 @@
           "if": {
             "properties": {
               "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "generating"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "generation_job_id"
+            ],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "maxItems": 0
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "candidate"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "generation_job_id"
+            ],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "validating",
+                  "validated",
+                  "published"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "generation_job_id",
+              "validation_job_id"
+            ],
+            "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "validation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "published"
+                }
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
                 "const": "published"
               }
             },
@@ -463,7 +614,21 @@
             ]
           },
           "then": {
+            "required": [
+              "generation_job_id"
+            ],
             "properties": {
+              "generation_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
+              },
+              "validation_job_id": {
+                "type": "null"
+              },
               "published_voice_id": {
                 "type": "null"
               },

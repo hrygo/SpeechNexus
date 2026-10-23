@@ -553,11 +553,66 @@ def test_voice_resource_positive_and_negative_examples() -> None:
     with pytest.raises(ValidationError):
         validator.validate(mismatched_kind)
 
+    candidate_without_generation_job = copy.deepcopy(candidate)
+    candidate_without_generation_job["generation_job_id"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(candidate_without_generation_job)
+
+    candidate_without_preview = copy.deepcopy(candidate)
+    candidate_without_preview["preview_artifact_ids"] = []
+    with pytest.raises(ValidationError):
+        validator.validate(candidate_without_preview)
+
+    generating_with_preview = copy.deepcopy(candidate)
+    generating_with_preview["status"] = "generating"
+    with pytest.raises(ValidationError):
+        validator.validate(generating_with_preview)
+
+    non_failed_with_failure = copy.deepcopy(candidate)
+    non_failed_with_failure["failure"] = {
+        "code": "generation_failed",
+        "message": "synthetic failure",
+        "retryable": False,
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(non_failed_with_failure)
+
+    validating_without_job = copy.deepcopy(candidate)
+    validating_without_job["status"] = "validating"
+    validating_without_job["validation_job_id"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(validating_without_job)
+
+    validated = copy.deepcopy(candidate)
+    validated["status"] = "validated"
+    validated["validation_job_id"] = "job_validation_demo"
+    validator.validate(validated)
+
+    published_revision = copy.deepcopy(validated)
+    published_revision["status"] = "published"
+    published_revision["published_voice_id"] = "voice_demo"
+    published_revision["published_voice_revision"] = "1"
+    validator.validate(published_revision)
+    published_without_validation = copy.deepcopy(published_revision)
+    published_without_validation["validation_job_id"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(published_without_validation)
+
     failed_without_detail = copy.deepcopy(candidate)
     failed_without_detail["status"] = "failed"
     failed_without_detail["failure"] = None
     with pytest.raises(ValidationError):
         validator.validate(failed_without_detail)
+
+    failed_with_published_ids = copy.deepcopy(published_revision)
+    failed_with_published_ids["status"] = "failed"
+    failed_with_published_ids["failure"] = {
+        "code": "publication_failed",
+        "message": "synthetic failure",
+        "retryable": False,
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(failed_with_published_ids)
 
     pending_validation = copy.deepcopy(
         next(e for e in examples if e["resource_type"] == "voice_validation")

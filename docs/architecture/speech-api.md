@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.5.4"
+version: "0.5.5"
 date: 2026-10-23
 ---
 
@@ -238,7 +238,7 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 }
 ```
 
-每个 draft_revision 的状态为 `draft → generating → candidate → validating → validated → published`，失败保留原因；生成配方与候选字节不可变。PATCH 修改声音描述、样本、参考正文、预览文本或绑定返回 `422 unsupported_parameter`，这些修改必须调用 generations 创建新 revision。新 head 在重新生成 / 校验前不能发布，旧校验不能满足新 revision；旧候选、旧校验和已经发布的 VoiceRevision 保留历史事实。新 head 与旧 validation 同时完成时，只更新各自 revision，不让迟到结果覆盖 head。试听与机器校验不自动构成发布确认。publication 固定当前 head 的 expected_draft_revision、对应 validation_job_id、素材 / 绑定和未过期资格；head 已变化返回 `409 configuration_changed`。每个草稿 revision 最多一次发布，初次建立 voice_id，后续发布追加同一 voice_id 的不可变 revision；重复发布返回原结果或明确冲突，不重复建立目录项。首期 manual_confirmation 是显式内容确认，不能证明审核者与创作者是两个人。
+每个 draft_revision 的状态为 `draft → generating → candidate → validating → validated → published`，失败保留原因；生成配方与候选字节不可变。`generating` 必须引用生成 Job 且尚无预览；`candidate` 必须有生成 Job 和至少一个试听 Artifact；`validating` / `validated` / `published` 还必须引用校验 Job；只有 `published` 可以携带发布 Voice ID / revision，且该状态必须同时具备生成、校验和发布引用。`failure` 只允许出现在 `failed`，失败 revision 不能携带发布引用。PATCH 修改声音描述、样本、参考正文、预览文本或绑定返回 `422 unsupported_parameter`，这些修改必须调用 generations 创建新 revision。新 head 在重新生成 / 校验前不能发布，旧校验不能满足新 revision；旧候选、旧校验和已经发布的 VoiceRevision 保留历史事实。新 head 与旧 validation 同时完成时，只更新各自 revision，不让迟到结果覆盖 head。试听与机器校验不自动构成发布确认。publication 固定当前 head 的 expected_draft_revision、对应 validation_job_id、素材 / 绑定和未过期资格；head 已变化返回 `409 configuration_changed`。每个草稿 revision 最多一次发布，初次建立 voice_id，后续发布追加同一 voice_id 的不可变 revision；重复发布返回原结果或明确冲突，不重复建立目录项。首期 manual_confirmation 是显式内容确认，不能证明审核者与创作者是两个人。
 
 VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本 / 语言能力、验证结果及私有 backend_voice_handle；公开结果不返回特征向量、任意文件路径或引擎内部句柄。调用 TTS 时仍检查音色与模型绑定兼容性，不把任意后端音色资产宣称为跨模型通用。
 

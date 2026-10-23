@@ -28,11 +28,15 @@ SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \
   make coordination-test
 ```
 
-This target fails immediately unless **both** DSNs are set. To run legacy and
-new integration suites together, use the same environment with `make integration-test`.
-A normal pytest run without a DSN skips that engine's integration cases; a skip
-is not qualification evidence. CI provisions disposable PG 16.15 and MySQL 8.4.8
-services and supplies both DSNs for its integration step.
+This target fails immediately unless **both** DSNs are set, and
+`make integration-test` requires the same pair. The shared transaction suite
+also reports a failure, not a skip, when exactly one engine is configured:
+one engine alone is never dual-database evidence. A normal pytest run with
+neither DSN skips the integration cases; a skip is not qualification evidence.
+Run the historical PG suite alone with
+`uv run pytest -m integration tests/integration/test_cluster_coordination_schema.py -q`
+when no MySQL instance is available. CI provisions disposable PG 16.15 and
+MySQL 8.4.8 services and supplies both DSNs for its integration step.
 
 An optional isolated MySQL test instance can be started as follows. The password
 is a synthetic local-test credential. No host data directory is mounted.

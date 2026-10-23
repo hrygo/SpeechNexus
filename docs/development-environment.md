@@ -49,7 +49,7 @@ source scripts/dev-env/activate.sh
 
 `make verify` 运行服务健康检查、Shell / JavaScript 语法检查、Ruff、mypy、契约检查、PCM / WAV / MP3 解码检查、Chromium 虚拟麦克风与 Web Audio 冒烟检查、WebSocket 文本和二进制往返，并在已有 Python 测试时执行 pytest。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
 
-`make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 拒绝 OpenAI 公共契约的明显破坏性变更；`SPEECHNEXUS_TEST_DATABASE_URL=... make integration-test` 在隔离 PostgreSQL 中实际应用协调 DDL 并验证正负事务。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
+`make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 拒绝 OpenAI 公共契约的明显破坏性变更；`make integration-test` 与 `make coordination-test` 要求同时设置隔离的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，在 PostgreSQL 与 MySQL/InnoDB 上应用协调 DDL 并验证正负事务，缺任一变量直接失败。`make verify` 使用同一对默认隔离 DSN，因此运行前需要按[集成测试说明](../tests/integration/README.md)启动本机隔离 MySQL 实例；两个变量同时缺失时相关用例跳过，只配置一个会失败。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
 
 无头 Chromium 使用合成音频设备，适合自动验证采集权限、MediaRecorder 与播放缓冲路径；本机未发现采集声卡，真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
 

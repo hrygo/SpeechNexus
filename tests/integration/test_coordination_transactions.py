@@ -37,14 +37,30 @@ pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 DIGEST = "sha256:" + "a" * 64
 RECIPE = Recipe("binding-test", "manifest-test", {"stage-main": "tts-realtime"})
+DATABASE_VARIABLES: dict[str, str] = {
+    "postgresql": "SPEECHNEXUS_TEST_DATABASE_URL",
+    "mysql": "SPEECHNEXUS_TEST_MYSQL_URL",
+}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def dual_database_configuration() -> None:
+    """One configured engine alone is a misconfiguration, not a smaller oracle."""
+    configured = {dialect: os.environ.get(name) for dialect, name in DATABASE_VARIABLES.items()}
+    if any(configured.values()) and not all(configured.values()):
+        missing = ", ".join(
+            DATABASE_VARIABLES[dialect] for dialect, url in configured.items() if not url
+        )
+        pytest.fail(
+            "the shared transaction oracle needs both engines configured; missing "
+            f"{missing}. Use make integration-test or make coordination-test."
+        )
 
 
 @pytest.fixture(params=["postgresql", "mysql"])
 def database(request: pytest.FixtureRequest) -> Iterator[Database]:
     dialect: Literal["postgresql", "mysql"] = request.param
-    variable = (
-        "SPEECHNEXUS_TEST_DATABASE_URL" if dialect == "postgresql" else "SPEECHNEXUS_TEST_MYSQL_URL"
-    )
+    variable = DATABASE_VARIABLES[dialect]
     url = os.environ.get(variable)
     if not url:
         pytest.skip(f"set {variable} to a project-isolated database; not a qualification pass")
@@ -145,9 +161,9 @@ def _owner(database: Database, pool: str = "tts-realtime", owner: str = "schedul
         )
     authority = {"pool_id": pool, "owner_id": owner, "fencing_token": token}
     with database.transaction() as tx:
-        tx.seal(authority, "gateway-test", DIGEST)
+        tx.seal(_seal_request(authority))
     with database.transaction() as tx:
-        tx.activate(authority)
+        tx.activate(_activate_request(tx, authority))
     return authority
 
 
@@ -195,6 +211,58 @@ def _admit(database: Database) -> Row:
     with database.transaction() as tx:
         assert tx.admit(request, RECIPE) == "committed"
     return request
+
+
+def _barrier(authority: Row, gateway: str = "gateway-test") -> Row:
+    """Synthetic sealed-entry report; it never proves real physical fencing."""
+    return {
+        "gateway_id": gateway,
+        "pool_id": authority["pool_id"],
+        "enforced_min_fencing_token": authority["fencing_token"],
+        "barrier_sealed": True,
+        "submitting_intent_ids": [],
+        "executing_intent_ids": [],
+        "quarantined_intent_ids": [],
+        "enforced_at": "2026-10-23T12:00:00Z",
+    }
+
+
+def _seal_request(authority: Row, gateway: str = "gateway-test") -> Row:
+    return {
+        "authority": authority,
+        "barrier": _barrier(authority, gateway),
+        "evidence_digest": DIGEST,
+    }
+
+
+def _activate_request(tx: Transaction, authority: Row) -> Row:
+    version = tx.one(
+        "SELECT version FROM resource_pools WHERE pool_id = %s", (authority["pool_id"],)
+    )["version"]
+    return {"authority": authority, "expected_version": str(version)}
+
+
+def _release_request(tx: Transaction, lease_id: str) -> Row:
+    version = tx.one("SELECT version FROM admission_leases WHERE lease_id = %s", (lease_id,))[
+        "version"
+    ]
+    return {"lease_id": lease_id, "expected_version": str(version)}
+
+
+def _quarantine_request(tx: Transaction, lease_id: str) -> Row:
+    return {
+        "lease_id": lease_id,
+        "reason_code": "cancellation_unconfirmed",
+        "observed_at_us": tx.now(),
+    }
+
+
+def _mark_unknown_request(tx: Transaction) -> Row:
+    return {
+        "submit_intent_id": "submit-test",
+        "reason_code": "cancellation_unconfirmed",
+        "observed_at_us": tx.now(),
+    }
 
 
 def _submit_request(admission: Row) -> Row:
@@ -304,7 +372,7 @@ def test_owner_reconciliation_and_expiry_do_not_resurrect(database: Database) ->
     newer = _owner(database, owner="scheduler-new")
     assert newer["fencing_token"] > authority["fencing_token"]
     with pytest.raises(RejectedError, match="stale_fencing_token"), database.transaction() as tx:
-        tx.seal(authority, "gateway-test", DIGEST)
+        tx.seal(_seal_request(authority))
 
 
 def test_owner_cannot_activate_without_sealed_entry(database: Database) -> None:
@@ -322,7 +390,7 @@ def test_owner_cannot_activate_without_sealed_entry(database: Database) -> None:
         pytest.raises(RejectedError, match="reconciliation_required"),
         database.transaction() as tx,
     ):
-        tx.activate(authority)
+        tx.activate(_activate_request(tx, authority))
 
 
 def test_complete_recipe_atomicity_replay_and_changed_digest(database: Database) -> None:
@@ -416,7 +484,7 @@ def test_ttl_never_substitutes_for_stop_evidence(database: Database) -> None:
         pytest.raises(RejectedError, match="execution_cleanup_pending"),
         database.transaction() as tx,
     ):
-        tx.release(admission["stages"][0]["lease_id"])
+        tx.release(_release_request(tx, admission["stages"][0]["lease_id"]))
     with database.transaction() as tx:
         assert tx.one("SELECT held_slots FROM engine_instances")["held_slots"] == 1
         stop = _stop_request(tx)
@@ -424,9 +492,9 @@ def test_ttl_never_substitutes_for_stop_evidence(database: Database) -> None:
     with database.transaction() as tx:
         assert tx.stop(stop) == "replayed"
     with database.transaction() as tx:
-        assert tx.release(admission["stages"][0]["lease_id"]) == "committed"
+        assert tx.release(_release_request(tx, admission["stages"][0]["lease_id"])) == "committed"
     with database.transaction() as tx:
-        assert tx.release(admission["stages"][0]["lease_id"]) == "replayed"
+        assert tx.release(_release_request(tx, admission["stages"][0]["lease_id"])) == "replayed"
         assert tx.one("SELECT held_slots FROM engine_instances")["held_slots"] == 0
         assert tx.one("SELECT held_attempts FROM workspace_quotas")["held_attempts"] == 0
 
@@ -523,7 +591,7 @@ def test_private_command_cleanup_preserves_coordination_evidence(database: Datab
     with database.transaction() as tx:
         tx.stop(_stop_request(tx))
     with database.transaction() as tx:
-        tx.release(admission["stages"][0]["lease_id"])
+        tx.release(_release_request(tx, admission["stages"][0]["lease_id"]))
     with database.transaction() as tx:
         request = _redaction_request(tx)
         assert tx.redact(request) == "committed"
@@ -666,7 +734,7 @@ def test_submit_release_both_lock_orders(database: Database, submit_first: bool)
         return tx.submit(request)
 
     def release(tx: Transaction) -> str:
-        return tx.release(lease_id)
+        return tx.release(_release_request(tx, lease_id))
 
     outcome = _interleave(
         database, submit if submit_first else release, release if submit_first else submit
@@ -791,11 +859,11 @@ def test_unknown_execution_keeps_quarantined_budget_until_verified_stop(database
     with database.transaction() as tx:
         tx.execute("UPDATE host_nodes SET quarantine_threshold_ppm = 1")
     with database.transaction() as tx:
-        tx.mark_unknown("submit-test")  # gateway owner transaction
+        tx.mark_unknown(_mark_unknown_request(tx))  # gateway owner transaction
     with database.transaction() as tx:
-        tx.quarantine(lease_id)  # scheduler owner transaction
+        tx.quarantine(_quarantine_request(tx, lease_id))  # scheduler owner transaction
     with database.transaction() as tx:
-        tx.quarantine(lease_id)
+        tx.quarantine(_quarantine_request(tx, lease_id))
         assert tx.one("SELECT held_slots, quarantined_slots FROM engine_instances") == {
             "held_slots": 0,
             "quarantined_slots": 1,
@@ -807,11 +875,11 @@ def test_unknown_execution_keeps_quarantined_budget_until_verified_stop(database
         pytest.raises(RejectedError, match="execution_cleanup_pending"),
         database.transaction() as tx,
     ):
-        tx.release(lease_id)
+        tx.release(_release_request(tx, lease_id))
     with database.transaction() as tx:
         tx.stop(_stop_request(tx))
     with database.transaction() as tx:
-        tx.release(lease_id)
+        tx.release(_release_request(tx, lease_id))
         assert tx.one("SELECT quarantined_slots FROM engine_instances")["quarantined_slots"] == 0
         assert tx.one("SELECT node_state FROM host_nodes")["node_state"] == "quarantined"
         assert (
@@ -948,13 +1016,13 @@ def test_runtime_grants_keep_evidence_append_only_and_owners_separate(database: 
             tx.admit(admission, RECIPE)
         with _runtime_role(database, gateway) as tx:
             tx.submit(_submit_request(admission))
-            tx.mark_unknown("submit-test")
+            tx.mark_unknown(_mark_unknown_request(tx))
         with _runtime_role(database, speech) as tx:
-            tx.quarantine(admission["stages"][0]["lease_id"])
+            tx.quarantine(_quarantine_request(tx, admission["stages"][0]["lease_id"]))
         with _runtime_role(database, gateway) as tx:
             tx.stop(_stop_request(tx))
         with _runtime_role(database, speech) as tx:
-            tx.release(admission["stages"][0]["lease_id"])
+            tx.release(_release_request(tx, admission["stages"][0]["lease_id"]))
         with _runtime_role(database, gateway) as tx:
             tx.redact(_redaction_request(tx))
         for role, statement in (
@@ -964,6 +1032,16 @@ def test_runtime_grants_keep_evidence_append_only_and_owners_separate(database: 
             (gateway, "UPDATE admission_leases SET lease_state = 'released'"),
             (speech, "TRUNCATE admission_attempts"),
             (speech, "UPDATE engine_instances SET per_slot_device_memory_bytes = 0"),
+            # Capacity configuration and topology identity belong to the control plane,
+            # so a runtime role can never raise its own limits or re-identify a node.
+            (speech, "UPDATE workspace_quotas SET max_attempts = 0"),
+            (speech, "UPDATE workspace_quotas SET policy_revision = 'policy-other'"),
+            (speech, "UPDATE host_nodes SET topology_digest = topology_digest"),
+            (speech, "UPDATE host_nodes SET quarantine_threshold_ppm = 1000000"),
+            (speech, "UPDATE host_nodes SET allocatable_device_memory_bytes = 1"),
+            # Another owner's canonical private request text stays unreadable.
+            (speech, "SELECT request_document FROM submit_intents"),
+            (gateway, "SELECT request_document FROM runtime_instance_intents"),
         ):
             with (
                 pytest.raises(
@@ -984,3 +1062,58 @@ def test_runtime_grants_keep_evidence_append_only_and_owners_separate(database: 
                     tx.execute(f'DROP ROLE "{role}"')
                 else:
                     tx.execute(f"DROP USER '{role}'@'%'")
+
+
+def test_release_and_activate_require_the_observed_version(database: Database) -> None:
+    authority = _owner(database)
+    request = _request(database, authority)
+    with database.transaction() as tx:
+        assert tx.admit(request, RECIPE) == "committed"
+    lease_id = request["stages"][0]["lease_id"]
+    with pytest.raises(RejectedError, match="version_conflict"), database.transaction() as tx:
+        tx.release({"lease_id": lease_id, "expected_version": "7"})
+    with pytest.raises(RejectedError, match="version_conflict"), database.transaction() as tx:
+        tx.activate({"authority": authority, "expected_version": "1"})
+    with database.transaction() as tx:
+        assert tx.release(_release_request(tx, lease_id)) == "committed"
+        assert tx.one("SELECT held_slots FROM engine_instances")["held_slots"] == 0
+        assert tx.one("SELECT held_attempts FROM workspace_quotas")["held_attempts"] == 0
+
+
+def test_job_identity_replays_only_with_the_same_key_and_digest(database: Database) -> None:
+    request: dict[str, Any] = {
+        "job": {
+            "job_id": "job-standalone",
+            "event_id": "event-standalone",
+            "event_digest": DIGEST,
+        },
+        "identity": {"operation_id": "operation-standalone", "attempt_id": "attempt-standalone"},
+        "request_digest": DIGEST,
+    }
+    with database.transaction() as tx:
+        assert tx.create_job(request) == "committed"
+    with database.transaction() as tx:
+        assert tx.create_job(request) == "replayed"
+        assert len(tx.rows("SELECT * FROM coordination_jobs")) == 1
+        assert len(tx.rows("SELECT * FROM coordination_outbox")) == 1
+    changed_digest = copy.deepcopy(request)
+    changed_digest["request_digest"] = "sha256:" + "b" * 64
+    with pytest.raises(RejectedError, match="idempotency_conflict"), database.transaction() as tx:
+        tx.create_job(changed_digest)
+    reused_key = copy.deepcopy(request)
+    reused_key["job"] = {**request["job"], "job_id": "job-other"}
+    with pytest.raises(RejectedError, match="idempotency_conflict"), database.transaction() as tx:
+        tx.create_job(reused_key)
+    with database.transaction() as tx:
+        assert len(tx.rows("SELECT * FROM coordination_jobs")) == 1
+
+
+def test_unknown_marking_cannot_reverse_a_terminal_execution(database: Database) -> None:
+    _submitted(database)
+    with database.transaction() as tx:
+        tx.stop(_stop_request(tx))
+    with pytest.raises(RejectedError, match="submit_intent_conflict"), database.transaction() as tx:
+        tx.mark_unknown(_mark_unknown_request(tx))
+    with database.transaction() as tx:
+        assert tx.one("SELECT execution_state FROM submit_intents")["execution_state"] == "aborted"
+        assert tx.one("SELECT cleanup_state FROM submit_intents")["cleanup_state"] == "complete"

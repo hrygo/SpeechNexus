@@ -10,3 +10,4 @@
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
 
 - [2026-10-23 架构与契约修复闭环](2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
+- [2026-10-23 集群协调重构后的架构与契约审查](2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。

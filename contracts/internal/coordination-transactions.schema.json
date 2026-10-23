@@ -1131,7 +1131,8 @@
                 "pool_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/PoolId"
                 }
-              }
+              },
+              "x-nexus-result-kind": "OwnerSnapshot"
             },
             {
               "type": "object",
@@ -1147,7 +1148,8 @@
                 "identity": {
                   "$ref": "#/$defs/AttemptIdentity"
                 }
-              }
+              },
+              "x-nexus-result-kind": "AdmissionSnapshot"
             },
             {
               "type": "object",
@@ -1163,7 +1165,8 @@
                 "job_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
                 }
-              }
+              },
+              "x-nexus-result-kind": "ClaimSnapshot"
             },
             {
               "type": "object",
@@ -1179,7 +1182,8 @@
                 "submit_intent_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
                 }
-              }
+              },
+              "x-nexus-result-kind": "ExecutionSnapshot"
             },
             {
               "type": "object",
@@ -1195,7 +1199,8 @@
                 "lease_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
                 }
-              }
+              },
+              "x-nexus-result-kind": "LeaseSnapshot"
             },
             {
               "type": "object",
@@ -1211,7 +1216,8 @@
                 "interval_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
                 }
-              }
+              },
+              "x-nexus-result-kind": "FactSnapshot"
             },
             {
               "type": "object",
@@ -1231,7 +1237,8 @@
                 "intent_id": {
                   "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
                 }
-              }
+              },
+              "x-nexus-result-kind": "RuntimeSnapshot"
             }
           ]
         },

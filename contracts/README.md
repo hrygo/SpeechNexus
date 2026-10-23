@@ -293,14 +293,20 @@ separate:
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \
+SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \
   make integration-test
 ```
 
 The historical PG suite applies the preserved legacy fixture. The new shared
 transaction suite applies the active simplified DDL to PG and MySQL/InnoDB.
-Use `make coordination-test` with both `SPEECHNEXUS_TEST_DATABASE_URL` and
-`SPEECHNEXUS_TEST_MYSQL_URL` for the required cross-database gate; a missing DSN
-fails that target. See [integration setup and scope](../tests/integration/README.md).
+`make integration-test` and `make coordination-test` are the required
+cross-database gates: both demand `SPEECHNEXUS_TEST_DATABASE_URL` and
+`SPEECHNEXUS_TEST_MYSQL_URL`, and the shared transaction suite fails rather than
+skips when only one engine is configured, so a single-engine run cannot be
+reported as dual-database evidence. Run the historical PG suite alone with
+`uv run pytest -m integration tests/integration/test_cluster_coordination_schema.py -q`
+when no MySQL instance is available. See
+[integration setup and scope](../tests/integration/README.md).
 CI provisions both disposable database services.
 
 

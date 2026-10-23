@@ -19,6 +19,7 @@
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md) | P0–P5、退出条件、工作包、交接产物与预算假设 |
 | [集群协调重构计划](plans/2026-10-23-cluster-coordination-refactor.md) | 精简 DDL/契约/双库原型的交付与生产接入、集群故障资格的剩余验收 |
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md) | 初验与终审补充的修复映射、验证证据及未验证运行边界 |
+| [集群协调重构后的架构与契约审查](audits/2026-10-23-architecture-contract-post-refactor-review.md) | 运行角色最小权限、双库门禁、契约结果覆盖、端口原型一致性与开放项 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md) | 已发现问题、修正裁决、来源核验、文档检查与未验证项 |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md) | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力 |
 | [开发与测试环境](development-environment.md) | 当前主机工具链、独立服务、媒体与无头浏览器验证、初始化和隔离边界 |

@@ -24,17 +24,21 @@
 | 产品范围、身份与共享部署 | [ADR 0001](docs/decisions/0001-product-boundaries-and-authentication-scope.md)、[产品设计](docs/speechnexus-product-architecture.md) |
 | 模型选择、绑定与加载 | [ADR 0002](docs/decisions/0002-speech-models-engines-and-loading.md)、[runtime-governance.md](docs/architecture/runtime-governance.md) |
 | 工作台 LLM 与内容网络边界 | [ADR 0003](docs/decisions/0003-workbench-llm-network-boundary.md) |
-| 事务、租约、执行与恢复 | [technical-blueprint.md](docs/architecture/technical-blueprint.md)、[runtime-governance.md](docs/architecture/runtime-governance.md) 的相关章节 |
+| 集群拓扑、单机部署与数据库支持范围 | [ADR 0004](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)、[ADR 0006](docs/decisions/0006-cluster-coordination-and-storage-portability.md) |
+| 完整执行命令、公开回执与删除生命周期 | [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)、[execution-command.md](docs/architecture/execution-command.md)、[data-deletion.md](docs/architecture/data-deletion.md) |
+| 协调事务、锁序、表所有权与恢复 | [coordination-transactions.md](docs/architecture/coordination-transactions.md)、[distributed-coordination-schema.md](docs/architecture/distributed-coordination-schema.md)、[事务契约](contracts/internal/coordination-transactions.schema.json) |
+| Web 视觉、设计 Token 与无障碍 | [UI/UX 设计框架](docs/architecture/ui-ux-design-framework-and-tokens.md) |
 | 本机环境、初始化或部署 | [development-environment.md](docs/development-environment.md)、[deploy/README.md](deploy/README.md) |
 | SpeechRail 代码或规则复用 | [speechrail-reuse.md](docs/architecture/speechrail-reuse.md) |
 
-当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线和已接受决定。发现冲突时指出具体差异，不能通过放宽校验掩盖。计划、占位目录和带日期记录不能单独证明能力已经实现。报告区分已实现、已验证、契约要求和计划状态。
+当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线和已接受决定，并按后续 ADR 标明的替代范围理解旧决定。发现冲突时指出具体差异，不能通过放宽校验掩盖。计划、占位目录和带日期记录不能单独证明能力已经实现；测试原型与历史 fixture 的验证结果须注明保护边界，不能视为生产模块已交付。报告区分已实现、已验证、契约要求和计划状态。
 
 ## 产品、数据与安全边界
 
 - 首期没有登录、用户目录、RBAC、ACL、多租户或个人私有空间。`/admin` 与 `/workbench` 是功能入口，不形成身份或数据隔离边界。
 - 语音底座可独立于 WebUI、工作台业务和 LLM 运行。工作台通过公开语音协议消费底座；工作台不共写底座表，项目、稿件、会议、助手、纪要和有声书编排留在工作台。
-- PostgreSQL 是任务、版本、用量、租约和 outbox 的权威存储；对象存储保存明确提交的输入和制品；Redis 仅可作可选加速层，不能承担唯一事实或协调保证。
+- PostgreSQL 是唯一正式产品数据库，承担任务、版本、用量、租约和 outbox 的权威存储；MySQL/InnoDB 仅验证关键协调路径的可移植性，不代表全产品支持。对象存储保存明确提交的输入和制品；不引入 etcd，Redis 仅作可选缓存或唤醒，丢失通知后依靠持久记录与轮询恢复。
+- 集群支持是实现与验收要求，单机 `Node=1` 使用同一协议、持久状态和恢复路径。节点、角色与实例身份须显式配置；不以进程内锁承担全局协调，不通过本地 IPC 或跨容器共享目录传递业务内容。跨进程资产与制品经对象存储传递，本地临时缓冲须有界且私有。
 - 音频、转写、书稿、声音参考及派生内容不得离开部署网络。浏览器资源、代理、日志、追踪和错误报告遵守同一边界。工作台 LLM 默认关闭，只能使用服务端配置的本机或内网服务；客户端不能指定任意端点，失败不能回退公有云。内网地址本身不是出站受限的证据。
 - 测试用合成数据或最小脱敏样例。日志、fixture 和报告不得包含真实凭据、私有音频、完整业务转写、声音特征、音频 Base64 或内部模型路径。模型、运行数据、`.runtime/`、`.venv/` 与 `node_modules/` 不入库。
 - SpeechRail 仅作为领域规则与测试思想来源。提取时遵循复用文档中的固定 commit，记录来源文件、许可证与改动范围；不移植 macOS、MLX、CoreML、私有 IPC 或单机生命周期实现。
@@ -43,11 +47,15 @@
 
 - 新增业务路由前先冻结生产者与消费者的机器契约，定义默认值、单位、范围、状态与稳定错误码。公共协议和内部执行/部署协议分开建模；为状态和错误变化提供正例、负例及必要事件序列，并验证所有消费者。schema 语法通过不代表语义已冻结。
 - Python / TypeScript 边界类型从契约生成或校验，不手改生成产物或维护独立语义副本。公共协议、内部协议、领域对象与 vendor DTO 分别建模并在边界转换。OpenAI 兼容范围限于明确声明的子集；扩展使用 `nexus` 命名空间。公开 DTO 不暴露内部端点、实例身份或凭据。
-- 依赖向内：`interfaces` / `infrastructure` → `application` → `domain`；`domain` 不依赖框架、生成 DTO、数据库或 vendor 类型。组合根负责装配，`uv run lint-imports` 检查依赖边界。
+- 依赖向内：`interfaces` / `infrastructure` → `application` → `domain`；`domain` 不依赖框架、生成 DTO、数据库或 vendor 类型。`interfaces` 与 `infrastructure` 同层互不导入，speech/workbench 与 backend/gateway 保持模块独立；组合根负责装配，`uv run lint-imports` 检查依赖边界。`tests/support/` 的事务原型不供产品代码导入。
+- 跨表协调规则由领域与应用用例裁决，经明确的窄事务端口执行；基础设施负责事务、锁与条件更新，不提供任意状态更新入口。数据库保留基础约束、历史保护与最小权限，不承诺独立拦截所有绕过应用的跨表违例；数据库特定锁定或通知机制是适配器选择。
+- 完整配方的配额、节点/实例预算与全部阶段租约须在同一关系数据库事务中准入，Job 与 outbox 同事务写入。表所有权或进程分离不构成跨独立数据库双写的理由。结果未知时查询原身份或进入协调，不能通过新建执行进行普通重试。
 - 部署控制器只管理获准模板对应的实例。业务 API、worker 和工作台不直接访问引擎，不持有任意容器管理权限，也不挂载 Docker socket。引擎凭据、执行提交屏障、fencing、abort 与完成证据由执行网关边界管理。
-- 持久化按表明确所有权，采用短事务和版本化迁移；运行角色不执行 DDL。推理、HTTP、对象写入和长时编码不占数据库事务；对象先写入私有 staging，再发布数据库引用。
+- 持久化按表明确所有权，采用短事务和版本化迁移；运行角色不执行 DDL，协调运行角色非 owner，不获协调历史删除或控制面预算/策略/拓扑配置的修改权限。推理、HTTP、对象写入和长时编码不占数据库事务；对象先写入私有 staging，再发布数据库引用。
+- 执行提交持久化完整有效命令、固定资源版本与规范摘要；先提交 intent 再外发，恢复不能只依赖摘要重建请求或重新读取可变默认值。私有命令正文不进入公开回执或日志。
 - 分开记录模型绑定、运行实例/generation、容量租约和资格。取消请求或任务结束不等于算力已停止；只有拿到停止与资源释放证据后才归还预算。音色及其他可复用制品按契约校验并显式发布不可变版本；细节以相关契约和架构文档为准。
-- `web/shared/` 只放两个入口以相同语义消费的稳定组件；未实现的能力不得用虚构任务、模型或容量填充界面。
+- 内容删除须经版本/摘要固定的预检、明确范围确认与持久删除账本；不追删跨模块独立保存副本，不删除执行、计量、租约或 fencing 证据。恢复先重放删除账本，再开放内容。
+- `web/shared/` 只放两个入口以相同语义消费的稳定组件与设计 Token。子应用复用共享 Token，遵守键盘焦点、减少动效与本地资源约定；能力状态使用 `ready` / `contract` / `planned`，未实现的能力不得用虚构任务、模型或容量填充界面。
 - 公共协议、架构或运行行为改变时，同步更新实现、消费者、相关测试和有效文档；README 中英文版的状态、命令和产品边界保持一致。历史计划与审查记录保留原时点事实。
 
 ## 工具链与验证
@@ -67,13 +75,16 @@ pnpm install --frozen-lockfile
 | --- | --- |
 | 文档或 Agent 指令 | 核对本地链接、命令与声明；运行 `git diff --check` |
 | Python | `uv run ruff format --check .`、`uv run ruff check .`、`uv run mypy`、`uv run lint-imports` 和覆盖改动的 `uv run pytest` 测试 |
-| Web | `pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` |
-| 机器契约 | `make contracts-check`，并验证正负样例、生产者与消费者语义 |
+| Web | `pnpm format:check`、`pnpm lint`（含设计 Token 门禁）、`pnpm typecheck`、`pnpm test`、`pnpm build` |
+| 机器契约 | `make contracts-check`、`uv run pytest tests/contract`；涉及 OpenAI 兼容子集时运行 `make contracts-sdk-test`，并设置 `CONTRACT_BASE_REF` 后运行 `make contracts-compat`，验证正负样例及消费者语义 |
 | 持久化、调度或恢复 | fake 和隔离 PostgreSQL / MinIO 集成测试，覆盖相关事务与故障路径 |
+| 协调事务或其 DDL / 权限 | `make coordination-test` 与 `make integration-test`；双库隔离设置与证据范围见 [tests/integration/README.md](tests/integration/README.md) |
 | 部署配置 | `make stack-config` 及受影响镜像或服务的针对性检查 |
 | 完整本机验证 | `make verify`；CI 检查范围见 [.github/workflows/ci.yml](.github/workflows/ci.yml) |
 
-`scripts/dev-env/` 服务管理针对 Linux ARM64、APT 与用户级 systemd。运行前确认宿主、脚本前置条件和现有服务；仅使用本项目隔离的 `.runtime/` PostgreSQL / MinIO，不访问同机共享实例。环境就绪记录不代表当前主机可运行。
+`scripts/dev-env/` 服务管理针对 Linux ARM64、APT 与用户级 systemd。运行前确认宿主、脚本前置条件和现有服务；仅使用本项目隔离的 `.runtime/` PostgreSQL / MinIO 与协调测试专用 MySQL 实例，不访问同机共享实例。环境就绪记录不代表当前主机可运行。
+
+协调门禁要求同时设置指向隔离测试实例的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量时 Make 目标直接失败。直接运行共享事务 pytest 时，两个变量均缺失会跳过，仅配置一个会失败。`make verify` 提供两者的本机隔离默认值，须预先准备对应服务。旧 PG 历史测试与当前受控事务测试保留各自保护边界，不得用单库通过、跳过或顺序调用冒充双库并发验证。
 
 确定性测试使用 fake adapter，不下载或加载模型，不使用私人音频。真实引擎、质量与负载验证需另记模型和引擎版本、绑定、拓扑与结果。健康检查、schema 校验、合成媒体和浏览器冒烟各自只证明实际覆盖范围；跳过不算通过，缺少契约或测试覆盖时如实说明。
 

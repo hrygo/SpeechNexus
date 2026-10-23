@@ -71,7 +71,11 @@ internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
 The coordination bundle also validates owner acquire/renew/activate and
 `query_outcome` requests. The production owner boundary implements the pool
-target only; other query targets stay with their fact owners.
+target only. The coordination bundle additionally validates `claim_job`; the
+production claim boundary handles Job current-authority queries. An unclaimed
+row returns unknown, and an expired/later claim snapshot neither proves that an
+earlier write rolled back nor permits redispatch. Remaining query targets stay
+with their fact owners.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

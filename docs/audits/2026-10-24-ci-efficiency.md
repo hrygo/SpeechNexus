@@ -59,6 +59,40 @@ date: 2026-10-24
   本地与 GitHub runner 硬件不同，这不是 CI 的同环境前后倍数。
 - actionlint 1.7.12、Ruff、mypy、import-linter 与生成漂移检查通过。
 
-远端新 CI 的总耗时与各阶段数据在实际完成后补充；单次测量会受 runner、镜像和
-缓存命中影响，不代表长期分位数。数据库并行增加一次 Python 安装和一个轻量汇总
-job，用总执行分钟换取更短反馈时间；不宣称其同时降低所有 runner 分钟。
+## 实施后测量
+
+优化由 [PR #47](https://github.com/hrygo/SpeechNexus/pull/47) 合并，main 提交
+`b3e0ed340763b827333747d464b68fd7f4981116`。最终 PR head
+`8aa2b197de45cc647c306c8cadfa3f5af34bf0c7` 的
+[CI run 39990005346](https://github.com/hrygo/SpeechNexus/actions/runs/39990005346)
+五项检查全部通过。以下仍使用 Jobs API 的实际执行时间；关键路径从最早 job 开始
+到最后必需检查完成，包含汇总 job 调度间隔，不含 workflow 开始前的排队时间。
+
+| 项目 | 优化前 | 优化后 |
+| --- | ---: | ---: |
+| 必需检查执行关键路径 | 353 秒 | 140 秒 |
+| OpenAI 契约兼容步骤 | 153 秒 | 1 秒 |
+| Python 静态/非集成 job | 原先串入单一 Python job | 134 秒 |
+| PG/InnoDB job | 原先串入单一 Python job | 112 秒 |
+| Web job | 31 秒 | 27 秒 |
+
+关键路径缩短约 60.3%。这是同一轮优化保留完整保护范围后的两次实际运行对比，
+不是长期分位数，也不是后续版本的固定 SLA。新增的回归用例同样通过；覆盖率
+阈值、双数据库、契约漂移与失败/跳过不能放行的汇总规则均保留。
+
+复核入口（只读取元数据，不下载日志或接触业务内容）：
+
+```sh
+gh api repos/hrygo/SpeechNexus/actions/runs/39988924348/jobs
+gh api repos/hrygo/SpeechNexus/actions/runs/39990005346/jobs
+```
+
+后续 Asset、gateway 和恢复测试持续增加，不能将其总耗时直接与本表混算优化幅度。
+例如 [#61 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40026575924)
+的存储 job 已增至 186 秒；它包含新增的真实 PG/版本化 MinIO 与 HTTP/维护验证。
+再次优化应固定测试集合并重新取 Jobs/Steps 基线，不用跳过测试换取较短时间。
+
+单次测量受 runner、镜像和缓存命中影响。数据库并行增加一次 Python 安装和一个
+轻量汇总 job，用执行分钟换取更短反馈；本次不宣称长期 runner 成本或全部
+运行分位数同步下降。当前依赖安装只需数秒，继续保留简单的锁文件/uv 缓存方案；
+下载成为可测瓶颈后，再评估 pnpm store 缓存或镜像构建缓存。

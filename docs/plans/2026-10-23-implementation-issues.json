@@ -1,0 +1,1238 @@
+{
+  "schema_version": 1,
+  "repository": "hrygo/SpeechNexus",
+  "fact_baseline": "390f121",
+  "created_date": "2026-10-23",
+  "date_timezone": "Asia/Shanghai",
+  "tracking_authority": "GitHub issue state/status labels + explicit Gate evidence; local Markdown is generated snapshot",
+  "plan_path": "docs/plans/2026-10-23-three-team-delivery-plan.md",
+  "startup_path": "docs/plans/2026-10-23-agent-team-startup-briefs.md",
+  "entries": [
+    {
+      "id": "PROGRAM",
+      "kind": "program",
+      "parent": null,
+      "team": "A/B/C",
+      "stage": null,
+      "number": 6,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/6",
+      "title": "[总控] SpeechNexus 三团队整体实施与验收跟踪",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S0",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S0",
+      "number": 7,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/7",
+      "title": "[Epic S0] 接口、环境与关键风险探针",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S1",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S1",
+      "number": 8,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/8",
+      "title": "[Epic S1] 标准文件语音与基础页面闭环",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S2",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S2",
+      "number": 9,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/9",
+      "title": "[Epic S2] 实时语音、音色与实例生命周期",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S3",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S3",
+      "number": 10,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/10",
+      "title": "[Epic S3] 完整语音底座与基础产品试点",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S4",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S4",
+      "number": 11,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/11",
+      "title": "[Epic S4] 会议、提词、助手与有声书",
+      "native_blocked_by": []
+    },
+    {
+      "id": "S5",
+      "kind": "epic",
+      "parent": "PROGRAM",
+      "team": "A/B/C",
+      "stage": "S5",
+      "number": 12,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/12",
+      "title": "[Epic S5] 目标拓扑、恢复与完整交付资格",
+      "native_blocked_by": []
+    },
+    {
+      "id": "G0",
+      "kind": "gate",
+      "parent": "S0",
+      "team": "A/B/C",
+      "stage": "S0",
+      "number": 13,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/13",
+      "title": "[Gate G0] 接口、环境与关键风险探针验收",
+      "native_blocked_by": ["A00", "B00", "C00"],
+      "acceptance": "三队消费的生成类型/正负例；18 端口所有权及缺口表；首个生产事务；引擎/硬件/许可/停止探针结论；冻结首批语料与浏览器矩阵",
+      "insufficient": "schema 通过、页面截图、模型能启动"
+    },
+    {
+      "id": "G1",
+      "kind": "gate",
+      "parent": "S1",
+      "team": "A/B/C",
+      "stage": "S1",
+      "number": 14,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/14",
+      "title": "[Gate G1] 标准文件语音与基础页面闭环验收",
+      "native_blocked_by": ["G0"],
+      "acceptance": "无 Web 的标准 SDK 文件 ASR/TTS；上传→Job→原子准入→唯一外发→staging/发布→下载；基本页面；进程重启/取消/同键重放；基础删除",
+      "insufficient": "全部 fake 通过、HTTP 200、只在内存保存的任务、直接调用引擎绕过网关"
+    },
+    {
+      "id": "G2",
+      "kind": "gate",
+      "parent": "S2",
+      "team": "A/B/C",
+      "stage": "S2",
+      "number": 15,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/15",
+      "title": "[Gate G2] 实时语音、音色与实例生命周期验收",
+      "native_blocked_by": ["G1"],
+      "acceptance": "实时 ASR/TTS 的样本/文本水位与背压；可信 abort/stop；设计和克隆各自的候选→复用→发布；加载/回收/unknown 证据",
+      "insufficient": "试听成功、断开连接、TTL 到期、只写较大 fencing token"
+    },
+    {
+      "id": "G3",
+      "kind": "gate",
+      "parent": "S3",
+      "team": "A/B/C",
+      "stage": "S3",
+      "number": 16,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/16",
+      "title": "[Gate G3] 完整语音底座与基础产品试点验收",
+      "native_blocked_by": ["G2"],
+      "acceptance": "四类语音与至少一条真实可复用音色；全部 18 生产端口/完整快照；双库协调行为；最低 1 路实时 ASR+1 路实时 TTS 与 VoiceDesign 共存；基础管理/工作台；对应拓扑的试点资格；无状态 MCP 工具发现/调用及 REST 等价行为；预设合并/精确参数拒绝、发布资格/CAS、默认指针回滚与词典版本",
+      "insufficient": "以文件切片替代完整 P1、只验证 happy path、只验证单个数据库、开发 Compose 健康"
+    },
+    {
+      "id": "G4",
+      "kind": "gate",
+      "parent": "S4",
+      "team": "A/B/C",
+      "stage": "S4",
+      "number": 17,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/17",
+      "title": "[Gate G4] 会议、提词、助手与有声书验收",
+      "native_blocked_by": ["G3"],
+      "acceptance": "会议封存/校对、提词手动接管、助手插话取消、版本化有声书局部重做/完整导出；各自删除/恢复；LLM 启用时通过内网内容边界；会议要点版本化保存、有声书质量/试听/匿名确认记录",
+      "insufficient": "UI 页面齐全、LLM 只配置内网 URL、仅测整章重新生成"
+    },
+    {
+      "id": "G5",
+      "kind": "gate",
+      "parent": "S5",
+      "team": "A/B/C",
+      "stage": "S5",
+      "number": 18,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/18",
+      "title": "[Gate G5] 目标拓扑、恢复与完整交付资格验收",
+      "native_blocked_by": ["G4"],
+      "acceptance": "物理多主机、网络分区/节点丢失、旧入口隔离、目标数据层切换/备份恢复、迁移/回退、长时/质量/容量、浏览器及内容出站、许可/交接资料完整；SDK/MCP 可运行交付、项目许可决策及冻结 RPO/RTO 的恢复证据",
+      "insufficient": "单机逻辑集群替代物理资格、CI 绿灯、历史原型测试数或源码覆盖率"
+    },
+    {
+      "id": "A00",
+      "title": "[A00] 契约类型生成、语义样例与接口交接",
+      "scope": "锁定生成器；Python/TS 边界类型、事件校验、生成漂移门禁；18 端口/表/契约责任矩阵",
+      "dependencies": "现有契约；B/C 同步评审",
+      "acceptance": "同组正负例跨消费者一致；完整结果快照；domain 不依赖生成 DTO；REST/WS/MCP 参数/命令/错误语义一致",
+      "size": "M",
+      "team": "A",
+      "stage": "S0",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "ready",
+      "steps": [
+        "建立 18 端口/表/契约/生产者/消费者责任矩阵，冻结 query_outcome 的既有快照映射。",
+        "锁定生成器与模板版本，交付 Python 边界 DTO、TypeScript 类型/客户端及事件运行时校验。",
+        "先发布文件闭环接口/正负样例子包供 B/C 消费，再补其余契约；生成物不手改，domain 不依赖生成 DTO。",
+        "建立生成漂移、额外字段/严格类型/联合/跨字段与错误状态的跨消费者一致性检查。",
+        "补管理、工作台和内部协议的变更清单/版本策略与可自动比较部分的门禁；不得扩大 OpenAI 兼容承诺。",
+        "将 REST/WS/MCP 的参数域、规范命令、错误、幂等与取消语义纳入同组正负/时序样例；MCP 不维护独立默认值。"
+      ],
+      "checkpoints": {
+        "G0": "生成/校验、责任矩阵、首闭环样例和消费者确认"
+      },
+      "number": 19,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/19",
+      "kind": "work-package",
+      "parent": "S0",
+      "native_blocked_by": [],
+      "artifact_dependencies": [],
+      "integration_partners": []
+    },
+    {
+      "id": "A01",
+      "title": "[A01] 生产协调事务、迁移权限与 18 端口验收",
+      "scope": "speech/runtime 领域规则与窄事务端口、PG adapter、有界连接池、Alembic/运行角色；汇总跨模块端口验收",
+      "dependencies": "A00 的相关接口冻结即可分批开工；网关自有事务由 B01/B04 实现",
+      "acceptance": "锁序、数据库取时、回滚/未知分类；优先补 4 个端口缺口；18 端口联合完成，在 G3 前通过",
+      "size": "L",
+      "team": "A",
+      "stage": "S3",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现 speech/runtime 领域值对象、预算/状态/证据规则和窄事务端口，禁止导入测试原型。",
+        "实现 PG adapter、有界连接池、Alembic 与非 owner 的最小运行角色，按全局锁序、数据库时间和版本前提执行。",
+        "优先补 create_runtime_intent、observe_runtime、query_outcome 的生产行为；record_execution_observation 由 B01 实现。",
+        "区分已确认回滚的有界重试与提交结果未知；未知只查原持久身份。",
+        "A 实现 10 个 speech/runtime 端口；B 实现 7 个 gateway 端口，query_outcome 各事实所有者实现。",
+        "汇总 18 端口完整 value 快照、权限/竞争/恢复证据；协调行为在隔离 PG/InnoDB 无跳过。"
+      ],
+      "checkpoints": {
+        "G0": "签名/样例、首个生产事务与迁移角色",
+        "G1": "文件闭环所用生产端口",
+        "G2": "runtime 生命周期/流计量协同",
+        "G3": "全部 18 端口、完整快照与双库无跳过"
+      },
+      "number": 20,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/20",
+      "kind": "work-package",
+      "parent": "S3",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A00",
+          "deliverable": "相应端口/生成类型/正负样例子包"
+        }
+      ],
+      "integration_partners": ["B01", "B04"]
+    },
+    {
+      "id": "A02",
+      "title": "[A02] 资产、不可变版本与对象原子发布",
+      "scope": "默认 workspace、资产/Artifact、对象 staging/发布、版本/预设/发音资源、Operation/receipt",
+      "dependencies": "A00、A01 的基础迁移；媒体联调 B03",
+      "acceptance": "摘要/引用一致；不可变 revision；无任意路径/URL；对象成功不等于业务发布成功",
+      "size": "L",
+      "team": "A",
+      "stage": "S1",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现默认共享 workspace、Asset/Artifact 元数据及受控引用校验。",
+        "实现对象 staging、长度/摘要校验、数据库引用原子发布与失败清理；无任意客户端路径/对象 key/URL。",
+        "固定 profile、发音资源、模型/声音引用与不可变 revision，明确草稿/发布/退役指针。",
+        "实现 Operation/receipt 和制品下载/保留/过期语义；结果与 attempt/fencing 对齐。",
+        "从首个资源接 A07 删除依赖，业务独立副本按 C 所有权保留。",
+        "按绑定默认值→已发布预设→允许 overrides 合并；校验 allowlist/ranges/required_capabilities，越界拒绝且 exact 模式下任何自动收紧返回 422；发布先资格校验/CAS，回滚只切默认指针不修改既有 Job。"
+      ],
+      "checkpoints": {
+        "G1": "资产/版本/receipt/staging/发布与下载",
+        "G3": "预设合并/override/exact、发布资格/CAS/默认指针回滚与不可变词典版本"
+      },
+      "number": 21,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/21",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A00",
+          "deliverable": "资产/版本/receipt 类型"
+        },
+        {
+          "id": "A01",
+          "deliverable": "基础迁移与角色子包"
+        }
+      ],
+      "integration_partners": ["B03", "A07"]
+    },
+    {
+      "id": "A03",
+      "title": "[A03] 调度准入、持久任务、配额与未知恢复",
+      "scope": "owner/接管、全配方准入、Worker claim、持久 Job/outbox、重放恢复、quota/结算和输入去重；消费 B 的输出区间事实",
+      "dependencies": "A01；对 B01 fake 先行，生产联调 B01/B02",
+      "acceptance": "两 Scheduler/多 Worker、跨池末预算、原子多阶段、重复通知、未知查询；全部 quota 不只 attempt 数",
+      "size": "L",
+      "team": "A",
+      "stage": "S1",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现 owner 获取/续租/安全接管，实际网关屏障与在途协调后才激活。",
+        "一次事务完成全部 quota、父 host/instance 预算、required stages、attempt/leases、Job/outbox。",
+        "实现持久 claim、claim_version、重复 outbox 去重、轮询与 reconcile；Redis 关闭仍能推进。",
+        "实现跨池共享父预算、实时保留、有界公平排队与完整配方回滚。",
+        "维护业务配额/结算及输入去重，消费 B 的输出区间事实，不复制 PCM 账本。",
+        "验证丢响应/重复认领/旧 owner/unknown quarantine，只有停止和释放事实完整才退预算。"
+      ],
+      "checkpoints": {
+        "G1": "持久 Job/outbox、完整文件准入和未知恢复",
+        "G3": "双工/跨池/全部 quota 与结算证据"
+      },
+      "number": 22,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/22",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A01",
+          "deliverable": "owner/admission/job/runtime 端口与迁移"
+        }
+      ],
+      "integration_partners": ["B01", "B02"]
+    },
+    {
+      "id": "A04",
+      "title": "[A04] 标准文件语音、任务与管理 REST/SSE",
+      "scope": "文件 ASR/TTS、模型/能力、持久任务和管理 REST/SSE；同步请求与 Job 共用规范命令；无状态公开 REST 的 MCP 发现/调用代理",
+      "dependencies": "A02/A03；B03 真实结果、C01/C02 消费",
+      "acceptance": "标准 SDK 无 nexus 包装可调用；默认/显式音频格式；取消/重试/进度/receipt 和断线恢复一致",
+      "size": "M",
+      "team": "A",
+      "stage": "S1",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现标准 OpenAI 声明子集的文件 ASR/TTS、models 与能力读取。",
+        "同步请求与持久 Job 映射同一规范命令，冻结默认值和不可变资源 revision。",
+        "实现任务查询、取消、重试、SSE 事件/断线恢复与 Operation/receipt 投影。",
+        "实现基础管理读写 API、模型绑定/实例/策略/预设的版本前提。",
+        "以官方 SDK 对真实 HTTP 服务验证默认 MP3、显式 WAV/PCM、错误及无 nexus 包装调用。",
+        "与 B03/C02 联合关闭文件闭环，不让 API 或页面直接调用引擎。",
+        "实现公开语音/音色 REST 上的无状态 MCP 代理及工具发现/调用，沿用部署入口策略；同命令同错误/幂等/取消，不持有模型或 WebSocket 会话、不绕过准入。",
+        "明确实现公开 profiles 列表/固定 revision 读取，以及 pronunciation-sets 列表、不可变 revision 创建/读取；草稿/发布/默认指针等管理写路径遵守版本 CAS 和资格。"
+      ],
+      "checkpoints": {
+        "G1": "标准文件 SDK/API/SSE 与页面消费",
+        "G3": "基础管理面全部有效能力；MCP 工具发现/调用与公开 REST 同命令/错误/幂等/取消"
+      },
+      "number": 23,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/23",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A02",
+          "deliverable": "资源引用/版本/发布端口"
+        },
+        {
+          "id": "A03",
+          "deliverable": "准入/Job/Operation 端口"
+        }
+      ],
+      "integration_partners": ["B03", "C01", "C02"]
+    },
+    {
+      "id": "A05",
+      "title": "[A05] 公开实时协议、双工准入与流恢复",
+      "scope": "公共 Realtime、owner/epoch、输入/输出水位、双工原子准入及恢复",
+      "dependencies": "A04；可对内部流 fake 开工；联调 B04/C04",
+      "acceptance": "预览与正文分离；空成功；旧 epoch 拒绝、显式 gap；append/commit/finish、去重与硬上界",
+      "size": "L",
+      "team": "A",
+      "stage": "S2",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现会话协商、公开 Realtime 事件子集与 namespace 扩展校验。",
+        "实现 owner/epoch、输入样本水位、正文 revision、空成功和唯一逻辑终态。",
+        "实现 TTS append/commit/finish 与文本冻结，双工执行原子准入。",
+        "实现背压/硬上界/输入去重、旧 epoch 拒绝与断线后显式 gap/恢复。",
+        "同 B04/C04 联验故障，不从未保存 PCM 元数据假装无缝恢复。"
+      ],
+      "checkpoints": {
+        "G2": "实时/双工/owner/epoch/水位/背压/恢复"
+      },
+      "number": 24,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/24",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A04",
+          "deliverable": "公开规范命令与持久恢复基础"
+        }
+      ],
+      "integration_partners": ["B04", "C04"]
+    },
+    {
+      "id": "A06",
+      "title": "[A06] 音色候选、复用校验与版本发布",
+      "scope": "音色候选/revision、再生成、校验、发布/退役/禁用、管理策略与配方",
+      "dependencies": "A02/A04；对 voice fake 先行；联调 B05/C03",
+      "acceptance": "preview_only 禁止发布；同键摘要幂等；换文复用；禁用/发布/在途使用竞争明确",
+      "size": "L",
+      "team": "A",
+      "stage": "S2",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现设计/克隆命令、候选与不可变 VoiceRevision，固定幂等摘要和材料版本。",
+        "实现再生成、试听与复用校验，preview_only 禁止发布。",
+        "只有新文本复用资格通过才显式发布，后续 TTS 固定已发布引用。",
+        "实现退役/禁用/删除与在途使用的版本及并发裁决。",
+        "音色任务遵循全配方预算与 Job/outbox，接 B05/C03 联验。"
+      ],
+      "checkpoints": {
+        "G2": "候选、换文复用、发布与退役/禁用竞争"
+      },
+      "number": 25,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/25",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A02",
+          "deliverable": "材料/版本/发布基础"
+        },
+        {
+          "id": "A04",
+          "deliverable": "规范命令/任务基础"
+        }
+      ],
+      "integration_partners": ["B05", "C03"]
+    },
+    {
+      "id": "A07",
+      "title": "[A07] 删除账本、备份恢复与平台发布交付",
+      "scope": "底座删除/保留/正文清理、对账与恢复；生产迁移/备份恢复、入口与集群资格集成",
+      "dependencies": "A02 首个资源落地即开始；持续对接 B01/B02/C00，最终覆盖全部闭环",
+      "acceptance": "版本化预检、明确确认、删除账本/tombstone；恢复先重放删除；未知占用不清空；运行角色无越权；SDK/MCP 可安装配置；许可决策和目标 RPO/RTO 有证据",
+      "size": "L",
+      "team": "A",
+      "stage": "S5",
+      "environment": "云开发环境 / 隔离 PG/InnoDB/MinIO",
+      "initial_status": "planned",
+      "steps": [
+        "实现版本/摘要固定的删除预检、明确范围确认与持久 deletion Job/ledger。",
+        "按所有权清理对象与网关命令正文，保留最小协调/计量/停止事实；不追删独立保存副本。",
+        "隔离或未知执行未清理时不得报告删除完成或退预算；幂等 tombstone/outbox 可恢复。",
+        "备份恢复先重放删除账本，再开放内容；token/高水位/未知占用不倒退。",
+        "串行迁移、最小权限、入口与内容出站、唯一权威/回退及运维发布包联合验收。",
+        "交付可运行的 SDK/MCP 安装配置、工具发现/调用与错误恢复示例；汇总本仓 LICENSE 的指挥者决策及模型/依赖/素材许可证据，在目标拓扑按冻结 RPO/RTO 完成恢复演练。"
+      ],
+      "checkpoints": {
+        "G1": "首个资源基础删除及 tombstone",
+        "G2": "音色/网关命令正文受控清理",
+        "G3": "删除与恢复/未知预算联验",
+        "G5": "迁移/备份恢复/唯一权威/发布包，SDK/MCP 配置与示例、许可决策、冻结 RPO/RTO 的恢复实测"
+      },
+      "number": 26,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/26",
+      "kind": "work-package",
+      "parent": "S5",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A02",
+          "deliverable": "首个持久资源与依赖身份"
+        }
+      ],
+      "integration_partners": ["B01", "B02", "C00", "B07", "C08"]
+    },
+    {
+      "id": "B00",
+      "title": "[B00] MegaCube 环境、模型可行性与停止证据探针",
+      "scope": "目标硬件、引擎/模型/镜像摘要和许可；文件/实时/音色最小探针；manifest 与停止证据草案",
+      "dependencies": "批准环境、制品和最小授权/合成语料；首轮开始",
+      "acceptance": "request ID、status/abort、停止与资源事实、强制输出上界、加载峰值；不满足的能力保持未资格化",
+      "size": "M",
+      "team": "B",
+      "stage": "S0",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "ready",
+      "steps": [
+        "只读清点 MegaCube OS/架构/GPU/驱动/CUDA/内存/磁盘/容器与现有服务，不从名称推断 GB10 资格。",
+        "锁定候选模型 revision、引擎/镜像摘要、独立依赖与许可；不假定上游支持即能运行。",
+        "在明确授权的制品/语料/窗口内验证文件 ASR/TTS，早探实时及 VoiceDesign/Base 关键可行性。",
+        "逐能力验证 request ID、status/abort、强输出上界、真实停止/资源事实与加载峰值。",
+        "GPU 实验统一排队，记录清理结果、资格/experimental/阻塞结论及 manifest 草案。"
+      ],
+      "checkpoints": {
+        "G0": "环境/许可/关键模型与 stop 可行性结论"
+      },
+      "number": 27,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/27",
+      "kind": "work-package",
+      "parent": "S0",
+      "native_blocked_by": [],
+      "artifact_dependencies": [],
+      "integration_partners": []
+    },
+    {
+      "id": "B01",
+      "title": "[B01] 执行网关、持久意图与真实提交屏障",
+      "scope": "fake engine/controller；网关持久 intent、完整有效命令、提交屏障、查询/取消/unknown、结果观察",
+      "dependencies": "A00；纯规则/fake 可先行，PG 联调 A01/A03",
+      "acceptance": "同意图不重复外发；提交确认丢失查原身份；实际封锁旧入口；未外发失败不能伪造 stop",
+      "size": "L",
+      "team": "B",
+      "stage": "S1",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "交付 fake engine/controller 的重复、丢响应、取消未知和迟到 generation 场景供 A 使用。",
+        "固定完整有效命令与 canonical digest，持久唯一 submit intent 后才在事务外 dispatch。",
+        "实现 create_submit、mark_execution_unknown、record_stop、record_execution_observation、seal_barrier 及自身 query_outcome。",
+        "重复意图只返回原执行；结果未知查原身份，未外发失败明确证明 not_required，不能伪造 stop。",
+        "实际封锁旧入口并协调在途；取消已接受、断线或 TTL 不当停止证据。",
+        "实现 redact_execution_command 的受信清理许可/版本检查与 tombstone，A 才裁决预算释放。"
+      ],
+      "checkpoints": {
+        "G0": "fake 故障与协议子包",
+        "G1": "唯一 intent、真实屏障、unknown/stop 与文件执行"
+      },
+      "number": 28,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/28",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A00",
+          "deliverable": "内部执行/错误/时序样例"
+        },
+        {
+          "id": "A01",
+          "deliverable": "网关表迁移/最小角色/租约查询子包"
+        }
+      ],
+      "integration_partners": ["A03", "B02"]
+    },
+    {
+      "id": "B02",
+      "title": "[B02] 受限节点控制器与实例生命周期",
+      "scope": "受限 node-controller、prepare/stop、generation、peak→steady、drain/停止/释放",
+      "dependencies": "内部契约可先做 fake；生产联调 A01/A03 的 runtime 端口、B01",
+      "acceptance": "批准模板/固定节点；迟到旧 generation 不伤新实例；退出与资源释放双证据；未知保留预算",
+      "size": "L",
+      "team": "B",
+      "stage": "S2",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "只允许批准模板、固定节点/实例身份/配置摘要，控制器不接任意镜像/挂载/shell。",
+        "消费 A 的 runtime prepare/stop 意图并通过协议报告观察，不共写 Scheduler 的预算表。",
+        "实现 generation、高水位和重复/迟到 prepare/stop 的幂等，不能误停替代实例。",
+        "加载前留 peak，warmup/资格 ready 后切 steady；drain 先阻止新准入/提交。",
+        "只有实例退出、资源释放、执行终结/lease 清理均成立才允许退基线；unknown 保留 quarantine。"
+      ],
+      "checkpoints": {
+        "G0": "controller fake/generation 接口",
+        "G1": "prepare/ready 与文件实例准备",
+        "G2": "完整 peak/steady/drain/停止/释放"
+      },
+      "number": 29,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/29",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "A00",
+          "deliverable": "runtime 协议/样例"
+        },
+        {
+          "id": "A01",
+          "deliverable": "runtime 意图/观察与 generation 端口"
+        }
+      ],
+      "integration_partners": ["A03", "B01", "B03"]
+    },
+    {
+      "id": "B03",
+      "title": "[B03] 真实文件 ASR/TTS 与有界媒体流水线",
+      "scope": "文件 ASR、CustomVoice/Base TTS、受控输入输出引用、有界解码/编码与采样时钟映射",
+      "dependencies": "B00/B01；首条真实闭环联调 A02/A03/A04/B02",
+      "acceptance": "长文件/尾部/无语音、交叠去重、MP3/WAV/PCM、正确时间戳；取消与有界资源",
+      "size": "L",
+      "team": "B",
+      "stage": "S1",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "实现有界解码/重采样/切块与原文件/canonical/vendor 时钟映射，覆盖尾部和无语音。",
+        "实现文件 ASR 交叠去重合并、正文与辅助 revision 绑定，时间戳不按文本长度伪造。",
+        "实现 CustomVoice/Base TTS 固定文本/voice/planner，PCM 与 MP3/WAV 编码输出。",
+        "输入输出仅用受控 Asset/Artifact 引用与私有 staging，发布由业务所有者裁决。",
+        "接入真实取消/停止、资源硬上限和错误映射，与 A04/C02 同一场景联合验收。"
+      ],
+      "checkpoints": {
+        "G1": "真实文件 ASR/TTS 和有界媒体/格式/取消"
+      },
+      "number": 30,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/30",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "B00",
+          "deliverable": "批准 binding/模型/镜像及真实能力探针"
+        },
+        {
+          "id": "B01",
+          "deliverable": "持久 intent/dispatch/stop 子包"
+        }
+      ],
+      "integration_partners": ["A02", "A03", "A04", "B02", "C02"]
+    },
+    {
+      "id": "B04",
+      "title": "[B04] 流式 ASR/TTS、PCM 背压与输出区间账本",
+      "scope": "流式 ASR/TTS、内部 WS/二进制 PCM、credit/背压、冻结文本顺序及双工执行、输出区间账本",
+      "dependencies": "B01/B03；B06 的 VAD 先行；联调 A05/C04/B02",
+      "acceptance": "音频与控制关联、旧帧拒绝、有界缓冲/区间去重；1.7B full_segment 和 required 辅助随完整配方准入",
+      "size": "L",
+      "team": "B",
+      "stage": "S2",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "实现内部 WS 控制信封/二进制 PCM framing、seq/epoch/descriptor 与错误联合。",
+        "实现 credits、背压、有界 PCM 缓冲、冻结文本顺序与迟到/越界帧拒绝。",
+        "实现流式 ASR/TTS，full_segment 的 1.7B 复核与 required 辅助在准入时完整可服务。",
+        "实现 append_interval 与流权威锁、部分重叠拒绝、精确重放不重复计量。",
+        "接 A05/C04 的双工准入、停止恢复与硬输出上界，区分首 PCM、网络收到和播放结束。"
+      ],
+      "checkpoints": {
+        "G2": "真实流式、credit、输出区间与硬上界"
+      },
+      "number": 31,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/31",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "B01",
+          "deliverable": "内部流/执行身份与停止基础"
+        },
+        {
+          "id": "B03",
+          "deliverable": "媒体映射/ASR/TTS adapter 基础"
+        },
+        {
+          "id": "B06",
+          "deliverable": "VAD 子项；required 辅助完整配方"
+        }
+      ],
+      "integration_partners": ["A05", "C04", "B02"]
+    },
+    {
+      "id": "B05",
+      "title": "[B05] VoiceDesign/Base、克隆与声音材料恢复",
+      "scope": "VoiceDesign→Base 复用、样本克隆、参考材料恢复、加载热身/回收",
+      "dependencies": "B00/B02/B03；联调 A06/C03",
+      "acceptance": "候选试听和可复用资格分开；不可只保留内存 handle；重启后按固定材料恢复声音",
+      "size": "L",
+      "team": "B",
+      "stage": "S2",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "真实实现 VoiceDesign 候选/参考→Base 克隆→换文复用验证的完整路径。",
+        "独立验证样本克隆、再生成、试听、发布后 Base 合成，未通过的模式不宣称可用。",
+        "持久化可重建声音材料/来源/参考文本及绑定版本，缓存/内存 handle 仅派生。",
+        "实例重启后按固定材料重建，材料缺失/不兼容应报不可用，不偷偷重设计声音。",
+        "接 B02 受控加载/热身/回收与 A06/C03，完整峰值预留、未知清理不退预算。"
+      ],
+      "checkpoints": {
+        "G2": "设计/克隆、换文复用、重启材料恢复"
+      },
+      "number": 32,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/32",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "B00",
+          "deliverable": "VoiceDesign/Base 关键可行性"
+        },
+        {
+          "id": "B02",
+          "deliverable": "prepare/ready 与受控回收子项"
+        },
+        {
+          "id": "B03",
+          "deliverable": "Base/媒体基础"
+        }
+      ],
+      "integration_partners": ["A06", "C03"]
+    },
+    {
+      "id": "B06",
+      "title": "[B06] VAD、对齐与匿名分人能力",
+      "scope": "CPU VAD、版本化切段/对齐/分人及辅助结果；逐能力支持矩阵",
+      "dependencies": "VAD 在 B04 前交付；对齐/分人随 ASR 结果与 C05 场景联调",
+      "acceptance": "匿名标签、跨块连续/重叠/reset；辅助只挂匹配正文 revision；required 不得隐式降级",
+      "size": "L",
+      "team": "B",
+      "stage": "S3",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "优先交付 CPU VAD/会话隔离/前缀缓冲/版本化切段，供 B04 及 C04 使用。",
+        "实现词级对齐和采样映射，辅助只挂到匹配正文 revision。",
+        "实现匿名分人有界状态，覆盖至多八位说话人跨块连续、重叠与 reset。",
+        "能力区分 required/best_effort，required 纳入全配方资源和终态。",
+        "逐绑定验证支持矩阵，无法恢复状态时显式产生标签连续性边界。"
+      ],
+      "checkpoints": {
+        "G1": "实时开发前 VAD 子项",
+        "G2": "required 辅助完整配方",
+        "G3": "分人/对齐支持矩阵与有界连续性"
+      },
+      "number": 33,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/33",
+      "kind": "work-package",
+      "parent": "S3",
+      "native_blocked_by": [],
+      "artifact_dependencies": [],
+      "integration_partners": ["B03", "B04", "C05"]
+    },
+    {
+      "id": "B07",
+      "title": "[B07] 模型部署、混合负载与目标拓扑资格",
+      "scope": "模型部署包与观测、真实质量/容量/混合负载、逻辑与物理集群故障、长时和发布资格",
+      "dependencies": "B00 起建模板；每个实际能力持续补证；最终与 A07/C08 合并",
+      "acceptance": "真实 stop/断网/节点丢失；冻结 binding/拓扑/语料/门槛；负载不过预算，无内容遥测",
+      "size": "L",
+      "team": "B",
+      "stage": "S5",
+      "environment": "MegaCube Linux / GPU",
+      "initial_status": "planned",
+      "steps": [
+        "建立逐 binding/模型/镜像/拓扑/语料/门槛/结果的资格模板与部署内观测。",
+        "G1 文件、G2 实时/音色、G3 1+1/VoiceDesign 混合负载分段出证。",
+        "验证真实停止、旧入口封锁、进程 kill/分区/节点丢失与长时资源曲线。",
+        "固定首轮 ASR 首预览 P95≤1000ms 与 TTS 首 PCM P95≤800ms 的负载/时钟口径，其他质量阈值先冻结。",
+        "确认目标物理拓扑和资源缺口；单 GPU 不能证明备用 GPU 接管。",
+        "交付镜像/权重/许可锁、manifest、告警与发布证据，日志/遥测不含业务内容。"
+      ],
+      "checkpoints": {
+        "G0": "资格模板/门槛/环境窗口",
+        "G1": "文件真实资格",
+        "G2": "实时/音色真实资格",
+        "G3": "1+1/VoiceDesign 混合负载",
+        "G5": "目标拓扑/故障/长时/完整发布资格"
+      },
+      "number": 34,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/34",
+      "kind": "work-package",
+      "parent": "S5",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "B00",
+          "deliverable": "目标环境/版本/许可与门槛草案"
+        }
+      ],
+      "integration_partners": ["A07", "C08", "B03", "B04", "B05"]
+    },
+    {
+      "id": "C00",
+      "title": "[C00] 工作台版本骨架、契约客户端与开发 fake",
+      "scope": "生成客户端消费、契约 fake/错误场景、项目/稿件版本、独立 schema/对象区与迁移、共享交互",
+      "dependencies": "A00 相关接口冻结；可直接基于已有契约起步",
+      "acceptance": "不写底座表、不导入 speech 内部；并发版本冲突；公开字段与本地资源；与 A07 对齐独立删除",
+      "size": "M",
+      "team": "C",
+      "stage": "S0",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "ready",
+      "steps": [
+        "消费 A 维护的生成客户端/类型与事件 validator；等待时基于既有契约完成状态模型，不自写默认值。",
+        "实现工作台独立 schema/对象区、项目/稿件 revision、版本冲突与一个可验证用例。",
+        "核对转写校对/字幕导出协议，缺口由 C 维护契约、A 评审，不私造 API。",
+        "建立开发模式 fake 与合法/非法/故障场景，不把 fixture 注入真实遥测或标 ready。",
+        "复用 Web Token/共享交互，工作台不导入 speech 内部、不共写底座表，与 A07 对齐独立副本删除。"
+      ],
+      "checkpoints": {
+        "G0": "客户端/项目版本骨架/开发 fake 与接口确认"
+      },
+      "number": 35,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/35",
+      "kind": "work-package",
+      "parent": "S0",
+      "native_blocked_by": [],
+      "artifact_dependencies": [],
+      "integration_partners": ["A00", "A07"]
+    },
+    {
+      "id": "C01",
+      "title": "[C01] AdminUI 与持久任务中心",
+      "scope": "Admin 能力/绑定/实例/预算/预设/策略/任务/诊断，工作台任务中心",
+      "dependencies": "C00；fake 首轮开始，真实联调 A04，逐步接 A06/B02",
+      "acceptance": "展示实际事实、ready/contract/planned；管理写入有版本/确认；SSE 恢复与取消不伪成功",
+      "size": "L",
+      "team": "C",
+      "stage": "S3",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "实现模型能力/资格/就绪事实、绑定/实例与资源预算管理视图。",
+        "实现预设/策略/音色等管理写路径的版本冲突与明确确认，不伪装用户权限。",
+        "实现任务列表/详情/进度/取消/重试与 SSE 断线后重读权威状态。",
+        "提供诊断与有界无内容观测，capability 仅 ready/contract/planned。",
+        "fake 可先行，真实管理/任务消费者与 A04/A06/B02 联合验收。",
+        "提供预设草稿/校验/发布/回滚/退役操作与 CAS 冲突反馈，展示有效参数/收紧原因及 exact 拒绝；公开列表不泄漏 draft。"
+      ],
+      "checkpoints": {
+        "G1": "任务/基础管理真实消费者",
+        "G3": "完整基础 Admin/策略/实例/诊断；预设校验/发布/回滚及 CAS 冲突可操作"
+      },
+      "number": 36,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/36",
+      "kind": "work-package",
+      "parent": "S3",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "客户端/fake/交互骨架"
+        }
+      ],
+      "integration_partners": ["A04", "A06", "B02"]
+    },
+    {
+      "id": "C02",
+      "title": "[C02] 转写校对导出与文本配音闭环",
+      "scope": "文件转写→校对→导出；文本配音→试听/下载，两条基础闭环",
+      "dependencies": "C00；真实依赖 A02/A04/B03",
+      "acceptance": "原文与校对 revision 分开；固定 voice/profile/文本；刷新可恢复；重试不重复发布，Range/过期明确",
+      "size": "L",
+      "team": "C",
+      "stage": "S1",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "文件上传→持久 ASR Job→原文结果→独立校对 revision→转写/字幕导出。",
+        "文本配音固定文本/voice/profile/model revision，生成、试听与下载可恢复。",
+        "覆盖同键重放、取消未知、失败/冲突、刷新/断线、事件过期与 Artifact 过期。",
+        "实现 Range/下载与结果边界，浏览器不持有引擎/数据库/组件凭据。",
+        "先完整 fake 交互，再与 A02/A04/B03 同一版本关闭真实闭环。"
+      ],
+      "checkpoints": {
+        "G1": "真实转写校对导出与配音试听下载"
+      },
+      "number": 37,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/37",
+      "kind": "work-package",
+      "parent": "S1",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "项目 revision/生成客户端/fake"
+        }
+      ],
+      "integration_partners": ["A02", "A04", "B03"]
+    },
+    {
+      "id": "C03",
+      "title": "[C03] 音色创作、校验发布与复用工作室",
+      "scope": "音色工作室：设计/克隆、候选、再生成、试听、校验、显式发布和复用",
+      "dependencies": "C00；页面可先 fake，真实依赖 A06/B05",
+      "acceptance": "模式分别资格化；preview_only 不可发布；已发布声音真实参与后续合成",
+      "size": "M",
+      "team": "C",
+      "stage": "S2",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "实现设计/样本克隆分开的输入及材料确认流程。",
+        "实现候选、再生成、试听、复用校验状态和明确失败原因。",
+        "preview_only 不允许发布，显式确认发布不可变 VoiceRevision。",
+        "已发布声音实际用于后续 TTS，退役/禁用/删除与共享部署文案准确。",
+        "同 A06/B05 联验，页面和假数据不构成真实资格。"
+      ],
+      "checkpoints": {
+        "G2": "音色工作室真实创作/校验/发布/复用"
+      },
+      "number": 38,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/38",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "客户端/候选交互骨架"
+        }
+      ],
+      "integration_partners": ["A06", "B05"]
+    },
+    {
+      "id": "C04",
+      "title": "[C04] 浏览器采集播放、实时字幕与媒体生命周期",
+      "scope": "AudioWorklet、有界 PCM、播放 generation、实时 reducer/字幕、设备与页面生命周期",
+      "dependencies": "C00 后立即并行；真实依赖 A05/B04/B06.VAD",
+      "acceptance": "离开/失败/取消释放设备；丢弃迟到音频；权限拒绝、后台节流、重连 gap 明确",
+      "size": "M",
+      "team": "C",
+      "stage": "S2",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "用合成 PCM/fake WS 建立 AudioWorklet、时钟与有界缓冲最小探针。",
+        "实现采集/播放 reducer、credit/gap/epoch 与实时字幕 preview/final 替换。",
+        "播放 generation 隔离迟到旧音频；停止/离开/异常立即释放本地设备。",
+        "逐浏览器验证权限拒绝/撤销、后台节流、休眠/断网/重连与设备切换。",
+        "真实远端使用批准的 HTTPS/WSS/同源入口，麦克风/系统音频按实际支持矩阵开放。",
+        "合成媒体、真实设备、GPU 联调三层分别出证，PCM 不进入 React 查询缓存。"
+      ],
+      "checkpoints": {
+        "G0": "合成媒体/fake WS 探针",
+        "G2": "真实设备/远端实时与生命周期"
+      },
+      "number": 39,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/39",
+      "kind": "work-package",
+      "parent": "S2",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "事件/交互契约基础"
+        }
+      ],
+      "integration_partners": ["A05", "B04", "B06"]
+    },
+    {
+      "id": "C05",
+      "title": "[C05] 会议封存、校对与提词跟随",
+      "scope": "会议保存/封存/校对/导出、匿名分人消费；提词跟随/手动接管",
+      "dependencies": "C02/C04；分人/对齐依赖 B06；普通会议不依赖 LLM",
+      "acceptance": "preview/final/辅助版本正确；封存后不改原文；旧稿/旧 epoch 不推动提词；未保存音频不承诺重识别",
+      "size": "L",
+      "team": "C",
+      "stage": "S4",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "保存会议会话、封存转写 revision，校对与源结果分层，保留来源/缺口。",
+        "消费匹配 revision 的匿名分人与对齐，断线显示 gap，不冒充可无缝恢复。",
+        "会议导出固定版本；未保存音频不承诺会后重新识别。",
+        "提词固定稿件 revision、有限窗口跟随、低置信暂缓与键盘/手动接管。",
+        "旧稿件/stream_epoch 不推动位置；普通会议和提词不依赖 LLM。",
+        "实现会议要点标记及关联会话/转写版本的保存与封存/导出；先核对 workbench 机器契约，缺口由 C 补充并经消费者评审，不私造页面 API。"
+      ],
+      "checkpoints": {
+        "G4": "会议要点标记/封存/校对/导出与提词手动接管"
+      },
+      "number": 40,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/40",
+      "kind": "work-package",
+      "parent": "S4",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C02",
+          "deliverable": "转写/校对/版本基础"
+        },
+        {
+          "id": "C04",
+          "deliverable": "真实字幕/媒体生命周期"
+        }
+      ],
+      "integration_partners": ["B06"]
+    },
+    {
+      "id": "C06",
+      "title": "[C06] 内网 LLM、会议纪要与语音助手",
+      "scope": "工作台 LLM 端口、内网纪要；助手 turn/插话/取消/迟到结果隔离",
+      "dependencies": "C00 可做 fake；纪要依赖 C05；助手还依赖 C02/C04/A05/B04，启用需部署出站资格",
+      "acceptance": "默认关闭、固定服务端端点、无公有云回退；固定转写/模板/模型；失败不改成功语音，旧音频不串播",
+      "size": "L",
+      "team": "C",
+      "stage": "S4",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "实现工作台独立 LLM port/Job/取消与结果，默认关闭，服务端批准端点，禁止公有云回退。",
+        "纪要固定 sealed 转写、模板/模型版本并保留来源，失败不改写成功转写。",
+        "助手持久 turn，固定输入/文本冻结与 TTS/播放器 generation。",
+        "插话先停止旧播放，旧计算按底座停止/释放事实协调，迟到音频不串播。",
+        "验证应用/代理/浏览器/观测内容出站边界；同设备 LLM 占用纳入父预算。"
+      ],
+      "checkpoints": {
+        "G4": "内网 LLM/纪要/助手插话与内容边界"
+      },
+      "number": 41,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/41",
+      "kind": "work-package",
+      "parent": "S4",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "LLM fake/版本基础"
+        },
+        {
+          "id": "C05",
+          "deliverable": "封存转写；纪要真实接入"
+        },
+        {
+          "id": "C02",
+          "deliverable": "TTS/文本冻结；助手接入"
+        },
+        {
+          "id": "C04",
+          "deliverable": "双工/播放 generation；助手接入"
+        }
+      ],
+      "integration_partners": ["A05", "B04", "A07", "B07"]
+    },
+    {
+      "id": "C07",
+      "title": "[C07] 有声书局部重做、保存副本与独立导出",
+      "scope": "有声书稿件/章节/角色/render_unit、词典/音色固定、局部失效、保存副本与独立导出 worker",
+      "dependencies": "C00/C02、A02/A04；音色创作消费依赖 C03；与 C06 无依赖",
+      "acceptance": "改文/换声仅重做相关单元；校验摘要/receipt；导出清单固定、有界/可取消/可续作、无缺章或空成品",
+      "size": "L",
+      "team": "C",
+      "stage": "S4",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "实现 TXT/章节/角色与词典/声音引用、render_unit 固定依赖和局部 stale 裁决。",
+        "改文/换声仅重做相关单元，底座结果与工作台项目保存副本按摘要/receipt 校验。",
+        "独立 export worker 不调用推理引擎，有界 CPU/内存/临时磁盘/并发计入部署预算。",
+        "导出固定清单与检查点，取消/重试/恢复不重复发布，先 staging 校验后原子提交。",
+        "完整性覆盖缺章/空成品/局部失败，关闭工作台不影响底座；无需等待 C06 助手。",
+        "独立保存质量检查、试听与匿名确认记录，固定对应稿件/声音/render_unit 版本，作为导出所需质量校验和确认依据；不宣称实名审核或双人分权。"
+      ],
+      "checkpoints": {
+        "G4": "局部重做/保存副本/独立完整导出；独立质量/试听/匿名确认记录"
+      },
+      "number": 42,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/42",
+      "kind": "work-package",
+      "parent": "S4",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "项目/稿件版本与独立存储"
+        },
+        {
+          "id": "C02",
+          "deliverable": "配音/结果消费基础"
+        },
+        {
+          "id": "A02",
+          "deliverable": "Artifact/receipt 下载与版本"
+        },
+        {
+          "id": "A04",
+          "deliverable": "持久任务/语音 API"
+        },
+        {
+          "id": "C03",
+          "deliverable": "若使用创作声音则需发布/复用子项"
+        }
+      ],
+      "integration_partners": []
+    },
+    {
+      "id": "C08",
+      "title": "[C08] 浏览器、业务删除恢复与应用交付资格",
+      "scope": "实际浏览器流程、键盘/焦点/无障碍与小窗口、工作台删除恢复、文档与应用交付资格",
+      "dependencies": "C00 起建用例；各闭环持续补证；最终汇入 A07/B07",
+      "acceptance": "采集/播放/断网/恢复真实证据；共享部署文案；服务关闭工作台后独立可用；内容不进入日志/外网",
+      "size": "M",
+      "team": "C",
+      "stage": "S5",
+      "environment": "MacBook / 浏览器；Linux 后端另验",
+      "initial_status": "planned",
+      "steps": [
+        "每个 Gate 逐次补浏览器/业务闭环证据，不把全部验收留到末期。",
+        "验证真实采集播放、断网恢复、取消迟到结果、键盘/焦点/小窗口与无障碍。",
+        "验证工作台独立副本、版本化删除/确认/恢复，与 A07 账本边界一致。",
+        "验证 LLM 关闭/不可用及内容出站、共享部署文案与无内容日志。",
+        "Mac 浏览器与 Linux 后端/镜像分层记录；交付支持矩阵、用户文档与运行交接。"
+      ],
+      "checkpoints": {
+        "G0": "目标浏览器/安全上下文矩阵",
+        "G1": "基础页面恢复与下载",
+        "G2": "真实设备/实时/音色交互",
+        "G3": "基础产品体验",
+        "G4": "高级流程/内容生命周期",
+        "G5": "完整浏览器/删除恢复/文档交接"
+      },
+      "number": 43,
+      "url": "https://github.com/hrygo/SpeechNexus/issues/43",
+      "kind": "work-package",
+      "parent": "S5",
+      "native_blocked_by": [],
+      "artifact_dependencies": [
+        {
+          "id": "C00",
+          "deliverable": "目标浏览器/业务骨架"
+        }
+      ],
+      "integration_partners": ["A07", "B07", "C01", "C02", "C03", "C04", "C05", "C06", "C07"]
+    }
+  ],
+  "delivery_coverage": [
+    {
+      "id": "D01",
+      "capability": "契约、生成客户端与兼容子集",
+      "owner": "A",
+      "packages": ["A00", "A04", "A05"],
+      "gates": ["G0", "G1", "G3"],
+      "evidence": "OpenAPI/实时 schema、生成类型、官方 SDK 与真实 HTTP/WS 正负例"
+    },
+    {
+      "id": "D02",
+      "capability": "无状态 MCP 代理与 SDK 接入交付",
+      "owner": "A",
+      "packages": ["A00", "A04", "A07"],
+      "gates": ["G3", "G5"],
+      "evidence": "工具发现/调用、REST 同命令同错误/幂等/取消及可运行安装配置/示例"
+    },
+    {
+      "id": "D03",
+      "capability": "文件 ASR 与完整文本 TTS",
+      "owner": "A/B/C",
+      "packages": ["A02", "A03", "A04", "B01", "B03", "C02"],
+      "gates": ["G1"],
+      "evidence": "真实标准 SDK/页面、采样映射、MP3/WAV/PCM、取消恢复与制品发布"
+    },
+    {
+      "id": "D04",
+      "capability": "实时 ASR/TTS、字幕与双工",
+      "owner": "A/B/C",
+      "packages": ["A05", "B04", "B06", "C04"],
+      "gates": ["G2", "G3"],
+      "evidence": "owner/epoch/gap/credit、完整配方准入、可信 stop、真实设备与样本区间"
+    },
+    {
+      "id": "D05",
+      "capability": "音色设计、克隆、校验发布及复用",
+      "owner": "A/B/C",
+      "packages": ["A06", "B02", "B05", "C03"],
+      "gates": ["G2", "G3"],
+      "evidence": "设计/克隆分别验证；换文复用→显式发布→后续 TTS；重启材料恢复"
+    },
+    {
+      "id": "D06",
+      "capability": "预设、发音资源与不可变版本",
+      "owner": "A/C",
+      "packages": ["A02", "A04", "A06", "C01", "C07"],
+      "gates": ["G1", "G3", "G4"],
+      "evidence": "合并顺序/allowlist/ranges/exact、发布资格/CAS、默认指针回滚不改旧 Job、预设/词典公开端点与固定 revision"
+    },
+    {
+      "id": "D07",
+      "capability": "持久任务、完整预算与计量",
+      "owner": "A/B",
+      "packages": ["A01", "A03", "B01", "B02", "B04"],
+      "gates": ["G1", "G2", "G3"],
+      "evidence": "18 端口/完整快照、单事务准入、双库协调、跨池父预算、unknown 不提前释放"
+    },
+    {
+      "id": "D08",
+      "capability": "工作台项目、转写校对与配音",
+      "owner": "A/C",
+      "packages": ["A02", "A04", "C00", "C02"],
+      "gates": ["G1", "G3"],
+      "evidence": "独立 schema/版本、原文/校对分层、持久恢复、公开 API/receipt 消费"
+    },
+    {
+      "id": "D09",
+      "capability": "Admin、模型/实例/策略/任务与诊断",
+      "owner": "A/B/C",
+      "packages": ["A04", "A06", "B02", "C01"],
+      "gates": ["G1", "G3"],
+      "evidence": "真实能力/资格/就绪、管理写路径版本/确认、任务恢复与共享边界"
+    },
+    {
+      "id": "D10",
+      "capability": "VAD、对齐与匿名分人",
+      "owner": "B/C",
+      "packages": ["B06", "C04", "C05"],
+      "gates": ["G2", "G3", "G4"],
+      "evidence": "有界会话、匹配正文 revision、跨块连续/重叠/reset、required 完整准入"
+    },
+    {
+      "id": "D11",
+      "capability": "会议、封存导出与提词",
+      "owner": "B/C",
+      "packages": ["B06", "C02", "C04", "C05"],
+      "gates": ["G4"],
+      "evidence": "要点标记/版本保存、sealed 转写/校对、来源/gap、旧稿/旧 epoch 隔离、手动接管"
+    },
+    {
+      "id": "D12",
+      "capability": "内网 LLM、纪要与语音助手",
+      "owner": "A/B/C",
+      "packages": ["A05", "B04", "B07", "C06", "C08"],
+      "gates": ["G4", "G5"],
+      "evidence": "默认关闭、批准内网/无外网回退、固定版本、turn/插话/迟到音频隔离"
+    },
+    {
+      "id": "D13",
+      "capability": "有声书、保存副本与独立导出",
+      "owner": "A/C",
+      "packages": ["A02", "A04", "C02", "C03", "C07"],
+      "gates": ["G4"],
+      "evidence": "render_unit 依赖/局部重做、非空 source receipt、副本校验、独立质量/试听/匿名确认记录、有界完整导出"
+    },
+    {
+      "id": "D14",
+      "capability": "内容删除、保留与恢复",
+      "owner": "A/B/C",
+      "packages": ["A07", "B01", "C00", "C07", "C08"],
+      "gates": ["G1", "G2", "G3", "G4", "G5"],
+      "evidence": "预检/明确确认、tombstone、正文清理、独立副本不误删、恢复先重放删除账本"
+    },
+    {
+      "id": "D15",
+      "capability": "浏览器体验、入口及内容网络",
+      "owner": "A/B/C",
+      "packages": ["A07", "B07", "C04", "C06", "C08"],
+      "gates": ["G2", "G4", "G5"],
+      "evidence": "HTTPS/WSS/Host/Origin、设备/播放/键盘/无障碍矩阵、无内容日志与出站实测"
+    },
+    {
+      "id": "D16",
+      "capability": "部署、观测、集群、恢复与发布",
+      "owner": "A/B/C",
+      "packages": ["A07", "B02", "B07", "C08"],
+      "gates": ["G3", "G5"],
+      "evidence": "同构角色/唯一权威、目标物理拓扑、混合负载/长时/质量、告警、许可/运维和 RPO/RTO 演练"
+    }
+  ]
+}

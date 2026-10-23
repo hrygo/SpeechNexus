@@ -109,6 +109,6 @@ uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lin
 `test_gateway_submit_ledger.py` 在真实 PostgreSQL 上、以非 owner 的 gateway 角色运行：创建后
 重放不产生第二行也不再外发；新进程（新池）读回同一 intent；`save` 版本守卫与陈旧写入失败；
 封屏障/非活动租约/未知租约/流采样率冲突各自拒绝；两 stage 共享一条流权威行；无音频阶段不建流、
-无上限；管理员改坏 `sample_rate_hz` 后读取报 `reconciliation_required`；另一个连接持有池行时提交
-事务真实等待该行锁，释放后才提交。InnoDB 分支按设计跳过（adapter 是 PostgreSQL 专用），不构成
+无上限；管理员改坏 `sample_rate_hz` 后读取报 `reconciliation_required`；同一连接上建同名临时表后，无限定名的读取
+仍解析到权威表；另一个连接持有池行时提交事务真实等待该行锁，释放后才提交。InnoDB 分支按设计跳过（adapter 是 PostgreSQL 专用），不构成
 MySQL 支持承诺。

@@ -110,12 +110,13 @@ def request_for(identity: SubmissionIdentity, *, stream: str | None = "tts-main"
     return SubmitRequest(identity=identity, command=COMMAND, output_stream_id=stream)
 
 
-def open_pool(foundation: Foundation) -> GatewayPool:
+def open_pool(foundation: Foundation, *, max_size: int = 4) -> GatewayPool:
     if foundation.database.dialect != "postgresql":
         pytest.skip("The gateway submit ledger is a PostgreSQL adapter; InnoDB holds the schema")
     pool = gateway_pool(
         make_conninfo(foundation.database.url, user=foundation.gateway_role, password=PASSWORD),
         schema=foundation.database.schema,
+        max_size=max_size,
     )
     pool.open()
     return pool
@@ -542,4 +543,40 @@ def test_the_submit_transaction_waits_for_the_pool_row_lock(foundation: Foundati
         assert engine.dispatch_count == 1
     finally:
         blocker.close()
+        pool.close()
+
+
+def test_a_temporary_relation_never_becomes_the_fact_source(foundation: Foundation) -> None:
+    seed_second_attempt(foundation)
+    pool = open_pool(foundation, max_size=1)
+    try:
+        ledger = PostgresSubmissionLedger(pool)
+        service, _ = service_for(ledger)
+        request = request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+        service.submit(request)
+        with pool.connection() as connection:
+            connection.execute(
+                "CREATE TEMP TABLE submit_intents (submit_intent_id text, request_digest text)"
+            )
+            shimmed = connection.execute(
+                "SELECT count(*) AS n FROM pg_class c "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname LIKE 'pg_temp%' AND c.relname = 'submit_intents'"
+            ).fetchone()
+            assert shimmed is not None and shimmed["n"] == 1
+            # An unqualified read still resolves to the authoritative table, not the
+            # empty temporary relation with the same name.
+            counted = connection.execute("SELECT count(*) AS n FROM submit_intents").fetchone()
+            assert counted is not None and counted["n"] >= 1
+            shadowed = connection.execute(
+                "SELECT count(*) AS n FROM pg_temp.submit_intents"
+            ).fetchone()
+            assert shadowed is not None and shadowed["n"] == 0
+
+        stored = ledger.get("intent-a")
+
+        assert stored is not None
+        assert stored.request_digest == request.request_digest
+        assert stored.version == 2
+    finally:
         pool.close()

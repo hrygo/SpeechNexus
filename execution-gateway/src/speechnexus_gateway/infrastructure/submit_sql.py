@@ -1,0 +1,413 @@
+"""Explicit submit-intent statements; the caller owns the transaction.
+
+``create_submit`` locks the pool row, the attempt and the lease in the contract's global
+order, re-reads the authority after waiting for those locks, verifies the claim against it,
+then writes one ``submit_intents`` row and, for a PCM stage, its ``output_stream_heads``
+row. No engine call, object write, budget calculation or sleep happens inside the
+transaction, and the canonical request body is written but never selected back here.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any, Final, Protocol
+
+from speechnexus_gateway.domain.submission import (
+    CleanupState,
+    ExecutionErrorCode,
+    ExecutionState,
+    InvalidExecutionRequestError,
+    LeaseFacts,
+    LeaseState,
+    StaleSubmissionVersionError,
+    StopEvidenceKind,
+    SubmissionIdentity,
+    SubmissionIntent,
+    SubmissionStoreError,
+    hard_output_ceiling_samples,
+    max_output_audio_ms_for,
+    verify_submit_identity,
+)
+
+_EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
+
+#: Stop kinds that must exist as their own append-only ``execution_stop_evidence`` row.
+_EVIDENCE_ROW_KINDS: Final = frozenset(
+    {
+        StopEvidenceKind.ENGINE_ABORT_ACK,
+        StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
+        StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
+    }
+)
+
+#: Columns ``create_submit`` inserts; the gateway role holds table-wide INSERT here.
+SUBMIT_INTENT_INSERT_COLUMNS: Final = (
+    "submit_intent_id",
+    "lease_id",
+    "operation_id",
+    "attempt_id",
+    "command_digest",
+    "request_digest",
+    "request_document",
+    "voice_revision_id",
+    "deadline_at_us",
+    "recorded_at_us",
+    "updated_at_us",
+    "execution_state",
+    "cleanup_state",
+    "engine_request_id",
+    "dispatched_at_us",
+    "error_code",
+    "output_stream_id",
+    "sample_rate_hz",
+    "hard_output_ceiling_samples",
+    "version",
+)
+
+#: Columns a state change rewrites. Identity, digest, body and stream stay immutable.
+SUBMIT_INTENT_UPDATE_COLUMNS: Final = (
+    "execution_state",
+    "cleanup_state",
+    "engine_request_id",
+    "dispatched_at_us",
+    "error_code",
+    "updated_at_us",
+    "version",
+)
+
+_INSERT_INTENT = (
+    "INSERT INTO submit_intents ("
+    + ", ".join(SUBMIT_INTENT_INSERT_COLUMNS)
+    + ") VALUES ("
+    + ", ".join("%s" for _ in SUBMIT_INTENT_INSERT_COLUMNS)
+    + ")"
+)
+
+_UPDATE_INTENT = (
+    "UPDATE submit_intents SET "
+    + ", ".join(f"{column} = %s" for column in SUBMIT_INTENT_UPDATE_COLUMNS if column != "version")
+    + ", version = version + 1 WHERE submit_intent_id = %s AND version = %s"
+)
+
+_LOCK_POOL = "UPDATE resource_pools SET version = version WHERE pool_id = %s"
+
+_LOCK_ATTEMPT = (
+    "UPDATE admission_attempts SET version = version WHERE operation_id = %s AND attempt_id = %s"
+)
+
+_LOCK_LEASE = "UPDATE admission_leases SET version = version WHERE lease_id = %s"
+
+_SELECT_AUTHORITY = """
+SELECT l.lease_id, l.operation_id, l.attempt_id, l.stage_id, l.host_node_id, l.instance_id,
+       l.instance_generation, l.pool_id, l.gateway_id, l.fencing_token, l.lease_state,
+       a.workspace_id, a.binding_revision_id, a.policy_revision_id
+FROM admission_leases AS l
+JOIN admission_attempts AS a
+  ON a.operation_id = l.operation_id AND a.attempt_id = l.attempt_id
+WHERE l.lease_id = %s
+"""
+
+_SELECT_BARRIER = (
+    "SELECT min_fencing_token FROM gateway_fencing_barriers WHERE gateway_id = %s AND pool_id = %s"
+)
+
+_SELECT_STREAM_HEAD = (
+    "SELECT sample_rate_hz FROM output_stream_heads "
+    "WHERE operation_id = %s AND attempt_id = %s AND output_stream_id = %s FOR UPDATE"
+)
+
+_INSERT_STREAM_HEAD = (
+    "INSERT INTO output_stream_heads "
+    "(operation_id, attempt_id, output_stream_id, sample_rate_hz) VALUES (%s, %s, %s, %s)"
+)
+
+_SELECT_INTENT = """
+SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_digest,
+       s.request_digest, s.voice_revision_id, s.deadline_at_us, s.recorded_at_us,
+       s.updated_at_us, s.execution_state, s.cleanup_state, s.engine_request_id,
+       s.dispatched_at_us, s.error_code, s.output_stream_id, s.sample_rate_hz,
+       s.hard_output_ceiling_samples, s.version, e.evidence_kind, e.evidence_digest,
+       l.stage_id, l.pool_id, l.host_node_id, l.gateway_id, l.instance_id,
+       l.instance_generation, l.fencing_token,
+       a.workspace_id, a.binding_revision_id, a.policy_revision_id
+FROM submit_intents AS s
+JOIN admission_leases AS l
+  ON l.lease_id = s.lease_id AND l.operation_id = s.operation_id AND l.attempt_id = s.attempt_id
+JOIN admission_attempts AS a
+  ON a.operation_id = s.operation_id AND a.attempt_id = s.attempt_id
+LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = s.submit_intent_id
+WHERE s.submit_intent_id = %s
+"""
+
+
+class SubmitCursor(Protocol):
+    """The part of a DB-API cursor these statements use."""
+
+    @property
+    def rowcount(self) -> int: ...
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object: ...
+
+    def fetchall(self) -> list[dict[str, Any]]: ...
+
+
+def to_unix_micros(value: datetime) -> int:
+    """Encode an instant the way the coordination tables store it."""
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("coordination instants must be timezone aware")
+    delta = value.astimezone(UTC) - _EPOCH
+    micros = (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
+    if micros < 0:
+        raise ValueError("coordination instants must not precede the Unix epoch")
+    return micros
+
+
+def from_unix_micros(value: int) -> datetime:
+    return _EPOCH + timedelta(microseconds=value)
+
+
+def submit_intent_values(intent: SubmissionIntent, request_document: str) -> dict[str, object]:
+    """Map a durable intent to its stored columns; the order is the INSERT order."""
+    identity = intent.identity
+    return {
+        "submit_intent_id": identity.submit_intent_id,
+        "lease_id": identity.lease_id,
+        "operation_id": identity.operation_id,
+        "attempt_id": identity.attempt_id,
+        "command_digest": identity.command_digest,
+        "request_digest": intent.request_digest,
+        "request_document": request_document,
+        "voice_revision_id": identity.voice_revision_id,
+        "deadline_at_us": to_unix_micros(identity.deadline_at),
+        "recorded_at_us": to_unix_micros(intent.recorded_at),
+        "updated_at_us": to_unix_micros(intent.updated_at),
+        "execution_state": intent.execution_state.value,
+        "cleanup_state": intent.cleanup_state.value,
+        "engine_request_id": intent.engine_request_id,
+        "dispatched_at_us": (
+            None if intent.dispatched_at is None else to_unix_micros(intent.dispatched_at)
+        ),
+        "error_code": None if intent.error_code is None else intent.error_code.value,
+        "output_stream_id": intent.output_stream_id,
+        "sample_rate_hz": identity.sample_rate_hz,
+        "hard_output_ceiling_samples": hard_output_ceiling_samples(
+            max_output_audio_ms=identity.max_output_audio_ms,
+            sample_rate_hz=identity.sample_rate_hz,
+        ),
+        "version": intent.version,
+    }
+
+
+def submit_intent_update_values(intent: SubmissionIntent) -> dict[str, object]:
+    """Map the mutable part of an intent to its stored columns."""
+    return {
+        "execution_state": intent.execution_state.value,
+        "cleanup_state": intent.cleanup_state.value,
+        "engine_request_id": intent.engine_request_id,
+        "dispatched_at_us": (
+            None if intent.dispatched_at is None else to_unix_micros(intent.dispatched_at)
+        ),
+        "error_code": None if intent.error_code is None else intent.error_code.value,
+        "updated_at_us": to_unix_micros(intent.updated_at),
+        "version": intent.version,
+    }
+
+
+def _lock_authority_rows(cursor: SubmitCursor, identity: SubmissionIdentity) -> None:
+    """Take the pool, attempt and lease rows in the contract's global order."""
+    for statement, parameters, description in (
+        (_LOCK_POOL, (identity.pool_id,), "pool"),
+        (
+            _LOCK_ATTEMPT,
+            (identity.operation_id, identity.attempt_id),
+            "attempt",
+        ),
+        (_LOCK_LEASE, (identity.lease_id,), "lease"),
+    ):
+        cursor.execute(statement, parameters)
+        if cursor.rowcount != 1:
+            raise InvalidExecutionRequestError(f"submit references an unknown {description}")
+
+
+def _read_lease_facts(cursor: SubmitCursor, lease_id: str) -> LeaseFacts:
+    cursor.execute(_SELECT_AUTHORITY, (lease_id,))
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise InvalidExecutionRequestError("submit references an unknown lease or attempt")
+    row = rows[0]
+    try:
+        return LeaseFacts(
+            lease_id=row["lease_id"],
+            operation_id=row["operation_id"],
+            attempt_id=row["attempt_id"],
+            stage_id=row["stage_id"],
+            workspace_id=row["workspace_id"],
+            pool_id=row["pool_id"],
+            host_node_id=row["host_node_id"],
+            gateway_id=row["gateway_id"],
+            instance_id=row["instance_id"],
+            instance_generation=row["instance_generation"],
+            fencing_token=row["fencing_token"],
+            lease_state=LeaseState(row["lease_state"]),
+            binding_revision_id=row["binding_revision_id"],
+            policy_revision_id=row["policy_revision_id"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise SubmissionStoreError(
+            f"stored lease authority is not readable: {type(error).__name__}"
+        ) from None
+
+
+def _read_sealed_min_fencing_token(
+    cursor: SubmitCursor, identity: SubmissionIdentity
+) -> int | None:
+    cursor.execute(_SELECT_BARRIER, (identity.gateway_id, identity.pool_id))
+    rows = cursor.fetchall()
+    if len(rows) > 1:
+        raise SubmissionStoreError("gateway barrier is not uniquely identified")
+    return None if not rows else int(rows[0]["min_fencing_token"])
+
+
+def _create_output_stream_head(cursor: SubmitCursor, intent: SubmissionIntent) -> None:
+    identity = intent.identity
+    if identity.sample_rate_hz is None:
+        return
+    stream_id = intent.output_stream_id
+    if stream_id is None:
+        raise InvalidExecutionRequestError("an audio stage submits with an output stream id")
+    parameters = (identity.operation_id, identity.attempt_id, stream_id)
+    cursor.execute(_SELECT_STREAM_HEAD, parameters)
+    rows = cursor.fetchall()
+    if rows:
+        if rows[0]["sample_rate_hz"] != identity.sample_rate_hz:
+            raise InvalidExecutionRequestError("the frozen output stream uses another sample rate")
+        return
+    cursor.execute(_INSERT_STREAM_HEAD, (*parameters, identity.sample_rate_hz))
+
+
+def create_submit_in_transaction(
+    cursor: SubmitCursor, intent: SubmissionIntent, request_document: str
+) -> None:
+    """Write one intent for a verified claim; an existing record is never returned."""
+    identity = intent.identity
+    _lock_authority_rows(cursor, identity)
+    facts = _read_lease_facts(cursor, identity.lease_id)
+    verify_submit_identity(
+        identity,
+        facts,
+        sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
+    )
+    values = submit_intent_values(intent, request_document)
+    if tuple(values) != SUBMIT_INTENT_INSERT_COLUMNS:
+        raise RuntimeError("submit intent insert columns drifted from the statement")
+    cursor.execute(_INSERT_INTENT, tuple(values.values()))
+    _create_output_stream_head(cursor, intent)
+
+
+def read_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> SubmissionIntent | None:
+    """Rebuild the durable intent from its own row and the authority it refers to."""
+    cursor.execute(_SELECT_INTENT, (submit_intent_id,))
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise SubmissionStoreError("submit intent does not resolve to exactly one authority")
+    return _intent_from_row(rows[0])
+
+
+def save_submit_intent(
+    cursor: SubmitCursor, intent: SubmissionIntent, *, expected_version: int
+) -> None:
+    """Write the state the caller derived, but only from the version it read."""
+    if intent.version != expected_version + 1:
+        raise ValueError("a saved intent carries exactly one version beyond the read version")
+    if intent.stop_evidence_kind in _EVIDENCE_ROW_KINDS:
+        # A verified stop is one fact in two tables; writing only the state here would
+        # claim a stop that no evidence row supports. The record_stop port owns that pair.
+        raise ValueError(
+            "verified stop evidence is appended by the record_stop port, which is not implemented"
+        )
+    values = submit_intent_update_values(intent)
+    if tuple(values) != SUBMIT_INTENT_UPDATE_COLUMNS:
+        raise RuntimeError("submit intent update columns drifted from the statement")
+    cursor.execute(
+        _UPDATE_INTENT,
+        (
+            *(value for name, value in values.items() if name != "version"),
+            intent.identity.submit_intent_id,
+            expected_version,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise StaleSubmissionVersionError(
+            "submit intent was not updated at the version the caller read"
+        )
+
+
+def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
+    try:
+        sample_rate_hz = row["sample_rate_hz"]
+        ceiling = row["hard_output_ceiling_samples"]
+        identity = SubmissionIdentity(
+            submit_intent_id=row["submit_intent_id"],
+            lease_id=row["lease_id"],
+            operation_id=row["operation_id"],
+            attempt_id=row["attempt_id"],
+            stage_id=row["stage_id"],
+            workspace_id=row["workspace_id"],
+            pool_id=row["pool_id"],
+            host_node_id=row["host_node_id"],
+            gateway_id=row["gateway_id"],
+            instance_id=row["instance_id"],
+            instance_generation=row["instance_generation"],
+            binding_revision_id=row["binding_revision_id"],
+            policy_revision_id=row["policy_revision_id"],
+            voice_revision_id=row["voice_revision_id"],
+            fencing_token=row["fencing_token"],
+            command_digest=row["command_digest"],
+            deadline_at=from_unix_micros(row["deadline_at_us"]),
+            max_output_audio_ms=(
+                None
+                if ceiling is None
+                else max_output_audio_ms_for(ceiling_samples=ceiling, sample_rate_hz=sample_rate_hz)
+            ),
+            sample_rate_hz=sample_rate_hz,
+        )
+        evidence_kind = row["evidence_kind"]
+        state = ExecutionState(row["execution_state"])
+        return SubmissionIntent(
+            identity=identity,
+            recorded_at=from_unix_micros(row["recorded_at_us"]),
+            updated_at=from_unix_micros(row["updated_at_us"]),
+            request_digest=row["request_digest"],
+            output_stream_id=row["output_stream_id"],
+            execution_state=state,
+            cleanup_state=CleanupState(row["cleanup_state"]),
+            dispatched_at=(
+                None
+                if row["dispatched_at_us"] is None
+                else from_unix_micros(row["dispatched_at_us"])
+            ),
+            engine_request_id=row["engine_request_id"],
+            error_code=(
+                None if row["error_code"] is None else ExecutionErrorCode(row["error_code"])
+            ),
+            stop_evidence_kind=_stored_stop_evidence_kind(state, evidence_kind),
+            stop_evidence_digest=row["evidence_digest"],
+            version=row["version"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise SubmissionStoreError(
+            f"stored submit intent is not readable: {type(error).__name__}"
+        ) from None
+
+
+def _stored_stop_evidence_kind(
+    state: ExecutionState, evidence_kind: str | None
+) -> StopEvidenceKind:
+    """Read the stop kind from its own row; a success carries its own terminal evidence."""
+    if evidence_kind is not None:
+        return StopEvidenceKind(evidence_kind)
+    if state is ExecutionState.SUCCEEDED:
+        return StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+    return StopEvidenceKind.NONE

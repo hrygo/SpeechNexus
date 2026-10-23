@@ -5,20 +5,28 @@ an intent is persisted before an engine request, a repeated intent never causes 
 second dispatch, an ambiguous dispatch stays quarantined while holding capacity,
 and a failure that never reached the engine releases capacity as
 ``not_required`` instead of fabricating stop evidence.
+
+The port that persists the intent is ``create_submit`` in
+``contracts/internal/coordination-transactions.schema.json``: it validates the complete
+execution request against the authoritative lease rows, writes one intent, and never
+dispatches. A replay compares the whole effective request, so the request digest and its
+canonical document travel with the intent.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Final
 
-from speechnexus_gateway.domain.canonical import JsonValue
+from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 
 _DIGEST_PATTERN: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SAMPLE_RATES: Final = frozenset({16000, 24000, 48000})
+_MIN_OUTPUT_AUDIO_MS: Final = 100
+_MAX_INT64: Final = 2**63 - 1
 
 
 class ExecutionState(StrEnum):
@@ -52,6 +60,21 @@ class CleanupState(StrEnum):
     PENDING = "pending"
     COMPLETE = "complete"
     QUARANTINED = "quarantined"
+
+
+class LeaseState(StrEnum):
+    """Reservation states a submit may observe on the authoritative lease row."""
+
+    RESERVED = "reserved"
+    EXECUTING = "executing"
+    STOPPING = "stopping"
+    RELEASED = "released"
+    QUARANTINED = "quarantined"
+
+    @property
+    def accepts_submit(self) -> bool:
+        """Only a lease that has not stopped or been isolated may take a first submit."""
+        return self in {LeaseState.RESERVED, LeaseState.EXECUTING}
 
 
 class StopEvidenceKind(StrEnum):
@@ -123,6 +146,65 @@ class CancellationUnconfirmedError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.CANCELLATION_UNCONFIRMED
 
 
+class LeaseNotActiveError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.LEASE_NOT_ACTIVE
+
+
+class StaleFencingTokenError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.STALE_FENCING_TOKEN
+
+
+class InstanceGenerationMismatchError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.INSTANCE_GENERATION_MISMATCH
+
+
+class GatewayBarrierFencedError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.GATEWAY_BARRIER_FENCED
+
+
+class SubmissionOutcomeUnknownError(Exception):
+    """The store cannot prove whether the transaction committed.
+
+    Recovery is a read of the original identity; the caller must not repeat the write
+    or dispatch as if the intent did not exist.
+    """
+
+    code: str = "outcome_unknown"
+    recovery: str = "query_original"
+
+
+class SubmissionStoreError(Exception):
+    """A store failure that is not a business rejection of the request.
+
+    ``code`` and ``recovery`` are the transaction error code and recovery hint from
+    ``contracts/internal/coordination-transactions.schema.json``; an interface layer maps
+    them instead of inventing new codes.
+    """
+
+    code: str = "reconciliation_required"
+    recovery: str = "reconcile"
+
+
+class SubmissionStoreUnavailableError(SubmissionStoreError):
+    """No transaction was committed, so retrying the same request is safe."""
+
+    recovery = "retry_transaction"
+
+
+class SubmissionIntentExistsError(SubmissionStoreError):
+    """The submit identity or its lease already owns a durable intent."""
+
+    code = "idempotency_conflict"
+    recovery = "query_original"
+
+
+class StaleSubmissionVersionError(SubmissionStoreError):
+    """The stored intent moved on since the caller read it."""
+
+    code = "version_conflict"
+    recovery = "query_current_authority"
+
+
 @dataclass(frozen=True, slots=True)
 class SubmissionIdentity:
     """Frozen identity and budget identity of one attempt."""
@@ -158,14 +240,170 @@ class SubmissionIdentity:
             raise ValueError("sample_rate_hz is required exactly when max_output_audio_ms is set")
         if self.sample_rate_hz is not None and self.sample_rate_hz not in _SAMPLE_RATES:
             raise ValueError("sample_rate_hz must be 16000, 24000 or 48000")
+        if self.max_output_audio_ms is not None and self.max_output_audio_ms < _MIN_OUTPUT_AUDIO_MS:
+            raise ValueError("max_output_audio_ms must be at least 100")
+
+
+@dataclass(frozen=True, slots=True)
+class LeaseFacts:
+    """Authoritative lease and attempt facts, read under the submit port's row locks.
+
+    A claim is never trusted on its own: the adapter locks the pool, the attempt and the
+    lease, then :func:`verify_submit_identity` compares every shared field with these rows.
+    """
+
+    lease_id: str
+    operation_id: str
+    attempt_id: str
+    stage_id: str
+    workspace_id: str
+    pool_id: str
+    host_node_id: str
+    gateway_id: str
+    instance_id: str
+    instance_generation: int
+    fencing_token: int
+    lease_state: LeaseState
+    binding_revision_id: str
+    policy_revision_id: str
+
+
+def verify_submit_identity(
+    identity: SubmissionIdentity,
+    facts: LeaseFacts,
+    *,
+    sealed_min_fencing_token: int | None,
+) -> None:
+    """Reject a submit that disagrees with the locked authority, or with a sealed barrier."""
+    claimed = (
+        ("lease_id", identity.lease_id, facts.lease_id),
+        ("operation_id", identity.operation_id, facts.operation_id),
+        ("attempt_id", identity.attempt_id, facts.attempt_id),
+        ("stage_id", identity.stage_id, facts.stage_id),
+        ("workspace_id", identity.workspace_id, facts.workspace_id),
+        ("pool_id", identity.pool_id, facts.pool_id),
+        ("host_node_id", identity.host_node_id, facts.host_node_id),
+        ("gateway_id", identity.gateway_id, facts.gateway_id),
+        ("instance_id", identity.instance_id, facts.instance_id),
+        ("binding_revision_id", identity.binding_revision_id, facts.binding_revision_id),
+        ("policy_revision_id", identity.policy_revision_id, facts.policy_revision_id),
+    )
+    for name, claimed_value, authoritative_value in claimed:
+        if claimed_value != authoritative_value:
+            raise InvalidExecutionRequestError(
+                f"submit identity disagrees with the lease on {name}"
+            )
+    if identity.instance_generation != facts.instance_generation:
+        raise InstanceGenerationMismatchError(
+            "submit identity disagrees with the lease on instance_generation"
+        )
+    if identity.fencing_token != facts.fencing_token:
+        raise StaleFencingTokenError("submit identity disagrees with the lease on fencing_token")
+    if not facts.lease_state.accepts_submit:
+        raise LeaseNotActiveError(f"lease is {facts.lease_state}")
+    if sealed_min_fencing_token is not None and identity.fencing_token < sealed_min_fencing_token:
+        raise GatewayBarrierFencedError(
+            "a sealed gateway barrier already requires a higher fencing token"
+        )
+
+
+def hard_output_ceiling_samples(
+    *, max_output_audio_ms: int | None, sample_rate_hz: int | None
+) -> int | None:
+    """Return the frozen sample ceiling, or ``None`` for a stage that emits no audio."""
+    if (max_output_audio_ms is None) != (sample_rate_hz is None):
+        raise ValueError("sample_rate_hz is required exactly when max_output_audio_ms is set")
+    if max_output_audio_ms is None or sample_rate_hz is None:
+        return None
+    if max_output_audio_ms < _MIN_OUTPUT_AUDIO_MS:
+        raise ValueError("max_output_audio_ms must be at least 100")
+    if sample_rate_hz not in _SAMPLE_RATES:
+        raise ValueError("sample_rate_hz must be 16000, 24000 or 48000")
+    if max_output_audio_ms * sample_rate_hz > _MAX_INT64:
+        raise ValueError("the output ceiling overflows a signed 64-bit sample count")
+    return -(-max_output_audio_ms * sample_rate_hz // 1000)
+
+
+def max_output_audio_ms_for(*, ceiling_samples: int, sample_rate_hz: int) -> int:
+    """Invert :func:`hard_output_ceiling_samples` exactly, never by rounding down.
+
+    A stored ceiling that does not represent a whole millisecond would silently widen or
+    narrow the frozen output budget, so it is reported instead of reinterpreted.
+    """
+    if ceiling_samples < 0:
+        raise ValueError("hard_output_ceiling_samples must not be negative")
+    if sample_rate_hz not in _SAMPLE_RATES:
+        raise ValueError("sample_rate_hz must be 16000, 24000 or 48000")
+    scaled = ceiling_samples * 1000
+    if scaled % sample_rate_hz:
+        raise ValueError("hard_output_ceiling_samples is not a whole-millisecond ceiling")
+    return scaled // sample_rate_hz
+
+
+def contract_instant_text(value: datetime) -> str:
+    """Serialize an instant the way the canonical request document must contain it.
+
+    The gateway resolves the wire value before digesting anything, so the same instant is
+    written the same way whatever offset the caller used.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("execution instants must be timezone aware")
+    return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 @dataclass(frozen=True, slots=True)
 class SubmitRequest:
-    """A submission as received at the gateway boundary."""
+    """A submission as received at the gateway boundary.
+
+    ``output_stream_id`` is the ``create_submit`` sibling of the execution request: the
+    contract requires it exactly for stages that emit PCM, and forbids it otherwise.
+    """
 
     identity: SubmissionIdentity
     command: JsonValue
+    output_stream_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.output_stream_id is None) != (self.identity.sample_rate_hz is None):
+            raise ValueError("output_stream_id is required exactly when sample_rate_hz is set")
+
+    @property
+    def effective_request(self) -> JsonValue:
+        """The resolved request, in the shape the persisted document must carry."""
+        identity = self.identity
+        execution_request: dict[str, JsonValue] = {
+            "submit_intent_id": identity.submit_intent_id,
+            "lease_id": identity.lease_id,
+            "operation_id": identity.operation_id,
+            "attempt_id": identity.attempt_id,
+            "stage_id": identity.stage_id,
+            "workspace_id": identity.workspace_id,
+            "pool_id": identity.pool_id,
+            "host_node_id": identity.host_node_id,
+            "gateway_id": identity.gateway_id,
+            "instance_id": identity.instance_id,
+            "instance_generation": identity.instance_generation,
+            "binding_revision_id": identity.binding_revision_id,
+            "policy_revision_id": identity.policy_revision_id,
+            "voice_revision_id": identity.voice_revision_id,
+            "fencing_token": identity.fencing_token,
+            "command_digest": identity.command_digest,
+            "command": self.command,
+            "deadline_at": contract_instant_text(identity.deadline_at),
+            "max_output_audio_ms": identity.max_output_audio_ms,
+            "sample_rate_hz": identity.sample_rate_hz,
+        }
+        return {"execution_request": execution_request, "output_stream_id": self.output_stream_id}
+
+    @property
+    def request_document(self) -> str:
+        """Canonical text persisted next to the intent so the request stays recoverable."""
+        return canonical_json(self.effective_request)
+
+    @property
+    def request_digest(self) -> str:
+        """Digest of the complete effective request, not only of ``command``."""
+        return command_digest(self.effective_request)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +441,8 @@ class SubmissionIntent:
     identity: SubmissionIdentity
     recorded_at: datetime
     updated_at: datetime
+    request_digest: str
+    output_stream_id: str | None = None
     execution_state: ExecutionState = ExecutionState.SUBMITTING
     cleanup_state: CleanupState = CleanupState.PENDING
     dispatched_at: datetime | None = None
@@ -217,6 +457,10 @@ class SubmissionIntent:
 
     def validate(self) -> None:
         """Enforce the contract's state, cleanup and dispatch-evidence matrix."""
+        if not _DIGEST_PATTERN.match(self.request_digest):
+            raise ValueError("request_digest must be sha256:<64 lowercase hex>")
+        if (self.output_stream_id is None) != (self.identity.sample_rate_hz is None):
+            raise ValueError("output_stream_id is required exactly when sample_rate_hz is set")
         allowed = _CLEANUP_BY_STATE[self.execution_state]
         if self.cleanup_state not in allowed:
             raise ValueError(

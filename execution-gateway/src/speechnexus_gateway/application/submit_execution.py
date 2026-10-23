@@ -64,13 +64,21 @@ class SubmitExecutionService:
 
         existing = self._ledger.get(identity.submit_intent_id)
         if existing is not None:
-            if existing.identity.command_digest != digest:
-                raise SubmitIntentConflictError("submit intent already exists with another command")
+            if existing.request_digest != request.request_digest:
+                raise SubmitIntentConflictError(
+                    "submit intent already exists with another effective request"
+                )
             return SubmissionOutcome(intent=self._reconcile(existing), idempotent_replay=True)
 
         at = self._now()
-        intent = SubmissionIntent(identity=identity, recorded_at=at, updated_at=at)
-        self._ledger.add(intent)
+        intent = SubmissionIntent(
+            identity=identity,
+            recorded_at=at,
+            updated_at=at,
+            request_digest=request.request_digest,
+            output_stream_id=request.output_stream_id,
+        )
+        self._ledger.add(intent, request_document=request.request_document)
         outcome = self._dispatch.dispatch(intent)
         if outcome.result is DispatchResult.ACKNOWLEDGED:
             if outcome.engine_request_id is None:

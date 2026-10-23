@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+import json
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.submission import DispatchResult, SubmissionIntent
 
@@ -21,10 +23,12 @@ class InMemorySubmissionLedger:
         stored = self._intents.get(submit_intent_id)
         return copy.deepcopy(stored) if stored is not None else None
 
-    def add(self, intent: SubmissionIntent) -> None:
+    def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
         key = intent.identity.submit_intent_id
         if key in self._intents:
             raise ValueError(f"submit intent {key} already stored")
+        if command_digest(json.loads(request_document)) != intent.request_digest:
+            raise ValueError("request document does not match the recorded request digest")
         self._intents[key] = copy.deepcopy(intent)
 
     def save(self, intent: SubmissionIntent, *, expected_version: int) -> None:

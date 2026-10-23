@@ -461,7 +461,7 @@ def test_asset_upgrade_is_atomic_and_preserves_existing_coordination_history(
     sandbox.admin.execute("DROP TABLE speech_content_deletions")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0004_asset_storage"
+    assert sandbox.version() == "0005_runtime_intents"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1

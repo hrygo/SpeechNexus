@@ -10,7 +10,9 @@
     "activate_owner",
     "query_outcome",
     "claim_job",
-    "mark_execution_unknown"
+    "mark_execution_unknown",
+    "create_runtime_intent",
+    "observe_runtime"
   ],
   "$defs": {
     "create_job": {
@@ -339,6 +341,23 @@
                     "const": "released"
                   }
                 }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "observe_runtime"
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/RuntimeObservedSnapshot"
               }
             }
           }
@@ -1337,6 +1356,23 @@
       ]
     },
     "RuntimeSnapshot": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RuntimeObservedSnapshot"
+        },
+        {
+          "$ref": "#/$defs/RuntimePendingSnapshot"
+        }
+      ],
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        }
+      }
+    },
+    "RuntimeObservedSnapshot": {
       "type": "object",
       "additionalProperties": false,
       "required": ["kind", "runtime"],
@@ -1794,6 +1830,114 @@
         }
       }
     },
+    "RuntimePendingSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Coordinator has durably recorded this immutable request but has no controller observation. A null runtime never proves absent, ready, stopped, or resource release. Timestamps belong to the coordinator record, not the controller response.",
+      "required": [
+        "kind",
+        "runtime",
+        "request",
+        "intent_state",
+        "recorded_at_us",
+        "updated_at_us",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        },
+        "runtime": {
+          "type": "null"
+        },
+        "request": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentRequest"
+        },
+        "intent_state": {
+          "enum": ["pending", "reconciling", "quarantined"]
+        },
+        "recorded_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "updated_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "target_node_id",
+        "pool_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "approved_template_id",
+        "binding_revision_id",
+        "manifest_id",
+        "config_digest",
+        "action",
+        "fencing_token",
+        "reserved_memory",
+        "deadline_at"
+      ],
+      "properties": {
+        "intent_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "target_node_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_PoolId"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approved_template_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "action": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeActionKind"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reserved_memory": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryReservation"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "acquire_owner": {
       "type": "object",
       "additionalProperties": false,
@@ -2001,6 +2145,43 @@
           "maximum": 9007199254740991
         }
       }
+    },
+    "create_runtime_intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "expected_head_version"],
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentRequest"
+        },
+        "expected_head_version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null means the initial head must be absent; first creation is serialized by host and unique instance identity. A revision requires that exact existing head."
+        }
+      }
+    },
+    "observe_runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "expected_instance_version", "expected_intent_version"],
+      "properties": {
+        "observation": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentResponse"
+        },
+        "expected_instance_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "expected_intent_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
     }
   },
   "anyOf": [
@@ -2027,6 +2208,12 @@
     },
     {
       "$ref": "#/$defs/mark_execution_unknown"
+    },
+    {
+      "$ref": "#/$defs/create_runtime_intent"
+    },
+    {
+      "$ref": "#/$defs/observe_runtime"
     }
   ]
 }

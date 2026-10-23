@@ -92,5 +92,9 @@ Job/outbox 与授权保留，再重复升级。两个独立迁移进程先观测
 释放后串行完成；这证明迁移互斥，不等于 HA 或恢复资格。
 
 ADR 0007 复核：本轮只迁入存储和权限基础，其他旧业务不变量仍未全部进入生产端口，
-保留旧必跑门禁。B 的 PG adapter、A 的准入/owner/runtime/claim 等后续实现与联合验收
-继续单独取证；不因本迁移合入关闭 A01 或 Gate。
+保留旧必跑门禁。B 的 PG adapter、A 的准入/runtime 等后续实现与联合验收
+继续单独取证；owner 和 claim 已按各自生产单元取证，不因本迁移合入关闭 A01 或 Gate。
+
+后续 [0005 runtime 意图存储扩展](production-runtime-intents.md)为 outbox 增加严格
+Job/runtime 目标，保存协调时间和观察正文；旧请求、Job 事件及原授权保留。
+create/observe 的生产事务和实际派发仍待该路线的后续单元。

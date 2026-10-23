@@ -8,7 +8,7 @@
     "version": null
   },
   "internal/coordination-transactions.schema.json": {
-    "sha256": "a6e7f26651770ce2c10e89dce63332c153eaee2acbdc43021c69e6a3fd1be8ad",
+    "sha256": "d3285dfbfe406668aeec671541a8591b560bd8ee6ce68382b8bfae4bb81a0359",
     "version": null
   },
   "internal/execution-command.schema.json": {

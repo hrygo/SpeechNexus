@@ -52,8 +52,8 @@ def retrieve(uri: str) -> Resource[Any]:
 def validator(name: str, definition: str | None = None) -> Draft202012Validator:
     schema = document(ROOT / name)
     if definition is not None:
-        schema = {**schema, **schema["$defs"][definition]}
         schema.pop("oneOf", None)
+        schema = {**schema, **schema["$defs"][definition]}
     return Draft202012Validator(
         schema, registry=cast(Any, Registry)(retrieve=retrieve), format_checker=FormatChecker()
     )

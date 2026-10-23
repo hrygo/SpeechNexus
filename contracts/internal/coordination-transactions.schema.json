@@ -1592,6 +1592,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "observe_runtime"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/RuntimeObservedSnapshot"
+              }
+            }
+          }
         }
       ]
     },
@@ -1815,18 +1834,21 @@
       }
     },
     "RuntimeSnapshot": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RuntimeObservedSnapshot"
+        },
+        {
+          "$ref": "#/$defs/RuntimePendingSnapshot"
+        }
+      ],
       "type": "object",
-      "additionalProperties": false,
       "required": [
-        "kind",
-        "runtime"
+        "kind"
       ],
       "properties": {
         "kind": {
           "const": "runtime"
-        },
-        "runtime": {
-          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentResponse"
         }
       }
     },
@@ -1870,6 +1892,67 @@
         }
       },
       "description": "Trusted deletion coordinator permit only; verify the authoritative deletion job/dependency scope before calling. Clear private command content only after execution cleanup and lease release. Preserve identities, request/command digests, fencing, stop facts and an immutable deletion tombstone. Replays use deletion_job_id and evidence digest; never authorize re-execution."
+    },
+    "RuntimeObservedSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "runtime"
+      ],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        },
+        "runtime": {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentResponse"
+        }
+      }
+    },
+    "RuntimePendingSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Coordinator has durably recorded this immutable request but has no controller observation. A null runtime never proves absent, ready, stopped, or resource release. Timestamps belong to the coordinator record, not the controller response.",
+      "required": [
+        "kind",
+        "runtime",
+        "request",
+        "intent_state",
+        "recorded_at_us",
+        "updated_at_us",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        },
+        "runtime": {
+          "type": "null"
+        },
+        "request": {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentRequest"
+        },
+        "intent_state": {
+          "enum": [
+            "pending",
+            "reconciling",
+            "quarantined"
+          ]
+        },
+        "recorded_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "updated_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
     }
   }
 }

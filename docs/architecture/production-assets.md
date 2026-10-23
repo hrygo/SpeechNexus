@@ -175,8 +175,9 @@ optional request field mandatory in TypeScript or insert a value at runtime.
 
 ## Storage, grants and local evidence
 
-The packaged Alembic head is `0004_asset_storage`, following the unchanged
-`0003_assets` and `0002_coordination` migrations. `0003_assets` creates
+The packaged Alembic head is `0005_runtime_intents`; its runtime/outbox extension
+preserves the unchanged `0004_asset_storage`, `0003_assets` and
+`0002_coordination` migrations. `0003_assets` creates
 the shared `workspace-default`, Asset/command/object/reference/event tables and
 content deletion ledger in the same authority schema. Existing coordination
 rows and grants are preserved. Destructive downgrade is refused. Use the

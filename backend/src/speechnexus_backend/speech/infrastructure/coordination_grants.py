@@ -32,7 +32,9 @@ SPEECH_UPDATES = {
         "current_generation generation_high_water "
         "current_prepare_intent_id current_stop_intent_id version"
     ),
-    "runtime_instance_intents": "intent_state stop_evidence_document error_code version",
+    "runtime_instance_intents": (
+        "intent_state stop_evidence_document error_code updated_at_us observation_document version"
+    ),
     "admission_attempts": "quota_state version",
     "admission_leases": (
         "lease_state cleanup_state budget_released_at_us "
@@ -58,7 +60,7 @@ INSERT_COLUMNS = {
     "coordination_jobs": (
         "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest"
     ),
-    "coordination_outbox": "event_id job_id event_digest",
+    "coordination_outbox": "event_id job_id event_digest event_kind target_node_id intent_id",
 }
 SPEECH_NARROW_SELECT = {
     "submit_intents": (

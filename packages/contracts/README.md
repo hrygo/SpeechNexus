@@ -79,6 +79,15 @@ Remaining query targets stay with their fact owners. The shared
 `execution-recovery.json` corpus checks the new coordination entry against the
 source schema, packaged Python validator and TypeScript bundle parser; this
 does not add a public TypeScript coordination API.
+The coordination bundle also exposes `create_runtime_intent` and
+`observe_runtime`. A RuntimeSnapshot can now contain `runtime: null`, a frozen
+request and coordinator timestamps while no controller observation exists;
+consumers must handle this branch before adopting the new producer. It cannot
+report successful lifecycle completion, and an observe result requires the
+actual response branch. The controller HTTP response schema is unchanged.
+Shared producer/consumer cases live in
+`tests/fixtures/coordination/transaction-examples.json`; production transaction
+and dispatch implementations remain pending.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

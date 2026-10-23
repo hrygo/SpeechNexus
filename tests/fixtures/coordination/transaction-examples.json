@@ -1839,6 +1839,186 @@
         "cleanup_state": "pending",
         "version": "2"
       }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_runtime_intent",
+      "outcome": "committed",
+      "scope_id": "runtime-test",
+      "recovery": "none",
+      "value": {
+        "kind": "runtime",
+        "runtime": null,
+        "request": {
+          "intent_id": "runtime-test",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "action": "prepare",
+          "fencing_token": 1,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2026-10-23T13:00:00Z"
+        },
+        "intent_state": "pending",
+        "recorded_at_us": 1792756800000000,
+        "updated_at_us": 1792756800000000,
+        "version": "1"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "query_outcome",
+      "outcome": "replayed",
+      "scope_id": "runtime-test",
+      "recovery": "none",
+      "value": {
+        "kind": "runtime",
+        "runtime": null,
+        "request": {
+          "intent_id": "runtime-test",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "action": "prepare",
+          "fencing_token": 1,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2026-10-23T13:00:00Z"
+        },
+        "intent_state": "reconciling",
+        "recorded_at_us": 1792756800000000,
+        "updated_at_us": 1792756800000000,
+        "version": "1"
+      }
+    }
+  ],
+  "invalid_results": [
+    {
+      "reason": "an intent is not a controller observation",
+      "result": {
+        "schema_version": "1.0.0",
+        "operation": "observe_runtime",
+        "outcome": "committed",
+        "scope_id": "runtime-test",
+        "recovery": "none",
+        "value": {
+          "kind": "runtime",
+          "runtime": null,
+          "request": {
+            "intent_id": "runtime-test",
+            "target_node_id": "host-test",
+            "pool_id": "tts-realtime",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "approved_template_id": "template-test",
+            "binding_revision_id": "binding-test",
+            "manifest_id": "manifest-test",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "prepare",
+            "fencing_token": 1,
+            "reserved_memory": {
+              "architecture": "unified_memory",
+              "peak": {
+                "unified_memory_bytes": 20,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              },
+              "steady": {
+                "unified_memory_bytes": 10,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              }
+            },
+            "deadline_at": "2026-10-23T13:00:00Z"
+          },
+          "intent_state": "pending",
+          "recorded_at_us": 1792756800000000,
+          "updated_at_us": 1792756800000000,
+          "version": "1"
+        }
+      }
+    },
+    {
+      "reason": "an unobserved intent cannot prove successful lifecycle completion",
+      "result": {
+        "schema_version": "1.0.0",
+        "operation": "create_runtime_intent",
+        "outcome": "committed",
+        "scope_id": "runtime-test",
+        "recovery": "none",
+        "value": {
+          "kind": "runtime",
+          "runtime": null,
+          "request": {
+            "intent_id": "runtime-test",
+            "target_node_id": "host-test",
+            "pool_id": "tts-realtime",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "approved_template_id": "template-test",
+            "binding_revision_id": "binding-test",
+            "manifest_id": "manifest-test",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "prepare",
+            "fencing_token": 1,
+            "reserved_memory": {
+              "architecture": "unified_memory",
+              "peak": {
+                "unified_memory_bytes": 20,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              },
+              "steady": {
+                "unified_memory_bytes": 10,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              }
+            },
+            "deadline_at": "2026-10-23T13:00:00Z"
+          },
+          "intent_state": "succeeded",
+          "recorded_at_us": 1792756800000000,
+          "updated_at_us": 1792756800000000,
+          "version": "1"
+        }
+      }
     }
   ]
 }

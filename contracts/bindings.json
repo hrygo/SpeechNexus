@@ -27,7 +27,9 @@
       "activate_owner",
       "query_outcome",
       "claim_job",
-      "mark_execution_unknown"
+      "mark_execution_unknown",
+      "create_runtime_intent",
+      "observe_runtime"
     ]
   },
   "profiles": {

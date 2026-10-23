@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/qualification-report.schema.json",
   "title": "DeploymentQualificationReport",
-  "description": "Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires at least one required scenario and every required scenario to pass. Optional scenario results are advisory and do not gate production; a non-passing optional result must be recorded in limitations. Scenario identifiers must exactly match test_suite.scenario_ids with no duplicates, which producer validation enforces because JSON Schema cannot compare array values across properties.",
+  "description": "Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires at least one required scenario and every required scenario to pass. Optional scenario results are advisory and do not gate production; a non-passing optional result must be recorded in limitations. Producer validation must resolve the referenced binding and capacity manifest, verify binding and release identities, match every stage component exactly, and require qualified_at to precede expires_at. Scenario identifiers must exactly match test_suite.scenario_ids with no duplicates. JSON Schema enforces the shape while producer validation enforces these cross-document and cross-array rules.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -38,7 +38,8 @@
       "description": "Must equal ModelBindingRevision.revision_id and the capacity manifest binding_revision_id."
     },
     "capacity_manifest_id": {
-      "$ref": "#/$defs/Identifier"
+      "$ref": "#/$defs/Identifier",
+      "description": "Must equal CapacityManifest.manifest_id. The referenced manifest must carry the same binding_revision_id and release_tier as this report."
     },
     "release_tier": {
       "$ref": "#/$defs/ReleaseTier"
@@ -71,6 +72,7 @@
     },
     "limitations": {
       "type": "array",
+      "description": "Qualification limitations. A skipped or failed optional scenario requires at least one recorded limitation because a non-passing optional result must not disappear from the release record.",
       "items": {
         "type": "string",
         "minLength": 1,
@@ -82,7 +84,8 @@
     },
     "qualified_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Must be earlier than expires_at when expires_at is present."
     },
     "expires_at": {
       "oneOf": [

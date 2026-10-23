@@ -68,7 +68,10 @@ of defaults, units, enum domains, or stable error codes.
   stage. A production release tier requires all required scenarios to pass.
   `required_scenarios_passed` and `overall_status` are computed from required
   scenario results; producer validation additionally enforces one-to-one
-  `test_suite.scenario_ids` coverage without duplicates.
+  `test_suite.scenario_ids` coverage without duplicates, a recorded limitation
+  for every non-passing optional scenario, expiry after qualification,
+  matching binding / manifest / release identities, and one engine component
+  per manifest stage with the declared engine kind.
 - `capacity-manifest.schema.json`: hardware-neutral capacity, execution stage
   graph, loading peak, resource vector, cancellation/fencing capability, and
   qualification manifest bound to an immutable `ModelBindingRevision`. Every

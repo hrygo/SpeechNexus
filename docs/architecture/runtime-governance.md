@@ -21,7 +21,7 @@ date: 2026-10-23
 
 资格报告按 `capacity_manifest_id` 为执行图中的每个 `stage_id` 记录实际的 engine kind、镜像摘要与 runtime 版本；单镜像字段不能代表包含 VAD、ASR 复核或 TTS 多 stage 的完整配方。草稿可以声明目标 `production` tier，但只有发布、退役和紧急禁用状态必须绑定已通过的必要场景与完整 stage 软件身份。`production` 资格至少包含一个 required scenario，并须全部 passed、整体 pass 且设置到期时间；managed 容量必须声明 fencing barrier，engine abort 模式必须声明真实 request abort，production 还必须声明硬输出上限。
 
-资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。
+资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。发布流程还必须解析报告引用的 binding 与 capacity manifest：`binding` 的 `id / revision`、`binding_revision_id`、`capacity_manifest_id` 和 `release_tier` 必须一致；`software.engine_components` 必须与 manifest 的每个 `stage_id` 一一对应且 engine kind 相同；报告拓扑的 memory architecture 必须与 manifest `topology_ref` 相同；`qualified_at` 必须早于 `expires_at`。这些跨文档规则由生产者和契约语义测试执行。
 
 资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
 

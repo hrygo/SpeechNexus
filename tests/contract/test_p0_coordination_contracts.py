@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 
 import pytest
 import yaml
+from jsonschema import FormatChecker
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validator_for
 from openapi_spec_validator import validate
@@ -67,16 +68,65 @@ def _retrieve_contract(uri: str) -> Resource[Any]:
 _REGISTRY: Registry[Any] = cast(Any, Registry)(retrieve=_retrieve_contract)
 
 
+def _assert_qualification_matches(
+    report: dict[str, Any],
+    binding: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    """Executable cross-document identity rules for release evidence."""
+    reference = cast(dict[str, Any], report["binding"])
+    if reference["id"] != binding["binding_id"] or reference["revision"] != binding["revision"]:
+        raise ValueError("qualification binding reference does not identify the cited binding")
+    if report["binding_revision_id"] != binding["revision_id"]:
+        raise ValueError("qualification binding_revision_id does not match the binding revision")
+    if manifest["binding_revision_id"] != binding["revision_id"]:
+        raise ValueError("capacity manifest does not belong to the binding revision")
+    if report["capacity_manifest_id"] != manifest["manifest_id"]:
+        raise ValueError("qualification report does not identify the cited capacity manifest")
+    if report["release_tier"] != manifest["release_tier"]:
+        raise ValueError("qualification and capacity release tiers differ")
+    if binding["execution_recipe"]["capacity_manifest_id"] != manifest["manifest_id"]:
+        raise ValueError("binding execution recipe cites a different capacity manifest")
+    if binding["publication"]["capacity_manifest_id"] != manifest["manifest_id"]:
+        raise ValueError("published binding cites a different capacity manifest")
+    if binding["publication"]["qualification_report_id"] != report["report_id"]:
+        raise ValueError("published binding cites a different qualification report")
+
+    stages = {
+        cast(str, stage["stage_id"]): stage
+        for stage in cast(list[dict[str, Any]], manifest["stage_graph"])
+    }
+    components = cast(dict[str, dict[str, Any]], report["software"]["engine_components"])
+    if set(components) != set(stages):
+        raise ValueError("engine component evidence must match stage_graph one-to-one")
+    for stage_id, component in components.items():
+        if component["engine_kind"] != stages[stage_id]["engine_kind"]:
+            raise ValueError(f"engine kind for {stage_id} does not match the stage declaration")
+
+    if report["topology"]["memory_architecture"] != manifest["topology_ref"]["memory_architecture"]:
+        raise ValueError("qualification topology memory architecture differs from the manifest")
+
+    qualification = cast(dict[str, Any], manifest["qualification"])
+    for field in ("qualified_at", "expires_at"):
+        if report[field] != qualification[field]:
+            raise ValueError(f"qualification {field} differs from the capacity manifest evidence")
+
+
 def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
     schema = _load_json(_CAPACITY_MANIFEST_SCHEMA_PATH)
     validator_cls = validator_for(schema)
     validator_cls.check_schema(schema)
-    validator = validator_cls(schema, registry=_REGISTRY)
+    validator = validator_cls(schema, registry=_REGISTRY, format_checker=FormatChecker())
 
     examples = schema.get("examples")
     assert isinstance(examples, list)
     assert len(examples) >= 1
     qualification_schema = _load_json(_QUALIFICATION_REPORT_SCHEMA_PATH)
+    qualification_validator = validator_for(qualification_schema)(
+        qualification_schema,
+        registry=_REGISTRY,
+        format_checker=FormatChecker(),
+    )
     qualification_reports = {
         report["report_id"]: report
         for report in cast(
@@ -104,12 +154,47 @@ def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
             stage["stage_role"] for stage in example["stage_graph"]
         }
         report = qualification_reports[example["qualification"]["qualification_report_id"]]
-        assert report["binding_revision_id"] == example["binding_revision_id"]
-        assert report["capacity_manifest_id"] == example["manifest_id"]
-        assert report["release_tier"] == example["release_tier"]
-        assert report["qualified_at"] == example["qualification"]["qualified_at"]
-        assert report["expires_at"] == example["qualification"]["expires_at"]
-        assert set(report["software"]["engine_components"]) == set(stage_ids)
+        _assert_qualification_matches(report, binding, example)
+
+    example = cast(dict[str, Any], examples[0])
+    binding = bindings[example["binding_revision_id"]]
+    report = qualification_reports[example["qualification"]["qualification_report_id"]]
+
+    wrong_binding_reference = copy.deepcopy(report)
+    wrong_binding_reference["binding"]["revision"] = "999"
+    qualification_validator.validate(wrong_binding_reference)
+    with pytest.raises(ValueError, match="binding reference"):
+        _assert_qualification_matches(wrong_binding_reference, binding, example)
+
+    mismatched_engine_kind = copy.deepcopy(report)
+    first_stage_id = example["stage_graph"][0]["stage_id"]
+    mismatched_engine_kind["software"]["engine_components"][first_stage_id]["engine_kind"] = "vllm"
+    qualification_validator.validate(mismatched_engine_kind)
+    with pytest.raises(ValueError, match="engine kind"):
+        _assert_qualification_matches(mismatched_engine_kind, binding, example)
+
+    mismatched_binding_revision = copy.deepcopy(example)
+    mismatched_binding_revision["binding_revision_id"] = "mbrev-other-1"
+    validator.validate(mismatched_binding_revision)
+    with pytest.raises(ValueError, match="does not belong"):
+        _assert_qualification_matches(report, binding, mismatched_binding_revision)
+
+    mismatched_release_tier = copy.deepcopy(report)
+    mismatched_release_tier["release_tier"] = "best_effort"
+    qualification_validator.validate(mismatched_release_tier)
+    with pytest.raises(ValueError, match="release tiers"):
+        _assert_qualification_matches(mismatched_release_tier, binding, example)
+
+    mismatched_memory_architecture = copy.deepcopy(report)
+    mismatched_memory_architecture["topology"]["memory_architecture"] = "discrete_device_memory"
+    qualification_validator.validate(mismatched_memory_architecture)
+    with pytest.raises(ValueError, match="memory architecture"):
+        _assert_qualification_matches(mismatched_memory_architecture, binding, example)
+
+    invalid_qualification_time = copy.deepcopy(report)
+    invalid_qualification_time["qualified_at"] = "2026-10-22"
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(invalid_qualification_time)
 
 
 def test_capacity_manifest_envelope_aggregation_is_frozen() -> None:

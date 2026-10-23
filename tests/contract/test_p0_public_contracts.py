@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+from datetime import datetime
 from email.message import Message
 from email.parser import BytesParser
 from email.policy import HTTP
@@ -17,6 +18,7 @@ import httpx
 import jsonschema
 import pytest
 import yaml
+from jsonschema import FormatChecker
 from jsonschema.exceptions import ValidationError
 from openai import OpenAI, RateLimitError
 from openai.resources.realtime.realtime import RealtimeConnection
@@ -104,7 +106,11 @@ _REGISTRY: Registry[Any] = cast(Any, Registry)(retrieve=_retrieve_contract)
 
 
 def _validator(schema: dict[str, Any]) -> jsonschema.Draft202012Validator:
-    return jsonschema.Draft202012Validator(schema, registry=_REGISTRY)
+    return jsonschema.Draft202012Validator(
+        schema,
+        registry=_REGISTRY,
+        format_checker=FormatChecker(),
+    )
 
 
 def _component_validator(document: dict[str, Any], name: str) -> jsonschema.Draft202012Validator:
@@ -151,6 +157,23 @@ def _assert_qualification_semantics(report: dict[str, Any]) -> None:
         raise ValueError("required_scenarios_passed does not match required scenario results")
     if report["overall_status"] != expected_overall:
         raise ValueError("overall_status does not match required scenario results")
+
+    optional_not_passed = [
+        scenario
+        for scenario in scenarios
+        if not scenario["required"] and scenario["status"] != "passed"
+    ]
+    if optional_not_passed and not report["limitations"]:
+        raise ValueError("a non-passing optional scenario requires a recorded limitation")
+
+    expires_at = report.get("expires_at")
+    if expires_at is not None:
+        qualified_at = datetime.fromisoformat(
+            cast(str, report["qualified_at"]).replace("Z", "+00:00")
+        )
+        parsed_expiry = datetime.fromisoformat(cast(str, expires_at).replace("Z", "+00:00"))
+        if qualified_at >= parsed_expiry:
+            raise ValueError("qualified_at must precede expires_at")
 
 
 def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
@@ -1157,6 +1180,20 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     optional_failure["scenarios"][0]["status"] = "failed"
     qualification_validator.validate(optional_failure)
     _assert_qualification_semantics(optional_failure)
+    optional_failure_without_limitation = copy.deepcopy(optional_failure)
+    optional_failure_without_limitation["limitations"] = []
+    qualification_validator.validate(optional_failure_without_limitation)
+    with pytest.raises(ValueError, match="optional scenario"):
+        _assert_qualification_semantics(optional_failure_without_limitation)
+    expired_before_qualification = copy.deepcopy(completed_production)
+    expired_before_qualification["expires_at"] = expired_before_qualification["qualified_at"]
+    qualification_validator.validate(expired_before_qualification)
+    with pytest.raises(ValueError, match="qualified_at must precede"):
+        _assert_qualification_semantics(expired_before_qualification)
+    invalid_qualification_time = copy.deepcopy(completed_production)
+    invalid_qualification_time["qualified_at"] = "not-a-date-time"
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(invalid_qualification_time)
     shared_domains = _load_json(_CONTRACTS / "shared" / "capability-domains.schema.json")
     raw_qualification_schema = json.loads(_QUALIFICATION_SCHEMA.read_text(encoding="utf-8"))
     assert raw_qualification_schema["$defs"]["MemoryArchitecture"] == {

@@ -541,6 +541,36 @@ def test_voice_resource_positive_and_negative_examples() -> None:
     pending_validation["checks"] = []
     validator.validate(pending_validation)
 
+    published_validation = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_validation")
+    )
+    validator.validate(published_validation)
+    skipped_required = copy.deepcopy(published_validation)
+    skipped_required["checks"][0]["status"] = "skipped"
+    with pytest.raises(ValidationError):
+        validator.validate(skipped_required)
+    no_required_checks = copy.deepcopy(published_validation)
+    for check in no_required_checks["checks"]:
+        check["required"] = False
+    with pytest.raises(ValidationError):
+        validator.validate(no_required_checks)
+
+    voice_revision = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_revision")
+    )
+    retired_voice = copy.deepcopy(voice_revision)
+    retired_voice["status"] = "retired"
+    retired_voice["retired_at"] = "2026-10-22T10:00:00Z"
+    validator.validate(retired_voice)
+    retired_voice_without_time = copy.deepcopy(retired_voice)
+    retired_voice_without_time["retired_at"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(retired_voice_without_time)
+    published_voice_with_retirement_time = copy.deepcopy(voice_revision)
+    published_voice_with_retirement_time["retired_at"] = "2026-10-22T10:00:00Z"
+    with pytest.raises(ValidationError):
+        validator.validate(published_voice_with_retirement_time)
+
 
 def test_realtime_events_positive_and_negative_examples() -> None:
     schema = _load_json(_REALTIME_SCHEMA)

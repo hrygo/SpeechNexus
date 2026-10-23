@@ -72,6 +72,7 @@
       "additionalProperties": false,
       "required": [
         "name",
+        "required",
         "status"
       ],
       "properties": {
@@ -86,6 +87,10 @@
             "failed",
             "skipped"
           ]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "A skipped or failed required check makes the candidate publication-ineligible."
         },
         "detail": {
           "type": [
@@ -599,6 +604,39 @@
             "properties": {
               "status": {
                 "const": "passed"
+              },
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "required"
+                  ],
+                  "properties": {
+                    "required": {
+                      "const": true
+                    }
+                  }
+                },
+                "minContains": 1,
+                "items": {
+                  "if": {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "required"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "status": {
+                        "const": "passed"
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -847,7 +885,54 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "retired_at": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "retired",
+                  "disabled"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "retired_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "retired_at"
+            ]
+          }
+        }
+      ]
     },
     "PronunciationEntry": {
       "type": "object",
@@ -985,16 +1070,19 @@
       "checks": [
         {
           "name": "format",
+          "required": true,
           "status": "passed",
           "detail": null
         },
         {
           "name": "reusable_tts",
+          "required": true,
           "status": "passed",
           "detail": null
         },
         {
           "name": "quality_subjective",
+            "required": false,
           "status": "skipped",
           "detail": "not required by the validation set"
         }

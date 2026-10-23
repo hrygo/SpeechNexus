@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from speechnexus_gateway import __version__
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import (
     ReadinessProbe,
     ReadinessService,
@@ -22,6 +23,7 @@ from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissio
 from speechnexus_gateway.interfaces.http.barrier_control import create_barrier_router
 from speechnexus_gateway.interfaces.http.control_errors import install_control_error_handlers
 from speechnexus_gateway.interfaces.http.control_security import ComponentCredential
+from speechnexus_gateway.interfaces.http.execution_query import create_execution_query_router
 from speechnexus_gateway.interfaces.http.health import create_health_router
 from speechnexus_gateway.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_gateway.settings import Settings
@@ -35,7 +37,9 @@ class _ControlReadinessProbe:
 
     async def check(self) -> None:
         service = self._app.state.barrier_control
-        if not isinstance(service, GatewayBarrierService):
+        if not isinstance(service, GatewayBarrierService) or not isinstance(
+            self._app.state.execution_query, ExecutionQueryService
+        ):
             raise RuntimeError("gateway control is not running")
         await run_in_threadpool(service.check_ownership)
 
@@ -54,7 +58,7 @@ def _build_readiness(settings: Settings, app: FastAPI) -> ReadinessService:
 
 def _build_control(
     settings: Settings,
-) -> tuple[GatewayBarrierService, ProcessIngressOwnership, GatewayPool]:
+) -> tuple[GatewayBarrierService, ExecutionQueryService, ProcessIngressOwnership, GatewayPool]:
     directory = settings.ingress_lock_directory
     if directory is None:
         raise ValueError("execution control requires a host lock directory")
@@ -69,7 +73,12 @@ def _build_control(
         pool.open()
         ingress = GatewayIngress(ownership, timeout_seconds=settings.control_timeout_seconds)
         ledger = PostgresSubmissionLedger(pool, timeout_seconds=settings.control_timeout_seconds)
-        return GatewayBarrierService(ingress=ingress, ledger=ledger), ownership, pool
+        return (
+            GatewayBarrierService(ingress=ingress, ledger=ledger),
+            ExecutionQueryService(ingress=ingress, ledger=ledger),
+            ownership,
+            pool,
+        )
     except BaseException:
         ownership.close()
         if pool is not None:
@@ -82,22 +91,29 @@ def create_app(
     settings: Settings | None = None,
     readiness: ReadinessService | None = None,
     barrier_control: GatewayBarrierService | None = None,
+    execution_query: ExecutionQueryService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
     if barrier_control is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
+    if (barrier_control is None) != (execution_query is None):
+        raise ValueError("inject both barrier and query services, or let the lifespan build both")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if not resolved_settings.execution_control_enabled or barrier_control is not None:
             yield
             return
-        service, ownership, pool = await run_in_threadpool(_build_control, resolved_settings)
+        service, queries, ownership, pool = await run_in_threadpool(
+            _build_control, resolved_settings
+        )
         app.state.barrier_control = service
+        app.state.execution_query = queries
         try:
             yield
         finally:
             app.state.barrier_control = None
+            app.state.execution_query = None
             try:
                 await run_in_threadpool(ownership.close)
             finally:
@@ -107,12 +123,13 @@ def create_app(
         title="SpeechNexus execution gateway API",
         version=__version__,
         description=(
-            "Operational endpoints and opt-in authenticated ingress barriers. "
+            "Operational endpoints, opt-in authenticated ingress barriers and recorded status. "
             "Engine submission and abort routes are not implemented."
         ),
         lifespan=lifespan,
     )
     app.state.barrier_control = barrier_control
+    app.state.execution_query = execution_query
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(
@@ -123,9 +140,9 @@ def create_app(
         )
     )
     if resolved_settings.component_token is not None:
+        credential = ComponentCredential(resolved_settings.component_token)
         install_control_error_handlers(app)
-        app.include_router(
-            create_barrier_router(credential=ComponentCredential(resolved_settings.component_token))
-        )
+        app.include_router(create_barrier_router(credential=credential))
+        app.include_router(create_execution_query_router(credential=credential))
     app.state.settings = resolved_settings
     return app

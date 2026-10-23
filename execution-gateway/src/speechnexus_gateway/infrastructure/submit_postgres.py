@@ -18,6 +18,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     RecordStop,
     StopEvidenceConflictError,
@@ -29,6 +30,7 @@ from speechnexus_gateway.domain.submission import (
 )
 from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
+from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
@@ -92,6 +94,18 @@ class PostgresSubmissionLedger:
         return self._run(
             read_only=True,
             work=lambda cursor: read_submit_intent(cursor, submit_intent_id),
+        )
+
+    def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
+        intent = self.get(submit_intent_id)
+        return None if intent is None else ExecutionSnapshot(intent)
+
+    def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: mark_execution_unknown_in_transaction(
+                cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+            ),
         )
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:

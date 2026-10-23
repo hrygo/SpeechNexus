@@ -9,7 +9,8 @@
     "renew_owner",
     "activate_owner",
     "query_outcome",
-    "claim_job"
+    "claim_job",
+    "mark_execution_unknown"
   ],
   "$defs": {
     "create_job": {
@@ -1235,7 +1236,7 @@
     },
     "External_internal_execution_control_openapi_yaml_ExecutionDispatchEvidenceInvariants": {
       "type": "object",
-      "description": "Submission is persisted before an engine request. Active execution,\nsuccessful completion, and verified abort therefore require an observed\ndispatch time. `submitting` and a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way.\n",
+      "description": "Submission is persisted before an engine request. Active execution,\nand successful completion require an observed dispatch time. `submitting`\nand a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way. An abort with\nno observed dispatch time is allowed only with verified whole-instance\ntermination evidence; recovery must not invent a dispatch time.\n",
       "allOf": [
         {
           "if": {
@@ -1259,7 +1260,7 @@
           "if": {
             "properties": {
               "execution_state": {
-                "enum": ["executing", "stopping", "succeeded", "aborted"]
+                "enum": ["executing", "stopping", "succeeded"]
               }
             },
             "required": ["execution_state"]
@@ -1272,6 +1273,43 @@
                 "format": "date-time"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["dispatched_at"],
+                "properties": {
+                  "dispatched_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              {
+                "required": ["dispatched_at", "stop_evidence_kind"],
+                "properties": {
+                  "dispatched_at": {
+                    "type": "null"
+                  },
+                  "stop_evidence_kind": {
+                    "enum": [
+                      "instance_terminated_by_controller",
+                      "operator_verified_instance_terminated"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         {
@@ -1945,6 +1983,24 @@
           "maximum": 60000
         }
       }
+    },
+    "mark_execution_unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["submit_intent_id", "reason_code", "observed_at_us"],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
     }
   },
   "anyOf": [
@@ -1968,6 +2024,9 @@
     },
     {
       "$ref": "#/$defs/claim_job"
+    },
+    {
+      "$ref": "#/$defs/mark_execution_unknown"
     }
   ]
 }

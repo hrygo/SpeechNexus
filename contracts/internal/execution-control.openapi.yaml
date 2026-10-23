@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal execution control API
-  version: 0.3.0.dev0
+  version: 0.4.0.dev0
   description: |
     Authoritative internal ExecutionControlPort protocol between the scheduler /
     workers / realtime gateway and the execution-gateway. Every engine submission,
@@ -76,6 +76,15 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Submit intent not found on this gateway control store.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Invalid submit identity or correlation header.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -622,10 +631,12 @@ components:
       type: object
       description: |
         Submission is persisted before an engine request. Active execution,
-        successful completion, and verified abort therefore require an observed
-        dispatch time. `submitting` and a failure that never dispatched require
+        and successful completion require an observed dispatch time. `submitting`
+        and a failure that never dispatched require
         it to be null. An unknown quarantined execution may have an ambiguous
-        dispatch outcome and keeps capacity quarantined either way.
+        dispatch outcome and keeps capacity quarantined either way. An abort with
+        no observed dispatch time is allowed only with verified whole-instance
+        termination evidence; recovery must not invent a dispatch time.
       allOf:
         - if:
             properties:
@@ -640,7 +651,7 @@ components:
         - if:
             properties:
               execution_state:
-                enum: [executing, stopping, succeeded, aborted]
+                enum: [executing, stopping, succeeded]
             required: [execution_state]
           then:
             required: [dispatched_at]
@@ -648,6 +659,24 @@ components:
               dispatched_at:
                 type: string
                 format: date-time
+        - if:
+            properties:
+              execution_state:
+                const: aborted
+            required: [execution_state]
+          then:
+            anyOf:
+              - required: [dispatched_at]
+                properties:
+                  dispatched_at:
+                    type: string
+                    format: date-time
+              - required: [dispatched_at, stop_evidence_kind]
+                properties:
+                  dispatched_at:
+                    type: "null"
+                  stop_evidence_kind:
+                    enum: [instance_terminated_by_controller, operator_verified_instance_terminated]
         - if:
             properties:
               execution_state:
@@ -743,6 +772,8 @@ components:
           maxLength: 256
         execution_state:
           $ref: "#/components/schemas/ExecutionState"
+        stop_evidence_kind:
+          $ref: "#/components/schemas/StopEvidenceKind"
         cleanup_state:
           $ref: "#/components/schemas/CleanupState"
         idempotent_replay:
@@ -1057,6 +1088,7 @@ components:
                     - control_outcome_unknown
                     - control_reconciliation_required
                     - control_state_conflict
+                    - control_execution_not_found
             message:
               type: string
               minLength: 1
@@ -1073,7 +1105,7 @@ components:
             - if:
                 properties:
                   code:
-                    enum: [control_store_unavailable, control_outcome_unknown, control_reconciliation_required, control_state_conflict]
+                    enum: [control_store_unavailable, control_outcome_unknown, control_reconciliation_required, control_state_conflict, control_execution_not_found]
                 required: [code]
               then:
                 required: [recovery]
@@ -1121,6 +1153,17 @@ components:
                     const: false
                   recovery:
                     const: query_current_authority
+            - if:
+                properties:
+                  code:
+                    const: control_execution_not_found
+                required: [code]
+              then:
+                properties:
+                  retryable:
+                    const: false
+                  recovery:
+                    const: none
   responses:
     ControlUnavailable:
       description: |

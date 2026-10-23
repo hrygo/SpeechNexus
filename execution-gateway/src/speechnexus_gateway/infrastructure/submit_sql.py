@@ -119,7 +119,7 @@ SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_d
        s.request_digest, s.voice_revision_id, s.deadline_at_us, s.recorded_at_us,
        s.updated_at_us, s.execution_state, s.cleanup_state, s.engine_request_id,
        s.dispatched_at_us, s.error_code, s.output_stream_id, s.sample_rate_hz,
-       s.hard_output_ceiling_samples, s.version, s.terminated_at_us,
+       s.hard_output_ceiling_samples, s.generated_pcm_samples, s.version, s.terminated_at_us,
        e.evidence_kind, e.evidence_digest,
        l.stage_id, l.pool_id, l.host_node_id, l.gateway_id, l.instance_id,
        l.instance_generation, l.fencing_token,
@@ -283,6 +283,8 @@ def create_submit_in_transaction(
     cursor: SubmitCursor, intent: SubmissionIntent, request_document: str
 ) -> None:
     """Write one intent for a verified claim; an existing record is never returned."""
+    if intent.generated_pcm_samples != 0:
+        raise InvalidExecutionRequestError("a new submission has not generated output")
     identity = intent.identity
     _lock_authority_rows(cursor, identity)
     facts = _read_lease_facts(cursor, identity.lease_id)
@@ -327,6 +329,7 @@ def save_submit_intent(
         current.identity != intent.identity
         or current.request_digest != intent.request_digest
         or current.output_stream_id != intent.output_stream_id
+        or current.generated_pcm_samples != intent.generated_pcm_samples
         or (
             current.engine_request_id is not None
             and current.engine_request_id != intent.engine_request_id
@@ -448,6 +451,7 @@ def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
                 else from_unix_micros(row["terminated_at_us"])
             ),
             version=row["version"],
+            generated_pcm_samples=row["generated_pcm_samples"],
         )
     except (KeyError, TypeError, ValueError) as error:
         raise SubmissionStoreError(

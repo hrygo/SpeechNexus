@@ -133,11 +133,15 @@ of defaults, units, enum domains, or stable error codes.
   execution status and output watermark query, verified abort vs quarantine,
   gateway takeover fencing barrier, and instance drain). It requires a
   per-component bearer credential; this credential is not the public shared
-  service key and public routes must reject it. Version `0.3.0.dev0` separates
+  service key and public routes must reject it. Version `0.4.0.dev0` separates
   retryable control-store unavailability from unknown commits and required
   reconciliation, with schema-enforced recovery hints. The authenticated
-  [barrier HTTP operation](../docs/architecture/execution-gateway.md) is implemented;
-  the remaining engine HTTP operations and qualification are pending.
+  [barrier and read-only query HTTP operations](../docs/architecture/execution-gateway.md)
+  are implemented. An unknown execution without an observed dispatch can be aborted
+  only with whole-instance termination evidence; submit replays in that branch must
+  include `stop_evidence_kind`. The new 404 `control_execution_not_found` carries
+  `retryable=false/recovery=none`; it does not prove absence of engine work.
+  Strict consumers must upgrade together. Submit/abort/drain HTTP and real qualification remain pending.
 - `internal/coordination-transactions.schema.json`: ADR 0006 application
   transaction ports for owner/fencing, complete-recipe admission, claim,
   execution evidence, quarantine/release, runtime lifecycle and interval
@@ -328,7 +332,6 @@ reported as dual-database evidence. Run the historical PG suite alone with
 when no MySQL instance is available. See
 [integration setup and scope](../tests/integration/README.md).
 CI provisions both disposable database services.
-
 
 ## Architecture repair revision (2026-10-23)
 

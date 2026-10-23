@@ -49,6 +49,29 @@ def test_generated_entrypoints_have_shared_positive_and_negative_examples() -> N
         assert any(e["schema"] == name and not e["valid"] for e in EXAMPLES), name
 
 
+RECOVERY_EXAMPLES: list[dict[str, Any]] = json.loads(
+    (ROOT / "tests/fixtures/contracts/execution-recovery.json").read_text()
+)["examples"]
+
+
+@pytest.mark.parametrize("example", RECOVERY_EXAMPLES, ids=lambda example: example["id"])
+def test_recovery_coordination_bundle_matches_the_source(example: dict[str, Any]) -> None:
+    from speechnexus_contracts.validation import validate_coordination
+
+    from tests.support.contracts import validator
+
+    value = copy.deepcopy(example["value"])
+    before = copy.deepcopy(value)
+    original = validator("internal/coordination-transactions.schema.json", example["schema"])
+    assert original.is_valid(value) is example["valid"]
+    if example["valid"]:
+        assert validate_coordination(example["schema"], value) is value
+    else:
+        with pytest.raises(ContractValidationError, match=f"^Invalid {example['schema']}$"):
+            validate_coordination(example["schema"], value)
+    assert value == before
+
+
 @pytest.mark.parametrize(
     "filename",
     ["file.schema.json", "coordination.schema.json"]

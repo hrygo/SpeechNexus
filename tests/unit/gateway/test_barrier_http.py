@@ -11,6 +11,7 @@ from pydantic import SecretStr, ValidationError
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.domain.fencing import (
     BarrierConflictError,
@@ -54,12 +55,12 @@ def app_for(
     tmp_path: Path, *, ledger: InMemorySubmissionLedger | None = None
 ) -> tuple[FastAPI, GatewayIngress]:
     ingress = fake_ingress(timeout_seconds=0.01)
-    service = GatewayBarrierService(
-        ingress=ingress, ledger=ledger or InMemorySubmissionLedger(now=lambda: NOW)
-    )
+    resolved_ledger = ledger or InMemorySubmissionLedger(now=lambda: NOW)
+    service = GatewayBarrierService(ingress=ingress, ledger=resolved_ledger)
     app = create_app(
         settings=settings_for(tmp_path),
         barrier_control=service,
+        execution_query=ExecutionQueryService(ingress=ingress, ledger=resolved_ledger),
         readiness=ReadinessService([StaticProbe("control_postgresql")], timeout_seconds=1),
     )
     return app, ingress

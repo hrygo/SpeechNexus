@@ -57,4 +57,18 @@ schema 固定 `retryable` 与恢复提示的组合，提交未知不能伪装可
 屏障恢复沿用原 gateway/pool/owner/token，可重新确认原屏障，不重新外发引擎请求。
 新增字段和控制码要求旧严格错误消费者同步升级生成绑定；不假定旧校验器能接受。
 公开语音协议与既有执行/停止事实保持原义。配置、故障矩阵与已验证边界见
-[执行网关](../architecture/execution-gateway.md#7-认证-http-屏障与运行装配)。
+[执行网关](../architecture/execution-gateway.md#7-认证-http-控制与运行装配)。
+
+## 2026-10-23 实施补充：未知外发的恢复
+
+内部 execution-control 升级至 `0.4.0.dev0`。崩溃后的 intent 可能没有外发时间或
+engine request ID，但整实例终止仍可提供可信停止与资源释放事实。为避免永远无法关闭，
+仅允许 unknown → aborted 凭 controller/operator 整实例终止双证据闭合，并保留空外发事实。
+engine ack、executing、succeeded 和有清理的 failed 仍要求真实外发时间；
+证据须可信覆盖原 generation，且不能代替入口屏障或代际凭据保证。
+
+Submit 重放在此分支必须携带 `stop_evidence_kind`；只读查询返回原快照，
+新增 `control_execution_not_found` 固定为 404、retryable=false、recovery=none。
+404 不能证明引擎未执行。旧严格消费者会拒绝新状态组合或新错误码，须同步升级绑定与样例。
+不改变公开语音协议，不回填历史外发时间；B 仍不归还 A 的预算。细节见
+[执行网关恢复](../architecture/execution-gateway.md#8-未知执行与只读恢复)。

@@ -49,6 +49,10 @@ class GatewayIngress:
     def gateway_id(self) -> str:
         return self._ownership.gateway_id
 
+    @property
+    def node_id(self) -> str:
+        return self._ownership.node_id
+
     def check_ownership(self) -> None:
         with self._ownership.hold():
             pass

@@ -1,18 +1,19 @@
 ---
-title: 执行网关：提交、入口屏障与停止事务
+title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.3.0"
+version: "1.4.0"
 date: 2026-10-23
 ---
 
-# 执行网关：提交、入口屏障与停止事务
+# 执行网关：提交、屏障与未知执行恢复
 
 网关的第一个生产事务是 `create_submit`：先持久化唯一 intent，再向外发引擎请求；重放沿用原
 intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契约](coordination-transactions.md)
 的锁序、摘要比较和未知结果规则实现，使用[生产协调存储基线](production-coordination-storage.md)
 冻结的表与网关最小权限角色。`record_stop` 已原子保存停止证据与执行终态；
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
-认证 HTTP 屏障入口已接入生产组合根；输出计量、HTTP 提交与真实引擎装配仍待后续单元。
+`mark_execution_unknown` 与自身 submit 分支的 `query_outcome` 已实现；
+认证 HTTP 屏障与只读执行查询已接入生产组合根。输出区间写入、HTTP 提交与真实引擎装配仍待后续单元。
 本页区分已实现、已验证与未交付。
 
 ## 1. 代码位置与依赖
@@ -21,10 +22,11 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 | --- | --- | --- |
 | 请求身份、状态/清理矩阵、停止证据裁决、租约校验规则 | `speechnexus_gateway.domain.submission` | 纯值对象与函数；不导入 SQL、驱动或生成 DTO |
 | 提交/停止应用服务、重放与隔离对账 | `speechnexus_gateway.application.submit_execution` | 通过 domain 端口访问外部系统，不自己发 SQL |
+| 未知转换与只读执行快照 | `domain.recovery`、`application.query_execution` | 独立 recovery/query 端口；查询不调用引擎、不触发对账或状态转换 |
 | 入口排序、屏障请求与证明 | `speechnexus_gateway.application.ingress`、`domain.fencing` | 同一个 guard 覆盖落 intent、完整外发握手与结果保存；网络期间不占数据库事务 |
 | 屏障控制用例与 HTTP 边界 | `application.barrier_control`、`interfaces.http.{barrier_control,control_schemas,control_errors,control_security}` | 专用组件凭据；契约生成类型、离线校验和同源 OpenAPI；不伪造引擎服务 |
 | 端口定义（`SubmissionLedger`、外发、观察） | `speechnexus_gateway.domain.ports` | 实现放 infrastructure 或测试 fake |
-| SQL 语句、锁序、列映射与错误分类 | `speechnexus_gateway.infrastructure.{submit_sql,stop_sql,barrier_sql,submit_postgres,postgres_pool}` | 一次调用一个短事务；不复制预算或证据策略 |
+| SQL 语句、锁序、列映射与错误分类 | `speechnexus_gateway.infrastructure.{submit_sql,stop_sql,barrier_sql,recovery_sql,submit_postgres,postgres_pool}` | 一次调用一个短事务；不复制预算或证据策略 |
 | 同宿主网关进程独占 | `speechnexus_gateway.infrastructure.process_ownership` | Linux/POSIX 文件锁；同身份的候选进程必须共用宿主锁目录 |
 | 组合根与运行入口 | `speechnexus_gateway.app`、`main` | 显式配置后在 lifespan 中取得宿主进程锁并打开数据库池；默认只装配运营健康检查 |
 
@@ -102,7 +104,8 @@ commit 前预算耗尽即回滚。事务内不做推理、HTTP、容器控制、
    `idempotency_conflict`；全局唯一键还能拒绝不同池上的并发抢占。
 3. 无原证据时，纯规则核对：四类受信证据、停止与资源释放均为 true、观察时间未早于外发且
    未晚于锁后的数据库时间。成功只接受 `engine_terminal_response`；失败必须有稳定错误码，
-   其他终态必须没有错误码。无外发事实不能伪装停止；未知隔离态须先协调，或以已验证中止闭合。
+   其他终态必须没有错误码。缺失外发时间的 unknown 只允许凭整实例终止双证据中止，详见第 8 节；
+   engine ack、执行中或成功仍须有真实外发事实。未知隔离态须先协调，或以已验证中止闭合。
    已有终态不能反转，version 耗尽拒绝写入。
 4. 同事务 INSERT `execution_stop_evidence`，按原 version 更新 `submit_intents` 的终态、清理状态、
    错误、终止与更新时间、version。两步任一步失败都回滚；不修改 A 的 lease、quota、节点预算或槽位。
@@ -175,10 +178,12 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 事务只更新 B 的屏障表，不修改 A 的 lease/quota/节点预算。A 的激活事务已经通过合成执行
 联调：活动执行存在时拒绝，可信停止事实保存后才可激活，激活本身不退预算。
 
-## 7. 认证 HTTP 屏障与运行装配
+## 7. 认证 HTTP 控制与运行装配
 
 已实现 `POST /internal/v1/gateways/{gateway_id}/fencing-barrier`，operation ID 为
-`enforceGatewayFencingBarrier`。提交、查询执行、abort 和 drain 没有占位路由。
+`enforceGatewayFencingBarrier`，以及只读
+`GET /internal/v1/executions/{submit_intent_id}`（`getExecution`）。
+提交、abort 和 drain 没有占位路由。
 组件凭据独立于公开服务密钥和 controller 凭据；健康端点不把“控制面可用”解释为引擎或模型就绪。
 传输 TLS、凭据分发与出站网络隔离仍由部署实现，本次 HTTP 测试不能证明这些资格。
 
@@ -195,7 +200,8 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 | `CONTROL_TIMEOUT_SECONDS` | 默认 3 秒，最大 30 秒；入口等待和数据库事务分别有界 |
 
 构造 app 不打开数据库池或取得进程锁。lifespan 启动后才装配一个 `GatewayIngress`、
-`PostgresSubmissionLedger` 与屏障服务；同身份旧进程仍持锁时启动失败。关闭时先停止提供屏障服务，
+`PostgresSubmissionLedger`、屏障服务与查询服务；同身份旧进程仍持锁时启动失败。
+两服务复用同一个 ingress 与 ledger，测试注入也必须成对提供。关闭时先停止提供控制服务，
 等待仍在使用进程 lease 的段退出，再释放锁与数据库池。启用后 `/readyz` 增加 `gateway_ingress`
 检查；未启动或已关闭的控制服务不能给出屏障确认。
 
@@ -204,7 +210,7 @@ Pydantic 转换前验证，字符串 token、伪布尔、越界整数和未知�
 OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制及错误恢复条件。
 验证错误只返回固定描述，不序列化 input/context。已声明的成功和失败响应带 `X-Request-ID`。
 
-内部执行控制契约升级至 `0.3.0.dev0`，增加屏障与控制错误的 Python/TypeScript consumer 入口，
+内部执行控制契约为 `0.4.0.dev0`，包含屏障、执行查询与控制错误的 Python/TypeScript consumer 入口，
 并重新生成绑定。引擎执行错误枚举保持原义；以下控制面错误不写入执行的 `error_code`：
 
 | HTTP/code | retryable | recovery | 调用方行为 |
@@ -213,16 +219,50 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 | 503 / `control_outcome_unknown` | false | `query_original` | 普通自动重试停止；按原身份恢复。屏障可用完全相同 gateway/pool/owner/token 请求重新确认原最低值；这不重新提交任何引擎工作 |
 | 503 / `control_reconciliation_required` | false | `reconcile` | 保留封锁与占用，协调权威状态，不确认接管 |
 | 409 / `control_state_conflict` | false | `query_current_authority` | 读取当前 owner/屏障，不能以另一个证明覆盖原身份 |
+| 404 / `control_execution_not_found` | false | `none` | 当前 gateway/node 没有原身份；不据此证明没有外发，更不能直接退预算或创建新执行 |
 
 新增控制错误的恢复字段与 retryable 组合由 schema 约束。现有执行错误格式继续可读，增加的
 控制码与可选 recovery 要求调用方更新至本版生成绑定；旧严格错误消费者不能假定可直接兼容。
 401 表示凭据无效；422 表示字段或目标 gateway 不合法；409 保留 stale token、未过期 owner
 不匹配和未完成 abort 等明确拒绝。错误响应不是成功屏障，不能据此释放预算。
 
-## 8. 未交付与已知缺口
+## 8. 未知执行与只读恢复
 
-- `mark_execution_unknown`、`record_execution_observation`、`redact_execution_command`、
-  `append_interval` 及自身 `query_outcome` 的完整具名端口仍未交付；
+进程可能在提交 intent 之后、记录外发结果之前崩溃。此时 `dispatched_at` 和
+`engine_request_id` 仍为空，不能把“没有记录”解释为“没有执行”。
+
+`ExecutionRecoveryLedger.mark_execution_unknown` 在 pool → submit 普通行锁后读取数据库时间，
+调用共享领域规则，保存一个 unknown/quarantined 版本，保留全部身份、摘要、输出投影与既有外发事实。
+观察时间不能晚于数据库时间或早于原事实；终态不能复活。同 submit/同原因重放返回原版本，
+不刷新时间；异原因报 `idempotency_conflict/query_original`。观察时间只裁决新事实是否陈旧，
+不是新建一份观察历史。本事务不改 A 的租约、quota、槽位或节点预算。
+
+缺失外发时间时，只允许 `unknown_quarantined → aborted`，且必须有
+`instance_terminated_by_controller` 或 `operator_verified_instance_terminated` 的停止、资源释放双证据。
+观察时间不得早于 intent 创建；operator 仍须说明原因。`record_stop` 原子保存证据与终态，
+保留空外发时间和空请求 ID，不补造一次 engine dispatch。engine abort/terminal ack 不适用这个分支。
+证据生产者必须可信覆盖原 instance/generation 的整个生命周期；这些 schema 和合成测试不代替
+第 6 节入口封锁、代际凭据及真实实例终止保证。
+
+`ExecutionQueryPort.query_outcome(submit_intent_id)` 返回原 `ExecutionSnapshot`，空身份返回 None；
+快照的 `response()` 对应协调契约 submit 分支的 `kind=execution`。认证 GET 仅返回其 execution
+投影，只接受当前 gateway/node 的记录。它不提交、观察、重试引擎，也不协调执行。
+存储读取失败为 503，不能转为 404。查询不读取命令正文，不返回内部 staging key；
+仅有 staging key 不足以生成完整制品引用。输出水位读取既有 `generated_pcm_samples` 持久投影，
+不代表 `append_interval` 已交付或真实计量取得资格。unknown 的 wire marker 为
+`unconfirmed_timeout`，不创建假停止证据行。
+已有生成样本的记录不能被解释成 `failed/not_required`；读取这种矛盾事实要求
+`reconciliation_required/reconcile`，不能对外给出“从未外发、无需清理”的结论。
+
+0.4 的兼容变化是空外发时间的整实例中止分支，以及新的 404 控制码。
+`SubmitExecutionResponse.stop_evidence_kind` 通常可选，但上述中止重放必须携带；
+旧严格消费者会拒绝这一状态组合，生产者和消费者必须同步升级生成绑定与正负例。
+公开语音契约不变，也不改写已有执行记录。
+
+## 9. 未交付与已知缺口
+
+- `record_execution_observation`、`redact_execution_command`、`append_interval` 仍未交付；
+  unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，完整事务响应封装、HTTP 提交/中止路由、
   实际引擎 consumer 仍未交付。Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
@@ -231,14 +271,14 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
 - 提交端完整 deadline/运行资格校验仍需后续接入，当前没有公开执行入口，不可据本事务称为生产执行链路就绪。
 
-## 9. 验证
+## 10. 验证
 
 ```sh
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
 SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
-    tests/integration/test_gateway_barrier_http.py -q
+    tests/integration/test_gateway_recovery.py tests/integration/test_gateway_barrier_http.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
 ```
@@ -266,6 +306,10 @@ token、owner/token/期限/node 核对、单调版本、回滚，以及 A 激活
 `test_barrier_http.py` 验证认证、原始字段拒绝、目标身份、未支持的 abort、正在外发时不确认、
 四类存储失败及恢复提示。`test_gateway_control_contract.py` 比较服务实际 OpenAPI 与冻结约束，
 并验证源 schema 与生成消费者一致。consumer profiles 的正负例同时由 Python/TypeScript 运行。
+`test_gateway_recovery.py` 在 PG/InnoDB 验证 unknown、原身份查询、无外发时间的实例中止、
+并发单版本、冲突与未来观察拒绝、写入失败回滚，逐项核对 A 预算未改变；PG 另覆盖提交确认丢失恢复。
+共享 `execution-recovery.json` 在源 schema、Python 与 TypeScript 中验证新增协调入口的正负例。
 `test_gateway_barrier_http.py` 用真实回环 TCP 与生产 lifespan、非 owner PG 角色验证 readiness、
-凭据、持久屏障、重放、owner 变更、无预算副作用和同身份候选进程启动拒绝，退出后可重新取得锁。
+凭据、持久屏障、重放、owner 变更、pending/unknown/closed 查询、无版本或预算副作用和同身份候选进程启动拒绝，
+退出后同时清除两个控制服务并可重新取得锁。
 这条测试没有注入 fake service/readiness，也没有真实模型执行，不证明真实引擎或跨宿主资格。

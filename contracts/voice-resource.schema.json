@@ -757,6 +757,36 @@
         {
           "if": {
             "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "failed"
+                    }
+                  }
+                },
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
               "publication_eligible": {
                 "const": true
               }
@@ -783,6 +813,30 @@
                   }
                 },
                 "minContains": 1,
+                "allOf": [
+                  {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "name": {
+                          "const": "reusable_tts"
+                        },
+                        "required": {
+                          "const": true
+                        },
+                        "status": {
+                          "const": "passed"
+                        }
+                      }
+                    },
+                    "minContains": 1
+                  }
+                ],
                 "items": {
                   "if": {
                     "properties": {

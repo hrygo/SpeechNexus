@@ -153,6 +153,24 @@ def _assert_qualification_semantics(report: dict[str, Any]) -> None:
         raise ValueError("overall_status does not match required scenario results")
 
 
+def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
+    checks = cast(list[dict[str, Any]], validation["checks"])
+    names = [cast(str, check["name"]) for check in checks]
+    if len(names) != len(set(names)):
+        raise ValueError("voice validation check names must be unique")
+    if validation["status"] == "failed" and not any(
+        check["status"] == "failed" for check in checks
+    ):
+        raise ValueError("failed voice validation requires a failed check")
+    if validation["publication_eligible"] and not any(
+        check["name"] == "reusable_tts"
+        and check["required"] is True
+        and check["status"] == "passed"
+        for check in checks
+    ):
+        raise ValueError("publication-eligible voice requires a passed reusable_tts check")
+
+
 def _multipart_fields(request: httpx.Request) -> dict[str, bytes]:
     content_type = request.headers["content-type"]
     raw = b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + request.content
@@ -626,6 +644,7 @@ def test_voice_resource_positive_and_negative_examples() -> None:
         next(e for e in examples if e["resource_type"] == "voice_validation")
     )
     validator.validate(published_validation)
+    _assert_voice_validation_semantics(published_validation)
     skipped_required = copy.deepcopy(published_validation)
     skipped_required["checks"][0]["status"] = "skipped"
     with pytest.raises(ValidationError):
@@ -635,6 +654,41 @@ def test_voice_resource_positive_and_negative_examples() -> None:
         check["required"] = False
     with pytest.raises(ValidationError):
         validator.validate(no_required_checks)
+
+    missing_reusable_tts = copy.deepcopy(published_validation)
+    missing_reusable_tts["checks"] = [
+        check for check in missing_reusable_tts["checks"] if check["name"] != "reusable_tts"
+    ]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_reusable_tts)
+
+    skipped_reusable_tts = copy.deepcopy(published_validation)
+    next(check for check in skipped_reusable_tts["checks"] if check["name"] == "reusable_tts")[
+        "status"
+    ] = "skipped"
+    with pytest.raises(ValidationError):
+        validator.validate(skipped_reusable_tts)
+
+    failed_without_failed_check = copy.deepcopy(published_validation)
+    failed_without_failed_check["status"] = "failed"
+    failed_without_failed_check["publication_eligible"] = False
+    with pytest.raises(ValidationError):
+        validator.validate(failed_without_failed_check)
+    failed_without_failed_check["checks"][0]["status"] = "failed"
+    validator.validate(failed_without_failed_check)
+    _assert_voice_validation_semantics(failed_without_failed_check)
+
+    duplicate_check_names = copy.deepcopy(published_validation)
+    duplicate_check_names["checks"].append(
+        {
+            "name": duplicate_check_names["checks"][0]["name"],
+            "required": False,
+            "status": "passed",
+            "detail": "duplicate name with different content",
+        }
+    )
+    with pytest.raises(ValueError, match="unique"):
+        _assert_voice_validation_semantics(duplicate_check_names)
 
     voice_revision = copy.deepcopy(
         next(e for e in examples if e["resource_type"] == "voice_revision")

@@ -50,9 +50,10 @@ of defaults, units, enum domains, or stable error codes.
 - `voice-resource.schema.json`: voice draft, draft revision, validation,
   publication, immutable VoiceRevision, and pronunciation revision. Draft
   revisions bind generation, validation, and publication references to their
-  lifecycle status, and failure details occur only in the failed state. Public
-  projections never contain backend handles, feature vectors, object keys, or
-  paths.
+  lifecycle status, and failure details occur only in the failed state.
+  Publication eligibility requires a passed required `reusable_tts` check;
+  check names are unique per validation. Public projections never contain
+  backend handles, feature vectors, object keys, or paths.
 - `model-binding.schema.json`: immutable logical model binding to engine,
   artifact set, execution recipe, parameter domains, capacity manifest, and
   qualification evidence, including a globally unique immutable `revision_id`

@@ -39,7 +39,10 @@ of defaults, units, enum domains, or stable error codes.
   events. Model-binding publication uses separate target-revision and
   expected-current-revision compare-and-swap fields. Quarantine release
   persists and echoes the operator-observed evidence time, reason, and
-  idempotent replay status.
+  idempotent replay status. A ready resource pool has at least one
+  contributing node and positive capacity; reserved slots do not exceed
+  capacity, and active plus quarantined slots do not exceed capacity.
+  Released submit-intent ids are sorted.
 - `shared/`: single-source definitions for opaque identifiers and digests
   (`identifiers.schema.json`), runtime and Operation states, the
   OpenAI-compatible public error envelope, revisioned references, language

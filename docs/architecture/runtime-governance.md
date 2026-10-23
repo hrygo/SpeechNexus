@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 资源治理与持久化设计"
 status: active
-version: "0.5.4"
+version: "0.5.5"
 date: 2026-10-23
 ---
 
@@ -70,6 +70,8 @@ date: 2026-10-23
 ### 1.4 多进程一致性与 fencing
 
 每个 pool 的调度 owner 使用 PostgreSQL 租约与递增 fencing token。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
+
+管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。
 
 `ExecutionControlPort` 的权威实现是每个 engine / stage 的受控 execution gateway，它独占该引擎网络入口与凭据。gateway 将“核验当前 reservation、attempt、policy / 资源 revision 与 token → 写入唯一 submit intent → 放行本次提交”串行化；先将状态记为 submitting 并占住预算，再向引擎发送。每个 intent 有可查询的 engine request_id 或确定的引擎侧关联证据；submitting 与传输结果未知都仍占用资源，不能当作未开始而免费重试。
 

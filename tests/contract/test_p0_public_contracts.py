@@ -137,6 +137,10 @@ def _component_validator(document: dict[str, Any], name: str) -> jsonschema.Draf
     return _validator(schema)
 
 
+def _parse_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _assert_qualification_semantics(report: dict[str, Any]) -> None:
     """Executable reference rules that JSON Schema cannot express across arrays."""
     scenarios = cast(list[dict[str, Any]], report["scenarios"])
@@ -168,10 +172,8 @@ def _assert_qualification_semantics(report: dict[str, Any]) -> None:
 
     expires_at = report.get("expires_at")
     if expires_at is not None:
-        qualified_at = datetime.fromisoformat(
-            cast(str, report["qualified_at"]).replace("Z", "+00:00")
-        )
-        parsed_expiry = datetime.fromisoformat(cast(str, expires_at).replace("Z", "+00:00"))
+        qualified_at = _parse_timestamp(cast(str, report["qualified_at"]))
+        parsed_expiry = _parse_timestamp(cast(str, expires_at))
         if qualified_at >= parsed_expiry:
             raise ValueError("qualified_at must precede expires_at")
 
@@ -264,6 +266,38 @@ def _assert_export_artifact_semantics(
         raise ValueError("export artifact belongs to a different export job")
     if artifact["manifest_revision"] != manifest_revision:
         raise ValueError("export artifact manifest revision differs from its job")
+
+
+def _assert_resource_pool_semantics(pool: dict[str, Any]) -> None:
+    """Executable aggregate-count rules for a logical resource pool."""
+    max_active_slots = cast(int, pool["max_active_slots"])
+    if pool["realtime_reserved_slots"] > max_active_slots:
+        raise ValueError("realtime reserved slots exceed the pool capacity")
+    if pool["active_slots"] + pool["quarantine_slots"] > max_active_slots:
+        raise ValueError("active and quarantined slots exceed the pool capacity")
+    if pool["status"] == "ready" and not pool["node_ids"]:
+        raise ValueError("a ready pool requires at least one contributing node")
+
+
+def _assert_quarantine_release_semantics(
+    request: dict[str, Any],
+    release: dict[str, Any],
+) -> None:
+    """Executable request/response echo and temporal rules for quarantine release."""
+    if (
+        release["evidence_kind"] != request["evidence_kind"]
+        or release["evidence_digest"] != request["evidence_digest"]
+        or release["evidence_observed_at"] != request["observed_at"]
+        or release["reason"] != request["reason"]
+    ):
+        raise ValueError("quarantine release does not echo the accepted evidence")
+    if _parse_timestamp(cast(str, release["evidence_observed_at"])) > _parse_timestamp(
+        cast(str, release["budget_released_at"])
+    ):
+        raise ValueError("quarantine evidence was observed after budget release")
+    released_intents = cast(list[str], release["released_submit_intent_ids"])
+    if released_intents != sorted(released_intents):
+        raise ValueError("released submit intent ids are not sorted")
 
 
 def _assert_realtime_terminal_operations(
@@ -1769,32 +1803,49 @@ def test_public_errors_share_one_openai_compatible_envelope() -> None:
 def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() -> None:
     admin = _resolved_yaml(_ADMIN_OPENAPI)
     pool_validator = _component_validator(admin, "ResourcePool")
-    pool_validator.validate(
-        {
-            "id": "asr-realtime",
-            "object": "nexus.resource_pool",
-            "node_ids": ["node-a", "node-b"],
-            "service_class": "realtime",
-            "max_active_slots": 4,
-            "realtime_reserved_slots": 2,
-            "active_slots": 1,
-            "quarantine_slots": 0,
-            "status": "ready",
-        }
-    )
-    pool_validator.validate(
-        {
-            "id": "voice-creation",
-            "object": "nexus.resource_pool",
-            "node_ids": [],
-            "service_class": "interactive",
-            "max_active_slots": 0,
-            "realtime_reserved_slots": 0,
-            "active_slots": 0,
-            "quarantine_slots": 0,
-            "status": "unavailable",
-        }
-    )
+    ready_pool: dict[str, Any] = {
+        "id": "asr-realtime",
+        "object": "nexus.resource_pool",
+        "node_ids": ["node-a", "node-b"],
+        "service_class": "realtime",
+        "max_active_slots": 4,
+        "realtime_reserved_slots": 2,
+        "active_slots": 1,
+        "quarantine_slots": 0,
+        "status": "ready",
+    }
+    pool_validator.validate(ready_pool)
+    _assert_resource_pool_semantics(ready_pool)
+    unavailable_pool: dict[str, Any] = {
+        "id": "voice-creation",
+        "object": "nexus.resource_pool",
+        "node_ids": [],
+        "service_class": "interactive",
+        "max_active_slots": 0,
+        "realtime_reserved_slots": 0,
+        "active_slots": 0,
+        "quarantine_slots": 0,
+        "status": "unavailable",
+    }
+    pool_validator.validate(unavailable_pool)
+    _assert_resource_pool_semantics(unavailable_pool)
+
+    ready_without_nodes = {**ready_pool, "node_ids": []}
+    with pytest.raises(ValidationError):
+        pool_validator.validate(ready_without_nodes)
+    ready_without_capacity = {**ready_pool, "max_active_slots": 0}
+    with pytest.raises(ValidationError):
+        pool_validator.validate(ready_without_capacity)
+
+    reserved_beyond_capacity = {**ready_pool, "realtime_reserved_slots": 5}
+    pool_validator.validate(reserved_beyond_capacity)
+    with pytest.raises(ValueError, match="reserved slots"):
+        _assert_resource_pool_semantics(reserved_beyond_capacity)
+
+    occupied_beyond_capacity = {**ready_pool, "active_slots": 3, "quarantine_slots": 2}
+    pool_validator.validate(occupied_beyond_capacity)
+    with pytest.raises(ValueError, match="active and quarantined"):
+        _assert_resource_pool_semantics(occupied_beyond_capacity)
     with pytest.raises(ValidationError):
         pool_validator.validate(
             {
@@ -1811,14 +1862,13 @@ def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() 
         )
 
     request_validator = _component_validator(admin, "QuarantineReleaseRequest")
-    request_validator.validate(
-        {
-            "evidence_kind": "operator_verified_instance_terminated",
-            "evidence_digest": "sha256:" + "1" * 64,
-            "observed_at": "2026-10-22T00:00:00Z",
-            "reason": "Operator verified the old container exited.",
-        }
-    )
+    release_request: dict[str, Any] = {
+        "evidence_kind": "operator_verified_instance_terminated",
+        "evidence_digest": "sha256:" + "1" * 64,
+        "observed_at": "2026-10-22T00:00:00Z",
+        "reason": "Operator verified the old container exited.",
+    }
+    request_validator.validate(release_request)
     with pytest.raises(ValidationError):
         request_validator.validate(
             {
@@ -1853,6 +1903,7 @@ def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() 
         "released_submit_intent_ids": ["intent-demo"],
     }
     release_validator.validate(release)
+    _assert_quarantine_release_semantics(release_request, release)
     missing_observed_at = copy.deepcopy(release)
     del missing_observed_at["evidence_observed_at"]
     with pytest.raises(ValidationError):
@@ -1861,6 +1912,27 @@ def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() 
     invalid_replay_flag["idempotent_replay"] = "true"
     with pytest.raises(ValidationError):
         release_validator.validate(invalid_replay_flag)
+
+    release_with_other_reason = {**release, "reason": "A different reason."}
+    release_validator.validate(release_with_other_reason)
+    with pytest.raises(ValueError, match="does not echo"):
+        _assert_quarantine_release_semantics(release_request, release_with_other_reason)
+
+    release_before_observation = {
+        **release,
+        "budget_released_at": "2026-10-21T23:59:59Z",
+    }
+    release_validator.validate(release_before_observation)
+    with pytest.raises(ValueError, match="observed after"):
+        _assert_quarantine_release_semantics(release_request, release_before_observation)
+
+    unsorted_released_intents = {
+        **release,
+        "released_submit_intent_ids": ["intent-z", "intent-a"],
+    }
+    release_validator.validate(unsorted_released_intents)
+    with pytest.raises(ValueError, match="not sorted"):
+        _assert_quarantine_release_semantics(release_request, unsorted_released_intents)
 
 
 def test_execution_stream_examples_and_unknown_field_rejection() -> None:

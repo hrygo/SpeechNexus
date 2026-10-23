@@ -1022,6 +1022,18 @@ components:
         status:
           type: string
           enum: [ready, degraded, unavailable]
+      allOf:
+        - if:
+            properties:
+              status:
+                const: ready
+            required: [status]
+          then:
+            properties:
+              node_ids:
+                minItems: 1
+              max_active_slots:
+                minimum: 1
     ResourcePoolList:
       type: object
       additionalProperties: false
@@ -1098,7 +1110,7 @@ components:
         released_submit_intent_ids:
           type: array
           uniqueItems: true
-          description: Sorted lexicographically for stable idempotent responses.
+          description: Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values.
           items:
             $ref: "#/components/schemas/Identifier"
     PolicyQuotas:

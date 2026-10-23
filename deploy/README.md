@@ -31,6 +31,16 @@ The Compose development topology binds all published ports to loopback:
 The repository's systemd development services use the same PostgreSQL and
 MinIO host ports. Stop one topology before starting the other.
 
+The Python and Web build contexts include the shared contracts workspace;
+`.dockerignore` excludes runtime data, credentials, local dependencies and caches.
+When a build runs behind a deployment/session CA, supply its trusted combined
+CA bundle as BuildKit secret `proxy_ca`. The optional secret is mounted only in
+networked dependency-install steps and is not copied into the final images.
+Do not disable TLS verification. The first explicit owner-only Job migration and
+minimum runtime grants are documented in
+[production jobs](../docs/architecture/production-jobs.md); normal API startup
+does not run migrations or install their optional dependencies.
+
 ## Configuration authority
 
 Runtime configuration is validated by `pydantic-settings` in each Python

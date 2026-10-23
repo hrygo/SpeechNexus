@@ -53,6 +53,8 @@ Contract repairs cover canonical execution commands, synchronous idempotency rec
 
 Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-cluster-coordination-and-storage-portability.md) excludes etcd and moves cross-table rules into controlled application transactions to reduce database coupling. PostgreSQL is the only database targeted for official product support; MySQL/InnoDB is limited to validating key coordination behavior. [Simplified DDL, application transaction design and contracts (Chinese)](docs/architecture/coordination-transactions.md) are delivered, with a shared test prototype on real PG/InnoDB. Production integration and full cluster fault qualification remain pending; see the [refactoring plan (Chinese)](docs/plans/2026-10-23-cluster-coordination-refactor.md).
 
+The [first production coordination unit (Chinese)](docs/architecture/production-jobs.md) implements atomic Job/outbox creation, full-identity replay and read-only recovery of unknown commits, with a PG adapter, minimum runtime grants and versioned migration. It is not connected to public business routes and does not implement the complete public Job or file-speech workflow.
+
 ### Maintain a deployment through AdminUI
 
 AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.

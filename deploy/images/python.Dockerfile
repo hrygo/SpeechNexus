@@ -11,9 +11,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY backend/README.md backend/pyproject.toml backend/
 COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gateway/
+COPY packages/contracts/pyproject.toml packages/contracts/
 COPY backend/src backend/src
 COPY execution-gateway/src execution-gateway/src
+COPY packages/contracts/src packages/contracts/src
 RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
     uv sync --frozen --all-packages --no-dev --no-editable
 
 FROM python:3.14.9-slim-bookworm AS runtime

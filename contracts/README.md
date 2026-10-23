@@ -141,7 +141,10 @@ of defaults, units, enum domains, or stable error codes.
   Includes typed results and unknown-outcome recovery. Exact atomic steps,
   lock order, replay identities and producer/consumer handoff are in the
   [application transaction design](../docs/architecture/coordination-transactions.md).
-  The shared PG/InnoDB prototype is test-only; production use cases remain pending.
+  The shared PG/InnoDB prototype is test-only. The first independent production
+  `create_job`/outbox unit and read-only recovery are documented in
+  [production jobs](../docs/architecture/production-jobs.md); remaining ports and
+  their application integration are still pending.
 - `internal/execution-stream.schema.json`: realtime gateway to execution
   gateway control envelopes, input/output credits, backpressure, watermarks,
   terminal evidence, and the fixed binary PCM frame. `stream.opened` echoes the

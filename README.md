@@ -53,6 +53,8 @@ SpeechNexus 希望服务于三类需求：
 
 集群支持保持完整；[ADR 0006](docs/decisions/0006-cluster-coordination-and-storage-portability.md)确定不采用 etcd、以受控应用事务降低数据库绑定，PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 仅作关键协调验证。已交付[精简 DDL、应用事务方案与契约](docs/architecture/coordination-transactions.md)，共享测试在真实 PG/InnoDB 上验证协调原型；生产业务接入和完整集群故障资格仍待完成，进度见[重构计划](docs/plans/2026-10-23-cluster-coordination-refactor.md)。
 
+[首个生产协调单元](docs/architecture/production-jobs.md)已实现 Job/outbox 原子创建、完整身份幂等与未知提交只读恢复，含 PG adapter、最低角色和版本化迁移；它尚未接入公开业务路由，不代表完整公开 Job 或文件语音闭环已实现。
+
 ### 通过 AdminUI 维护部署
 
 AdminUI 面向部署维护者，规划提供服务概览、模型与音色管理、预设配置、资源预算、全局任务和诊断入口。工作台与 AdminUI 分别组织使用任务和维护任务。

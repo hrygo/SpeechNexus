@@ -420,11 +420,11 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            with pytest.raises(RuntimeError, match="Destructive Job/outbox downgrade"):
+            with pytest.raises(RuntimeError, match="Destructive coordination downgrade"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()
     assert database.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0001_jobs"}
+        {"version_num": "0002_coordination"}
     ]
     assert database.counts() == (1, 1)

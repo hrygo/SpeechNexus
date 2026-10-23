@@ -98,7 +98,8 @@ coordination-test:
 	./scripts/dev-env/mysql-service.sh
 	uv run pytest tests/contract/test_coordination_transactions.py \
 		tests/integration/test_coordination_transactions.py \
-		tests/integration/test_production_jobs.py -q
+		tests/integration/test_production_jobs.py \
+		tests/integration/test_coordination_foundation.py -q
 
 python-build:
 	uv build --all-packages --out-dir dist/python

@@ -15,6 +15,9 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 - Alembic `0001_jobs`：在独立 speech schema 中创建协调 Job 和 outbox；
   迁移仅由独立命令执行，不在 API/worker 启动时自动建表。
 
+后续 `0002_coordination` 增加其余 13 表的[生产存储与最小权限基线](production-coordination-storage.md)，
+不改写本单元的 Job/outbox 身份或授权；已有迁移命令升级整个包内链到 head。
+
 这里的 Job 是协调元数据，不是完整公开 Job 的业务命令/结果存储。公共路由、
 完整配方准入、claim、outbox 投递、Scheduler/Worker 和真实引擎仍待对应单元。
 不得把此单元解释为文件转写/合成闭环已完成。

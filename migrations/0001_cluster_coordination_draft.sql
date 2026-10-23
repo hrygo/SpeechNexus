@@ -588,6 +588,8 @@ CREATE TABLE admission_leases (
     quarantined_at TIMESTAMPTZ,
     quarantine_release_evidence_kind TEXT,
     quarantine_release_evidence_digest TEXT,
+    quarantine_release_observed_at TIMESTAMPTZ,
+    quarantine_release_reason TEXT,
     budget_released_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -686,11 +688,25 @@ CREATE TABLE admission_leases (
     CONSTRAINT ck_admission_leases_quarantine_evidence_pair
         CHECK (
             (quarantine_release_evidence_kind IS NULL
-                AND quarantine_release_evidence_digest IS NULL)
+                AND quarantine_release_evidence_digest IS NULL
+                AND quarantine_release_observed_at IS NULL
+                AND quarantine_release_reason IS NULL)
             OR (
                 quarantine_release_evidence_kind IS NOT NULL
                 AND quarantine_release_evidence_digest ~ '^sha256:[0-9a-f]{64}$'
+                AND quarantine_release_observed_at IS NOT NULL
                 AND quarantined_at IS NOT NULL
+                AND (
+                    (
+                        quarantine_release_evidence_kind = 'operator_verified_instance_terminated'
+                        AND quarantine_release_reason IS NOT NULL
+                        AND char_length(btrim(quarantine_release_reason)) BETWEEN 1 AND 2000
+                    )
+                    OR (
+                        quarantine_release_evidence_kind <> 'operator_verified_instance_terminated'
+                        AND quarantine_release_reason IS NULL
+                    )
+                )
             )
         ),
     -- Budget release is strictly forbidden while lease is quarantined or cleanup is pending
@@ -700,6 +716,10 @@ CREATE TABLE admission_leases (
                 lease_state = 'released'
                 AND cleanup_state IN ('not_required', 'complete')
                 AND budget_released_at IS NOT NULL
+                AND (
+                    quarantine_release_observed_at IS NULL
+                    OR quarantine_release_observed_at <= budget_released_at
+                )
             )
             OR (
                 lease_state = 'quarantined'

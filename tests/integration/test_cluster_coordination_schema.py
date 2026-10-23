@@ -741,6 +741,47 @@ def test_quarantined_lease_requires_evidence_to_release(
             """
         )
 
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
+                quarantine_release_evidence_digest = %s,
+                quarantine_release_observed_at = CURRENT_TIMESTAMP
+            WHERE lease_id = 'lease-release'
+            """,
+            (_DIGEST,),
+        )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
+                quarantine_release_evidence_digest = %s,
+                quarantine_release_observed_at = CURRENT_TIMESTAMP,
+                quarantine_release_reason = '   '
+            WHERE lease_id = 'lease-release'
+            """,
+            (_DIGEST,),
+        )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET lease_state = 'released',
+                cleanup_state = 'complete',
+                quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
+                quarantine_release_evidence_digest = %s,
+                quarantine_release_observed_at = CURRENT_TIMESTAMP + INTERVAL '1 hour',
+                quarantine_release_reason = 'operator confirmed the old container exited',
+                budget_released_at = CURRENT_TIMESTAMP
+            WHERE lease_id = 'lease-release'
+            """,
+            (_DIGEST,),
+        )
+
     db.execute(
         """
         UPDATE admission_leases
@@ -748,6 +789,8 @@ def test_quarantined_lease_requires_evidence_to_release(
             cleanup_state = 'complete',
             quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
             quarantine_release_evidence_digest = %s,
+            quarantine_release_observed_at = CURRENT_TIMESTAMP - INTERVAL '1 second',
+            quarantine_release_reason = 'operator confirmed the old container exited',
             budget_released_at = CURRENT_TIMESTAMP
         WHERE lease_id = 'lease-release'
         """,
@@ -755,7 +798,11 @@ def test_quarantined_lease_requires_evidence_to_release(
     )
     row = db.execute(
         """
-        SELECT lease_state, cleanup_state, budget_released_at
+        SELECT lease_state,
+               cleanup_state,
+               budget_released_at,
+               quarantine_release_observed_at,
+               quarantine_release_reason
         FROM admission_leases
         WHERE lease_id = 'lease-release'
         """
@@ -763,6 +810,9 @@ def test_quarantined_lease_requires_evidence_to_release(
     assert row is not None
     assert row[0:2] == ("released", "complete")
     assert isinstance(row[2], datetime)
+    assert isinstance(row[3], datetime)
+    assert row[2] >= row[3]
+    assert row[4] == "operator confirmed the old container exited"
 
     with pytest.raises(CheckViolation), db.transaction():
         db.execute(

@@ -1,8 +1,8 @@
 ---
 title: "SpeechNexus 分布式协调与容量治理 Schema 设计（P0-B 草案）"
 status: active
-version: "0.2.3"
-date: 2026-10-22
+version: "0.2.4"
+date: 2026-10-23
 ---
 
 # SpeechNexus 分布式协调与容量治理 Schema 设计（P0-B 草案）
@@ -32,7 +32,7 @@ erDiagram
 | `scheduler_pool_leases` | `speech`（scheduler） | 分池调度 Owner 租约，只绑定 `owner_scheduler_id`，不绑定容量节点；新 Owner 接管时先进入 `reconciling_takeover`，未完成旧网关屏障与在途协调前禁止转为 `active` |
 | `engine_instances` | `speech`（scheduler） | 动态运行实例（含 `instance_generation`、按内存架构分列的常驻 / 加载峰值 / 每槽预算、最大/保留/已用/隔离槽位）；未就绪前禁止提前释放 `peak_reservation_active`。同一 `instance_id` 可保留历史 `stopped` generation，但最多一个未停止 generation；generation 的 host / gateway / pool / binding / template / config 身份不可改写，`stopped` 后整行不可变，重启必须使用新 generation |
 | `runtime_instance_intents` | `speech`（scheduler / controller） | 节点级受限控制器（`node-controller`）的持久 `prepare` / `stop` 意图；按节点内存架构记录 peak / steady unified、device 与 host 向量。保留完整意图历史，仅对未解决状态去重；意图身份不可改写，`succeeded` / `failed` 终态不可复活，重试使用新 `intent_id`。`stop` 意图未同时取得 `process_or_container_exited` 与 `resources_released_confirmed` 前禁止标记 `succeeded` |
-| `admission_leases` | `speech`（scheduler / worker） | 一个 operation attempt 的**每阶段**跨层级容量租约；完整执行配方在同一事务内为全部 required stage 各插入一行，多个 stage 可复用同一 pool / instance。按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定 stage、实例 host / generation / pool / gateway / binding revision 与 workspace。身份、预留向量和 deadline 在准入后不可变；严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型与摘要，`released` 后不可重新打开 |
+| `admission_leases` | `speech`（scheduler / worker） | 一个 operation attempt 的**每阶段**跨层级容量租约；完整执行配方在同一事务内为全部 required stage 各插入一行，多个 stage 可复用同一 pool / instance。按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定 stage、实例 host / generation / pool / gateway / binding revision 与 workspace。身份、预留向量和 deadline 在准入后不可变；严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型、摘要、观察时间及人工释放原因，观察时间不得晚于预算释放时间，`released` 后不可重新打开 |
 | `gateway_fencing_barriers` | `gateway_control`（execution-gateway） | 网关按 `(gateway_id, pool_id)` 持久化的最小可接受 `fencing_token` 屏障，阻断旧 Scheduler 迟到提交 |
 | `submit_intents` | `gateway_control`（execution-gateway） | 两阶段提交屏障权威记录；按 `(operation_id, attempt_id, stage_id)` 唯一去重，外发前先持久化 `submitting`，无确切停止证据禁止转入 `aborted`。身份、command digest、engine request 关联和 staging key 在观测后不可改写；`succeeded` / `failed` / `aborted` 结果不可改成其他结果，`unknown_quarantined` 只能凭停止证据关闭为 `aborted`。`submitting` / `executing` / `stopping` 只能保持 `cleanup_state = pending`；`succeeded` 必须有 engine terminal response 且无错误；`failed` 必须带稳定错误码，并在 `not_required` 或已验证终止的 `complete` 清理之间二选一 |
 | `output_sample_intervals` | `gateway_control`（execution-gateway） | 只追加的输出样本区间权威账本；同一 `(operation_id, attempt_id, output_stream_id, meter_kind)` 的 `[sample_start, sample_end)` 禁止重叠，既有区间禁止改写或删除，避免标量水位覆盖先前 attempt / 区间证据。毫秒数只从 samples 与 sample rate 派生，不单独存储 |
@@ -106,7 +106,7 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 隔离中的容量只有一个退出路径：取得“旧执行已停止且资源已释放”的可审计证据后，在一个事务中减少对应实例 / 节点隔离计数、释放租约并恢复可分配预算。
 
 1. **机器证据优先**：`execution-gateway` 的 abort / terminal 响应或 `node-controller` 的 `process_or_container_exited + resources_released_confirmed` 证据由后台 reconciler 消费。`engine_terminal_response` 只有在 adapter 证明该响应终止了对应请求且连接不可继续生成时才可作为证据；仅“连接已断开”不足以释放。
-2. **人工兜底**：机器证据不可得时，运维通过 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 提交 `operator_verified_instance_terminated`、不可变证据摘要与观察时间。接口只记录经独立核验的停止事实；服务端仍须先关闭该租约下全部未解决 `submit_intents` 并写入对应证据，再原子扣减隔离账目。响应列出被关闭的 submit intent；只写证据或只释放租约不算释放。
+2. **人工兜底**：机器证据不可得时，运维通过 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` 提交 `operator_verified_instance_terminated`、不可变证据摘要、观察时间与原因。接口只记录经独立核验的停止事实；服务端仍须先关闭该租约下全部未解决 `submit_intents` 并写入对应证据，再原子扣减隔离账目。响应按字典序列出被关闭的 submit intent，并回声同一证据时间、原因及 `idempotent_replay`；同一 Idempotency-Key / 规范证据重放返回原释放结果，同 key 不同证据返回 `409 idempotency_conflict`，已释放租约与提交证据不一致返回 `409 quarantine_release_conflict`。只写证据或只释放租约不算释放。
 3. **阈值与节点状态**：任一物理维度的隔离量超过 `quarantine_threshold_ratio` 时，节点不能保持 `ready`，同一事务改为 `quarantined` 或 `draining`。隔离计数低于阈值后也不自动恢复接单；须由部署健康检查重新确认节点、引擎入口和容量资格后才能转回 `ready`。
 4. **禁止捷径**：重启 scheduler / gateway、删除 lease 行、换实例 generation 或新建 attempt 都不能清除未协调的隔离容量。释放证据与摘要保留到审计与账本保留期结束。
 

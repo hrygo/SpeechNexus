@@ -1425,19 +1425,39 @@ def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() 
                 "reason": "Not an operator-verification request.",
             }
         )
+    with pytest.raises(ValidationError):
+        request_validator.validate(
+            {
+                "evidence_kind": "operator_verified_instance_terminated",
+                "evidence_digest": "sha256:" + "1" * 64,
+                "observed_at": "2026-10-22T00:00:00Z",
+                "reason": "   ",
+            }
+        )
 
-    _component_validator(admin, "QuarantineRelease").validate(
-        {
-            "lease_id": "lease-demo",
-            "object": "nexus.quarantine_release",
-            "lease_state": "released",
-            "cleanup_state": "complete",
-            "budget_released_at": "2026-10-22T00:01:00Z",
-            "evidence_kind": "operator_verified_instance_terminated",
-            "evidence_digest": "sha256:" + "1" * 64,
-            "released_submit_intent_ids": ["intent-demo"],
-        }
-    )
+    release_validator = _component_validator(admin, "QuarantineRelease")
+    release = {
+        "lease_id": "lease-demo",
+        "object": "nexus.quarantine_release",
+        "lease_state": "released",
+        "cleanup_state": "complete",
+        "budget_released_at": "2026-10-22T00:01:00Z",
+        "evidence_kind": "operator_verified_instance_terminated",
+        "evidence_digest": "sha256:" + "1" * 64,
+        "evidence_observed_at": "2026-10-22T00:00:00Z",
+        "reason": "Operator verified the old container exited.",
+        "idempotent_replay": False,
+        "released_submit_intent_ids": ["intent-demo"],
+    }
+    release_validator.validate(release)
+    missing_observed_at = copy.deepcopy(release)
+    del missing_observed_at["evidence_observed_at"]
+    with pytest.raises(ValidationError):
+        release_validator.validate(missing_observed_at)
+    invalid_replay_flag = copy.deepcopy(release)
+    invalid_replay_flag["idempotent_replay"] = "true"
+    with pytest.raises(ValidationError):
+        release_validator.validate(invalid_replay_flag)
 
 
 def test_execution_stream_examples_and_unknown_field_rejection() -> None:

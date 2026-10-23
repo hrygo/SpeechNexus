@@ -24,7 +24,9 @@ of defaults, units, enum domains, or stable error codes.
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit
   events. Model-binding publication uses separate target-revision and
-  expected-current-revision compare-and-swap fields.
+  expected-current-revision compare-and-swap fields. Quarantine release
+  persists and echoes the operator-observed evidence time, reason, and
+  idempotent replay status.
 - `shared/`: single-source definitions for opaque identifiers and digests
   (`identifiers.schema.json`), runtime and Operation states, the
   OpenAI-compatible public error envelope, revisioned references, language

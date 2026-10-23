@@ -474,7 +474,20 @@ paths:
         capacity. Machine-verifiable gateway/controller evidence is consumed by
         the background reconciler and does not require this endpoint. Before
         budget is released, every submit intent belonging to the lease must be
-        closed with complete cleanup evidence; the response lists those intents.
+        closed with complete cleanup evidence; the response lists those intents
+        in lexicographic order. `observed_at` is the operator-observed
+        termination time and must not be later than the server's
+        `budget_released_at`.
+
+        The `Idempotency-Key` scope is the deployment and lease. Replaying the
+        same key and canonical evidence returns 200 with the original
+        `budget_released_at`, sorted intent list, and `idempotent_replay: true`;
+        reusing that key with any different evidence or reason returns 409
+        `idempotency_conflict`. A lease already released by a background
+        reconciler may be queried idempotently only when the supplied evidence
+        matches the stored release facts; otherwise the endpoint returns 409
+        `quarantine_release_conflict`. Evidence and reason are persisted with
+        the release and never rewritten.
       parameters:
         - $ref: "#/components/parameters/LeaseIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -1037,6 +1050,7 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
+          pattern: "\\S"
     QuarantineRelease:
       type: object
       additionalProperties: false
@@ -1048,6 +1062,9 @@ components:
         - budget_released_at
         - evidence_kind
         - evidence_digest
+        - evidence_observed_at
+        - reason
+        - idempotent_replay
         - released_submit_intent_ids
       properties:
         lease_id:
@@ -1068,9 +1085,20 @@ components:
           const: operator_verified_instance_terminated
         evidence_digest:
           $ref: "#/components/schemas/Sha256Digest"
+        evidence_observed_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: "\\S"
+        idempotent_replay:
+          type: boolean
         released_submit_intent_ids:
           type: array
           uniqueItems: true
+          description: Sorted lexicographically for stable idempotent responses.
           items:
             $ref: "#/components/schemas/Identifier"
     PolicyQuotas:

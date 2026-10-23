@@ -78,4 +78,8 @@ MySQL 仅将文档 TEXT 列映射为 LONGTEXT，避免合法长命令截断；�
 保留直接 SQL 拦截、触发器来源校验、权限与历史证据；不把旧负例改为跳过或 fake。
 历史规则到新执行位置的逐项映射见应用方案第 8 节。
 
+上述保留是迁移对照期安排，退出条件见 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md)。
+有效业务不变量迁入新路径并通过相关验收后，移除旧门禁并删除废弃原型文件；
+历史证据通过 Git 追溯，不形成永久 CI 负担。
+
 [资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)

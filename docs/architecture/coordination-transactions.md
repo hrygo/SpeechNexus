@@ -253,7 +253,7 @@ Gateway 不查询工作台或语音业务表，只在自己的清理事务中重
 | GiST 区间排他、watermark 触发器 | 锁 submit/output stream，检查 `[start,end)` 全部重叠并追加 | 重放、相邻/重叠/硬上限、真实锁等待；gateway/计量消费者 |
 | append-only、禁止 delete/truncate、不可变身份 | 只追加 evidence/interval；角色无删除/DDL权限，仅可更新可变列 | 两库真实权限负例；可变行终态裁决属于应用保护边界 |
 | `updated_at` 触发器 | 用例写入事实的 DB observation time 与 version | 不用更新时间判断停止；旧版时间语义留在历史测试 |
-| Security-definer 函数与调用来源检查 | 目标无提升权限的业务函数；安装最小权限 | 旧原型安全回归继续运行；目标权限检查独立运行 |
+| Security-definer 函数与调用来源检查 | 目标无提升权限的业务函数；安装最小权限 | 旧原型安全回归仅过渡运行，按 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md) 退出；目标权限检查独立运行 |
 
 旧 24 个函数按职责完整归档如下；该清单是迁移审阅入口，不代表尚未编码的路径已验证：
 

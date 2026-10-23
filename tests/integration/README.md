@@ -16,6 +16,11 @@ The two suites exercise different assurance boundaries:
   No business procedures, triggers, GiST, partial indexes or
   `SKIP LOCKED` are used. Both engines execute the same application rules.
 
+The historical PG suite is transitional. [ADR 0007](../../docs/decisions/0007-legacy-coordination-retirement.md)
+defines its exit conditions: migrate valid invariants into current-path tests,
+then remove the legacy CI gate, SQL, tests and obsolete design from the working
+tree. Git history preserves provenance; the shared transaction gate remains.
+
 Each test creates a unique namespace, installs the DDL, and drops it afterwards.
 Permission checks create fresh runtime roles/users and remove them after testing.
 PG uses a schema in the explicitly configured test database; MySQL creates a

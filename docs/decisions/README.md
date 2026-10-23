@@ -9,5 +9,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 
 - [0005：完整执行与数据生命周期契约](0005-complete-execution-and-data-lifecycle-contracts.md)（accepted，2026-10-23；契约/草案修复，业务运行时待实现）。
 - [0006：集群协调与存储可移植性](0006-cluster-coordination-and-storage-portability.md)（accepted，2026-10-23；集群能力不降级，不采用 etcd；受控应用事务，PG 正式交付与 MySQL 关键协调验证；重构待实施）。
+- [0007：遗留协调原型的退出与删除](0007-legacy-coordination-retirement.md)（accepted，2026-10-23；逐项迁移有效业务不变量后，退出旧 PG 必跑门禁并删除废弃原型；条件待验收）。
 
 [文档索引](../README.md)

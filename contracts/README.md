@@ -19,7 +19,9 @@ of defaults, units, enum domains, or stable error codes.
   `job.succeeded` event carries the same result shape and at least one
   committed artifact. Realtime session projections require connection,
   terminal-time, structured failure, and cleanup facts to agree with the
-  session status.
+  session status. Ready assets carry non-empty validated media facts; audio
+  assets expose duration, sample rate, and channel count, while text assets
+  cannot claim audio metadata.
 - `workbench-openapi.yaml`: optional workbench application resources: projects,
   transcripts, meetings, assistant turns, teleprompter state, audiobooks,
   saved assets, export jobs, and export events. It does not claim OpenAI

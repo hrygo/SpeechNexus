@@ -3773,6 +3773,54 @@ components:
             - type: string
               format: date-time
             - type: "null"
+      allOf:
+        - if:
+            properties:
+              status:
+                const: ready
+            required: [status]
+          then:
+            properties:
+              bytes:
+                minimum: 1
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: ready
+                required: [status]
+              - properties:
+                  purpose:
+                    enum: [asr_input, voice_reference]
+                required: [purpose]
+          then:
+            required: [duration_ms, sample_rate_hz, channels]
+            properties:
+              duration_ms:
+                type: integer
+                minimum: 1
+              sample_rate_hz:
+                type: integer
+              channels:
+                type: integer
+        - if:
+            allOf:
+              - properties:
+                  status:
+                    const: ready
+                required: [status]
+              - properties:
+                  purpose:
+                    const: text_input
+                required: [purpose]
+          then:
+            properties:
+              duration_ms:
+                type: "null"
+              sample_rate_hz:
+                type: "null"
+              channels:
+                type: "null"
     ArtifactKind:
       type: string
       enum: [transcript, audio, preview, validation_report, export_manifest]

@@ -2725,6 +2725,52 @@ def test_realtime_session_terminal_state_requires_cleanup_and_failure_facts() ->
         )
 
 
+def test_ready_assets_require_validated_media_facts() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    validator = _component_validator(speech, "Asset")
+    audio_asset: dict[str, Any] = {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "workspace-demo",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:" + "b" * 64,
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z",
+        "expires_at": None,
+    }
+    validator.validate(audio_asset)
+
+    missing_duration = copy.deepcopy(audio_asset)
+    missing_duration["duration_ms"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(missing_duration)
+    empty_audio = copy.deepcopy(audio_asset)
+    empty_audio["bytes"] = 0
+    with pytest.raises(ValidationError):
+        validator.validate(empty_audio)
+
+    text_asset = copy.deepcopy(audio_asset)
+    text_asset.update(
+        {
+            "purpose": "text_input",
+            "media_type": "text/plain; charset=utf-8",
+            "duration_ms": None,
+            "sample_rate_hz": None,
+            "channels": None,
+        }
+    )
+    validator.validate(text_asset)
+    text_asset_with_audio_metadata = copy.deepcopy(text_asset)
+    text_asset_with_audio_metadata["channels"] = 1
+    with pytest.raises(ValidationError):
+        validator.validate(text_asset_with_audio_metadata)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

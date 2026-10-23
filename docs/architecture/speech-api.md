@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.5.9"
+version: "0.5.10"
 date: 2026-10-23
 ---
 
@@ -68,6 +68,8 @@ SpeechCommand
 增强资源包括 `/v1/nexus/workspaces`、`/profile-drafts`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision，普通 PATCH 只更新草稿。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
+
+资产只有在完整接收并验证后才是 `ready`，且 `bytes>0`。音频用途（`asr_input` / `voice_reference`）的 ready 资产必须同时提供大于零的 `duration_ms`、实际 `sample_rate_hz` 与 `channels`；`text_input` 不得携带这三项音频元数据。验证失败保留 `rejected` 事实，后续 Job / 音色命令不能把 staging、rejected、expired 或 deleted 资产当作可执行输入。
 
 ### 1.3 同步 REST 子集
 

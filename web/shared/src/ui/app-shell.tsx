@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
+import { BrandMark } from "./brand-mark";
+import type { NexusTone } from "../tokens";
 
 import "./styles.css";
 
 export type AppShellProps = {
   surface: "AdminUI" | "个人语音工作台";
-  tone: "admin" | "workbench";
+  tone: NexusTone;
   eyebrow: string;
   title: string;
   description: string;
@@ -28,12 +30,15 @@ export function AppShell({
       </a>
       <header className="site-header">
         <a className="brand" href="/" aria-label="SpeechNexus 首页">
-          <span className="brand-mark" aria-hidden="true">
-            SN
-          </span>
+          <BrandMark tone={tone} size={36} />
           <span>SpeechNexus</span>
         </a>
-        <span className="surface-label">{surface}</span>
+        <div className="header-meta">
+          <span className="airgap-badge" title="模型本地离线推理，数据不出网">
+            本地离线 · 音频不出网
+          </span>
+          <span className="surface-label">{surface}</span>
+        </div>
       </header>
 
       <main id="main-content">

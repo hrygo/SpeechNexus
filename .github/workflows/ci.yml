@@ -118,6 +118,9 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      - name: Validate design tokens and boundaries
+        run: pnpm lint:tokens
+
       - name: Lint
         run: pnpm lint
 

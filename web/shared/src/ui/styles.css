@@ -1,27 +1,197 @@
+/**
+ * SpeechNexus Shared Design System & Tokens
+ *
+ * Architecture:
+ * 1. Primitive Tokens (--nexus-*)
+ * 2. Semantic Tokens (--bg-*, --text-*, --border-*, --shadow-*, --status-*)
+ * 3. Domain & Tone Tokens (AdminUI: Emerald/Teal, Workbench: Cobalt/Cyan, Audio & Diarization)
+ * 4. Micro-Materiality (Glassmorphism 2.0, hairline specular borders, elevation)
+ */
+
 :root {
+  /* ==========================================================================
+     1. Primitive Tokens: Colors (OKLCH Color Space)
+     ========================================================================== */
+  /* Obsidian Dark Neutrals */
+  --nexus-color-obsidian-950: oklch(0.12 0.015 250);
+  --nexus-color-obsidian-900: oklch(0.16 0.018 250);
+  --nexus-color-obsidian-850: oklch(0.2 0.02 250);
+  --nexus-color-obsidian-800: oklch(0.26 0.022 250);
+  --nexus-color-obsidian-700: oklch(0.34 0.02 250);
+  --nexus-color-obsidian-500: oklch(0.55 0.018 250);
+  --nexus-color-obsidian-300: oklch(0.72 0.012 250);
+  --nexus-color-obsidian-100: oklch(0.92 0.008 250);
+  --nexus-color-obsidian-50: oklch(0.98 0.002 250);
+
+  /* Parchment Light Neutrals */
+  --nexus-color-sand-50: oklch(0.985 0.008 85);
+  --nexus-color-sand-100: oklch(0.965 0.012 85);
+  --nexus-color-sand-200: oklch(0.92 0.015 85);
+  --nexus-color-sand-300: oklch(0.85 0.018 85);
+  --nexus-color-sand-700: oklch(0.42 0.025 85);
+  --nexus-color-sand-900: oklch(0.18 0.028 85);
+
+  /* Emerald / Teal - Admin Fleet Accent */
+  --nexus-color-emerald-300: oklch(0.82 0.12 168);
+  --nexus-color-emerald-400: oklch(0.72 0.15 168);
+  --nexus-color-emerald-500: oklch(0.6 0.17 165);
+  --nexus-color-emerald-600: oklch(0.48 0.15 165);
+  --nexus-color-emerald-900: oklch(0.24 0.08 165);
+
+  /* Cobalt / Cyan - Workbench Studio Accent */
+  --nexus-color-cobalt-300: oklch(0.8 0.14 255);
+  --nexus-color-cobalt-400: oklch(0.68 0.18 255);
+  --nexus-color-cobalt-500: oklch(0.55 0.22 260);
+  --nexus-color-cobalt-600: oklch(0.44 0.2 260);
+  --nexus-color-cobalt-900: oklch(0.22 0.1 260);
+
+  /* Status and Multi-Speaker Atoms */
+  --nexus-color-amber-400: oklch(0.8 0.15 75);
+  --nexus-color-amber-500: oklch(0.7 0.16 75);
+  --nexus-color-rose-500: oklch(0.62 0.21 25);
+  --nexus-color-violet-500: oklch(0.64 0.19 300);
+  --nexus-color-coral-500: oklch(0.68 0.18 45);
+
+  /* ==========================================================================
+     Primitive Tokens: Typography, Radii & Spacing
+     ========================================================================== */
   --font-sans:
-    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --page: #f5f2ea;
-  --surface: #fffdf7;
-  --surface-strong: #ffffff;
-  --ink: #18201c;
-  --muted: #66706a;
-  --line: #d9d7ce;
-  --accent: #087b62;
-  --accent-soft: #dff3eb;
-  --warning: #9b5a08;
-  --warning-soft: #fff0d5;
-  --shadow: 0 18px 50px rgb(31 43 37 / 8%);
-  --radius-large: 24px;
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
   --radius-medium: 16px;
-  --page-width: 1180px;
+  --radius-lg: 16px;
+  --radius-large: 24px;
+  --radius-full: 9999px;
+
+  --page-width: 1200px;
+  --glass-blur: 16px;
+  --glass-saturation: 1.15;
+
+  /* ==========================================================================
+     2. Semantic Tokens (Light Default)
+     ========================================================================== */
   color-scheme: light;
+  --page: var(--nexus-color-sand-50);
+  --surface: var(--nexus-color-sand-100);
+  --surface-strong: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-glass: color-mix(in srgb, #ffffff 82%, transparent);
+
+  --ink: var(--nexus-color-sand-900);
+  --muted: var(--nexus-color-sand-700);
+  --muted-subtle: oklch(0.55 0.02 85);
+  --line: var(--nexus-color-sand-200);
+  --line-strong: var(--nexus-color-sand-300);
+  --specular-line: rgba(0, 0, 0, 0.05);
+
+  --accent: var(--nexus-color-emerald-500);
+  --accent-soft: oklch(0.94 0.04 165);
+  --accent-glow: rgba(8, 123, 98, 0.2);
+
+  --warning: oklch(0.58 0.16 75);
+  --warning-soft: oklch(0.96 0.04 75);
+  --warning-border: color-mix(in srgb, var(--warning) 25%, transparent);
+
+  --shadow-sm: 0 1px 3px rgba(31, 43, 37, 0.04);
+  --shadow: 0 12px 36px rgba(31, 43, 37, 0.07);
+  --shadow-lg: 0 20px 50px rgba(31, 43, 37, 0.1);
+
+  /* Audio and Waveform Semantics */
+  --waveform-wave: var(--nexus-color-sand-300);
+  --waveform-progress: var(--accent);
+  --waveform-cursor: var(--ink);
+
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
+/* ==========================================================================
+   Semantic Tokens (Dark Mode)
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: var(--nexus-color-obsidian-950);
+    --surface: var(--nexus-color-obsidian-900);
+    --surface-strong: var(--nexus-color-obsidian-850);
+    --surface-raised: var(--nexus-color-obsidian-850);
+    --surface-overlay: var(--nexus-color-obsidian-800);
+    --surface-glass: color-mix(in srgb, var(--nexus-color-obsidian-900) 80%, transparent);
+
+    --ink: var(--nexus-color-obsidian-50);
+    --muted: var(--nexus-color-obsidian-300);
+    --muted-subtle: var(--nexus-color-obsidian-500);
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --specular-line: rgba(255, 255, 255, 0.08);
+
+    --accent: var(--nexus-color-emerald-400);
+    --accent-soft: rgba(94, 234, 212, 0.12);
+    --accent-glow: rgba(94, 234, 212, 0.35);
+
+    --warning: var(--nexus-color-amber-400);
+    --warning-soft: rgba(245, 158, 11, 0.12);
+    --warning-border: rgba(245, 158, 11, 0.3);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
+
+    --waveform-wave: rgba(255, 255, 255, 0.15);
+    --waveform-progress: var(--accent);
+    --waveform-cursor: var(--nexus-color-obsidian-50);
+  }
+}
+
+/* ==========================================================================
+   3. Domain & Tone Specific Overrides
+   ========================================================================== */
+.app-shell[data-tone="admin"] {
+  --accent: var(--nexus-color-emerald-500);
+  --accent-soft: oklch(0.94 0.04 165);
+  --accent-glow: rgba(8, 123, 98, 0.25);
+  --status-pill-ready-text: var(--nexus-color-emerald-600);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+.app-shell[data-tone="workbench"] {
+  --accent: var(--nexus-color-cobalt-500);
+  --accent-soft: oklch(0.93 0.05 260);
+  --accent-glow: rgba(29, 78, 216, 0.25);
+  --waveform-progress: var(--nexus-color-cobalt-500);
+  --status-pill-ready-text: var(--nexus-color-cobalt-600);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+@media (prefers-color-scheme: dark) {
+  .app-shell[data-tone="admin"] {
+    --accent: var(--nexus-color-emerald-400);
+    --accent-soft: rgba(94, 234, 212, 0.12);
+    --accent-glow: rgba(94, 234, 212, 0.35);
+    --status-pill-ready-text: var(--nexus-color-emerald-300);
+    --status-pill-ready-bg: var(--accent-soft);
+  }
+
+  .app-shell[data-tone="workbench"] {
+    --accent: var(--nexus-color-cobalt-300);
+    --accent-soft: rgba(96, 165, 250, 0.14);
+    --accent-glow: rgba(96, 165, 250, 0.35);
+    --waveform-progress: var(--nexus-color-cobalt-300);
+    --status-pill-ready-text: var(--nexus-color-cobalt-300);
+    --status-pill-ready-bg: var(--accent-soft);
+  }
+}
+
+/* ==========================================================================
+   Global Base & Typography
+   ========================================================================== */
 * {
   box-sizing: border-box;
 }
@@ -37,8 +207,17 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 85% 8%, rgb(8 123 98 / 9%), transparent 28rem),
-    linear-gradient(180deg, #fbf9f3 0, var(--page) 24rem);
+    radial-gradient(
+      circle at 85% 8%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 32rem
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 50%, var(--page)) 0%,
+      var(--page) 26rem
+    );
+  background-attachment: fixed;
 }
 
 button,
@@ -54,29 +233,31 @@ a {
 
 .skip-link {
   position: fixed;
-  z-index: 20;
-  top: 12px;
-  left: 12px;
-  padding: 10px 14px;
+  z-index: 50;
+  top: 14px;
+  left: 14px;
+  padding: 10px 16px;
   color: #fff;
   background: var(--ink);
-  border-radius: 8px;
-  transform: translateY(-180%);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transform: translateY(-200%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow);
 }
 
 .skip-link:focus {
   transform: translateY(0);
 }
 
+/* ==========================================================================
+   App Shell & Masthead
+   ========================================================================== */
 .app-shell {
-  width: min(100% - 40px, var(--page-width));
+  width: min(100% - 48px, var(--page-width));
   margin-inline: auto;
-  padding-bottom: 40px;
-}
-
-.app-shell[data-tone="workbench"] {
-  --accent: #315ea8;
-  --accent-soft: #e1eafc;
+  padding-bottom: 48px;
 }
 
 .site-header {
@@ -85,29 +266,37 @@ a {
   justify-content: space-between;
   min-height: 84px;
   border-bottom: 1px solid var(--line);
+  position: relative;
 }
 
 .brand {
   display: inline-flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.brand:hover {
+  opacity: 0.9;
 }
 
 .brand-mark {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   color: #fff;
   background: var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
+  font-weight: 700;
   letter-spacing: -0.04em;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--ink) 20%, transparent);
 }
 
 .surface-label,
@@ -115,22 +304,58 @@ a {
 .card-label,
 .boundary-label {
   font-family: var(--font-mono);
-  font-size: 0.73rem;
-  letter-spacing: 0.07em;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .surface-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.airgap-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Hero Section & Status Gauge
+   ========================================================================== */
 main {
-  padding-top: clamp(48px, 7vw, 84px);
+  padding-top: clamp(48px, 6vw, 76px);
 }
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.3fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.32fr);
   gap: 40px;
   align-items: end;
 }
@@ -148,31 +373,36 @@ p {
 }
 
 h1 {
-  max-width: 760px;
+  max-width: 780px;
   margin-bottom: 20px;
-  font-size: clamp(2.6rem, 7vw, 5.8rem);
+  font-size: clamp(2.3rem, 6.2vw, 4.8rem);
   font-weight: 650;
-  letter-spacing: -0.065em;
-  line-height: 0.98;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  text-wrap: balance;
 }
 
 .hero-description {
   max-width: 700px;
   margin-bottom: 0;
   color: var(--muted);
-  font-size: clamp(1rem, 2vw, 1.2rem);
-  line-height: 1.75;
+  font-size: clamp(1rem, 1.8vw, 1.18rem);
+  line-height: 1.72;
 }
 
 .hero-status {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
-  padding: 18px;
-  background: var(--surface);
+  padding: 20px;
+  background: var(--surface-glass);
   border: 1px solid var(--line);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow);
 }
 
 .hero-status strong,
@@ -182,7 +412,8 @@ h1 {
 
 .hero-status strong {
   margin-bottom: 5px;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
 }
 
 .hero-status small {
@@ -192,29 +423,50 @@ h1 {
 }
 
 .status-dot {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   margin-top: 5px;
   background: var(--accent);
-  border-radius: 999px;
-  box-shadow: 0 0 0 5px var(--accent-soft);
+  border-radius: var(--radius-full);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 0 12px var(--accent-glow);
   flex: 0 0 auto;
+  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes pulse-ring {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px var(--accent-soft),
+      0 0 12px var(--accent-glow);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px var(--accent-soft),
+      0 0 18px var(--accent-glow);
+  }
+}
+
+/* ==========================================================================
+   Boundary Note (Shared Deployment Banner)
+   ========================================================================== */
 .boundary-note {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 18px;
-  margin: 44px 0 24px;
-  padding: 18px 20px;
+  margin: 44px 0 28px;
+  padding: 18px 22px;
   background: var(--warning-soft);
-  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-sm);
 }
 
 .boundary-note p {
   margin-bottom: 0;
-  color: #68420e;
+  color: var(--ink);
   font-size: 0.9rem;
   line-height: 1.65;
 }
@@ -222,23 +474,43 @@ h1 {
 .boundary-label {
   color: var(--warning);
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
 }
 
+/* ==========================================================================
+   Capability Cards (Strict Tri-State Grid)
+   ========================================================================== */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: 20px;
 }
 
 .capability-card {
   display: flex;
-  min-height: 240px;
-  padding: 22px;
+  min-height: 250px;
+  padding: 24px;
   flex-direction: column;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--surface-glass);
   border: 1px solid var(--line);
   border-radius: var(--radius-large);
-  box-shadow: var(--shadow);
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.capability-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow-lg);
 }
 
 .card-heading {
@@ -246,7 +518,7 @@ h1 {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 42px;
+  margin-bottom: 38px;
 }
 
 .card-label {
@@ -254,62 +526,96 @@ h1 {
 }
 
 .card-state {
-  padding: 5px 8px;
+  padding: 5px 10px;
   color: var(--muted);
-  background: #eeece5;
-  border-radius: 999px;
-  font-size: 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
   font-weight: 650;
   white-space: nowrap;
 }
 
 .card-state[data-state="ready"] {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--status-pill-ready-text);
+  background: var(--status-pill-ready-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .card-state[data-state="contract"] {
   color: var(--warning);
   background: var(--warning-soft);
+  border-color: var(--warning-border);
+}
+
+.card-state[data-state="planned"] {
+  color: var(--muted-subtle);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  border-color: var(--line);
 }
 
 .capability-card h2 {
   margin-bottom: 12px;
   font-size: 1.25rem;
   letter-spacing: -0.025em;
+  font-weight: 650;
 }
 
 .capability-card p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.91rem;
   line-height: 1.7;
 }
 
+/* ==========================================================================
+   Footer & Focus Accessibility
+   ========================================================================== */
 footer {
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  margin-top: 64px;
-  padding-top: 20px;
+  margin-top: 68px;
+  padding-top: 24px;
   color: var(--muted);
   border-top: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: 3px;
 }
 
-@media (max-width: 820px) {
+/* ==========================================================================
+   Responsive Adaptations & Accessibility Hygiene
+   ========================================================================== */
+@media (max-width: 980px) and (min-width: 641px) {
   .hero {
     grid-template-columns: 1fr;
   }
 
   .hero-status {
-    max-width: 420px;
+    max-width: 480px;
+  }
+
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capability-card {
+    min-height: 220px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-status {
+    max-width: 100%;
   }
 
   .card-grid {
@@ -317,20 +623,21 @@ footer {
   }
 
   .capability-card {
-    min-height: 200px;
+    min-height: 190px;
   }
 }
 
 @media (max-width: 560px) {
   .app-shell {
-    width: min(100% - 24px, var(--page-width));
+    width: min(100% - 28px, var(--page-width));
   }
 
   .site-header {
     min-height: 72px;
   }
 
-  .surface-label {
+  .surface-label,
+  .airgap-badge {
     display: none;
   }
 
@@ -341,6 +648,15 @@ footer {
 
   footer {
     flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hero-status,
+  .capability-card {
+    background: var(--surface);
+    backdrop-filter: none;
   }
 }
 
@@ -352,41 +668,5 @@ footer {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #111714;
-    --surface: #18211d;
-    --surface-strong: #1d2823;
-    --ink: #edf1ed;
-    --muted: #a5aea8;
-    --line: #344039;
-    --accent: #67d7b8;
-    --accent-soft: #173a31;
-    --warning: #f2b35e;
-    --warning-soft: #352916;
-    --shadow: 0 18px 50px rgb(0 0 0 / 22%);
-    color-scheme: dark;
-  }
-
-  body {
-    background:
-      radial-gradient(circle at 85% 8%, rgb(103 215 184 / 9%), transparent 28rem),
-      linear-gradient(180deg, #151c18 0, var(--page) 24rem);
-  }
-
-  .app-shell[data-tone="workbench"] {
-    --accent: #94b8ff;
-    --accent-soft: #1e2e4b;
-  }
-
-  .boundary-note p {
-    color: #efd09e;
-  }
-
-  .card-state {
-    background: #242c27;
   }
 }

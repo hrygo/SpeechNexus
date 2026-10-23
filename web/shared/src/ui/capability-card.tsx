@@ -1,15 +1,11 @@
+import { STATE_LABELS, type CapabilityState } from "../tokens";
+
 export type CapabilityCardProps = {
   label: string;
   title: string;
   description: string;
-  state: "ready" | "contract" | "planned";
+  state: CapabilityState;
 };
-
-const stateLabels = {
-  ready: "基础就绪",
-  contract: "契约已交付",
-  planned: "后续阶段",
-} as const;
 
 export function CapabilityCard({ label, title, description, state }: CapabilityCardProps) {
   return (
@@ -17,7 +13,7 @@ export function CapabilityCard({ label, title, description, state }: CapabilityC
       <div className="card-heading">
         <span className="card-label">{label}</span>
         <span className="card-state" data-state={state}>
-          {stateLabels[state]}
+          {STATE_LABELS[state]}
         </span>
       </div>
       <h2>{title}</h2>

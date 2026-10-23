@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @speechnexus/admin --filter @speechnexus/workbench dev",
     "build": "pnpm -r --if-present build",
-    "lint": "eslint web --max-warnings 0 && echo \"ESLint: passed\"",
+    "lint:tokens": "node scripts/dev-env/validate-design-tokens.mjs",
+    "lint": "node scripts/dev-env/validate-design-tokens.mjs && eslint web --max-warnings 0 && echo \"ESLint: passed\"",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:contracts-sdk": "node --test tests/contract/test_openai_js_sdk.mjs",

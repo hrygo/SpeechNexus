@@ -120,34 +120,6 @@
       "contentEncoding": "base64",
       "description": "Base64-encoded PCM16 little-endian bytes. The decoded byte length must be even and must match the negotiated wire format. The negotiated max_message_bytes applies to the entire JSON message, including the event envelope."
     },
-    "JsonValue": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/JsonValue"
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/JsonValue"
-          }
-        }
-      ]
-    },
     "ErrorEnvelope": {
       "$ref": "shared/errors.schema.json#/$defs/ErrorBody"
     },
@@ -783,48 +755,7 @@
       "description": "OpenAI Realtime log-probability shape. Emit only when the binding supplies genuine token evidence."
     },
     "Receipt": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "receipt_id",
-        "requested",
-        "effective",
-        "observed",
-        "missing",
-        "unknown"
-      ],
-      "properties": {
-        "receipt_id": {
-          "$ref": "#/$defs/Identifier"
-        },
-        "request_id": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "requested": {
-          "$ref": "#/$defs/JsonValue"
-        },
-        "effective": {
-          "$ref": "#/$defs/JsonValue"
-        },
-        "observed": {
-          "$ref": "#/$defs/JsonValue"
-        },
-        "missing": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 128
-          }
-        },
-        "unknown": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 128
-          }
-        }
-      }
+      "$ref": "shared/receipts.schema.json#/$defs/ExecutionReceipt"
     },
     "BaseClientEvent": {
       "type": "object",

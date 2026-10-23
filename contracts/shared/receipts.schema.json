@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/receipts.schema.json",
+  "title": "SpeechNexusExecutionReceipt",
+  "description": "Single source of truth for redacted execution receipts shared by REST Operation projections and nexus realtime operation terminals. Receipts describe requested, effective, and observed execution facts; they never authorize replay or expose credentials, object keys, private paths, audio, or full content.",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "requested",
+        "effective",
+        "observed",
+        "missing",
+        "unknown"
+      ],
+      "properties": {
+        "receipt_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "effective": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "observed": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "missing": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  }
+}

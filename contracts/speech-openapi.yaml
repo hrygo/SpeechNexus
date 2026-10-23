@@ -3645,44 +3645,8 @@ components:
             properties:
               cleanup_state:
                 enum: [not_required, complete]
-    JsonValue:
-      anyOf:
-        - type: string
-        - type: number
-        - type: boolean
-        - type: "null"
-        - type: array
-          items:
-            $ref: "#/components/schemas/JsonValue"
-        - type: object
-          additionalProperties:
-            $ref: "#/components/schemas/JsonValue"
     ExecutionReceipt:
-      type: object
-      additionalProperties: false
-      required: [receipt_id, requested, effective, observed, missing, unknown]
-      properties:
-        receipt_id:
-          $ref: "#/components/schemas/Identifier"
-        request_id:
-          type: [string, "null"]
-          maxLength: 128
-        requested:
-          $ref: "#/components/schemas/JsonValue"
-        effective:
-          $ref: "#/components/schemas/JsonValue"
-        observed:
-          $ref: "#/components/schemas/JsonValue"
-        missing:
-          type: array
-          items:
-            type: string
-            maxLength: 128
-        unknown:
-          type: array
-          items:
-            type: string
-            maxLength: 128
+      $ref: "shared/receipts.schema.json#/$defs/ExecutionReceipt"
     OperationCancellation:
       type: object
       additionalProperties: false

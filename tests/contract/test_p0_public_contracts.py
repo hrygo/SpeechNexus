@@ -2100,6 +2100,39 @@ def test_audit_change_summary_records_field_names_without_payloads() -> None:
         validator.validate(duplicate_fields)
 
 
+def test_execution_receipt_is_shared_by_rest_and_realtime() -> None:
+    receipt: dict[str, Any] = {
+        "receipt_id": "receipt-demo",
+        "request_id": None,
+        "requested": {"language": "zh", "seed": 7},
+        "effective": {"language": "zh", "seed": 7},
+        "observed": {"sample_rate_hz": 24000},
+        "missing": [],
+        "unknown": [],
+    }
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    _component_validator(speech, "ExecutionReceipt").validate(receipt)
+
+    realtime = _load_json(_REALTIME_SCHEMA)
+    realtime_receipt = _validator(
+        {
+            "$ref": "#/$defs/Receipt",
+            "$defs": realtime["$defs"],
+        }
+    )
+    realtime_receipt.validate(receipt)
+
+    duplicate_missing = copy.deepcopy(receipt)
+    duplicate_missing["missing"] = ["observed.language", "observed.language"]
+    with pytest.raises(ValidationError):
+        realtime_receipt.validate(duplicate_missing)
+
+    private_receipt = copy.deepcopy(receipt)
+    private_receipt["internal_endpoint"] = "http://engine.invalid"
+    with pytest.raises(ValidationError):
+        realtime_receipt.validate(private_receipt)
+
+
 def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() -> None:
     admin = _resolved_yaml(_ADMIN_OPENAPI)
     pool_validator = _component_validator(admin, "ResourcePool")

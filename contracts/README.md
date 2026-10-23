@@ -57,8 +57,9 @@ of defaults, units, enum domains, or stable error codes.
   (`identifiers.schema.json`), runtime and Operation states, the
   OpenAI-compatible public error envelope, revisioned references, language
   tags, capability and execution domains, public PCM / usage / realtime
-  limits, and retire/disable commands. Public, admin, and internal contracts
-  reference these definitions instead of copying domains.
+  limits, retire/disable commands, and the redacted execution receipt shared by
+  REST Operation and `nexus.operation.done` projections. Public, admin, and
+  internal contracts reference these definitions instead of copying domains.
 - `realtime-events.schema.json`: the public WebSocket event union. The
   standard transcription subset keeps OpenAI event names and shapes; TTS,
   hypotheses, metadata, credits, gaps, and operation terminals use `nexus.*`.

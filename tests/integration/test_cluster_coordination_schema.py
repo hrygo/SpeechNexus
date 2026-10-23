@@ -463,6 +463,24 @@ def test_instance_generation_history_is_retained(
             architecture="discrete_device_memory",
         )
 
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET instance_state = 'ready', stopped_at = NULL
+            WHERE instance_id = 'inst-generation' AND instance_generation = 1
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET config_digest = %s
+            WHERE instance_id = 'inst-generation' AND instance_generation = 2
+            """,
+            ("sha256:" + "b" * 64,),
+        )
+
 
 def test_unresolved_intents_are_unique_while_history_is_retained(
     db: psycopg.Connection[Any],
@@ -512,6 +530,23 @@ def test_unresolved_intents_are_unique_while_history_is_retained(
 
     with pytest.raises(UniqueViolation), db.transaction():
         db.execute(insert_sql, ("intent-duplicate", _DIGEST, "reconciling", "loading"))
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE runtime_instance_intents
+            SET intent_state = 'pending'
+            WHERE intent_id = 'intent-history'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE runtime_instance_intents
+            SET config_digest = %s
+            WHERE intent_id = 'intent-active'
+            """,
+            ("sha256:" + "b" * 64,),
+        )
 
 
 def test_memory_architecture_counters_are_exclusive(
@@ -728,6 +763,35 @@ def test_quarantined_lease_requires_evidence_to_release(
     assert row is not None
     assert row[0:2] == ("released", "complete")
     assert isinstance(row[2], datetime)
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET lease_state = 'reserved',
+                cleanup_state = 'pending',
+                budget_released_at = NULL
+            WHERE lease_id = 'lease-release'
+            """
+        )
+
+    _insert_lease(
+        db,
+        lease_id="lease-reservation-immutable",
+        operation_id="op-reservation-immutable",
+        attempt_id="att-reservation-immutable",
+        host_node_id="node-release",
+        instance_id="inst-release",
+        generation=1,
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET reserved_slots = 2
+            WHERE lease_id = 'lease-reservation-immutable'
+            """
+        )
 
 
 def test_service_class_and_submit_identity_cannot_drift(
@@ -1003,6 +1067,34 @@ def test_quarantined_execution_closes_with_terminal_or_operator_evidence(
         """
     ).fetchone()
     assert row == ("aborted", "complete", evidence_kind)
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET execution_state = 'executing',
+                cleanup_state = 'pending',
+                terminated_at = NULL
+            WHERE submit_intent_id = 'intent-stop-evidence'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET command_digest = %s
+            WHERE submit_intent_id = 'intent-stop-evidence'
+            """,
+            ("sha256:" + "b" * 64,),
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET stop_evidence_kind = 'engine_abort_ack'
+            WHERE submit_intent_id = 'intent-stop-evidence'
+            """
+        )
 
 
 def test_admission_reservations_and_fencing_cannot_be_negative(

@@ -1077,6 +1077,185 @@ CREATE TRIGGER trg_engine_instances_fencing_monotonic
     BEFORE UPDATE ON engine_instances
     FOR EACH ROW EXECUTE FUNCTION enforce_engine_instance_fencing_monotonic();
 
+-- A generation is an immutable runtime identity. Once stopped, it remains a
+-- historical fact and cannot be revived; a restart must allocate a new
+-- generation so stale fencing tokens and late evidence cannot target it.
+CREATE FUNCTION enforce_engine_instance_identity_and_terminality() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.instance_state = 'stopped' THEN
+        RAISE EXCEPTION 'stopped engine-instance generation is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.instance_id IS DISTINCT FROM OLD.instance_id
+        OR NEW.instance_generation IS DISTINCT FROM OLD.instance_generation
+        OR NEW.host_node_id IS DISTINCT FROM OLD.host_node_id
+        OR NEW.memory_architecture IS DISTINCT FROM OLD.memory_architecture
+        OR NEW.gateway_id IS DISTINCT FROM OLD.gateway_id
+        OR NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.binding_revision_id IS DISTINCT FROM OLD.binding_revision_id
+        OR NEW.manifest_id IS DISTINCT FROM OLD.manifest_id
+        OR NEW.approved_template_id IS DISTINCT FROM OLD.approved_template_id
+        OR NEW.config_digest IS DISTINCT FROM OLD.config_digest
+        OR NEW.loading_policy IS DISTINCT FROM OLD.loading_policy
+        OR NEW.management_mode IS DISTINCT FROM OLD.management_mode
+        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'engine-instance generation identity is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_engine_instances_identity_and_terminality
+    BEFORE UPDATE ON engine_instances
+    FOR EACH ROW EXECUTE FUNCTION enforce_engine_instance_identity_and_terminality();
+
+-- Runtime intents retain their full history. Succeeded and failed intents are
+-- terminal facts; a retry is a new intent_id. Quarantined intents stay mutable
+-- so later controller evidence can close the same reconciliation attempt.
+CREATE FUNCTION enforce_runtime_intent_identity_and_terminality() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.intent_state IN ('succeeded', 'failed') THEN
+        RAISE EXCEPTION 'terminal runtime intent is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.intent_id IS DISTINCT FROM OLD.intent_id
+        OR NEW.target_node_id IS DISTINCT FROM OLD.target_node_id
+        OR NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.gateway_id IS DISTINCT FROM OLD.gateway_id
+        OR NEW.instance_id IS DISTINCT FROM OLD.instance_id
+        OR NEW.instance_generation IS DISTINCT FROM OLD.instance_generation
+        OR NEW.memory_architecture IS DISTINCT FROM OLD.memory_architecture
+        OR NEW.approved_template_id IS DISTINCT FROM OLD.approved_template_id
+        OR NEW.binding_revision_id IS DISTINCT FROM OLD.binding_revision_id
+        OR NEW.manifest_id IS DISTINCT FROM OLD.manifest_id
+        OR NEW.config_digest IS DISTINCT FROM OLD.config_digest
+        OR NEW.action IS DISTINCT FROM OLD.action
+        OR NEW.fencing_token IS DISTINCT FROM OLD.fencing_token
+        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'runtime intent identity is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_runtime_instance_intents_identity_and_terminality
+    BEFORE UPDATE ON runtime_instance_intents
+    FOR EACH ROW EXECUTE FUNCTION enforce_runtime_intent_identity_and_terminality();
+
+-- Releasing a lease is an irreversible accounting fact. Identity and reserved
+-- vector are frozen from admission so later updates cannot redirect a lease to
+-- another execution or silently change the amount released.
+CREATE FUNCTION enforce_admission_lease_identity_and_release_terminality() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.lease_state = 'released' THEN
+        RAISE EXCEPTION 'released admission lease is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.lease_id IS DISTINCT FROM OLD.lease_id
+        OR NEW.operation_id IS DISTINCT FROM OLD.operation_id
+        OR NEW.attempt_id IS DISTINCT FROM OLD.attempt_id
+        OR NEW.stage_id IS DISTINCT FROM OLD.stage_id
+        OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+        OR NEW.service_class IS DISTINCT FROM OLD.service_class
+        OR NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.host_node_id IS DISTINCT FROM OLD.host_node_id
+        OR NEW.memory_architecture IS DISTINCT FROM OLD.memory_architecture
+        OR NEW.gateway_id IS DISTINCT FROM OLD.gateway_id
+        OR NEW.instance_id IS DISTINCT FROM OLD.instance_id
+        OR NEW.instance_generation IS DISTINCT FROM OLD.instance_generation
+        OR NEW.binding_revision_id IS DISTINCT FROM OLD.binding_revision_id
+        OR NEW.policy_revision_id IS DISTINCT FROM OLD.policy_revision_id
+        OR NEW.fencing_token IS DISTINCT FROM OLD.fencing_token
+        OR NEW.reserved_slots IS DISTINCT FROM OLD.reserved_slots
+        OR NEW.reserved_unified_memory_bytes IS DISTINCT FROM OLD.reserved_unified_memory_bytes
+        OR NEW.reserved_device_memory_bytes IS DISTINCT FROM OLD.reserved_device_memory_bytes
+        OR NEW.reserved_host_memory_bytes IS DISTINCT FROM OLD.reserved_host_memory_bytes
+        OR NEW.reserved_cpu_decode_millicores IS DISTINCT FROM OLD.reserved_cpu_decode_millicores
+        OR NEW.reserved_host_pcm_buffer_bytes IS DISTINCT FROM OLD.reserved_host_pcm_buffer_bytes
+        OR NEW.reserved_scratch_disk_bytes IS DISTINCT FROM OLD.reserved_scratch_disk_bytes
+        OR NEW.admitted_at IS DISTINCT FROM OLD.admitted_at
+        OR NEW.deadline_at IS DISTINCT FROM OLD.deadline_at THEN
+        RAISE EXCEPTION 'admission lease identity and reservation are immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_admission_leases_identity_and_release_terminality
+    BEFORE UPDATE ON admission_leases
+    FOR EACH ROW EXECUTE FUNCTION enforce_admission_lease_identity_and_release_terminality();
+
+-- Submit intent identity links one admitted execution to one engine request.
+-- Final execution results cannot be revived, and quarantine can only close as
+-- aborted after verified stop evidence; cleanup facts remain updateable.
+CREATE FUNCTION enforce_submit_intent_identity_and_terminality() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.execution_state IN ('succeeded', 'failed', 'aborted')
+        AND NEW.execution_state IS DISTINCT FROM OLD.execution_state THEN
+        RAISE EXCEPTION 'terminal submit intent execution state is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.execution_state = 'unknown_quarantined'
+        AND NEW.execution_state NOT IN ('unknown_quarantined', 'aborted') THEN
+        RAISE EXCEPTION 'quarantined submit intent may only close as aborted'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.submit_intent_id IS DISTINCT FROM OLD.submit_intent_id
+        OR NEW.lease_id IS DISTINCT FROM OLD.lease_id
+        OR NEW.operation_id IS DISTINCT FROM OLD.operation_id
+        OR NEW.attempt_id IS DISTINCT FROM OLD.attempt_id
+        OR NEW.stage_id IS DISTINCT FROM OLD.stage_id
+        OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+        OR NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.host_node_id IS DISTINCT FROM OLD.host_node_id
+        OR NEW.gateway_id IS DISTINCT FROM OLD.gateway_id
+        OR NEW.instance_id IS DISTINCT FROM OLD.instance_id
+        OR NEW.instance_generation IS DISTINCT FROM OLD.instance_generation
+        OR NEW.binding_revision_id IS DISTINCT FROM OLD.binding_revision_id
+        OR NEW.policy_revision_id IS DISTINCT FROM OLD.policy_revision_id
+        OR NEW.voice_revision_id IS DISTINCT FROM OLD.voice_revision_id
+        OR NEW.fencing_token IS DISTINCT FROM OLD.fencing_token
+        OR NEW.command_digest IS DISTINCT FROM OLD.command_digest
+        OR NEW.recorded_at IS DISTINCT FROM OLD.recorded_at
+        OR NEW.deadline_at IS DISTINCT FROM OLD.deadline_at THEN
+        RAISE EXCEPTION 'submit intent identity is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.engine_request_id IS NOT NULL
+        AND NEW.engine_request_id IS DISTINCT FROM OLD.engine_request_id THEN
+        RAISE EXCEPTION 'engine request association is immutable once observed'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.staging_output_object_key IS NOT NULL
+        AND NEW.staging_output_object_key IS DISTINCT FROM OLD.staging_output_object_key THEN
+        RAISE EXCEPTION 'staging output identity is immutable once observed'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.terminated_at IS NOT NULL
+        AND NEW.terminated_at IS DISTINCT FROM OLD.terminated_at THEN
+        RAISE EXCEPTION 'execution termination time is immutable once observed'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.execution_state = 'aborted'
+        AND NEW.stop_evidence_kind IS DISTINCT FROM OLD.stop_evidence_kind THEN
+        RAISE EXCEPTION 'aborted execution evidence is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_submit_intents_identity_and_terminality
+    BEFORE UPDATE ON submit_intents
+    FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_identity_and_terminality();
+
 -- The scalar submit watermark is a query projection over interval rows. Keep
 -- its position monotonic and freeze stream identity once it is declared so a
 -- retry cannot rewrite the authoritative sample coordinate system.

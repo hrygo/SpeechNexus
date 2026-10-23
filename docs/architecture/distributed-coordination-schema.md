@@ -30,11 +30,11 @@ erDiagram
 | `host_nodes` | `speech`（scheduler） | 顶层算力节点父物理预算；各维度均执行 `reserved_* + quarantined_* <= allocatable_*`，并强制统一内存节点只使用 unified 计数器、离散节点只使用 device/host 计数器 |
 | `resource_pools` | `speech`（scheduler） | 逻辑资源池注册表与单调递增 `high_water_fencing_token`；同一池可包含多个 `host_node_id` 上的实例。公开池标识域只在共享契约维护，DDL 不再复制枚举 |
 | `scheduler_pool_leases` | `speech`（scheduler） | 分池调度 Owner 租约，只绑定 `owner_scheduler_id`，不绑定容量节点；新 Owner 接管时先进入 `reconciling_takeover`，未完成旧网关屏障与在途协调前禁止转为 `active` |
-| `engine_instances` | `speech`（scheduler） | 动态运行实例（含 `instance_generation`、按内存架构分列的常驻 / 加载峰值 / 每槽预算、最大/保留/已用/隔离槽位）；未就绪前禁止提前释放 `peak_reservation_active`。同一 `instance_id` 可保留历史 `stopped` generation，但最多一个未停止 generation |
-| `runtime_instance_intents` | `speech`（scheduler / controller） | 节点级受限控制器（`node-controller`）的持久 `prepare` / `stop` 意图；按节点内存架构记录 peak / steady unified、device 与 host 向量。保留完整意图历史，仅对未解决状态去重。`stop` 意图未同时取得 `process_or_container_exited` 与 `resources_released_confirmed` 前禁止标记 `succeeded` |
-| `admission_leases` | `speech`（scheduler / worker） | 一个 operation attempt 的**每阶段**跨层级容量租约；完整执行配方在同一事务内为全部 required stage 各插入一行，多个 stage 可复用同一 pool / instance。按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定 stage、实例 host / generation / pool / gateway / binding revision 与 workspace。严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型与摘要 |
+| `engine_instances` | `speech`（scheduler） | 动态运行实例（含 `instance_generation`、按内存架构分列的常驻 / 加载峰值 / 每槽预算、最大/保留/已用/隔离槽位）；未就绪前禁止提前释放 `peak_reservation_active`。同一 `instance_id` 可保留历史 `stopped` generation，但最多一个未停止 generation；generation 的 host / gateway / pool / binding / template / config 身份不可改写，`stopped` 后整行不可变，重启必须使用新 generation |
+| `runtime_instance_intents` | `speech`（scheduler / controller） | 节点级受限控制器（`node-controller`）的持久 `prepare` / `stop` 意图；按节点内存架构记录 peak / steady unified、device 与 host 向量。保留完整意图历史，仅对未解决状态去重；意图身份不可改写，`succeeded` / `failed` 终态不可复活，重试使用新 `intent_id`。`stop` 意图未同时取得 `process_or_container_exited` 与 `resources_released_confirmed` 前禁止标记 `succeeded` |
+| `admission_leases` | `speech`（scheduler / worker） | 一个 operation attempt 的**每阶段**跨层级容量租约；完整执行配方在同一事务内为全部 required stage 各插入一行，多个 stage 可复用同一 pool / instance。按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定 stage、实例 host / generation / pool / gateway / binding revision 与 workspace。身份、预留向量和 deadline 在准入后不可变；严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型与摘要，`released` 后不可重新打开 |
 | `gateway_fencing_barriers` | `gateway_control`（execution-gateway） | 网关按 `(gateway_id, pool_id)` 持久化的最小可接受 `fencing_token` 屏障，阻断旧 Scheduler 迟到提交 |
-| `submit_intents` | `gateway_control`（execution-gateway） | 两阶段提交屏障权威记录；按 `(operation_id, attempt_id, stage_id)` 唯一去重，外发前先持久化 `submitting`，无确切停止证据禁止转入 `aborted` |
+| `submit_intents` | `gateway_control`（execution-gateway） | 两阶段提交屏障权威记录；按 `(operation_id, attempt_id, stage_id)` 唯一去重，外发前先持久化 `submitting`，无确切停止证据禁止转入 `aborted`。身份、command digest、engine request 关联和 staging key 在观测后不可改写；`succeeded` / `failed` / `aborted` 结果不可改成其他结果，`unknown_quarantined` 只能凭停止证据关闭为 `aborted` |
 | `output_sample_intervals` | `gateway_control`（execution-gateway） | 只追加的输出样本区间权威账本；同一 `(operation_id, attempt_id, output_stream_id, meter_kind)` 的 `[sample_start, sample_end)` 禁止重叠，既有区间禁止改写或删除，避免标量水位覆盖先前 attempt / 区间证据。毫秒数只从 samples 与 sample rate 派生，不单独存储 |
 
 ## 2. 全局死锁预防与加锁顺序
@@ -85,7 +85,7 @@ erDiagram
 Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execution-gateway` 在控制库短事务中：
 
 1. 锁定 `(gateway_id, pool_id)` 对应的 `gateway_fencing_barriers`，若 `request.fencing_token < enforced_min_fencing_token` 立即以 `409 gateway_barrier_fenced` 拒绝。
-2. 核对 `admission_leases` 状态为 `reserved` 或 `executing`，且 `instance_generation`、`binding_revision_id`、`policy_revision_id` 与有效资源状态一致。
+2. 核对 `admission_leases` 状态为 `reserved` 或 `executing`，且 `instance_generation`、`binding_revision_id`（等于 `ModelBindingRevision.revision_id`）、`policy_revision_id` 与有效资源状态一致。
 3. 按 `(operation_id, attempt_id, stage_id)` 查找或插入 `submit_intents`：
    - 若已存在且 `command_digest` 一致，作为幂等重放返回当前状态；
    - 若已存在但 `command_digest` 或 `fencing_token` 冲突，返回 `409 submit_intent_conflict`；
@@ -97,6 +97,7 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 
 - **确认停止**：网关通过引擎 adapter 收到明确的 abort 确认（`engine_abort_ack`）或可证明该请求已终止且连接不可继续生成的 terminal response（`engine_terminal_response`），或控制器确认容器已销毁（`instance_terminated_by_controller`），或取得人工独立核验证据（`operator_verified_instance_terminated`）。在同一事务中将 `submit_intents` 更新为 `execution_state = 'aborted', cleanup_state = 'complete'` 后，Scheduler 才可释放 `admission_leases` 与节点 / 实例增量预算，Job/Operation 方可进入 `cancelled`。
 - **停止未确认（Quarantine）**：若在 drain / 取消期限内引擎无响应或不支持细粒度 abort，网关将 `submit_intents` 更新为 `execution_state = 'unknown_quarantined', cleanup_state = 'quarantined', stop_evidence_kind = 'unconfirmed_timeout'`；Scheduler 将 `admission_leases` 标记为 `lease_state = 'quarantined', cleanup_state = 'quarantined'`，并将该槽位与物理内存转入 `quarantined` 账目（**不释放可用预算**）。Job/Operation 以 `failed`（`error.code = cancellation_unconfirmed`）终结，在后台协调完成清理前拒绝重试（`409 execution_cleanup_pending`）。
+- **结果不可反转**：已写入的 submit intent 结果、runtime intent 终态、已释放租约和已停止 generation 都不因迟到响应回到执行态；后台只能补充 cleanup 事实，最终关闭仍须满足同一证据与状态约束。
 
 ### 3.6 Quarantine 释放与节点恢复
 
@@ -109,6 +110,6 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 
 ### 3.7 数据库行为门禁
 
-`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史、意图去重、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
+`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史与终态不可复活、意图去重与终态不可变、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、已释放租约与预留向量不可改写、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
 
 [架构索引](README.md) · [资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)

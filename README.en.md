@@ -57,7 +57,9 @@ The [first production coordination unit (Chinese)](docs/architecture/production-
 
 The [`0002_coordination` production storage foundation (Chinese)](docs/architecture/production-coordination-storage.md) completes the 15 coordination tables and minimum A/B role grants while preserving existing Job/outbox data. Remaining scheduling, admission and gateway transactions, and real runtime qualification, still require their owners' implementation and evidence.
 
-[Production owner epoch transactions (Chinese)](docs/architecture/production-owners.md) provide acquire, renew, activate and current-authority queries, with database time after lock waits, complete snapshots and unknown-commit recovery. Real gateway barriers, scheduler loops and runtime admission remain separate delivery units.
+[Production owner epoch transactions (Chinese)](docs/architecture/production-owners.md) provide acquire, renew, activate and current-authority queries, with database time after lock waits, complete snapshots and unknown-commit recovery. Scheduler loops and runtime admission remain separate delivery units.
+
+The [execution gateway (Chinese)](docs/architecture/execution-gateway.md) provides persistent submit/stop transactions and an authenticated HTTP ingress barrier enabled by explicit control configuration. Actual loopback HTTP/PostgreSQL integration is verified; submit/abort routes, real engines and cross-host qualification remain pending. Default Compose does not yet enable this control endpoint.
 
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.
 

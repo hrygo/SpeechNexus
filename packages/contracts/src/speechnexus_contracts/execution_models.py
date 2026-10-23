@@ -128,6 +128,31 @@ class ExecutionTerminalEvidenceInvariants(TypedDict):
     pass
 
 
+class Error(TypedDict):
+    code: (
+        ExecutionErrorCode
+        | Literal[
+            "control_store_unavailable",
+            "control_outcome_unknown",
+            "control_reconciliation_required",
+            "control_state_conflict",
+        ]
+    )
+    message: str
+    retryable: bool
+    recovery: NotRequired[
+        Literal[
+            "none", "retry_transaction", "query_original", "query_current_authority", "reconcile"
+        ]
+    ]
+    observed_fencing_token: NotRequired[int | None]
+    submit_intent_id: NotRequired[str | None]
+
+
+class ExecutionControlErrorResponse(TypedDict):
+    error: Error
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type PoolId = ExternalSharedIdentifiersSchemaJsonPoolId
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
@@ -185,6 +210,24 @@ class AbortExecutionRequest(TypedDict):
         "stream_disconnected",
     ]
     wait_timeout_ms: int
+
+
+class GatewayFencingBarrierRequest(TypedDict):
+    pool_id: PoolId
+    new_owner_scheduler_id: Identifier
+    min_accepted_fencing_token: int
+    abort_in_flight: bool
+
+
+class GatewayFencingBarrierResponse(TypedDict):
+    gateway_id: Identifier
+    pool_id: PoolId
+    enforced_min_fencing_token: int
+    barrier_sealed: Literal[True]
+    submitting_intent_ids: list[Identifier]
+    executing_intent_ids: list[Identifier]
+    quarantined_intent_ids: list[Identifier]
+    enforced_at: str
 
 
 class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
@@ -445,4 +488,7 @@ type ExecutionContracts = (
     | SubmitExecutionResponse
     | ExecutionStatusResponse
     | AbortExecutionRequest
+    | GatewayFencingBarrierRequest
+    | GatewayFencingBarrierResponse
+    | ExecutionControlErrorResponse
 )

@@ -111,7 +111,7 @@ types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
 | ----------- | -------------------------------------------------------------------- |
 | `admin`     | Workspace create and metadata CAS patch                              |
 | `workbench` | Project create and metadata CAS patch                                |
-| `execution` | Submit request/receipt, execution status, abort request              |
+| `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
 | `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
 
 ```python
@@ -132,6 +132,13 @@ are boundary DTOs, not domain values. Typed HTTP clients require an explicit
 deployment URL, do not retry, and do not automatically validate responses.
 The default and workbench parsers reject internal protocol names. A separate
 profile is an import/API namespace, not an authorization mechanism.
+
+Execution control `0.3.0.dev0` adds barrier and error parser entrypoints. Control
+failures carry a constrained recovery hint: a lost commit acknowledgment is
+`control_outcome_unknown` / `query_original` with `retryable=false`, while a
+bounded unavailable transaction uses `retry_transaction`. Upgrade strict error
+consumers together with this bundle; older error vocabularies cannot validate
+the added codes. These control errors are not persisted engine execution errors.
 
 All profile outputs (including `*_models.py`, profile parsers and schema bundles)
 are generated and checked by the same drift gate. Python static projection

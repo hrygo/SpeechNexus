@@ -16,8 +16,8 @@
     "version": null
   },
   "internal/execution-control.openapi.yaml": {
-    "sha256": "05eb99168586a06e7a85dee01a8a52e5a4db03af815722f244e2238df772e9d1",
-    "version": "0.2.0.dev0"
+    "sha256": "0089bce9af14045dd065245d416da6661c56d209f2515bd110771a1d22164712",
+    "version": "0.3.0.dev0"
   },
   "internal/execution-stream.schema.json": {
     "sha256": "ae26a1834d3c119e672204c4ae7964170689bd0f0688c98de378b48be4a40bf4",

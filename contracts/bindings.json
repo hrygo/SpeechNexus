@@ -49,7 +49,10 @@
         "SubmitExecutionRequest",
         "SubmitExecutionResponse",
         "ExecutionStatusResponse",
-        "AbortExecutionRequest"
+        "AbortExecutionRequest",
+        "GatewayFencingBarrierRequest",
+        "GatewayFencingBarrierResponse",
+        "ExecutionControlErrorResponse"
       ]
     },
     "runtime": {

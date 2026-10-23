@@ -26,5 +26,23 @@ def parse(
 def parse(name: Literal["AbortExecutionRequest"], value: Any) -> models.AbortExecutionRequest: ...
 
 
+@overload
+def parse(
+    name: Literal["GatewayFencingBarrierRequest"], value: Any
+) -> models.GatewayFencingBarrierRequest: ...
+
+
+@overload
+def parse(
+    name: Literal["GatewayFencingBarrierResponse"], value: Any
+) -> models.GatewayFencingBarrierResponse: ...
+
+
+@overload
+def parse(
+    name: Literal["ExecutionControlErrorResponse"], value: Any
+) -> models.ExecutionControlErrorResponse: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("execution", name, value)

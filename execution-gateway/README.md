@@ -1,7 +1,17 @@
 # SpeechNexus execution gateway
 
-This independently deployed process will own engine-facing submission,
-fencing, abort, and completion evidence. The bootstrap exposes operational
-health endpoints and verifies its PostgreSQL control-plane connection. Engine
-control contracts are frozen, while the engine adapter and submission barrier
-behavior remain pending implementation.
+This independent deployment owns submission intents, ingress fencing and stop evidence.
+Its default HTTP surface is `/healthz` and `/readyz`. Explicit control configuration
+enables the authenticated gateway fencing-barrier route, backed by the production
+PostgreSQL ledger and an exclusive host-local process lease.
+
+Set `SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN`, `SPEECHNEXUS_GATEWAY_INGRESS_LOCK_DIRECTORY`,
+and explicit `SPEECHNEXUS_GATEWAY_NODE_ID` / `SPEECHNEXUS_GATEWAY_GATEWAY_ID` together.
+Use the migration-provisioned gateway database role. Candidates for the same identity
+must share the same host-mounted lock directory; it must not carry business content.
+Compose does not yet provision this control configuration.
+
+The submit application/ledger and atomic stop facts are implemented, but HTTP
+submit/abort/drain, real engine adapters and physical cluster qualification remain pending.
+`abort_in_flight=true` is rejected until a qualified abort adapter exists.
+See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

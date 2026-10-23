@@ -57,7 +57,9 @@ SpeechNexus 希望服务于三类需求：
 
 [`0002_coordination` 生产存储基线](docs/architecture/production-coordination-storage.md)已补齐 15 张协调表及 A/B 最小权限，保留既有 Job/outbox 数据。其余调度、准入、网关事务与真实运行资格仍按所有权分别实现和验收。
 
-[生产 owner 任期事务](docs/architecture/production-owners.md)已提供获取、续约、激活和当前权威查询，覆盖锁后数据库取时、完整快照及未知提交恢复；真实网关屏障、调度循环和 runtime 准入仍待对应单元。
+[生产 owner 任期事务](docs/architecture/production-owners.md)已提供获取、续约、激活和当前权威查询，覆盖锁后数据库取时、完整快照及未知提交恢复；调度循环和 runtime 准入仍待对应单元。
+
+[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止事务，以及显式配置后启用的认证 HTTP 入口屏障。真实回环 HTTP 与 PG 联调已验证；提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。
 

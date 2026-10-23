@@ -139,6 +139,10 @@ class InvalidExecutionRequestError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.INVALID_EXECUTION_REQUEST
 
 
+class ComponentCredentialInvalidError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.COMPONENT_CREDENTIAL_INVALID
+
+
 class SubmitIntentConflictError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.SUBMIT_INTENT_CONFLICT
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal execution control API
-  version: 0.2.0.dev0
+  version: 0.3.0.dev0
   description: |
     Authoritative internal ExecutionControlPort protocol between the scheduler /
     workers / realtime gateway and the execution-gateway. Every engine submission,
@@ -53,6 +53,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
   /internal/v1/executions/{submit_intent_id}:
     get:
       operationId: getExecution
@@ -81,6 +83,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
   /internal/v1/executions/{submit_intent_id}/abort:
     post:
       operationId: abortExecution
@@ -133,6 +137,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
   /internal/v1/gateways/{gateway_id}/fencing-barrier:
     post:
       operationId: enforceGatewayFencingBarrier
@@ -159,7 +165,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Supplied fencing token is lower than the gateway's already-enforced barrier token.
+          description: Stale owner/token, conflicting barrier proof, or abort cleanup not yet supported or complete.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -168,7 +174,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
         "422":
-          description: Barrier request failed schema validation.
+          description: Barrier request failed schema or target identity validation.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -176,6 +182,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
   /internal/v1/instances/{instance_id}/drain:
     post:
       operationId: drainEngineInstance
@@ -219,6 +227,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
 components:
   securitySchemes:
     ComponentBearer:
@@ -895,6 +905,7 @@ components:
         min_accepted_fencing_token:
           type: integer
           minimum: 1
+          maximum: 9007199254740991
         abort_in_flight:
           type: boolean
     GatewayFencingBarrierResponse:
@@ -917,6 +928,7 @@ components:
         enforced_min_fencing_token:
           type: integer
           minimum: 1
+          maximum: 9007199254740991
         barrier_sealed:
           const: true
         submitting_intent_ids:
@@ -937,6 +949,7 @@ components:
         enforced_at:
           type: string
           format: date-time
+          description: Time of this successful enforcement confirmation. Replay may refresh inventory and this time while preserving the same durable minimum and proof.
     DrainInstanceRequest:
       type: object
       additionalProperties: false
@@ -1036,17 +1049,92 @@ components:
             - retryable
           properties:
             code:
-              $ref: "#/components/schemas/ExecutionErrorCode"
+              anyOf:
+                - $ref: "#/components/schemas/ExecutionErrorCode"
+                - type: string
+                  enum:
+                    - control_store_unavailable
+                    - control_outcome_unknown
+                    - control_reconciliation_required
+                    - control_state_conflict
             message:
               type: string
               minLength: 1
             retryable:
               type: boolean
+            recovery:
+              type: string
+              enum: [none, retry_transaction, query_original, query_current_authority, reconcile]
             observed_fencing_token:
               type: [integer, "null"]
             submit_intent_id:
               type: [string, "null"]
+          allOf:
+            - if:
+                properties:
+                  code:
+                    enum: [control_store_unavailable, control_outcome_unknown, control_reconciliation_required, control_state_conflict]
+                required: [code]
+              then:
+                required: [recovery]
+            - if:
+                properties:
+                  code:
+                    const: control_store_unavailable
+                required: [code]
+              then:
+                properties:
+                  retryable:
+                    const: true
+                  recovery:
+                    const: retry_transaction
+            - if:
+                properties:
+                  code:
+                    const: control_outcome_unknown
+                required: [code]
+              then:
+                properties:
+                  retryable:
+                    const: false
+                  recovery:
+                    const: query_original
+            - if:
+                properties:
+                  code:
+                    const: control_reconciliation_required
+                required: [code]
+              then:
+                properties:
+                  retryable:
+                    const: false
+                  recovery:
+                    const: reconcile
+            - if:
+                properties:
+                  code:
+                    const: control_state_conflict
+                required: [code]
+              then:
+                properties:
+                  retryable:
+                    const: false
+                  recovery:
+                    const: query_current_authority
   responses:
+    ControlUnavailable:
+      description: |
+        No success acknowledgment. control_store_unavailable permits retrying the same
+        transaction; control_outcome_unknown requires querying/reconfirming the original
+        identity without resubmitting engine work; control_reconciliation_required needs
+        reconciliation. A barrier caller must not activate an owner on any of these errors.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ExecutionControlErrorResponse"
     Unauthorized:
       description: Missing, invalid, or revoked component credential.
       content:

@@ -2235,9 +2235,11 @@ components:
           maxLength: 128
         media_type:
           type: string
+          minLength: 1
+          maxLength: 128
         bytes:
           type: integer
-          minimum: 0
+          minimum: 1
         sha256:
           $ref: "#/components/schemas/Sha256Digest"
         source_artifact_id:
@@ -2275,9 +2277,11 @@ components:
             equal the owning ExportJob manifest_revision.
         media_type:
           type: string
+          minLength: 1
+          maxLength: 128
         bytes:
           type: integer
-          minimum: 0
+          minimum: 1
         sha256:
           $ref: "#/components/schemas/Sha256Digest"
         created_at:

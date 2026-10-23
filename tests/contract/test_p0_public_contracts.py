@@ -209,6 +209,63 @@ def _assert_scenario_profile_semantics(profile: dict[str, Any]) -> None:
         raise ValueError("max_segment_ms must be greater than or equal to preview_interval_ms")
 
 
+def _assert_job_success_evidence(data: dict[str, Any]) -> None:
+    """Executable cross-array rules for a succeeded Job or job.succeeded event."""
+    artifacts = cast(list[dict[str, Any]], data["artifacts"])
+    artifacts_by_id: dict[str, dict[str, Any]] = {}
+    for artifact in artifacts:
+        artifact_id = cast(str, artifact["artifact_id"])
+        if artifact_id in artifacts_by_id:
+            raise ValueError(f"successful job evidence repeats artifact_id {artifact_id}")
+        artifacts_by_id[artifact_id] = artifact
+
+    result = cast(dict[str, Any], data["result"])
+    result_kind = cast(str, result["kind"])
+    expected_artifacts: list[tuple[str, str]]
+    if result_kind == "asr":
+        expected_artifacts = [(cast(str, result["transcript_artifact_id"]), "transcript")]
+    elif result_kind == "tts":
+        expected_artifacts = [(cast(str, result["audio_artifact_id"]), "audio")]
+    elif result_kind in {"voice_design", "voice_clone"}:
+        expected_artifacts = [
+            (cast(str, artifact_id), "preview")
+            for artifact_id in cast(list[str], result["preview_artifact_ids"])
+        ]
+    elif result_kind == "voice_preview":
+        expected_artifacts = [(cast(str, result["preview_artifact_id"]), "preview")]
+    elif result_kind == "voice_validation":
+        expected_artifacts = [
+            (cast(str, result["validation_report_artifact_id"]), "validation_report")
+        ]
+    else:
+        raise ValueError(f"unsupported successful result kind {result_kind}")
+
+    receipt_id = cast(str, result["receipt_id"])
+    for artifact_id, expected_kind in expected_artifacts:
+        artifact = artifacts_by_id.get(artifact_id)
+        if artifact is None:
+            raise ValueError(f"result artifact {artifact_id} is not committed in artifacts")
+        if artifact["kind"] != expected_kind:
+            raise ValueError(
+                f"result artifact {artifact_id} has kind {artifact['kind']}, "
+                f"expected {expected_kind}"
+            )
+        if artifact["receipt_id"] != receipt_id:
+            raise ValueError(f"result artifact {artifact_id} does not carry the result receipt")
+
+
+def _assert_export_artifact_semantics(
+    export_id: str,
+    manifest_revision: str,
+    artifact: dict[str, Any],
+) -> None:
+    """Executable ownership and manifest pin rules for an export artifact."""
+    if artifact["export_id"] != export_id:
+        raise ValueError("export artifact belongs to a different export job")
+    if artifact["manifest_revision"] != manifest_revision:
+        raise ValueError("export artifact manifest revision differs from its job")
+
+
 def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
     checks = cast(list[dict[str, Any]], validation["checks"])
     names = [cast(str, check["name"]) for check in checks]
@@ -1902,6 +1959,40 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     succeeded_without_artifacts["data"]["artifacts"] = []
     with pytest.raises(ValidationError):
         job_event_validator.validate(succeeded_without_artifacts)
+    _assert_job_success_evidence(cast(dict[str, Any], succeeded_job_event["data"]))
+
+    result_with_unknown_artifact = copy.deepcopy(succeeded_job_event)
+    result_with_unknown_artifact["data"]["result"]["audio_artifact_id"] = "artifact_missing"
+    job_event_validator.validate(result_with_unknown_artifact)
+    with pytest.raises(ValueError, match="not committed"):
+        _assert_job_success_evidence(cast(dict[str, Any], result_with_unknown_artifact["data"]))
+
+    result_with_wrong_artifact_kind = copy.deepcopy(succeeded_job_event)
+    result_with_wrong_artifact_kind["data"]["artifacts"][0]["kind"] = "transcript"
+    job_event_validator.validate(result_with_wrong_artifact_kind)
+    with pytest.raises(ValueError, match="expected audio"):
+        _assert_job_success_evidence(cast(dict[str, Any], result_with_wrong_artifact_kind["data"]))
+
+    result_with_different_artifact_receipt = copy.deepcopy(succeeded_job_event)
+    result_with_different_artifact_receipt["data"]["artifacts"][0]["receipt_id"] = "other_receipt"
+    job_event_validator.validate(result_with_different_artifact_receipt)
+    with pytest.raises(ValueError, match="result receipt"):
+        _assert_job_success_evidence(
+            cast(dict[str, Any], result_with_different_artifact_receipt["data"])
+        )
+
+    repeated_artifact = copy.deepcopy(succeeded_job_event)
+    repeated_artifact["data"]["artifacts"].append(
+        copy.deepcopy(repeated_artifact["data"]["artifacts"][0])
+    )
+    job_event_validator.validate(repeated_artifact)
+    with pytest.raises(ValueError, match="repeats artifact_id"):
+        _assert_job_success_evidence(cast(dict[str, Any], repeated_artifact["data"]))
+
+    empty_artifact = copy.deepcopy(succeeded_job_event)
+    empty_artifact["data"]["artifacts"][0]["bytes"] = 0
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(empty_artifact)
 
     failed_job_event: dict[str, Any] = {
         "id": "18",
@@ -1953,6 +2044,41 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     }
     for example in export_examples:
         export_event_validator.validate(example)
+        artifact = example.get("data", {}).get("artifact")
+        if isinstance(artifact, dict):
+            _assert_export_artifact_semantics(
+                cast(str, example["export_id"]),
+                "3",
+                cast(dict[str, Any], artifact),
+            )
+
+    succeeded_export = copy.deepcopy(
+        next(example for example in export_examples if example["type"] == "export.succeeded")
+    )
+    artifact_with_wrong_owner = copy.deepcopy(succeeded_export)
+    artifact_with_wrong_owner["data"]["artifact"]["export_id"] = "export_other"
+    export_event_validator.validate(artifact_with_wrong_owner)
+    with pytest.raises(ValueError, match="different export job"):
+        _assert_export_artifact_semantics(
+            cast(str, artifact_with_wrong_owner["export_id"]),
+            "3",
+            cast(dict[str, Any], artifact_with_wrong_owner["data"]["artifact"]),
+        )
+
+    artifact_with_wrong_manifest = copy.deepcopy(succeeded_export)
+    artifact_with_wrong_manifest["data"]["artifact"]["manifest_revision"] = "4"
+    export_event_validator.validate(artifact_with_wrong_manifest)
+    with pytest.raises(ValueError, match="manifest revision"):
+        _assert_export_artifact_semantics(
+            cast(str, artifact_with_wrong_manifest["export_id"]),
+            "3",
+            cast(dict[str, Any], artifact_with_wrong_manifest["data"]["artifact"]),
+        )
+
+    empty_export_artifact = copy.deepcopy(succeeded_export)
+    empty_export_artifact["data"]["artifact"]["bytes"] = 0
+    with pytest.raises(ValidationError):
+        export_event_validator.validate(empty_export_artifact)
 
     invalid_export_sequence = copy.deepcopy(export_examples[0])
     invalid_export_sequence["id"] = "export-event-1"
@@ -1981,6 +2107,44 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     mismatched_export_data["data"]["status"] = "succeeded"
     with pytest.raises(ValidationError):
         export_event_validator.validate(mismatched_export_data)
+
+
+def test_committed_artifacts_require_non_empty_content() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    artifact_validator = _component_validator(speech, "Artifact")
+    artifact: dict[str, Any] = {
+        "id": "artifact_demo",
+        "object": "nexus.artifact",
+        "workspace_id": "ws_demo",
+        "kind": "audio",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 1,
+        "sha256": "sha256:" + "a" * 64,
+        "created_at": "2026-10-23T00:00:00Z",
+    }
+    artifact_validator.validate(artifact)
+    empty_artifact = {**artifact, "bytes": 0}
+    with pytest.raises(ValidationError):
+        artifact_validator.validate(empty_artifact)
+
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    saved_asset_validator = _component_validator(workbench, "SavedAsset")
+    saved_asset: dict[str, Any] = {
+        "id": "saved_asset_demo",
+        "object": "nexus.saved_asset",
+        "project_id": "project_demo",
+        "media_type": "audio/wav",
+        "bytes": 1,
+        "sha256": "sha256:" + "a" * 64,
+        "source_artifact_id": "artifact_demo",
+        "created_at": "2026-10-23T00:00:00Z",
+    }
+    saved_asset_validator.validate(saved_asset)
+    with pytest.raises(ValidationError):
+        saved_asset_validator.validate({**saved_asset, "bytes": 0})
+    with pytest.raises(ValidationError):
+        saved_asset_validator.validate({**saved_asset, "media_type": ""})
 
 
 def test_workbench_job_errors_and_terminal_states_are_typed() -> None:

@@ -17,7 +17,9 @@ of defaults, units, enum domains, or stable error codes.
   Job carries a kind-discriminated structured result tied to its committed
   artifacts and receipt; non-success states carry no result. Its
   `job.succeeded` event carries the same result shape and at least one
-  committed artifact. Realtime session projections require connection,
+  committed artifact. Result artifact identifiers must resolve to committed
+  entries of the same kind with the result receipt; committed artifacts have
+  non-empty content. Realtime session projections require connection,
   terminal-time, structured failure, and cleanup facts to agree with the
   session status. Ready assets carry non-empty validated media facts; audio
   assets expose duration, sample rate, and channel count, while text assets
@@ -27,7 +29,8 @@ of defaults, units, enum domains, or stable error codes.
   saved assets, export jobs, and export events. It does not claim OpenAI
   compatibility and does not write speech-base Job or Artifact state. A
   workbench export artifact pins the same immutable manifest revision as its
-  owning export job.
+  owning export job and carries non-empty content. Export success / publication
+  events must reference an artifact owned by the event's export job.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit

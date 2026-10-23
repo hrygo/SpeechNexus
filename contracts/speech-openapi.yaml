@@ -2930,13 +2930,14 @@ components:
           maxLength: 128
         bytes:
           type: integer
-          minimum: 0
+          minimum: 1
         sha256:
           $ref: "#/components/schemas/Sha256Digest"
         receipt_id:
           oneOf:
             - $ref: "#/components/schemas/Identifier"
             - type: "null"
+          description: For an artifact referenced by a succeeded Job result, this must be present and equal the result receipt_id.
         expires_at:
           oneOf:
             - type: string
@@ -2946,8 +2947,9 @@ components:
       description: |
         Structured successful outcome of a durable Job. `kind` must equal the
         owning Job kind. Artifact identifiers in the result must identify the
-        corresponding entries in `Job.artifacts`; the service validates that
-        cross-array identity before committing `succeeded`.
+        corresponding entries in `Job.artifacts` with the matching kind and
+        result receipt; the service validates that cross-array identity before
+        committing `succeeded`.
       oneOf:
         - $ref: "#/components/schemas/AsrJobResult"
         - $ref: "#/components/schemas/TtsJobResult"
@@ -3857,7 +3859,7 @@ components:
           maxLength: 128
         bytes:
           type: integer
-          minimum: 0
+          minimum: 1
         sha256:
           $ref: "#/components/schemas/Sha256Digest"
         receipt_id:

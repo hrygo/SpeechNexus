@@ -1568,6 +1568,81 @@ def test_lease_release_waits_for_terminal_submit_intents(
     assert row == ("released", "complete")
 
 
+def test_submit_intent_requires_a_live_admission_lease(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-live-lease")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-live-lease",
+        generation=1,
+        host_node_id="node-live-lease",
+        architecture="discrete_device_memory",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-released-before-submit",
+        operation_id="op-released-before-submit",
+        attempt_id="att-released-before-submit",
+        host_node_id="node-live-lease",
+        instance_id="inst-live-lease",
+        generation=1,
+    )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'released',
+            cleanup_state = 'not_required',
+            budget_released_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-released-before-submit'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_submit_intent(
+            db,
+            submit_intent_id="intent-after-release",
+            lease_id="lease-released-before-submit",
+            operation_id="op-released-before-submit",
+            attempt_id="att-released-before-submit",
+            host_node_id="node-live-lease",
+            instance_id="inst-live-lease",
+            generation=1,
+            dispatched=False,
+        )
+
+    _insert_lease(
+        db,
+        lease_id="lease-quarantined-before-submit",
+        operation_id="op-quarantined-before-submit",
+        attempt_id="att-quarantined-before-submit",
+        host_node_id="node-live-lease",
+        instance_id="inst-live-lease",
+        generation=1,
+    )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'quarantined',
+            cleanup_state = 'quarantined',
+            quarantined_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-quarantined-before-submit'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_submit_intent(
+            db,
+            submit_intent_id="intent-after-quarantine",
+            lease_id="lease-quarantined-before-submit",
+            operation_id="op-quarantined-before-submit",
+            attempt_id="att-quarantined-before-submit",
+            host_node_id="node-live-lease",
+            instance_id="inst-live-lease",
+            generation=1,
+            dispatched=False,
+        )
+
+
 def test_stopped_instance_requires_all_leases_released(
     db: psycopg.Connection[Any],
 ) -> None:

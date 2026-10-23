@@ -1392,6 +1392,39 @@ CREATE TRIGGER trg_submit_intents_identity_and_terminality
     BEFORE UPDATE ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_identity_and_terminality();
 
+-- A submit intent may only be created while its admission lease is still
+-- executable. Locking the lease row also serializes this check with lease
+-- release / quarantine transitions, so a concurrent release cannot win after
+-- observing no submit intent and then let a late insert through.
+CREATE FUNCTION enforce_submit_intent_live_lease() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    lease_state_value TEXT;
+    cleanup_state_value TEXT;
+BEGIN
+    SELECT lease_state, cleanup_state
+    INTO lease_state_value, cleanup_state_value
+    FROM admission_leases
+    WHERE lease_id = NEW.lease_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'submit intent requires an existing admission lease'
+            USING ERRCODE = '23503';
+    END IF;
+    IF lease_state_value NOT IN ('reserved', 'executing')
+        OR cleanup_state_value <> 'pending' THEN
+        RAISE EXCEPTION 'submit intent requires a live admission lease'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_submit_intents_live_lease
+    BEFORE INSERT ON submit_intents
+    FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_live_lease();
+
 -- A lease releases capacity only after every execution intent attached to it
 -- has reached a terminal execution state. A quarantined lease may retain an
 -- unknown execution, but it cannot be marked released until that execution is

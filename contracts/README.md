@@ -174,12 +174,15 @@ A failed submit intent may use `cleanup_state=not_required` only when
 `engine_request_id` is explicitly null, no dispatch occurred, and no output or
 staging fact exists. Dispatched executions must provide verified termination
 evidence before capacity is released; a failed response without an error code
-is invalid. Active submit intents cannot expose terminal stop evidence, and a
-terminal submit intent's error code and stop evidence are immutable. An
-admission lease cannot become `released` or `quarantined` while an attached
-submit intent is still active; `released` additionally requires no unresolved
-`unknown_quarantined` execution. A stopped engine generation cannot retain an
-unreleased admission lease or a non-terminal submit intent.
+is invalid. A submit intent can be inserted only while its admission lease is
+`reserved` or `executing` with `cleanup_state=pending`; the lease row is locked
+so a concurrent release cannot race the insert. Active submit intents cannot
+expose terminal stop evidence, and a terminal submit intent's error code and
+stop evidence are immutable. An admission lease cannot become `released` or
+`quarantined` while an attached submit intent is still active; `released`
+additionally requires no unresolved `unknown_quarantined` execution. A stopped
+engine generation cannot retain an unreleased admission lease or a non-terminal
+submit intent.
 
 ## OpenAI compatibility
 

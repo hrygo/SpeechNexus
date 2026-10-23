@@ -97,6 +97,7 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 
 当客户端取消、流断开或执行超时触发 `POST /internal/v1/executions/{submit_intent_id}/abort` 时：
 
+- **提交前置**：`submit_intents` 只能在对应 `admission_leases` 仍为 `reserved` 或 `executing` 且 `cleanup_state = 'pending'` 时插入；插入事务锁定 lease 行，与释放 / 隔离转换串行化，禁止对已释放或已隔离租约开始新的执行。
 - **确认停止**：网关通过引擎 adapter 收到明确的 abort 确认（`engine_abort_ack`）或可证明该请求已终止且连接不可继续生成的 terminal response（`engine_terminal_response`），或控制器确认容器已销毁（`instance_terminated_by_controller`），或取得人工独立核验证据（`operator_verified_instance_terminated`）。在同一事务中将 `submit_intents` 更新为 `execution_state = 'aborted', cleanup_state = 'complete'` 后，Scheduler 才可释放 `admission_leases` 与节点 / 实例增量预算，Job/Operation 方可进入 `cancelled`。
 - **停止未确认（Quarantine）**：若在 drain / 取消期限内引擎无响应或不支持细粒度 abort，网关将 `submit_intents` 更新为 `execution_state = 'unknown_quarantined', cleanup_state = 'quarantined', stop_evidence_kind = 'unconfirmed_timeout'`；Scheduler 将 `admission_leases` 标记为 `lease_state = 'quarantined', cleanup_state = 'quarantined'`，并将该槽位与物理内存转入 `quarantined` 账目（**不释放可用预算**）。Job/Operation 以 `failed`（`error.code = cancellation_unconfirmed`）终结，在后台协调完成清理前拒绝重试（`409 execution_cleanup_pending`）。
 - **结果不可反转**：已写入的 submit intent 结果、runtime intent 终态、已释放租约和已停止 generation 都不因迟到响应回到执行态；后台只能补充 cleanup 事实，最终关闭仍须满足同一证据与状态约束。
@@ -112,6 +113,6 @@ Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execut
 
 ### 3.7 数据库行为门禁
 
-`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史与终态不可复活、意图去重与终态不可变、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、已释放租约与预留向量不可改写、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。活动 submit intent 不得记录停止证据；租约不得在活动或未关闭 unknown 执行上释放；实例不得在仍有未释放租约或非终态执行时转为 `stopped`。标量 `generated_pcm_samples` 必须等于权威 generated 区间的最大终点，不能被直接推进。`runtime-control` 契约同时要求 peak 内存向量不小于 steady、succeeded 意图无错误码，并拒绝同一 `(instance_id, instance_generation)` 在一个协调快照中重复出现。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
+`tests/integration/test_cluster_coordination_schema.py` 在隔离 PostgreSQL 16 中为每个模块创建独立 schema，实际应用 DDL，并用正例和预期失败的事务验证 generation 历史与终态不可复活、意图去重与终态不可变、内存架构互斥、quarantine 阈值与释放证据、pool / gateway / binding revision 与租约执行身份一致性、已释放租约与预留向量不可改写、fencing 与输出水位单调性、输出流 / 采样率不可变、`updated_at` 触发器、输出区间不重叠 / 不越硬上限 / 不可改写。submit intent 不得插入已释放 / 已隔离租约；活动 submit intent 不得记录停止证据；租约不得在活动或未关闭 unknown 执行上释放；实例不得在仍有未释放租约或非终态执行时转为 `stopped`。标量 `generated_pcm_samples` 必须等于权威 generated 区间的最大终点，不能被直接推进。`runtime-control` 契约同时要求 peak 内存向量不小于 steady、succeeded 意图无错误码，并拒绝同一 `(instance_id, instance_generation)` 在一个协调快照中重复出现。CI 使用一次性 PostgreSQL service 运行该组测试；字符串包含断言只保留作快速结构冒烟，不作为数据库不变量证据。
 
 [架构索引](README.md) · [资源治理](runtime-governance.md) · [整体技术方案](technical-blueprint.md) · [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)

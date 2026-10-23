@@ -106,6 +106,7 @@ coordination-test:
 		tests/integration/test_production_claims.py \
 		tests/integration/test_runtime_intent_storage.py \
 		tests/integration/test_production_runtime_intents.py \
+		tests/integration/test_runtime_observations.py \
 		tests/integration/test_coordination_foundation.py -q
 
 python-build:

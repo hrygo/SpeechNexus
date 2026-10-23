@@ -49,6 +49,26 @@ def integer(value: int, *, minimum: int = 0, maximum: int = MAX_RESOURCE_COUNTER
     return value
 
 
+def runtime_timestamp_us(value: str) -> int:
+    if not isinstance(value, str) or not _RFC3339.fullmatch(value):
+        raise ValueError("Invalid runtime timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
+    except OverflowError:
+        raise ValueError("Runtime timestamp exceeds supported time range") from None
+    elapsed = parsed - datetime(1970, 1, 1, tzinfo=UTC)
+    at_us = (elapsed.days * 86400 + elapsed.seconds) * 1000000 + elapsed.microseconds
+    integer(at_us)
+    return at_us
+
+
+def runtime_timestamp_key(value: str) -> tuple[int, str]:
+    at_us = runtime_timestamp_us(value)
+    fraction = re.search(r"\.([0-9]+)", value)
+    tail = fraction[1][6:].rstrip("0") if fraction is not None else ""
+    return at_us, tail
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeIdentity:
     target_node_id: str
@@ -67,18 +87,7 @@ class RuntimeDeadline:
     at_us: int = field(init=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.text, str) or not _RFC3339.fullmatch(self.text):
-            raise ValueError("Invalid runtime deadline")
-        try:
-            parsed = datetime.fromisoformat(self.text.upper().replace("Z", "+00:00")).astimezone(
-                UTC
-            )
-        except OverflowError:
-            raise ValueError("Runtime deadline exceeds supported time range") from None
-        elapsed = parsed - datetime(1970, 1, 1, tzinfo=UTC)
-        at_us = (elapsed.days * 86400 + elapsed.seconds) * 1000000 + elapsed.microseconds
-        integer(at_us)
-        object.__setattr__(self, "at_us", at_us)
+        object.__setattr__(self, "at_us", runtime_timestamp_us(self.text))
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,9 +224,11 @@ class RuntimeHost:
     capacity: PhysicalResources
     held: PhysicalResources
     quarantined: PhysicalResources
+    quarantine_threshold_ppm: int = 250000
 
     def __post_init__(self) -> None:
         identifier(self.node_id)
+        integer(self.quarantine_threshold_ppm, maximum=1000000)
         digest(self.topology_digest)
         integer(self.version, minimum=1, maximum=MAX_VERSION)
         for vector in (self.capacity, self.held, self.quarantined):
@@ -261,6 +272,8 @@ class RuntimeInstance:
     last_fencing_token: int
     version: int
     stopped_at_us: int | None
+    ready_at_us: int | None = None
+    quarantine_reason: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.instance_id)
@@ -275,6 +288,12 @@ class RuntimeInstance:
             raise ValueError("Invalid runtime budget kind")
         if self.stopped_at_us is not None:
             integer(self.stopped_at_us, minimum=1)
+        if self.ready_at_us is not None:
+            integer(self.ready_at_us, minimum=1)
+        if self.quarantine_reason is not None and (
+            not self.quarantine_reason.strip() or len(self.quarantine_reason) > 2000
+        ):
+            raise ValueError("Invalid runtime quarantine reason")
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,6 +482,7 @@ class RuntimeRecord:
     # Validated original response retained for replay at the boundary. Create
     # decisions never infer readiness or release from this opaque document.
     observation_document: str | None = field(default=None, repr=False)
+    readiness_document: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         identifier(self.creator_id)
@@ -488,6 +508,13 @@ class RuntimeRecord:
                 raise ValueError("An unobserved runtime cannot claim terminal completion")
         elif not isinstance(self.observation_document, str) or not self.observation_document:
             raise ValueError("Invalid original runtime observation")
+        if self.readiness_document is not None and (
+            self.request.action != "prepare"
+            or self.observation_document is None
+            or not isinstance(self.readiness_document, str)
+            or not self.readiness_document
+        ):
+            raise ValueError("Readiness provenance requires an observed prepare")
 
     @property
     def identity(self) -> RuntimeIdentity:

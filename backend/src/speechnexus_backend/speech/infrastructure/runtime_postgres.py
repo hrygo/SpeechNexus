@@ -17,8 +17,11 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     rejected,
     unknown,
 )
+from speechnexus_backend.speech.domain.runtime_observations import ObserveRuntimeIntent
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.runtime_codec import prepare_request
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import decode_observation
+from speechnexus_backend.speech.infrastructure.runtime_observation_sql import observe_in_transaction
 from speechnexus_backend.speech.infrastructure.runtime_sql import (
     RuntimeCursor,
     create_in_transaction,
@@ -72,11 +75,24 @@ class PostgresRuntimeTransactions:
     def _run(
         self,
         identity: RuntimeIdentity,
-        command: CreateRuntimeIntent | None = None,
+        command: CreateRuntimeIntent | ObserveRuntimeIntent | None = None,
         *,
         request_digest: str | None = None,
     ) -> RuntimeResult:
-        prepared = None if command is None else prepare_request(command.request)
+        prepared = (
+            prepare_request(command.request) if isinstance(command, CreateRuntimeIntent) else None
+        )
+        observed = (
+            decode_observation(command.original_document)
+            if isinstance(command, ObserveRuntimeIntent)
+            else None
+        )
+        if (
+            observed is not None
+            and isinstance(command, ObserveRuntimeIntent)
+            and observed.observation != command.observation
+        ):
+            raise ValueError("Runtime observation facts do not match their original document")
         if prepared is not None:
             request_digest = prepared.request_digest
         deadline = time.monotonic() + self._timeout
@@ -93,24 +109,31 @@ class PostgresRuntimeTransactions:
                         connection.execute("SET TRANSACTION READ ONLY")
                     with connection.cursor() as raw:
                         cursor = _DeadlineCursor(cast(RuntimeCursor, raw), deadline)
-                        result = (
-                            query_in_transaction(
+                        if command is None or conflict_if_absent:
+                            result = query_in_transaction(
                                 cursor,
                                 identity,
                                 request_digest=request_digest,
                                 conflict_if_absent=conflict_if_absent,
                             )
-                            if command is None or conflict_if_absent or prepared is None
-                            else create_in_transaction(
+                        elif isinstance(command, CreateRuntimeIntent):
+                            assert prepared is not None
+                            result = create_in_transaction(
                                 cursor, command, prepared, clock=cursor.clock
                             )
-                        )
+                        else:
+                            assert observed is not None
+                            result = observe_in_transaction(
+                                cursor, command, observed, clock=cursor.clock
+                            )
                         if time.monotonic() >= deadline:
                             raise _BudgetExpiredError
                 return result  # Only after commit acknowledgement and pool release.
             except RuntimeRejectedError as error:
                 return rejected(identity, error.code)
             except psycopg.errors.UniqueViolation:
+                if isinstance(command, ObserveRuntimeIntent):
+                    return rejected(identity, "reconciliation_required")
                 # The failed transaction has rolled back. Read the original
                 # identity; a different head winner does not authorize a rewrite.
                 conflict_if_absent = True
@@ -135,3 +158,6 @@ class PostgresRuntimeTransactions:
         self, identity: RuntimeIdentity, *, request_digest: str | None = None
     ) -> RuntimeResult:
         return self._run(identity, request_digest=request_digest)
+
+    def observe_runtime(self, command: ObserveRuntimeIntent) -> RuntimeResult:
+        return self._run(command.observation.identity, command)

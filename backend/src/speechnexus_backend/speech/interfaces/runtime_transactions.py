@@ -15,6 +15,11 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     RuntimeResult,
     identifier,
 )
+from speechnexus_backend.speech.domain.runtime_observations import (
+    ObserveRuntimeIntent,
+    RuntimeObservation,
+    VerifiedRuntimeReadiness,
+)
 
 
 class RuntimeTransactionBoundary:
@@ -26,6 +31,7 @@ class RuntimeTransactionBoundary:
         decode_request: Callable[[Any], RuntimeIntent],
         render_request: Callable[[RuntimeIntent], dict[str, Any]],
         decode_observation: Callable[[str, RuntimeIntent], dict[str, Any]],
+        parse_observation: Callable[[Any], tuple[RuntimeObservation, str]] | None = None,
     ) -> None:
         identifier(owner_id)
         self._owner_id = owner_id
@@ -33,6 +39,7 @@ class RuntimeTransactionBoundary:
         self._decode = decode_request
         self._render = render_request
         self._observation = decode_observation
+        self._parse_observation = parse_observation
 
     def create_runtime_intent(
         self, request: Any, *, approved_plan: ApprovedRuntimePlan | None
@@ -50,6 +57,29 @@ class RuntimeTransactionBoundary:
         except ValueError:
             raise ContractValidationError("Invalid create_runtime_intent") from None
         return self._wire("create_runtime_intent", self._service.create(command))
+
+    def observe_runtime(
+        self,
+        request: Any,
+        *,
+        readiness: VerifiedRuntimeReadiness | None,
+    ) -> dict[str, Any]:
+        validate_coordination("observe_runtime", request)
+        if self._parse_observation is None:
+            raise ContractValidationError("Runtime observation codec has not been assembled")
+        try:
+            observation, document = self._parse_observation(request["observation"])
+            command = ObserveRuntimeIntent(
+                observation,
+                int(request["expected_instance_version"]),
+                int(request["expected_intent_version"]),
+                self._owner_id,
+                document,
+                readiness,
+            )
+        except ValueError:
+            raise ContractValidationError("Invalid observe_runtime") from None
+        return self._wire("observe_runtime", self._service.observe(command))
 
     def query_outcome(self, request: Any) -> dict[str, Any]:
         validate_coordination("query_outcome", request)

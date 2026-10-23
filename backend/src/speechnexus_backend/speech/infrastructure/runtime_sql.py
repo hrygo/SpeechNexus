@@ -13,6 +13,7 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     RuntimeHost,
     RuntimeIdentity,
     RuntimeInstance,
+    RuntimeIntent,
     RuntimePrerequisites,
     RuntimeRecord,
     RuntimeRejectedError,
@@ -30,6 +31,10 @@ from speechnexus_backend.speech.infrastructure.runtime_codec import (
     encode_record,
     prepare_request,
     validate_original_observation,
+)
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import (
+    decode_observation,
+    validate_stored_readiness,
 )
 
 type Row = dict[str, Any]
@@ -72,6 +77,7 @@ def _host(row: Row) -> RuntimeHost:
         _vector(row, "allocatable_"),
         _vector(row, "held_"),
         _vector(row, "quarantined_"),
+        row["quarantine_threshold_ppm"],
     )
 
 
@@ -114,6 +120,19 @@ def _record(row: Row) -> RuntimeRecord:
                 and row["intent_state"] != value["intent_state"]
             ):
                 raise ValueError("Runtime terminal state does not match its actual observation")
+        if row["stop_evidence_document"] is not None and (
+            observation is None
+            or decode_observation(observation).stop_document != row["stop_evidence_document"]
+        ):
+            raise ValueError("Standalone stop evidence does not match its actual observation")
+        readiness_document = row["readiness_document"]
+        if readiness_document is not None:
+            validate_stored_readiness(readiness_document, request, plan)
+            if observation is None or row["intent_state"] != "succeeded":
+                raise ValueError("Readiness provenance requires a successful prepare observation")
+            observed = decode_observation(observation).observation
+            if observed.action != "prepare" or observed.intent_state != "succeeded":
+                raise ValueError("Readiness does not match an actual ready observation")
         return RuntimeRecord(
             request,
             plan,
@@ -124,6 +143,7 @@ def _record(row: Row) -> RuntimeRecord:
             row["updated_at_us"],
             row["version"],
             observation,
+            row["readiness_document"],
         )
     except ValueError, TypeError, KeyError:
         raise RuntimeRejectedError("reconciliation_required") from None
@@ -164,6 +184,13 @@ def _instance(row: Row, record: RuntimeRecord) -> RuntimeInstance:
         or _vector(row, "per_slot_") != plan.per_slot
     ):
         raise RuntimeRejectedError("reconciliation_required")
+    if record.readiness_document is not None:
+        receipt = validate_stored_readiness(record.readiness_document, record.request, plan)
+        if (
+            row["ready_at_us"] is None
+            or not receipt.verified_at_us <= row["ready_at_us"] < receipt.expires_at_us
+        ):
+            raise RuntimeRejectedError("reconciliation_required")
     return RuntimeInstance(
         row["instance_id"],
         row["instance_generation"],
@@ -175,6 +202,8 @@ def _instance(row: Row, record: RuntimeRecord) -> RuntimeInstance:
         row["last_fencing_token"],
         row["version"],
         row["stopped_at_us"],
+        row["ready_at_us"],
+        row["quarantine_reason"],
     )
 
 
@@ -244,9 +273,8 @@ def query_in_transaction(
 
 
 def _related_records(
-    cursor: RuntimeCursor, command: CreateRuntimeIntent, current: Row | None
+    cursor: RuntimeCursor, request: RuntimeIntent, current: Row | None
 ) -> list[RuntimeRecord]:
-    request = command.request
     selector = "target_node_id = %s AND intent_id = %s"
     parameters: tuple[object, ...] = (request.binding.target_node_id, request.intent_id)
     if current is not None:
@@ -418,7 +446,7 @@ def create_in_transaction(
         (request.instance_id,),
     ):
         raise RuntimeRejectedError("reconciliation_required")
-    records = _related_records(cursor, command, current)
+    records = _related_records(cursor, request, current)
     previous: RuntimeInstance | None = None
     facts = RuntimePrerequisites(True, True, True, False, False)
     if current is not None and head is not None:

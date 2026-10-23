@@ -109,6 +109,9 @@ class FixedRuntimePort:
             else RuntimeResult("committed", REQUEST.identity, self.record)
         )
 
+    def observe_runtime(self, command: Any) -> RuntimeResult:
+        raise NotImplementedError("This create/query fixture never observes")
+
     def query_runtime_intent(
         self, identity: RuntimeIdentity, *, request_digest: str | None = None
     ) -> RuntimeResult:

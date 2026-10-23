@@ -3244,6 +3244,10 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         "updated_at": "2026-10-22T00:00:00Z",
     }
     intent_validator.validate(stopped_intent)
+    succeeded_with_error = copy.deepcopy(stopped_intent)
+    succeeded_with_error["error_code"] = "runtime_start_failed"
+    with pytest.raises(ValidationError):
+        intent_validator.validate(succeeded_with_error)
     missing_intent_identity = copy.deepcopy(stopped_intent)
     del missing_intent_identity["binding_revision_id"]
     with pytest.raises(ValidationError):

@@ -611,6 +611,16 @@ def test_unresolved_intents_are_unique_while_history_is_retained(
         db.execute(
             """
             UPDATE runtime_instance_intents
+            SET intent_state = 'succeeded',
+                observed_instance_state = 'ready',
+                error_code = 'runtime_start_failed'
+            WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE runtime_instance_intents
             SET intent_state = 'failed', observed_instance_state = 'failed'
             WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
             """
@@ -624,6 +634,14 @@ def test_unresolved_intents_are_unique_while_history_is_retained(
         WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
         """
     )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE runtime_instance_intents
+            SET error_code = 'runtime_start_failed_again'
+            WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
+            """
+        )
 
 
 def test_memory_architecture_counters_are_exclusive(
@@ -1347,6 +1365,266 @@ def test_submit_execution_cleanup_matrix_is_closed(
         WHERE submit_intent_id = 'intent-cleanup-failure'
         """
     )
+
+
+def test_active_submit_intent_cannot_claim_terminal_evidence(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-active-evidence")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-active-evidence",
+        generation=1,
+        host_node_id="node-active-evidence",
+        architecture="discrete_device_memory",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-active-evidence",
+        operation_id="op-active-evidence",
+        attempt_id="att-active-evidence",
+        host_node_id="node-active-evidence",
+        instance_id="inst-active-evidence",
+        generation=1,
+    )
+    _insert_submit_intent(
+        db,
+        submit_intent_id="intent-active-evidence",
+        lease_id="lease-active-evidence",
+        operation_id="op-active-evidence",
+        attempt_id="att-active-evidence",
+        host_node_id="node-active-evidence",
+        instance_id="inst-active-evidence",
+        generation=1,
+        dispatched=False,
+    )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET stop_evidence_kind = 'engine_abort_ack'
+            WHERE submit_intent_id = 'intent-active-evidence'
+            """
+        )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'failed',
+            cleanup_state = 'not_required',
+            error_code = 'policy_denied_before_dispatch'
+        WHERE submit_intent_id = 'intent-active-evidence'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET error_code = 'different_terminal_error'
+            WHERE submit_intent_id = 'intent-active-evidence'
+            """
+        )
+
+
+def test_lease_release_waits_for_terminal_submit_intents(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-lease-release")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-lease-release",
+        generation=1,
+        host_node_id="node-lease-release",
+        architecture="discrete_device_memory",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-active-release",
+        operation_id="op-active-release",
+        attempt_id="att-active-release",
+        host_node_id="node-lease-release",
+        instance_id="inst-lease-release",
+        generation=1,
+    )
+    _insert_submit_intent(
+        db,
+        submit_intent_id="intent-active-release",
+        lease_id="lease-active-release",
+        operation_id="op-active-release",
+        attempt_id="att-active-release",
+        host_node_id="node-lease-release",
+        instance_id="inst-lease-release",
+        generation=1,
+        dispatched=False,
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET lease_state = 'released',
+                cleanup_state = 'not_required',
+                budget_released_at = CURRENT_TIMESTAMP
+            WHERE lease_id = 'lease-active-release'
+            """
+        )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'failed',
+            cleanup_state = 'not_required',
+            error_code = 'policy_denied_before_dispatch'
+        WHERE submit_intent_id = 'intent-active-release'
+        """
+    )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'released',
+            cleanup_state = 'not_required',
+            budget_released_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-active-release'
+        """
+    )
+
+    _insert_lease(
+        db,
+        lease_id="lease-unknown-release",
+        operation_id="op-unknown-release",
+        attempt_id="att-unknown-release",
+        host_node_id="node-lease-release",
+        instance_id="inst-lease-release",
+        generation=1,
+    )
+    _insert_submit_intent(
+        db,
+        submit_intent_id="intent-unknown-release",
+        lease_id="lease-unknown-release",
+        operation_id="op-unknown-release",
+        attempt_id="att-unknown-release",
+        host_node_id="node-lease-release",
+        instance_id="inst-lease-release",
+        generation=1,
+    )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'unknown_quarantined',
+            cleanup_state = 'quarantined',
+            stop_evidence_kind = 'unconfirmed_timeout'
+        WHERE submit_intent_id = 'intent-unknown-release'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET lease_state = 'released',
+                cleanup_state = 'complete',
+                budget_released_at = CURRENT_TIMESTAMP
+            WHERE lease_id = 'lease-unknown-release'
+            """
+        )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'quarantined',
+            cleanup_state = 'quarantined',
+            quarantined_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-unknown-release'
+        """
+    )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'aborted',
+            cleanup_state = 'complete',
+            stop_evidence_kind = 'engine_terminal_response',
+            terminated_at = CURRENT_TIMESTAMP
+        WHERE submit_intent_id = 'intent-unknown-release'
+        """
+    )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'released',
+            cleanup_state = 'complete',
+            quarantine_release_evidence_kind = 'engine_terminal_response',
+            quarantine_release_evidence_digest = %s,
+            quarantine_release_observed_at = CURRENT_TIMESTAMP,
+            budget_released_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-unknown-release'
+        """,
+        (_DIGEST,),
+    )
+    row = db.execute(
+        """
+        SELECT lease_state, cleanup_state
+        FROM admission_leases
+        WHERE lease_id = 'lease-unknown-release'
+        """
+    ).fetchone()
+    assert row == ("released", "complete")
+
+
+def test_stopped_instance_requires_all_leases_released(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-stop-cleanup")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-stop-cleanup",
+        generation=1,
+        host_node_id="node-stop-cleanup",
+        architecture="discrete_device_memory",
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-stop-cleanup",
+        operation_id="op-stop-cleanup",
+        attempt_id="att-stop-cleanup",
+        host_node_id="node-stop-cleanup",
+        instance_id="inst-stop-cleanup",
+        generation=1,
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET instance_state = 'stopped',
+                stopped_at = CURRENT_TIMESTAMP,
+                peak_reservation_active = FALSE
+            WHERE instance_id = 'inst-stop-cleanup' AND instance_generation = 1
+            """
+        )
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET lease_state = 'released',
+            cleanup_state = 'not_required',
+            budget_released_at = CURRENT_TIMESTAMP
+        WHERE lease_id = 'lease-stop-cleanup'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET instance_state = 'stopped',
+            stopped_at = CURRENT_TIMESTAMP,
+            peak_reservation_active = FALSE
+        WHERE instance_id = 'inst-stop-cleanup' AND instance_generation = 1
+        """
+    )
+    row = db.execute(
+        """
+        SELECT instance_state
+        FROM engine_instances
+        WHERE instance_id = 'inst-stop-cleanup' AND instance_generation = 1
+        """
+    ).fetchone()
+    assert row == ("stopped",)
 
 
 def test_admission_reservations_and_fencing_cannot_be_negative(

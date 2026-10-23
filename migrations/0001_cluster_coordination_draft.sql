@@ -550,6 +550,16 @@ CREATE TABLE runtime_instance_intents (
                 error_code IS NOT NULL
                 AND error_code ~ '^[a-z][a-z0-9_]{2,63}$'
             )
+        ),
+    CONSTRAINT ck_runtime_intents_succeeded_error
+        CHECK (intent_state <> 'succeeded' OR error_code IS NULL),
+    CONSTRAINT ck_runtime_intents_stop_verified
+        CHECK (
+            stop_verified_at IS NULL
+            OR (
+                process_or_container_exited = TRUE
+                AND resources_released_confirmed = TRUE
+            )
         )
 );
 
@@ -891,6 +901,13 @@ CREATE TABLE submit_intents (
                 'unconfirmed_timeout'
             )
         ),
+    -- Stop evidence is a terminal observation. It cannot be attached to a
+    -- still-active submission before the corresponding state transition.
+    CONSTRAINT ck_submit_intents_active_stop_evidence
+        CHECK (
+            execution_state NOT IN ('submitting', 'executing', 'stopping')
+            OR stop_evidence_kind = 'none'
+        ),
     -- Active executions still own cleanup. Successful and failed executions
     -- may not silently retain pending capacity; unknown execution is the only
     -- quarantined execution state and is constrained separately below.
@@ -1007,6 +1024,9 @@ CREATE INDEX idx_submit_intents_gateway_active
 CREATE INDEX idx_submit_intents_instance_active
     ON submit_intents (instance_id, instance_generation, execution_state)
     WHERE execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined');
+
+CREATE INDEX idx_submit_intents_lease_state
+    ON submit_intents (lease_id, execution_state);
 
 -- ============================================================================
 -- 9. output_sample_intervals: Interval-Authoritative Output Metering Ledger
@@ -1354,10 +1374,15 @@ BEGIN
         RAISE EXCEPTION 'execution termination time is immutable once observed'
             USING ERRCODE = '23514';
     END IF;
-    IF OLD.execution_state = 'aborted'
-        AND NEW.stop_evidence_kind IS DISTINCT FROM OLD.stop_evidence_kind THEN
-        RAISE EXCEPTION 'aborted execution evidence is immutable'
-            USING ERRCODE = '23514';
+    IF OLD.execution_state IN ('succeeded', 'failed', 'aborted') THEN
+        IF NEW.stop_evidence_kind IS DISTINCT FROM OLD.stop_evidence_kind THEN
+            RAISE EXCEPTION 'terminal execution evidence is immutable'
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.error_code IS DISTINCT FROM OLD.error_code THEN
+            RAISE EXCEPTION 'terminal execution error is immutable'
+                USING ERRCODE = '23514';
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -1366,6 +1391,86 @@ $$;
 CREATE TRIGGER trg_submit_intents_identity_and_terminality
     BEFORE UPDATE ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_identity_and_terminality();
+
+-- A lease releases capacity only after every execution intent attached to it
+-- has reached a terminal execution state. A quarantined lease may retain an
+-- unknown execution, but it cannot be marked released until that execution is
+-- closed with verified evidence.
+CREATE FUNCTION enforce_admission_lease_terminality() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.lease_state IS NOT DISTINCT FROM OLD.lease_state
+        OR NEW.lease_state NOT IN ('released', 'quarantined') THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM 1
+    FROM submit_intents
+    WHERE lease_id = NEW.lease_id
+      AND execution_state IN ('submitting', 'executing', 'stopping')
+    FOR UPDATE;
+    IF FOUND THEN
+        RAISE EXCEPTION 'lease cannot release while submit intent is active'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.lease_state = 'released' THEN
+        PERFORM 1
+        FROM submit_intents
+        WHERE lease_id = NEW.lease_id
+          AND execution_state = 'unknown_quarantined'
+        FOR UPDATE;
+        IF FOUND THEN
+            RAISE EXCEPTION 'lease cannot release an unresolved quarantined execution'
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_admission_leases_terminality
+    BEFORE UPDATE ON admission_leases
+    FOR EACH ROW EXECUTE FUNCTION enforce_admission_lease_terminality();
+
+-- Marking a runtime generation stopped is the final capacity-release fact.
+-- No admission lease or non-terminal submit intent may still reference it.
+CREATE FUNCTION enforce_engine_instance_stop_cleanup() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.instance_state <> 'stopped'
+        OR OLD.instance_state = 'stopped' THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM 1
+    FROM admission_leases
+    WHERE instance_id = NEW.instance_id
+      AND instance_generation = NEW.instance_generation
+      AND lease_state <> 'released'
+    FOR UPDATE;
+    IF FOUND THEN
+        RAISE EXCEPTION 'instance cannot stop with an unreleased admission lease'
+            USING ERRCODE = '23514';
+    END IF;
+
+    PERFORM 1
+    FROM submit_intents
+    WHERE instance_id = NEW.instance_id
+      AND instance_generation = NEW.instance_generation
+      AND execution_state NOT IN ('succeeded', 'failed', 'aborted')
+    FOR UPDATE;
+    IF FOUND THEN
+        RAISE EXCEPTION 'instance cannot stop with a non-terminal submit intent'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_engine_instances_stop_cleanup
+    BEFORE UPDATE ON engine_instances
+    FOR EACH ROW EXECUTE FUNCTION enforce_engine_instance_stop_cleanup();
 
 -- The scalar submit watermark is a query projection over interval rows. Keep
 -- its position equal to the generated interval high-water mark, and freeze

@@ -468,6 +468,15 @@ components:
                 pattern: "^[a-z][a-z0-9_]{2,63}$"
         - if:
             properties:
+              intent_state:
+                const: succeeded
+            required: [intent_state]
+          then:
+            properties:
+              error_code:
+                type: "null"
+        - if:
+            properties:
               reserved_memory:
                 properties:
                   architecture:

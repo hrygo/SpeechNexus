@@ -139,11 +139,11 @@ of defaults, units, enum domains, or stable error codes.
   caller-generated `intent_id` can be reused independently on another node;
   replays echo the immutable intent identity and a changed request under the
   same node/key is a stable `409 intent_conflict`. A failed intent requires a
-  non-empty `error_code`. Runtime memory reservations require peak to be at
-  least steady in every architecture-specific counter. A reconciliation
-  snapshot may report each `(instance_id, instance_generation)` once, and stop
-  evidence is present only for a succeeded stop intent / stopped or absent
-  observation.
+  non-empty `error_code`; a succeeded intent carries no error. Runtime memory
+  reservations require peak to be at least steady in every architecture-specific
+  counter. A reconciliation snapshot may report each
+  `(instance_id, instance_generation)` once, and stop evidence is present only
+  for a succeeded stop intent / stopped or absent observation.
 
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision
@@ -174,7 +174,12 @@ A failed submit intent may use `cleanup_state=not_required` only when
 `engine_request_id` is explicitly null, no dispatch occurred, and no output or
 staging fact exists. Dispatched executions must provide verified termination
 evidence before capacity is released; a failed response without an error code
-is invalid.
+is invalid. Active submit intents cannot expose terminal stop evidence, and a
+terminal submit intent's error code and stop evidence are immutable. An
+admission lease cannot become `released` or `quarantined` while an attached
+submit intent is still active; `released` additionally requires no unresolved
+`unknown_quarantined` execution. A stopped engine generation cannot retain an
+unreleased admission lease or a non-terminal submit intent.
 
 ## OpenAI compatibility
 

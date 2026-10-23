@@ -16,6 +16,7 @@ from openapi_spec_validator import validate
 from referencing import Registry, Resource
 
 _ROOT = Path(__file__).resolve().parents[2]
+_BINDING_SCHEMA_PATH = _ROOT / "contracts" / "model-binding.schema.json"
 _CAPACITY_MANIFEST_SCHEMA_PATH = _ROOT / "contracts" / "capacity-manifest.schema.json"
 _QUALIFICATION_REPORT_SCHEMA_PATH = _ROOT / "contracts" / "qualification-report.schema.json"
 _EXECUTION_CONTROL_OPENAPI_PATH = (
@@ -83,13 +84,30 @@ def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
             qualification_schema["examples"],
         )
     }
+    binding_schema = _load_json(_BINDING_SCHEMA_PATH)
+    bindings = {
+        binding["revision_id"]: binding
+        for binding in cast(
+            list[dict[str, Any]],
+            binding_schema["examples"],
+        )
+    }
     for example in examples:
         validator.validate(example)
         stage_ids = [stage["stage_id"] for stage in example["stage_graph"]]
         assert len(stage_ids) == len(set(stage_ids))
+        binding = bindings[example["binding_revision_id"]]
+        assert binding["execution_recipe"]["capacity_manifest_id"] == example["manifest_id"]
+        assert binding["publication"]["capacity_manifest_id"] == example["manifest_id"]
+        assert set(binding["execution_recipe"]["stage_roles"]) == {
+            stage["stage_role"] for stage in example["stage_graph"]
+        }
         report = qualification_reports[example["qualification"]["qualification_report_id"]]
         assert report["binding_revision_id"] == example["binding_revision_id"]
         assert report["capacity_manifest_id"] == example["manifest_id"]
+        assert report["release_tier"] == example["release_tier"]
+        assert report["qualified_at"] == example["qualification"]["qualified_at"]
+        assert report["expires_at"] == example["qualification"]["expires_at"]
         assert set(report["software"]["engine_components"]) == set(stage_ids)
 
 

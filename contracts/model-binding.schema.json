@@ -999,6 +999,79 @@
       },
       "supersedes_revision": null,
       "created_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "schema_version": "1.0.0",
+      "binding_id": "asr-realtime",
+      "revision": "4",
+      "revision_id": "mbrev-asr-realtime-4",
+      "logical_model": "asr-realtime",
+      "description": "Realtime ASR binding with VAD preview and full-segment review.",
+      "tasks": [
+        "vad",
+        "asr_realtime",
+        "asr_full_segment_review"
+      ],
+      "engine": {
+        "kind": "vllm",
+        "image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "runtime_version": "vllm-2026.10"
+      },
+      "artifact_set": [
+        {
+          "role": "weights",
+          "artifact_id": "model-qwen3-asr-realtime",
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "media_type": "application/x-safetensors",
+          "size_bytes": 4000000000
+        }
+      ],
+      "execution_recipe": {
+        "recipe_revision": "4",
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "stage_roles": [
+          "vad",
+          "asr_preview",
+          "asr_review"
+        ],
+        "requires_complete_reservation": true
+      },
+      "parameter_domains": {
+        "asr": {
+          "languages": [
+            "zh",
+            "en",
+            "auto"
+          ],
+          "max_segment_ms": 30000,
+          "finalization_modes": [
+            "full_segment"
+          ],
+          "supports_prompt": true,
+          "supports_word_timestamps": false,
+          "alignment_modes": [
+            "off",
+            "best_effort"
+          ],
+          "diarization_modes": [
+            "off",
+            "best_effort"
+          ],
+          "max_speakers": 8,
+          "supports_rollback_tokens": true
+        }
+      },
+      "release_tier": "experimental",
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+        "disabled_reason": null
+      },
+      "supersedes_revision": "3",
+      "created_at": "2026-10-22T09:00:00Z"
     }
   ]
 }

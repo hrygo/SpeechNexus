@@ -14,6 +14,7 @@ from speechnexus_gateway.domain.submission import (
     DispatchResult,
     EngineObservedState,
     ExecutionErrorCode,
+    RecordStop,
     SubmissionIntent,
 )
 
@@ -50,6 +51,10 @@ class SubmissionLedger(Protocol):
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None: ...
 
     def save(self, intent: SubmissionIntent, *, expected_version: int) -> None: ...
+
+    def record_stop(self, request: RecordStop) -> SubmissionIntent:
+        """Append immutable evidence and close the execution in one transaction."""
+        ...
 
 
 class EngineDispatchPort(Protocol):

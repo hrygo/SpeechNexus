@@ -26,6 +26,7 @@ from tests.integration.test_production_jobs import database as database
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.submission import (
+    ExecutionCleanupPendingError,
     ExecutionState,
     GatewayBarrierFencedError,
     InvalidExecutionRequestError,
@@ -284,7 +285,7 @@ def test_save_writes_conditions_on_the_version_the_caller_read(
     assert engine.dispatch_count == 1
 
 
-def test_a_recorded_success_is_read_back_with_its_terminal_evidence(
+def test_a_bare_success_cannot_bypass_record_stop(
     foundation: Foundation, ledger: PostgresSubmissionLedger
 ) -> None:
     seed_second_attempt(foundation)
@@ -295,41 +296,44 @@ def test_a_recorded_success_is_read_back_with_its_terminal_evidence(
     version = intent.version
     intent.complete_successfully(at=NOW + timedelta(seconds=1))
 
-    ledger.save(intent, expected_version=version)
+    with pytest.raises(ExecutionCleanupPendingError):
+        ledger.save(intent, expected_version=version)
 
     stored = ledger.get("intent-a")
     assert stored is not None
-    assert stored.execution_state is ExecutionState.SUCCEEDED
-    assert stored.stop_evidence_kind is StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+    assert stored.execution_state is ExecutionState.EXECUTING
+    assert stored.stop_evidence_kind is StopEvidenceKind.NONE
     assert stored.error_code is None
 
 
-def test_a_verified_stop_is_refused_until_its_own_port_exists(
+def test_a_verified_stop_and_execution_close_together(
     foundation: Foundation, ledger: PostgresSubmissionLedger
 ) -> None:
     seed_second_attempt(foundation)
     service, _ = service_for(ledger)
     service.submit(request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a")))
+    observed_at_us = foundation.database.query(
+        "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+    )[0]["now_us"]
     evidence = VerifiedStopEvidence(
         evidence_id="evidence-1",
         submit_intent_id="intent-a",
         evidence_kind=StopEvidenceKind.ENGINE_ABORT_ACK,
         evidence_digest=DIGEST,
-        observed_at_us=1,
+        observed_at_us=observed_at_us,
         execution_stopped=True,
         resources_released=True,
         reason="integration",
     )
 
-    with pytest.raises(ValueError, match="record_stop"):
-        service.record_stop(evidence)
+    service.record_stop(evidence)
 
     row = foundation.database.query(
         "SELECT execution_state, version FROM submit_intents WHERE submit_intent_id = 'intent-a'"
     )[0]
-    assert row == {"execution_state": "executing", "version": 2}
+    assert row == {"execution_state": "aborted", "version": 3}
     evidence_rows = foundation.database.query("SELECT count(*) AS n FROM execution_stop_evidence")
-    assert evidence_rows[0]["n"] == 0
+    assert evidence_rows[0]["n"] == 1
 
 
 def test_a_lease_that_is_not_active_refuses_a_submit(

@@ -10,14 +10,25 @@ from datetime import UTC, datetime
 
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
-from speechnexus_gateway.domain.submission import DispatchResult, SubmissionIntent
+from speechnexus_gateway.domain.submission import (
+    CleanupState,
+    DispatchResult,
+    ExecutionCleanupPendingError,
+    InvalidExecutionRequestError,
+    RecordStop,
+    StopEvidenceConflictError,
+    SubmissionIntent,
+    VerifiedStopEvidence,
+)
 
 
 class InMemorySubmissionLedger:
     """Keeps copies so tests observe durable state instead of live objects."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, now: Callable[[], datetime] | None = None) -> None:
         self._intents: dict[str, SubmissionIntent] = {}
+        self._evidence: dict[str, VerifiedStopEvidence] = {}
+        self._now = now or (lambda: datetime.now(UTC))
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
         stored = self._intents.get(submit_intent_id)
@@ -38,7 +49,25 @@ class InMemorySubmissionLedger:
             raise ValueError(f"submit intent {key} is not stored")
         if stored.version != expected_version:
             raise ValueError(f"submit intent {key} version conflict")
+        if intent.cleanup_state is CleanupState.COMPLETE or stored.execution_state.is_terminal:
+            raise ExecutionCleanupPendingError("terminal writes require record_stop")
         self._intents[key] = copy.deepcopy(intent)
+
+    def record_stop(self, request: RecordStop) -> SubmissionIntent:
+        key = request.evidence.submit_intent_id
+        stored = self.get(key)
+        if stored is None:
+            raise InvalidExecutionRequestError("unknown submit intent for stop evidence")
+        for evidence in self._evidence.values():
+            if (
+                evidence.evidence_id == request.evidence.evidence_id
+                and evidence.submit_intent_id != key
+            ):
+                raise StopEvidenceConflictError("stop evidence belongs to another execution")
+        updated = request.apply(stored, previous_evidence=self._evidence.get(key), at=self._now())
+        self._evidence[key] = request.evidence
+        self._intents[key] = copy.deepcopy(updated)
+        return updated
 
 
 class ScriptedEngine:

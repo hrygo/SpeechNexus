@@ -16,8 +16,9 @@ canonical document travel with the intent.
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
@@ -146,6 +147,10 @@ class CancellationUnconfirmedError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.CANCELLATION_UNCONFIRMED
 
 
+class ExecutionCleanupPendingError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.EXECUTION_CLEANUP_PENDING
+
+
 class LeaseNotActiveError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.LEASE_NOT_ACTIVE
 
@@ -203,6 +208,13 @@ class StaleSubmissionVersionError(SubmissionStoreError):
 
     code = "version_conflict"
     recovery = "query_current_authority"
+
+
+class StopEvidenceConflictError(SubmissionStoreError):
+    """An evidence identity or an already closed execution has another fact."""
+
+    code = "idempotency_conflict"
+    recovery = "query_original"
 
 
 @dataclass(frozen=True, slots=True)
@@ -417,11 +429,27 @@ class VerifiedStopEvidence:
     observed_at_us: int
     execution_stopped: bool
     resources_released: bool
-    reason: str
+    reason: str | None
 
     def __post_init__(self) -> None:
         if not _DIGEST_PATTERN.match(self.evidence_digest):
             raise ValueError("evidence_digest must be sha256:<64 lowercase hex>")
+        identifier = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
+        if not identifier.fullmatch(self.evidence_id) or not identifier.fullmatch(
+            self.submit_intent_id
+        ):
+            raise ValueError("stop evidence identifiers must match the shared Identifier domain")
+        if type(self.observed_at_us) is not int or not 0 <= self.observed_at_us <= 2**53 - 1:
+            raise ValueError("observed_at_us must be a nonnegative safe integer")
+        if self.reason is not None and (
+            not self.reason.strip() or not 1 <= len(self.reason) <= 2000
+        ):
+            raise ValueError("reason must contain non-whitespace text of at most 2000 characters")
+        if (
+            self.evidence_kind is StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED
+            and self.reason is None
+        ):
+            raise ValueError("operator verified stop requires a reason")
 
     @property
     def is_verified(self) -> bool:
@@ -431,7 +459,7 @@ class VerifiedStopEvidence:
             StopEvidenceKind.UNCONFIRMED_TIMEOUT,
         }:
             return False
-        return self.execution_stopped and self.resources_released
+        return self.execution_stopped is True and self.resources_released is True
 
 
 @dataclass(slots=True)
@@ -450,6 +478,7 @@ class SubmissionIntent:
     error_code: ExecutionErrorCode | None = None
     stop_evidence_kind: StopEvidenceKind = StopEvidenceKind.NONE
     stop_evidence_digest: str | None = None
+    terminated_at: datetime | None = None
     version: int = field(default=1)
 
     def __post_init__(self) -> None:
@@ -525,21 +554,39 @@ class SubmissionIntent:
         self._touch(at)
 
     def apply_stop_evidence(
-        self, evidence: VerifiedStopEvidence, *, terminal_state: ExecutionState, at: datetime
+        self,
+        evidence: VerifiedStopEvidence,
+        *,
+        terminal_state: ExecutionState,
+        at: datetime,
+        error_code: ExecutionErrorCode | None = None,
     ) -> None:
+        """Apply a verified fact; the transaction port owns persistence and replay."""
         if evidence.submit_intent_id != self.identity.submit_intent_id:
             raise ValueError("stop evidence belongs to another submit intent")
-        if terminal_state not in {ExecutionState.ABORTED, ExecutionState.FAILED}:
-            raise ValueError("stop evidence only produces aborted or failed states")
-        if not evidence.is_verified:
-            raise CancellationUnconfirmedError("stop evidence is not confirmed")
+        RecordStop(evidence, terminal_state, error_code)
+        if self.execution_state.is_terminal:
+            raise ExecutionCleanupPendingError("a terminal execution cannot be reversed")
         if self.dispatched_at is None:
-            raise ValueError("stop evidence requires a dispatched intent")
+            raise ExecutionCleanupPendingError("stop evidence requires a dispatched intent")
+        if (
+            self.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+            and terminal_state is not ExecutionState.ABORTED
+        ):
+            raise ExecutionCleanupPendingError("unknown execution needs abort or reconciliation")
+        observed_at = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(
+            microseconds=evidence.observed_at_us
+        )
+        if observed_at > at or observed_at < self.dispatched_at or at < self.updated_at:
+            raise ExecutionCleanupPendingError("stop observation contradicts execution time")
+        if self.version >= _MAX_INT64:
+            raise ExecutionCleanupPendingError("execution version is exhausted")
         self.execution_state = terminal_state
         self.cleanup_state = CleanupState.COMPLETE
         self.stop_evidence_kind = evidence.evidence_kind
         self.stop_evidence_digest = evidence.evidence_digest
-        self.error_code = None if terminal_state is ExecutionState.ABORTED else self.error_code
+        self.terminated_at = observed_at
+        self.error_code = error_code
         self._touch(at)
 
     def complete_successfully(self, *, at: datetime) -> None:
@@ -579,3 +626,52 @@ class SubmissionIntent:
         self.version += 1
         self.updated_at = at
         self.validate()
+
+
+@dataclass(frozen=True, slots=True)
+class RecordStop:
+    """Frozen record_stop request with one shared transition and replay rule."""
+
+    evidence: VerifiedStopEvidence
+    terminal_state: ExecutionState
+    error_code: ExecutionErrorCode | None = None
+
+    def __post_init__(self) -> None:
+        if not self.evidence.is_verified:
+            raise CancellationUnconfirmedError("stop evidence is not confirmed")
+        if not self.terminal_state.is_terminal:
+            raise InvalidExecutionRequestError("stop evidence requires a terminal state")
+        if (self.terminal_state is ExecutionState.FAILED) != (self.error_code is not None):
+            raise InvalidExecutionRequestError("only a failed stop requires an error code")
+        if (
+            self.terminal_state is ExecutionState.SUCCEEDED
+            and self.evidence.evidence_kind is not StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+        ):
+            raise InvalidExecutionRequestError("success requires the engine terminal response")
+
+    def apply(
+        self,
+        intent: SubmissionIntent,
+        *,
+        previous_evidence: VerifiedStopEvidence | None,
+        at: datetime,
+    ) -> SubmissionIntent:
+        """Return the original replay or one new version, never partially mutate a caller."""
+        if previous_evidence is not None:
+            if (
+                previous_evidence != self.evidence
+                or intent.execution_state is not self.terminal_state
+                or intent.error_code != self.error_code
+                or intent.cleanup_state is not CleanupState.COMPLETE
+                or intent.stop_evidence_digest != self.evidence.evidence_digest
+            ):
+                raise StopEvidenceConflictError("stop identity already has another complete fact")
+            return intent
+        updated = deepcopy(intent)
+        updated.apply_stop_evidence(
+            self.evidence,
+            terminal_state=self.terminal_state,
+            error_code=self.error_code,
+            at=at,
+        )
+        return updated

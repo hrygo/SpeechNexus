@@ -19,9 +19,11 @@ from speechnexus_gateway.domain.ports import (
 )
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
+    EngineObservedState,
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
+    RecordStop,
     SubmissionIntent,
     SubmitIntentConflictError,
     SubmitRequest,
@@ -68,7 +70,10 @@ class SubmitExecutionService:
                 raise SubmitIntentConflictError(
                     "submit intent already exists with another effective request"
                 )
-            return SubmissionOutcome(intent=self._reconcile(existing), idempotent_replay=True)
+            # query owns the conditional save when a delayed executing fact arrives.
+            return SubmissionOutcome(
+                intent=self.query(identity.submit_intent_id) or existing, idempotent_replay=True
+            )
 
         at = self._now()
         intent = SubmissionIntent(
@@ -98,15 +103,10 @@ class SubmitExecutionService:
         evidence: VerifiedStopEvidence,
         *,
         terminal_state: ExecutionState = ExecutionState.ABORTED,
+        error_code: ExecutionErrorCode | None = None,
     ) -> SubmissionIntent:
-        """Release capacity only for verified evidence; otherwise keep holding."""
-        intent = self._ledger.get(evidence.submit_intent_id)
-        if intent is None:
-            raise InvalidExecutionRequestError("unknown submit intent for stop evidence")
-        version = intent.version
-        intent.apply_stop_evidence(evidence, terminal_state=terminal_state, at=self._now())
-        self._ledger.save(intent, expected_version=version)
-        return intent
+        """Persist stop and release facts atomically; Scheduler owns budget release."""
+        return self._ledger.record_stop(RecordStop(evidence, terminal_state, error_code))
 
     def query(self, submit_intent_id: str) -> SubmissionIntent | None:
         """Read an intent, reconciling a quarantined one against the engine."""
@@ -127,6 +127,10 @@ class SubmitExecutionService:
             return intent
         observation = self._observation.observe(intent)
         if observation is None:
+            return intent
+        if observation.state is not EngineObservedState.EXECUTING:
+            # A status alone does not attest resource release. Only record_stop can
+            # atomically persist verified terminal evidence and close the execution.
             return intent
         intent.adopt_engine_observation(
             engine_request_id=observation.engine_request_id,

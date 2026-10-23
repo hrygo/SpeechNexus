@@ -105,6 +105,7 @@ def stored_row(**overrides: object) -> dict[str, Any]:
         "cleanup_state": "pending",
         "engine_request_id": "engine-request-1",
         "dispatched_at_us": to_unix_micros(NOW),
+        "terminated_at_us": None,
         "error_code": None,
         "output_stream_id": "tts-main",
         "sample_rate_hz": 24000,
@@ -147,8 +148,10 @@ class StubCursor:
                 self._rows = rows
                 self.rowcount = self._rowcounts.get(marker, 1)
                 return None
-        self._rows = []
-        self.rowcount = self._rowcounts.get("default", 1)
+        self.rowcount = self._rowcounts.get(
+            query.split(" WHERE")[0], self._rowcounts.get("default", 1)
+        )
+        self._rows = [{"lock": True}] if "FOR UPDATE" in query and self.rowcount else []
         return None
 
     def fetchall(self) -> list[dict[str, Any]]:
@@ -195,9 +198,9 @@ def test_create_submit_locks_the_pool_attempt_and_lease_in_global_order() -> Non
     create_submit_in_transaction(cursor, INTENT, "{}")
 
     locks = [statement.split(" WHERE")[0] for statement in cursor.calls[:3]]
-    assert locks[0].startswith("UPDATE resource_pools")
-    assert locks[1].startswith("UPDATE admission_attempts")
-    assert locks[2].startswith("UPDATE admission_leases")
+    assert locks[0].startswith("SELECT pool_id FROM resource_pools")
+    assert locks[1].startswith("SELECT operation_id FROM admission_attempts")
+    assert locks[2].startswith("SELECT lease_id FROM admission_leases")
     assert cursor.calls[3].startswith("\nSELECT") or "FROM admission_leases AS l" in cursor.calls[3]
     assert any(statement.startswith("INSERT INTO submit_intents") for statement in cursor.calls)
     assert any(
@@ -216,7 +219,7 @@ def test_create_submit_rejects_a_claim_the_lease_contradicts() -> None:
 
 def test_create_submit_rejects_an_unknown_lease_without_inserting() -> None:
     cursor = StubCursor()
-    cursor.fail_rowcount("UPDATE admission_leases", 0)
+    cursor.fail_rowcount("SELECT lease_id FROM admission_leases", 0)
 
     with pytest.raises(InvalidExecutionRequestError, match="unknown lease"):
         create_submit_in_transaction(cursor, INTENT, "{}")
@@ -296,7 +299,13 @@ def test_read_submit_intent_reports_rows_it_cannot_reinterpret(broken: dict[str,
 
 
 def test_save_requires_exactly_one_newer_version_and_the_read_version() -> None:
-    cursor = StubCursor()
+    cursor = StubCursor(
+        {
+            "FROM submit_intents AS s": [stored_row()],
+            "SELECT pool_id FROM resource_pools": [{"pool_id": "tts-realtime"}],
+            "SELECT submit_intent_id FROM submit_intents": [{"submit_intent_id": "intent-1"}],
+        }
+    )
     updated = read_submit_intent(
         StubCursor({"FROM submit_intents AS s": [stored_row()]}), "intent-1"
     )
@@ -311,8 +320,13 @@ def test_save_requires_exactly_one_newer_version_and_the_read_version() -> None:
 
 
 def test_save_reports_a_stale_version_instead_of_succeeding() -> None:
-    cursor = StubCursor()
-    cursor.fail_rowcount("default", 0)
+    cursor = StubCursor(
+        {
+            "FROM submit_intents AS s": [stored_row(version=9)],
+            "SELECT pool_id FROM resource_pools": [{"pool_id": "tts-realtime"}],
+            "SELECT submit_intent_id FROM submit_intents": [{"submit_intent_id": "intent-1"}],
+        }
+    )
     intent = SubmissionIntent(
         identity=IDENTITY,
         recorded_at=NOW,

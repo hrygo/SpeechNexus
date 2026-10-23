@@ -123,23 +123,24 @@ def _dereference_schema(
     if ref.startswith("#"):
         target_path = side.path
         target_git_ref = side.git_ref
-        target_document = side.document
+        resolved_document = side.document
         fragment = ref[1:]
     else:
         path_part, separator, fragment = ref.partition("#")
         target_path = posixpath.normpath(posixpath.join(posixpath.dirname(side.path), path_part))
         target_git_ref = side.git_ref
-        target_document = _load_schema_document(target_path, target_git_ref)
-        if target_document is None:
+        loaded_document = _load_schema_document(target_path, target_git_ref)
+        if loaded_document is None:
             return schema
+        resolved_document = loaded_document
         fragment = fragment if not separator or fragment.startswith("/") else f"/{fragment}"
 
-    target = _resolve_local_pointer(_mapping(target_document) or {}, fragment)
+    target = _resolve_local_pointer(_mapping(resolved_document) or {}, fragment)
     if target is None:
         return schema
     resolved = _dereference_schema(
         target,
-        _SchemaSide(target_document, target_path, target_git_ref),
+        _SchemaSide(resolved_document, target_path, target_git_ref),
         seen | {identity},
     )
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}

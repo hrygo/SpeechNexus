@@ -1595,3 +1595,12 @@ def test_output_ceiling_cannot_be_introduced_after_generated_output(
             WHERE submit_intent_id = 'intent-late-ceiling'
             """
         )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET sample_rate_hz = NULL,
+                hard_output_ceiling_samples = 48000
+            WHERE submit_intent_id = 'intent-late-ceiling'
+            """
+        )

@@ -1585,11 +1585,25 @@ def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> N
         "command_digest": "sha256:" + "2" * 64,
         "deadline_at": "2026-10-22T01:00:00Z",
         "max_output_audio_ms": 30_000,
+        "sample_rate_hz": 24_000,
     }
     submit_validator.validate(request)
     text_only_request = copy.deepcopy(request)
     text_only_request["max_output_audio_ms"] = None
+    text_only_request["sample_rate_hz"] = None
     submit_validator.validate(text_only_request)
+    audio_without_sample_rate = copy.deepcopy(request)
+    audio_without_sample_rate["sample_rate_hz"] = None
+    with pytest.raises(ValidationError):
+        submit_validator.validate(audio_without_sample_rate)
+    text_with_sample_rate = copy.deepcopy(text_only_request)
+    text_with_sample_rate["sample_rate_hz"] = 24_000
+    with pytest.raises(ValidationError):
+        submit_validator.validate(text_with_sample_rate)
+    unsupported_sample_rate = copy.deepcopy(request)
+    unsupported_sample_rate["sample_rate_hz"] = 8_000
+    with pytest.raises(ValidationError):
+        submit_validator.validate(unsupported_sample_rate)
 
     caller_path = copy.deepcopy(request)
     caller_path["staging_output_prefix"] = "staging/caller-controlled/"
@@ -1631,6 +1645,7 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         "fencing_token": 1,
         "command_digest": "sha256:" + "2" * 64,
         "deadline_at": "2026-10-22T01:00:00Z",
+        "sample_rate_hz": 24_000,
         "execution_state": "aborted",
         "cleanup_state": "complete",
         "stop_evidence_kind": "engine_abort_ack",
@@ -1804,6 +1819,7 @@ def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None
         "fencing_token": 7,
         "command_digest": "sha256:" + "2" * 64,
         "deadline_at": "2026-10-22T01:00:00Z",
+        "sample_rate_hz": 24_000,
         "execution_state": "executing",
         "cleanup_state": "pending",
         "idempotent_replay": True,
@@ -1817,6 +1833,7 @@ def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None
         "policy_revision_id",
         "command_digest",
         "deadline_at",
+        "sample_rate_hz",
     ):
         missing_identity = copy.deepcopy(response)
         del missing_identity[field]

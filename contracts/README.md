@@ -54,7 +54,10 @@ of defaults, units, enum domains, or stable error codes.
   `test_suite.scenario_ids` coverage without duplicates.
 - `capacity-manifest.schema.json`: hardware-neutral capacity, execution stage
   graph, loading peak, resource vector, cancellation/fencing capability, and
-  qualification manifest bound to an immutable `ModelBindingRevision`.
+  qualification manifest bound to an immutable `ModelBindingRevision`. Every
+  stage declares whether it emits PCM audio; an audio-emitting stage requires
+  at least one declared audio output format, and execution submission carries
+  the metering sample rate with the output-duration ceiling.
 - `internal/execution-control.openapi.yaml`: internal
   `ExecutionControlPort` protocol between the scheduler / workers / realtime
   gateway and `execution-gateway` (fenced two-phase submit intent barrier,

@@ -96,6 +96,7 @@ def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
         validator.validate(example)
         stage_ids = [stage["stage_id"] for stage in example["stage_graph"]]
         assert len(stage_ids) == len(set(stage_ids))
+        assert all(isinstance(stage["emits_audio_pcm"], bool) for stage in example["stage_graph"])
         binding = bindings[example["binding_revision_id"]]
         assert binding["execution_recipe"]["capacity_manifest_id"] == example["manifest_id"]
         assert binding["publication"]["capacity_manifest_id"] == example["manifest_id"]
@@ -198,6 +199,18 @@ def test_capacity_manifest_rejects_external_production_and_missing_parent_budget
     unknown_field["gpu_marketing_name"] = "NVIDIA GB10"
     with pytest.raises(ValidationError):
         validator.validate(unknown_field)
+
+    missing_audio_flag = copy.deepcopy(base_example)
+    del missing_audio_flag["stage_graph"][0]["emits_audio_pcm"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_audio_flag)
+
+    audio_stage_with_text_only_formats = copy.deepcopy(base_example)
+    audio_stage_with_text_only_formats["stage_graph"][0]["emits_audio_pcm"] = True
+    with pytest.raises(ValidationError):
+        validator.validate(audio_stage_with_text_only_formats)
+    audio_stage_with_text_only_formats["supported_output_formats"].append("wav")
+    validator.validate(audio_stage_with_text_only_formats)
 
 
 def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> None:

@@ -924,6 +924,7 @@ CREATE TABLE submit_intents (
         CHECK (
             generated_pcm_samples >= 0
             AND (sample_rate_hz IS NULL OR sample_rate_hz IN (16000, 24000, 48000))
+            AND (hard_output_ceiling_samples IS NULL OR sample_rate_hz IS NOT NULL)
             AND (
                 hard_output_ceiling_samples IS NULL
                 OR hard_output_ceiling_samples >= generated_pcm_samples

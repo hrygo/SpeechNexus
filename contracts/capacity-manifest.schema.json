@@ -106,6 +106,42 @@
     {
       "if": {
         "properties": {
+          "stage_graph": {
+            "contains": {
+              "type": "object",
+              "required": ["emits_audio_pcm"],
+              "properties": {
+                "emits_audio_pcm": {
+                  "const": true
+                }
+              }
+            }
+          }
+        },
+        "required": ["stage_graph"]
+      },
+      "then": {
+        "properties": {
+          "supported_output_formats": {
+            "contains": {
+              "enum": [
+                "pcm_s16le_16k_mono",
+                "pcm_s16le_24k_mono",
+                "wav",
+                "mp3",
+                "flac",
+                "ogg_opus",
+                "m4a_aac",
+                "webm_opus"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "management_mode": {
             "const": "external"
           }
@@ -400,6 +436,7 @@
         "engine_kind",
         "model_revision_digest",
         "required_for_admission",
+        "emits_audio_pcm",
         "resident_budget",
         "loading_peak_budget",
         "per_slot_incremental_budget",
@@ -421,6 +458,10 @@
         "required_for_admission": {
           "type": "boolean",
           "description": "True when this stage's readiness and incremental budget must be reserved atomically at admission time (e.g. 1.7B full_segment review or required alignment)."
+        },
+        "emits_audio_pcm": {
+          "type": "boolean",
+          "description": "True exactly for stages that emit PCM samples metered against max_output_audio_ms and the output sample intervals. Upstream token stages and text-only stages are false."
         },
         "resident_budget": {
           "$ref": "#/$defs/ResourceVector",
@@ -610,6 +651,7 @@
           "engine_kind": "onnx_runtime",
           "model_revision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
           "required_for_admission": true,
+          "emits_audio_pcm": false,
           "resident_budget": {
             "engine_active_slots": 0,
             "device_memory_bytes": 0,
@@ -654,6 +696,7 @@
           "engine_kind": "vllm",
           "model_revision_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
           "required_for_admission": true,
+          "emits_audio_pcm": false,
           "resident_budget": {
             "engine_active_slots": 0,
             "device_memory_bytes": 3221225472,
@@ -698,6 +741,7 @@
           "engine_kind": "vllm",
           "model_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
           "required_for_admission": true,
+          "emits_audio_pcm": false,
           "resident_budget": {
             "engine_active_slots": 0,
             "device_memory_bytes": 6442450944,

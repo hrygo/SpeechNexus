@@ -387,6 +387,7 @@ components:
         - command_digest
         - deadline_at
         - max_output_audio_ms
+        - sample_rate_hz
       properties:
         submit_intent_id:
           $ref: "#/components/schemas/Identifier"
@@ -437,10 +438,37 @@ components:
           description: |
             Hard output-audio ceiling for stages that synthesize audio. Use
             null for ASR, alignment, and other stages that cannot emit audio.
-            The gateway resolves the stage's declared PCM sample rate and stores
+            The referenced manifest stage must declare `emits_audio_pcm=true`
+            for a non-null value. The gateway stores
             `hard_output_ceiling_samples` as
-            `floor(max_output_audio_ms * sample_rate_hz / 1000)`. Null is
-            rejected for a manifest stage that can emit audio.
+            `floor(max_output_audio_ms * sample_rate_hz / 1000)`. A manifest
+            stage that emits audio PCM rejects a null value.
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
+          description: |
+            PCM sample rate used for output metering. Required and non-null
+            exactly when `max_output_audio_ms` is non-null; null for text-only
+            stages.
+      allOf:
+        - if:
+            properties:
+              max_output_audio_ms:
+                type: integer
+            required: [max_output_audio_ms]
+          then:
+            properties:
+              sample_rate_hz:
+                enum: [16000, 24000, 48000]
+        - if:
+            properties:
+              max_output_audio_ms:
+                type: "null"
+            required: [max_output_audio_ms]
+          then:
+            properties:
+              sample_rate_hz:
+                type: "null"
     ExecutionStateInvariants:
       type: object
       description: |
@@ -598,6 +626,7 @@ components:
         - fencing_token
         - command_digest
         - deadline_at
+        - sample_rate_hz
         - execution_state
         - cleanup_state
         - idempotent_replay
@@ -642,6 +671,9 @@ components:
         deadline_at:
           type: string
           format: date-time
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
         engine_request_id:
           type: [string, "null"]
           minLength: 1
@@ -708,6 +740,7 @@ components:
         - fencing_token
         - command_digest
         - deadline_at
+        - sample_rate_hz
         - execution_state
         - cleanup_state
         - stop_evidence_kind
@@ -752,6 +785,9 @@ components:
         deadline_at:
           type: string
           format: date-time
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
         engine_request_id:
           type: [string, "null"]
         execution_state:

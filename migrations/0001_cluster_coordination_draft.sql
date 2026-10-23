@@ -788,7 +788,9 @@ CREATE TABLE gateway_fencing_barriers (
 
     PRIMARY KEY (gateway_id, pool_id),
     CONSTRAINT ck_gateway_barriers_fencing_positive
-        CHECK (enforced_min_fencing_token >= 1)
+        CHECK (enforced_min_fencing_token >= 1),
+    CONSTRAINT ck_gateway_barriers_sealed
+        CHECK (barrier_sealed = TRUE)
 );
 
 -- ============================================================================
@@ -1307,6 +1309,25 @@ BEGIN
         OR NEW.admitted_at IS DISTINCT FROM OLD.admitted_at
         OR NEW.deadline_at IS DISTINCT FROM OLD.deadline_at THEN
         RAISE EXCEPTION 'admission lease identity and reservation are immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.quarantined_at IS NOT NULL
+        AND NEW.quarantined_at IS DISTINCT FROM OLD.quarantined_at THEN
+        RAISE EXCEPTION 'quarantine observation time is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.quarantine_release_evidence_kind IS NOT NULL
+        AND (
+            NEW.quarantine_release_evidence_kind
+                IS DISTINCT FROM OLD.quarantine_release_evidence_kind
+            OR NEW.quarantine_release_evidence_digest
+                IS DISTINCT FROM OLD.quarantine_release_evidence_digest
+            OR NEW.quarantine_release_observed_at
+                IS DISTINCT FROM OLD.quarantine_release_observed_at
+            OR NEW.quarantine_release_reason
+                IS DISTINCT FROM OLD.quarantine_release_reason
+        ) THEN
+        RAISE EXCEPTION 'quarantine release evidence is immutable once recorded'
             USING ERRCODE = '23514';
     END IF;
     RETURN NEW;

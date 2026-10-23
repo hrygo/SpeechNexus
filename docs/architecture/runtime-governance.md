@@ -83,7 +83,7 @@ date: 2026-10-23
 
 隔离账目覆盖统一内存、设备内存、主机内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
 
-数据库是上述终止与释放规则的兜底边界，而不是只靠应用顺序：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一约束失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。
+数据库是上述终止与释放规则的兜底边界，而不是只靠应用顺序：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；隔离观察时间与释放证据不可改写；gateway fencing barrier 保持 sealed 且 token 不下降；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一约束失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。
 
 ### 1.5 准入与引擎内部 batching 的关系
 

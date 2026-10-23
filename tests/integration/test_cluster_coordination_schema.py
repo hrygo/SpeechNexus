@@ -877,6 +877,36 @@ def test_quarantined_lease_requires_evidence_to_release(
             (_DIGEST,),
         )
 
+    observed_at = "2026-10-23 00:00:00+00"
+    db.execute(
+        """
+        UPDATE admission_leases
+        SET quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
+            quarantine_release_evidence_digest = %s,
+            quarantine_release_observed_at = %s,
+            quarantine_release_reason = 'operator confirmed the old container exited'
+        WHERE lease_id = 'lease-release'
+        """,
+        (_DIGEST, observed_at),
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET quarantine_release_evidence_digest = %s
+            WHERE lease_id = 'lease-release'
+            """,
+            ("sha256:" + "b" * 64,),
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE admission_leases
+            SET quarantined_at = CURRENT_TIMESTAMP + INTERVAL '1 hour'
+            WHERE lease_id = 'lease-release'
+            """
+        )
+
     db.execute(
         """
         UPDATE admission_leases
@@ -884,12 +914,12 @@ def test_quarantined_lease_requires_evidence_to_release(
             cleanup_state = 'complete',
             quarantine_release_evidence_kind = 'operator_verified_instance_terminated',
             quarantine_release_evidence_digest = %s,
-            quarantine_release_observed_at = CURRENT_TIMESTAMP - INTERVAL '1 second',
+            quarantine_release_observed_at = %s,
             quarantine_release_reason = 'operator confirmed the old container exited',
-            budget_released_at = CURRENT_TIMESTAMP
+            budget_released_at = %s
         WHERE lease_id = 'lease-release'
         """,
-        (_DIGEST,),
+        (_DIGEST, observed_at, observed_at),
     )
     row = db.execute(
         """
@@ -1818,6 +1848,14 @@ def test_fencing_is_monotonic_and_updated_at_is_refreshed(
             """
             UPDATE gateway_fencing_barriers
             SET enforced_min_fencing_token = 4
+            WHERE gateway_id = 'gateway-1' AND pool_id = 'asr-realtime'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE gateway_fencing_barriers
+            SET barrier_sealed = FALSE
             WHERE gateway_id = 'gateway-1' AND pool_id = 'asr-realtime'
             """
         )

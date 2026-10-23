@@ -182,7 +182,9 @@ stop evidence are immutable. An admission lease cannot become `released` or
 `quarantined` while an attached submit intent is still active; `released`
 additionally requires no unresolved `unknown_quarantined` execution. A stopped
 engine generation cannot retain an unreleased admission lease or a non-terminal
-submit intent.
+submit intent. Once recorded, an admission lease's quarantine observation time
+and release evidence are immutable; a gateway fencing barrier is permanently
+sealed and its minimum accepted token cannot decrease.
 
 ## OpenAI compatibility
 

@@ -19,16 +19,29 @@
     "source": "internal/coordination-transactions.schema.json",
     "definitions_prefix": "/$defs/",
     "title": "CoordinationJobContract",
-    "schemas": ["create_job", "TransactionResult"]
+    "schemas": [
+      "create_job",
+      "TransactionResult",
+      "acquire_owner",
+      "renew_owner",
+      "activate_owner",
+      "query_outcome"
+    ]
   },
   "profiles": {
     "admin": {
       "source": "admin-openapi.yaml",
-      "schemas": ["WorkspaceCreateRequest", "WorkspacePatch"]
+      "schemas": [
+        "WorkspaceCreateRequest",
+        "WorkspacePatch"
+      ]
     },
     "workbench": {
       "source": "workbench-openapi.yaml",
-      "schemas": ["ProjectCreateRequest", "ProjectPatch"]
+      "schemas": [
+        "ProjectCreateRequest",
+        "ProjectPatch"
+      ]
     },
     "execution": {
       "source": "internal/execution-control.openapi.yaml",

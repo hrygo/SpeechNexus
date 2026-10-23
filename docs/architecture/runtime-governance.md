@@ -21,6 +21,8 @@ date: 2026-10-22
 
 资格报告按 `capacity_manifest_id` 为执行图中的每个 `stage_id` 记录实际的 engine kind、镜像摘要与 runtime 版本；单镜像字段不能代表包含 VAD、ASR 复核或 TTS 多 stage 的完整配方。草稿可以声明目标 `production` tier，但只有发布、退役和紧急禁用状态必须绑定已通过的必要场景与完整 stage 软件身份。`production` 资格至少包含一个 required scenario，并须全部 passed、整体 pass 且设置到期时间；managed 容量必须声明 fencing barrier，engine abort 模式必须声明真实 request abort，production 还必须声明硬输出上限。
 
+资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。
+
 资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
 
 完整执行图也覆盖实时 ASR 的定稿依赖。启用 `full_segment` 的配方必须把 1.7B 复核的就绪、保留预算和等待期限纳入实时资格，required 对齐 / 分人亦同；不能仅按 0.6B 预览占用宣称可准入。文件任务即使复用该实例，也只能使用不破坏实时承诺的预算。绑定 revision / 资格、具体实例及 generation、准入租约各自独立记录，空闲卸载不退役绑定。

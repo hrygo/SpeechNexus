@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/qualification-report.schema.json",
   "title": "DeploymentQualificationReport",
-  "description": "Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires every required scenario to pass; skipped, failed, or missing evidence stays experimental or best_effort.",
+  "description": "Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires at least one required scenario and every required scenario to pass. Optional scenario results are advisory and do not gate production; a non-passing optional result must be recorded in limitations. Scenario identifiers must exactly match test_suite.scenario_ids with no duplicates, which producer validation enforces because JSON Schema cannot compare array values across properties.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -62,11 +62,12 @@
     },
     "required_scenarios_passed": {
       "type": "boolean",
-      "description": "Computed over scenarios with required=true. Production reports must set this to true."
+      "description": "Computed over scenarios with required=true: true exactly when at least one required scenario exists and every required scenario has status=passed. Optional results do not change this value."
     },
     "overall_status": {
       "type": "string",
-      "enum": ["pass", "fail", "incomplete"]
+      "enum": ["pass", "fail", "incomplete"],
+      "description": "Computed over required scenarios only: fail when any required scenario failed; pass when required_scenarios_passed=true; otherwise incomplete. Optional results are advisory."
     },
     "limitations": {
       "type": "array",
@@ -116,6 +117,62 @@
               },
               "then": {
                 "properties": {"status": {"const": "passed"}}
+              }
+            }
+          },
+          "overall_status": {"const": "pass"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"overall_status": {"const": "pass"}},
+        "required": ["overall_status"]
+      },
+      "then": {
+        "properties": {
+          "required_scenarios_passed": {"const": true}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"overall_status": {"const": "fail"}},
+        "required": ["overall_status"]
+      },
+      "then": {
+        "properties": {
+          "required_scenarios_passed": {"const": false},
+          "scenarios": {
+            "contains": {
+              "type": "object",
+              "required": ["required", "status"],
+              "properties": {
+                "required": {"const": true},
+                "status": {"const": "failed"}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"overall_status": {"const": "incomplete"}},
+        "required": ["overall_status"]
+      },
+      "then": {
+        "properties": {
+          "required_scenarios_passed": {"const": false},
+          "scenarios": {
+            "not": {
+              "contains": {
+                "type": "object",
+                "required": ["required", "status"],
+                "properties": {
+                  "required": {"const": true},
+                  "status": {"const": "failed"}
+                }
               }
             }
           }

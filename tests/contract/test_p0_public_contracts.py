@@ -131,6 +131,28 @@ def _component_validator(document: dict[str, Any], name: str) -> jsonschema.Draf
     return _validator(schema)
 
 
+def _assert_qualification_semantics(report: dict[str, Any]) -> None:
+    """Executable reference rules that JSON Schema cannot express across arrays."""
+    scenarios = cast(list[dict[str, Any]], report["scenarios"])
+    scenario_ids = [cast(str, scenario["scenario_id"]) for scenario in scenarios]
+    declared_ids = set(cast(list[str], report["test_suite"]["scenario_ids"]))
+    if len(scenario_ids) != len(set(scenario_ids)):
+        raise ValueError("scenario evidence contains duplicate scenario_id values")
+    if set(scenario_ids) != declared_ids or len(scenario_ids) != len(declared_ids):
+        raise ValueError("scenario evidence must match test_suite.scenario_ids one-to-one")
+
+    required = [scenario for scenario in scenarios if scenario["required"]]
+    required_failed = any(scenario["status"] == "failed" for scenario in required)
+    required_passed = bool(required) and all(
+        scenario["status"] == "passed" for scenario in required
+    )
+    expected_overall = "fail" if required_failed else "pass" if required_passed else "incomplete"
+    if report["required_scenarios_passed"] is not required_passed:
+        raise ValueError("required_scenarios_passed does not match required scenario results")
+    if report["overall_status"] != expected_overall:
+        raise ValueError("overall_status does not match required scenario results")
+
+
 def _multipart_fields(request: httpx.Request) -> dict[str, bytes]:
     content_type = request.headers["content-type"]
     raw = b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + request.content
@@ -872,6 +894,8 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
         assert examples
         for example in examples:
             validator.validate(example)
+            if path == _QUALIFICATION_SCHEMA:
+                _assert_qualification_semantics(example)
 
     binding_schema = _load_json(_BINDING_SCHEMA)
     binding_validator = _validator(binding_schema)
@@ -938,6 +962,29 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     false_required_pass_claim["required_scenarios_passed"] = True
     with pytest.raises(ValidationError):
         qualification_validator.validate(false_required_pass_claim)
+    pass_without_required = copy.deepcopy(completed_production)
+    pass_without_required["required_scenarios_passed"] = False
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(pass_without_required)
+    fail_without_failed_required = copy.deepcopy(completed_production)
+    fail_without_failed_required["overall_status"] = "fail"
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(fail_without_failed_required)
+    failed_required = copy.deepcopy(cast(list[dict[str, Any]], qualification_schema["examples"])[0])
+    failed_required["scenarios"][0]["status"] = "failed"
+    failed_required["required_scenarios_passed"] = False
+    failed_required["overall_status"] = "fail"
+    qualification_validator.validate(failed_required)
+    _assert_qualification_semantics(failed_required)
+    incompletely_failed_required = copy.deepcopy(failed_required)
+    incompletely_failed_required["overall_status"] = "incomplete"
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(incompletely_failed_required)
+    optional_failure = copy.deepcopy(completed_production)
+    optional_failure["scenarios"][0]["required"] = False
+    optional_failure["scenarios"][0]["status"] = "failed"
+    qualification_validator.validate(optional_failure)
+    _assert_qualification_semantics(optional_failure)
     shared_domains = _load_json(_CONTRACTS / "shared" / "capability-domains.schema.json")
     raw_qualification_schema = json.loads(_QUALIFICATION_SCHEMA.read_text(encoding="utf-8"))
     assert raw_qualification_schema["$defs"]["MemoryArchitecture"] == {
@@ -970,6 +1017,17 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     assert set(qualification_example["test_suite"]["scenario_ids"]) == {
         scenario["scenario_id"] for scenario in qualification_example["scenarios"]
     }
+    mismatched_scenario_ids = copy.deepcopy(qualification_example)
+    mismatched_scenario_ids["test_suite"]["scenario_ids"][0] = "scenario-not-recorded"
+    # Structural schema validation cannot compare array values across properties.
+    qualification_validator.validate(mismatched_scenario_ids)
+    with pytest.raises(ValueError, match="one-to-one"):
+        _assert_qualification_semantics(mismatched_scenario_ids)
+    duplicate_scenario = copy.deepcopy(qualification_example)
+    duplicate_scenario["scenarios"].append(copy.deepcopy(duplicate_scenario["scenarios"][0]))
+    qualification_validator.validate(duplicate_scenario)
+    with pytest.raises(ValueError, match="duplicate scenario_id"):
+        _assert_qualification_semantics(duplicate_scenario)
     missing_engine_identity = copy.deepcopy(qualification_example)
     del missing_engine_identity["software"]["engine_components"]["stage-silero-vad"]["image_digest"]
     with pytest.raises(ValidationError):

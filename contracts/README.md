@@ -49,6 +49,9 @@ of defaults, units, enum domains, or stable error codes.
 - `qualification-report.schema.json`: per-binding, per-topology qualification
   evidence, including the exact image and runtime identity for every execution
   stage. A production release tier requires all required scenarios to pass.
+  `required_scenarios_passed` and `overall_status` are computed from required
+  scenario results; producer validation additionally enforces one-to-one
+  `test_suite.scenario_ids` coverage without duplicates.
 - `capacity-manifest.schema.json`: hardware-neutral capacity, execution stage
   graph, loading peak, resource vector, cancellation/fencing capability, and
   qualification manifest bound to an immutable `ModelBindingRevision`.

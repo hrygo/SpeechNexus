@@ -119,9 +119,9 @@
     "Base64Audio": {
       "type": "string",
       "minLength": 4,
-      "maxLength": 262144,
+      "maxLength": 65536,
       "contentEncoding": "base64",
-      "description": "Base64-encoded PCM16 little-endian bytes. The decoded byte length must be even and must match the negotiated wire format."
+      "description": "Base64-encoded PCM16 little-endian bytes. The decoded byte length must be even and must match the negotiated wire format. The negotiated max_message_bytes applies to the entire JSON message, including the event envelope."
     },
     "JsonValue": {
       "anyOf": [
@@ -1921,6 +1921,9 @@
             "status": {
               "$ref": "#/$defs/TerminalOperationStatus"
             },
+            "cleanup_state": {
+              "$ref": "#/$defs/CleanupState"
+            },
             "receipt": {
               "oneOf": [
                 {
@@ -1953,7 +1956,8 @@
             "type",
             "operation_id",
             "kind",
-            "status"
+            "status",
+            "cleanup_state"
           ]
         },
         {
@@ -1981,6 +1985,19 @@
           },
           "then": {
             "properties": {"error": {"type": "null"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "cancelled"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
           }
         }
       ]
@@ -2308,6 +2325,7 @@
       "operation_id": "op_asr_1",
       "kind": "asr",
       "status": "succeeded",
+      "cleanup_state": "complete",
       "receipt": {
         "receipt_id": "rcpt_demo",
         "request_id": "req_demo",

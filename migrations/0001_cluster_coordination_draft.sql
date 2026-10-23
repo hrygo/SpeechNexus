@@ -558,6 +558,7 @@ CREATE TABLE admission_leases (
     lease_id TEXT PRIMARY KEY,
     operation_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
+    stage_id TEXT NOT NULL,
     workspace_id TEXT NOT NULL,
     service_class TEXT NOT NULL,
     pool_id TEXT NOT NULL REFERENCES resource_pools (pool_id) ON DELETE RESTRICT,
@@ -622,10 +623,14 @@ CREATE TABLE admission_leases (
         UNIQUE (lease_id, operation_id, attempt_id),
     CONSTRAINT uq_admission_leases_identity_pool
         UNIQUE (lease_id, pool_id),
+    CONSTRAINT uq_admission_leases_identity_stage
+        UNIQUE (lease_id, stage_id),
     CONSTRAINT uq_admission_leases_identity_workspace
         UNIQUE (lease_id, workspace_id),
-    CONSTRAINT uq_admission_leases_operation_attempt
-        UNIQUE (operation_id, attempt_id, pool_id),
+    -- A complete execution recipe owns one lease per required stage. Multiple
+    -- stages may use the same pool or instance, so uniqueness is by stage.
+    CONSTRAINT uq_admission_leases_operation_attempt_stage
+        UNIQUE (operation_id, attempt_id, stage_id),
     CONSTRAINT uq_admission_leases_execution_identity
         UNIQUE (
             lease_id,
@@ -636,6 +641,8 @@ CREATE TABLE admission_leases (
         ),
     CONSTRAINT ck_admission_leases_service_class
         CHECK (service_class IN ('realtime', 'interactive', 'batch')),
+    CONSTRAINT ck_admission_leases_stage_id_format
+        CHECK (stage_id ~ '^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'),
     CONSTRAINT ck_admission_leases_fencing_positive
         CHECK (fencing_token >= 1),
     CONSTRAINT ck_admission_leases_reservations_non_negative
@@ -785,6 +792,10 @@ CREATE TABLE submit_intents (
     CONSTRAINT fk_submit_intents_lease_identity
         FOREIGN KEY (lease_id, operation_id, attempt_id)
         REFERENCES admission_leases (lease_id, operation_id, attempt_id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_submit_intents_lease_stage
+        FOREIGN KEY (lease_id, stage_id)
+        REFERENCES admission_leases (lease_id, stage_id)
         ON DELETE RESTRICT,
     CONSTRAINT fk_submit_intents_lease_pool
         FOREIGN KEY (lease_id, pool_id)
@@ -986,6 +997,18 @@ CREATE TRIGGER trg_output_intervals_append_only
     BEFORE UPDATE OR DELETE ON output_sample_intervals
     FOR EACH ROW EXECUTE FUNCTION reject_output_interval_mutation();
 
+CREATE FUNCTION reject_output_interval_truncate() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'output sample intervals are append-only'
+        USING ERRCODE = '23514';
+END;
+$$;
+
+CREATE TRIGGER trg_output_intervals_no_truncate
+    BEFORE TRUNCATE ON output_sample_intervals
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_output_interval_truncate();
+
 -- PostgreSQL CHECK constraints cannot compare old and new row values. Keep the
 -- gateway fencing watermark monotonic with a trigger, using CHECK_VIOLATION so
 -- callers observe a stable SQLSTATE.
@@ -1072,6 +1095,19 @@ BEGIN
     IF OLD.sample_rate_hz IS NOT NULL
         AND NEW.sample_rate_hz IS DISTINCT FROM OLD.sample_rate_hz THEN
         RAISE EXCEPTION 'output sample rate is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    -- The hard ceiling is part of the admitted execution envelope. It may be
+    -- initialized before output evidence exists, but cannot move afterwards.
+    IF OLD.hard_output_ceiling_samples IS NOT NULL
+        AND NEW.hard_output_ceiling_samples IS DISTINCT FROM OLD.hard_output_ceiling_samples THEN
+        RAISE EXCEPTION 'hard output ceiling is immutable'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.hard_output_ceiling_samples IS NULL
+        AND OLD.generated_pcm_samples > 0
+        AND NEW.hard_output_ceiling_samples IS NOT NULL THEN
+        RAISE EXCEPTION 'hard output ceiling cannot be introduced after generated output'
             USING ERRCODE = '23514';
     END IF;
     RETURN NEW;

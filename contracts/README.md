@@ -45,7 +45,8 @@ of defaults, units, enum domains, or stable error codes.
   configuration digest, readiness, observed facts, stop evidence, and
   quarantine state.
 - `qualification-report.schema.json`: per-binding, per-topology qualification
-  evidence. A production release tier requires all required scenarios to pass.
+  evidence, including the exact image and runtime identity for every execution
+  stage. A production release tier requires all required scenarios to pass.
 - `capacity-manifest.schema.json`: hardware-neutral capacity, execution stage
   graph, loading peak, resource vector, cancellation/fencing capability, and
   qualification manifest bound to an immutable `ModelBindingRevision`.

@@ -163,7 +163,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 列表统一 `data`、`has_more`、`next_cursor`，按 `(created_at,id)` 排序；page limit 为 1–100，默认 50。游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
-`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度和产物字段必须与该事件类型匹配。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
+`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
 创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
 
@@ -292,7 +292,7 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |
 | C→S `nexus.tts.cancel` | `event_id`、`utterance_id`；请求取消对应计算与发送 |
 | S→C `nexus.tts.audio.delta` | `operation_id`、`utterance_id`、`chunk_seq`、`audio`（Base64 PCM）、`start_sample`、`sample_count` |
-| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、receipt、error / reason；唯一逻辑终态，资源清理另报 `cleanup_state` |
+| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`、receipt、error / reason；唯一逻辑终态。`cancelled` 只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined` |
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的 sample_span / 原因；不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态及未成功 operation 的引用 |

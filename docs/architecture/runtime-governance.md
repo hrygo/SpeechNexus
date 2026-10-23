@@ -19,6 +19,8 @@ date: 2026-10-22
 
 每个 `ModelBindingRevision` 关联一份 `CapacityManifest`：支持任务与格式、模型 / 引擎 revision、部署拓扑引用、常驻预算、每 active slot 的增量资源上界、最大 active slots、预填充与输出速率限制、最大段预算、取消方式、最坏非抢占执行时间、资格报告与有效期。
 
+资格报告按 `capacity_manifest_id` 为执行图中的每个 `stage_id` 记录实际的 engine kind、镜像摘要与 runtime 版本；单镜像字段不能代表包含 VAD、ASR 复核或 TTS 多 stage 的完整配方。草稿可以声明目标 `production` tier，但只有发布、退役和紧急禁用状态必须绑定已通过的必要场景与完整 stage 软件身份。
+
 资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
 
 完整执行图也覆盖实时 ASR 的定稿依赖。启用 `full_segment` 的配方必须把 1.7B 复核的就绪、保留预算和等待期限纳入实时资格，required 对齐 / 分人亦同；不能仅按 0.6B 预览占用宣称可准入。文件任务即使复用该实例，也只能使用不破坏实时承诺的预算。绑定 revision / 资格、具体实例及 generation、准入租约各自独立记录，空闲卸载不退役绑定。

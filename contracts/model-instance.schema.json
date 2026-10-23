@@ -8,7 +8,8 @@
   "required": [
     "schema_version",
     "instance_id",
-    "node_id",
+    "host_node_id",
+    "gateway_id",
     "binding",
     "pool_id",
     "generation",
@@ -25,7 +26,10 @@
     "instance_id": {
       "$ref": "#/$defs/Identifier"
     },
-    "node_id": {
+    "host_node_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "gateway_id": {
       "$ref": "#/$defs/Identifier"
     },
     "binding": {
@@ -251,7 +255,8 @@
     {
       "schema_version": "1.0.0",
       "instance_id": "inst-asr-1",
-      "node_id": "node-gb10-1",
+      "host_node_id": "node-gb10-1",
+      "gateway_id": "gateway-1",
       "binding": {"id": "asr-quality", "revision": "7"},
       "pool_id": "asr-realtime",
       "generation": 42,
@@ -282,7 +287,8 @@
     {
       "schema_version": "1.0.0",
       "instance_id": "inst-tts-2",
-      "node_id": "node-gb10-1",
+      "host_node_id": "node-gb10-1",
+      "gateway_id": "gateway-1",
       "binding": {"id": "tts-interactive", "revision": "5"},
       "pool_id": "tts-realtime",
       "generation": 7,

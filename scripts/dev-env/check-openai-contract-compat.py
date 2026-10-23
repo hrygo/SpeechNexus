@@ -112,6 +112,24 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
     if "const" in base_schema and base_schema.get("const") != current_schema.get("const"):
         _issue(issues, pointer, "const value changed")
 
+    if ("default" in base_schema) != ("default" in current_schema):
+        _issue(issues, pointer, "default presence changed")
+    elif "default" in base_schema and base_schema.get("default") != current_schema.get("default"):
+        _issue(
+            issues,
+            pointer,
+            f"default changed from {base_schema.get('default')!r} "
+            f"to {current_schema.get('default')!r}",
+        )
+
+    if base_schema.get("format") != current_schema.get("format"):
+        _issue(
+            issues,
+            pointer,
+            f"format changed from {base_schema.get('format')!r} "
+            f"to {current_schema.get('format')!r}",
+        )
+
     base_enum = _sequence(base_schema.get("enum"))
     current_enum = _sequence(current_schema.get("enum"))
     if base_enum is not None:

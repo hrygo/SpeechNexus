@@ -570,6 +570,13 @@ def test_realtime_events_positive_and_negative_examples() -> None:
     with pytest.raises(ValidationError):
         validator.validate(unsupported_response)
 
+    oversized_append = copy.deepcopy(
+        next(e for e in examples if e["type"] == "input_audio_buffer.append")
+    )
+    oversized_append["audio"] = "A" * 65_540
+    with pytest.raises(ValidationError):
+        validator.validate(oversized_append)
+
     missing_event_id = copy.deepcopy(
         next(e for e in examples if e["type"] == "nexus.tts.append_text")
     )
@@ -610,6 +617,18 @@ def test_realtime_events_positive_and_negative_examples() -> None:
     }
     with pytest.raises(ValidationError):
         validator.validate(operation_done)
+    operation_done["status"] = "cancelled"
+    operation_done["reason"] = None
+    operation_done["error"] = None
+    operation_done["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        validator.validate(operation_done)
+    operation_done["cleanup_state"] = "complete"
+    validator.validate(operation_done)
+    operation_done["status"] = "failed"
+    operation_done["reason"] = "cancellation_unconfirmed"
+    operation_done["cleanup_state"] = "quarantined"
+    validator.validate(operation_done)
 
     for example in examples:
         unknown_field = copy.deepcopy(example)
@@ -848,6 +867,34 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
         for example in examples:
             validator.validate(example)
 
+    binding_schema = _load_json(_BINDING_SCHEMA)
+    binding_validator = _validator(binding_schema)
+    binding_example = copy.deepcopy(cast(list[dict[str, Any]], binding_schema["examples"])[0])
+    production_draft = copy.deepcopy(binding_example)
+    production_draft["release_tier"] = "production"
+    production_draft["publication"] = {
+        "status": "draft",
+        "published_at": None,
+        "retired_at": None,
+        "capacity_manifest_id": None,
+        "qualification_report_id": None,
+        "disabled_reason": None,
+    }
+    binding_validator.validate(production_draft)
+    draft_with_publish_timestamp = copy.deepcopy(production_draft)
+    draft_with_publish_timestamp["publication"]["published_at"] = "2026-10-22T09:00:00Z"
+    with pytest.raises(ValidationError):
+        binding_validator.validate(draft_with_publish_timestamp)
+
+    retired_binding = copy.deepcopy(binding_example)
+    retired_binding["publication"]["status"] = "retired"
+    retired_binding["publication"]["retired_at"] = "2026-10-22T10:00:00Z"
+    binding_validator.validate(retired_binding)
+    retired_without_timestamp = copy.deepcopy(retired_binding)
+    retired_without_timestamp["publication"]["retired_at"] = None
+    with pytest.raises(ValidationError):
+        binding_validator.validate(retired_without_timestamp)
+
     instance_schema = _load_json(_INSTANCE_SCHEMA)
     instance_validator = _validator(instance_schema)
     ready_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
@@ -867,6 +914,38 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     false_required_pass_claim["required_scenarios_passed"] = True
     with pytest.raises(ValidationError):
         qualification_validator.validate(false_required_pass_claim)
+    shared_domains = _load_json(_CONTRACTS / "shared" / "capability-domains.schema.json")
+    raw_qualification_schema = json.loads(_QUALIFICATION_SCHEMA.read_text(encoding="utf-8"))
+    assert raw_qualification_schema["$defs"]["MemoryArchitecture"] == {
+        "$ref": "shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
+    }
+    assert shared_domains["$defs"]["MemoryArchitecture"]["enum"] == [
+        "unified_memory",
+        "discrete_device_memory",
+    ]
+    qualification_topology = copy.deepcopy(
+        cast(list[dict[str, Any]], qualification_schema["examples"])[0]["topology"]
+    )
+    assert "host_node_id" in qualification_topology
+    with pytest.raises(ValidationError):
+        _validator({"$ref": "#/$defs/Topology", "$defs": qualification_schema["$defs"]}).validate(
+            {
+                **qualification_topology,
+                "memory_architecture": "host_only",
+            }
+        )
+    qualification_example = cast(list[dict[str, Any]], qualification_schema["examples"])[0]
+    engine_components = cast(
+        dict[str, dict[str, Any]], qualification_example["software"]["engine_components"]
+    )
+    assert len(engine_components) >= 2
+    assert {"stage-silero-vad", "stage-asr-review"} <= set(engine_components)
+    missing_engine_identity = copy.deepcopy(qualification_example)
+    del missing_engine_identity["software"]["engine_components"]["stage-silero-vad"][
+        "image_digest"
+    ]
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(missing_engine_identity)
 
     stopped_instance = copy.deepcopy(
         next(
@@ -916,6 +995,20 @@ def test_runtime_state_domains_are_shared_by_admin_and_internal_contracts() -> N
     ready_instance["state"] = "unknown_quarantined"
     with pytest.raises(ValidationError):
         instance_validator.validate(ready_instance)
+
+    canonical_instance = copy.deepcopy(
+        cast(list[dict[str, Any]], instance_schema["examples"])[0]
+    )
+    assert canonical_instance["host_node_id"] == "node-gb10-1"
+    assert canonical_instance["gateway_id"] == "gateway-1"
+    legacy_node_alias = copy.deepcopy(canonical_instance)
+    legacy_node_alias["node_id"] = legacy_node_alias.pop("host_node_id")
+    with pytest.raises(ValidationError):
+        instance_validator.validate(legacy_node_alias)
+    missing_gateway = copy.deepcopy(canonical_instance)
+    del missing_gateway["gateway_id"]
+    with pytest.raises(ValidationError):
+        instance_validator.validate(missing_gateway)
 
 
 def test_public_contract_enums_do_not_contain_yaml_boolean_typos() -> None:
@@ -1179,6 +1272,7 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
         "occurred_at": "2026-10-23T00:00:00Z",
         "data": {
             "status": "failed",
+            "cleanup_state": "quarantined",
             "error": {
                 "code": "engine_failure",
                 "message": "synthetic engine failure",
@@ -1197,6 +1291,13 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     mismatched_job_data["data"] = {"status": "queued"}
     with pytest.raises(ValidationError):
         job_event_validator.validate(mismatched_job_data)
+
+    false_cancelled_cleanup = copy.deepcopy(
+        next(example for example in job_examples if example["type"] == "job.cancelled")
+    )
+    false_cancelled_cleanup["data"]["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(false_cancelled_cleanup)
 
     workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
     export_event_validator = _component_validator(workbench, "ExportEvent")
@@ -1371,6 +1472,105 @@ def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> N
     watermark_with_derived_ms["generated_audio_ms"] = 1_000
     with pytest.raises(ValidationError):
         watermark_validator.validate(watermark_with_derived_ms)
+
+
+def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
+    execution = _resolved_yaml(_EXECUTION_CONTROL_OPENAPI)
+    status_validator = _component_validator(execution, "ExecutionStatusResponse")
+    status = {
+        "submit_intent_id": "intent-demo",
+        "lease_id": "lease-demo",
+        "operation_id": "op-demo",
+        "attempt_id": "att-demo",
+        "stage_id": "stage-demo",
+        "host_node_id": "node-demo",
+        "gateway_id": "gateway-demo",
+        "instance_id": "instance-demo",
+        "instance_generation": 1,
+        "fencing_token": 1,
+        "execution_state": "aborted",
+        "cleanup_state": "complete",
+        "stop_evidence_kind": "engine_abort_ack",
+        "output_watermark": None,
+        "staging_artifact_ref": None,
+        "error_code": None,
+        "updated_at": "2026-10-22T00:00:00Z",
+    }
+    status_validator.validate(status)
+
+    unconfirmed = copy.deepcopy(status)
+    unconfirmed["execution_state"] = "aborted"
+    unconfirmed["cleanup_state"] = "quarantined"
+    unconfirmed["stop_evidence_kind"] = "unconfirmed_timeout"
+    with pytest.raises(ValidationError):
+        status_validator.validate(unconfirmed)
+
+    quarantined = copy.deepcopy(status)
+    quarantined["execution_state"] = "unknown_quarantined"
+    quarantined["cleanup_state"] = "quarantined"
+    quarantined["stop_evidence_kind"] = "unconfirmed_timeout"
+    status_validator.validate(quarantined)
+
+    drain_validator = _component_validator(execution, "DrainInstanceResponse")
+    drained = {
+        "instance_id": "instance-demo",
+        "instance_generation": 1,
+        "drain_state": "drained",
+        "active_intent_count": 0,
+        "submitting_intent_count": 0,
+        "quarantined_intent_count": 0,
+        "safe_to_stop_instance": True,
+        "updated_at": "2026-10-22T00:00:00Z",
+    }
+    drain_validator.validate(drained)
+    still_active = copy.deepcopy(drained)
+    still_active["active_intent_count"] = 1
+    with pytest.raises(ValidationError):
+        drain_validator.validate(still_active)
+    still_active["drain_state"] = "draining"
+    still_active["safe_to_stop_instance"] = False
+    drain_validator.validate(still_active)
+
+    runtime = _resolved_yaml(_RUNTIME_CONTROL_OPENAPI)
+    intent_validator = _component_validator(runtime, "RuntimeInstanceIntentResponse")
+    stopped_intent = {
+        "intent_id": "intent-stop",
+        "target_node_id": "node-demo",
+        "instance_id": "instance-demo",
+        "instance_generation": 1,
+        "action": "stop",
+        "fencing_token": 1,
+        "intent_state": "succeeded",
+        "observed_instance_state": "stopped",
+        "reserved_memory": {
+            "architecture": "discrete_device_memory",
+            "peak": {
+                "unified_memory_bytes": 0,
+                "device_memory_bytes": 1024,
+                "host_memory_bytes": 512,
+            },
+            "steady": {
+                "unified_memory_bytes": 0,
+                "device_memory_bytes": 768,
+                "host_memory_bytes": 384,
+            },
+        },
+        "stop_evidence": {
+            "process_or_container_exited": True,
+            "resources_released_confirmed": True,
+            "verified_at": "2026-10-22T00:00:00Z",
+        },
+        "updated_at": "2026-10-22T00:00:00Z",
+    }
+    intent_validator.validate(stopped_intent)
+    missing_evidence = copy.deepcopy(stopped_intent)
+    missing_evidence["stop_evidence"] = None
+    with pytest.raises(ValidationError):
+        intent_validator.validate(missing_evidence)
+    false_evidence = copy.deepcopy(stopped_intent)
+    false_evidence["stop_evidence"]["resources_released_confirmed"] = False
+    with pytest.raises(ValidationError):
+        intent_validator.validate(false_evidence)
 
 
 def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:
@@ -1631,6 +1831,15 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
             {
                 "operation_id": "op-demo",
                 "kind": "asr",
+                "status": "cancelled",
+                "cleanup_state": "quarantined",
+            }
+        )
+    with pytest.raises(ValidationError):
+        terminal_validator.validate(
+            {
+                "operation_id": "op-demo",
+                "kind": "asr",
                 "status": "quarantined",
                 "cleanup_state": "quarantined",
             }
@@ -1673,6 +1882,13 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     failed_job["status"] = "succeeded"
     with pytest.raises(ValidationError):
         job_validator.validate(failed_job)
+    cancelled_job = copy.deepcopy(job)
+    cancelled_job["status"] = "cancelled"
+    cancelled_job["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        job_validator.validate(cancelled_job)
+    cancelled_job["cleanup_state"] = "complete"
+    job_validator.validate(cancelled_job)
 
     operation: dict[str, Any] = {
         "id": "op-demo",
@@ -1699,6 +1915,10 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     }
     operation_validator.validate(failed_operation)
     failed_operation["status"] = "cancelled"
+    with pytest.raises(ValidationError):
+        operation_validator.validate(failed_operation)
+    failed_operation["error"] = None
+    failed_operation["cleanup_state"] = "quarantined"
     with pytest.raises(ValidationError):
         operation_validator.validate(failed_operation)
 

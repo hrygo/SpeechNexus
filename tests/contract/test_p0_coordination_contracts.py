@@ -76,6 +76,8 @@ def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
     assert len(examples) >= 1
     for example in examples:
         validator.validate(example)
+        stage_ids = [stage["stage_id"] for stage in example["stage_graph"]]
+        assert len(stage_ids) == len(set(stage_ids))
 
 
 def test_capacity_manifest_envelope_aggregation_is_frozen() -> None:
@@ -202,6 +204,8 @@ def test_cluster_coordination_sql_draft_defines_required_tables_and_invariants()
         "fk_runtime_intents_execution_identity",
         "ck_submit_intents_fencing_positive",
         "fk_admission_leases_execution_identity",
+        "uq_admission_leases_operation_attempt_stage",
+        "fk_submit_intents_lease_stage",
         "fk_submit_intents_lease_execution_identity",
         "uq_submit_intents_operation_attempt_stage",
         "uq_engine_instances_execution_identity",

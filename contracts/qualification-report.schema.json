@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/qualification-report.schema.json",
   "title": "DeploymentQualificationReport",
-  "description": "Evidence that a specific immutable binding, engine image, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires every required scenario to pass; skipped, failed, or missing evidence stays experimental or best_effort.",
+  "description": "Evidence that a specific immutable binding, every execution-stage engine image and runtime, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires every required scenario to pass; skipped, failed, or missing evidence stays experimental or best_effort.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -143,6 +143,12 @@
     "ReleaseTier": {
       "$ref": "shared/capability-domains.schema.json#/$defs/ReleaseTier"
     },
+    "MemoryArchitecture": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
+    },
+    "EngineKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/EngineKind"
+    },
     "BindingReference": {
       "$ref": "shared/references.schema.json#/$defs/ResourceReference"
     },
@@ -150,14 +156,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "node_id",
+        "host_node_id",
         "cpu_arch",
         "hardware_class",
         "memory_architecture",
         "total_physical_memory_bytes"
       ],
       "properties": {
-        "node_id": {"$ref": "#/$defs/Identifier"},
+        "host_node_id": {"$ref": "#/$defs/Identifier"},
         "cpu_arch": {
           "type": "string",
           "enum": ["x86_64", "arm64"]
@@ -168,8 +174,7 @@
           "maxLength": 128
         },
         "memory_architecture": {
-          "type": "string",
-          "enum": ["unified", "discrete", "host_only"]
+          "$ref": "#/$defs/MemoryArchitecture"
         },
         "total_physical_memory_bytes": {
           "type": "integer",
@@ -202,8 +207,7 @@
       "required": [
         "application_version",
         "contract_version",
-        "engine_image_digest",
-        "engine_runtime_version"
+        "engine_components"
       ],
       "properties": {
         "application_version": {
@@ -216,8 +220,31 @@
           "minLength": 1,
           "maxLength": 64
         },
-        "engine_image_digest": {"$ref": "#/$defs/Sha256Digest"},
-        "engine_runtime_version": {
+        "engine_components": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Exact software identity for every execution stage in the referenced capacity manifest. Publication validation requires one component per stage_id and rejects conflicting or missing evidence.",
+          "propertyNames": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineComponent"
+          }
+        }
+      }
+    },
+    "EngineComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_kind",
+        "image_digest",
+        "runtime_version"
+      ],
+      "properties": {
+        "engine_kind": {"$ref": "#/$defs/EngineKind"},
+        "image_digest": {"$ref": "#/$defs/Sha256Digest"},
+        "runtime_version": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
@@ -301,10 +328,10 @@
       "capacity_manifest_id": "cap-asr-realtime-4",
       "release_tier": "experimental",
       "topology": {
-        "node_id": "node-gb10-1",
+        "host_node_id": "node-gb10-1",
         "cpu_arch": "arm64",
         "hardware_class": "nvidia-gb10-single-node",
-        "memory_architecture": "unified",
+        "memory_architecture": "unified_memory",
         "total_physical_memory_bytes": 137438953472,
         "device_memory_bytes": 137438953472,
         "shared_memory": {
@@ -315,8 +342,18 @@
       "software": {
         "application_version": "0.1.0.dev0",
         "contract_version": "1.0.0",
-        "engine_image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        "engine_runtime_version": "vllm-2026.10"
+        "engine_components": {
+          "stage-silero-vad": {
+            "engine_kind": "onnx_runtime",
+            "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "runtime_version": "onnxruntime-1.23"
+          },
+          "stage-asr-review": {
+            "engine_kind": "vllm",
+            "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "runtime_version": "vllm-2026.10"
+          }
+        }
       },
       "test_suite": {
         "revision": "1",

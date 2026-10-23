@@ -410,6 +410,35 @@ components:
           description: |
             Hard output-audio ceiling for stages that synthesize audio. Use
             null for ASR, alignment, and other stages that cannot emit audio.
+    ExecutionStateInvariants:
+      type: object
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                const: aborted
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: complete
+              stop_evidence_kind:
+                enum:
+                  - engine_abort_ack
+                  - engine_terminal_response
+                  - instance_terminated_by_controller
+                  - operator_verified_instance_terminated
+        - if:
+            properties:
+              execution_state:
+                const: unknown_quarantined
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: quarantined
+              stop_evidence_kind:
+                const: unconfirmed_timeout
     SubmitExecutionResponse:
       type: object
       additionalProperties: false
@@ -458,6 +487,8 @@ components:
         recorded_at:
           type: string
           format: date-time
+      allOf:
+        - $ref: "#/components/schemas/ExecutionStateInvariants"
     AbortExecutionRequest:
       type: object
       additionalProperties: false
@@ -552,6 +583,8 @@ components:
         updated_at:
           type: string
           format: date-time
+      allOf:
+        - $ref: "#/components/schemas/ExecutionStateInvariants"
     GatewayFencingBarrierRequest:
       type: object
       additionalProperties: false
@@ -591,7 +624,7 @@ components:
           type: integer
           minimum: 1
         barrier_sealed:
-          type: boolean
+          const: true
         submitting_intent_ids:
           type: array
           items:
@@ -666,6 +699,31 @@ components:
         updated_at:
           type: string
           format: date-time
+      allOf:
+        - if:
+            properties:
+              drain_state:
+                const: drained
+            required: [drain_state]
+          then:
+            properties:
+              active_intent_count:
+                const: 0
+              submitting_intent_count:
+                const: 0
+              quarantined_intent_count:
+                const: 0
+              safe_to_stop_instance:
+                const: true
+        - if:
+            properties:
+              drain_state:
+                enum: [draining, quarantined]
+            required: [drain_state]
+          then:
+            properties:
+              safe_to_stop_instance:
+                const: false
     ExecutionControlErrorResponse:
       type: object
       additionalProperties: false

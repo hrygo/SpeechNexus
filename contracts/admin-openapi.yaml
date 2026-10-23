@@ -325,7 +325,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
-        - name: node_id
+        - name: host_node_id
           in: query
           required: false
           schema:

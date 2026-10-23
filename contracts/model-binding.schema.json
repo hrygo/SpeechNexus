@@ -63,10 +63,12 @@
       "$ref": "#/$defs/ParameterDomains"
     },
     "release_tier": {
-      "$ref": "#/$defs/ReleaseTier"
+      "$ref": "#/$defs/ReleaseTier",
+      "description": "Publication claim for this revision. A draft may target production without evidence identifiers; any published, retired, or disabled production revision requires the bound capacity manifest and qualification report."
     },
     "publication": {
-      "$ref": "#/$defs/PublicationState"
+      "$ref": "#/$defs/PublicationState",
+      "description": "Mutable lifecycle projection over the immutable binding definition. Drafts cannot carry publication timestamps or evidence identifiers."
     },
     "supersedes_revision": {
       "oneOf": [
@@ -129,18 +131,179 @@
     {
       "if": {
         "properties": {
-          "release_tier": {
-            "const": "production"
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "draft"
+              }
+            },
+            "required": [
+              "status"
+            ]
           }
         },
-        "required": ["release_tier"]
+        "required": [
+          "publication"
+        ]
       },
       "then": {
         "properties": {
           "publication": {
-            "required": ["status", "capacity_manifest_id", "qualification_report_id"],
             "properties": {
-              "status": {"const": "published"}
+              "published_at": {
+                "type": "null"
+              },
+              "retired_at": {
+                "type": "null"
+              },
+              "capacity_manifest_id": {
+                "type": "null"
+              },
+              "qualification_report_id": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "retired_at": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "retired"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "published_at",
+              "retired_at",
+              "capacity_manifest_id",
+              "qualification_report_id"
+            ],
+            "properties": {
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "retired_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "qualification_report_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "release_tier": {
+                "const": "production"
+              }
+            },
+            "required": ["release_tier"]
+          },
+          {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "not": {
+                      "const": "draft"
+                    }
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "status",
+              "published_at",
+              "capacity_manifest_id",
+              "qualification_report_id"
+            ],
+            "properties": {
+              "status": {
+                "enum": ["published", "retired", "disabled"]
+              },
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "qualification_report_id": {
+                "$ref": "#/$defs/Identifier"
+              }
             }
           }
         }

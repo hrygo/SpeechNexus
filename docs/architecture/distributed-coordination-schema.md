@@ -32,7 +32,7 @@ erDiagram
 | `scheduler_pool_leases` | `speech`（scheduler） | 分池调度 Owner 租约，只绑定 `owner_scheduler_id`，不绑定容量节点；新 Owner 接管时先进入 `reconciling_takeover`，未完成旧网关屏障与在途协调前禁止转为 `active` |
 | `engine_instances` | `speech`（scheduler） | 动态运行实例（含 `instance_generation`、按内存架构分列的常驻 / 加载峰值 / 每槽预算、最大/保留/已用/隔离槽位）；未就绪前禁止提前释放 `peak_reservation_active`。同一 `instance_id` 可保留历史 `stopped` generation，但最多一个未停止 generation |
 | `runtime_instance_intents` | `speech`（scheduler / controller） | 节点级受限控制器（`node-controller`）的持久 `prepare` / `stop` 意图；按节点内存架构记录 peak / steady unified、device 与 host 向量。保留完整意图历史，仅对未解决状态去重。`stop` 意图未同时取得 `process_or_container_exited` 与 `resources_released_confirmed` 前禁止标记 `succeeded` |
-| `admission_leases` | `speech`（scheduler / worker） | 请求级跨层级容量租约；按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定同一实例 host / generation / pool / gateway / binding revision 与 workspace。严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型与摘要 |
+| `admission_leases` | `speech`（scheduler / worker） | 一个 operation attempt 的**每阶段**跨层级容量租约；完整执行配方在同一事务内为全部 required stage 各插入一行，多个 stage 可复用同一 pool / instance。按节点内存架构只使用 unified 或 device/host 增量计数，并通过复合外键绑定 stage、实例 host / generation / pool / gateway / binding revision 与 workspace。严格分离 `lease_state`（`reserved → executing → stopping → released / quarantined`）与 `cleanup_state`，`quarantined` 状态下禁止写入 `budget_released_at`；释放隔离租约必须同时记录证据类型与摘要 |
 | `gateway_fencing_barriers` | `gateway_control`（execution-gateway） | 网关按 `(gateway_id, pool_id)` 持久化的最小可接受 `fencing_token` 屏障，阻断旧 Scheduler 迟到提交 |
 | `submit_intents` | `gateway_control`（execution-gateway） | 两阶段提交屏障权威记录；按 `(operation_id, attempt_id, stage_id)` 唯一去重，外发前先持久化 `submitting`，无确切停止证据禁止转入 `aborted` |
 | `output_sample_intervals` | `gateway_control`（execution-gateway） | 只追加的输出样本区间权威账本；同一 `(operation_id, attempt_id, output_stream_id, meter_kind)` 的 `[sample_start, sample_end)` 禁止重叠，既有区间禁止改写或删除，避免标量水位覆盖先前 attempt / 区间证据。毫秒数只从 samples 与 sample rate 派生，不单独存储 |
@@ -65,12 +65,12 @@ erDiagram
 
 ### 3.2 三级拓扑跨层级原子准入（HostNode + EngineInstance + AdmissionLease）
 
-准入一次语音执行（或双工会话的组合资源）时，Scheduler 在单个事务内：
+准入一次语音执行（或双工会话的组合资源）时，Scheduler 必须按完整执行配方的每个 required stage 在**单个事务内插入全部租约**：
 
 1. 锁定 `scheduler_pool_leases`，验证自身为当前 `active` Owner 且租期有效，读取当前 `fencing_token`。
-2. 锁定目标 `host_nodes` 与 `engine_instances`（校验 `instance_state = 'ready'`、剩余槽位及实时保留比例）。
-3. 原子累加 `host_nodes.reserved_incremental_unified_memory_bytes`（及设备/主机/CPU/PCM 缓冲向量）与 `engine_instances.reserved_active_slots`。
-4. 插入 `admission_leases`（`lease_state = 'reserved'`, `cleanup_state = 'pending'`, 绑定 `fencing_token` 与 `instance_generation`）。
+2. 按统一的 `resource_pools → scheduler_pool_leases → host_nodes → engine_instances` 顺序锁定所有涉及的行，校验每个 `instance_state = 'ready'`、剩余槽位及实时保留比例。
+3. 原子累加每个目标 `host_nodes` 的增量向量与每个 `engine_instances` 的 active slots；同一 stage 不得重复计费，跨 stage 共用实例时按各自 per-slot 预算累计。
+4. 为每个 stage 插入一行 `admission_leases`（`lease_state = 'reserved'`, `cleanup_state = 'pending'`, 绑定 `stage_id`、`fencing_token` 与 `instance_generation`）；`(operation_id, attempt_id, stage_id)` 唯一。一个 stage 完成且停止证据成立后只释放该行预算，其他 stage 保持原租约。
 
 任一维度超出上限立即触发 `CHECK` 约束回滚，返回明确的容量或队列受限错误。
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 from pathlib import Path
 from types import ModuleType
@@ -140,3 +141,31 @@ def test_compat_gate_covers_shared_public_domains() -> None:
 
     issues = compare_json_schema(base, current, "shared/errors.schema.json")
     assert any("enum values removed" in issue for issue in issues)
+
+
+def test_compat_gate_rejects_changed_public_defaults_and_formats() -> None:
+    module = _load_compat_module()
+    compare_json_schema = cast(Any, module._compare_json_schema)
+    base = {
+        "type": "object",
+        "properties": {
+            "response_format": {"type": "string", "default": "json"},
+            "created_at": {"type": "string", "format": "date-time"},
+        },
+    }
+    current = {
+        "type": "object",
+        "properties": {
+            "response_format": {"type": "string", "default": "text"},
+            "created_at": {"type": "string", "format": "date"},
+        },
+    }
+
+    issues = compare_json_schema(base, current, "speech-openapi.yaml")
+    assert any("default changed" in issue for issue in issues)
+    assert any("format changed" in issue for issue in issues)
+
+    current = copy.deepcopy(base)
+    del current["properties"]["response_format"]["default"]
+    issues = compare_json_schema(base, current, "speech-openapi.yaml")
+    assert any("default presence changed" in issue for issue in issues)

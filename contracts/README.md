@@ -52,8 +52,13 @@ of defaults, units, enum domains, or stable error codes.
   revisions bind generation, validation, and publication references to their
   lifecycle status, and failure details occur only in the failed state.
   Publication eligibility requires a passed required `reusable_tts` check;
-  check names are unique per validation. Public projections never contain
-  backend handles, feature vectors, object keys, or paths.
+  check names are unique per validation. A publication echoes the succeeded
+  validation Job, and producer validation must atomically match its draft
+  revision, validation, and published VoiceRevision binding. The immutable
+  VoiceRevision source requires draft identity for designed / cloned voices,
+  a reference-asset digest for clones, and no draft identity for built-ins.
+  Public projections never contain backend handles, feature vectors, object
+  keys, or paths.
 - `model-binding.schema.json`: immutable logical model binding to engine,
   artifact set, execution recipe, parameter domains, capacity manifest, and
   qualification evidence, including a globally unique immutable `revision_id`

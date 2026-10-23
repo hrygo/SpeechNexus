@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 资源治理与持久化设计"
 status: active
-version: "0.5.3"
+version: "0.5.4"
 date: 2026-10-23
 ---
 

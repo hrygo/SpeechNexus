@@ -194,6 +194,69 @@ def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
         raise ValueError("publication-eligible voice requires a passed reusable_tts check")
 
 
+def _assert_voice_publication_semantics(
+    publication: dict[str, Any],
+    draft: dict[str, Any],
+    draft_revision: dict[str, Any],
+    validation: dict[str, Any],
+    voice_revision: dict[str, Any],
+) -> None:
+    """Executable identity chain for draft, validation, publication, and voice."""
+    draft_id = cast(str, publication["draft_id"])
+    draft_revision_number = cast(str, publication["draft_revision"])
+    voice_id = cast(str, publication["voice_id"])
+    voice_revision_number = cast(str, publication["voice_revision"])
+
+    if draft["id"] != draft_id or draft_revision["draft_id"] != draft_id:
+        raise ValueError("publication draft identity does not match the draft and revision")
+    if draft["kind"] != draft_revision["kind"]:
+        raise ValueError("voice draft kind differs from its revision kind")
+    if draft_revision["revision"] != draft_revision_number:
+        raise ValueError("publication draft revision does not identify the cited revision")
+    if validation["draft_id"] != draft_id:
+        raise ValueError("voice validation belongs to a different draft")
+    if validation["draft_revision"] != draft_revision_number:
+        raise ValueError("voice validation belongs to a different draft revision")
+    if publication["validation_id"] != validation["id"]:
+        raise ValueError("publication validation_id does not identify the cited validation")
+    if publication["validation_job_id"] != draft_revision["validation_job_id"]:
+        raise ValueError("publication and draft revision cite different validation jobs")
+    if validation["status"] != "passed" or not validation["publication_eligible"]:
+        raise ValueError("voice publication requires a passed publication-eligible validation")
+
+    if draft["current_voice_id"] != voice_id:
+        raise ValueError("voice draft current_voice_id does not identify the published voice")
+    if draft_revision["published_voice_id"] != voice_id:
+        raise ValueError("published draft revision identifies a different voice")
+    if draft_revision["published_voice_revision"] != voice_revision_number:
+        raise ValueError("published draft revision identifies a different voice revision")
+    if (
+        voice_revision["voice_id"] != voice_id
+        or voice_revision["revision"] != voice_revision_number
+    ):
+        raise ValueError("published voice revision does not match the publication")
+
+    source = cast(dict[str, Any], voice_revision["source"])
+    expected_source_type = "designed" if draft["kind"] == "design" else "cloned"
+    if source["type"] != expected_source_type:
+        raise ValueError("published voice source type does not match the draft kind")
+    if source["draft_id"] != draft_id or source["draft_revision"] != draft_revision_number:
+        raise ValueError("published voice source does not identify the draft revision")
+    if draft["kind"] == "clone" and source["source_asset_digest"] is None:
+        raise ValueError("cloned voice source requires the reference asset digest")
+
+    if voice_revision["model_binding"] != validation["model_binding"]:
+        raise ValueError("published voice and validation use different model bindings")
+    voice_validation = cast(dict[str, Any], voice_revision["validation"])
+    if (
+        voice_validation["validation_id"] != validation["id"]
+        or voice_validation["status"] != "passed"
+    ):
+        raise ValueError("published voice validation evidence does not match the validation")
+    if voice_revision["published_at"] != publication["published_at"]:
+        raise ValueError("publication and voice revision published_at values differ")
+
+
 def _multipart_fields(request: httpx.Request) -> dict[str, bytes]:
     content_type = request.headers["content-type"]
     raw = b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + request.content
@@ -712,6 +775,91 @@ def test_voice_resource_positive_and_negative_examples() -> None:
     )
     with pytest.raises(ValueError, match="unique"):
         _assert_voice_validation_semantics(duplicate_check_names)
+
+    publication = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_publication")
+    )
+    published_validation = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_validation")
+    )
+    published_candidate = copy.deepcopy(candidate)
+    published_candidate["status"] = "published"
+    published_candidate["validation_job_id"] = publication["validation_job_id"]
+    published_candidate["published_voice_id"] = publication["voice_id"]
+    published_candidate["published_voice_revision"] = publication["voice_revision"]
+    published_draft = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_draft")
+    )
+    published_draft["status"] = "published"
+    published_draft["current_voice_id"] = publication["voice_id"]
+    published_voice = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_revision")
+    )
+    validator.validate(published_candidate)
+    validator.validate(publication)
+    _assert_voice_publication_semantics(
+        publication,
+        published_draft,
+        published_candidate,
+        published_validation,
+        published_voice,
+    )
+
+    different_validation_job = copy.deepcopy(publication)
+    different_validation_job["validation_job_id"] = "job_other_validation"
+    validator.validate(different_validation_job)
+    with pytest.raises(ValueError, match="validation jobs"):
+        _assert_voice_publication_semantics(
+            different_validation_job,
+            published_draft,
+            published_candidate,
+            published_validation,
+            published_voice,
+        )
+
+    different_validation_revision = copy.deepcopy(published_validation)
+    different_validation_revision["draft_revision"] = "2"
+    validator.validate(different_validation_revision)
+    with pytest.raises(ValueError, match="different draft revision"):
+        _assert_voice_publication_semantics(
+            publication,
+            published_draft,
+            published_candidate,
+            different_validation_revision,
+            published_voice,
+        )
+
+    different_voice_binding = copy.deepcopy(published_voice)
+    different_voice_binding["model_binding"]["revision"] = "4"
+    validator.validate(different_voice_binding)
+    with pytest.raises(ValueError, match="different model bindings"):
+        _assert_voice_publication_semantics(
+            publication,
+            published_draft,
+            published_candidate,
+            published_validation,
+            different_voice_binding,
+        )
+
+    publication_without_job = copy.deepcopy(publication)
+    del publication_without_job["validation_job_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(publication_without_job)
+
+    published_without_preview = copy.deepcopy(published_candidate)
+    published_without_preview["preview_artifact_ids"] = []
+    with pytest.raises(ValidationError):
+        validator.validate(published_without_preview)
+
+    cloned_voice_without_source_digest = copy.deepcopy(published_voice)
+    cloned_voice_without_source_digest["source"]["type"] = "cloned"
+    with pytest.raises(ValidationError):
+        validator.validate(cloned_voice_without_source_digest)
+
+    builtin_voice_with_draft = copy.deepcopy(published_voice)
+    builtin_voice_with_draft["source"]["type"] = "builtin"
+    with pytest.raises(ValidationError):
+        validator.validate(builtin_voice_with_draft)
 
     voice_revision = copy.deepcopy(
         next(e for e in examples if e["resource_type"] == "voice_revision")

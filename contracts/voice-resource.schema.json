@@ -544,6 +544,9 @@
                 "not": {
                   "type": "null"
                 }
+              },
+              "preview_artifact_ids": {
+                "minItems": 1
               }
             }
           }
@@ -873,6 +876,7 @@
         "draft_revision",
         "voice_id",
         "voice_revision",
+        "validation_job_id",
         "validation_id",
         "manual_confirmation",
         "published_at"
@@ -898,6 +902,10 @@
         },
         "voice_revision": {
           "$ref": "#/$defs/Revision"
+        },
+        "validation_job_id": {
+          "$ref": "#/$defs/Identifier",
+          "description": "Succeeded durable Job that produced validation. Must equal VoiceDraftRevision.validation_job_id and the Job that returned this validation as its structured result."
         },
         "validation_id": {
           "$ref": "#/$defs/Identifier"
@@ -1017,7 +1025,103 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "builtin"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "draft_id": {
+                "type": "null"
+              },
+              "draft_revision": {
+                "type": "null"
+              },
+              "source_asset_digest": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "designed"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "draft_id",
+              "draft_revision"
+            ],
+            "properties": {
+              "draft_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "draft_revision": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "source_asset_digest": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "cloned"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "draft_id",
+              "draft_revision",
+              "source_asset_digest"
+            ],
+            "properties": {
+              "draft_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "draft_revision": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "source_asset_digest": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "VoiceRevision": {
       "type": "object",
@@ -1363,6 +1467,7 @@
       "draft_revision": "1",
       "voice_id": "voice_demo",
       "voice_revision": "1",
+      "validation_job_id": "job_validation_demo",
       "validation_id": "vval_demo",
       "manual_confirmation": true,
       "published_at": "2026-10-22T09:10:00Z"

@@ -298,8 +298,10 @@ uv run python scripts/dev-env/coordination-grants.py \
   --speech-role speech_runtime --gateway-role gateway_runtime
 ```
 
-当前没有生产协调数据；活动 SQL 只应用于新建 namespace，不作为旧草案的原地升级。
-未来部署迁移另建版本化迁移，先关闭新准入、封锁旧入口、完成/隔离在途执行；
+根目录活动 SQL 只用于新建隔离测试 namespace，不作为旧草案的原地升级。
+生产使用独立包内版本化迁移：已有[Job/outbox 单元](production-jobs.md)及
+[`0002_coordination` 存储基线](production-coordination-storage.md)，不导入原型工具。
+涉及既有协调结构/运行态的部署升级，须先关闭新准入、封锁旧入口、完成/隔离在途执行；
 在唯一权威库内备份并核对全部身份、generation/token high water、租约、提交、区间、
 删除账本和证据，构造当前指针、配方集合、投影与摘要后，再启用新入口。
 旧新结构或旧新数据库不得同时接受协调写入。

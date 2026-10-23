@@ -55,6 +55,8 @@ SpeechNexus 希望服务于三类需求：
 
 [首个生产协调单元](docs/architecture/production-jobs.md)已实现 Job/outbox 原子创建、完整身份幂等与未知提交只读恢复，含 PG adapter、最低角色和版本化迁移；它尚未接入公开业务路由，不代表完整公开 Job 或文件语音闭环已实现。
 
+[`0002_coordination` 生产存储基线](docs/architecture/production-coordination-storage.md)已补齐 15 张协调表及 A/B 最小权限，保留既有 Job/outbox 数据。其余调度、准入、网关事务与真实运行资格仍按所有权分别实现和验收。
+
 ### 通过 AdminUI 维护部署
 
 AdminUI 面向部署维护者，规划提供服务概览、模型与音色管理、预设配置、资源预算、全局任务和诊断入口。工作台与 AdminUI 分别组织使用任务和维护任务。

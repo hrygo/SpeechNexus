@@ -38,6 +38,15 @@ tests additionally terminate a real session or simulate a lost reply after an
 actual commit; the latter is not packet-loss or HA qualification. See the
 [production unit and deployment instructions](../../docs/architecture/production-jobs.md).
 
+`test_coordination_foundation.py` verifies the packaged `0002_coordination`
+storage baseline, core foreign keys, bounds and minimum A/B role permissions.
+PG applies actual migrations; InnoDB applies the same product DDL with only
+binary-collation and TEXT-to-LONGTEXT mappings. PG-only upgrade tests verify
+transactional DDL rollback, retained Job/outbox rows and grants, repeat upgrades,
+and observed advisory-lock waits in two separate migration processes. Synthetic
+admin fixture rows do not qualify scheduling/admission/dispatch or cleanup
+ordering; those production transactions remain their owners' work.
+
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \
 SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \

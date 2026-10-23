@@ -17,7 +17,9 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 运行角色只获最小 DML 权限。
 
 [首个生产 Job/outbox 单元](production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
-事件身份并以最低角色运行；不把本文件的 15 表草案作为生产迁移直接应用。
+事件身份并以最低角色运行；[后续生产存储基线](production-coordination-storage.md)以
+`0002_coordination` 冻结其余 13 表、基础约束与角色授权。产品不直接加载本文件的草案 SQL；
+具名生产事务和真实运行资格按各单元另行验收。
 
 程序的端口、原子步骤、锁序、错误/重放/未知结果、预算公式与后续编码交接详见
 [受控协调事务方案](coordination-transactions.md)；机器定义见
@@ -40,7 +42,7 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 | `execution_stop_evidence` | Gateway，只追加 | 已核验的停止与资源释放事实；独立于 Scheduler 的预算释放事务 |
 | `output_stream_heads` | Gateway | 按 operation/attempt/output stream 锁定；同一输出流的不同 stage/submit 共享重叠保护 |
 | `output_sample_intervals` | Gateway，只追加 | PCM 样本区间账本；重叠由锁定流权威行后的应用检查拒绝 |
-| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；尚无生产 Job 业务实现 |
+| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；已有生产原子创建/恢复，完整公开 Job 业务与 claim 仍待实现 |
 | `coordination_outbox` | 同上 | 与 Job 同事务写入；通知丢失时仍可轮询 |
 
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。

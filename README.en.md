@@ -55,6 +55,8 @@ Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-
 
 The [first production coordination unit (Chinese)](docs/architecture/production-jobs.md) implements atomic Job/outbox creation, full-identity replay and read-only recovery of unknown commits, with a PG adapter, minimum runtime grants and versioned migration. It is not connected to public business routes and does not implement the complete public Job or file-speech workflow.
 
+The [`0002_coordination` production storage foundation (Chinese)](docs/architecture/production-coordination-storage.md) completes the 15 coordination tables and minimum A/B role grants while preserving existing Job/outbox data. Remaining scheduling, admission and gateway transactions, and real runtime qualification, still require their owners' implementation and evidence.
+
 ### Maintain a deployment through AdminUI
 
 AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.

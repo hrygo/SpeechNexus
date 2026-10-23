@@ -11,9 +11,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY backend/README.md backend/pyproject.toml backend/
 COPY execution-gateway/README.md execution-gateway/pyproject.toml execution-gateway/
+COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY packages/contracts/pyproject.toml packages/contracts/
 COPY backend/src backend/src
 COPY execution-gateway/src execution-gateway/src
+COPY node-controller/src node-controller/src
 COPY packages/contracts/src packages/contracts/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=proxy_ca \

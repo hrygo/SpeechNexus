@@ -1541,8 +1541,7 @@ components:
     XAudioFormat:
       description: Actual audio encoding of the response body.
       schema:
-        type: string
-        enum: [mp3, wav, pcm]
+        $ref: "#/components/schemas/AudioFormat"
     XSampleRateHz:
       description: Actual output sample rate.
       schema:
@@ -1666,6 +1665,14 @@ components:
       $ref: "shared/capability-domains.schema.json#/$defs/ProfileReleaseTier"
     ServiceClass:
       $ref: "shared/capability-domains.schema.json#/$defs/ServiceClass"
+    AudioFormat:
+      $ref: "shared/capability-domains.schema.json#/$defs/AudioFormat"
+    TranscriptFormat:
+      $ref: "shared/capability-domains.schema.json#/$defs/TranscriptFormat"
+    TextCommitMode:
+      $ref: "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+    AuxiliaryMode:
+      $ref: "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
     ErrorResponse:
       $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
     ModelList:
@@ -1772,8 +1779,7 @@ components:
           type: string
           maxLength: 4000
         response_format:
-          type: string
-          enum: [json, text, verbose_json, srt, vtt]
+          $ref: "#/components/schemas/TranscriptFormat"
           default: json
         timestamp_granularities[]:
           type: array
@@ -1947,8 +1953,7 @@ components:
           type: string
           maxLength: 4096
         response_format:
-          type: string
-          enum: [mp3, wav, pcm]
+          $ref: "#/components/schemas/AudioFormat"
           default: mp3
         speed:
           type: number
@@ -2035,8 +2040,7 @@ components:
           type: string
           maxLength: 35
         text_commit_mode:
-          type: string
-          enum: [explicit, sentence]
+          $ref: "#/components/schemas/TextCommitMode"
         audio_delivery:
           const: complete
         seed:
@@ -2162,8 +2166,7 @@ components:
           type: array
           uniqueItems: true
           items:
-            type: string
-            enum: ["off", required, best_effort]
+            $ref: "#/components/schemas/AuxiliaryMode"
         max_speakers:
           type: [integer, "null"]
           minimum: 1
@@ -2253,8 +2256,7 @@ components:
           type: array
           uniqueItems: true
           items:
-            type: string
-            enum: [mp3, wav, pcm]
+            $ref: "#/components/schemas/AudioFormat"
     PronunciationList:
       type: object
       additionalProperties: false
@@ -2425,8 +2427,7 @@ components:
       additionalProperties: false
       properties:
         transcript_format:
-          type: string
-          enum: [json, text, verbose_json, srt, vtt]
+          $ref: "#/components/schemas/TranscriptFormat"
           default: json
         save_artifacts:
           type: boolean
@@ -2469,8 +2470,7 @@ components:
       additionalProperties: false
       properties:
         audio_format:
-          type: string
-          enum: [mp3, wav, pcm]
+          $ref: "#/components/schemas/AudioFormat"
           default: mp3
         save_artifacts:
           type: boolean
@@ -3459,8 +3459,7 @@ components:
               cleanup_state:
                 enum: [not_required, complete]
     OperationKind:
-      type: string
-      enum: [asr, tts, voice_preview, voice_validation]
+      $ref: "shared/capability-domains.schema.json#/$defs/OperationKind"
     OperationStatus:
       $ref: "shared/operation-states.schema.json#/$defs/OperationStatus"
     Operation:

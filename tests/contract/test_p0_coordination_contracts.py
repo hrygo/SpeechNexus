@@ -24,6 +24,11 @@ _EXECUTION_CONTROL_OPENAPI_PATH = (
     _ROOT / "contracts" / "internal" / "execution-control.openapi.yaml"
 )
 _RUNTIME_CONTROL_OPENAPI_PATH = _ROOT / "contracts" / "internal" / "runtime-control.openapi.yaml"
+_SPEECH_OPENAPI_PATH = _ROOT / "contracts" / "speech-openapi.yaml"
+_SCENARIO_PROFILE_SCHEMA_PATH = _ROOT / "contracts" / "scenario-profile.schema.json"
+_VOICE_RESOURCE_SCHEMA_PATH = _ROOT / "contracts" / "voice-resource.schema.json"
+_REALTIME_EVENTS_SCHEMA_PATH = _ROOT / "contracts" / "realtime-events.schema.json"
+_CAPABILITY_DOMAINS_SCHEMA_PATH = _ROOT / "contracts" / "shared" / "capability-domains.schema.json"
 _COORDINATION_SQL_PATH = _ROOT / "migrations" / "0001_cluster_coordination_draft.sql"
 
 
@@ -222,6 +227,76 @@ def test_capacity_manifest_envelope_aggregation_is_frozen() -> None:
 
     assert envelope["max_active_slots"] == min(stage["max_active_slots"] for stage in stages)
     assert envelope["realtime_reserved_slots"] <= envelope["max_active_slots"]
+
+
+def test_shared_speech_control_domains_have_one_source() -> None:
+    domains = json.loads(_CAPABILITY_DOMAINS_SCHEMA_PATH.read_text(encoding="utf-8"))
+    defs = domains["$defs"]
+    assert defs["AudioFormat"]["enum"] == ["mp3", "wav", "pcm"]
+    assert defs["TranscriptFormat"]["enum"] == ["json", "text", "verbose_json", "srt", "vtt"]
+    assert defs["VadMode"]["enum"] == ["server_vad", "manual"]
+    assert defs["FinalizationMode"]["enum"] == ["full_segment", "streaming_finalize"]
+    assert defs["AuxiliaryMode"]["enum"] == ["off", "required", "best_effort"]
+    assert defs["TextCommitMode"]["enum"] == ["explicit", "sentence"]
+    assert defs["AudioDeliveryMode"]["enum"] == ["complete", "chunked"]
+    assert defs["OperationKind"]["enum"] == ["asr", "tts", "voice_preview", "voice_validation"]
+
+    binding = json.loads(_BINDING_SCHEMA_PATH.read_text(encoding="utf-8"))
+    tts_domain = binding["$defs"]["TtsParameterDomain"]["properties"]
+    assert tts_domain["audio_formats"]["items"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AudioFormat"
+    )
+    assert tts_domain["text_commit_modes"]["items"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+    )
+    assert tts_domain["audio_delivery_modes"]["items"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+    )
+
+    scenario = json.loads(_SCENARIO_PROFILE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    scenario_defs = scenario["$defs"]
+    assert scenario_defs["AsrParameters"]["properties"]["finalization"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/FinalizationMode"
+    )
+    assert scenario_defs["AsrParameters"]["properties"]["alignment"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+    )
+    assert scenario_defs["TtsParameters"]["properties"]["text_commit_mode"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+    )
+    assert scenario_defs["OutputParameters"]["properties"]["audio_format"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AudioFormat"
+    )
+
+    voice = json.loads(_VOICE_RESOURCE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    voice_capabilities = voice["$defs"]["VoiceCapabilities"]["properties"]
+    assert voice_capabilities["audio_formats"]["items"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AudioFormat"
+    )
+    assert voice_capabilities["modes"]["items"]["$ref"].endswith(
+        "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+    )
+
+    realtime = json.loads(_REALTIME_EVENTS_SCHEMA_PATH.read_text(encoding="utf-8"))
+    realtime_defs = realtime["$defs"]
+    for name in (
+        "VadMode",
+        "FinalizationMode",
+        "AuxiliaryMode",
+        "TextCommitMode",
+        "AudioDeliveryMode",
+        "OperationKind",
+    ):
+        assert realtime_defs[name]["$ref"].endswith(
+            f"shared/capability-domains.schema.json#/$defs/{name}"
+        )
+
+    speech = yaml.safe_load(_SPEECH_OPENAPI_PATH.read_text(encoding="utf-8"))
+    speech_schemas = speech["components"]["schemas"]
+    for name in ("AudioFormat", "TranscriptFormat", "TextCommitMode", "OperationKind"):
+        assert speech_schemas[name]["$ref"].endswith(
+            f"shared/capability-domains.schema.json#/$defs/{name}"
+        )
 
 
 def test_capacity_manifest_rejects_external_production_and_missing_parent_budget() -> None:

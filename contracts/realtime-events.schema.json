@@ -126,6 +126,24 @@
     "CleanupState": {
       "$ref": "shared/operation-states.schema.json#/$defs/CleanupState"
     },
+    "VadMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/VadMode"
+    },
+    "FinalizationMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
+    },
+    "AuxiliaryMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+    },
+    "TextCommitMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+    },
+    "AudioDeliveryMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+    },
+    "OperationKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/OperationKind"
+    },
     "TerminalOperationStatus": {
       "$ref": "shared/operation-states.schema.json#/$defs/TerminalOperationStatus"
     },
@@ -251,11 +269,7 @@
           "maximum": 30000
         },
         "finalization": {
-          "type": "string",
-          "enum": [
-            "full_segment",
-            "streaming_finalize"
-          ]
+          "$ref": "#/$defs/FinalizationMode"
         },
         "final_deadline_ms": {
           "type": "integer",
@@ -281,11 +295,7 @@
           ],
           "properties": {
             "mode": {
-              "type": "string",
-              "enum": [
-                "server_vad",
-                "manual"
-              ]
+              "$ref": "#/$defs/VadMode"
             },
             "silence_duration_ms": {
               "type": "integer",
@@ -305,20 +315,10 @@
           ]
         },
         "alignment": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "#/$defs/AuxiliaryMode"
         },
         "diarization": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "#/$defs/AuxiliaryMode"
         }
       }
     },
@@ -338,18 +338,10 @@
           "maxLength": 35
         },
         "text_commit_mode": {
-          "type": "string",
-          "enum": [
-            "explicit",
-            "sentence"
-          ]
+          "$ref": "#/$defs/TextCommitMode"
         },
         "audio_delivery": {
-          "type": "string",
-          "enum": [
-            "complete",
-            "chunked"
-          ]
+          "$ref": "#/$defs/AudioDeliveryMode"
         },
         "speed": {
           "type": "number",
@@ -845,18 +837,10 @@
               "$ref": "#/$defs/ModelReference"
             },
             "text_commit_mode": {
-              "type": "string",
-              "enum": [
-                "explicit",
-                "sentence"
-              ]
+              "$ref": "#/$defs/TextCommitMode"
             },
             "audio_delivery": {
-              "type": "string",
-              "enum": [
-                "complete",
-                "chunked"
-              ]
+              "$ref": "#/$defs/AudioDeliveryMode"
             }
           },
           "required": [
@@ -1756,13 +1740,7 @@
               "const": "nexus.operation.done"
             },
             "kind": {
-              "type": "string",
-              "enum": [
-                "asr",
-                "tts",
-                "voice_preview",
-                "voice_validation"
-              ]
+              "$ref": "#/$defs/OperationKind"
             },
             "status": {
               "$ref": "#/$defs/TerminalOperationStatus"

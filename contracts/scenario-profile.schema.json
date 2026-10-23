@@ -609,11 +609,7 @@
           "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
         },
         "finalization": {
-          "type": "string",
-          "enum": [
-            "full_segment",
-            "streaming_finalize"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
         },
         "final_deadline_ms": {
           "type": "integer",
@@ -641,11 +637,7 @@
           ],
           "properties": {
             "mode": {
-              "type": "string",
-              "enum": [
-                "server_vad",
-                "manual"
-              ]
+              "$ref": "shared/capability-domains.schema.json#/$defs/VadMode"
             },
             "silence_duration_ms": {
               "type": "integer",
@@ -665,20 +657,10 @@
           ]
         },
         "alignment": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
         },
         "diarization": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
         }
       }
     },
@@ -697,18 +679,10 @@
           "$ref": "#/$defs/LanguageTag"
         },
         "text_commit_mode": {
-          "type": "string",
-          "enum": [
-            "explicit",
-            "sentence"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
         },
         "audio_delivery": {
-          "type": "string",
-          "enum": [
-            "complete",
-            "chunked"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
         },
         "speed": {
           "type": "number",
@@ -768,22 +742,10 @@
       "additionalProperties": false,
       "properties": {
         "transcript_format": {
-          "type": "string",
-          "enum": [
-            "json",
-            "text",
-            "verbose_json",
-            "srt",
-            "vtt"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/TranscriptFormat"
         },
         "audio_format": {
-          "type": "string",
-          "enum": [
-            "mp3",
-            "wav",
-            "pcm"
-          ]
+          "$ref": "shared/capability-domains.schema.json#/$defs/AudioFormat"
         },
         "save_artifacts": {
           "type": "boolean"

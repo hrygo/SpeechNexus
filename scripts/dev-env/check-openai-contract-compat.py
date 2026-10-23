@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import posixpath
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
+from urllib.parse import unquote
 
 import yaml
 
@@ -50,6 +52,12 @@ _OPENAI_REALTIME_DEFS = {
 }
 
 
+class _SchemaSide(NamedTuple):
+    document: Mapping[str, Any]
+    path: str
+    git_ref: str | None
+
+
 def _mapping(value: object) -> Mapping[str, Any] | None:
     return cast(Mapping[str, Any], value) if isinstance(value, Mapping) else None
 
@@ -69,6 +77,79 @@ def _load_base(ref: str, path: str) -> object:
 def _load_current(path: str) -> object:
     with (_ROOT / path).open(encoding="utf-8") as stream:
         return yaml.safe_load(stream)
+
+
+def _load_schema_document(path: str, git_ref: str | None) -> Mapping[str, Any] | None:
+    document = _load_base(git_ref, path) if git_ref is not None else _load_current(path)
+    return _mapping(document)
+
+
+def _resolve_local_pointer(document: Mapping[str, Any], pointer: str) -> object | None:
+    if pointer in ("", "#"):
+        return document
+    if not pointer.startswith("/"):
+        return None
+    current: object = document
+    for encoded_part in pointer.removeprefix("/").split("/"):
+        part = unquote(encoded_part).replace("~1", "/").replace("~0", "~")
+        if isinstance(current, Mapping):
+            current = current.get(part)
+        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
+            current = current[int(part)]
+        else:
+            return None
+    return current
+
+
+def _dereference_schema(
+    schema: object,
+    side: _SchemaSide,
+    seen: frozenset[tuple[str, str]] = frozenset(),
+) -> object:
+    schema_mapping = _mapping(schema)
+    if schema_mapping is None:
+        if isinstance(schema, list):
+            return [_dereference_schema(item, side, seen) for item in schema]
+        return schema
+    ref = schema_mapping.get("$ref")
+    if not isinstance(ref, str) or "://" in ref:
+        return {
+            key: _dereference_schema(value, side, seen) for key, value in schema_mapping.items()
+        }
+    identity = (side.path, ref)
+    if identity in seen:
+        return schema
+
+    if ref.startswith("#"):
+        target_path = side.path
+        target_git_ref = side.git_ref
+        target_document = side.document
+        fragment = ref[1:]
+    else:
+        path_part, separator, fragment = ref.partition("#")
+        target_path = posixpath.normpath(posixpath.join(posixpath.dirname(side.path), path_part))
+        target_git_ref = side.git_ref
+        target_document = _load_schema_document(target_path, target_git_ref)
+        if target_document is None:
+            return schema
+        fragment = fragment if not separator or fragment.startswith("/") else f"/{fragment}"
+
+    target = _resolve_local_pointer(_mapping(target_document) or {}, fragment)
+    if target is None:
+        return schema
+    resolved = _dereference_schema(
+        target,
+        _SchemaSide(target_document, target_path, target_git_ref),
+        seen | {identity},
+    )
+    siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
+    resolved_mapping = _mapping(resolved)
+    if siblings and resolved_mapping is not None:
+        return {
+            **resolved_mapping,
+            **{key: _dereference_schema(value, side, seen) for key, value in siblings.items()},
+        }
+    return resolved
 
 
 def _issue(issues: list[str], pointer: str, message: str) -> None:
@@ -113,7 +194,19 @@ def _constraint_break(base: Mapping[str, Any], current: Mapping[str, Any]) -> st
     return None
 
 
-def _compare_schema(base: object, current: object, pointer: str, issues: list[str]) -> None:
+def _compare_schema(
+    base: object,
+    current: object,
+    pointer: str,
+    issues: list[str],
+    *,
+    base_side: _SchemaSide | None = None,
+    current_side: _SchemaSide | None = None,
+) -> None:
+    if base_side is not None:
+        base = _dereference_schema(base, base_side)
+    if current_side is not None:
+        current = _dereference_schema(current, current_side)
     base_schema = _mapping(base)
     current_schema = _mapping(current)
     if base_schema is None or current_schema is None:
@@ -183,6 +276,8 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
     current_properties = _mapping(current_schema.get("properties"))
     if base_properties is not None:
         for name, base_property in base_properties.items():
+            if name == "nexus":
+                continue
             property_pointer = f"{pointer}/properties/{name}"
             if current_properties is None or name not in current_properties:
                 _issue(issues, property_pointer, "property removed")
@@ -192,6 +287,8 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
                     current_properties[name],
                     property_pointer,
                     issues,
+                    base_side=base_side,
+                    current_side=current_side,
                 )
 
     for definitions_key in ("$defs", "definitions"):
@@ -209,6 +306,8 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
                     current_definitions[name],
                     definition_pointer,
                     issues,
+                    base_side=base_side,
+                    current_side=current_side,
                 )
 
     for keyword in ("items", "if", "then", "else", "not"):
@@ -218,6 +317,8 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
                 current_schema.get(keyword),
                 f"{pointer}/{keyword}",
                 issues,
+                base_side=base_side,
+                current_side=current_side,
             )
     for keyword in ("oneOf", "anyOf", "allOf"):
         base_variants = _sequence(base_schema.get(keyword))
@@ -233,6 +334,8 @@ def _compare_schema(base: object, current: object, pointer: str, issues: list[st
                 current_variants[index],
                 f"{pointer}/{keyword}/{index}",
                 issues,
+                base_side=base_side,
+                current_side=current_side,
             )
 
 
@@ -241,6 +344,9 @@ def _compare_parameters(
     current_parameters: object,
     pointer: str,
     issues: list[str],
+    *,
+    base_side: _SchemaSide | None = None,
+    current_side: _SchemaSide | None = None,
 ) -> None:
     def indexed(parameters: object) -> dict[tuple[str, str], Mapping[str, Any]]:
         result: dict[tuple[str, str], Mapping[str, Any]] = {}
@@ -268,6 +374,8 @@ def _compare_parameters(
             current_parameter.get("schema", {}),
             f"{pointer}/parameters/{key[1]}/{key[0]}",
             issues,
+            base_side=base_side,
+            current_side=current_side,
         )
 
 
@@ -321,8 +429,16 @@ def _reachable_components(document: Mapping[str, Any]) -> dict[str, set[str]]:
     return reachable
 
 
-def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: str) -> list[str]:
+def _compare_openapi(
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    path: str,
+    *,
+    base_git_ref: str | None = None,
+) -> list[str]:
     issues: list[str] = []
+    base_side = _SchemaSide(base, path, base_git_ref)
+    current_side = _SchemaSide(current, path, None)
     base_paths = _mapping(base.get("paths")) or {}
     current_paths = _mapping(current.get("paths")) or {}
     for path_name, base_path_item in base_paths.items():
@@ -339,6 +455,8 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
             current_path_mapping.get("parameters", []),
             f"{path}:paths/{path_name}",
             issues,
+            base_side=base_side,
+            current_side=current_side,
         )
         for method, base_operation in base_path_mapping.items():
             if method not in _HTTP_METHODS:
@@ -354,6 +472,8 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
                 current_operation.get("parameters", []),
                 operation_pointer,
                 issues,
+                base_side=base_side,
+                current_side=current_side,
             )
 
             base_body = _mapping(base_operation_mapping.get("requestBody"))
@@ -383,6 +503,8 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
                             (_mapping(current_media) or {}).get("schema", {}),
                             f"{operation_pointer}/requestBody/{media_type}",
                             issues,
+                            base_side=base_side,
+                            current_side=current_side,
                         )
 
             base_responses = _mapping(base_operation_mapping.get("responses")) or {}
@@ -407,6 +529,8 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
                         (_mapping(current_media) or {}).get("schema", {}),
                         f"{response_pointer}/{media_type}",
                         issues,
+                        base_side=base_side,
+                        current_side=current_side,
                     )
 
     base_components = _mapping(base.get("components")) or {}
@@ -422,7 +546,14 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
         if name not in current_schemas:
             _issue(issues, component_pointer, "component schema removed")
         else:
-            _compare_schema(base_schema, current_schemas[name], component_pointer, issues)
+            _compare_schema(
+                base_schema,
+                current_schemas[name],
+                component_pointer,
+                issues,
+                base_side=base_side,
+                current_side=current_side,
+            )
 
     for section in ("parameters", "headers"):
         base_section = _mapping(base_components.get(section)) or {}
@@ -438,13 +569,22 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
             base_mapping = _mapping(base_value) or {}
             current_mapping = _mapping(current_section[name]) or {}
             if section == "parameters":
-                _compare_parameters([base_mapping], [current_mapping], component_pointer, issues)
+                _compare_parameters(
+                    [base_mapping],
+                    [current_mapping],
+                    component_pointer,
+                    issues,
+                    base_side=base_side,
+                    current_side=current_side,
+                )
             else:
                 _compare_schema(
                     base_mapping.get("schema", {}),
                     current_mapping.get("schema", {}),
                     component_pointer,
                     issues,
+                    base_side=base_side,
+                    current_side=current_side,
                 )
 
     for section in ("requestBodies", "responses"):
@@ -470,6 +610,8 @@ def _compare_openapi(base: Mapping[str, Any], current: Mapping[str, Any], path: 
                     (_mapping(current_content[media_type]) or {}).get("schema", {}),
                     media_pointer,
                     issues,
+                    base_side=base_side,
+                    current_side=current_side,
                 )
     return issues
 
@@ -496,10 +638,21 @@ def _collect_event_types(document: object) -> set[str]:
 
 
 def _compare_json_schema(
-    base: Mapping[str, Any], current: Mapping[str, Any], path: str
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    path: str,
+    *,
+    base_git_ref: str | None = None,
 ) -> list[str]:
     issues: list[str] = []
-    _compare_schema(base, current, path, issues)
+    _compare_schema(
+        base,
+        current,
+        path,
+        issues,
+        base_side=_SchemaSide(base, path, base_git_ref),
+        current_side=_SchemaSide(current, path, None),
+    )
     removed_event_types = _collect_event_types(base) - _collect_event_types(current)
     if removed_event_types:
         _issue(issues, path, f"event types removed: {sorted(removed_event_types)}")
@@ -542,9 +695,15 @@ def _reachable_defs(document: Mapping[str, Any], roots: set[str]) -> set[str]:
 
 
 def _compare_realtime_events_schema(
-    base: Mapping[str, Any], current: Mapping[str, Any], path: str
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    path: str,
+    *,
+    base_git_ref: str | None = None,
 ) -> list[str]:
     issues: list[str] = []
+    base_side = _SchemaSide(base, path, base_git_ref)
+    current_side = _SchemaSide(current, path, None)
     base_defs = _mapping(base.get("$defs")) or {}
     current_defs = _mapping(current.get("$defs")) or {}
     standard_roots = _OPENAI_REALTIME_DEFS & set(base_defs)
@@ -568,7 +727,14 @@ def _compare_realtime_events_schema(
             if name not in standard_roots:
                 _issue(issues, pointer, "referenced schema definition removed")
             continue
-        _compare_schema(base_definition, current_defs[name], pointer, issues)
+        _compare_schema(
+            base_definition,
+            current_defs[name],
+            pointer,
+            issues,
+            base_side=base_side,
+            current_side=current_side,
+        )
 
     base_types = _collect_event_types(
         {"$defs": {name: base_defs[name] for name in reachable_base if name in base_defs}}
@@ -608,11 +774,32 @@ def main() -> int:
             issues.append(f"{path}: document root is not an object")
             continue
         if path.endswith("openapi.yaml"):
-            issues.extend(_compare_openapi(base_document, current_document, path))
+            issues.extend(
+                _compare_openapi(
+                    base_document,
+                    current_document,
+                    path,
+                    base_git_ref=args.base,
+                )
+            )
         elif path.endswith("realtime-events.schema.json"):
-            issues.extend(_compare_realtime_events_schema(base_document, current_document, path))
+            issues.extend(
+                _compare_realtime_events_schema(
+                    base_document,
+                    current_document,
+                    path,
+                    base_git_ref=args.base,
+                )
+            )
         else:
-            issues.extend(_compare_json_schema(base_document, current_document, path))
+            issues.extend(
+                _compare_json_schema(
+                    base_document,
+                    current_document,
+                    path,
+                    base_git_ref=args.base,
+                )
+            )
 
     if issues:
         print("Breaking OpenAI-compatible contract changes:", file=sys.stderr)

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/shared/capability-domains.schema.json",
   "title": "SpeechNexusCapabilityDomains",
-  "description": "Single source of truth for speech task, execution stage, engine, service-class, release-tier, and memory-architecture domains shared by public, admin, and internal contracts.",
+  "description": "Single source of truth for speech task, execution stage, engine, service-class, release-tier, memory-architecture, output-format, and speech-control domains shared by public, admin, and internal contracts.",
   "$defs": {
     "ServiceClass": {
       "type": "string",
@@ -77,6 +77,69 @@
         "qwen_forced_aligner",
         "onnx_runtime",
         "cpu_native"
+      ]
+    },
+    "AudioFormat": {
+      "type": "string",
+      "enum": [
+        "mp3",
+        "wav",
+        "pcm"
+      ]
+    },
+    "TranscriptFormat": {
+      "type": "string",
+      "enum": [
+        "json",
+        "text",
+        "verbose_json",
+        "srt",
+        "vtt"
+      ]
+    },
+    "VadMode": {
+      "type": "string",
+      "enum": [
+        "server_vad",
+        "manual"
+      ]
+    },
+    "FinalizationMode": {
+      "type": "string",
+      "enum": [
+        "full_segment",
+        "streaming_finalize"
+      ]
+    },
+    "AuxiliaryMode": {
+      "type": "string",
+      "enum": [
+        "off",
+        "required",
+        "best_effort"
+      ]
+    },
+    "TextCommitMode": {
+      "type": "string",
+      "enum": [
+        "explicit",
+        "sentence"
+      ]
+    },
+    "AudioDeliveryMode": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "chunked"
+      ]
+    },
+    "OperationKind": {
+      "type": "string",
+      "enum": [
+        "asr",
+        "tts",
+        "voice_preview",
+        "voice_validation"
       ]
     }
   }

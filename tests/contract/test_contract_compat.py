@@ -171,6 +171,56 @@ def test_compat_gate_rejects_changed_public_defaults_and_formats() -> None:
     assert any("default presence changed" in issue for issue in issues)
 
 
+def test_compat_gate_resolves_equivalent_schema_refs() -> None:
+    module = _load_compat_module()
+    compare_openapi = cast(Any, module._compare_openapi)
+    base: dict[str, Any] = {
+        "paths": {
+            "/v1/audio/speech": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "response_format": {
+                                                "type": "string",
+                                                "enum": ["mp3", "wav", "pcm"],
+                                                "default": "mp3",
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "components": {"schemas": {}},
+    }
+    current = copy.deepcopy(base)
+    current["components"]["schemas"]["AudioFormat"] = {
+        "type": "string",
+        "enum": ["mp3", "wav", "pcm"],
+    }
+    current["paths"]["/v1/audio/speech"]["post"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]["properties"]["response_format"] = {
+        "$ref": "#/components/schemas/AudioFormat",
+        "default": "mp3",
+    }
+
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert not issues
+
+    current["components"]["schemas"]["AudioFormat"]["enum"].remove("pcm")
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert any("enum values removed" in issue for issue in issues)
+
+
 def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
     module = _load_compat_module()
     compare_openapi = cast(Any, module._compare_openapi)

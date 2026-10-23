@@ -518,11 +518,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "full_segment",
-              "streaming_finalize"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
           }
         },
         "supports_prompt": {
@@ -535,24 +531,14 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "off",
-              "required",
-              "best_effort"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
           }
         },
         "diarization_modes": {
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "off",
-              "required",
-              "best_effort"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
           }
         },
         "max_speakers": {
@@ -595,12 +581,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "mp3",
-              "wav",
-              "pcm"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioFormat"
           }
         },
         "sample_rates_hz": {
@@ -618,11 +599,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "explicit",
-              "sentence"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
           }
         },
         "audio_delivery_modes": {
@@ -630,11 +607,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "chunked"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
           }
         },
         "supports_instructions": {

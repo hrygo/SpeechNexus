@@ -17,11 +17,7 @@
           "additionalProperties": false,
           "properties": {
             "mode": {
-              "type": "string",
-              "enum": [
-                "server_vad",
-                "manual"
-              ]
+              "$ref": "capability-domains.schema.json#/$defs/VadMode"
             },
             "silence_duration_ms": {
               "type": "integer",
@@ -31,11 +27,7 @@
           }
         },
         "finalization": {
-          "type": "string",
-          "enum": [
-            "full_segment",
-            "streaming_finalize"
-          ]
+          "$ref": "capability-domains.schema.json#/$defs/FinalizationMode"
         },
         "preview_interval_ms": {
           "type": "integer",
@@ -63,20 +55,10 @@
           "maximum": 10000
         },
         "alignment": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
         },
         "diarization": {
-          "type": "string",
-          "enum": [
-            "off",
-            "required",
-            "best_effort"
-          ]
+          "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
         },
         "vocabulary_set_revision": {
           "oneOf": [
@@ -95,18 +77,10 @@
       "additionalProperties": false,
       "properties": {
         "text_commit_mode": {
-          "type": "string",
-          "enum": [
-            "explicit",
-            "sentence"
-          ]
+          "$ref": "capability-domains.schema.json#/$defs/TextCommitMode"
         },
         "audio_delivery": {
-          "type": "string",
-          "enum": [
-            "complete",
-            "chunked"
-          ]
+          "$ref": "capability-domains.schema.json#/$defs/AudioDeliveryMode"
         },
         "language": {
           "type": "string",

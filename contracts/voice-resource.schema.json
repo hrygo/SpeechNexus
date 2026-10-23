@@ -953,12 +953,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "mp3",
-              "wav",
-              "pcm"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioFormat"
           }
         },
         "modes": {
@@ -966,11 +961,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "chunked"
-            ]
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
           }
         },
         "max_input_codepoints": {

@@ -68,6 +68,10 @@ speech.write_to_file("output.wav")
 
 ### 2.2 JavaScript SDK
 
+仓库契约测试锁定 OpenAI JavaScript SDK `7.43.0`，验证 Node 客户端实际发送的
+`models.list()` / `models.retrieve()`、multipart 转写字段、TTS JSON body、二进制响应和
+429 错误映射；标准调用形状与 Python 门禁一致。
+
 ```ts
 import OpenAI from "openai";
 
@@ -138,6 +142,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 
 - 标准路径、请求字段和响应形状存在；
 - 官方 OpenAI Python SDK 实际生成的路径、multipart 字段和 JSON body 能通过契约 schema；
+- 官方 OpenAI JavaScript SDK 实际生成的路径、multipart 字段、JSON body、错误映射和音频响应能被客户端解析；
 - `models.list()`、`audio.transcriptions.create()`、`audio.speech.create()` 能解析声明响应；
 - 官方 SDK 的 Realtime connection 实际序列化的 `session.update` 与
   `input_audio_buffer.*` 事件能通过事件 schema，标准 `session.created` 可由 SDK 解析；
@@ -147,6 +152,9 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 REST 测试使用 `httpx.MockTransport`，Realtime 测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；两者共同证明契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端实现后，还须以同一组样例运行 HTTP / WebSocket 集成测试，并记录实际 binding、拓扑和验证范围。
 
 PR CI 使用 `CONTRACT_BASE_REF=<target-branch> make contracts-compat` 对比目标分支：删除标准路径 / 操作 / 字段 / 响应状态 / 事件类型或枚举值、增加必填字段、收紧参数域、改变默认值或字段格式都会失败。该检查覆盖 `speech-openapi.yaml`、`realtime-events.schema.json` 以及它们引用的 `contracts/shared/` 公共域，避免通过修改共享 schema 绕过兼容门禁；内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
+
+`make contracts-sdk-test`（即 `pnpm test:contracts-sdk`）锁定 OpenAI JavaScript SDK 的实际 REST 形状；与 Python
+SDK 门禁一起，CI 同时检查两个官方客户端的请求序列化、响应解析和错误映射。两者仍不替代未来服务端 HTTP 集成测试。
 
 ## 5. 新增兼容或增强能力的检查清单
 

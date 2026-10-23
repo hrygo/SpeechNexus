@@ -28,6 +28,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:contracts-sdk
 pnpm build
 uv build --all-packages --out-dir dist/python
 docker compose --env-file deploy/compose.env.example -f deploy/compose.yaml config --quiet

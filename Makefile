@@ -1,5 +1,6 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
-	browser-install browser-smoke media-smoke contracts-check contracts-compat service-smoke stack-config \
+	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-sdk-test \
+	service-smoke stack-config \
 	format lint typecheck test integration-test python-build build verify
 
 install:
@@ -47,6 +48,9 @@ contracts-compat:
 	@test -n "$$CONTRACT_BASE_REF" || \
 		{ echo "CONTRACT_BASE_REF is required" >&2; exit 2; }
 	uv run python scripts/dev-env/check-openai-contract-compat.py --base "$$CONTRACT_BASE_REF"
+
+contracts-sdk-test:
+	pnpm test:contracts-sdk
 
 service-smoke:
 	./scripts/dev-env/service-smoke.sh

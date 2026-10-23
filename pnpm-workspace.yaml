@@ -37,6 +37,7 @@ minimumReleaseAgeExclude:
   - "@rolldown/binding-win32-x64-msvc@1.2.15"
   - caniuse-lite@1.0.30001818
   - rolldown@1.2.15
+  - openai@7.43.0
 
 onlyBuiltDependencies:
   - esbuild

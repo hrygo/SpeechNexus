@@ -268,6 +268,7 @@ def test_cluster_coordination_sql_draft_defines_required_tables_and_invariants()
         "fk_submit_intents_lease_execution_identity",
         "uq_submit_intents_operation_attempt_stage",
         "uq_engine_instances_execution_identity",
+        "ck_submit_intents_execution_cleanup_matrix",
         "ck_submit_intents_aborted_requires_evidence",
         "ck_submit_intents_quarantine_invariant",
     )

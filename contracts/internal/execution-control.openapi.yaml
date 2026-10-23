@@ -443,7 +443,40 @@ components:
             rejected for a manifest stage that can emit audio.
     ExecutionStateInvariants:
       type: object
+      description: |
+        Closed execution-state to cleanup-state matrix. Active states still own
+        capacity. A successful execution has completed cleanup. A failed
+        execution may clean up without a dispatched request (`not_required`) or
+        only after verified termination (`complete`); an unknown execution must
+        use `unknown_quarantined` together with quarantined cleanup.
       allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting, executing, stopping]
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: pending
+        - if:
+            properties:
+              execution_state:
+                const: succeeded
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: complete
+        - if:
+            properties:
+              execution_state:
+                const: failed
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                enum: [not_required, complete]
         - if:
             properties:
               execution_state:
@@ -453,6 +486,82 @@ components:
             properties:
               cleanup_state:
                 const: complete
+        - if:
+            properties:
+              execution_state:
+                const: unknown_quarantined
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: quarantined
+    ExecutionTerminalEvidenceInvariants:
+      type: object
+      description: |
+        Terminal status must expose evidence consistent with its result.
+        A successful execution has an engine terminal response and no error. A
+        failed execution must carry a stable error code and either have no
+        dispatched request or verified termination evidence.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting, executing, stopping]
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                const: none
+        - if:
+            properties:
+              execution_state:
+                const: succeeded
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                const: engine_terminal_response
+              error_code:
+                type: "null"
+        - if:
+            properties:
+              execution_state:
+                const: failed
+            required: [execution_state]
+          then:
+            properties:
+              error_code:
+                not:
+                  type: "null"
+            allOf:
+              - if:
+                  properties:
+                    cleanup_state:
+                      const: not_required
+                  required: [cleanup_state]
+                then:
+                  properties:
+                    stop_evidence_kind:
+                      const: none
+              - if:
+                  properties:
+                    cleanup_state:
+                      const: complete
+                  required: [cleanup_state]
+                then:
+                  properties:
+                    stop_evidence_kind:
+                      enum:
+                        - engine_terminal_response
+                        - instance_terminated_by_controller
+                        - operator_verified_instance_terminated
+        - if:
+            properties:
+              execution_state:
+                const: aborted
+            required: [execution_state]
+          then:
+            properties:
               stop_evidence_kind:
                 enum:
                   - engine_abort_ack
@@ -466,8 +575,6 @@ components:
             required: [execution_state]
           then:
             properties:
-              cleanup_state:
-                const: quarantined
               stop_evidence_kind:
                 const: unconfirmed_timeout
     SubmitExecutionResponse:
@@ -479,9 +586,18 @@ components:
         - operation_id
         - attempt_id
         - stage_id
+        - workspace_id
+        - pool_id
+        - host_node_id
+        - gateway_id
         - instance_id
         - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - voice_revision_id
         - fencing_token
+        - command_digest
+        - deadline_at
         - execution_state
         - cleanup_state
         - idempotent_replay
@@ -497,14 +613,35 @@ components:
           $ref: "#/components/schemas/Identifier"
         stage_id:
           $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
         instance_id:
           $ref: "#/components/schemas/Identifier"
         instance_generation:
           type: integer
           minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
         fencing_token:
           type: integer
           minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        deadline_at:
+          type: string
+          format: date-time
         engine_request_id:
           type: [string, "null"]
           minLength: 1
@@ -559,11 +696,18 @@ components:
         - operation_id
         - attempt_id
         - stage_id
+        - workspace_id
+        - pool_id
         - host_node_id
         - gateway_id
         - instance_id
         - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - voice_revision_id
         - fencing_token
+        - command_digest
+        - deadline_at
         - execution_state
         - cleanup_state
         - stop_evidence_kind
@@ -579,6 +723,10 @@ components:
           $ref: "#/components/schemas/Identifier"
         stage_id:
           $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
         host_node_id:
           $ref: "#/components/schemas/Identifier"
         gateway_id:
@@ -588,9 +736,22 @@ components:
         instance_generation:
           type: integer
           minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
         fencing_token:
           type: integer
           minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        deadline_at:
+          type: string
+          format: date-time
         engine_request_id:
           type: [string, "null"]
         execution_state:
@@ -616,6 +777,7 @@ components:
           format: date-time
       allOf:
         - $ref: "#/components/schemas/ExecutionStateInvariants"
+        - $ref: "#/components/schemas/ExecutionTerminalEvidenceInvariants"
     GatewayFencingBarrierRequest:
       type: object
       additionalProperties: false

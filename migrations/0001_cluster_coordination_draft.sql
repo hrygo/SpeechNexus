@@ -859,6 +859,43 @@ CREATE TABLE submit_intents (
                 'unconfirmed_timeout'
             )
         ),
+    -- Active executions still own cleanup. Successful and failed executions
+    -- may not silently retain pending capacity; unknown execution is the only
+    -- quarantined execution state and is constrained separately below.
+    CONSTRAINT ck_submit_intents_execution_cleanup_matrix
+        CHECK (
+            (
+                execution_state IN ('submitting', 'executing', 'stopping')
+                AND cleanup_state = 'pending'
+            )
+            OR (
+                execution_state = 'succeeded'
+                AND cleanup_state = 'complete'
+                AND stop_evidence_kind = 'engine_terminal_response'
+                AND error_code IS NULL
+                AND terminated_at IS NOT NULL
+            )
+            OR (
+                execution_state = 'failed'
+                AND error_code IS NOT NULL
+                AND (
+                    (
+                        cleanup_state = 'not_required'
+                        AND stop_evidence_kind = 'none'
+                    )
+                    OR (
+                        cleanup_state = 'complete'
+                        AND stop_evidence_kind IN (
+                            'engine_terminal_response',
+                            'instance_terminated_by_controller',
+                            'operator_verified_instance_terminated'
+                        )
+                        AND terminated_at IS NOT NULL
+                    )
+                )
+            )
+            OR execution_state IN ('aborted', 'unknown_quarantined')
+        ),
     -- `aborted` is strictly forbidden without verified stop evidence from the engine or controller
     CONSTRAINT ck_submit_intents_aborted_requires_evidence
         CHECK (

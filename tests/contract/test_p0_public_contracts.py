@@ -1561,11 +1561,18 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         "operation_id": "op-demo",
         "attempt_id": "att-demo",
         "stage_id": "stage-demo",
+        "workspace_id": "ws-demo",
+        "pool_id": "tts-batch",
         "host_node_id": "node-demo",
         "gateway_id": "gateway-demo",
         "instance_id": "instance-demo",
         "instance_generation": 1,
+        "binding_revision_id": "tts-binding-rev-1",
+        "policy_revision_id": "policy-1",
+        "voice_revision_id": None,
         "fencing_token": 1,
+        "command_digest": "sha256:" + "2" * 64,
+        "deadline_at": "2026-10-22T01:00:00Z",
         "execution_state": "aborted",
         "cleanup_state": "complete",
         "stop_evidence_kind": "engine_abort_ack",
@@ -1582,6 +1589,40 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     unconfirmed["stop_evidence_kind"] = "unconfirmed_timeout"
     with pytest.raises(ValidationError):
         status_validator.validate(unconfirmed)
+
+    succeeded = copy.deepcopy(status)
+    succeeded["execution_state"] = "succeeded"
+    succeeded["cleanup_state"] = "pending"
+    succeeded["stop_evidence_kind"] = "none"
+    with pytest.raises(ValidationError):
+        status_validator.validate(succeeded)
+    succeeded["cleanup_state"] = "complete"
+    succeeded["stop_evidence_kind"] = "engine_terminal_response"
+    status_validator.validate(succeeded)
+
+    failed = copy.deepcopy(status)
+    failed["execution_state"] = "failed"
+    failed["cleanup_state"] = "complete"
+    failed["stop_evidence_kind"] = "none"
+    failed["error_code"] = "policy_or_resource_disabled"
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed)
+    failed["stop_evidence_kind"] = "engine_terminal_response"
+    status_validator.validate(failed)
+    failed["cleanup_state"] = "not_required"
+    failed["stop_evidence_kind"] = "none"
+    status_validator.validate(failed)
+    failed["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed)
+
+    failed_without_error = copy.deepcopy(status)
+    failed_without_error["execution_state"] = "failed"
+    failed_without_error["cleanup_state"] = "not_required"
+    failed_without_error["stop_evidence_kind"] = "none"
+    failed_without_error["error_code"] = None
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_without_error)
 
     quarantined = copy.deepcopy(status)
     quarantined["execution_state"] = "unknown_quarantined"
@@ -1682,6 +1723,52 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     }
     with pytest.raises(ValidationError):
         runtime_error_validator.validate(unknown_runtime_error)
+
+
+def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None:
+    execution = _resolved_yaml(_EXECUTION_CONTROL_OPENAPI)
+    validator = _component_validator(execution, "SubmitExecutionResponse")
+    response = {
+        "submit_intent_id": "intent-demo",
+        "lease_id": "lease-demo",
+        "operation_id": "op-demo",
+        "attempt_id": "att-demo",
+        "stage_id": "stage-demo",
+        "workspace_id": "ws-demo",
+        "pool_id": "tts-batch",
+        "host_node_id": "node-demo",
+        "gateway_id": "gateway-demo",
+        "instance_id": "instance-demo",
+        "instance_generation": 1,
+        "binding_revision_id": "tts-binding-rev-1",
+        "policy_revision_id": "policy-1",
+        "voice_revision_id": None,
+        "fencing_token": 7,
+        "command_digest": "sha256:" + "2" * 64,
+        "deadline_at": "2026-10-22T01:00:00Z",
+        "execution_state": "executing",
+        "cleanup_state": "pending",
+        "idempotent_replay": True,
+        "recorded_at": "2026-10-22T00:00:00Z",
+    }
+    validator.validate(response)
+
+    for field in (
+        "workspace_id",
+        "binding_revision_id",
+        "policy_revision_id",
+        "command_digest",
+        "deadline_at",
+    ):
+        missing_identity = copy.deepcopy(response)
+        del missing_identity[field]
+        with pytest.raises(ValidationError):
+            validator.validate(missing_identity)
+
+    active_with_released_cleanup = copy.deepcopy(response)
+    active_with_released_cleanup["cleanup_state"] = "complete"
+    with pytest.raises(ValidationError):
+        validator.validate(active_with_released_cleanup)
 
 
 def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:

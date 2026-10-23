@@ -1097,6 +1097,104 @@ def test_quarantined_execution_closes_with_terminal_or_operator_evidence(
         )
 
 
+def test_submit_execution_cleanup_matrix_is_closed(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-cleanup-matrix")
+    _insert_pool(db)
+    _insert_instance(
+        db,
+        instance_id="inst-cleanup-matrix",
+        generation=1,
+        host_node_id="node-cleanup-matrix",
+        architecture="discrete_device_memory",
+    )
+    for suffix in ("success", "failure"):
+        _insert_lease(
+            db,
+            lease_id=f"lease-cleanup-{suffix}",
+            operation_id=f"op-cleanup-{suffix}",
+            attempt_id=f"att-cleanup-{suffix}",
+            host_node_id="node-cleanup-matrix",
+            instance_id="inst-cleanup-matrix",
+            generation=1,
+        )
+        _insert_submit_intent(
+            db,
+            submit_intent_id=f"intent-cleanup-{suffix}",
+            lease_id=f"lease-cleanup-{suffix}",
+            operation_id=f"op-cleanup-{suffix}",
+            attempt_id=f"att-cleanup-{suffix}",
+            host_node_id="node-cleanup-matrix",
+            instance_id="inst-cleanup-matrix",
+            generation=1,
+        )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET cleanup_state = 'complete'
+            WHERE submit_intent_id = 'intent-cleanup-success'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET execution_state = 'succeeded',
+                cleanup_state = 'complete',
+                stop_evidence_kind = 'none',
+                terminated_at = CURRENT_TIMESTAMP
+            WHERE submit_intent_id = 'intent-cleanup-success'
+            """
+        )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'succeeded',
+            cleanup_state = 'complete',
+            stop_evidence_kind = 'engine_terminal_response',
+            terminated_at = CURRENT_TIMESTAMP
+        WHERE submit_intent_id = 'intent-cleanup-success'
+        """
+    )
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET execution_state = 'failed',
+                cleanup_state = 'complete',
+                stop_evidence_kind = 'none',
+                error_code = 'policy_or_resource_disabled',
+                terminated_at = CURRENT_TIMESTAMP
+            WHERE submit_intent_id = 'intent-cleanup-failure'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET execution_state = 'failed',
+                cleanup_state = 'not_required',
+                stop_evidence_kind = 'none'
+            WHERE submit_intent_id = 'intent-cleanup-failure'
+            """
+        )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'failed',
+            cleanup_state = 'complete',
+            stop_evidence_kind = 'instance_terminated_by_controller',
+            error_code = 'policy_or_resource_disabled',
+            terminated_at = CURRENT_TIMESTAMP
+        WHERE submit_intent_id = 'intent-cleanup-failure'
+        """
+    )
+
+
 def test_admission_reservations_and_fencing_cannot_be_negative(
     db: psycopg.Connection[Any],
 ) -> None:

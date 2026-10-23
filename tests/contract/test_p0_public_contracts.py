@@ -1732,12 +1732,18 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         "id": "export_artifact_demo",
         "object": "nexus.export_artifact",
         "export_id": "export_demo",
+        "manifest_revision": "1",
         "media_type": "application/zip",
         "bytes": 2048,
         "sha256": "sha256:" + "a" * 64,
         "created_at": "2026-10-23T00:00:02Z",
     }
-    _component_validator(workbench, "ExportJob").validate(export_job)
+    export_job_validator = _component_validator(workbench, "ExportJob")
+    export_job_validator.validate(export_job)
+    artifact_without_manifest = copy.deepcopy(export_job)
+    del artifact_without_manifest["artifact"]["manifest_revision"]
+    with pytest.raises(ValidationError):
+        export_job_validator.validate(artifact_without_manifest)
 
     minutes_job = copy.deepcopy(next(sample for name, sample in samples if name == "MinutesJob"))
     minutes_job["status"] = "succeeded"

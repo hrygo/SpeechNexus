@@ -21,7 +21,9 @@ of defaults, units, enum domains, or stable error codes.
 - `workbench-openapi.yaml`: optional workbench application resources: projects,
   transcripts, meetings, assistant turns, teleprompter state, audiobooks,
   saved assets, export jobs, and export events. It does not claim OpenAI
-  compatibility and does not write speech-base Job or Artifact state.
+  compatibility and does not write speech-base Job or Artifact state. A
+  workbench export artifact pins the same immutable manifest revision as its
+  owning export job.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit

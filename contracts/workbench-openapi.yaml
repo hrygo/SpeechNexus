@@ -2252,7 +2252,15 @@ components:
     ExportArtifact:
       type: object
       additionalProperties: false
-      required: [id, object, export_id, media_type, bytes, sha256, created_at]
+      required:
+        - id
+        - object
+        - export_id
+        - manifest_revision
+        - media_type
+        - bytes
+        - sha256
+        - created_at
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
@@ -2260,6 +2268,11 @@ components:
           const: nexus.export_artifact
         export_id:
           $ref: "#/components/schemas/Identifier"
+        manifest_revision:
+          $ref: "#/components/schemas/Revision"
+          description: |
+            Immutable export manifest used to produce this artifact. It must
+            equal the owning ExportJob manifest_revision.
         media_type:
           type: string
         bytes:
@@ -2409,6 +2422,7 @@ components:
               id: export_artifact_demo
               object: nexus.export_artifact
               export_id: export_demo
+              manifest_revision: "3"
               media_type: application/zip
               bytes: 2048
               sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -2438,6 +2452,7 @@ components:
               id: export_artifact_demo
               object: nexus.export_artifact
               export_id: export_demo
+              manifest_revision: "3"
               media_type: application/zip
               bytes: 2048
               sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

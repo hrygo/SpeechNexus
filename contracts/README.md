@@ -39,6 +39,12 @@ of defaults, units, enum domains, or stable error codes.
   units pin both source Artifact and receipt; a saved asset always retains the
   receipt, a ready render unit requires both source identities, and an explicit
   export unit subset cannot be empty.
+  A failed meeting records a structured capture error and cannot claim a seal,
+  minutes reference, or successful minutes transition; a failed MinutesJob
+  remains visible through its meeting's `minutes_pending` state instead of
+  reclassifying the whole meeting as a capture failure. A non-succeeded
+  MinutesJob may expose explicitly partial text but never a publishable
+  `artifact_id`.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   and scenario-profile revision publication / activation / retirement,
   observed model instances, resource pools, policies,

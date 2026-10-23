@@ -2891,6 +2891,20 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     minutes_job["minutes_text"] = None
     minutes_job["artifact_id"] = "artifact-minutes-demo"
     minutes_validator.validate(minutes_job)
+    failed_minutes_with_artifact = copy.deepcopy(minutes_job)
+    failed_minutes_with_artifact["status"] = "failed"
+    failed_minutes_with_artifact["error"] = {
+        "code": "llm_unavailable",
+        "message": "configured internal LLM is unavailable",
+        "retryable": True,
+        "param": None,
+    }
+    with pytest.raises(ValidationError):
+        minutes_validator.validate(failed_minutes_with_artifact)
+    failed_minutes_with_partial_text = copy.deepcopy(failed_minutes_with_artifact)
+    failed_minutes_with_partial_text["artifact_id"] = None
+    failed_minutes_with_partial_text["minutes_text"] = "Synthetic partial minutes."
+    minutes_validator.validate(failed_minutes_with_partial_text)
 
     assistant_turn = copy.deepcopy(
         next(sample for name, sample in samples if name == "AssistantTurn")
@@ -2950,6 +2964,7 @@ def test_workbench_meeting_terminal_states_are_consistent() -> None:
         "save_audio": False,
         "started_at": "2026-10-23T00:00:00Z",
         "ended_at": None,
+        "error": None,
     }
     validator.validate(meeting)
     capturing_with_seal = copy.deepcopy(meeting)
@@ -2980,6 +2995,31 @@ def test_workbench_meeting_terminal_states_are_consistent() -> None:
         missing_minutes["minutes_id"] = None
         with pytest.raises(ValidationError):
             validator.validate(missing_minutes)
+
+    failed: dict[str, Any] = {
+        **meeting,
+        "status": "failed",
+        "ended_at": "2026-10-23T00:30:00Z",
+        "error": {
+            "code": "capture_failed",
+            "message": "Synthetic capture failure.",
+            "retryable": True,
+            "param": None,
+        },
+    }
+    validator.validate(failed)
+    failed_without_error = copy.deepcopy(failed)
+    del failed_without_error["error"]
+    with pytest.raises(ValidationError):
+        validator.validate(failed_without_error)
+    failed_with_minutes = copy.deepcopy(failed)
+    failed_with_minutes["minutes_id"] = "minutes_demo"
+    with pytest.raises(ValidationError):
+        validator.validate(failed_with_minutes)
+    capturing_with_error = copy.deepcopy(meeting)
+    capturing_with_error["error"] = failed["error"]
+    with pytest.raises(ValidationError):
+        validator.validate(capturing_with_error)
 
 
 def test_transcription_logprobs_match_the_openai_sdk_shape() -> None:

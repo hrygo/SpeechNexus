@@ -1647,6 +1647,10 @@ components:
             - type: string
               format: date-time
             - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/WorkbenchJobError"
+            - type: "null"
       allOf:
         - if:
             properties:
@@ -1660,6 +1664,8 @@ components:
               minutes_id:
                 type: "null"
               ended_at:
+                type: "null"
+              error:
                 type: "null"
         - if:
             properties:
@@ -1676,6 +1682,8 @@ components:
               ended_at:
                 type: string
                 format: date-time
+              error:
+                type: "null"
         - if:
             properties:
               status:
@@ -1691,6 +1699,36 @@ components:
               ended_at:
                 type: string
                 format: date-time
+              error:
+                type: "null"
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [ended_at, error]
+            properties:
+              sealed_revision:
+                type: "null"
+              minutes_id:
+                type: "null"
+              ended_at:
+                type: string
+                format: date-time
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                not:
+                  const: failed
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
     MeetingCreateRequest:
       type: object
       additionalProperties: false
@@ -1824,6 +1862,16 @@ components:
                 properties:
                   artifact_id:
                     $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              status:
+                not:
+                  const: succeeded
+            required: [status]
+          then:
+            properties:
+              artifact_id:
+                type: "null"
     MinutesCreateRequest:
       type: object
       additionalProperties: false

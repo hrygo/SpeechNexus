@@ -3942,6 +3942,17 @@ components:
         - if:
             properties:
               status:
+                const: succeeded
+            required: [status]
+          then:
+            required: [receipt_id]
+            properties:
+              receipt_id:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
                 const: cancelled
             required: [status]
           then:
@@ -3959,6 +3970,10 @@ components:
         - connection_url
         - effective_configuration
         - limits
+        - cleanup_state
+        - terminal_operations
+        - closed_at
+        - error
       properties:
         id:
           $ref: "#/components/schemas/Identifier"
@@ -3970,10 +3985,15 @@ components:
           type: string
           format: date-time
         connection_url:
-          type: string
-          minLength: 1
-          maxLength: 2048
-          description: Relative or absolute WebSocket URL containing session_id. The URL is not a credential.
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 2048
+            - type: "null"
+          description: |
+            Relative or absolute WebSocket URL containing session_id while the
+            session can still be connected. The URL is not a credential.
+            Terminal sessions return null.
         effective_configuration:
           $ref: "#/components/schemas/EffectiveConfiguration"
         limits:
@@ -3987,6 +4007,92 @@ components:
             $ref: "#/components/schemas/RealtimeTerminalOperation"
         cleanup_state:
           $ref: "#/components/schemas/CleanupState"
+        closed_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error, closed_at]
+            properties:
+              error:
+                not:
+                  type: "null"
+              closed_at:
+                type: string
+                format: date-time
+        - if:
+            properties:
+              status:
+                not:
+                  const: failed
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+        - if:
+            properties:
+              status:
+                enum: [closed, failed, expired]
+            required: [status]
+          then:
+            required: [closed_at]
+            properties:
+              connection_url:
+                type: "null"
+              closed_at:
+                type: string
+                format: date-time
+        - if:
+            properties:
+              status:
+                const: expired
+            required: [status]
+          then:
+            properties:
+              cleanup_state:
+                const: not_required
+              terminal_operations:
+                maxItems: 0
+        - if:
+            properties:
+              status:
+                enum: [created, admitting]
+            required: [status]
+          then:
+            properties:
+              connection_url:
+                type: string
+              cleanup_state:
+                const: not_required
+              terminal_operations:
+                maxItems: 0
+              closed_at:
+                type: "null"
+        - if:
+            properties:
+              status:
+                enum: [active, draining]
+            required: [status]
+          then:
+            properties:
+              connection_url:
+                type: string
+              cleanup_state:
+                const: pending
+              closed_at:
+                type: "null"
     RealtimeSessionCancelRequest:
       type: object
       additionalProperties: false

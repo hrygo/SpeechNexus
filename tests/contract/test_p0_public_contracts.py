@@ -2586,6 +2586,111 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
         operation_validator.validate(failed_operation)
 
 
+def test_realtime_session_terminal_state_requires_cleanup_and_failure_facts() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    session_validator = _component_validator(speech, "RealtimeSession")
+    session: dict[str, Any] = {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "created",
+        "expires_at": "2026-10-23T00:00:30Z",
+        "connection_url": "wss://speechnexus.example/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+            "models": {"asr": {"id": "asr-quality", "revision": "1"}},
+            "policy_revision": "1",
+            "catalog_revision": "1",
+        },
+        "limits": {
+            "max_input_chunk_ms": 250,
+            "max_message_bytes": 65536,
+            "input_credit_samples": 48000,
+            "output_credit_samples": 48000,
+            "max_segment_ms": 30000,
+            "max_session_duration_ms": 28800000,
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": None,
+        "error": None,
+    }
+    session_validator.validate(session)
+
+    active = copy.deepcopy(session)
+    active["status"] = "active"
+    active["cleanup_state"] = "pending"
+    session_validator.validate(active)
+    active["cleanup_state"] = "not_required"
+    with pytest.raises(ValidationError):
+        session_validator.validate(active)
+
+    closed = copy.deepcopy(session)
+    closed["status"] = "closed"
+    closed["connection_url"] = None
+    closed["closed_at"] = "2026-10-23T00:10:00Z"
+    session_validator.validate(closed)
+    closed["connection_url"] = session["connection_url"]
+    with pytest.raises(ValidationError):
+        session_validator.validate(closed)
+
+    failed = copy.deepcopy(closed)
+    failed["status"] = "failed"
+    failed["connection_url"] = None
+    failed["cleanup_state"] = "quarantined"
+    failed["error"] = {
+        "code": "cleanup_unconfirmed",
+        "message": "engine termination could not be confirmed",
+        "retryable": False,
+    }
+    session_validator.validate(failed)
+    failed_without_error = copy.deepcopy(failed)
+    failed_without_error["error"] = None
+    with pytest.raises(ValidationError):
+        session_validator.validate(failed_without_error)
+
+    expired = copy.deepcopy(session)
+    expired["status"] = "expired"
+    expired["connection_url"] = None
+    expired["closed_at"] = "2026-10-23T00:00:30Z"
+    session_validator.validate(expired)
+    expired["cleanup_state"] = "complete"
+    with pytest.raises(ValidationError):
+        session_validator.validate(expired)
+
+    premature_operation = copy.deepcopy(session)
+    premature_operation["terminal_operations"] = [
+        {
+            "operation_id": "op-demo",
+            "kind": "asr",
+            "status": "succeeded",
+            "cleanup_state": "complete",
+            "receipt_id": "receipt-demo",
+        }
+    ]
+    with pytest.raises(ValidationError):
+        session_validator.validate(premature_operation)
+
+    terminal_operation_validator = _component_validator(speech, "RealtimeTerminalOperation")
+    terminal_operation_validator.validate(
+        {
+            "operation_id": "op-demo",
+            "kind": "asr",
+            "status": "succeeded",
+            "cleanup_state": "complete",
+            "receipt_id": "receipt-demo",
+        }
+    )
+    with pytest.raises(ValidationError):
+        terminal_operation_validator.validate(
+            {
+                "operation_id": "op-demo",
+                "kind": "asr",
+                "status": "succeeded",
+                "cleanup_state": "complete",
+                "receipt_id": None,
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "payload",
     [

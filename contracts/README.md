@@ -15,7 +15,9 @@ of defaults, units, enum domains, or stable error codes.
   artifacts, realtime sessions, voices, pronunciation sets, and voice
   design / clone / preview / validation / publication. A successful durable
   Job carries a kind-discriminated structured result tied to its committed
-  artifacts and receipt; non-success states carry no result.
+  artifacts and receipt; non-success states carry no result. Realtime session
+  projections require connection, terminal-time, structured failure, and
+  cleanup facts to agree with the session status.
 - `workbench-openapi.yaml`: optional workbench application resources: projects,
   transcripts, meetings, assistant turns, teleprompter state, audiobooks,
   saved assets, export jobs, and export events. It does not claim OpenAI

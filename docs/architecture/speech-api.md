@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.5.6"
+version: "0.5.7"
 date: 2026-10-23
 ---
 
@@ -267,6 +267,8 @@ created → admitting → active → draining → closed
 ```
 
 用户关闭时默认 drain 已接受的段与 TTS，`mode=abort` 则取消全部 operation；超过 drain deadline 进入失败清理。session terminal 记录保存 15 分钟供调用方协调，实时 PCM 与音频块不因此保留。
+
+会话 REST 投影必须让生命周期与清理事实同时可判定：`created` / `admitting` 返回非空 `connection_url`、`cleanup_state=not_required`、无终态 operation、`closed_at=null`；`active` / `draining` 仍返回连接地址但 `cleanup_state=pending`。`closed` / `failed` / `expired` 的 `connection_url` 为 null 且 `closed_at` 非空；`expired` 固定 `cleanup_state=not_required` 且没有终态 operation。`failed` 必须带结构化 `error`，其余状态 `error=null`；失败前后资源清理仍分别使用 not_required / pending / complete / quarantined，不由会话状态替代。终态 operation 的 `succeeded` 必须引用 receipt；`cancelled` 仍只允许 not_required / complete。
 
 ### 2.2 标准子集与命名空间
 

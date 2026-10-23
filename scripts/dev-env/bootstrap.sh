@@ -220,6 +220,7 @@ systemctl --user enable --now speechnexus-postgres.service speechnexus-minio.ser
 if [[ "$(loginctl show-user "$USER" -p Linger --value)" != "yes" ]]; then
   loginctl enable-linger "$USER"
 fi
+"$repo_root/scripts/dev-env/mysql-service.sh" --local
 
 for _ in $(seq 1 80); do
   if LD_LIBRARY_PATH="$postgres_lib" "$postgres_bin/pg_isready" \

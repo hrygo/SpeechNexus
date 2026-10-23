@@ -16,6 +16,11 @@ The two suites exercise different assurance boundaries:
   No business procedures, triggers, GiST, partial indexes or
   `SKIP LOCKED` are used. Both engines execute the same application rules.
 
+The historical PG suite is transitional. [ADR 0007](../../docs/decisions/0007-legacy-coordination-retirement.md)
+defines its exit conditions: migrate valid invariants into current-path tests,
+then remove the legacy CI gate, SQL, tests and obsolete design from the working
+tree. Git history preserves provenance; the shared transaction gate remains.
+
 Each test creates a unique namespace, installs the DDL, and drops it afterwards.
 Permission checks create fresh runtime roles/users and remove them after testing.
 PG uses a schema in the explicitly configured test database; MySQL creates a
@@ -38,20 +43,30 @@ Run the historical PG suite alone with
 when no MySQL instance is available. CI provisions disposable PG 16.15 and
 MySQL 8.4.8 services and supplies both DSNs for its integration step.
 
-An optional isolated MySQL test instance can be started as follows. The password
-is a synthetic local-test credential. No host data directory is mounted.
+On this host the isolated MySQL instance is a project-managed container, started
+like the other development services rather than by hand:
 
 ```bash
-docker run --rm --detach --name speechnexus-coordination-mysql \
-  --publish 127.0.0.1:55434:3306 \
-  --env MYSQL_ROOT_PASSWORD=speechnexus_test --env MYSQL_ROOT_HOST=% \
-  mysql:8.4.8 --default-storage-engine=InnoDB \
-  --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_bin
-docker exec speechnexus-coordination-mysql \
-  mysqladmin ping --host=127.0.0.1 --user=root --password=speechnexus_test
-# Run tests after initialization reports ready, then remove the temporary instance:
-docker stop speechnexus-coordination-mysql
+./scripts/dev-env/mysql-service.sh          # provision and start; idempotent
+./scripts/dev-env/mysql-service.sh status   # readiness probe
+./scripts/dev-env/mysql-service.sh stop
 ```
+
+`make dev-bootstrap` and `make dev-up` install and start it, and the test gates
+call the same script: `make integration-test` and `make coordination-test`
+start the local container while `SPEECHNEXUS_TEST_MYSQL_URL` points at it and
+stay out of the way for any other isolated server, while `make verify` always
+ensures the local one because it also validates this host's environment. The
+dual-database gate therefore never needs a manual prerequisite. The container is
+pinned to
+`mysql@sha256:2952e3be7807f06fc18de50b3ea1a632d5c70d63482ff7d7376fe3aa8999babf`
+(MySQL 8.4.8, InnoDB, `utf8mb4_0900_bin`), binds `127.0.0.1:55434` only, caps
+itself at 2 GiB and 2 CPUs, and keeps data in `.runtime/data/mysql`, owned by the
+container's `mysql` account after initialisation. It is not a user systemd unit:
+this host's user manager has no docker socket access, so docker's
+`unless-stopped` restart policy restores it with the daemon instead. The root
+password is a synthetic local-test credential in `.runtime/config/mysql.env`;
+it never names a shared or production server.
 
 The measured local environment is Linux ARM64, PostgreSQL 16.15 / psycopg 3.3.6,
 and MySQL 8.4.8 / PyMySQL 1.2.3, with Read Committed and UTC. Driver versions are

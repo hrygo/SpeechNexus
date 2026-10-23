@@ -26,10 +26,12 @@ check "user session persistence" bash -c \
   '[[ "$(loginctl show-user "$USER" -p Linger --value)" == "yes" ]]'
 check "credential file permissions" bash -c \
   '[[ "$(stat -c %a .runtime/config/minio.env)" == "600" ]]'
+check "coordination MySQL credential permissions" bash -c \
+  '[[ "$(stat -c %a .runtime/config/mysql.env)" == "600" ]]'
 check "runtime configuration ignored" git -C "$repo_root" check-ignore -q \
   .runtime/config/minio.env
 check "development listeners loopback only" bash -c \
-  '! ss -ltnH | awk "{print \$4}" | grep -Eq "(0\.0\.0\.0|\[::\]):(55432|59000)$"'
+  '! ss -ltnH | awk "{print \$4}" | grep -Eq "(0\.0\.0\.0|\[::\]):(55432|55434|59000)$"'
 check "PostgreSQL 16.15" env LD_LIBRARY_PATH="$postgres_lib" \
   "$postgres_bin/postgres" --version
 check "PostgreSQL protocol" env LD_LIBRARY_PATH="$postgres_lib" \
@@ -41,6 +43,7 @@ check "test schema access" env LD_LIBRARY_PATH="$postgres_lib" \
   "$postgres_bin/psql" -h 127.0.0.1 -p 55432 -U speechnexus -d speechnexus_test -Atqc \
   'select 1'
 check "MinIO health" curl -fsS --max-time 2 http://127.0.0.1:59000/minio/health/live
+check "coordination MySQL" "$repo_root/scripts/dev-env/mysql-service.sh" status
 check "Python 3.14.9" bash -c \
   '[[ "$(uv run --directory "$1" python --version)" == "Python 3.14.9" ]]' _ "$repo_root"
 check "contract toolchain" uv run --directory "$repo_root" python -c \
@@ -78,9 +81,10 @@ read -r available_kb < <(awk '/MemAvailable/ {print $2}' /proc/meminfo)
 read -r free_kb < <(df -Pk "$repo_root" | awk 'NR==2 {print $4}')
 printf 'info available_memory_gib=%s free_disk_gib=%s\n' \
   "$((available_kb / 1024 / 1024))" "$((free_kb / 1024 / 1024))"
-printf 'info database_dev=%s database_test=%s object_store=%s\n' \
+printf 'info database_dev=%s database_test=%s coordination_mysql=%s object_store=%s\n' \
   'postgresql://speechnexus@127.0.0.1:55432/speechnexus_dev' \
   'postgresql://speechnexus@127.0.0.1:55432/speechnexus_test' \
+  '127.0.0.1:55434' \
   'http://127.0.0.1:59000'
 
 if ((failures > 0)); then

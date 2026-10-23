@@ -27,6 +27,7 @@
 | 集群拓扑、单机部署与数据库支持范围 | [ADR 0004](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)、[ADR 0006](docs/decisions/0006-cluster-coordination-and-storage-portability.md) |
 | 完整执行命令、公开回执与删除生命周期 | [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)、[execution-command.md](docs/architecture/execution-command.md)、[data-deletion.md](docs/architecture/data-deletion.md) |
 | 协调事务、锁序、表所有权与恢复 | [coordination-transactions.md](docs/architecture/coordination-transactions.md)、[distributed-coordination-schema.md](docs/architecture/distributed-coordination-schema.md)、[事务契约](contracts/internal/coordination-transactions.schema.json) |
+| 遗留协调原型的退出与删除 | [ADR 0007](docs/decisions/0007-legacy-coordination-retirement.md) |
 | Web 视觉、设计 Token 与无障碍 | [UI/UX 设计框架](docs/architecture/ui-ux-design-framework-and-tokens.md) |
 | 本机环境、初始化或部署 | [development-environment.md](docs/development-environment.md)、[deploy/README.md](deploy/README.md) |
 | SpeechRail 代码或规则复用 | [speechrail-reuse.md](docs/architecture/speechrail-reuse.md) |
@@ -57,6 +58,7 @@
 - 内容删除须经版本/摘要固定的预检、明确范围确认与持久删除账本；不追删跨模块独立保存副本，不删除执行、计量、租约或 fencing 证据。恢复先重放删除账本，再开放内容。
 - `web/shared/` 只放两个入口以相同语义消费的稳定组件与设计 Token。子应用复用共享 Token，遵守键盘焦点、减少动效与本地资源约定；能力状态使用 `ready` / `contract` / `planned`，未实现的能力不得用虚构任务、模型或容量填充界面。
 - 公共协议、架构或运行行为改变时，同步更新实现、消费者、相关测试和有效文档；README 中英文版的状态、命令和产品边界保持一致。历史计划与审查记录保留原时点事实。
+- 遗留协调原型仅过渡保留。接入协调事务或更新规则覆盖时，按 ADR 0007 复核退出条件；满足后移除旧必跑门禁及废弃 SQL、测试、设计和专属断言，保留有效业务不变量的新路径验证与 Git 追溯，不把历史保留要求解释为永久维护义务。
 
 ## 工具链与验证
 
@@ -84,7 +86,7 @@ pnpm install --frozen-lockfile
 
 `scripts/dev-env/` 服务管理针对 Linux ARM64、APT 与用户级 systemd。运行前确认宿主、脚本前置条件和现有服务；仅使用本项目隔离的 `.runtime/` PostgreSQL / MinIO 与协调测试专用 MySQL 实例，不访问同机共享实例。环境就绪记录不代表当前主机可运行。
 
-协调门禁要求同时设置指向隔离测试实例的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量时 Make 目标直接失败。直接运行共享事务 pytest 时，两个变量均缺失会跳过，仅配置一个会失败。`make verify` 提供两者的本机隔离默认值，须预先准备对应服务。旧 PG 历史测试与当前受控事务测试保留各自保护边界，不得用单库通过、跳过或顺序调用冒充双库并发验证。
+协调门禁要求同时设置指向隔离测试实例的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量时 Make 目标直接失败。直接运行共享事务 pytest 时，两个变量均缺失会跳过，仅配置一个会失败。`make verify` 提供两者的本机隔离默认值，并在 DSN 指向默认端口时通过 `scripts/dev-env/mysql-service.sh` 自动启动协调 MySQL 容器（该容器由 docker 重启策略随守护进程恢复，不使用用户 systemd 单元）。旧 PG 历史测试与当前受控事务测试保留各自保护边界，不得用单库通过、跳过或顺序调用冒充双库并发验证。
 
 确定性测试使用 fake adapter，不下载或加载模型，不使用私人音频。真实引擎、质量与负载验证需另记模型和引擎版本、绑定、拓扑与结果。健康检查、schema 校验、合成媒体和浏览器冒烟各自只证明实际覆盖范围；跳过不算通过，缺少契约或测试覆盖时如实说明。
 

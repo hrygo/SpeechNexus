@@ -31,9 +31,10 @@
 | [工作台 LLM 与业务内容的网络边界](decisions/0003-workbench-llm-network-boundary.md)                 | 仅本机 / 内网 LLM、内容不出网、可选集成与部署责任                               |
 | [集群就绪架构与单机 MVP 同构部署](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) | 架构层集群原生、三级资源拓扑、分池租约、节点控制器与单机 MVP 演进边界           |
 | [集群协调与存储可移植性](decisions/0006-cluster-coordination-and-storage-portability.md)            | 已接受的应用事务保护边界、不采用 etcd、PG 正式交付及 MySQL 关键协调验证         |
+| [遗留协调原型的退出与删除](decisions/0007-legacy-coordination-retirement.md)                        | 旧 PG 必跑门禁、SQL/测试/设计的退出条件与 Git 追溯；有效业务不变量迁入新路径    |
 
 领域设计使用稳定文件名持续维护；实施计划与审查保留日期；ADR 以四位编号记录决定。协议 / 数据规则分别在其负责文档集中维护，主文档给出职责与入口。冲突需修订设计，不能以工作记录或历史材料静默覆盖公共语义。
 
-机器契约入口为 [contracts/README.md](../contracts/README.md)。`make contracts-check` 与 `uv run pytest tests/contract` 校验 OpenAPI / JSON Schema、正负样例、事件联合与 OpenAI SDK REST / Realtime 形状；这些检查不启动业务服务。协调原型按[集成测试说明](../tests/integration/README.md)使用独立 PG/MySQL 测试库运行；CI 同时提供一次性 PG16 与 MySQL8.4 服务。旧 PG 触发器测试与新受控事务测试分别保留。
+机器契约入口为 [contracts/README.md](../contracts/README.md)。`make contracts-check` 与 `uv run pytest tests/contract` 校验 OpenAPI / JSON Schema、正负样例、事件联合与 OpenAI SDK REST / Realtime 形状；这些检查不启动业务服务。协调原型按[集成测试说明](../tests/integration/README.md)使用独立 PG/MySQL 测试库运行；CI 同时提供一次性 PG16 与 MySQL8.4 服务。旧 PG 触发器测试仅过渡保留，按 ADR 0007 退出；新受控事务测试持续验证当前架构要求。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

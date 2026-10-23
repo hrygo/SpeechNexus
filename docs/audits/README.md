@@ -11,3 +11,4 @@
 
 - [2026-10-23 架构与契约修复闭环](2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
 - [2026-10-23 集群协调重构后的架构与契约审查](2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。
+- [2026-10-24 B00 MegaCube 环境与能力缺口前检](2026-10-24-b00-megacube-environment-and-capability-gap.md)：主机与 GPU 事实、授权释放与制品获取（含摘要与许可）、首个真实 ASR 生命周期探针与停止证据、逐能力缺口与 B01 首个单元。

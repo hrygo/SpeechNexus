@@ -328,6 +328,6 @@ python3 scripts/dev-env/refresh-implementation-tracker.py
 
 预设/发音资源还需逐项验收合并顺序、allowlist/ranges、exact 拒绝、发布资格/CAS、默认指针回滚和公开端点，由 A02/A04/C01 在 G3 收敛；C05/G4 包含会议要点标记和版本保存，C07/G4 包含独立质量检查、试听及匿名确认记录。上述已有产品设计范围均已补入对应工作包，不增加新的产品阶段或父工作包。
 
-首轮直接派 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)、[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)。规划材料与跟踪工具随同一 PR 集成，三队使用包含这些文件的集成 SHA 启动；远端 issue 正文提供可独立阅读的任务与验收条件。团队 A 的持续执行目标与首轮退出条件见[团队 A 目标](2026-10-23-team-a-goal.md)。
+首轮直接派 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)、[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)。规划材料与跟踪工具随同一 PR 集成，三队使用包含这些文件的集成 SHA 启动；远端 issue 正文提供可独立阅读的任务与验收条件。团队 A 的持续执行目标与首轮退出条件见[团队 A 目标](2026-10-23-team-a-goal.md)，团队 B 的持续执行目标见[团队 B 目标](2026-10-23-team-b-goal.md)。
 
 [计划索引](README.md) · [项目主设计](../speechnexus-product-architecture.md) · [整体技术方案](../architecture/technical-blueprint.md) · [协调事务](../architecture/coordination-transactions.md)

@@ -23,6 +23,7 @@ from speechnexus_backend.speech.domain.assets import (
     UploadResult,
     VerifiedObject,
     begin_asset_write,
+    digest,
     expiry_blocker,
     identifier,
     publish_asset,
@@ -140,10 +141,13 @@ def _replay(asset: AssetRecord, intent: UploadIntent) -> UploadResult:
 
 
 class PostgresAssetMetadata:
-    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+    def __init__(
+        self, pool: SpeechPool, *, namespace_digest: str, timeout_seconds: float = 3
+    ) -> None:
         if not 0 < timeout_seconds <= 30:
             raise ValueError("Asset metadata requires bounded transaction deadlines")
         self._pool, self._timeout = pool, timeout_seconds
+        self._namespace = digest(namespace_digest)
 
     @contextmanager
     def _transaction(self, *, readonly: bool = False) -> Iterator[_Cursor]:
@@ -153,7 +157,9 @@ class PostgresAssetMetadata:
                 if readonly:
                     connection.execute("SET TRANSACTION READ ONLY")
                 with connection.cursor() as raw:
-                    yield _Cursor(raw, deadline)
+                    cursor = _Cursor(raw, deadline)
+                    self._require_namespace(cursor, readonly=readonly)
+                    yield cursor
                     if time.monotonic() >= deadline:
                         raise AssetError("asset_metadata_deadline")
         except psycopg.errors.UniqueViolation:
@@ -162,6 +168,44 @@ class PostgresAssetMetadata:
             raise AssetError("asset_metadata_unknown") from None
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise AssetError("asset_metadata_unavailable") from None
+
+    def check_namespace(self, *, initialize: bool = False) -> None:
+        # Bootstraps an immutable fact only for an empty resource authority.
+        # Existing assets without a declaration require verified A07 adoption.
+        with self._transaction(readonly=not initialize):
+            pass
+
+    def _require_namespace(self, cursor: _Cursor, *, readonly: bool) -> None:
+        def declared() -> str | None:
+            rows = cursor.rows(
+                "SELECT namespace_digest FROM speech_asset_storage_authority WHERE binding_id = 1"
+            )
+            return rows[0]["namespace_digest"] if rows else None
+
+        found = declared()
+        if found is None:
+            if readonly:
+                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                    raise AssetError("asset_storage_adoption_required")
+                raise AssetError("asset_storage_namespace_unbound")
+            # All new writers enter this declaration check before other asset
+            # locks. No object I/O or mutable topology is held in the transaction.
+            cursor.rows(
+                "SELECT workspace_id FROM speech_workspaces "
+                "WHERE workspace_id = 'workspace-default' FOR UPDATE"
+            )
+            found = declared()
+            if found is None:
+                if cursor.rows("SELECT asset_id FROM speech_assets LIMIT 1"):
+                    raise AssetError("asset_storage_adoption_required")
+                cursor.rows(
+                    "INSERT INTO speech_asset_storage_authority "
+                    "(binding_id,namespace_digest,recorded_at_us) VALUES (1,%s,%s)",
+                    (self._namespace, cursor.clock()),
+                )
+                found = self._namespace
+        if found != self._namespace:
+            raise AssetError("asset_storage_namespace_mismatch")
 
     def _original(self, cursor: _Cursor, intent: UploadIntent) -> AssetRecord | None:
         rows = cursor.rows(

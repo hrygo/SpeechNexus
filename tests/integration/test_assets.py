@@ -106,8 +106,8 @@ def assets(database: JobDatabase) -> Iterator[Assets]:  # noqa: F811 -- pytest f
     for grant in asset_runtime_grants(database.schema, database.role):
         database.query(grant)
     assert database.pool is not None
-    metadata = PostgresAssetMetadata(database.pool)
     objects = MinioAssetObjects(endpoint, bucket, access, secret)
+    metadata = PostgresAssetMetadata(database.pool, namespace_digest=objects.namespace_digest)
     service = AssetService(metadata, objects, TextAssetInspector(), AssetPolicy(60))
     try:
         yield Assets(database, service, metadata, objects, admin, bucket)
@@ -357,6 +357,8 @@ def test_cleanup_lost_ack_is_not_reported_complete(
         "UPDATE speech_workspaces SET workspace_state = 'disabled'",
         "INSERT INTO speech_asset_references (reference_id) VALUES ('forbidden')",
         "CREATE TABLE forbidden (id INTEGER)",
+        "UPDATE speech_asset_storage_authority SET namespace_digest = 'changed'",
+        "DELETE FROM speech_asset_storage_authority",
     ],
 )
 def test_fresh_asset_role_cannot_rewrite_identity_or_evidence(
@@ -388,7 +390,9 @@ def test_pg_lost_commit_reply_never_reexecutes_write(
         max_size=1,
         timeout=3,
     ) as pool:
-        metadata = PostgresAssetMetadata(cast(SpeechPool, pool))
+        metadata = PostgresAssetMetadata(
+            cast(SpeechPool, pool), namespace_digest=assets.objects.namespace_digest
+        )
         intent = UploadIntent(
             "workspace-default", "text_input", len(BODY), hash_bytes(BODY), hash_bytes(b"fault-key")
         )
@@ -457,7 +461,7 @@ def test_asset_upgrade_is_atomic_and_preserves_existing_coordination_history(
     sandbox.admin.execute("DROP TABLE speech_content_deletions")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0003_assets"
+    assert sandbox.version() == "0004_asset_storage"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1

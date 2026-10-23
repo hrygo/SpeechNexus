@@ -188,8 +188,14 @@ def _assert_contract_matches(
 def test_backend_exposes_valid_operational_openapi() -> None:
     document = _backend().openapi()
     validate(document)
-    assert set(document["paths"]) == {"/healthz", "/readyz"}
-    _assert_contract_matches(_load_contract(), document)
+    assert set(document["paths"]) == {
+        "/healthz",
+        "/readyz",
+        "/v1/nexus/assets",
+        "/v1/nexus/assets/{asset_id}",
+        "/v1/nexus/assets/{asset_id}/content",
+    }
+    _assert_contract_matches(_load_contract(), document, require_exact_paths=False)
 
 
 def test_gateway_exposes_valid_operational_openapi() -> None:
@@ -226,7 +232,7 @@ def test_operational_parity_detects_component_drift(
     actual = copy.deepcopy(_backend().openapi())
     actual["components"]["schemas"][component]["properties"][field][keyword] = value
     with pytest.raises(AssertionError):
-        _assert_contract_matches(_load_contract(), actual)
+        _assert_contract_matches(_load_contract(), actual, require_exact_paths=False)
 
 
 def test_operational_parity_detects_removed_response_guarantee() -> None:

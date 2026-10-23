@@ -121,6 +121,7 @@ def asset_runtime_grants(schema: str, role: str) -> tuple[str, ...]:
     grants = [f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"']
     tables = (
         "speech_workspaces",
+        "speech_asset_storage_authority",
         "speech_assets",
         "speech_asset_commands",
         "speech_asset_objects",

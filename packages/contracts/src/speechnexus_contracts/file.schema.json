@@ -2362,7 +2362,8 @@
           "format": "binary"
         },
         "workspace_id": {
-          "$ref": "#/$defs/Identifier"
+          "$ref": "#/$defs/Identifier",
+          "default": "workspace-default"
         },
         "purpose": {
           "$ref": "#/$defs/AssetPurpose"

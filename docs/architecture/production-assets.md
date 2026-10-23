@@ -3,9 +3,11 @@
 A02's first storage/application unit provides real UTF-8 `text_input`
 publication on PostgreSQL and versioned MinIO. `AssetService` exposes upload,
 original-identity reconciliation, metadata, bounded content/Range reads and
-bounded retention maintenance. These are process-local ports; public HTTP routes,
-a scheduled maintenance process and the complete A02 resource families remain
-subsequent units. Operational endpoints retain their existing behavior.
+bounded retention maintenance. The backend now exposes `POST /v1/nexus/assets`, `GET /v1/nexus/assets/{asset_id}`
+and its `/content` path when explicit storage credentials are configured. A
+standalone maintenance entry point replays originals and retention ledgers.
+Artifact/Operation/receipt and immutable resource families remain subsequent
+A02 units. Operational endpoints retain their existing behavior.
 
 ## Publication and recovery
 
@@ -61,12 +63,120 @@ transaction port and serialize new references with the same workspace → Asset
 lock prelude, reject expired/closed assets and retain references until their own
 release evidence is satisfied. The asset runtime role cannot insert references.
 User-requested deletion still requires A07's preflight/confirmation protocol;
-this unit adds no public delete shortcut. Maintenance must run before exposing
-content after recovery, as part of the subsequent deployment/API integration.
+this unit adds no public delete shortcut. The configured API performs a bounded maintenance pass before accepting traffic;
+every read independently rejects persisted expiry. A separate worker continues
+polling. Full backup restoration and user-confirmed deletion remain A07 work.
+
+## Immutable storage namespace
+
+`0004_asset_storage` adds a singleton immutable namespace declaration. The
+fingerprint identifies the normalized configured S3 origin and bucket, excludes
+credentials (which may rotate), and is checked by every metadata transaction.
+The API/worker composition derives the metadata fingerprint from its exact
+object adapter. A changed endpoint/bucket fails before any original object is
+read or deleted; a different store's missing version cannot complete the original
+ledger. Runtime roles may insert the initial declaration, but cannot update or
+delete it. This is a persisted identity fact, not mutable topology configuration.
+
+An empty authority declares its first namespace under the default-workspace
+lock before any new Asset row is committed. Configured startup checks an existing
+declaration before sending even S3 credentials; initial versioning/credential
+checks happen before declaration. Existing assets without a declaration (for
+example an old `0003_assets` authority) require explicit verified A07 adoption.
+Startup refuses to infer their old bucket or silently replace their placement.
+Do not rewrite the declaration to bypass recovery. Stop/fence all older asset
+writers and cleanup processes before this protocol upgrade; old binaries do not
+check the new declaration. A07 qualifies the full rolling-upgrade/restore path.
+
+All processes must use the same canonical storage origin/bucket. This guard
+qualifies configuration identity, not physical-provider attestation, endpoint
+alias migration or multi-host storage/backup failover. Loopback endpoints are
+for the same isolated host in these tests; cluster deployment needs a shared
+approved canonical endpoint. Those deployment/recovery qualifications remain A07.
+
+## HTTP and worker configuration
+
+The API uses the explicitly configured `SPEECHNEXUS_DATABASE_URL` and
+`SPEECHNEXUS_DATABASE_SCHEMA` (default `speech`). Apply migrations with the
+separate migration credential and install `asset_runtime_grants` as an
+administrator. API/worker startup rejects a database/schema/table owner or a
+role able to create persistent objects in the authority schema. It does not
+install migrations, grants, a bucket, versioning or an object policy. This
+startup guard is not the complete deployment privilege audit.
+
+Supply both `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` and
+`SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` for the configured private, versioned
+bucket. With neither key, business endpoints return a stable 503 and operational
+health remains available. A partial credential pair is a configuration error;
+validation excludes input values from error messages. Use dedicated object
+credentials; synthetic test root keys do not qualify production IAM.
+
+`SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS` is optional and has no selected product
+default. Without it, uploads require `ttl_seconds`. `asset_max_bytes` is 1–4 MiB
+(default 4 MiB); ingress allows another 16 KiB for multipart framing. A process
+accepts at most `asset_upload_concurrency` concurrent private upload buffers
+(default/hard maximum 4), with no waiting queue. The complete receive deadline is
+`asset_receive_timeout_seconds` (default 30 s, maximum 120 s). This is a transport
+buffer bound, not a distributed execution capacity claim. File parsing accepts
+one binary part and four bounded metadata fields; duplicate or unapproved fields
+and client paths/keys/URLs are rejected. Private buffers close on errors and
+receive disconnects. Filename and client Content-Type do not determine storage
+identity or validated MIME facts.
+
+Asset endpoints accept only configured `asset_allowed_hosts` (default
+`localhost`, `127.0.0.1`, `::1`). Requests carrying Origin require an exact
+`asset_allowed_origins` entry (default empty). These are ingress guards, not a
+login, user identity, tenant boundary or CORS service. Browser clients use the
+same-origin deployment proxy; the existing Vite `/v1` proxy supports this during
+development. Configure its actual Host and frontend Origin explicitly. Deployment
+network access and outgoing-content restrictions still require A07 evidence.
+
+Responses validate against packaged authoritative schemas, not weaker inferred
+response models. `/openapi.json` projects only these three implemented business
+paths alongside health. Public metadata exposes no object key/version, writer
+or request digest. Downloads use octet-stream attachments, no-store, nosniff and
+one pinned byte range; malformed/multiple/unsatisfiable ranges return 416 with
+`Content-Range: bytes */<actual-size>`. Prefetched storage readers close even if
+response start/body sends fail. A same-key expired replay remains unavailable.
+
+Unknown/pending responses provide Location when the original Asset identity is
+known, `retryable: false` and `X-Should-Retry: false`. The latter suppresses the
+OpenAI SDK's default transport retries. `asset_upload_in_progress` represents an
+Asset; it never invents an Operation ID. Query the original metadata or retry
+only its original body/key for reconciliation. Stable error envelopes omit
+parser/SDK diagnostics, raw content and raw idempotency keys. Without a key,
+a new request remains a new logical upload.
+
+The `speechnexus-asset-maintain` process requires explicit `process_role=job-worker`,
+node ID and instance ID, plus the same authority/bucket configuration. It defaults
+to a 10-resource batch every 5 seconds (`asset_maintenance_batch_size` 1–100,
+`asset_maintenance_interval_seconds` >0–300 s). `--once` runs one bounded pass;
+a zero exit does not assert that blocked/unknown ledgers are complete. SIGINT or
+SIGTERM unwinds the current owned transaction/reader and stops the process;
+interrupted or forced operations retain original identities/ledgers for replay. This worker does not start a GPU process
+or release compute budgets.
+
+```bash
+# A non-owner runtime credential, pre-created versioned bucket and paired
+# object keys must already be configured. Do not use a migration/DB-owner DSN.
+export SPEECHNEXUS_PROCESS_ROLE=job-worker
+export SPEECHNEXUS_NODE_ID=node-local-1
+export SPEECHNEXUS_INSTANCE_ID=asset-maintenance-1
+uv run speechnexus-asset-maintain
+```
+
+`@speechnexus/contracts` exports `uploadAsset(createSpeechClient(baseUrl), input)`:
+its Blob/File transport replaces only the generated binary placeholder, validates
+metadata/replies and supplies actual FormData without adding mutable defaults or
+retrying unknown replies. Use an explicit Idempotency-Key and request TTL, e.g.
+`{ purpose: "text_input", file, ttl_seconds: 3600 }`. The static generator uses
+`--default-non-nullable false`: a schema's default annotation must not make an
+optional request field mandatory in TypeScript or insert a value at runtime.
 
 ## Storage, grants and local evidence
 
-The packaged Alembic head is `0003_assets`, after `0002_coordination`. It creates
+The packaged Alembic head is `0004_asset_storage`, following the unchanged
+`0003_assets` and `0002_coordination` migrations. `0003_assets` creates
 the shared `workspace-default`, Asset/command/object/reference/event tables and
 content deletion ledger in the same authority schema. Existing coordination
 rows and grants are preserved. Destructive downgrade is refused. Use the

@@ -149,3 +149,36 @@ Python compares each case with the original schema and TypeScript compile tests
 cover parser results and client path restrictions. This is the first profile
 slice; full admin/workbench runtime coverage, streaming protocols and actual
 B/C consumer integration remain pending in A00.
+
+## Asset HTTP transport
+
+`uploadAsset(createSpeechClient(baseUrl), input, { idempotencyKey, requestId })`
+replaces only `AssetUploadRequest.file`'s binary placeholder with a Blob/File.
+All metadata uses the generated shape/runtime validator. The helper creates
+actual multipart FormData, validates Asset/error replies and performs no retries.
+It preserves response headers for original-identity recovery. It inserts no TTL
+or workspace default. Set an explicit Idempotency-Key; an unknown reply never
+means permission to create another upload.
+
+```typescript
+import { createSpeechClient, uploadAsset } from "@speechnexus/contracts";
+const client = createSpeechClient("http://127.0.0.1:8000");
+const result = await uploadAsset(
+  client,
+  { purpose: "text_input", file: new File(["synthetic"], "input.txt"), ttl_seconds: 3600 },
+  { idempotencyKey: "asset-example-1" },
+);
+```
+
+The server must be configured with a versioned private bucket, a non-owner DB
+role and paired object credentials. Browser callers use an approved Origin and
+the deployment's same-origin proxy. Initial content inspection supports actual
+UTF-8 text; audio readiness requires B03.
+
+`contracts/bindings.json.http_surfaces.assets` selects three implemented paths
+for packaged `assets.openapi.json`. The generator closes external schemas and
+retains parameters/responses/headers in their original component namespaces.
+The running backend merges this complete projection with health schemas; it
+never publishes the unimplemented speech paths in its OpenAPI. Schema default
+annotations stay optional in TypeScript (`--default-non-nullable false`) and
+never cause runtime default insertion. Generated files remain drift-protected.

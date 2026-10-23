@@ -784,7 +784,15 @@ paths:
       summary: Upload a bounded input asset
       description: |
         The body is streamed to private staging, validated, and only then marked
-        ready. No remote URL, object key, or server path is accepted.
+        ready. No remote URL, object key, or server path is accepted. The initial
+        text publication unit accepts at most 4 MiB and one million UTF-8 text
+        characters. Missing workspace_id selects workspace-default. Missing TTL
+        requires an explicit deployment default; retention is fixed with the
+        original reservation. Audio readiness requires an installed real inspector.
+        An unknown or in-progress upload is queried at Location when that header
+        is available, or reconciled with the same Idempotency-Key and original
+        body. X-Should-Retry: false suppresses ordinary SDK transport retries;
+        creating another upload is never recovery of the original.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -812,12 +820,24 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "408":
+          $ref: "#/components/responses/AssetReceiveTimeout"
+        "409":
+          $ref: "#/components/responses/AssetUploadConflict"
+        "410":
+          $ref: "#/components/responses/Gone"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/AssetUploadUnavailable"
   /v1/nexus/assets/{asset_id}:
     get:
       tags: [assets]
@@ -838,10 +858,14 @@ paths:
                 $ref: "#/components/schemas/Asset"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "410":
           $ref: "#/components/responses/Gone"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/assets/{asset_id}/content:
     get:
       tags: [assets]
@@ -880,10 +904,16 @@ paths:
                 format: binary
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "410":
           $ref: "#/components/responses/Gone"
+        "416":
+          $ref: "#/components/responses/AssetRangeNotSatisfiable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/nexus/artifacts/{artifact_id}:
     get:
       tags: [artifacts]
@@ -1663,6 +1693,15 @@ components:
         type: string
         pattern: "^bytes=[0-9]*-[0-9]*$"
   headers:
+    AssetLocation:
+      description: Relative URL of the original Asset; its existence or readiness may be unknown.
+      schema:
+        type: string
+    NoOrdinaryRetry:
+      description: Suppress ordinary SDK retries; reconcile the original identity instead.
+      schema:
+        type: string
+        const: "false"
     XRequestId:
       description: Validated client request ID or a server-generated correlation ID.
       schema:
@@ -1709,6 +1748,52 @@ components:
         type: string
         pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
   responses:
+    AssetReceiveTimeout:
+      description: The bounded upload receive deadline expired before reservation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AssetUploadConflict:
+      description: |
+        Idempotency fingerprint conflict or an original upload remains in progress.
+        asset_upload_in_progress does not represent an Operation. Query the original
+        Asset via Location; do not create a new upload to recover an uncertain one.
+      headers:
+        Location:
+          $ref: "#/components/headers/AssetLocation"
+        X-Should-Retry:
+          $ref: "#/components/headers/NoOrdinaryRetry"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AssetUploadUnavailable:
+      description: |
+        Storage, retention configuration or inspection is unavailable, or an original
+        commit/PUT is unknown. Unknown results are not ordinary retry permission.
+        Location is present when an original Asset identity is known. Without an
+        Idempotency-Key a new request is a new logical upload, not guaranteed recovery.
+      headers:
+        Location:
+          $ref: "#/components/headers/AssetLocation"
+        X-Should-Retry:
+          $ref: "#/components/headers/NoOrdinaryRetry"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AssetRangeNotSatisfiable:
+      description: A malformed, multiple or unsatisfiable single byte range.
+      headers:
+        Content-Range:
+          schema:
+            type: string
+            pattern: '^bytes \*/[0-9]+$'
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     BadRequest:
       description: Malformed request, invalid JSON, invalid audio, or unknown field.
       content:
@@ -3742,6 +3827,7 @@ components:
           format: binary
         workspace_id:
           $ref: "#/components/schemas/Identifier"
+          default: workspace-default
         purpose:
           $ref: "#/components/schemas/AssetPurpose"
         ttl_seconds:

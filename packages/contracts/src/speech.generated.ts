@@ -409,7 +409,15 @@ export interface paths {
     /**
      * Upload a bounded input asset
      * @description The body is streamed to private staging, validated, and only then marked
-     *     ready. No remote URL, object key, or server path is accepted.
+     *     ready. No remote URL, object key, or server path is accepted. The initial
+     *     text publication unit accepts at most 4 MiB and one million UTF-8 text
+     *     characters. Missing workspace_id selects workspace-default. Missing TTL
+     *     requires an explicit deployment default; retention is fixed with the
+     *     original reservation. Audio readiness requires an installed real inspector.
+     *     An unknown or in-progress upload is queried at Location when that header
+     *     is available, or reconciled with the same Idempotency-Key and original
+     *     body. X-Should-Retry: false suppresses ordinary SDK transport retries;
+     *     creating another upload is never recovery of the original.
      */
     post: operations["uploadAsset"];
     delete?: never;
@@ -873,7 +881,7 @@ export interface components {
       language?: string;
       prompt?: string;
       /** @default json */
-      response_format: components["schemas"]["TranscriptFormat"];
+      response_format?: components["schemas"]["TranscriptFormat"];
       /** @description Only valid with response_format=verbose_json. */
       "timestamp_granularities[]"?: ("segment" | "word")[];
       /**
@@ -953,15 +961,15 @@ export interface components {
       voice: string;
       instructions?: string;
       /** @default mp3 */
-      response_format: components["schemas"]["AudioFormat"];
+      response_format?: components["schemas"]["AudioFormat"];
       /** @default 1 */
-      speed: number;
+      speed?: number;
       /**
        * @description P0 supports only complete audio. `sse` is rejected as unsupported.
        * @default audio
        * @enum {string}
        */
-      stream_format: "audio";
+      stream_format?: "audio";
       nexus?: components["schemas"]["SpeechNexusOptions"];
     };
     SpeechNexusOptions: {
@@ -1111,7 +1119,7 @@ export interface components {
       encoding: "pinyin" | "ipa";
       entries: components["schemas"]["PronunciationEntry"][];
       /** @default true */
-      publish: boolean;
+      publish?: boolean;
     };
     /** @enum {string} */
     JobKind: "asr" | "tts" | "voice_design" | "voice_clone" | "voice_preview" | "voice_validation";
@@ -1151,9 +1159,9 @@ export interface components {
     JobConstraints: {
       max_queue_wait_ms?: number;
       /** @default false */
-      allow_degradation: boolean;
+      allow_degradation?: boolean;
       /** @default false */
-      require_exact_parameters: boolean;
+      require_exact_parameters?: boolean;
     };
     DraftTarget: {
       id: components["schemas"]["Identifier"];
@@ -1192,12 +1200,12 @@ export interface components {
     };
     AsrJobOutput: {
       /** @default json */
-      transcript_format: components["schemas"]["TranscriptFormat"];
+      transcript_format?: components["schemas"]["TranscriptFormat"];
       /**
        * @default true
        * @constant
        */
-      save_artifacts: true;
+      save_artifacts?: true;
     };
     TtsJobCreate: components["schemas"]["JobCreateBase"] & {
       /** @constant */
@@ -1222,12 +1230,12 @@ export interface components {
         };
     TtsJobOutput: {
       /** @default mp3 */
-      audio_format: components["schemas"]["AudioFormat"];
+      audio_format?: components["schemas"]["AudioFormat"];
       /**
        * @default true
        * @constant
        */
-      save_artifacts: true;
+      save_artifacts?: true;
     };
     VoiceDesignJobCreate: components["schemas"]["JobCreateBase"] & {
       /** @constant */
@@ -1423,7 +1431,7 @@ export interface components {
        * @default none
        * @enum {string}
        */
-      degradation: "none" | "resource_tightened" | "quality_reduced";
+      degradation?: "none" | "resource_tightened" | "quality_reduced";
     };
     JobError: {
       code: string;
@@ -1859,6 +1867,7 @@ export interface components {
     AssetUploadRequest: {
       /** Format: binary */
       file: string;
+      /** @default workspace-default */
       workspace_id?: components["schemas"]["Identifier"];
       purpose: components["schemas"]["AssetPurpose"];
       ttl_seconds?: number;
@@ -1921,7 +1930,7 @@ export interface components {
     RealtimeConstraints: {
       max_admission_wait_ms?: number;
       /** @default false */
-      allow_degradation: boolean;
+      allow_degradation?: boolean;
     };
     RealtimeSessionCreateRequest: {
       workspace_id?: components["schemas"]["Identifier"];
@@ -1934,7 +1943,7 @@ export interface components {
       overrides?: components["schemas"]["RealtimeOverrides"];
       constraints?: components["schemas"]["RealtimeConstraints"];
       /** @default 30 */
-      expires_in_s: number;
+      expires_in_s?: number;
     } & (unknown & unknown & unknown & unknown);
     /** @enum {string} */
     RealtimeSessionStatus:
@@ -3122,6 +3131,56 @@ export interface components {
     } & (unknown & unknown & unknown);
   };
   responses: {
+    /** @description The bounded upload receive deadline expired before reservation. */
+    AssetReceiveTimeout: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description Idempotency fingerprint conflict or an original upload remains in progress.
+     *     asset_upload_in_progress does not represent an Operation. Query the original
+     *     Asset via Location; do not create a new upload to recover an uncertain one.
+     */
+    AssetUploadConflict: {
+      headers: {
+        Location: components["headers"]["AssetLocation"];
+        "X-Should-Retry": components["headers"]["NoOrdinaryRetry"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description Storage, retention configuration or inspection is unavailable, or an original
+     *     commit/PUT is unknown. Unknown results are not ordinary retry permission.
+     *     Location is present when an original Asset identity is known. Without an
+     *     Idempotency-Key a new request is a new logical upload, not guaranteed recovery.
+     */
+    AssetUploadUnavailable: {
+      headers: {
+        Location: components["headers"]["AssetLocation"];
+        "X-Should-Retry": components["headers"]["NoOrdinaryRetry"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description A malformed, multiple or unsatisfiable single byte range. */
+    AssetRangeNotSatisfiable: {
+      headers: {
+        "Content-Range"?: string;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Malformed request, invalid JSON, invalid audio, or unknown field. */
     BadRequest: {
       headers: {
@@ -3252,6 +3311,10 @@ export interface components {
   };
   requestBodies: never;
   headers: {
+    /** @description Relative URL of the original Asset; its existence or readiness may be unknown. */
+    AssetLocation: string;
+    /** @description Suppress ordinary SDK retries; reconcile the original identity instead. */
+    NoOrdinaryRetry: "false";
     /** @description Validated client request ID or a server-generated correlation ID. */
     XRequestId: string;
     /** @description Operation identity for receipt and cancellation coordination. */
@@ -4025,9 +4088,15 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["AssetReceiveTimeout"];
+      409: components["responses"]["AssetUploadConflict"];
+      410: components["responses"]["Gone"];
       413: components["responses"]["PayloadTooLarge"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["AssetUploadUnavailable"];
     };
   };
   getAsset: {
@@ -4054,8 +4123,10 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
       410: components["responses"]["Gone"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   downloadAssetContent: {
@@ -4096,8 +4167,11 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
       410: components["responses"]["Gone"];
+      416: components["responses"]["AssetRangeNotSatisfiable"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getArtifact: {

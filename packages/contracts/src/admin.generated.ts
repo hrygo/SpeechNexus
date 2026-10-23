@@ -1574,7 +1574,7 @@ export interface components {
        * @description True when every stage, including required review or auxiliary work, must be admitted before execution starts.
        * @default true
        */
-      requires_complete_reservation: boolean;
+      requires_complete_reservation?: boolean;
     };
     AsrParameterDomain: {
       languages: string[];
@@ -1959,7 +1959,7 @@ export interface components {
            * @description True when every stage, including required review or auxiliary work, must be admitted before execution starts.
            * @default true
            */
-          requires_complete_reservation: boolean;
+          requires_complete_reservation?: boolean;
         };
         AsrParameterDomain: {
           languages: string[];

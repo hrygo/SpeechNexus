@@ -17,7 +17,7 @@ from tests.unit.test_assets import INSPECTION, INTENT, POLICY, PROOF, READY, RES
 
 
 def adapter(monkeypatch: pytest.MonkeyPatch) -> tuple[PostgresAssetMetadata, Mock]:
-    metadata = PostgresAssetMetadata(cast(SpeechPool, Mock()))
+    metadata = PostgresAssetMetadata(cast(SpeechPool, Mock()), namespace_digest=PROOF.sha256)
     cursor = Mock(spec=_Cursor)
     cursor.rows.return_value = []
     cursor.asset.return_value = WRITING
@@ -129,7 +129,7 @@ def test_second_writer_is_never_authorized_from_an_in_progress_record(
 def test_unknown_commit_is_returned_without_repeating_transaction(
     monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
-    metadata = PostgresAssetMetadata(cast(SpeechPool, Mock()))
+    metadata = PostgresAssetMetadata(cast(SpeechPool, Mock()), namespace_digest=PROOF.sha256)
     attempts = 0
 
     @contextmanager
@@ -166,7 +166,7 @@ def test_unknown_commit_is_returned_without_repeating_transaction(
 def test_driver_failures_expose_only_safe_error_and_do_not_retry(error: Exception) -> None:
     pool = Mock()
     pool.connection.side_effect = error
-    metadata = PostgresAssetMetadata(cast(SpeechPool, pool))
+    metadata = PostgresAssetMetadata(cast(SpeechPool, pool), namespace_digest=PROOF.sha256)
     with pytest.raises(AssetError) as caught:
         metadata.get("asset-test")
     assert "private" not in str(caught.value)
@@ -189,7 +189,9 @@ def test_read_clock_and_scans_are_bounded_and_unknown_identity_is_not_mutated(
     cursor.save.assert_not_called()
     assert not metadata.complete_deletion("ledger-unknown")
     with pytest.raises(ValueError, match="bounded"):
-        PostgresAssetMetadata(cast(SpeechPool, Mock()), timeout_seconds=0)
+        PostgresAssetMetadata(
+            cast(SpeechPool, Mock()), namespace_digest=PROOF.sha256, timeout_seconds=0
+        )
 
 
 def test_transaction_budget_uses_remaining_time_and_closes_on_failure(
@@ -199,7 +201,9 @@ def test_transaction_budget_uses_remaining_time_and_closes_on_failure(
     connection = pool.connection.return_value.__enter__.return_value
     raw = connection.cursor.return_value.__enter__.return_value
     raw.description = None
-    metadata = PostgresAssetMetadata(cast(SpeechPool, pool))
+    metadata = PostgresAssetMetadata(cast(SpeechPool, pool), namespace_digest=PROOF.sha256)
+    # This test isolates the time budget; real PG tests cover namespace authority.
+    monkeypatch.setattr(metadata, "_require_namespace", Mock())
     with metadata._transaction(readonly=True) as cursor:
         assert cursor.rows("SELECT 1") == []
     connection.execute.assert_called_once_with("SET TRANSACTION READ ONLY")

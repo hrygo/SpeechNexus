@@ -105,9 +105,6 @@
     "Identifier": {
       "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
     },
-    "Revision": {
-      "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
-    },
     "CleanupState": {
       "$ref": "../shared/operation-states.schema.json#/$defs/CleanupState"
     },

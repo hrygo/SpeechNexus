@@ -199,7 +199,9 @@ CONTRACT_BASE_REF=origin/main make contracts-compat
 and resolves local file references relative to the containing document.
 `tests/contract` validates examples, negative examples, OpenAI SDK parity, and
 cross-protocol invariants. It also rejects duplicate inline schema definitions
-so shared domains cannot drift back into independent copies.
+and orphan local schema components, so shared domains cannot drift back into
+independent copies and generators do not expose definitions the protocol never
+uses.
 `make contracts-compat` compares the OpenAI-standard paths in the public speech
 OpenAPI and every component schema reachable from those paths, the declared
 standard Realtime event definitions and their reachable definitions, and the

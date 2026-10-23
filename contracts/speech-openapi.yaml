@@ -1665,8 +1665,6 @@ components:
       $ref: "shared/capability-domains.schema.json#/$defs/ServiceClass"
     ErrorResponse:
       $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
-    ErrorBody:
-      $ref: "shared/errors.schema.json#/$defs/ErrorBody"
     ModelList:
       type: object
       additionalProperties: false

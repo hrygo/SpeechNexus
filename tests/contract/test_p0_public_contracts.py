@@ -89,6 +89,39 @@ def _resolve_local_refs(node: Any, source: Path) -> None:
             _resolve_local_refs(value, source)
 
 
+def _collect_refs(node: Any) -> list[str]:
+    references: list[str] = []
+    if isinstance(node, dict):
+        reference = node.get("$ref")
+        if isinstance(reference, str):
+            references.append(reference)
+        for value in node.values():
+            references.extend(_collect_refs(value))
+    elif isinstance(node, list):
+        for value in node:
+            references.extend(_collect_refs(value))
+    return references
+
+
+def _reachable_local_definitions(
+    root: Any,
+    definitions: dict[str, Any],
+    prefix: str,
+) -> set[str]:
+    reachable: set[str] = set()
+    pending = _collect_refs(root)
+    while pending:
+        reference = pending.pop()
+        if not reference.startswith(prefix):
+            continue
+        name = reference[len(prefix) :].split("/", 1)[0]
+        if name in reachable or name not in definitions:
+            continue
+        reachable.add(name)
+        pending.extend(_collect_refs(definitions[name]))
+    return reachable
+
+
 def _resolved_yaml(path: Path) -> dict[str, Any]:
     document = _load_yaml(path)
     _resolve_local_refs(document, path)
@@ -1776,6 +1809,41 @@ def test_contract_definitions_do_not_duplicate_inline_schema_bodies() -> None:
     assert not duplicates, "duplicate inline schemas; use a shared $ref:\n" + "\n".join(
         repr(places) for places in duplicates
     )
+
+
+def test_contract_definitions_are_reachable_from_document_roots() -> None:
+    """Reject orphan schema bodies that generators can mistake for live protocol."""
+    for path in sorted(_CONTRACTS.rglob("*.schema.json")):
+        if "shared" in path.relative_to(_CONTRACTS).parts:
+            continue
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
+        assert isinstance(raw, dict)
+        document = cast(dict[str, Any], raw)
+        definitions = cast(dict[str, Any], document.get("$defs", {}))
+        root = {key: value for key, value in document.items() if key != "$defs"}
+        reachable = _reachable_local_definitions(root, definitions, "#/$defs/")
+        assert set(definitions) == reachable, (
+            f"{path.relative_to(_ROOT)} has unreachable definitions: "
+            f"{sorted(set(definitions) - reachable)}"
+        )
+
+    for path in sorted(_CONTRACTS.rglob("*.openapi.yaml")):
+        openapi_raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert isinstance(openapi_raw, dict)
+        document = cast(dict[str, Any], openapi_raw)
+        components = cast(dict[str, Any], document.get("components", {}))
+        definitions = cast(dict[str, Any], components.get("schemas", {}))
+        root = copy.deepcopy(document)
+        del root["components"]["schemas"]
+        reachable = _reachable_local_definitions(
+            root,
+            definitions,
+            "#/components/schemas/",
+        )
+        assert set(definitions) == reachable, (
+            f"{path.relative_to(_ROOT)} has unreachable components: "
+            f"{sorted(set(definitions) - reachable)}"
+        )
 
 
 def test_public_errors_share_one_openai_compatible_envelope() -> None:

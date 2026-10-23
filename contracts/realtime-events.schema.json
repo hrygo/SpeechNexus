@@ -113,9 +113,6 @@
     "Revision": {
       "$ref": "shared/identifiers.schema.json#/$defs/Revision"
     },
-    "Sha256Digest": {
-      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
-    },
     "Base64Audio": {
       "type": "string",
       "minLength": 4,

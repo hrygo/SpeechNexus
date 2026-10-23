@@ -161,9 +161,6 @@
     "Identifier": {
       "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
     },
-    "Revision": {
-      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
-    },
     "Sha256Digest": {
       "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
     },

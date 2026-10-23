@@ -61,6 +61,8 @@ The [`0002_coordination` production storage foundation (Chinese)](docs/architect
 
 The [execution gateway (Chinese)](docs/architecture/execution-gateway.md) provides persistent submit/stop transactions and an authenticated HTTP ingress barrier enabled by explicit control configuration. Actual loopback HTTP/PostgreSQL integration is verified; submit/abort routes, real engines and cross-host qualification remain pending. Default Compose does not yet enable this control endpoint.
 
+[Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
+
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.
 
 ### Maintain a deployment through AdminUI

@@ -25,7 +25,8 @@
       "acquire_owner",
       "renew_owner",
       "activate_owner",
-      "query_outcome"
+      "query_outcome",
+      "claim_job"
     ]
   },
   "profiles": {

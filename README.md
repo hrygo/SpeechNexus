@@ -61,6 +61,8 @@ SpeechNexus 希望服务于三类需求：
 
 [执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止事务，以及显式配置后启用的认证 HTTP 入口屏障。真实回环 HTTP 与 PG 联调已验证；提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 
+[Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
+
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。
 
 ### 通过 AdminUI 维护部署

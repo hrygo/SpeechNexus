@@ -227,7 +227,7 @@ Gateway 不查询工作台或语音业务表，只在自己的清理事务中重
 
 ## 7. 实例生命周期与详细实施要求
 
-这些用例已定义契约和 DDL 落点，当前尚未实现生产程序，也未完成跨库生命周期资格。
+create/query/observe 已具备[独立生产事务端口](production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；批准计划/资格提供者、scheduler/controller 客户端和真实生命周期资格仍待接入，不代表生产进程或 GPU/多主机验收完成。
 
 - `create_runtime_intent(prepare)`：锁 owner/quota（若需要）/host/head；核对获准模板、
   拓扑、绑定、manifest、config、加载策略；新 generation 必须大于持久 high water。

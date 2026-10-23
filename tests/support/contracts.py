@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
 
-import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
+
+from tests.support.safe_yaml import load_yaml
 
 ROOT = Path(__file__).resolve().parents[2] / "contracts"
 
@@ -18,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2] / "contracts"
 def document(path: Path) -> Any:
     path = path.resolve()
     path.relative_to(ROOT)
-    node = yaml.safe_load(path.read_text())
+    node = load_yaml(path.read_text())
 
     def rewrite(value: Any) -> None:
         if isinstance(value, dict):

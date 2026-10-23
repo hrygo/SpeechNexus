@@ -96,3 +96,28 @@ gh api repos/hrygo/SpeechNexus/actions/runs/39990005346/jobs
 轻量汇总 job，用执行分钟换取更短反馈；本次不宣称长期 runner 成本或全部
 运行分位数同步下降。当前依赖安装只需数秒，继续保留简单的锁文件/uv 缓存方案；
 下载成为可测瓶颈后，再评估 pnpm store 缓存或镜像构建缓存。
+
+## 第二轮：契约测试的解析开销
+
+文件/内部协议样例增多后，重新测量发现测试 helper 每次都用纯 Python
+`yaml.SafeLoader` 解析整份文档。这里需要每次新读以保护变更检测和可变测试副本，
+因此本轮不加入文档缓存，改用可选 `CSafeLoader`，缺少 LibYAML 扩展时回退
+`SafeLoader`。两者都使用安全构造器；不使用 `Loader` / `CLoader`。
+
+[PyYAML 官方说明](https://pyyaml.org/wiki/PyYAMLDocumentation)介绍了 LibYAML
+解析器的性能，也指出两种解析器存在细微差异。因此增加整个仓库契约语料的递归
+类型/值对照，以及 Python 对象标签拒绝、无扩展回退、变更后重新读取和调用方
+修改不泄漏的回归。本轮只改测试加载路径；生成器、兼容 CLI、产品配置与校验规则不变。
+
+同一本机、同一份 `speech-openapi.yaml` 的三次测量中位数为：SafeLoader
+0.1673 秒，CSafeLoader 0.0215 秒。两个未改用例文件组成的同一测试集合：
+
+```sh
+uv run pytest tests/contract/test_consumer_bindings.py \
+  tests/contract/test_generated_bindings.py -q --no-cov
+```
+
+121 项全部通过，修改前 15.74 秒、修改后 3.56 秒，耗时减少约 77.4%。
+新增 33 项解析语义/安全/回退验证也全部通过。这是同机局部测试集合测量，
+不是整体 CI 加速承诺；远端完整检查结果和耗时以本次 PR 对应 Actions run 为准。
+继续保留原有用例、覆盖率和数据库门禁，不减少测试集合。

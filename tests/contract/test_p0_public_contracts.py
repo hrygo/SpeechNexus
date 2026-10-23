@@ -41,6 +41,8 @@ from openai.types.realtime.session_created_event import SessionCreatedEvent
 from openapi_spec_validator import validate
 from referencing import Registry, Resource
 
+from tests.support.safe_yaml import load_yaml
+
 _ROOT = Path(__file__).resolve().parents[2]
 _CONTRACTS = _ROOT / "contracts"
 _SPEECH_OPENAPI = _CONTRACTS / "speech-openapi.yaml"
@@ -69,7 +71,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw: object = load_yaml(path.read_text(encoding="utf-8"))
     assert isinstance(raw, dict)
     return cast(dict[str, Any], raw)
 
@@ -1910,7 +1912,7 @@ def test_public_contract_enums_do_not_contain_yaml_boolean_typos() -> None:
         if path.suffix not in {".json", ".yaml", ".yml"}:
             continue
         raw = path.read_text(encoding="utf-8")
-        document = json.loads(raw) if path.suffix == ".json" else yaml.safe_load(raw)
+        document = json.loads(raw) if path.suffix == ".json" else load_yaml(raw)
         _assert_string_enum_values_are_quoted(document, str(path.relative_to(_ROOT)))
 
 
@@ -1951,7 +1953,7 @@ def test_contract_schema_arrays_do_not_repeat_semantic_values() -> None:
         if path.suffix == ".json":
             raw: object = json.loads(path.read_text(encoding="utf-8"))
         elif path.suffix in {".yaml", ".yml"}:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+            raw = load_yaml(path.read_text(encoding="utf-8"))
         else:
             continue
         walk(raw, path.relative_to(_ROOT), "")
@@ -1967,7 +1969,7 @@ def test_contract_definitions_do_not_duplicate_inline_schema_bodies() -> None:
         if path.suffix == ".json":
             raw = json.loads(path.read_text(encoding="utf-8"))
         else:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+            raw = load_yaml(path.read_text(encoding="utf-8"))
         assert isinstance(raw, dict)
         document = cast(dict[str, Any], raw)
         candidates = {
@@ -2008,7 +2010,7 @@ def test_contract_definitions_are_reachable_from_document_roots() -> None:
         )
 
     for path in sorted(_CONTRACTS.rglob("*.openapi.yaml")):
-        openapi_raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+        openapi_raw: object = load_yaml(path.read_text(encoding="utf-8"))
         assert isinstance(openapi_raw, dict)
         document = cast(dict[str, Any], openapi_raw)
         components = cast(dict[str, Any], document.get("components", {}))

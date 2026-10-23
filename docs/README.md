@@ -10,10 +10,13 @@
 | [语音接口](architecture/speech-api.md) | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例 |
 | [OpenAI 兼容与增强边界](architecture/openai-compatibility.md) | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁 |
 | [资源治理与持久化](architecture/runtime-governance.md) | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除 |
+| [规范执行命令与内部文本流](architecture/execution-command.md) | 完整有效命令、摘要、受控资源引用与 TTS 文本提交 |
+| [数据删除与依赖裁决](architecture/data-deletion.md) | 预检、明确级联、独立副本、异步清理和恢复账本 |
 | [分布式协调与容量治理 Schema（P0-B 草案）](architecture/distributed-coordination-schema.md) | 三级资源拓扑表、分池租约、网关提交屏障、全局锁顺序与六大原子事务模板 |
 | [UI/UX 设计框架与设计 Token 系统](architecture/ui-ux-design-framework-and-tokens.md) | 2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md) | 固定来源、可提取规则、需重写的基础设施和许可证 |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md) | P0–P5、退出条件、工作包、交接产物与预算假设 |
+| [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md) | 本轮问题修复映射、204 项测试及未验证运行边界 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md) | 已发现问题、修正裁决、来源核验、文档检查与未验证项 |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md) | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力 |
 | [开发与测试环境](development-environment.md) | 当前主机工具链、独立服务、媒体与无头浏览器验证、初始化和隔离边界 |

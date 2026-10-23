@@ -8,6 +8,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "scripts" / "dev-env" / "check-openai-contract-compat.py"
 
@@ -80,7 +82,7 @@ def test_compat_gate_rejects_removed_public_contract_surface() -> None:
         "schema"
     ]["required"] = ["audio", "metadata"]
     issues = compare_openapi(base, current, "speech-openapi.yaml")
-    assert any("new required fields" in issue for issue in issues)
+    assert not issues  # Stronger output guarantees are backward compatible.
 
 
 def test_compat_gate_rejects_removed_event_type() -> None:
@@ -122,7 +124,7 @@ def test_compat_gate_rejects_removed_event_type() -> None:
 def test_compat_gate_covers_shared_public_domains() -> None:
     module = _load_compat_module()
     compare_json_schema = cast(Any, module._compare_json_schema)
-    base = {
+    base: dict[str, Any] = {
         "$defs": {
             "ErrorType": {
                 "type": "string",
@@ -216,9 +218,9 @@ def test_compat_gate_resolves_equivalent_schema_refs() -> None:
     issues = compare_openapi(base, current, "speech-openapi.yaml")
     assert not issues
 
-    current["components"]["schemas"]["AudioFormat"]["enum"].remove("pcm")
+    current["components"]["schemas"]["AudioFormat"]["enum"].append("flac")
     issues = compare_openapi(base, current, "speech-openapi.yaml")
-    assert any("enum values removed" in issue for issue in issues)
+    assert any("enum values added" in issue for issue in issues)
 
 
 def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
@@ -273,11 +275,9 @@ def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
     issues = compare_openapi(base, current, "speech-openapi.yaml")
     assert not issues
 
-    current["components"]["schemas"]["ModelList"]["required"].append("data")
+    current["components"]["schemas"]["ModelList"]["required"].remove("object")
     issues = compare_openapi(base, current, "speech-openapi.yaml")
-    assert any(
-        "components/schemas/ModelList: new required fields: ['data']" in issue for issue in issues
-    )
+    assert any("response required guarantees removed: ['object']" in issue for issue in issues)
 
 
 def test_openai_compat_gate_ignores_optional_nexus_nested_schemas() -> None:
@@ -326,10 +326,7 @@ def test_openai_compat_gate_ignores_optional_nexus_nested_schemas() -> None:
 
     del current["components"]["schemas"]["SpeechRequest"]["properties"]["input"]
     issues = compare_openapi(base, current, "speech-openapi.yaml")
-    assert any(
-        "components/schemas/SpeechRequest/properties/input: property removed" in issue
-        for issue in issues
-    )
+    assert any("/properties/input: property removed" in issue for issue in issues)
 
 
 def test_realtime_compat_gate_checks_only_standard_event_definitions() -> None:
@@ -410,6 +407,147 @@ def test_realtime_compat_gate_ignores_optional_nexus_nested_definitions() -> Non
 
     del current["$defs"]["SessionRequest"]["properties"]["type"]
     issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
-    assert any(
-        "$defs/SessionRequest/properties/type: property removed" in issue for issue in issues
-    )
+    assert any("/properties/session/properties/type: property removed" in issue for issue in issues)
+
+
+@pytest.mark.parametrize("location", ["header", "query"])
+def test_new_required_parameter_is_breaking(location: str) -> None:
+    module = _load_compat_module()
+    base: dict[str, Any] = {"paths": {"/v1/audio/speech": {"post": {"responses": {}}}}}
+    current = copy.deepcopy(base)
+    current["paths"]["/v1/audio/speech"]["post"]["parameters"] = [
+        {"name": "required-new", "in": location, "required": True, "schema": {"type": "string"}}
+    ]
+    assert module._compare_openapi(base, current, "speech-openapi.yaml")
+
+
+def test_new_required_request_body_is_breaking() -> None:
+    module = _load_compat_module()
+    base: dict[str, Any] = {"paths": {"/v1/audio/speech": {"post": {"responses": {}}}}}
+    current = copy.deepcopy(base)
+    current["paths"]["/v1/audio/speech"]["post"]["requestBody"] = {"required": True, "content": {}}
+    assert module._compare_openapi(base, current, "speech-openapi.yaml")
+
+
+@pytest.mark.parametrize(
+    "keyword,value",
+    [
+        ("maxLength", 1),
+        ("minLength", 1),
+        ("minimum", 1),
+        ("maximum", 1),
+        ("maxItems", 1),
+        ("minItems", 1),
+        ("exclusiveMinimum", 1),
+        ("exclusiveMaximum", 1),
+        ("pattern", "^x$"),
+        ("multipleOf", 2),
+    ],
+)
+def test_new_request_bounds_and_lost_response_bounds_are_breaking(keyword: str, value: Any) -> None:
+    module = _load_compat_module()
+    issues: list[str] = []
+    module._compare_schema({}, {keyword: value}, "request", issues)
+    assert issues
+    issues = []
+    module._compare_schema({keyword: value}, {}, "response", issues, direction="response")
+    assert issues
+    issues = []
+    module._compare_schema({keyword: value}, {}, "request", issues)
+    assert not issues
+
+
+@pytest.mark.parametrize(
+    "direction,base,current",
+    [
+        ("request", {"enum": ["a", "b"]}, {"enum": ["a"]}),
+        ("response", {"enum": ["a"]}, {"enum": ["a", "b"]}),
+        ("response", {"required": ["text"]}, {"required": []}),
+        ("request", {"type": ["string", "null"]}, {"type": "string"}),
+        ("response", {"type": "string"}, {"type": ["string", "null"]}),
+        ("request", {}, {"allOf": [{"maxLength": 1}]}),
+    ],
+)
+def test_comparison_respects_input_and_output_direction(
+    direction: str,
+    base: dict[str, Any],
+    current: dict[str, Any],
+) -> None:
+    module = _load_compat_module()
+    issues: list[str] = []
+    module._compare_schema(base, current, "schema", issues, direction=direction)
+    assert issues
+
+
+def test_ref_siblings_preserve_intersection_constraints() -> None:
+    module = _load_compat_module()
+    base: dict[str, Any] = {
+        "paths": {
+            "/v1/audio/speech": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Text", "maxLength": 10}
+                            }
+                        }
+                    },
+                    "responses": {},
+                }
+            }
+        },
+        "components": {"schemas": {"Text": {"type": "string", "maxLength": 20}}},
+    }
+    current = copy.deepcopy(base)
+    current["components"]["schemas"]["Text"]["maxLength"] = 5
+    assert module._compare_openapi(base, current, "speech-openapi.yaml")
+
+
+def test_response_realtime_guarantee_cannot_disappear() -> None:
+    module = _load_compat_module()
+    base: dict[str, Any] = {
+        "oneOf": [{"$ref": "#/$defs/TranscriptionCompleted"}],
+        "$defs": {
+            "TranscriptionCompleted": {
+                "type": "object",
+                "required": ["type", "transcript"],
+                "properties": {
+                    "type": {"const": "conversation.item.input_audio_transcription.completed"},
+                    "transcript": {"type": "string"},
+                },
+            }
+        },
+    }
+    current = copy.deepcopy(base)
+    current["$defs"]["TranscriptionCompleted"]["required"].remove("transcript")
+    assert module._compare_realtime_events_schema(base, current, "realtime-events.schema.json")
+
+
+@pytest.mark.parametrize("mutation", ["removed", "required", "type"])
+def test_response_header_guarantees_are_compared(mutation: str) -> None:
+    module = _load_compat_module()
+    base: dict[str, Any] = {
+        "paths": {
+            "/v1/audio/speech": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "headers": {
+                                "X-Receipt": {"required": True, "schema": {"type": "string"}}
+                            },
+                            "content": {},
+                        }
+                    }
+                }
+            }
+        }
+    }
+    current = copy.deepcopy(base)
+    headers = current["paths"]["/v1/audio/speech"]["post"]["responses"]["200"]["headers"]
+    if mutation == "removed":
+        headers.clear()
+    elif mutation == "required":
+        headers["X-Receipt"]["required"] = False
+    else:
+        headers["X-Receipt"]["schema"]["type"] = "integer"
+    assert module._compare_openapi(base, current, "speech-openapi.yaml")

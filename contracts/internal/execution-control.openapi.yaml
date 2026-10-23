@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal execution control API
-  version: 0.1.0.dev0
+  version: 0.2.0.dev0
   description: |
     Authoritative internal ExecutionControlPort protocol between the scheduler /
     workers / realtime gateway and the execution-gateway. Every engine submission,
@@ -309,33 +309,7 @@ components:
         - invalid_execution_request
         - component_credential_invalid
     ArtifactStorageReference:
-      type: object
-      additionalProperties: false
-      required:
-        - asset_or_artifact_id
-        - workspace_id
-        - storage_bucket
-        - object_key
-        - content_sha256
-        - byte_length
-      properties:
-        asset_or_artifact_id:
-          $ref: "#/components/schemas/Identifier"
-        workspace_id:
-          $ref: "#/components/schemas/Identifier"
-        storage_bucket:
-          type: string
-          minLength: 1
-          maxLength: 128
-        object_key:
-          type: string
-          minLength: 1
-          maxLength: 512
-        content_sha256:
-          $ref: "#/components/schemas/Sha256Digest"
-        byte_length:
-          type: integer
-          minimum: 1
+      $ref: "./execution-command.schema.json#/$defs/ArtifactStorageReference"
     OutputWatermark:
       type: object
       additionalProperties: false
@@ -369,8 +343,12 @@ components:
       additionalProperties: false
       description: |
         The execution gateway derives the private staging namespace from
-        `workspace_id` and `submit_intent_id`. Callers cannot supply an object
-        key, path prefix, bucket, or external URL.
+        `workspace_id` and `submit_intent_id`. command contains the complete frozen
+        input and effective parameters. command_digest is SHA-256 over RFC 8785
+        canonical command JSON; mismatch is invalid_execution_request. Same intent
+        with a different canonical command is submit_intent_conflict. Callers cannot supply an output object
+        key, path prefix, bucket, or external URL. Input storage references must
+        identify immutable owned assets and match the command workspace.
       required:
         - submit_intent_id
         - lease_id
@@ -387,6 +365,7 @@ components:
         - policy_revision_id
         - fencing_token
         - command_digest
+        - command
         - deadline_at
         - max_output_audio_ms
         - sample_rate_hz
@@ -427,10 +406,8 @@ components:
           minimum: 1
         command_digest:
           $ref: "#/components/schemas/Sha256Digest"
-        input_asset_ref:
-          anyOf:
-            - $ref: "#/components/schemas/ArtifactStorageReference"
-            - type: "null"
+        command:
+          $ref: "./execution-command.schema.json#/$defs/ExecutionCommand"
         deadline_at:
           type: string
           format: date-time

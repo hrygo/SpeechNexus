@@ -285,3 +285,29 @@ SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnex
 Those tests create an isolated schema, apply the coordination DDL, exercise
 positive and negative PostgreSQL transactions, and drop the schema. CI runs
 them against a disposable PostgreSQL 16 service.
+
+
+## Architecture repair revision (2026-10-23)
+
+[ADR 0005](../docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)
+records the intentional internal/receipt changes and upgrade boundary.
+`internal/execution-command.schema.json` freezes complete effective execution
+commands and typed resource material; internal control 0.2.0.dev0 requires the
+command and its canonical digest. Stream 1.1.0 adds explicitly negotiated text
+input with append/commit/finish/ack and scalar-value credits. See
+[execution command semantics](../docs/architecture/execution-command.md).
+
+`shared/receipts.schema.json` revision 2.0.0 permits only public facts, typed
+immutable references and allowlisted missing/unknown paths. It never returns
+content or arbitrary vendor objects. Shared errors preserve the OpenAI envelope
+and require `error.nexus.operation_id` for `operation_in_progress`; a
+`response_not_replayable` additionally carries the original successful receipt.
+
+`shared/deletion.schema.json` is shared by owner-scoped speech and workbench
+plan/create/query endpoints. Version/digest-pinned dependencies and exact cascade
+confirmation precede asynchronous cleanup. Independent saved copies remain
+independent; stop uncertainty retains capacity and restoration replays the
+persistent deletion ledger before exposing content. See
+[deletion semantics](../docs/architecture/data-deletion.md).
+These protocols have contract tests; business routes and cleanup services remain
+unimplemented.

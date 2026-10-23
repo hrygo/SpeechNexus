@@ -8,3 +8,5 @@
 - [2026-10-23 UI/UX 设计框架与 CI 门禁终审](2026-10-23-ui-ux-design-framework-audit.md)：多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力。
 
 [项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
+
+- [2026-10-23 架构与契约修复闭环](2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。

@@ -31,6 +31,7 @@ dev = [
   "pytest-asyncio>=1.4,<2",
   "pytest-cov>=7.1,<8",
   "pyyaml>=6,<7",
+  "rfc8785>=0.1.4,<0.2",
   "ruff>=0.17.1,<1",
   "soundfile>=0.14,<1",
   "types-jsonschema>=4.23,<5",
@@ -93,8 +94,7 @@ root_packages = ["speechnexus_backend", "speechnexus_gateway"]
 name = "Speech backend dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_backend.speech.interfaces",
-  "speechnexus_backend.speech.infrastructure",
+  "speechnexus_backend.speech.interfaces | speechnexus_backend.speech.infrastructure",
   "speechnexus_backend.speech.application",
   "speechnexus_backend.speech.domain",
 ]
@@ -103,8 +103,7 @@ layers = [
 name = "Workbench backend dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_backend.workbench.interfaces",
-  "speechnexus_backend.workbench.infrastructure",
+  "speechnexus_backend.workbench.interfaces | speechnexus_backend.workbench.infrastructure",
   "speechnexus_backend.workbench.application",
   "speechnexus_backend.workbench.domain",
 ]
@@ -113,8 +112,17 @@ layers = [
 name = "Execution gateway dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_gateway.interfaces",
-  "speechnexus_gateway.infrastructure",
+  "speechnexus_gateway.interfaces | speechnexus_gateway.infrastructure",
   "speechnexus_gateway.application",
   "speechnexus_gateway.domain",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Speech and workbench consume public protocols only"
+type = "independence"
+modules = ["speechnexus_backend.speech", "speechnexus_backend.workbench"]
+
+[[tool.importlinter.contracts]]
+name = "Backend and execution gateway are independent deployments"
+type = "independence"
+modules = ["speechnexus_backend", "speechnexus_gateway"]

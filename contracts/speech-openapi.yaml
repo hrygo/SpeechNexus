@@ -1415,6 +1415,139 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/deletion-plans:
+    post:
+      operationId: speechCreateDeletionPlan
+      summary: createDeletionPlan
+      description: |
+        This endpoint owns only speech resources. Another owner returns
+        422 deletion_owner_mismatch. Plans pin all dependencies and expire;
+        execution rechecks the complete snapshot atomically. See data-deletion.md.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./shared/deletion.schema.json#/$defs/DeletionPlanRequest"
+      responses:
+        "200":
+          description: Immutable plan or original asynchronous deletion record.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/deletion.schema.json#/$defs/DeletionPlan"
+        "404":
+          description: Target, plan or deletion resource not found.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "409":
+          description: Dependency, revision, plan expiry or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "422":
+          description: Invalid target owner or confirmation scope.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+  /v1/nexus/deletions:
+    post:
+      operationId: speechCreateDeletion
+      summary: createDeletion
+      description: |
+        This endpoint owns only speech resources. Another owner returns
+        422 deletion_owner_mismatch. Plans pin all dependencies and expire;
+        execution rechecks the complete snapshot atomically. See data-deletion.md.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./shared/deletion.schema.json#/$defs/DeletionCreateRequest"
+      responses:
+        "202":
+          description: Immutable plan or original asynchronous deletion record.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/deletion.schema.json#/$defs/Deletion"
+        "404":
+          description: Target, plan or deletion resource not found.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "409":
+          description: Dependency, revision, plan expiry or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "422":
+          description: Invalid target owner or confirmation scope.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+  /v1/nexus/deletions/{deletion_id}:
+    get:
+      operationId: speechGetDeletion
+      summary: getDeletion
+      description: |
+        This endpoint owns only speech resources. Another owner returns
+        422 deletion_owner_mismatch. Plans pin all dependencies and expire;
+        execution rechecks the complete snapshot atomically. See data-deletion.md.
+      parameters:
+        - name: deletion_id
+          in: path
+          required: true
+          schema:
+            $ref: "./shared/identifiers.schema.json#/$defs/Identifier"
+      responses:
+        "200":
+          description: Immutable plan or original asynchronous deletion record.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/deletion.schema.json#/$defs/Deletion"
+        "404":
+          description: Target, plan or deletion resource not found.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "409":
+          description: Dependency, revision, plan expiry or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "422":
+          description: Invalid target owner or confirmation scope.
+          content:
+            application/json:
+              schema:
+                $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
 components:
   securitySchemes:
     SharedServiceKey:
@@ -1601,7 +1734,11 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Conflict:
-      description: Configuration changed, idempotency conflict, operation in progress, or cleanup pending.
+      description: |
+        Configuration changed, idempotency conflict, operation in progress, or cleanup pending.
+        operation_in_progress requires error.nexus.operation_id for querying the original
+        execution. response_not_replayable additionally requires error.nexus.receipt and
+        never starts another execution. Query GET /v1/nexus/operations/{operation_id}.
       content:
         application/json:
           schema:

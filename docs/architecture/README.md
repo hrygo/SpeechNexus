@@ -7,6 +7,8 @@
 - [语音接口](speech-api.md)：REST / Job、音色生命周期、实时协议与示例。
 - [OpenAI 兼容与增强边界](openai-compatibility.md)：SDK 调用、兼容子集、`nexus.*` 扩展规则与契约门禁。
 - [资源治理与持久化](runtime-governance.md)：调度、fencing、用量、发布与数据生命周期。
+- [规范执行命令](execution-command.md)：完整参数、摘要与内部 TTS 文本流。
+- [数据删除](data-deletion.md)：依赖预检、级联确认、清理证据和恢复账本。
 - [分布式协调与容量治理 Schema（P0-B 草案）](distributed-coordination-schema.md)：三级资源拓扑表、分池租约、网关提交屏障、锁顺序与原子事务模板。
 - [UI/UX 设计框架与设计 Token 系统](ui-ux-design-framework-and-tokens.md)：2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系。
 - [SpeechRail 复用边界](speechrail-reuse.md)：领域经验、来源和移植条件。

@@ -178,9 +178,9 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 工作台终态还要求产物自洽：MinutesJob `succeeded` 至少提供非空 `minutes_text` 或 `artifact_id`，非成功状态只可保留明确的部分文本，不得发布成品 `artifact_id`；AssistantTurn `succeeded` 必须有非空 `output_text`；RenderUnit `generating` 必须带 `speech_job_id`，`ready` 还必须同时带 `source_artifact_id` 与 `source_receipt_id`；Meeting 的 `sealed` / `minutes_pending` / `minutes_ready` 必须带 seal revision 与结束时间，后两者还必须带 `minutes_id`。Meeting 的 `failed` 表示封存前的采集失败，必须带结束时间和结构化 `error`，且不得携带 seal revision 或 minutes 引用；纪要任务失败保留在 `minutes_pending` 并通过所引 MinutesJob 的结构化错误呈现，不把整个会议改判为采集失败。从语音 Artifact 导入转写、保存副本或 render unit 时必须同时固定 Artifact ID 与 receipt，saved asset 的 receipt 不可为空；非 succeeded 的 ExportJob 不得携带成品 Artifact，显式导出子集不得为空。这些约束不替代跨资源校验，服务端仍须确认 source receipt 等于 Artifact 的 receipt、source Artifact 属于目标项目工作空间、MinutesJob 成功、单元副本已保存且版本一致后才能宣称整书可导出。
 
-创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
+创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 `error.nexus.operation_id`；查询路径固定为 `GET /v1/nexus/operations/{operation_id}`。
 
-同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
+同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及 `error.nexus.operation_id`、`error.nexus.receipt` 中的原成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
 
 作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 创建新 Job 与新 key，旧 Job 保持原终态。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
 
@@ -506,3 +506,7 @@ finish_text 不重新合成已经 commit 的文本，只关闭输入并提交未
 ```
 
 生成失败时 revision=2 保留失败事实；修正后重新生成建立 revision=3。同一 Job 的受限自动重试仍执行 revision=2 的固定配方，全部 attempt 结束后才形成该 revision 的最终生成结果。对失败 voice_design / voice_clone 调用显式 `/jobs/{job_id}/retries`，以新 key 原子创建新 Job 与下一 draft_revision，复制失败任务的固定声音配方；仅当当前 head 仍等于该失败 revision 且无活跃生成时接受，否则返回 configuration_changed。旧候选、旧校验和已发布 voice 版本不被覆盖。
+
+
+主动删除、依赖预检、明确级联与恢复后的删除账本重放使用[数据删除协议](data-deletion.md)，
+不可用 retirement、TTL、archive 或取消完成代替内容删除。

@@ -153,9 +153,7 @@ test("OpenAI JavaScript SDK requests and responses match the declared subset", a
   );
   assert.ok(calls.every((call) => call.authorization === "Bearer test-key"));
 
-  const transcriptionCall = calls.find(
-    (call) => call.path === "/v1/audio/transcriptions",
-  );
+  const transcriptionCall = calls.find((call) => call.path === "/v1/audio/transcriptions");
   assert.ok(transcriptionCall?.fields);
   assert.deepEqual(
     transcriptionCall.fields.map(([name]) => name).sort(),
@@ -182,3 +180,57 @@ test("OpenAI JavaScript SDK requests and responses match the declared subset", a
     response_format: "wav",
   });
 });
+
+for (const code of ["operation_in_progress", "response_not_replayable"]) {
+  test(`OpenAI JavaScript SDK preserves ${code} recovery identity`, async () => {
+    let submissions = 0;
+    const receipt = {
+      receipt_id: "receipt-demo",
+      requested: { language: "en" },
+      effective: { language: "en", seed: 7 },
+      observed: { sample_rate_hz: 24000 },
+      missing: [],
+      unknown: [],
+    };
+    const recovery = { operation_id: "op-original" };
+    if (code === "response_not_replayable") recovery.receipt = receipt;
+    const client = new OpenAI({
+      apiKey: "synthetic-test",
+      baseURL: "http://mock.invalid/v1",
+      maxRetries: 0,
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        assert.equal(request.headers.get("Idempotency-Key"), "synthetic-key");
+        submissions += 1;
+        return Response.json(
+          {
+            error: {
+              code,
+              type: "api_error",
+              message: "Query original execution.",
+              param: null,
+              request_id: "req-demo",
+              retryable: false,
+              nexus: recovery,
+            },
+          },
+          { status: 409 },
+        );
+      },
+    });
+    await assert.rejects(
+      client.audio.speech.create(
+        { model: "tts", input: "Synthetic.", voice: "alloy" },
+        { headers: { "Idempotency-Key": "synthetic-key" } },
+      ),
+      (error) => {
+        assert.equal(error.status, 409);
+        assert.equal(error.error.nexus.operation_id, "op-original");
+        if (code === "response_not_replayable")
+          assert.deepEqual(error.error.nexus.receipt, receipt);
+        return true;
+      },
+    );
+    assert.equal(submissions, 1);
+  });
+}

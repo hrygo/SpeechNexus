@@ -1,0 +1,1311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/internal/execution-command.schema.json",
+  "title": "CanonicalExecutionCommand",
+  "description": "Private immutable effective command, never returned in public receipts. Validate before hashing; SHA-256 over RFC 8785 canonical UTF-8 JSON, no defaults or Unicode normalization. Gateway verifies digest before persisting or dispatching. Input objects are immutable and checked against byte_length/content_sha256 using gateway-configured storage; no arbitrary URLs or shared business database lookup.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ExecutionCommand"
+    }
+  ],
+  "$defs": {
+    "ArtifactStorageReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_or_artifact_id",
+        "workspace_id",
+        "storage_bucket",
+        "object_key",
+        "content_sha256",
+        "byte_length"
+      ],
+      "properties": {
+        "asset_or_artifact_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "workspace_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "storage_bucket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content_sha256": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "AudioInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storage",
+        "media_type",
+        "sample_rate_hz",
+        "channels"
+      ],
+      "properties": {
+        "storage": {
+          "$ref": "#/$defs/ArtifactStorageReference"
+        },
+        "media_type": {
+          "enum": [
+            "audio/wav",
+            "audio/flac",
+            "audio/mpeg",
+            "audio/ogg",
+            "audio/pcm"
+          ]
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      }
+    },
+    "StreamInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream_id",
+        "stream_epoch"
+      ],
+      "properties": {
+        "stream_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "stream_epoch": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "AudioSource": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AudioInput"
+        },
+        {
+          "$ref": "#/$defs/StreamInput"
+        }
+      ]
+    },
+    "VocabularyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "weight"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "PronunciationEntry": {
+      "$ref": "../voice-resource.schema.json#/$defs/PronunciationEntry"
+    },
+    "ResolvedResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice",
+        "voice_material",
+        "vocabulary",
+        "pronunciation",
+        "voice_kind",
+        "vocabulary_source",
+        "pronunciation_source"
+      ],
+      "properties": {
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "../shared/references.schema.json#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_material": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vocabulary": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/VocabularyEntry"
+          }
+        },
+        "pronunciation": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/PronunciationEntry"
+          }
+        },
+        "voice_kind": {
+          "enum": [
+            "builtin",
+            "custom",
+            null
+          ]
+        },
+        "vocabulary_source": {
+          "oneOf": [
+            {
+              "$ref": "../shared/references.schema.json#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation_source": {
+          "oneOf": [
+            {
+              "$ref": "../shared/references.schema.json#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "voice": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_kind": {
+                "type": "null"
+              },
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_kind": {
+                "enum": [
+                  "builtin",
+                  "custom"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "voice_kind": {
+                "const": "custom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_material": {
+                "$ref": "#/$defs/ArtifactStorageReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AsrCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "asr"
+        },
+        "task_kind": {
+          "enum": [
+            "asr_realtime",
+            "asr_full_segment_review",
+            "asr_file"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "asr_preview",
+            "asr_review",
+            "asr_batch"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioSource"
+        },
+        "parameters": {
+          "$ref": "#/$defs/AsrEffectiveParameters"
+        }
+      }
+    },
+    "TtsCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "text_stream",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "tts"
+        },
+        "task_kind": {
+          "enum": [
+            "tts_realtime",
+            "tts_file"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "tts_talker",
+            "tts_connector"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text_stream": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StreamInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "$ref": "#/$defs/TtsEffectiveParameters"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "text_stream": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "text": {
+              "type": "null"
+            },
+            "text_stream": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "../shared/references.schema.json#/$defs/ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "VoiceDesignCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "description",
+        "preview_text",
+        "language",
+        "seed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicedesign"
+        },
+        "task_kind": {
+          "enum": [
+            "voice_design"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "voice_design"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "../shared/language.schema.json#/$defs/LanguageTag"
+        },
+        "seed": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/seed"
+        }
+      }
+    },
+    "VoiceCloneCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "reference_audio",
+        "reference_text",
+        "preview_text",
+        "language",
+        "source_use_confirmed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voiceclone"
+        },
+        "task_kind": {
+          "enum": [
+            "voice_clone"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "voice_clone_base"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "reference_audio": {
+          "$ref": "#/$defs/AudioInput"
+        },
+        "reference_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "language": {
+          "$ref": "../shared/language.schema.json#/$defs/LanguageTag"
+        },
+        "source_use_confirmed": {
+          "const": true
+        }
+      }
+    },
+    "VoiceValidationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "parameters",
+        "validation_checks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicevalidation"
+        },
+        "task_kind": {
+          "enum": [
+            "voice_validation"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "tts_talker",
+            "tts_connector"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "parameters": {
+          "$ref": "#/$defs/TtsEffectiveParameters"
+        },
+        "validation_checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "reusable_tts",
+              "reference_integrity",
+              "language_support"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "../shared/references.schema.json#/$defs/ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AlignmentCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "transcript",
+        "language"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "alignment"
+        },
+        "task_kind": {
+          "enum": [
+            "forced_alignment",
+            "asr_file",
+            "asr_full_segment_review"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "alignment"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioInput"
+        },
+        "transcript": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "language": {
+          "$ref": "../shared/language.schema.json#/$defs/LanguageTag"
+        }
+      }
+    },
+    "DiarizationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "min_speakers",
+        "max_speakers"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "diarization"
+        },
+        "task_kind": {
+          "enum": [
+            "speaker_diarization",
+            "asr_file",
+            "asr_full_segment_review"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "diarization"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioInput"
+        },
+        "min_speakers": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_speakers": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 128
+        }
+      }
+    },
+    "VadCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "threshold",
+        "silence_duration_ms"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "vad"
+        },
+        "task_kind": {
+          "enum": [
+            "vad",
+            "asr_realtime",
+            "asr_file"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "vad"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioSource"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "silence_duration_ms": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/turn_detection/properties/silence_duration_ms"
+        }
+      }
+    },
+    "CodecCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "codec_tokens",
+        "codec_format",
+        "codebook_count",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "codec"
+        },
+        "task_kind": {
+          "enum": [
+            "tts_realtime",
+            "tts_file",
+            "voice_design",
+            "voice_clone",
+            "voice_validation"
+          ]
+        },
+        "stage_role": {
+          "enum": [
+            "tts_code2wav"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/ResolvedResources"
+        },
+        "codec_tokens": {
+          "$ref": "#/$defs/ArtifactStorageReference"
+        },
+        "codec_format": {
+          "const": "nexus.codec_tokens.v1"
+        },
+        "codebook_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "sample_rate_hz": {
+          "enum": [
+            16000,
+            24000,
+            48000
+          ]
+        }
+      }
+    },
+    "ExecutionCommand": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AsrCommand"
+        },
+        {
+          "$ref": "#/$defs/TtsCommand"
+        },
+        {
+          "$ref": "#/$defs/VoiceDesignCommand"
+        },
+        {
+          "$ref": "#/$defs/VoiceCloneCommand"
+        },
+        {
+          "$ref": "#/$defs/VoiceValidationCommand"
+        },
+        {
+          "$ref": "#/$defs/AlignmentCommand"
+        },
+        {
+          "$ref": "#/$defs/DiarizationCommand"
+        },
+        {
+          "$ref": "#/$defs/VadCommand"
+        },
+        {
+          "$ref": "#/$defs/CodecCommand"
+        }
+      ]
+    },
+    "TtsEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text_commit_mode",
+        "audio_delivery",
+        "language",
+        "pronunciation_revision",
+        "instructions",
+        "speed",
+        "seed",
+        "planner",
+        "response_format"
+      ],
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/audio_delivery"
+        },
+        "language": {
+          "$ref": "../shared/language.schema.json#/$defs/LanguageTag"
+        },
+        "pronunciation_revision": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/pronunciation_revision"
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4096
+        },
+        "speed": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/speed"
+        },
+        "seed": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/seed"
+        },
+        "planner": {
+          "allOf": [
+            {
+              "$ref": "../shared/speech-overrides.schema.json#/$defs/TtsOverrides/properties/planner"
+            },
+            {
+              "required": [
+                "max_chars",
+                "max_wait_ms"
+              ]
+            }
+          ]
+        },
+        "response_format": {
+          "$ref": "../shared/capability-domains.schema.json#/$defs/AudioFormat"
+        }
+      }
+    },
+    "AsrEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "turn_detection",
+        "finalization",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "rollback_tokens",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "alignment",
+        "diarization",
+        "vocabulary_set_revision",
+        "prompt",
+        "temperature",
+        "response_format",
+        "timestamp_granularities"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "../shared/language.schema.json#/$defs/LanguageTag"
+        },
+        "turn_detection": {
+          "allOf": [
+            {
+              "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/turn_detection"
+            },
+            {
+              "required": [
+                "mode",
+                "silence_duration_ms"
+              ]
+            }
+          ]
+        },
+        "finalization": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/preview_interval_ms"
+        },
+        "max_segment_ms": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/max_segment_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/alignment"
+        },
+        "diarization": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "../shared/speech-overrides.schema.json#/$defs/AsrOverrides/properties/vocabulary_set_revision"
+        },
+        "prompt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 10000
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "response_format": {
+          "$ref": "../shared/capability-domains.schema.json#/$defs/TranscriptFormat"
+        },
+        "timestamp_granularities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "word",
+              "segment"
+            ]
+          }
+        }
+      }
+    },
+    "CodecTokenDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "codebook_count",
+        "frames"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "codebook_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "frames": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "kind": "tts",
+      "task_kind": "tts_file",
+      "stage_role": "tts_connector",
+      "resources": {
+        "voice": {
+          "id": "voice-demo",
+          "revision": "1"
+        },
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": "builtin",
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "text": "Synthetic narration.",
+      "text_stream": null,
+      "parameters": {
+        "text_commit_mode": "explicit",
+        "audio_delivery": "complete",
+        "language": "en",
+        "pronunciation_revision": null,
+        "instructions": null,
+        "speed": 1,
+        "seed": 7,
+        "planner": {
+          "max_chars": 200,
+          "max_wait_ms": 500
+        },
+        "response_format": "wav"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "asr",
+      "task_kind": "asr_file",
+      "stage_role": "asr_batch",
+      "audio": {
+        "storage": {
+          "asset_or_artifact_id": "asset-demo",
+          "workspace_id": "ws-demo",
+          "storage_bucket": "synthetic",
+          "object_key": "synthetic/input.wav",
+          "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byte_length": 100
+        },
+        "media_type": "audio/wav",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "parameters": {
+        "language": "en",
+        "turn_detection": {
+          "mode": "server_vad",
+          "silence_duration_ms": 500
+        },
+        "finalization": "full_segment",
+        "preview_interval_ms": 500,
+        "max_segment_ms": 20000,
+        "rollback_tokens": 0,
+        "final_deadline_ms": 1000,
+        "auxiliary_deadline_ms": 1000,
+        "alignment": "off",
+        "diarization": "off",
+        "vocabulary_set_revision": null,
+        "prompt": null,
+        "temperature": 0,
+        "response_format": "json",
+        "timestamp_granularities": []
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "voicedesign",
+      "task_kind": "voice_design",
+      "stage_role": "voice_design",
+      "description": "Synthetic voice.",
+      "preview_text": "Synthetic preview.",
+      "language": "en",
+      "seed": 7
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "voiceclone",
+      "task_kind": "voice_clone",
+      "stage_role": "voice_clone_base",
+      "reference_audio": {
+        "storage": {
+          "asset_or_artifact_id": "asset-demo",
+          "workspace_id": "ws-demo",
+          "storage_bucket": "synthetic",
+          "object_key": "synthetic/input.wav",
+          "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byte_length": 100
+        },
+        "media_type": "audio/wav",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "reference_text": null,
+      "preview_text": null,
+      "language": "en",
+      "source_use_confirmed": true
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": {
+          "id": "voice-demo",
+          "revision": "1"
+        },
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": "builtin",
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "voicevalidation",
+      "task_kind": "voice_validation",
+      "stage_role": "tts_connector",
+      "text": "Synthetic validation.",
+      "parameters": {
+        "text_commit_mode": "explicit",
+        "audio_delivery": "complete",
+        "language": "en",
+        "pronunciation_revision": null,
+        "instructions": null,
+        "speed": 1,
+        "seed": 7,
+        "planner": {
+          "max_chars": 200,
+          "max_wait_ms": 500
+        },
+        "response_format": "wav"
+      },
+      "validation_checks": [
+        "reusable_tts"
+      ]
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "alignment",
+      "task_kind": "forced_alignment",
+      "stage_role": "alignment",
+      "audio": {
+        "storage": {
+          "asset_or_artifact_id": "asset-demo",
+          "workspace_id": "ws-demo",
+          "storage_bucket": "synthetic",
+          "object_key": "synthetic/input.wav",
+          "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byte_length": 100
+        },
+        "media_type": "audio/wav",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "transcript": "Synthetic.",
+      "language": "en"
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "diarization",
+      "task_kind": "speaker_diarization",
+      "stage_role": "diarization",
+      "audio": {
+        "storage": {
+          "asset_or_artifact_id": "asset-demo",
+          "workspace_id": "ws-demo",
+          "storage_bucket": "synthetic",
+          "object_key": "synthetic/input.wav",
+          "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byte_length": 100
+        },
+        "media_type": "audio/wav",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "min_speakers": 1,
+      "max_speakers": 2
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "vad",
+      "task_kind": "vad",
+      "stage_role": "vad",
+      "audio": {
+        "storage": {
+          "asset_or_artifact_id": "asset-demo",
+          "workspace_id": "ws-demo",
+          "storage_bucket": "synthetic",
+          "object_key": "synthetic/input.wav",
+          "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byte_length": 100
+        },
+        "media_type": "audio/wav",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "threshold": 0.5,
+      "silence_duration_ms": 500
+    },
+    {
+      "schema_version": "1.0.0",
+      "resources": {
+        "voice": null,
+        "voice_material": null,
+        "vocabulary": [],
+        "pronunciation": [],
+        "voice_kind": null,
+        "vocabulary_source": null,
+        "pronunciation_source": null
+      },
+      "kind": "codec",
+      "task_kind": "tts_file",
+      "stage_role": "tts_code2wav",
+      "codec_tokens": {
+        "asset_or_artifact_id": "asset-demo",
+        "workspace_id": "ws-demo",
+        "storage_bucket": "synthetic",
+        "object_key": "synthetic/input.wav",
+        "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byte_length": 100
+      },
+      "codec_format": "nexus.codec_tokens.v1",
+      "codebook_count": 2,
+      "sample_rate_hz": 24000
+    }
+  ],
+  "x-speechnexus-artifact-schemas": {
+    "codec_tokens": {
+      "$ref": "#/$defs/CodecTokenDocument"
+    }
+  }
+}

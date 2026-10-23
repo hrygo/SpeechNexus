@@ -62,8 +62,48 @@
             "null"
           ],
           "minimum": 0
+        },
+        "nexus": {
+          "$ref": "#/$defs/OperationRecovery"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "operation_in_progress",
+                  "response_not_replayable"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "nexus"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "response_not_replayable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nexus": {
+                "required": [
+                  "receipt"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "ErrorResponse": {
       "type": "object",
@@ -76,6 +116,22 @@
           "$ref": "#/$defs/ErrorBody"
         }
       }
+    },
+    "OperationRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "receipt": {
+          "$ref": "receipts.schema.json#/$defs/ExecutionReceipt"
+        }
+      },
+      "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
     }
   }
 }

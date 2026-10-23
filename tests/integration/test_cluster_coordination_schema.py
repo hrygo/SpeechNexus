@@ -131,8 +131,8 @@ def _insert_instance(
     pool_id: str = "asr-realtime",
     state: str = "ready",
     unified: tuple[int, int, int] = (0, 0, 0),
-    device: tuple[int, int, int] = (100, 100, 10),
-    host: tuple[int, int, int] = (100, 100, 10),
+    device: tuple[int, int, int] = (100, 100, 1),
+    host: tuple[int, int, int] = (100, 100, 1),
 ) -> None:
     connection.execute(
         """
@@ -159,13 +159,16 @@ def _insert_instance(
             resident_host_memory_bytes,
             loading_peak_host_memory_bytes,
             per_slot_host_memory_bytes,
+            per_slot_cpu_decode_millicores,
+            per_slot_host_pcm_buffer_bytes,
+            per_slot_scratch_disk_bytes,
             max_active_slots,
             last_fencing_token,
             ready_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, 1, 1, 1, %s, %s,
             CASE WHEN %s = 'ready' THEN CURRENT_TIMESTAMP ELSE NULL END
         )
         """,
@@ -212,10 +215,14 @@ def _insert_lease(
     service_class: str = "realtime",
     pool_id: str = "asr-realtime",
     memory_architecture: str = "discrete_device_memory",
+    reservation: tuple[int, ...] | None = None,
+    slots: int = 1,
 ) -> None:
     reserved_unified = 1 if memory_architecture == "unified_memory" else 0
     reserved_device = 0 if memory_architecture == "unified_memory" else 1
     reserved_host = 0 if memory_architecture == "unified_memory" else 1
+    vector = reservation or (reserved_unified, reserved_device, reserved_host, 1, 1, 1)
+    assert len(vector) == 6
     connection.execute(
         """
         INSERT INTO admission_leases (
@@ -242,11 +249,12 @@ def _insert_lease(
             reserved_cpu_decode_millicores,
             reserved_host_pcm_buffer_bytes,
             reserved_scratch_disk_bytes,
+            reserved_slots,
             deadline_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            CURRENT_TIMESTAMP + INTERVAL '1 hour'
+            %s, CURRENT_TIMESTAMP + INTERVAL '1 hour'
         )
         """,
         (
@@ -267,12 +275,8 @@ def _insert_lease(
             1,
             "reserved",
             "pending",
-            reserved_unified,
-            reserved_device,
-            reserved_host,
-            1,
-            1,
-            1,
+            *vector,
+            slots,
         ),
     )
 
@@ -628,6 +632,28 @@ def test_unresolved_intents_are_unique_while_history_is_retained(
     db.execute(insert_sql, ("intent-history", _DIGEST, "succeeded", "ready"))
     db.execute(insert_sql, ("intent-active", _DIGEST, "pending", "loading"))
 
+    # The idempotent request projection is frozen independently of observed state.
+    for column in (
+        "reserved_peak_device_bytes",
+        "reserved_steady_device_bytes",
+        "reserved_peak_host_bytes",
+        "reserved_steady_host_bytes",
+        "reserved_peak_unified_bytes",
+        "reserved_steady_unified_bytes",
+        "deadline_at",
+    ):
+        delta = "INTERVAL '1 second'" if column == "deadline_at" else "1"
+        with pytest.raises(CheckViolation, match="runtime intent identity"), db.transaction():
+            db.execute(
+                sql.SQL(
+                    "UPDATE runtime_instance_intents SET {c} = {c} + "
+                    + delta
+                    + " WHERE intent_id = 'intent-active'"
+                ).format(c=sql.Identifier(column))
+            )
+    with pytest.raises(CheckViolation, match="append-only"), db.transaction():
+        db.execute("DELETE FROM runtime_instance_intents WHERE intent_id = 'intent-active'")
+
     with pytest.raises(UniqueViolation), db.transaction():
         db.execute(insert_sql, ("intent-duplicate", _DIGEST, "reconciling", "loading"))
     with pytest.raises(CheckViolation), db.transaction():
@@ -764,7 +790,7 @@ def test_memory_architecture_counters_are_exclusive(
         generation=1,
         host_node_id="node-unified",
         architecture="unified_memory",
-        unified=(100, 100, 10),
+        unified=(100, 100, 1),
         device=(0, 0, 0),
         host=(0, 0, 0),
     )
@@ -775,7 +801,7 @@ def test_memory_architecture_counters_are_exclusive(
             generation=1,
             host_node_id="node-unified",
             architecture="unified_memory",
-            unified=(100, 100, 10),
+            unified=(100, 100, 1),
             device=(1, 1, 1),
             host=(0, 0, 0),
         )
@@ -1064,7 +1090,7 @@ def test_unified_capacity_aggregates_move_with_quarantine(
         host_node_id="node-unified-capacity-accounting",
         architecture="unified_memory",
         pool_id="unified-capacity-accounting",
-        unified=(100, 100, 10),
+        unified=(100, 100, 1),
         device=(0, 0, 0),
         host=(0, 0, 0),
     )
@@ -2312,12 +2338,13 @@ def test_fencing_is_monotonic_and_updated_at_is_refreshed(
             resident_device_memory_bytes, loading_peak_device_memory_bytes,
             per_slot_device_memory_bytes, resident_host_memory_bytes,
             loading_peak_host_memory_bytes, per_slot_host_memory_bytes,
-            max_active_slots, last_fencing_token, ready_at
+            per_slot_cpu_decode_millicores, per_slot_host_pcm_buffer_bytes,
+            per_slot_scratch_disk_bytes, max_active_slots, last_fencing_token, ready_at
         ) VALUES (
             'inst-fencing', 1, 'node-fencing', 'discrete_device_memory',
             'gateway-1', 'asr-realtime', 'asr-quality@7', 'manifest-1',
             'template-1', %s, 'resident', 'managed', 'ready',
-            0, 0, 0, 100, 100, 10, 100, 100, 10, 4, 7, CURRENT_TIMESTAMP
+            0, 0, 0, 100, 100, 10, 100, 100, 10, 1, 1, 1, 4, 7, CURRENT_TIMESTAMP
         )
         """,
         (_DIGEST,),
@@ -2350,6 +2377,22 @@ def test_fencing_is_monotonic_and_updated_at_is_refreshed(
     assert row is not None
     assert isinstance(row[0], datetime)
     assert row[0].year > 2000
+
+    for table, column in (
+        ("resource_pools", "pool_id"),
+        ("scheduler_pool_leases", "pool_id"),
+        ("gateway_fencing_barriers", "gateway_id"),
+    ):
+        with pytest.raises(CheckViolation, match="scope identity"), db.transaction():
+            db.execute(
+                sql.SQL("UPDATE {} SET {} = 'scope-renamed'").format(
+                    sql.Identifier(table), sql.Identifier(column)
+                )
+            )
+
+    for table in ("resource_pools", "scheduler_pool_leases", "gateway_fencing_barriers"):
+        with pytest.raises(CheckViolation, match="append-only"), db.transaction():
+            db.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier(table)))
 
     trigger_rows = db.execute(
         """
@@ -2402,6 +2445,8 @@ def test_output_intervals_are_non_overlapping_and_identity_bound(
         instance_id="inst-metering",
         generation=1,
     )
+    with pytest.raises(CheckViolation, match="append-only"), db.transaction():
+        db.execute("DELETE FROM submit_intents WHERE submit_intent_id = 'intent-metering'")
     db.execute(
         """
         UPDATE submit_intents
@@ -2620,4 +2665,409 @@ def test_output_ceiling_cannot_be_introduced_after_generated_output(
                 hard_output_ceiling_samples = 48000
             WHERE submit_intent_id = 'intent-late-ceiling'
             """
+        )
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "host_nodes",
+        "resource_pools",
+        "scheduler_pool_leases",
+        "engine_instances",
+        "runtime_instance_intents",
+        "admission_leases",
+        "gateway_fencing_barriers",
+        "submit_intents",
+        "output_sample_intervals",
+    ],
+)
+def test_history_cannot_be_truncated(db: psycopg.Connection[Any], table: str) -> None:
+    with pytest.raises(CheckViolation, match="append-only"), db.transaction():
+        db.execute(sql.SQL("TRUNCATE {} CASCADE").format(sql.Identifier(table)))
+
+
+@pytest.mark.parametrize(
+    "architecture,index",
+    [
+        ("unified_memory", 0),
+        ("discrete_device_memory", 1),
+        ("discrete_device_memory", 2),
+        ("discrete_device_memory", 3),
+        ("discrete_device_memory", 4),
+        ("discrete_device_memory", 5),
+    ],
+)
+def test_reservation_cannot_underreport_slot_budget(
+    db: psycopg.Connection[Any],
+    architecture: str,
+    index: int,
+) -> None:
+    _insert_host(db, "node-vector", architecture=architecture)
+    _insert_pool(db)
+    unified = architecture == "unified_memory"
+    _insert_instance(
+        db,
+        instance_id="inst-vector",
+        generation=1,
+        host_node_id="node-vector",
+        architecture=architecture,
+        unified=(100, 100, 10) if unified else (0, 0, 0),
+        device=(0, 0, 0) if unified else (100, 100, 10),
+        host=(0, 0, 0) if unified else (100, 100, 10),
+    )
+    vector = [20, 0, 0, 2, 2, 2] if unified else [0, 20, 20, 2, 2, 2]
+    vector[index] -= 1
+    with pytest.raises(CheckViolation, match="per-slot budget"), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-vector",
+            operation_id="op-vector",
+            attempt_id="att-vector",
+            host_node_id="node-vector",
+            instance_id="inst-vector",
+            generation=1,
+            memory_architecture=architecture,
+            reservation=tuple(vector),
+            slots=2,
+        )
+    vector[index] += 1
+    _insert_lease(
+        db,
+        lease_id="lease-vector",
+        operation_id="op-vector",
+        attempt_id="att-vector",
+        host_node_id="node-vector",
+        instance_id="inst-vector",
+        generation=1,
+        memory_architecture=architecture,
+        reservation=tuple(vector),
+        slots=2,
+    )
+    db.execute(
+        "UPDATE engine_instances SET reserved_active_slots = 2 WHERE instance_id = 'inst-vector'"
+    )
+    db.execute(
+        """UPDATE host_nodes SET reserved_peak_loading_unified_memory_bytes = %s,
+        reserved_incremental_unified_memory_bytes = %s, reserved_device_memory_bytes = %s,
+        reserved_host_memory_bytes = %s, reserved_cpu_decode_millicores = 2,
+        reserved_host_pcm_buffer_bytes = 2, reserved_scratch_disk_bytes = 2
+        WHERE host_node_id = 'node-vector'""",
+        (100 if unified else 0, 20 if unified else 0, 0 if unified else 120, 0 if unified else 120),
+    )
+    db.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_capacity_verification_is_deduplicated_and_rearms_after_flush(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-queue")
+    for _ in range(20):
+        db.execute(
+            "UPDATE host_nodes SET last_heartbeat_at = clock_timestamp() "
+            "WHERE host_node_id = 'node-queue'"
+        )
+    assert db.execute(
+        "SELECT count(*) FROM capacity_verification_queue WHERE transaction_id = txid_current()"
+    ).fetchone() == (1,)
+    db.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert db.execute(
+        "SELECT count(*) FROM capacity_verification_queue WHERE transaction_id = txid_current()"
+    ).fetchone() == (0,)
+    db.execute("SET CONSTRAINTS ALL DEFERRED")
+    db.execute(
+        "UPDATE host_nodes SET reserved_cpu_decode_millicores = 1 WHERE host_node_id = 'node-queue'"
+    )
+    with pytest.raises(CheckViolation, match="capacity counters"):
+        db.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    db.rollback()
+
+
+@pytest.mark.parametrize("plane", ["speech", "gateway_control"])
+def test_runtime_roles_cannot_erase_evidence_or_bypass_verification(
+    db: psycopg.Connection[Any],
+    plane: str,
+) -> None:
+    from psycopg.errors import InsufficientPrivilege
+
+    role = "sn_test_" + uuid.uuid4().hex[:12]
+    db.execute(
+        sql.SQL("CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB").format(
+            sql.Identifier(role)
+        )
+    )
+    db.execute("SELECT configure_coordination_runtime_role(%s::name, %s)", (role, plane))
+    _insert_host(db, "node-role")
+    db.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    db.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+    try:
+        assert db.execute("SELECT count(*) FROM host_nodes").fetchone() is not None
+        for statement in (
+            "DELETE FROM submit_intents",
+            "TRUNCATE gateway_fencing_barriers CASCADE",
+            "DELETE FROM capacity_verification_queue",
+            "ALTER TABLE submit_intents DISABLE TRIGGER ALL",
+            "CREATE TABLE unauthorized (id integer)",
+            "SELECT configure_coordination_runtime_role(current_user::name, 'speech')",
+        ):
+            with pytest.raises(InsufficientPrivilege), db.transaction():
+                db.execute(statement)
+        if plane == "speech":
+            db.execute("CREATE TEMP TABLE capacity_verification_queue (spoof integer)")
+            db.execute(
+                "UPDATE host_nodes SET last_heartbeat_at = clock_timestamp() "
+                "WHERE host_node_id = 'node-role'"
+            )
+            with pytest.raises(CheckViolation, match="capacity counters"), db.transaction():
+                db.execute(
+                    "UPDATE host_nodes SET reserved_cpu_decode_millicores = 1 "
+                    "WHERE host_node_id = 'node-role'"
+                )
+    finally:
+        db.execute("RESET ROLE")
+
+
+def _lock_race_scope(
+    connection: psycopg.Connection[Any], pool: str, node: str, instance: str
+) -> None:
+    connection.execute("SELECT 1 FROM resource_pools WHERE pool_id = %s FOR UPDATE", (pool,))
+    connection.execute("SELECT 1 FROM scheduler_pool_leases WHERE pool_id = %s FOR UPDATE", (pool,))
+    connection.execute("SELECT 1 FROM host_nodes WHERE host_node_id = %s FOR UPDATE", (node,))
+    connection.execute(
+        "SELECT 1 FROM engine_instances WHERE instance_id = %s "
+        "ORDER BY instance_generation FOR UPDATE",
+        (instance,),
+    )
+    connection.execute(
+        "SELECT 1 FROM admission_leases WHERE pool_id = %s ORDER BY lease_id FOR UPDATE", (pool,)
+    )
+    connection.execute(
+        "SELECT 1 FROM gateway_fencing_barriers WHERE pool_id = %s ORDER BY gateway_id FOR UPDATE",
+        (pool,),
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario", ["last_slot", "submit_release", "admission_drain", "takeover_submit"]
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_ordered_transaction_recipes_under_actual_lock_contention(
+    coordination_schema: CoordinationDatabase,
+    scenario: str,
+    reverse: bool,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from queue import Queue
+    from threading import Event
+    from time import monotonic
+
+    suffix = uuid.uuid4().hex[:10]
+    pool, node, instance = "pool-" + suffix, "node-" + suffix, "inst-" + suffix
+    initial_slots = (
+        3
+        if scenario == "last_slot"
+        else 1
+        if scenario in ("submit_release", "takeover_submit")
+        else 0
+    )
+
+    def connect() -> psycopg.Connection[Any]:
+        connection = psycopg.connect(coordination_schema.url)
+        connection.execute(
+            sql.SQL("SET search_path TO {}, public").format(
+                sql.Identifier(coordination_schema.schema)
+            )
+        )
+        connection.execute("SET lock_timeout = '5s'")
+        connection.execute("SET statement_timeout = '5s'")
+        return connection
+
+    with connect() as setup:
+        _insert_host(setup, node)
+        _insert_pool(setup, pool_id=pool)
+        _insert_instance(
+            setup,
+            instance_id=instance,
+            generation=1,
+            host_node_id=node,
+            architecture="discrete_device_memory",
+            pool_id=pool,
+        )
+        setup.execute(
+            "UPDATE resource_pools SET high_water_fencing_token = 1 WHERE pool_id = %s", (pool,)
+        )
+        setup.execute(
+            """INSERT INTO scheduler_pool_leases VALUES
+            (%s, 'owner-1', 1, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+             CURRENT_TIMESTAMP + INTERVAL '1 hour', TRUE)""",
+            (pool,),
+        )
+        setup.execute(
+            """INSERT INTO gateway_fencing_barriers
+            (gateway_id,pool_id,host_node_id,enforced_min_fencing_token,new_owner_scheduler_id)
+            VALUES ('gateway-1',%s,%s,1,'owner-1')""",
+            (pool, node),
+        )
+        if initial_slots:
+            _insert_lease(
+                setup,
+                lease_id="lease-" + suffix,
+                operation_id="op-" + suffix,
+                attempt_id="att-" + suffix,
+                host_node_id=node,
+                instance_id=instance,
+                generation=1,
+                pool_id=pool,
+                slots=initial_slots,
+                reservation=(
+                    0,
+                    initial_slots,
+                    initial_slots,
+                    initial_slots,
+                    initial_slots,
+                    initial_slots,
+                ),
+            )
+        setup.execute(
+            "UPDATE engine_instances SET reserved_active_slots = %s WHERE instance_id = %s",
+            (initial_slots, instance),
+        )
+        setup.execute(
+            """UPDATE host_nodes SET reserved_device_memory_bytes = %s,
+            reserved_host_memory_bytes = %s, reserved_cpu_decode_millicores = %s,
+            reserved_host_pcm_buffer_bytes = %s, reserved_scratch_disk_bytes = %s
+            WHERE host_node_id = %s""",
+            (
+                100 + initial_slots,
+                100 + initial_slots,
+                initial_slots,
+                initial_slots,
+                initial_slots,
+                node,
+            ),
+        )
+
+    actions = {
+        "last_slot": ("admit-a", "admit-b"),
+        "submit_release": ("submit", "release"),
+        "admission_drain": ("admit-a", "drain"),
+        "takeover_submit": ("takeover", "submit"),
+    }[scenario]
+    if reverse:
+        actions = actions[::-1]
+
+    def act(connection: psycopg.Connection[Any], action: str) -> None:
+        if action.startswith("admit"):
+            _insert_lease(
+                connection,
+                lease_id=action + suffix,
+                operation_id="op-" + action + suffix,
+                attempt_id="att-" + action + suffix,
+                host_node_id=node,
+                instance_id=instance,
+                generation=1,
+                pool_id=pool,
+            )
+            delta = 1
+        elif action == "release":
+            connection.execute(
+                """UPDATE admission_leases SET lease_state='released',
+                cleanup_state='not_required', budget_released_at=CURRENT_TIMESTAMP
+                WHERE lease_id=%s""",
+                ("lease-" + suffix,),
+            )
+            delta = -1
+        else:
+            delta = 0
+        if delta:
+            connection.execute(
+                "UPDATE engine_instances SET reserved_active_slots=reserved_active_slots+%s "
+                "WHERE instance_id=%s",
+                (delta, instance),
+            )
+            connection.execute(
+                """UPDATE host_nodes SET
+                reserved_device_memory_bytes=reserved_device_memory_bytes+%s,
+                reserved_host_memory_bytes=reserved_host_memory_bytes+%s,
+                reserved_cpu_decode_millicores=reserved_cpu_decode_millicores+%s,
+                reserved_host_pcm_buffer_bytes=reserved_host_pcm_buffer_bytes+%s,
+                reserved_scratch_disk_bytes=reserved_scratch_disk_bytes+%s WHERE host_node_id=%s""",
+                (delta, delta, delta, delta, delta, node),
+            )
+        if action == "drain":
+            connection.execute(
+                "UPDATE engine_instances SET instance_state='draining' WHERE instance_id=%s",
+                (instance,),
+            )
+        if action == "takeover":
+            connection.execute(
+                "UPDATE resource_pools SET high_water_fencing_token=2 WHERE pool_id=%s", (pool,)
+            )
+            connection.execute(
+                """UPDATE scheduler_pool_leases SET owner_scheduler_id='owner-2',
+                fencing_token=2,lease_state='reconciling_takeover',previous_owner_reconciled=FALSE
+                WHERE pool_id=%s""",
+                (pool,),
+            )
+            connection.execute(
+                "UPDATE gateway_fencing_barriers SET enforced_min_fencing_token=2,"
+                "new_owner_scheduler_id='owner-2' WHERE pool_id=%s",
+                (pool,),
+            )
+        if action == "submit":
+            token = connection.execute(
+                "SELECT enforced_min_fencing_token FROM gateway_fencing_barriers WHERE pool_id=%s",
+                (pool,),
+            ).fetchone()
+            assert token is not None
+            if token[0] > 1:
+                raise CheckViolation("gateway_barrier_fenced")
+            _insert_submit_intent(
+                connection,
+                submit_intent_id="submit-" + suffix,
+                lease_id="lease-" + suffix,
+                operation_id="op-" + suffix,
+                attempt_id="att-" + suffix,
+                host_node_id=node,
+                instance_id=instance,
+                generation=1,
+                pool_id=pool,
+            )
+
+    pids: Queue[int] = Queue()
+
+    def contender() -> str:
+        try:
+            with connect() as connection:
+                pids.put(connection.info.backend_pid)
+                _lock_race_scope(connection, pool, node, instance)
+                act(connection, actions[1])
+            return "committed"
+        except CheckViolation:
+            return "rejected"
+
+    with connect() as first, connect() as observer, ThreadPoolExecutor(max_workers=1) as executor:
+        _lock_race_scope(first, pool, node, instance)
+        future = executor.submit(contender)
+        second_pid = pids.get(timeout=5)
+        deadline = monotonic() + 5
+        while True:
+            blockers = observer.execute("SELECT pg_blocking_pids(%s)", (second_pid,)).fetchone()
+            if blockers and first.info.backend_pid in blockers[0]:
+                break
+            assert monotonic() < deadline, "second transaction never reached the contested lock"
+            Event().wait(0.01)
+        act(first, actions[0])
+        first.commit()
+        outcome = future.result(timeout=5)
+        expected_rejection = (
+            scenario in ("last_slot", "submit_release")
+            or (scenario == "admission_drain" and reverse)
+            or (scenario == "takeover_submit" and not reverse)
+        )
+        assert outcome == ("rejected" if expected_rejection else "committed")
+        # Invariants also execute at commit; neither a partial admission nor a
+        # false release can survive the competing transactions.
+        assert observer.execute("SELECT count(*) FROM capacity_verification_queue").fetchone() == (
+            0,
         )

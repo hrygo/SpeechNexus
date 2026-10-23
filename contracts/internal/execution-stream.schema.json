@@ -34,6 +34,18 @@
     },
     {
       "$ref": "#/$defs/StreamHeartbeat"
+    },
+    {
+      "$ref": "#/$defs/StreamTextAppend"
+    },
+    {
+      "$ref": "#/$defs/StreamTextCommit"
+    },
+    {
+      "$ref": "#/$defs/StreamTextFinish"
+    },
+    {
+      "$ref": "#/$defs/StreamTextAck"
     }
   ],
   "x-speechnexus-binary-frame": {
@@ -157,7 +169,12 @@
             "execution_not_found",
             "execution_fenced",
             "adapter_failure",
-            "cleanup_unknown"
+            "cleanup_unknown",
+            "text_gap",
+            "text_conflict",
+            "text_finished",
+            "text_commit_invalid",
+            "input_kind_mismatch"
           ]
         },
         "message": {
@@ -189,7 +206,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "1.0.0"
+          "const": "1.1.0"
         },
         "type": {
           "type": "string"
@@ -238,11 +255,13 @@
             "fencing_token",
             "input",
             "input_credit_samples",
-            "max_message_bytes"
+            "max_message_bytes",
+            "input_kind",
+            "input_credit_codepoints"
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.open"
@@ -276,7 +295,14 @@
               "minimum": 1
             },
             "input": {
-              "$ref": "#/$defs/PcmDescriptor"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/PcmDescriptor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "output": {
               "oneOf": [
@@ -290,14 +316,64 @@
             },
             "input_credit_samples": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 0
             },
             "max_message_bytes": {
               "type": "integer",
               "minimum": 1024,
               "maximum": 1048576
+            },
+            "input_kind": {
+              "enum": [
+                "pcm",
+                "text"
+              ]
+            },
+            "input_credit_codepoints": {
+              "type": "integer",
+              "minimum": 0
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "pcm"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_codepoints": {
+                    "const": 0
+                  },
+                  "input": {
+                    "$ref": "#/$defs/PcmDescriptor"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_samples": {
+                    "const": 0
+                  },
+                  "input": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
         }
       ]
     },
@@ -321,11 +397,13 @@
             "fencing_token",
             "input_credit_samples",
             "output_credit_samples",
-            "max_message_bytes"
+            "max_message_bytes",
+            "input_kind",
+            "input_credit_codepoints"
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.opened"
@@ -370,8 +448,52 @@
               "type": "integer",
               "minimum": 1024,
               "maximum": 1048576
+            },
+            "input_kind": {
+              "enum": [
+                "pcm",
+                "text"
+              ]
+            },
+            "input_credit_codepoints": {
+              "type": "integer",
+              "minimum": 0
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "pcm"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_codepoints": {
+                    "const": 0
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_samples": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
         }
       ]
     },
@@ -395,7 +517,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.input.ack"
@@ -450,7 +572,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.output.ack"
@@ -506,7 +628,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.backpressure"
@@ -579,7 +701,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.close"
@@ -646,7 +768,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.closed"
@@ -826,7 +948,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.error"
@@ -876,7 +998,7 @@
           ],
           "properties": {
             "schema_version": {
-              "const": "1.0.0"
+              "const": "1.1.0"
             },
             "type": {
               "const": "stream.heartbeat"
@@ -912,11 +1034,147 @@
           }
         }
       ]
+    },
+    "StreamTextAppend": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "offset_codepoints",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.append"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "offset_codepoints": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "through_codepoint"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.commit"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextFinish": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "final_codepoint"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.finish"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "final_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "accepted_through_text_seq",
+            "accepted_through_codepoint",
+            "committed_through_codepoint",
+            "credit_through_codepoint",
+            "finished"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.ack"
+            },
+            "accepted_through_text_seq": {
+              "type": "integer",
+              "minimum": -1
+            },
+            "accepted_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "committed_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credit_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "finished": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
     }
   },
   "examples": [
     {
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "type": "stream.open",
       "stream_id": "stream_demo",
       "stream_epoch": 1,
@@ -937,10 +1195,12 @@
         "channels": 1
       },
       "input_credit_samples": 48000,
-      "max_message_bytes": 65536
+      "max_message_bytes": 65536,
+      "input_kind": "pcm",
+      "input_credit_codepoints": 0
     },
     {
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "type": "stream.opened",
       "stream_id": "stream_demo",
       "stream_epoch": 1,
@@ -952,10 +1212,12 @@
       "fencing_token": 42,
       "input_credit_samples": 48000,
       "output_credit_samples": 48000,
-      "max_message_bytes": 65536
+      "max_message_bytes": 65536,
+      "input_kind": "pcm",
+      "input_credit_codepoints": 0
     },
     {
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "type": "stream.error",
       "stream_id": "stream_demo",
       "stream_epoch": 1,
@@ -970,7 +1232,7 @@
       }
     },
     {
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "type": "stream.closed",
       "stream_id": "stream_demo",
       "stream_epoch": 1,
@@ -986,5 +1248,18 @@
       "error": null
     }
   ],
-  "unevaluatedProperties": false
+  "unevaluatedProperties": false,
+  "x-speechnexus-text-stream": {
+    "unit": "Unicode scalar values (codepoints), never UTF-8 bytes or UTF-16 code units; unpaired surrogates are invalid.",
+    "invariants": [
+      "Submit command must be tts with text_stream matching open stream_id/epoch. Open/opened input_kind must match; PCM input is forbidden in text mode. A stream epoch is never reused.",
+      "Before opened no append/commit/finish is accepted. text_seq starts at 0 and is contiguous over append/commit/finish per epoch. Only one unacknowledged sender event is in flight.",
+      "Append offset_codepoints equals accepted_through_codepoint; accepted length may not exceed absolute credit_through_codepoint. Open credit initializes this absolute limit; each ack grants a monotonic absolute limit, not an additive amount.",
+      "An exact retry of a previously accepted text_seq returns its original ack without regenerating text; changed kind/body at that sequence is text_conflict. Future sequence is text_gap. Store canonical event digest and ack through execution retention.",
+      "Commit through_codepoint lies between prior committed and accepted offsets. Only immutable committed prefix reaches the adapter. Repeating a commit cannot schedule the prefix twice.",
+      "Finish final_codepoint equals accepted offset and commits its remaining suffix once. Finished ack is required; subsequent new append/commit/finish is text_finished. Exact retries still return their original ack.",
+      "Ack satisfies committed <= accepted <= credit. Latest accepted text_seq/offsets/credit never decrease; an original ack replay for an older text_seq must not replace later high-water state. -1 means no accepted text event yet. Credit exceeding max_message_bytes is not permission to send an oversized frame.",
+      "Cancel/disconnect does not imply termination or release. New epoch resumes no unacknowledged text; query the original execution, abort or reconcile before creating a replacement. stream.closed follows verified execution and cleanup facts."
+    ]
+  }
 }

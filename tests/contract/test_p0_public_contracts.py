@@ -3115,7 +3115,14 @@ def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> N
         "max_output_audio_ms": 30_000,
         "sample_rate_hz": 24_000,
     }
+    request["command"] = _load_json(_CONTRACTS / "internal/execution-command.schema.json")[
+        "examples"
+    ][0]
     submit_validator.validate(request)
+    inputless = copy.deepcopy(request)
+    del inputless["command"]
+    with pytest.raises(ValidationError):
+        submit_validator.validate(inputless)
     text_only_request = copy.deepcopy(request)
     text_only_request["max_output_audio_ms"] = None
     text_only_request["sample_rate_hz"] = None

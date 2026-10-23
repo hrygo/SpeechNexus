@@ -33,7 +33,6 @@ _OPENAI_PATHS = {
     "/v1/audio/speech",
     "/v1/realtime",
 }
-_COMPONENT_SECTIONS = ("schemas", "parameters", "headers", "requestBodies", "responses")
 _OPENAI_REALTIME_DEFS = {
     "SessionUpdate",
     "InputAudioBufferAppend",
@@ -146,10 +145,16 @@ def _dereference_schema(
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
     resolved_mapping = _mapping(resolved)
     if siblings and resolved_mapping is not None:
-        return {
-            **resolved_mapping,
-            **{key: _dereference_schema(value, side, seen) for key, value in siblings.items()},
+        resolved_siblings = {
+            key: _dereference_schema(value, side, seen) for key, value in siblings.items()
         }
+        annotations = {"title", "description", "default", "examples", "$comment"}
+        conflicts = (resolved_mapping.keys() & resolved_siblings.keys()) - annotations
+        if any(resolved_mapping[key] != resolved_siblings[key] for key in conflicts):
+            # JSON Schema $ref siblings intersect; overriding the target can hide
+            # a tighter bound or change the meaning of a composed schema.
+            return {"allOf": [resolved_mapping, resolved_siblings]}
+        return {**resolved_mapping, **resolved_siblings}
     return resolved
 
 
@@ -174,21 +179,24 @@ def _constraint_break(base: Mapping[str, Any], current: Mapping[str, Any]) -> st
         ("minItems", ">"),
         ("maxLength", "<"),
         ("maxItems", "<"),
+        ("minProperties", ">"),
+        ("maxProperties", "<"),
+        ("minContains", ">"),
+        ("maxContains", "<"),
     )
     for key, direction in checks:
         old = base.get(key)
         new = current.get(key)
-        if (
-            old is None
-            or new is None
-            or not isinstance(old, (int, float))
-            or not isinstance(new, (int, float))
-        ):
+        if new is None:
+            continue
+        if old is None:
+            return f"{key} was tightened from unbounded to {new!r}"
+        if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
             continue
         if (direction == ">" and new > old) or (direction == "<" and new < old):
             return f"{key} was tightened from {old!r} to {new!r}"
     for key in ("pattern", "multipleOf"):
-        if key in base and base.get(key) != current.get(key):
+        if key in current and base.get(key) != current.get(key):
             return f"{key} changed from {base.get(key)!r} to {current.get(key)!r}"
     if base.get("uniqueItems") is not True and current.get("uniqueItems") is True:
         return "uniqueItems was tightened to true"
@@ -201,6 +209,7 @@ def _compare_schema(
     pointer: str,
     issues: list[str],
     *,
+    direction: str = "request",
     base_side: _SchemaSide | None = None,
     current_side: _SchemaSide | None = None,
 ) -> None:
@@ -208,6 +217,13 @@ def _compare_schema(
         base = _dereference_schema(base, base_side)
     if current_side is not None:
         current = _dereference_schema(current, current_side)
+    if isinstance(base, bool) or isinstance(current, bool):
+        accepted, constrained = (base, current) if direction == "request" else (current, base)
+        if (constrained is False and accepted is not False) or (
+            accepted is True and constrained is not True
+        ):
+            _issue(issues, pointer, "boolean schema acceptance/guarantee changed")
+        return
     base_schema = _mapping(base)
     current_schema = _mapping(current)
     if base_schema is None or current_schema is None:
@@ -222,12 +238,24 @@ def _compare_schema(
 
     base_types = _type_set(base_schema.get("type"))
     current_types = _type_set(current_schema.get("type"))
-    if base_types and current_types and base_types != current_types:
+    type_break = (
+        bool(current_types) and (not base_types or not base_types <= current_types)
+        if direction == "request"
+        else bool(base_types) and (not current_types or not current_types <= base_types)
+    )
+    if type_break:
         _issue(
             issues, pointer, f"type changed from {sorted(base_types)} to {sorted(current_types)}"
         )
 
-    if "const" in base_schema and base_schema.get("const") != current_schema.get("const"):
+    constrained, accepted = (
+        (current_schema, base_schema) if direction == "request" else (base_schema, current_schema)
+    )
+    if (
+        "const" in constrained
+        and constrained.get("const") != accepted.get("const")
+        and accepted.get("enum") != [constrained["const"]]
+    ):
         _issue(issues, pointer, "const value changed")
 
     if ("default" in base_schema) != ("default" in current_schema):
@@ -248,28 +276,42 @@ def _compare_schema(
             f"to {current_schema.get('format')!r}",
         )
 
-    base_enum = _sequence(base_schema.get("enum"))
-    current_enum = _sequence(current_schema.get("enum"))
+    base_enum = _sequence(constrained.get("enum"))
+    current_enum = _sequence(accepted.get("enum"))
     if base_enum is not None:
-        missing = [
-            value for value in base_enum if current_enum is None or value not in current_enum
-        ]
-        if missing:
-            _issue(issues, pointer, f"enum values removed: {missing!r}")
+        values = current_enum
+        if "const" in accepted:
+            values = [accepted["const"]]
+        missing = [value for value in values or [] if value not in base_enum]
+        if values is None or missing:
+            _issue(
+                issues,
+                pointer,
+                f"enum values {'removed' if direction == 'request' else 'added'}: {missing!r}",
+            )
 
     base_required = set(cast(Iterable[str], base_schema.get("required", [])))
     current_required = set(cast(Iterable[str], current_schema.get("required", [])))
-    added_required = current_required - base_required
-    if added_required:
-        _issue(issues, pointer, f"new required fields: {sorted(added_required)}")
+    changed_required = (
+        current_required - base_required
+        if direction == "request"
+        else base_required - current_required
+    )
+    if changed_required:
+        label = (
+            "new required fields"
+            if direction == "request"
+            else "response required guarantees removed"
+        )
+        _issue(issues, pointer, f"{label}: {sorted(changed_required)}")
 
     if (
-        base_schema.get("additionalProperties") is not False
-        and current_schema.get("additionalProperties") is False
+        accepted.get("additionalProperties") is not False
+        and constrained.get("additionalProperties") is False
     ):
-        _issue(issues, pointer, "additionalProperties was tightened to false")
+        _issue(issues, pointer, "additionalProperties acceptance/guarantee changed")
 
-    constraint_issue = _constraint_break(base_schema, current_schema)
+    constraint_issue = _constraint_break(accepted, constrained)
     if constraint_issue is not None:
         _issue(issues, pointer, constraint_issue)
 
@@ -288,6 +330,7 @@ def _compare_schema(
                     current_properties[name],
                     property_pointer,
                     issues,
+                    direction=direction,
                     base_side=base_side,
                     current_side=current_side,
                 )
@@ -307,27 +350,71 @@ def _compare_schema(
                     current_definitions[name],
                     definition_pointer,
                     issues,
+                    direction=direction,
                     base_side=base_side,
                     current_side=current_side,
                 )
 
-    for keyword in ("items", "if", "then", "else", "not"):
-        if keyword in base_schema:
-            _compare_schema(
-                base_schema[keyword],
-                current_schema.get(keyword),
-                f"{pointer}/{keyword}",
+    for keyword in (
+        "if",
+        "then",
+        "else",
+        "not",
+        "dependentRequired",
+        "dependentSchemas",
+        "unevaluatedProperties",
+        "contains",
+        "prefixItems",
+    ):
+        if base_schema.get(keyword) != current_schema.get(keyword):
+            _issue(
                 issues,
-                base_side=base_side,
-                current_side=current_side,
+                f"{pointer}/{keyword}",
+                "conditional or composed constraint changed; compatibility needs explicit proof",
             )
+    if "items" in base_schema or "items" in current_schema:
+        _compare_schema(
+            base_schema.get("items", True),
+            current_schema.get("items", True),
+            f"{pointer}/items",
+            issues,
+            direction=direction,
+            base_side=base_side,
+            current_side=current_side,
+        )
+    old_additional = base_schema.get("additionalProperties", True)
+    new_additional = current_schema.get("additionalProperties", True)
+    if isinstance(old_additional, Mapping) or isinstance(new_additional, Mapping):
+        _compare_schema(
+            old_additional,
+            new_additional,
+            f"{pointer}/additionalProperties",
+            issues,
+            direction=direction,
+            base_side=base_side,
+            current_side=current_side,
+        )
     for keyword in ("oneOf", "anyOf", "allOf"):
         base_variants = _sequence(base_schema.get(keyword))
         current_variants = _sequence(current_schema.get(keyword))
         if base_variants is None:
+            if current_variants is not None and direction == "request":
+                _issue(
+                    issues,
+                    f"{pointer}/{keyword}",
+                    "composition introduced; compatibility needs explicit proof",
+                )
             continue
-        if current_variants is None or len(current_variants) != len(base_variants):
-            _issue(issues, f"{pointer}/{keyword}", "variant count changed")
+        if current_variants is None:
+            if direction == "response":
+                _issue(issues, f"{pointer}/{keyword}", "response composition guarantee removed")
+            continue
+        if len(current_variants) != len(base_variants):
+            _issue(
+                issues,
+                f"{pointer}/{keyword}",
+                "variant count changed; compatibility needs explicit proof",
+            )
             continue
         for index, variant in enumerate(base_variants):
             _compare_schema(
@@ -335,6 +422,7 @@ def _compare_schema(
                 current_variants[index],
                 f"{pointer}/{keyword}/{index}",
                 issues,
+                direction=direction,
                 base_side=base_side,
                 current_side=current_side,
             )
@@ -363,6 +451,9 @@ def _compare_parameters(
 
     base_index = indexed(base_parameters)
     current_index = indexed(current_parameters)
+    for key, parameter in current_index.items():
+        if key not in base_index and parameter.get("required") is True:
+            _issue(issues, pointer, f"new required parameter: {key[1]} {key[0]}")
     for key, base_parameter in base_index.items():
         if key not in current_index:
             _issue(issues, pointer, f"parameter removed: {key[1]} {key[0]}")
@@ -380,56 +471,6 @@ def _compare_parameters(
         )
 
 
-def _collect_local_component_refs(node: object, references: set[tuple[str, str]]) -> None:
-    mapping = _mapping(node)
-    if mapping is not None:
-        ref = mapping.get("$ref")
-        if isinstance(ref, str) and ref.startswith("#/components/"):
-            parts = ref.split("/")
-            if len(parts) == 4 and parts[2] in _COMPONENT_SECTIONS:
-                references.add((parts[2], parts[3]))
-        properties = _mapping(mapping.get("properties"))
-        if properties is not None:
-            for name, value in properties.items():
-                # `nexus` is the explicitly optional enhancement namespace.
-                # Its components are not part of the OpenAI compatibility
-                # promise even when nested inside a standard request or model.
-                if name != "nexus":
-                    _collect_local_component_refs(value, references)
-        for key, value in mapping.items():
-            if key == "properties":
-                continue
-            _collect_local_component_refs(value, references)
-        return
-    for value in _sequence(node) or []:
-        _collect_local_component_refs(value, references)
-
-
-def _reachable_components(document: Mapping[str, Any]) -> dict[str, set[str]]:
-    paths = _mapping(document.get("paths")) or {}
-    components = _mapping(document.get("components")) or {}
-    pending: set[tuple[str, str]] = set()
-    for path_name, path_item in paths.items():
-        if path_name in _OPENAI_PATHS:
-            _collect_local_component_refs(path_item, pending)
-
-    seen: set[tuple[str, str]] = set()
-    while pending:
-        section, name = pending.pop()
-        if (section, name) in seen:
-            continue
-        seen.add((section, name))
-        section_values = _mapping(components.get(section)) or {}
-        component = section_values.get(name)
-        if component is not None:
-            _collect_local_component_refs(component, pending)
-
-    reachable: dict[str, set[str]] = {section: set() for section in _COMPONENT_SECTIONS}
-    for section, name in seen:
-        reachable[section].add(name)
-    return reachable
-
-
 def _compare_openapi(
     base: Mapping[str, Any],
     current: Mapping[str, Any],
@@ -440,8 +481,8 @@ def _compare_openapi(
     issues: list[str] = []
     base_side = _SchemaSide(base, path, base_git_ref)
     current_side = _SchemaSide(current, path, None)
-    base_paths = _mapping(base.get("paths")) or {}
-    current_paths = _mapping(current.get("paths")) or {}
+    base_paths = _mapping(_dereference_schema(base.get("paths"), base_side)) or {}
+    current_paths = _mapping(_dereference_schema(current.get("paths"), current_side)) or {}
     for path_name, base_path_item in base_paths.items():
         if path_name not in _OPENAI_PATHS:
             continue
@@ -451,14 +492,6 @@ def _compare_openapi(
             continue
         base_path_mapping = _mapping(base_path_item) or {}
         current_path_mapping = _mapping(current_path_item) or {}
-        _compare_parameters(
-            base_path_mapping.get("parameters", []),
-            current_path_mapping.get("parameters", []),
-            f"{path}:paths/{path_name}",
-            issues,
-            base_side=base_side,
-            current_side=current_side,
-        )
         for method, base_operation in base_path_mapping.items():
             if method not in _HTTP_METHODS:
                 continue
@@ -469,8 +502,14 @@ def _compare_openapi(
                 continue
             base_operation_mapping = _mapping(base_operation) or {}
             _compare_parameters(
-                base_operation_mapping.get("parameters", []),
-                current_operation.get("parameters", []),
+                [
+                    *base_path_mapping.get("parameters", []),
+                    *base_operation_mapping.get("parameters", []),
+                ],
+                [
+                    *current_path_mapping.get("parameters", []),
+                    *current_operation.get("parameters", []),
+                ],
                 operation_pointer,
                 issues,
                 base_side=base_side,
@@ -479,6 +518,12 @@ def _compare_openapi(
 
             base_body = _mapping(base_operation_mapping.get("requestBody"))
             current_body = _mapping(current_operation.get("requestBody"))
+            if (
+                base_body is None
+                and current_body is not None
+                and current_body.get("required") is True
+            ):
+                _issue(issues, operation_pointer, "new required requestBody")
             if base_body is not None:
                 if current_body is None:
                     _issue(issues, operation_pointer, "requestBody removed")
@@ -516,6 +561,40 @@ def _compare_openapi(
                 if current_response is None:
                     _issue(issues, response_pointer, "response status removed")
                     continue
+                base_headers = {
+                    name.lower(): value
+                    for name, value in (
+                        _mapping((_mapping(base_response) or {}).get("headers")) or {}
+                    ).items()
+                }
+                current_headers = {
+                    name.lower(): value
+                    for name, value in (
+                        _mapping((_mapping(current_response) or {}).get("headers")) or {}
+                    ).items()
+                }
+                for name, old_header in base_headers.items():
+                    if name not in current_headers:
+                        _issue(issues, response_pointer, f"response header removed: {name}")
+                        continue
+                    old_header_mapping = _mapping(old_header) or {}
+                    new_header_mapping = _mapping(current_headers[name]) or {}
+                    if (
+                        old_header_mapping.get("required") is True
+                        and new_header_mapping.get("required") is not True
+                    ):
+                        _issue(
+                            issues, response_pointer, f"response header guarantee removed: {name}"
+                        )
+                    _compare_schema(
+                        old_header_mapping.get("schema", {}),
+                        new_header_mapping.get("schema", {}),
+                        f"{response_pointer}/headers/{name}",
+                        issues,
+                        direction="response",
+                        base_side=base_side,
+                        current_side=current_side,
+                    )
                 base_content = _mapping((_mapping(base_response) or {}).get("content")) or {}
                 current_content = _mapping((_mapping(current_response) or {}).get("content")) or {}
                 for media_type, base_media in base_content.items():
@@ -530,90 +609,11 @@ def _compare_openapi(
                         (_mapping(current_media) or {}).get("schema", {}),
                         f"{response_pointer}/{media_type}",
                         issues,
+                        direction="response",
                         base_side=base_side,
                         current_side=current_side,
                     )
 
-    base_components = _mapping(base.get("components")) or {}
-    current_components = _mapping(current.get("components")) or {}
-    reachable = _reachable_components(base)
-    base_schemas = _mapping(base_components.get("schemas")) or {}
-    current_schemas = _mapping(current_components.get("schemas")) or {}
-    for name in sorted(reachable["schemas"]):
-        base_schema = base_schemas.get(name)
-        if base_schema is None:
-            continue
-        component_pointer = f"{path}:components/schemas/{name}"
-        if name not in current_schemas:
-            _issue(issues, component_pointer, "component schema removed")
-        else:
-            _compare_schema(
-                base_schema,
-                current_schemas[name],
-                component_pointer,
-                issues,
-                base_side=base_side,
-                current_side=current_side,
-            )
-
-    for section in ("parameters", "headers"):
-        base_section = _mapping(base_components.get(section)) or {}
-        current_section = _mapping(current_components.get(section)) or {}
-        for name in sorted(reachable[section]):
-            base_value = base_section.get(name)
-            if base_value is None:
-                continue
-            component_pointer = f"{path}:components/{section}/{name}"
-            if name not in current_section:
-                _issue(issues, component_pointer, f"component {section} entry removed")
-                continue
-            base_mapping = _mapping(base_value) or {}
-            current_mapping = _mapping(current_section[name]) or {}
-            if section == "parameters":
-                _compare_parameters(
-                    [base_mapping],
-                    [current_mapping],
-                    component_pointer,
-                    issues,
-                    base_side=base_side,
-                    current_side=current_side,
-                )
-            else:
-                _compare_schema(
-                    base_mapping.get("schema", {}),
-                    current_mapping.get("schema", {}),
-                    component_pointer,
-                    issues,
-                    base_side=base_side,
-                    current_side=current_side,
-                )
-
-    for section in ("requestBodies", "responses"):
-        base_section = _mapping(base_components.get(section)) or {}
-        current_section = _mapping(current_components.get(section)) or {}
-        for name in sorted(reachable[section]):
-            base_value = base_section.get(name)
-            if base_value is None:
-                continue
-            component_pointer = f"{path}:components/{section}/{name}"
-            if name not in current_section:
-                _issue(issues, component_pointer, f"component {section} entry removed")
-                continue
-            base_content = _mapping((_mapping(base_value) or {}).get("content")) or {}
-            current_content = _mapping((_mapping(current_section[name]) or {}).get("content")) or {}
-            for media_type, base_media in base_content.items():
-                media_pointer = f"{component_pointer}/{media_type}"
-                if media_type not in current_content:
-                    _issue(issues, media_pointer, "media type removed")
-                    continue
-                _compare_schema(
-                    (_mapping(base_media) or {}).get("schema", {}),
-                    (_mapping(current_content[media_type]) or {}).get("schema", {}),
-                    media_pointer,
-                    issues,
-                    base_side=base_side,
-                    current_side=current_side,
-                )
     return issues
 
 
@@ -644,6 +644,7 @@ def _compare_json_schema(
     path: str,
     *,
     base_git_ref: str | None = None,
+    direction: str = "request",
 ) -> list[str]:
     issues: list[str] = []
     _compare_schema(
@@ -651,6 +652,7 @@ def _compare_json_schema(
         current,
         path,
         issues,
+        direction=direction,
         base_side=_SchemaSide(base, path, base_git_ref),
         current_side=_SchemaSide(current, path, None),
     )
@@ -719,7 +721,7 @@ def _compare_realtime_events_schema(
 
     reachable_base = _reachable_defs(base, standard_roots)
     reachable_current = _reachable_defs(current, standard_roots)
-    for name in sorted(reachable_base):
+    for name in sorted(standard_roots):
         pointer = f"{path}:$defs/{name}"
         base_definition = base_defs.get(name)
         if base_definition is None:
@@ -733,6 +735,15 @@ def _compare_realtime_events_schema(
             current_defs[name],
             pointer,
             issues,
+            direction="request"
+            if name
+            in {
+                "SessionUpdate",
+                "InputAudioBufferAppend",
+                "InputAudioBufferCommit",
+                "InputAudioBufferClear",
+            }
+            else "response",
             base_side=base_side,
             current_side=current_side,
         )
@@ -799,6 +810,7 @@ def main() -> int:
                     current_document,
                     path,
                     base_git_ref=args.base,
+                    direction="response" if path.endswith("errors.schema.json") else "request",
                 )
             )
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 import yaml
 from fastapi import FastAPI
 from openapi_spec_validator import validate
@@ -54,6 +56,46 @@ def _load_contract() -> dict[str, Any]:
     return _object(document)
 
 
+def _resolved_schema(node: Any, document: dict[str, Any]) -> Any:
+    if isinstance(node, list):
+        return [_resolved_schema(item, document) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if "$ref" in node:
+        target: Any = document
+        for part in node["$ref"].removeprefix("#/").split("/"):
+            target = target[part.replace("~1", "/").replace("~0", "~")]
+        node = {**target, **{key: value for key, value in node.items() if key != "$ref"}}
+    result = {
+        key: _resolved_schema(value, document)
+        for key, value in node.items()
+        if key not in {"title", "description", "default"}
+    }
+    # Pydantic emits nullable scalar types as anyOf rather than a type array.
+    variants = result.get("anyOf")
+    if variants and all(set(item) == {"type"} for item in variants):
+        result.pop("anyOf")
+        result["type"] = [item["type"] for item in variants]
+    if isinstance(result.get("type"), list):
+        result["type"] = sorted(result["type"])
+    if "required" in result:
+        result["required"] = sorted(result["required"])
+    return result
+
+
+def _assert_schema_guarantees(expected: Any, actual: Any) -> None:
+    if isinstance(expected, dict):
+        assert isinstance(actual, dict)
+        for key, value in expected.items():
+            assert key in actual, f"missing schema constraint {key}"
+            if key == "required":
+                assert set(value) <= set(actual[key]), "response required guarantee removed"
+            else:
+                _assert_schema_guarantees(value, actual[key])
+    else:
+        assert expected == actual
+
+
 def _assert_contract_matches(expected: dict[str, Any], actual: dict[str, Any]) -> None:
     expected_info = _object(expected["info"])
     actual_info = _object(actual["info"])
@@ -97,7 +139,10 @@ def _assert_contract_matches(expected: dict[str, Any], actual: dict[str, Any]) -
                 actual_schema = _object(
                     _object(_object(actual_response["content"])["application/json"])["schema"]
                 )
-                assert expected_schema == actual_schema
+                _assert_schema_guarantees(
+                    _resolved_schema(expected_schema, expected),
+                    _resolved_schema(actual_schema, actual),
+                )
 
 
 def test_backend_exposes_valid_operational_openapi() -> None:
@@ -112,3 +157,50 @@ def test_gateway_exposes_valid_operational_openapi() -> None:
     validate(document)
     assert set(document["paths"]) == {"/healthz", "/readyz"}
     _assert_contract_matches(_load_contract(), document)
+
+
+@pytest.mark.parametrize(
+    "component,field,keyword,value",
+    [
+        ("HealthResponse", "status", "type", "integer"),
+        ("HealthResponse", "status", "const", "broken"),
+        ("HealthResponse", "service", "minLength", 0),
+        ("HealthResponse", "service", "maxLength", 128),
+        ("ReadinessResponse", "checks", "minItems", 0),
+        ("ReadinessCheckResponse", "status", "enum", ["ok", "unknown"]),
+    ],
+)
+def test_operational_parity_detects_component_drift(
+    component: str,
+    field: str,
+    keyword: str,
+    value: Any,
+) -> None:
+    actual = copy.deepcopy(_backend().openapi())
+    actual["components"]["schemas"][component]["properties"][field][keyword] = value
+    with pytest.raises(AssertionError):
+        _assert_contract_matches(_load_contract(), actual)
+
+
+def test_operational_parity_detects_removed_response_guarantee() -> None:
+    actual = _gateway().openapi()
+    actual["components"]["schemas"]["HealthResponse"]["required"].remove("service")
+    with pytest.raises(AssertionError):
+        _assert_contract_matches(_load_contract(), actual)
+
+
+@pytest.mark.parametrize("factory", [_backend, _gateway])
+async def test_operational_http_bodies_satisfy_resolved_contract(factory: Any) -> None:
+    from httpx import ASGITransport, AsyncClient
+    from jsonschema import Draft202012Validator
+
+    expected = _load_contract()
+    async with AsyncClient(
+        transport=ASGITransport(app=factory()), base_url="http://test"
+    ) as client:
+        for path, component in (("/healthz", "HealthResponse"), ("/readyz", "ReadinessResponse")):
+            response = await client.get(path)
+            assert response.status_code == 200
+            assert response.headers["X-Request-ID"]
+            schema = _resolved_schema(expected["components"]["schemas"][component], expected)
+            Draft202012Validator(schema).validate(response.json())

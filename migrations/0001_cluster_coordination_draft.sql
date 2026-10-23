@@ -23,6 +23,10 @@
 
 BEGIN;
 
+-- Freeze an explicit trusted schema and put pg_temp last before capturing the
+-- SECURITY DEFINER search_path. Runtime-created temp tables cannot shadow it.
+SELECT set_config('search_path', format('%I, pg_catalog, public, pg_temp', current_schema()), true);
+
 -- The interval ledger uses an exclusion constraint, which requires the
 -- btree_gist operator classes for scalar equality. The migration role needs
 -- permission to install extensions; runtime roles do not.
@@ -271,6 +275,9 @@ CREATE TABLE engine_instances (
     resident_host_memory_bytes BIGINT NOT NULL DEFAULT 0,
     loading_peak_host_memory_bytes BIGINT NOT NULL DEFAULT 0,
     per_slot_host_memory_bytes BIGINT NOT NULL DEFAULT 0,
+    per_slot_cpu_decode_millicores BIGINT NOT NULL CHECK (per_slot_cpu_decode_millicores >= 0),
+    per_slot_host_pcm_buffer_bytes BIGINT NOT NULL CHECK (per_slot_host_pcm_buffer_bytes >= 0),
+    per_slot_scratch_disk_bytes BIGINT NOT NULL CHECK (per_slot_scratch_disk_bytes >= 0),
     peak_reservation_active BOOLEAN NOT NULL DEFAULT TRUE,
 
     max_active_slots INTEGER NOT NULL,
@@ -1167,6 +1174,11 @@ CREATE TRIGGER trg_output_intervals_no_truncate
 CREATE FUNCTION enforce_resource_pool_fencing_monotonic() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.service_class IS DISTINCT FROM OLD.service_class
+        OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'fencing scope identity is immutable' USING ERRCODE = '23514';
+    END IF;
     IF NEW.high_water_fencing_token < OLD.high_water_fencing_token THEN
         RAISE EXCEPTION 'resource-pool fencing token cannot decrease'
             USING ERRCODE = '23514';
@@ -1182,6 +1194,11 @@ CREATE TRIGGER trg_resource_pools_fencing_monotonic
 CREATE FUNCTION enforce_gateway_fencing_monotonic() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF NEW.gateway_id IS DISTINCT FROM OLD.gateway_id
+        OR NEW.pool_id IS DISTINCT FROM OLD.pool_id
+        OR NEW.host_node_id IS DISTINCT FROM OLD.host_node_id THEN
+        RAISE EXCEPTION 'fencing scope identity is immutable' USING ERRCODE = '23514';
+    END IF;
     IF NEW.enforced_min_fencing_token < OLD.enforced_min_fencing_token THEN
         RAISE EXCEPTION 'gateway fencing token cannot decrease'
             USING ERRCODE = '23514';
@@ -1197,6 +1214,9 @@ CREATE TRIGGER trg_gateway_fencing_monotonic
 CREATE FUNCTION enforce_scheduler_lease_fencing_monotonic() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF NEW.pool_id IS DISTINCT FROM OLD.pool_id THEN
+        RAISE EXCEPTION 'fencing scope identity is immutable' USING ERRCODE = '23514';
+    END IF;
     IF NEW.fencing_token < OLD.fencing_token THEN
         RAISE EXCEPTION 'scheduler lease fencing token cannot decrease'
             USING ERRCODE = '23514';
@@ -1274,6 +1294,9 @@ BEGIN
             IS DISTINCT FROM OLD.loading_peak_host_memory_bytes
         OR NEW.per_slot_host_memory_bytes
             IS DISTINCT FROM OLD.per_slot_host_memory_bytes
+        OR NEW.per_slot_cpu_decode_millicores IS DISTINCT FROM OLD.per_slot_cpu_decode_millicores
+        OR NEW.per_slot_host_pcm_buffer_bytes IS DISTINCT FROM OLD.per_slot_host_pcm_buffer_bytes
+        OR NEW.per_slot_scratch_disk_bytes IS DISTINCT FROM OLD.per_slot_scratch_disk_bytes
         OR NEW.max_active_slots IS DISTINCT FROM OLD.max_active_slots
         OR NEW.realtime_reserved_slots IS DISTINCT FROM OLD.realtime_reserved_slots
         OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
@@ -1310,6 +1333,13 @@ BEGIN
         OR NEW.manifest_id IS DISTINCT FROM OLD.manifest_id
         OR NEW.config_digest IS DISTINCT FROM OLD.config_digest
         OR NEW.action IS DISTINCT FROM OLD.action
+        OR NEW.reserved_peak_device_bytes IS DISTINCT FROM OLD.reserved_peak_device_bytes
+        OR NEW.reserved_steady_device_bytes IS DISTINCT FROM OLD.reserved_steady_device_bytes
+        OR NEW.reserved_peak_host_bytes IS DISTINCT FROM OLD.reserved_peak_host_bytes
+        OR NEW.reserved_steady_host_bytes IS DISTINCT FROM OLD.reserved_steady_host_bytes
+        OR NEW.reserved_peak_unified_bytes IS DISTINCT FROM OLD.reserved_peak_unified_bytes
+        OR NEW.reserved_steady_unified_bytes IS DISTINCT FROM OLD.reserved_steady_unified_bytes
+        OR NEW.deadline_at IS DISTINCT FROM OLD.deadline_at
         OR NEW.fencing_token IS DISTINCT FROM OLD.fencing_token
         OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'runtime intent identity is immutable'
@@ -1504,6 +1534,7 @@ DECLARE
     pool_state_value TEXT;
     node_state_value TEXT;
     instance_state_value TEXT;
+    budget engine_instances%ROWTYPE;
 BEGIN
     SELECT pool_state
     INTO pool_state_value
@@ -1547,6 +1578,24 @@ BEGIN
         RAISE EXCEPTION 'admission lease requires a ready instance generation'
             USING ERRCODE = '23514';
     END IF;
+    SELECT * INTO STRICT budget FROM engine_instances
+    WHERE instance_id = NEW.instance_id
+      AND instance_generation = NEW.instance_generation;
+    IF NEW.memory_architecture <> budget.memory_architecture THEN
+        RAISE EXCEPTION 'admission architecture differs from instance' USING ERRCODE = '23503';
+    END IF;
+    -- Every stage lease is charged its full slots; sharing one generation
+    -- between stages does not deduplicate simultaneous reservations.
+    IF NEW.reserved_unified_memory_bytes::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_unified_memory_bytes
+        OR NEW.reserved_device_memory_bytes::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_device_memory_bytes
+        OR NEW.reserved_host_memory_bytes::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_host_memory_bytes
+        OR NEW.reserved_cpu_decode_millicores::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_cpu_decode_millicores
+        OR NEW.reserved_host_pcm_buffer_bytes::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_host_pcm_buffer_bytes
+        OR NEW.reserved_scratch_disk_bytes::NUMERIC < NEW.reserved_slots::NUMERIC * budget.per_slot_scratch_disk_bytes THEN
+        RAISE EXCEPTION 'admission reservation is below immutable per-slot budget'
+            USING ERRCODE = '23514';
+    END IF;
+
     RETURN NEW;
 END;
 $$;
@@ -1584,7 +1633,8 @@ BEGIN
     INTO expected_reserved, expected_quarantined
     FROM admission_leases
     WHERE instance_id = target_instance_id
-      AND instance_generation = target_instance_generation;
+      AND instance_generation = target_instance_generation
+      AND lease_state IN ('reserved', 'executing', 'stopping', 'quarantined');
 
     SELECT reserved_active_slots, quarantined_slots
     INTO actual_reserved, actual_quarantined
@@ -1606,6 +1656,14 @@ BEGIN
     END IF;
 END;
 $$;
+
+CREATE INDEX idx_capacity_active_leases_host ON admission_leases (host_node_id)
+    WHERE lease_state IN ('reserved', 'executing', 'stopping', 'quarantined');
+CREATE INDEX idx_capacity_active_leases_instance
+    ON admission_leases (instance_id, instance_generation)
+    WHERE lease_state IN ('reserved', 'executing', 'stopping', 'quarantined');
+CREATE INDEX idx_capacity_live_instances_host ON engine_instances (host_node_id)
+    WHERE instance_state <> 'stopped';
 
 CREATE FUNCTION assert_host_capacity_accounting(target_host_node_id TEXT)
 RETURNS VOID
@@ -1743,6 +1801,7 @@ BEGIN
             ) AS quarantined_host
         FROM engine_instances
         WHERE host_node_id = target_host_node_id
+          AND instance_state <> 'stopped'
     ),
     lease_totals AS (
         SELECT
@@ -1820,6 +1879,7 @@ BEGIN
             ) AS quarantined_scratch
         FROM admission_leases
         WHERE host_node_id = target_host_node_id
+          AND lease_state IN ('reserved', 'executing', 'stopping', 'quarantined')
     )
     SELECT
         instance_totals.resident_unified,
@@ -1913,46 +1973,64 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION assert_engine_instance_capacity_accounting() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+-- Only this transaction's changed targets enter the deferred verification queue.
+-- Runtime roles have no access to this private table. The migration owner owns
+-- these SECURITY DEFINER trigger functions, whose trusted search_path is frozen.
+CREATE TABLE capacity_verification_queue (
+    transaction_id BIGINT NOT NULL,
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('host', 'instance')),
+    target_id TEXT NOT NULL,
+    generation INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (transaction_id, target_kind, target_id, generation)
+);
+REVOKE ALL ON capacity_verification_queue FROM PUBLIC;
+
+CREATE FUNCTION enqueue_capacity_verification() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
 BEGIN
-    PERFORM assert_instance_slot_accounting(NEW.instance_id, NEW.instance_generation);
-    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
+    INSERT INTO capacity_verification_queue VALUES
+        (txid_current(), 'host', NEW.host_node_id, 0)
+        ON CONFLICT DO NOTHING;
+    IF TG_TABLE_NAME <> 'host_nodes' THEN
+        INSERT INTO capacity_verification_queue VALUES
+            (txid_current(), 'instance', NEW.instance_id, NEW.instance_generation)
+            ON CONFLICT DO NOTHING;
+    END IF;
     RETURN NULL;
 END;
 $$;
 
-CREATE FUNCTION assert_admission_lease_capacity_accounting() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+CREATE FUNCTION verify_queued_capacity() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
 BEGIN
-    PERFORM assert_instance_slot_accounting(NEW.instance_id, NEW.instance_generation);
-    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
+    IF NEW.target_kind = 'host' THEN
+        PERFORM assert_host_capacity_accounting(NEW.target_id);
+    ELSE
+        PERFORM assert_instance_slot_accounting(NEW.target_id, NEW.generation);
+    END IF;
+    -- Deleting only after validation permits a later SET CONSTRAINTS flush or
+    -- another statement in immediate mode to enqueue and validate again.
+    DELETE FROM capacity_verification_queue
+    WHERE transaction_id = NEW.transaction_id AND target_kind = NEW.target_kind
+      AND target_id = NEW.target_id AND generation = NEW.generation;
     RETURN NULL;
 END;
 $$;
 
-CREATE FUNCTION assert_host_node_capacity_accounting() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-    PERFORM assert_host_capacity_accounting(NEW.host_node_id);
-    RETURN NULL;
-END;
-$$;
+CREATE CONSTRAINT TRIGGER trg_queued_capacity_verification
+    AFTER INSERT ON capacity_verification_queue
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION verify_queued_capacity();
 
-CREATE CONSTRAINT TRIGGER trg_engine_instances_capacity_accounting
+CREATE TRIGGER trg_engine_instances_capacity_accounting
     AFTER INSERT OR UPDATE ON engine_instances
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION assert_engine_instance_capacity_accounting();
-
-CREATE CONSTRAINT TRIGGER trg_admission_leases_capacity_accounting
+    FOR EACH ROW EXECUTE FUNCTION enqueue_capacity_verification();
+CREATE TRIGGER trg_admission_leases_capacity_accounting
     AFTER INSERT OR UPDATE ON admission_leases
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION assert_admission_lease_capacity_accounting();
-
-CREATE CONSTRAINT TRIGGER trg_host_nodes_capacity_accounting
+    FOR EACH ROW EXECUTE FUNCTION enqueue_capacity_verification();
+CREATE TRIGGER trg_host_nodes_capacity_accounting
     AFTER INSERT OR UPDATE ON host_nodes
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION assert_host_node_capacity_accounting();
+    FOR EACH ROW EXECUTE FUNCTION enqueue_capacity_verification();
 
 -- A lease releases capacity only after every execution intent attached to it
 -- has reached a terminal execution state. A quarantined lease may retain an
@@ -2132,6 +2210,40 @@ CREATE TRIGGER trg_admission_leases_no_truncate
     BEFORE TRUNCATE ON admission_leases
     FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
 
+-- Execution evidence and fencing watermarks survive cleanup and owner changes.
+-- Runtime roles receive no DELETE/TRUNCATE/DDL privileges; archival is a
+-- migration-only operation retaining watermarks and evidence tombstones.
+CREATE TRIGGER trg_resource_pools_no_delete
+    BEFORE DELETE ON resource_pools
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_resource_pools_no_truncate
+    BEFORE TRUNCATE ON resource_pools
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_scheduler_pool_leases_no_delete
+    BEFORE DELETE ON scheduler_pool_leases
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_scheduler_pool_leases_no_truncate
+    BEFORE TRUNCATE ON scheduler_pool_leases
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_runtime_instance_intents_no_delete
+    BEFORE DELETE ON runtime_instance_intents
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_runtime_instance_intents_no_truncate
+    BEFORE TRUNCATE ON runtime_instance_intents
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_gateway_fencing_barriers_no_delete
+    BEFORE DELETE ON gateway_fencing_barriers
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_gateway_fencing_barriers_no_truncate
+    BEFORE TRUNCATE ON gateway_fencing_barriers
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_submit_intents_no_delete
+    BEFORE DELETE ON submit_intents
+    FOR EACH ROW EXECUTE FUNCTION reject_capacity_history_mutation();
+CREATE TRIGGER trg_submit_intents_no_truncate
+    BEFORE TRUNCATE ON submit_intents
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_capacity_history_mutation();
+
 -- Keep audit timestamps current even when application code forgets to set them.
 CREATE FUNCTION set_updated_at() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -2162,5 +2274,55 @@ CREATE TRIGGER trg_gateway_fencing_barriers_updated_at
 CREATE TRIGGER trg_submit_intents_updated_at
     BEFORE UPDATE ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Run only as the migration owner after creating deployment-specific NOLOGIN
+-- runtime roles. Never assign schema/table ownership or role-administration
+-- memberships to a runtime principal. No runtime DDL or queue-table access.
+CREATE FUNCTION configure_coordination_runtime_role(runtime_role NAME, plane TEXT)
+RETURNS VOID LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+DECLARE
+    owned_table TEXT;
+    schema_name TEXT := current_schema();
+    migration_owner NAME;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO migration_owner
+    FROM pg_class WHERE oid = 'host_nodes'::regclass;
+    IF plane NOT IN ('speech', 'gateway_control')
+        OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = runtime_role AND NOT rolsuper
+            AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolbypassrls)
+        OR pg_has_role(runtime_role, migration_owner, 'MEMBER') THEN
+        RAISE EXCEPTION 'runtime role must be an unprivileged non-owner'
+            USING ERRCODE = '23514';
+    END IF;
+    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM %I', schema_name, runtime_role);
+    EXECUTE format('REVOKE CREATE ON SCHEMA %I FROM PUBLIC', schema_name);
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', schema_name, runtime_role);
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', schema_name, runtime_role);
+    FOREACH owned_table IN ARRAY ARRAY[
+        'host_nodes', 'resource_pools', 'scheduler_pool_leases', 'engine_instances',
+        'runtime_instance_intents', 'admission_leases', 'gateway_fencing_barriers',
+        'submit_intents', 'output_sample_intervals'
+    ] LOOP
+        EXECUTE format('GRANT SELECT ON %I TO %I', owned_table, runtime_role);
+        IF (plane = 'speech' AND owned_table IN (
+            'host_nodes', 'resource_pools', 'scheduler_pool_leases',
+            'engine_instances', 'runtime_instance_intents', 'admission_leases'
+        )) OR (plane = 'gateway_control' AND owned_table IN (
+            'gateway_fencing_barriers', 'submit_intents', 'output_sample_intervals'
+        )) THEN
+            EXECUTE format('GRANT INSERT, UPDATE ON %I TO %I', owned_table, runtime_role);
+        END IF;
+    END LOOP;
+    IF plane = 'speech' THEN
+        EXECUTE format('GRANT UPDATE (submit_intent_id) ON submit_intents TO %I', runtime_role);
+    END IF;
+    IF plane = 'gateway_control' THEN
+        -- FOR UPDATE on a lease requires UPDATE on at least one column. Its
+        -- immutable key guard forbids redirection; no lease state write grant.
+        EXECUTE format('GRANT UPDATE (lease_id) ON admission_leases TO %I', runtime_role);
+    END IF;
+END;
+$$;
+REVOKE ALL ON FUNCTION configure_coordination_runtime_role(NAME, TEXT) FROM PUBLIC;
 
 COMMIT;

@@ -13,12 +13,11 @@ from datetime import UTC, datetime
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
-    CleanupState,
     DispatchResult,
-    ExecutionCleanupPendingError,
     GatewayBarrierFencedError,
     InvalidExecutionRequestError,
     RecordStop,
@@ -55,8 +54,7 @@ class InMemorySubmissionLedger:
         return updated
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
-        if intent.generated_pcm_samples != 0:
-            raise InvalidExecutionRequestError("a new submission has not generated output")
+        intent.validate_new()
         barrier = self._barriers.get((intent.identity.gateway_id, intent.identity.pool_id))
         if barrier is not None and intent.identity.fencing_token < barrier.min_fencing_token:
             raise GatewayBarrierFencedError("durable barrier rejects stale submit")
@@ -67,18 +65,14 @@ class InMemorySubmissionLedger:
             raise ValueError("request document does not match the recorded request digest")
         self._intents[key] = copy.deepcopy(intent)
 
-    def save(self, intent: SubmissionIntent, *, expected_version: int) -> None:
-        key = intent.identity.submit_intent_id
-        stored = self._intents.get(key)
+    def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
+        key = request.observation.identity.submit_intent_id
+        stored = self.get(key)
         if stored is None:
-            raise ValueError(f"submit intent {key} is not stored")
-        if stored.version != expected_version:
-            raise ValueError(f"submit intent {key} version conflict")
-        if stored.generated_pcm_samples != intent.generated_pcm_samples:
-            raise InvalidExecutionRequestError("observations cannot rewrite metering facts")
-        if intent.cleanup_state is CleanupState.COMPLETE or stored.execution_state.is_terminal:
-            raise ExecutionCleanupPendingError("terminal writes require record_stop")
-        self._intents[key] = copy.deepcopy(intent)
+            raise InvalidExecutionRequestError("unknown execution observation")
+        updated = request.apply(stored, at=self._now())
+        self._intents[key] = copy.deepcopy(updated)
+        return updated
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:
         key = request.evidence.submit_intent_id
@@ -170,13 +164,17 @@ class ScriptedEngine:
     """Engine double with scripted dispatch results and observations."""
 
     def __init__(
-        self, *, before_dispatch: Callable[[SubmissionIntent], None] | None = None
+        self,
+        *,
+        before_dispatch: Callable[[SubmissionIntent], None] | None = None,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self.dispatch_count = 0
         self.dispatched: list[SubmissionIntent] = []
         self._outcomes: deque[DispatchOutcome] = deque()
         self._observations: dict[str, EngineObservation] = {}
         self._before_dispatch = before_dispatch
+        self._now = now or (lambda: datetime.now(UTC))
 
     def script_outcome(self, outcome: DispatchOutcome) -> None:
         self._outcomes.append(outcome)
@@ -193,7 +191,7 @@ class ScriptedEngine:
             return self._outcomes.popleft()
         return DispatchOutcome(
             result=DispatchResult.ACKNOWLEDGED,
-            observed_at=datetime.now(UTC),
+            observed_at=self._now(),
             engine_request_id=f"engine-request-{intent.identity.submit_intent_id}",
         )
 

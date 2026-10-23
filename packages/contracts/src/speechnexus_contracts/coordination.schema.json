@@ -12,7 +12,8 @@
     "claim_job",
     "mark_execution_unknown",
     "create_runtime_intent",
-    "observe_runtime"
+    "observe_runtime",
+    "record_execution_observation"
   ],
   "$defs": {
     "create_job": {
@@ -2182,6 +2183,19 @@
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         }
       }
+    },
+    "record_execution_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "expected_version"],
+      "properties": {
+        "observation": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionStatusResponse"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
     }
   },
   "anyOf": [
@@ -2214,6 +2228,9 @@
     },
     {
       "$ref": "#/$defs/observe_runtime"
+    },
+    {
+      "$ref": "#/$defs/record_execution_observation"
     }
   ]
 }

@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.observe_execution import check_gateway_scope
 from speechnexus_gateway.domain.canonical import command_digest
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import (
     EngineDispatchPort,
     EngineObservationPort,
@@ -41,7 +43,7 @@ class SubmissionOutcome:
 
 
 class SubmitExecutionService:
-    """Owns the submit path and the capacity-releasing stop path."""
+    """Owns submit and stop facts; Scheduler owns capacity release."""
 
     def __init__(
         self,
@@ -61,6 +63,7 @@ class SubmitExecutionService:
     def submit(self, request: SubmitRequest) -> SubmissionOutcome:
         """Persist, then dispatch once; replays and conflicts never dispatch."""
         identity = request.identity
+        check_gateway_scope(self._ingress, identity)
         digest = command_digest(request.command)
         if digest != identity.command_digest:
             raise InvalidExecutionRequestError(
@@ -109,8 +112,10 @@ class SubmitExecutionService:
             )
         else:
             intent.mark_dispatch_unknown(at=outcome.observed_at)
-        self._ledger.save(intent, expected_version=1)
-        return SubmissionOutcome(intent=intent, idempotent_replay=False)
+        saved = self._ledger.record_execution_observation(
+            RecordExecutionObservation.from_intent(intent, expected_version=1)
+        )
+        return SubmissionOutcome(intent=saved, idempotent_replay=False)
 
     def record_stop(
         self,
@@ -127,13 +132,16 @@ class SubmitExecutionService:
         intent = self._ledger.get(submit_intent_id)
         if intent is None:
             return None
+        check_gateway_scope(self._ingress, intent.identity)
         if intent.execution_state is not ExecutionState.UNKNOWN_QUARANTINED:
             return intent
         version = intent.version
         reconciled = self._reconcile(intent)
         if reconciled.version != version:
-            self._ledger.save(reconciled, expected_version=version)
-        return reconciled
+            return self._ledger.record_execution_observation(
+                RecordExecutionObservation.from_intent(reconciled, expected_version=version)
+            )
+        return intent
 
     def _reconcile(self, intent: SubmissionIntent) -> SubmissionIntent:
         """Adopt an engine fact for the original identity; never dispatch again."""
@@ -146,10 +154,15 @@ class SubmitExecutionService:
             # A status alone does not attest resource release. Only record_stop can
             # atomically persist verified terminal evidence and close the execution.
             return intent
+        if intent.dispatched_at is None and observation.dispatched_at is None:
+            return (
+                intent  # An observed executing status does not reveal the original dispatch time.
+            )
         intent.adopt_engine_observation(
             engine_request_id=observation.engine_request_id,
             engine_state=observation.state,
             at=self._now(),
             error_code=observation.error_code,
+            dispatched_at=observation.dispatched_at,
         )
         return intent

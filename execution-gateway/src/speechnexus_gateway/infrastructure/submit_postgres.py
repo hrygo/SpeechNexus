@@ -18,6 +18,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     RecordStop,
@@ -29,6 +30,9 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
 )
 from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.observation_sql import (
+    record_execution_observation_in_transaction,
+)
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
@@ -37,7 +41,6 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     create_submit_in_transaction,
     from_unix_micros,
     read_submit_intent,
-    save_submit_intent,
 )
 
 _Result = TypeVar("_Result")
@@ -114,11 +117,11 @@ class PostgresSubmissionLedger:
             work=lambda cursor: create_submit_in_transaction(cursor, intent, request_document),
         )
 
-    def save(self, intent: SubmissionIntent, *, expected_version: int) -> None:
-        self._run(
+    def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
+        return self._run(
             read_only=False,
-            work=lambda cursor: save_submit_intent(
-                cursor, intent, expected_version=expected_version
+            work=lambda cursor: record_execution_observation_in_transaction(
+                cursor, request, clock=cast(_DeadlineCursor, cursor).clock
             ),
         )
 

@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.4.0"
+version: "1.5.0"
 date: 2026-10-23
 ---
 
@@ -12,7 +12,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 的锁序、摘要比较和未知结果规则实现，使用[生产协调存储基线](production-coordination-storage.md)
 冻结的表与网关最小权限角色。`record_stop` 已原子保存停止证据与执行终态；
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
-`mark_execution_unknown` 与自身 submit 分支的 `query_outcome` 已实现；
+`mark_execution_unknown`、`record_execution_observation` 与自身 submit 分支的 `query_outcome` 已实现；
 认证 HTTP 屏障与只读执行查询已接入生产组合根。输出区间写入、HTTP 提交与真实引擎装配仍待后续单元。
 本页区分已实现、已验证与未交付。
 
@@ -23,6 +23,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 | 请求身份、状态/清理矩阵、停止证据裁决、租约校验规则 | `speechnexus_gateway.domain.submission` | 纯值对象与函数；不导入 SQL、驱动或生成 DTO |
 | 提交/停止应用服务、重放与隔离对账 | `speechnexus_gateway.application.submit_execution` | 通过 domain 端口访问外部系统，不自己发 SQL |
 | 未知转换与只读执行快照 | `domain.recovery`、`application.query_execution` | 独立 recovery/query 端口；查询不调用引擎、不触发对账或状态转换 |
+| 观察裁决与受信事务边界 | `domain.observation`、`application.observe_execution`、`interfaces.observation_transactions` | 完整身份、版本与状态检查；生成契约校验与完整 TransactionResult，不新增 HTTP 路由 |
 | 入口排序、屏障请求与证明 | `speechnexus_gateway.application.ingress`、`domain.fencing` | 同一个 guard 覆盖落 intent、完整外发握手与结果保存；网络期间不占数据库事务 |
 | 屏障控制用例与 HTTP 边界 | `application.barrier_control`、`interfaces.http.{barrier_control,control_schemas,control_errors,control_security}` | 专用组件凭据；契约生成类型、离线校验和同源 OpenAPI；不伪造引擎服务 |
 | 端口定义（`SubmissionLedger`、外发、观察） | `speechnexus_gateway.domain.ports` | 实现放 infrastructure 或测试 fake |
@@ -36,6 +37,9 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 ## 2. `create_submit` 事务
 
 一次 `add(intent, request_document=…)` 就是一个 `create_submit`：
+
+入口只接受 version=1 的新 submitting/pending intent：尚无外发、错误、输出或停止事实，
+创建与更新时间一致。不能通过首次 INSERT 直接导入 executing、终态或 not_required 结论。
 
 1. 按全局顺序取行锁：`resource_pools` → `admission_attempts` → `admission_leases`，每条语句
    都通过普通 `SELECT … FOR UPDATE` 命中一行，否则按未知身份拒绝。
@@ -58,7 +62,8 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 `get` 用 `submit_intents ⋈ admission_leases ⋈ admission_attempts` 重建完整身份，行数不等于 1、
 枚举或上限无法重新解释时按 `reconciliation_required` 报告，不猜测。`save` 是带版本条件的写入：
 只有 `WHERE submit_intent_id = … AND version = 读取值` 命中一行才成功，否则
-`version_conflict`（`query_current_authority`）。
+`version_conflict`（`query_current_authority`）。该写入助手只供受控事务内部复用；
+提交服务与 adapter 不再提供通用 `save` 入口，外发结果与迟到观察都经第 9 节专用端口。
 
 未知结果只对数据库已确认回滚的 deadlock/serialization 冲突重试，最多三次、抖动在连接归还后
 发生、共享同一 deadline。连接断开、提交确认丢失或 `InterfaceError` 报 `outcome_unknown`
@@ -259,10 +264,44 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 旧严格消费者会拒绝这一状态组合，生产者和消费者必须同步升级生成绑定与正负例。
 公开语音契约不变，也不改写已有执行记录。
 
-## 9. 未交付与已知缺口
+## 9. `record_execution_observation`
 
-- `record_execution_observation`、`redact_execution_command`、`append_interval` 仍未交付；
+提交服务已将外发后的状态保存和迟到 executing 对账迁到本端口。事务外取得引擎观察，
+事务内按 pool → submit 普通行锁重读原事实，再取数据库时间并执行共享领域裁决；
+没有引擎、HTTP、对象写入或预算修改。数据库与 fake 共用 `RecordExecutionObservation`，
+没有新增表、存储过程、触发器或专门的观察历史。
+
+- 完整冻结身份必须相等，包括原 generation、token、binding/policy/voice revision、
+  command digest、deadline 与输出边界。采样数与输出流只能沿用持久投影，不能借观察修改计量；
+  staging 发布也不属于此端口。数据库读取仅把 staging key 转为“已有 staging”事实，不暴露路径。
+- 必须命中 `expected_version`。改变事实只增加一个版本，以锁后的数据库时间更新；
+  同版本的相同事实即使观察时间较新也不写心跳版本。旧版本返回
+  `version_conflict/query_current_authority`，不能通过语义相似绕过版本守卫。
+- 观察时间不得早于已记录事实或晚于数据库时间；真实外发时间必须在 intent 创建与观察之间。
+  已有 request ID、外发时间不可改写。迟到 executing 不能撤销 stopping，终态不能复活；
+  普通状态响应不能伪装停止与释放证据，成功、中止及有清理的失败仍经 `record_stop`。
+- `failed/not_required` 只从 submitting 产生，并同时要求无外发时间、无 engine request ID、
+  无持久 staging、无生成样本。unknown 不能据此解除隔离。该事实允许 A 后续裁决，
+  本事务不归还 A 的任何预算。
+- 提交确认丢失返回 unknown/query_original，不自动重写。先读取原 submit；重发旧版本会冲突。
+  `query_outcome` 给出当前事实，不据此声称某个更早的请求已提交或回滚。
+
+受信 `ExecutionObservationBoundary` 消费已有协调机器契约，验证后转换成独立领域对象；
+返回完整、经同源校验的 `TransactionResult` 与 `ExecutionSnapshot`。音频观察须携带与原记录
+匹配的完整 output watermark，非音频使用 null；该要求用于冻结关系核对，不产生区间计量。
+边界拒绝非空 staging artifact 发布输入。观察服务与提交服务均核对本 gateway/node，
+不能凭另一个节点的记录调用本节点引擎。没有新增 HTTP 观察路由或自动恢复循环。
+
+`EngineObservation` 可携带可信的原外发时间。崩溃记录没有外发时间、引擎又未提供实际时间时，
+即使 status=executing 也继续 unknown；不能用“本次查询时间”补造 dispatch。
+已有真实外发时间时仍可对账原请求，始终不再次 dispatch。
+新增 Python 协调入口与 Python/TypeScript 正负例复用原 `0.4.0.dev0` 状态协议，不改变公开语音协议。
+
+## 10. 未交付与已知缺口
+
+- `redact_execution_command`、`append_interval` 仍未交付；
   unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
+  观察端口已有完整具名结果边界，其余 B 事务的统一结果入口仍待收敛。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，完整事务响应封装、HTTP 提交/中止路由、
   实际引擎 consumer 仍未交付。Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
@@ -271,14 +310,15 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
 - 提交端完整 deadline/运行资格校验仍需后续接入，当前没有公开执行入口，不可据本事务称为生产执行链路就绪。
 
-## 10. 验证
+## 11. 验证
 
 ```sh
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
 SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
-    tests/integration/test_gateway_recovery.py tests/integration/test_gateway_barrier_http.py -q
+    tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
+    tests/integration/test_gateway_barrier_http.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
 ```
@@ -313,3 +353,11 @@ token、owner/token/期限/node 核对、单调版本、回滚，以及 A 激活
 凭据、持久屏障、重放、owner 变更、pending/unknown/closed 查询、无版本或预算副作用和同身份候选进程启动拒绝，
 退出后同时清除两个控制服务并可重新取得锁。
 这条测试没有注入 fake service/readiness，也没有真实模型执行，不证明真实引擎或跨宿主资格。
+
+`test_gateway_observation.py` 在 PG/InnoDB 验证观察版本与完整结果、确认未外发失败、staging/采样
+保护、并发单版本、失败回滚及 generation/水位冲突，核对 A 预算和停止历史未改变。
+PG 另验证真实 pool 锁等待后的取时与提交确认丢失后的只读恢复。单位测试覆盖完整身份、
+时间/状态矩阵、不可倒退与不补造外发时间。原有提交、停止、屏障回归均经新窄端口继续验证。
+
+按 ADR 0007 复核：本单元补齐观察路径，但遗留用例尚未逐项分类并映射全部有效不变量，
+退出条件未齐；本轮不删除旧 PG 原型或停用其门禁，也不把旧机制通过当作新事务证据。

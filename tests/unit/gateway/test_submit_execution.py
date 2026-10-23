@@ -82,7 +82,7 @@ def build_service(
     *, before_dispatch: object = None
 ) -> tuple[SubmitExecutionService, InMemorySubmissionLedger, ScriptedEngine]:
     ledger = InMemorySubmissionLedger(now=lambda: NOW)
-    engine = ScriptedEngine(before_dispatch=before_dispatch)  # type: ignore[arg-type]
+    engine = ScriptedEngine(before_dispatch=before_dispatch, now=lambda: NOW)  # type: ignore[arg-type]
     service = SubmitExecutionService(
         ingress=fake_ingress(), ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
     )

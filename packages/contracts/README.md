@@ -70,7 +70,8 @@ Python additionally exposes `validation.validate_coordination` for the first
 internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
 The coordination bundle also validates owner acquire/renew/activate,
-`claim_job`, `query_outcome` and `mark_execution_unknown` requests. The production
+`claim_job`, `query_outcome`, `mark_execution_unknown` and
+`record_execution_observation` requests. The production
 owner boundary implements the pool target, the claim boundary handles Job
 current-authority queries, and the gateway implements its own submit snapshot.
 An unclaimed Job row returns unknown, and an expired/later claim snapshot neither
@@ -88,6 +89,11 @@ actual response branch. The controller HTTP response schema is unchanged.
 Shared producer/consumer cases live in
 `tests/fixtures/coordination/transaction-examples.json`; production transaction
 and dispatch implementations remain pending.
+The trusted gateway observation boundary returns a complete validated
+`TransactionResult`. It compares the full frozen identity and current version;
+output/staging publication and verified stop remain separate writers. A stale
+version requires a current-authority query, and an unknown commit never permits
+blind observation retry or engine redispatch.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

@@ -91,7 +91,7 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `append_interval` | 计量所有者 → interval transaction | 按流串行检查重叠和硬上限，追加区间，推进 generated 水位 | interval ID +完整区间身份；相邻合法，部分重叠拒绝 |
 | `create_runtime_intent` | Scheduler → runtime transaction | generation/head、加载预算、prepare/stop 意图及 outbox | `(target_node_id, intent_id)` 与规范请求摘要 |
 | `observe_runtime` | controller/gateway 观察 → runtime transaction | 核对完整身份、证据、实例/意图版本，再改变基线预算/状态 | 同意图观察；旧 generation 的迟到响应不修改当前 generation |
-| `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要；不引发执行 | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
+| `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要，不引发执行；目标分支用 `x-nexus-result-kind` 声明对应快照：pool→OwnerSnapshot、attempt→AdmissionSnapshot、job→ClaimSnapshot、submit→ExecutionSnapshot、lease→LeaseSnapshot、interval→FactSnapshot、runtime_intent→RuntimeSnapshot | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
 
 后续实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
@@ -286,6 +286,10 @@ DELETE/TRUNCATE；evidence/interval 只有对应所有者的 SELECT/INSERT。
 正文清理列作为受控单向擦除的显式 UPDATE 例外，身份、请求摘要和停止事实不改写；
 读取未清理的正文进行执行恢复前，必须重新核验其规范摘要；已清理正文不可恢复。跨所有权
 仅对 version 授 UPDATE，以支持行锁，不授对方状态更新。不要给运行角色全表 UPDATE。
+配额上限、policy revision、topology digest、隔离阈值和 allocatable 容量配置属于控制面，
+运行角色不获这些列的 UPDATE，因此无法自行放量、改身份或降低隔离阈值；规范请求正文
+只对所属角色可读，非所有者角色只获身份/状态列级 SELECT。MySQL 输出仍绑定
+`'role'@'%'`，安装前须按部署收紧到获准主机或网段。
 
 ```bash
 uv run python scripts/dev-env/coordination-grants.py \

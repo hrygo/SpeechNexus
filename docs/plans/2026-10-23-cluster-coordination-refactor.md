@@ -170,8 +170,9 @@ R2/R3 的原型只证明列明路径的事务行为，不证明业务路由或 S
 
 现有入口继续使用 `make contracts-check`、兼容比较器、`uv run lint-imports`、
 Ruff/mypy、针对性 pytest 及显式隔离 DSN 的数据库集成测试。
-双库门禁为 `make coordination-test`，必须同时提供 `SPEECHNEXUS_TEST_DATABASE_URL`
-和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量直接失败。初始化与清理按测试独立
+双库门禁为 `make coordination-test` 与 `make integration-test`，两者都必须同时提供
+`SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`；缺任一变量直接失败，
+只配置一个时共享事务用例按失败而非跳过处理。初始化与清理按测试独立
 namespace 执行，命令见[集成测试说明](../../tests/integration/README.md)。CI 配置已加入
 隔离 MySQL 8.4.8 service，但本地执行结果不替代尚未运行的远端 CI 结果。
 协调变更须跑两种数据库的相关矩阵，缺 DSN、跳过或基础设施故障均不算通过。

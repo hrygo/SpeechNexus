@@ -133,7 +133,7 @@ pnpm install --frozen-lockfile
 make verify
 ```
 
-只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试；当前协调 DDL 的 PostgreSQL 行为门禁为 `make integration-test`，必须设置 `SPEECHNEXUS_TEST_DATABASE_URL` 指向本项目隔离测试库。
+只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试；当前协调 DDL 的双库行为门禁为 `make integration-test` 与 `make coordination-test`，必须同时设置指向本项目隔离测试库的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，缺任一变量直接失败，且只配置一个时共享事务用例按失败处理。
 
 ## 8. 后续工程交接
 

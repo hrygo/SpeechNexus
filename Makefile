@@ -76,8 +76,8 @@ test:
 	pnpm test
 
 integration-test:
-	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" || \
-		{ echo "SPEECHNEXUS_TEST_DATABASE_URL is required" >&2; exit 2; }
+	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \
+		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
 	uv run pytest -m integration tests/integration -q
 
 coordination-test:

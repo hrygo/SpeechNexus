@@ -34,6 +34,12 @@ DIMENSIONS: tuple[str, ...] = tuple(
     )["properties"]
 )
 ACTIVE_EXECUTIONS = ("submitting", "executing", "stopping")
+TERMINAL_EXECUTIONS = ("succeeded", "failed", "aborted")
+# The Scheduler may lock a submit row but never reads its private request document.
+# Keep this list aligned with SPEECH_NARROW_SELECT in scripts/dev-env/coordination-grants.py.
+SPEECH_SUBMIT_READ_COLUMNS = (
+    "submit_intent_id, lease_id, operation_id, attempt_id, execution_state, cleanup_state, version"
+)
 STOP_KINDS = (
     "engine_abort_ack",
     "engine_terminal_response",
@@ -234,33 +240,56 @@ class Transaction:
             (expiry, authority["pool_id"]),
         )
 
-    def seal(self, authority: Row, gateway_id: str, proof_digest: str) -> None:
+    def seal(self, request: Row) -> None:
         """Persist a synthetic fixture observation, never perform real fencing."""
+        validate_request("seal_barrier", request)
+        authority = request["authority"]
+        barrier = request["barrier"]
+        gateway_id = barrier["gateway_id"]
         pool = self.lock_pool(authority["pool_id"])
         self.authority(authority, pool, active=False)
+        if (
+            barrier["pool_id"] != authority["pool_id"]
+            or barrier["enforced_min_fencing_token"] != authority["fencing_token"]
+        ):
+            raise RejectedError("stale_fencing_token")
         previous = self.rows(
             """SELECT * FROM gateway_fencing_barriers
                WHERE gateway_id = %s AND pool_id = %s FOR UPDATE""",
             (gateway_id, authority["pool_id"]),
         )
         if previous:
-            if previous[0]["min_fencing_token"] > authority["fencing_token"]:
+            if previous[0]["min_fencing_token"] > barrier["enforced_min_fencing_token"]:
                 raise RejectedError("stale_fencing_token")
             self.execute(
                 """UPDATE gateway_fencing_barriers SET min_fencing_token = %s,
                    sealed_evidence_digest = %s, version = version + 1
                    WHERE gateway_id = %s AND pool_id = %s""",
-                (authority["fencing_token"], proof_digest, gateway_id, authority["pool_id"]),
+                (
+                    barrier["enforced_min_fencing_token"],
+                    request["evidence_digest"],
+                    gateway_id,
+                    authority["pool_id"],
+                ),
             )
         else:
             self.execute(
                 "INSERT INTO gateway_fencing_barriers VALUES (%s, %s, %s, %s, 1)",
-                (gateway_id, authority["pool_id"], authority["fencing_token"], proof_digest),
+                (
+                    gateway_id,
+                    authority["pool_id"],
+                    barrier["enforced_min_fencing_token"],
+                    request["evidence_digest"],
+                ),
             )
 
-    def activate(self, authority: Row) -> None:
+    def activate(self, request: Row) -> None:
+        validate_request("activate_owner", request)
+        authority = request["authority"]
         pool = self.lock_pool(authority["pool_id"])
         self.authority(authority, pool, active=False)
+        if int(request["expected_version"]) != pool["version"]:
+            raise RejectedError("version_conflict")
         missing = self.rows(
             """SELECT i.gateway_id FROM engine_instances i
                LEFT JOIN gateway_fencing_barriers b
@@ -488,19 +517,47 @@ class Transaction:
             )
             if index == 0:
                 after_first_lease()
-        self.create_job(request["job"], identity, request_hash)
+        self.create_job(
+            {
+                "job": request["job"],
+                "identity": {"operation_id": identity[0], "attempt_id": identity[1]},
+                "request_digest": request_hash,
+            }
+        )
         return "committed"
 
-    def create_job(self, job: Row, identity: tuple[str, str], request_hash: str) -> None:
+    def create_job(self, request: Row) -> str:
+        """Job identity and its outbox event commit together; the business key replays."""
+        validate_request("create_job", request)
+        job = request["job"]
+        identity = request["identity"]
+        existing = self.rows(
+            """SELECT job_id, request_digest FROM coordination_jobs
+               WHERE job_id = %s OR (operation_id = %s AND attempt_id = %s)""",
+            (job["job_id"], identity["operation_id"], identity["attempt_id"]),
+        )
+        if existing:
+            if (
+                existing[0]["job_id"] != job["job_id"]
+                or existing[0]["request_digest"] != request["request_digest"]
+            ):
+                raise RejectedError("idempotency_conflict")
+            return "replayed"
         self.execute(
             """INSERT INTO coordination_jobs (job_id, operation_id, attempt_id, request_digest)
                VALUES (%s, %s, %s, %s)""",
-            (job["job_id"], *identity, request_hash),
+            (
+                job["job_id"],
+                identity["operation_id"],
+                identity["attempt_id"],
+                request["request_digest"],
+            ),
         )
         self.execute(
             "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
             (job["event_id"], job["job_id"], job["event_digest"]),
         )
+        return "committed"
 
     def claim(self, request: Row) -> int:
         validate_request("claim_job", request)
@@ -652,22 +709,35 @@ class Transaction:
             )
         return "committed"
 
-    def mark_unknown(self, submit_intent_id: str) -> None:
+    def mark_unknown(self, request: Row) -> str:
         """Gateway transaction; scheduler accounting is a separate transaction."""
+        validate_request("mark_execution_unknown", request)
+        if request["observed_at_us"] > self.now():
+            raise RejectedError("invalid_execution_request")
         submit = self.one(
             "SELECT * FROM submit_intents WHERE submit_intent_id = %s FOR UPDATE",
-            (submit_intent_id,),
+            (request["submit_intent_id"],),
         )
-        if submit["execution_state"] in ACTIVE_EXECUTIONS:
-            self.execute(
-                """UPDATE submit_intents SET execution_state = 'unknown_quarantined',
-                   cleanup_state = 'quarantined', error_code = 'cancellation_unconfirmed',
-                   updated_at_us = %s, version = version + 1 WHERE submit_intent_id = %s""",
-                (self.now(), submit_intent_id),
-            )
+        if submit["execution_state"] in TERMINAL_EXECUTIONS:
+            raise RejectedError("submit_intent_conflict")
+        if submit["execution_state"] == "unknown_quarantined":
+            if submit["error_code"] != request["reason_code"]:
+                raise RejectedError("idempotency_conflict")
+            return "replayed"
+        self.execute(
+            """UPDATE submit_intents SET execution_state = 'unknown_quarantined',
+               cleanup_state = 'quarantined', error_code = %s,
+               updated_at_us = %s, version = version + 1 WHERE submit_intent_id = %s""",
+            (request["reason_code"], self.now(), request["submit_intent_id"]),
+        )
+        return "committed"
 
-    def quarantine(self, lease_id: str) -> None:
+    def quarantine(self, request: Row) -> str:
         """Keep all capacity; move held counters once and preserve terminal facts."""
+        validate_request("quarantine_lease", request)
+        lease_id = request["lease_id"]
+        if request["observed_at_us"] > self.now():
+            raise RejectedError("invalid_execution_request")
         hint = self.one("SELECT * FROM admission_leases WHERE lease_id = %s", (lease_id,))
         identity = (hint["operation_id"], hint["attempt_id"])
         attempt = self.one(
@@ -696,10 +766,17 @@ class Transaction:
             "SELECT * FROM admission_leases WHERE lease_id = %s FOR UPDATE", (lease_id,)
         )
         submits = self.rows(
-            "SELECT * FROM submit_intents WHERE lease_id = %s FOR UPDATE", (lease_id,)
+            f"""SELECT {SPEECH_SUBMIT_READ_COLUMNS} FROM submit_intents
+                WHERE lease_id = %s FOR UPDATE""",
+            (lease_id,),
         )
-        if lease["lease_state"] in ("quarantined", "released"):
-            return
+        if lease["lease_state"] == "released":
+            raise RejectedError("lease_not_active")
+        if lease["lease_state"] == "quarantined":
+            # The first observation and its reason stand; only that reason replays.
+            if lease["quarantine_reason_code"] != request["reason_code"]:
+                raise RejectedError("idempotency_conflict")
+            return "replayed"
         if not any(item["execution_state"] == "unknown_quarantined" for item in submits) or any(
             item["execution_state"] in ACTIVE_EXECUTIONS for item in submits
         ):
@@ -741,9 +818,9 @@ class Transaction:
         self.execute(
             """UPDATE admission_leases SET lease_state = 'quarantined',
                cleanup_state = 'quarantined', quarantine_observed_at_us = %s,
-               quarantine_reason_code = 'cancellation_unconfirmed',
+               quarantine_reason_code = %s,
                version = version + 1 WHERE lease_id = %s""",
-            (self.now(), lease_id),
+            (request["observed_at_us"], request["reason_code"], lease_id),
         )
         if attempt["quota_state"] == "held":
             self.execute(
@@ -757,6 +834,7 @@ class Transaction:
                    version = version + 1 WHERE operation_id = %s AND attempt_id = %s""",
                 identity,
             )
+        return "committed"
 
     def stop(self, request: Row) -> str:
         validate_request("record_stop", request)
@@ -864,8 +942,10 @@ class Transaction:
         )
         return "committed"
 
-    def release(self, lease_id: str) -> str:
+    def release(self, request: Row) -> str:
         # Locate immutable identity without locks; recheck after locking parents.
+        validate_request("release_lease", request)
+        lease_id = request["lease_id"]
         hint = self.one("SELECT * FROM admission_leases WHERE lease_id = %s", (lease_id,))
         attempt_hint = self.one(
             "SELECT * FROM admission_attempts WHERE operation_id = %s AND attempt_id = %s",
@@ -894,8 +974,12 @@ class Transaction:
         )
         if lease["lease_state"] == "released":
             return "replayed"
+        if lease["version"] != int(request["expected_version"]):
+            raise RejectedError("version_conflict")
         submits = self.rows(
-            "SELECT * FROM submit_intents WHERE lease_id = %s FOR UPDATE", (lease_id,)
+            f"""SELECT {SPEECH_SUBMIT_READ_COLUMNS} FROM submit_intents
+                WHERE lease_id = %s FOR UPDATE""",
+            (lease_id,),
         )
         if any(
             item["execution_state"] not in ("succeeded", "failed", "aborted")

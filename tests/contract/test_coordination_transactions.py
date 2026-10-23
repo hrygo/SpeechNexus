@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -18,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES: dict[str, Any] = json.loads(
     (ROOT / "tests/fixtures/coordination/transaction-examples.json").read_text()
 )
+ACTIVE_DDL = ROOT / "migrations/0001_cluster_coordination_draft.sql"
+GRANTS_SCRIPT = ROOT / "scripts/dev-env/coordination-grants.py"
 
 
 @pytest.mark.parametrize("command", EXAMPLES["valid_commands"], ids=lambda c: c["operation"])
@@ -51,6 +54,7 @@ def test_every_port_is_covered_and_reuses_execution_runtime_domains() -> None:
         if "properties" in branch
     }
     assert operations == {example["operation"] for example in EXAMPLES["valid_commands"]}
+    assert {result["operation"] for result in EXAMPLES["valid_results"]} == operations
     assert len(operations) == 18
     assert (
         set(schema["$defs"]["TransactionResult"]["properties"]["operation"]["enum"]) == operations
@@ -127,3 +131,72 @@ def test_active_ddl_has_no_replaced_pg_business_mechanisms() -> None:
     functions = re.findall(r"^CREATE FUNCTION ([a-z_]+)\(", legacy, re.MULTILINE)
     assert len(functions) == 24
     assert all(f"`{name}`" in handoff for name in functions)
+
+
+def test_query_outcome_declares_the_result_kind_of_every_target() -> None:
+    schema = json.loads(
+        (ROOT / "contracts/internal/coordination-transactions.schema.json").read_text()
+    )
+    branches = schema["$defs"]["query_outcome"]["properties"]["target"]["oneOf"]
+    declared: dict[str, str] = {}
+    for branch in branches:
+        target_kind = branch["properties"]["kind"]["const"]
+        snapshot = branch["x-nexus-result-kind"]
+        declared[target_kind] = schema["$defs"][snapshot]["properties"]["kind"]["const"]
+    assert len(declared) == len(branches) == 7
+    results = [item for item in EXAMPLES["valid_results"] if item["operation"] == "query_outcome"]
+    assert results, "query_outcome needs a committed result example"
+    expected = set(declared.values())
+    assert {result["value"]["kind"] for result in results} <= expected
+    assert len(expected) == 7, "each queried target kind maps to its own snapshot type"
+
+
+def _ddl_columns() -> dict[str, set[str]]:
+    ddl = ACTIVE_DDL.read_text()
+    column = re.compile(r" {4}([a-z][a-z0-9_]*) (?:VARCHAR|BIGINT|TEXT|INT|SMALLINT)\b")
+    return {
+        table: {match.group(1) for line in body.splitlines() if (match := column.match(line))}
+        for table, body in re.findall(r"CREATE TABLE (\w+) \((.*?)\n\);", ddl, re.DOTALL)
+    }
+
+
+def test_runtime_grants_match_the_ddl_and_protect_configuration() -> None:
+    spec = importlib.util.spec_from_file_location("coordination_grants", GRANTS_SCRIPT)
+    assert spec and spec.loader
+    grants: Any = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(grants)
+    columns = _ddl_columns()
+    assert len(columns) == 15
+    assert set(columns) == set(grants.SPEECH_UPDATES) | set(grants.GATEWAY_UPDATES)
+    for granted in (
+        grants.SPEECH_UPDATES,
+        grants.GATEWAY_UPDATES,
+        grants.SPEECH_NARROW_SELECT,
+        grants.GATEWAY_NARROW_SELECT,
+    ):
+        for table, listed in granted.items():
+            assert set(listed.split()) <= columns[table], (table, listed)
+    control_plane_only = {
+        "workspace_quotas": {"max_attempts", "policy_revision"},
+        "host_nodes": {"memory_architecture", "topology_digest", "quarantine_threshold_ppm"},
+        "engine_instances": {"max_slots", "realtime_reserved_slots", "binding_revision_id"},
+    }
+    for table, protected in control_plane_only.items():
+        writable = set(grants.SPEECH_UPDATES.get(table, "").split()) | set(
+            grants.GATEWAY_UPDATES.get(table, "").split()
+        )
+        assert not protected & writable, table
+    for dialect in ("postgresql", "mysql"):
+        statements = grants.statements(
+            dialect, "sn_grants_test", "sn_speech_test", "sn_gateway_test"
+        )
+        assert all("allocatable_" not in statement for statement in statements)
+        for statement in statements:
+            if "request_document" in statement:
+                # Only the owning role may touch private command text, and only to erase it.
+                assert statement.startswith("GRANT UPDATE ("), statement
+                assert "submit_intents" in statement, statement
+        assert any(
+            statement.startswith("GRANT SELECT (") and "submit_intents" in statement
+            for statement in statements
+        )

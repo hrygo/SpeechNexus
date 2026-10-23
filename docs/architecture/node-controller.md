@@ -20,13 +20,13 @@ Scheduler 在自己的事务中完成，控制器只提供意图与观察事实�
 
 ## 1. 端口草图
 
-当前单元只有领域与应用层，不需要 HTTP 或容器即可验证规则：
+领域与应用层的规则不需要 HTTP 或容器即可验证，容器 adapter 另经合成容器真实探针验证：
 
 ```text
 scheduler ──intent──▶ NodeRuntimeControlService ──▶ IntentStore (持久意图事实)
                             │                        │
                             │                        └─ 幂等键 (node_id, intent_id)、版本
-                            └──prepare/stop/inspect──▶ NodeRuntimePort (节点容器运行时)
+                            └──prepare/stop/inspect──▶ NodeRuntimePort ──▶ 容器 daemon
 scheduler ◀──observation/reconcile 快照───────────────┘
 ```
 
@@ -36,15 +36,47 @@ scheduler ◀──observation/reconcile 快照───────────
 | `domain/templates.py` | 批准模板注册表：镜像摘要固定、允许池、内存架构与峰值上限 | 已实现；模板清单与部署绑定待接入 |
 | `domain/ports.py` | `IntentStore`、`NodeRuntimePort`、reconcile 快照 | 协议草图；持久化与容器 adapter 待交付 |
 | `application/runtime_control.py` | 认领意图、幂等重放、generation / fencing 门、drain 门、观察折叠与 reconcile | 已实现并有单元测试 |
-| `interfaces/` | `internal/runtime-control` HTTP 外壳与组件凭据 | 未实现（本单元为空包） |
-| `infrastructure/` | 持久意图存储与容器运行时 adapter | 未实现（本单元为空包） |
+| `infrastructure/docker_api.py` | 本地 daemon 的最小 Engine API 客户端（固定操作集合，不接任意镜像/挂载/shell） | 已实现并有 double 测试 |
+| `infrastructure/docker_runtime.py` | 受控容器 adapter：镜像摘要核对、标签化实例身份、prepare/stop/inspect 与停止双证据 | 已实现；合成容器真实探针见下文 |
+| `infrastructure/template_config.py` | 批准模板配置文件加载（未知字段拒绝） | 已实现 |
+| `interfaces/` | `internal/runtime-control` HTTP 外壳与组件凭据 | 未实现（当前为空包） |
+| 持久意图存储 | 控制器本地意图事实 | 未实现；当前只有端口与 double |
 
 `tests/fake/controller.py` 提供确定性的 `InMemoryIntentStore` 与 `ScriptedNodeRuntime`，
 它们不接触真实容器；`tests/contract/test_node_controller_contract.py` 断言本包的错误码、
 状态、池与内存架构枚举、请求字段与契约逐项相等，并把本包可产生的每种意图状态序列化成
 契约响应形状校验，避免出现第二套字段定义。
 
-## 2. 可执行规则
+## 2. 受控容器 adapter 与批准模板
+
+adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把「能运行什么」全部留在
+批准模板里：镜像引用与本地 image id、argv、readiness 规则、GPU 请求、只读制品绑定都由模板
+声明，请求本身无法放宽其中任何一项。
+
+- **镜像核对**：创建容器前 inspect 本地镜像，`image id` 必须等于模板的 `image_digest`；
+  不匹配报 `unapproved_runtime_template`，不自动 pull。
+- **实例身份**：容器写入 `nexus.*` 标签（node / intent / instance / generation / template /
+  config digest / pool / gateway / binding / manifest / fencing token），因此控制器重启后仍能
+  按 `(instance_id, instance_generation)` 找到自己的实例，也能识别身份不一致的容器。
+- **容器加固**：`Privileged=false`、`CapDrop=["ALL"]`、`no-new-privileges`、`RestartPolicy=no`、
+  `Init=true`、不发布宿主端口，绑定只来自模板的只读制品目录；GPU 请求按模板的
+  `gpu_device_count` 生成 `DeviceRequests`。
+- **prepare 幂等**：同一 `(instance_id, generation)` 已有容器且标签摘要一致时复用，不再创建
+  第二个；标签摘要不同则报 `intent_conflict`。
+- **readiness**：模板声明 `process_running` 或 `tcp_port_accepting:port`。容器运行但未通过
+  readiness 时报告 `loading`（保持 peak），通过后才报告 `ready`（切 steady）。
+- **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
+  `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除
+  失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
+- **退出码语义**：退出码 0 与 143（SIGTERM）都是正常终止；容器是否成功服务由网关的执行事实
+  判断，控制器不把退出码当作执行结果。
+- **配置来源**：批准模板来自部署配置文件（`template_config.py`，未知字段拒绝），不是请求。
+  当前 adapter 不设 `Memory` 上界，容器内存只作为观察峰值报告；保留由 Scheduler 记账。
+
+合成容器上的真实 prepare → ready → stop 证据（含为何需要 `Init=true`）见
+[B02 容器生命周期探针](../audits/2026-10-24-b02-controller-container-lifecycle-probe.md)。
+
+## 3. 可执行规则
 
 - **节点范围**：`target_node_id != self.node_id` 直接拒绝（`target_node_mismatch`），不留意图。
 - **批准模板**：`approved_template_id` 必须解析到已批准模板，且请求池在该模板允许集合内，
@@ -72,12 +104,15 @@ scheduler ◀──observation/reconcile 快照───────────
 控制器记录的原因码（`RuntimeIntentErrorCode`）与 HTTP 冲突码（`RuntimeControlErrorCode`）
 分开：前者写入意图事实，后者是契约冻结的响应枚举。
 
-## 3. 当前未实现与交接
+## 4. 当前未实现与交接
 
-- HTTP 外壳（`internal/runtime-control` 路由、`X-Request-ID`、组件凭据校验）与持久意图存储、
-  容器 adapter 尚未实现；本单元不部署新进程，`deploy/` 与 Compose 服务随之一起交付。
+- HTTP 外壳（`internal/runtime-control` 路由、`X-Request-ID`、组件凭据校验）与持久意图存储
+  尚未实现；`deploy/` 与 Compose 服务随它们一起交付，当前没有可部署的控制器进程。
 - 批准模板清单（`approved_template_id` → 固定镜像摘要、峰值上限）需要 B00 制品摘要与
-  部署绑定共同落地，当前只有校验规则与注册表。
+  部署绑定共同落地，当前只有校验规则、注册表与配置文件加载。
+- 真实引擎容器（Qwen3-ASR / TTS）的 ready 与停止、GPU `DeviceRequests` 路径、容器内存上界与
+  统一内存语义、控制器重启后的重新发现与 reconcile 只有合成容器证据，没有任何真实引擎资格
+  结论。
 - 真实多实例竞争、跨节点 `intent_id` 复用、控制器不可用时的接管与恢复没有真实证据；
   这些属于 [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29) 的 G1/G2 检查项。
 - 本包不写 Scheduler 的预算表；`create_runtime_intent`、`observe_runtime` 的事务侧实现由

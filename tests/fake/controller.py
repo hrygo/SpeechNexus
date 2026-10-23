@@ -22,12 +22,18 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeMemoryVector,
     RuntimeStopEvidence,
 )
-from speechnexus_node_controller.domain.templates import ApprovedRuntimeTemplate
+from speechnexus_node_controller.domain.templates import (
+    ApprovedRuntimeTemplate,
+    ReadinessKind,
+    ReadinessRule,
+    ReadOnlyBind,
+)
 
 GIB = 1024**3
 FIXED_NOW = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
 SAMPLE_DIGEST = "sha256:" + "a" * 64
 IMAGE_DIGEST = "sha256:" + "c" * 64
+SAMPLE_IMAGE_REFERENCE = "local/synthetic-engine:0.1.0"
 SAMPLE_NODE_ID = "node-local-1"
 SAMPLE_INSTANCE_ID = "instance-asr-1"
 SAMPLE_TEMPLATE_ID = "template-qwen3-asr-0p6b"
@@ -74,14 +80,27 @@ def build_template(
     architecture: MemoryArchitecture = MemoryArchitecture.UNIFIED_MEMORY,
     pools: frozenset[str] = frozenset({"asr-batch", "asr-realtime"}),
     max_peak_memory_bytes: int = 16 * GIB,
+    image_reference: str = SAMPLE_IMAGE_REFERENCE,
+    image_digest: str = IMAGE_DIGEST,
+    readiness: ReadinessRule | None = None,
+    command: tuple[str, ...] | None = None,
+    gpu_device_count: int = 0,
+    read_only_binds: tuple[ReadOnlyBind, ...] = (),
 ) -> ApprovedRuntimeTemplate:
+    resolved_readiness = (
+        readiness if readiness is not None else ReadinessRule(kind=ReadinessKind.PROCESS_RUNNING)
+    )
     return ApprovedRuntimeTemplate(
         template_id=template_id,
-        image_reference=f"local/synthetic-engine:0.1.0@{IMAGE_DIGEST}",
-        image_digest=IMAGE_DIGEST,
+        image_reference=image_reference,
+        image_digest=image_digest,
         memory_architecture=architecture,
         allowed_pool_ids=pools,
         max_peak_memory_bytes=max_peak_memory_bytes,
+        readiness=resolved_readiness,
+        command=command,
+        gpu_device_count=gpu_device_count,
+        read_only_binds=read_only_binds,
     )
 
 
@@ -171,9 +190,13 @@ class ScriptedNodeRuntime:
         self._observations[(request.instance_id, request.instance_generation)] = observation
         return observation
 
-    def inspect(self, instance_id: str, instance_generation: int) -> InstanceObservation | None:
-        self.inspections.append((instance_id, instance_generation))
-        return self._observations.get((instance_id, instance_generation))
+    def inspect(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        del template
+        key = (request.instance_id, request.instance_generation)
+        self.inspections.append(key)
+        return self._observations.get(key)
 
     def observe_as(
         self,

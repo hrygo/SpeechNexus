@@ -33,7 +33,12 @@ class IntentStore(Protocol):
 
 
 class NodeRuntimePort(Protocol):
-    """Node-local container runtime restricted to approved templates."""
+    """Node-local container runtime restricted to approved templates.
+
+    Every call carries the recorded intent and its approved template so the
+    adapter can evaluate the template's readiness rule and cannot widen what the
+    recorded intent allowed.
+    """
 
     def prepare(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
@@ -43,7 +48,9 @@ class NodeRuntimePort(Protocol):
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation: ...
 
-    def inspect(self, instance_id: str, instance_generation: int) -> InstanceObservation | None: ...
+    def inspect(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None: ...
 
 
 @dataclass(frozen=True, slots=True)

@@ -274,11 +274,15 @@ def test_reconcile_instance_adopts_a_later_ready_observation() -> None:
 
 def test_observation_for_another_generation_is_quarantined() -> None:
     class MisreportingRuntime(ScriptedNodeRuntime):
-        def inspect(self, instance_id: str, instance_generation: int) -> InstanceObservation | None:
-            observation = super().inspect(instance_id, instance_generation)
+        def inspect(
+            self,
+            request: RuntimeInstanceIntentRequest,
+            template: ApprovedRuntimeTemplate,
+        ) -> InstanceObservation | None:
+            observation = super().inspect(request, template)
             if observation is None:
                 return None
-            return replace(observation, instance_generation=instance_generation + 1)
+            return replace(observation, instance_generation=request.instance_generation + 1)
 
     service, runtime, _ = _service(runtime=MisreportingRuntime())
     service.submit_intent(build_request())

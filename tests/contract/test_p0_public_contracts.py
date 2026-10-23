@@ -1575,6 +1575,18 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     with pytest.raises(ValidationError):
         job_event_validator.validate(invalid_sequence)
 
+    succeeded_job_event = copy.deepcopy(
+        next(example for example in job_examples if example["type"] == "job.succeeded")
+    )
+    succeeded_without_result = copy.deepcopy(succeeded_job_event)
+    del succeeded_without_result["data"]["result"]
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(succeeded_without_result)
+    succeeded_without_artifacts = copy.deepcopy(succeeded_job_event)
+    succeeded_without_artifacts["data"]["artifacts"] = []
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(succeeded_without_artifacts)
+
     failed_job_event: dict[str, Any] = {
         "id": "18",
         "type": "job.failed",

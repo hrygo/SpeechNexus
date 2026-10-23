@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.5.8"
+version: "0.5.9"
 date: 2026-10-23
 ---
 
@@ -168,7 +168,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 列表统一 `data`、`has_more`、`next_cursor`，按 `(created_at,id)` 排序；page limit 为 1–100，默认 50。游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
-`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
+`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.succeeded` 至少携带一个 committed Artifact 和与 Job kind 匹配的结构化 `result`，与 REST Job 终态使用同一判别规则；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
 工作台终态还要求产物自洽：MinutesJob `succeeded` 至少提供非空 `minutes_text` 或 `artifact_id`；AssistantTurn `succeeded` 必须有非空 `output_text`；RenderUnit `generating` 必须带 `speech_job_id`，`ready` 还必须带 `source_artifact_id`；Meeting 的 `sealed` / `minutes_pending` / `minutes_ready` 必须带 seal revision 与结束时间，后两者还必须带 `minutes_id`。这些约束不替代跨资源校验，服务端仍须确认 MinutesJob 成功、单元副本已保存且版本一致后才能宣称整书可导出。
 

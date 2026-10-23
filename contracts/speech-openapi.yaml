@@ -3205,6 +3205,11 @@ components:
                 media_type: audio/wav
                 bytes: 1024
                 sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                receipt_id: receipt_demo
+            result:
+              kind: tts
+              audio_artifact_id: artifact_demo
+              receipt_id: receipt_demo
         - id: "7"
           type: job.failed
           job_id: job_demo
@@ -3397,14 +3402,17 @@ components:
     JobSucceededEventData:
       type: object
       additionalProperties: false
-      required: [status, artifacts, cleanup_state]
+      required: [status, artifacts, result, cleanup_state]
       properties:
         status:
           const: succeeded
         artifacts:
           type: array
+          minItems: 1
           items:
             $ref: "#/components/schemas/JobArtifact"
+        result:
+          $ref: "#/components/schemas/JobResult"
         cleanup_state:
           $ref: "#/components/schemas/CleanupState"
     JobFailedEvent:

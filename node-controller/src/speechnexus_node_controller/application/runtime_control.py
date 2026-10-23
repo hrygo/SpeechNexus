@@ -125,17 +125,14 @@ class NodeRuntimeControlService:
 
     def reconcile_instance(self, instance_id: str, instance_generation: int) -> list[IntentOutcome]:
         """Fold the current node observation into the unresolved intents of one generation."""
-        observation = self._runtime.inspect(instance_id, instance_generation)
-        if observation is None:
-            return []
         outcomes: list[IntentOutcome] = []
-        unresolved = [
-            intent
-            for intent in self._store.list_for_instance(instance_id)
-            if intent.instance_generation == instance_generation
-            and intent.intent_state.is_unresolved
-        ]
-        for intent in unresolved:
+        for intent in self._unresolved(instance_id, instance_generation):
+            template = self._resolve_template(intent.request.approved_template_id)
+            if template is None:
+                continue
+            observation = self._runtime.inspect(intent.request, template)
+            if observation is None:
+                continue
             version = intent.version
             self._apply_observation(intent, observation)
             self._store.save(intent, expected_version=version)
@@ -207,6 +204,23 @@ class NodeRuntimeControlService:
                     f"generation {head.current_generation} has not been stopped with evidence"
                 )
         return template
+
+    def _unresolved(
+        self, instance_id: str, instance_generation: int
+    ) -> list[RuntimeInstanceIntent]:
+        """Unresolved intents of one instance generation, in store order."""
+        return [
+            intent
+            for intent in self._store.list_for_instance(instance_id)
+            if intent.instance_generation == instance_generation
+            and intent.intent_state.is_unresolved
+        ]
+
+    def _resolve_template(self, template_id: str) -> ApprovedRuntimeTemplate | None:
+        """Resolve a recorded template; a withdrawn template leaves the intent unresolved."""
+        if not self._templates.contains(template_id):
+            return None
+        return self._templates.require(template_id)
 
     @staticmethod
     def _require_reservation_within_template(

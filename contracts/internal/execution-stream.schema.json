@@ -30,7 +30,7 @@
       "$ref": "#/$defs/StreamClosed"
     },
     {
-      "$ref": "#/$defs/StreamError"
+      "$ref": "#/$defs/StreamErrorEvent"
     },
     {
       "$ref": "#/$defs/StreamHeartbeat"
@@ -948,6 +948,21 @@
       "input_credit_samples": 48000,
       "output_credit_samples": 48000,
       "max_message_bytes": 65536
+    },
+    {
+      "schema_version": "1.0.0",
+      "type": "stream.error",
+      "stream_id": "stream_demo",
+      "stream_epoch": 1,
+      "seq": 4,
+      "sent_at": "2026-10-22T09:00:20Z",
+      "operation_id": "op_demo",
+      "error": {
+        "code": "stale_epoch",
+        "message": "stale stream epoch rejected without mutating execution state",
+        "retryable": true,
+        "retry_after_ms": 1000
+      }
     },
     {
       "schema_version": "1.0.0",

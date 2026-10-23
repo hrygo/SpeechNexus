@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.2.1"
+version: "0.2.2"
 date: 2026-10-22
 ---
 
@@ -123,6 +123,8 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 ## 6. 执行网关与部署控制协议
 
 内部控制使用 HTTP / JSON，实时数据使用 WebSocket 的 JSON 控制事件与二进制 PCM。流连接绑定固定执行身份；二进制块的 framing、长度、序列与描述符关联由内部机器契约冻结。公开 Realtime 的编码不因此改变。文件与制品通过受控 Asset / Artifact 引用传递，禁止提交任意路径、对象 key 或外部 URL。
+
+控制流错误使用带 `stream_id / stream_epoch / seq / operation_id` 的 `stream.error` 信封和封闭错误码集合，不能把裸错误对象混入事件 union。传输级错误可要求重试，但只有 `stream.closed` 或其对应的权威操作查询能终结业务 Operation；陈旧 epoch、帧缺口和 credit 超限不得静默修改执行状态。
 
 一次执行至少能够追溯规范命令、Operation、attempt、reservation、binding / recipe、实例 generation 与 fencing。重复提交同一意图只关联原执行；意图不一致则拒绝。查询区分未提交、正在协调与已知执行事实，传输失败不等于引擎未执行。控制响应不能凭“已接收取消”生成停止证据。
 

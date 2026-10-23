@@ -1961,6 +1961,7 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
     examples = cast(list[dict[str, Any]], schema["examples"])
     for example in examples:
         validator.validate(example)
+    assert "stream.error" in {example["type"] for example in examples}
 
     for example in examples:
         unknown = copy.deepcopy(example)
@@ -1974,6 +1975,18 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
     wrong_fence["fencing_token"] = "42"
     with pytest.raises(ValidationError):
         validator.validate(wrong_fence)
+    stream_error = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.error")
+    )
+    assert stream_error["error"]["code"] == "stale_epoch"
+    invalid_stream_error = copy.deepcopy(stream_error)
+    invalid_stream_error["error"]["code"] = "unstructured_failure"
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_stream_error)
+    error_without_operation = copy.deepcopy(stream_error)
+    del error_without_operation["operation_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(error_without_operation)
     forty_eight_k = copy.deepcopy(stream_open)
     forty_eight_k["input"]["sample_rate_hz"] = 48_000
     forty_eight_k["output"]["sample_rate_hz"] = 48_000

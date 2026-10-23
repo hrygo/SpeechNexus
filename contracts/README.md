@@ -107,7 +107,9 @@ of defaults, units, enum domains, or stable error codes.
   gateway control envelopes, input/output credits, backpressure, watermarks,
   terminal evidence, and the fixed binary PCM frame. `stream.opened` echoes the
   accepted submit intent, fencing token, and negotiated message limit; PCM
-  descriptors accept 16, 24, and 48 kHz.
+  descriptors accept 16, 24, and 48 kHz. Structured `stream.error` envelopes
+  carry stable error codes and stream identity without becoming a terminal
+  Operation result.
 - `internal/runtime-control.openapi.yaml`: internal
   `RuntimeLifecycleControlPort` protocol between the scheduler and the
   node-scoped deployment controller (`node-controller`). Its per-node component

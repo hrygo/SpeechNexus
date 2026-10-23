@@ -37,6 +37,7 @@ OTHER_COMMAND: JsonValue = {
     "input": {"text": "hi"},
 }
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
+REQUEST_DIGEST = "sha256:" + "c" * 64
 
 
 def identity_for(command: JsonValue, **overrides: object) -> SubmissionIdentity:
@@ -63,6 +64,17 @@ def identity_for(command: JsonValue, **overrides: object) -> SubmissionIdentity:
     }
     fields.update(overrides)
     return SubmissionIdentity(**fields)  # type: ignore[arg-type]
+
+
+def intent_for(command: JsonValue = COMMAND, **overrides: object) -> SubmissionIntent:
+    fields: dict[str, object] = {
+        "identity": identity_for(command),
+        "recorded_at": NOW,
+        "updated_at": NOW,
+        "request_digest": REQUEST_DIGEST,
+    }
+    fields.update(overrides)
+    return SubmissionIntent(**fields)  # type: ignore[arg-type]
 
 
 def build_service(
@@ -224,7 +236,7 @@ def test_unconfirmed_timeout_evidence_never_verifies() -> None:
 
 
 def test_stop_evidence_for_another_intent_is_rejected_by_the_domain() -> None:
-    intent = SubmissionIntent(identity=identity_for(COMMAND), recorded_at=NOW, updated_at=NOW)
+    intent = intent_for()
     intent.mark_dispatched("engine-request-1", at=NOW)
 
     with pytest.raises(ValueError, match="another submit intent"):
@@ -298,38 +310,23 @@ def test_state_matrix_rejects_illegal_combinations(
     state: ExecutionState, cleanup: CleanupState
 ) -> None:
     with pytest.raises(ValueError, match="cleanup_state"):
-        SubmissionIntent(
-            identity=identity_for(COMMAND),
-            recorded_at=NOW,
-            updated_at=NOW,
-            execution_state=state,
-            cleanup_state=cleanup,
-        )
+        intent_for(execution_state=state, cleanup_state=cleanup)
 
 
 def test_failed_intent_requires_error_code_and_no_dispatch_when_not_required() -> None:
     with pytest.raises(ValueError, match="error code"):
-        SubmissionIntent(
-            identity=identity_for(COMMAND),
-            recorded_at=NOW,
-            updated_at=NOW,
+        intent_for(
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.NOT_REQUIRED,
         )
     with pytest.raises(ValueError, match="requires a dispatch time"):
-        SubmissionIntent(
-            identity=identity_for(COMMAND),
-            recorded_at=NOW,
-            updated_at=NOW,
+        intent_for(
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.COMPLETE,
             error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
         )
     with pytest.raises(ValueError, match="no dispatch time"):
-        SubmissionIntent(
-            identity=identity_for(COMMAND),
-            recorded_at=NOW,
-            updated_at=NOW,
+        intent_for(
             execution_state=ExecutionState.FAILED,
             cleanup_state=CleanupState.NOT_REQUIRED,
             error_code=ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN,
@@ -339,10 +336,7 @@ def test_failed_intent_requires_error_code_and_no_dispatch_when_not_required() -
 
 def test_successful_intent_rejects_error_codes() -> None:
     with pytest.raises(ValueError, match="error code"):
-        SubmissionIntent(
-            identity=identity_for(COMMAND),
-            recorded_at=NOW,
-            updated_at=NOW,
+        intent_for(
             execution_state=ExecutionState.SUCCEEDED,
             cleanup_state=CleanupState.COMPLETE,
             dispatched_at=NOW,

@@ -1,0 +1,143 @@
+"""PostgreSQL submit ledger: one short transaction per call, no engine call inside it.
+
+Only a deadlock or serialization failure the database already rolled back is retried, at
+most three times with jitter inside the original budget. A lost connection or commit
+acknowledgment is reported as an unknown outcome, because repeating the write could
+dispatch a second execution while quoting the same identity.
+"""
+
+from __future__ import annotations
+
+import random
+import time
+from collections.abc import Callable
+from typing import Any, TypeVar, cast
+
+import psycopg
+from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
+
+from speechnexus_gateway.domain.submission import (
+    SubmissionIntent,
+    SubmissionIntentExistsError,
+    SubmissionOutcomeUnknownError,
+    SubmissionStoreError,
+    SubmissionStoreUnavailableError,
+)
+from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
+from speechnexus_gateway.infrastructure.submit_sql import (
+    SubmitCursor,
+    create_submit_in_transaction,
+    read_submit_intent,
+    save_submit_intent,
+)
+
+_Result = TypeVar("_Result")
+
+
+class _BudgetExpiredError(Exception):
+    """Raised before commit; the connection context rolls the transaction back."""
+
+
+class _DeadlineCursor:
+    """Bounds every statement by the submit budget that is left."""
+
+    def __init__(self, cursor: SubmitCursor, deadline: float) -> None:
+        self._cursor = cursor
+        self._deadline = deadline
+
+    @property
+    def rowcount(self) -> int:
+        return self._cursor.rowcount
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> object:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _BudgetExpiredError
+        self._cursor.execute(
+            "SELECT set_config('statement_timeout', %s, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        return self._cursor.execute(query, parameters)
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._cursor.fetchall()
+
+
+class PostgresSubmissionLedger:
+    """Implements the gateway's ``SubmissionLedger`` port on the frozen tables."""
+
+    def __init__(
+        self, pool: GatewayPool, *, timeout_seconds: float = 3, max_attempts: int = 3
+    ) -> None:
+        if not 0 < timeout_seconds <= 30 or not 1 <= max_attempts <= 3:
+            raise ValueError("Submit transactions need bounded deadlines and retries")
+        self._pool = pool
+        self._deadline_seconds = timeout_seconds
+        self._max_attempts = max_attempts
+
+    def get(self, submit_intent_id: str) -> SubmissionIntent | None:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_submit_intent(cursor, submit_intent_id),
+        )
+
+    def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
+        self._run(
+            read_only=False,
+            work=lambda cursor: create_submit_in_transaction(cursor, intent, request_document),
+        )
+
+    def save(self, intent: SubmissionIntent, *, expected_version: int) -> None:
+        self._run(
+            read_only=False,
+            work=lambda cursor: save_submit_intent(
+                cursor, intent, expected_version=expected_version
+            ),
+        )
+
+    def _run(self, *, read_only: bool, work: Callable[[SubmitCursor], _Result]) -> _Result:
+        deadline = time.monotonic() + self._deadline_seconds
+        exhausted: SubmissionStoreError | None = None
+        for attempt in range(self._max_attempts):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                with self._pool.connection(timeout=remaining) as connection:
+                    if time.monotonic() >= deadline:
+                        raise _BudgetExpiredError
+                    if read_only:
+                        connection.execute("SET TRANSACTION READ ONLY")
+                    with connection.cursor() as raw:
+                        cursor = _DeadlineCursor(cast(SubmitCursor, raw), deadline)
+                        result = work(cursor)
+                        if time.monotonic() >= deadline:
+                            raise _BudgetExpiredError
+                return result  # Commit acknowledgment was received.
+            except psycopg.errors.UniqueViolation as error:
+                # The submit identity, or its lease, already owns a durable intent. Never
+                # return it as if this call had created it: the caller queries instead.
+                raise SubmissionIntentExistsError(
+                    "the submit identity or its lease already has a durable intent"
+                ) from error
+            except psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure:
+                # Confirmed abort only; no connection or transaction is held here.
+                delay = min(random.uniform(0.001, 0.01), max(0.0, deadline - time.monotonic()))
+                if delay and attempt + 1 < self._max_attempts:
+                    time.sleep(delay)
+            except PoolClosed, PoolTimeout, TooManyRequests, _BudgetExpiredError:
+                exhausted = SubmissionStoreUnavailableError(
+                    "the control database gave no bounded connection before the budget ran out"
+                )
+                break
+            except (psycopg.OperationalError, psycopg.InterfaceError) as error:
+                raise SubmissionOutcomeUnknownError(
+                    "the submit transaction cannot prove whether it committed"
+                ) from error
+            except psycopg.Error as error:
+                raise SubmissionStoreError(
+                    f"the submit transaction failed: {type(error).__name__}"
+                ) from error
+        raise exhausted or SubmissionStoreUnavailableError(
+            "the submit transaction used its retry budget without committing"
+        )

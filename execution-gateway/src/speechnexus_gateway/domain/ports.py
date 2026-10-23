@@ -37,11 +37,17 @@ class EngineObservation:
 
 
 class SubmissionLedger(Protocol):
-    """Durable intent store; the adapter owns the transaction and row version."""
+    """Durable intent store; the adapter owns the transaction and row version.
+
+    ``add`` is the ``create_submit`` transaction: it re-reads the authoritative lease rows
+    under lock, stores one intent plus the canonical request document, and fails rather than
+    returning a pre-existing intent, so a caller never dispatches for a record it did not
+    just create. ``save`` is a conditional write on the version the caller read.
+    """
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None: ...
 
-    def add(self, intent: SubmissionIntent) -> None: ...
+    def add(self, intent: SubmissionIntent, *, request_document: str) -> None: ...
 
     def save(self, intent: SubmissionIntent, *, expected_version: int) -> None: ...
 

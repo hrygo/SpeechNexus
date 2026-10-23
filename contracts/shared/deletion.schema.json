@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/deletion.schema.json",
+  "title": "DependencyPinnedDeletionLifecycle",
+  "description": "Content deletion is separate from immutable execution/fencing/accounting evidence. Plans are owner-scoped, version/digest-pinned snapshots. A plan does not authorize deletion. No cross-module cascade into independent copies. See docs/architecture/data-deletion.md for atomic dependency recheck, stop evidence, durable ledger and restoration protocol.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/DeletionPlanRequest"
+    },
+    {
+      "$ref": "#/$defs/DeletionPlan"
+    },
+    {
+      "$ref": "#/$defs/DeletionCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/Deletion"
+    }
+  ],
+  "$defs": {
+    "ResourceKind": {
+      "enum": [
+        "asset",
+        "artifact",
+        "voice_revision",
+        "operation_content",
+        "project",
+        "saved_asset",
+        "transcript",
+        "meeting",
+        "audiobook"
+      ]
+    },
+    "DeletionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "kind",
+        "resource"
+      ],
+      "properties": {
+        "owner": {
+          "enum": [
+            "speech",
+            "workbench"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ResourceKind"
+        },
+        "resource": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "owner": {
+                "const": "speech"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "asset",
+                  "artifact",
+                  "voice_revision",
+                  "operation_content"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "project",
+                  "saved_asset",
+                  "transcript",
+                  "meeting",
+                  "audiobook"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "relation",
+        "disposition"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/DeletionTarget"
+        },
+        "relation": {
+          "enum": [
+            "persistent_reference",
+            "active_execution",
+            "owned_child",
+            "independent_copy"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "blocks",
+            "cascade",
+            "retain"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "relation": {
+                "const": "independent_copy"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "disposition": {
+                "const": "retain"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "relation": {
+                "const": "active_execution"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "disposition": {
+                "enum": [
+                  "blocks",
+                  "cascade"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DeletionMode": {
+      "enum": [
+        "ordinary",
+        "cascade"
+      ]
+    },
+    "DeletionPlanRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "mode"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/DeletionTarget"
+        },
+        "mode": {
+          "$ref": "#/$defs/DeletionMode"
+        }
+      }
+    },
+    "DeletionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "target",
+        "mode",
+        "plan_revision",
+        "plan_digest",
+        "created_at",
+        "expires_at",
+        "dependencies",
+        "eligible"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.deletion_plan"
+        },
+        "target": {
+          "$ref": "#/$defs/DeletionTarget"
+        },
+        "mode": {
+          "$ref": "#/$defs/DeletionMode"
+        },
+        "plan_revision": {
+          "$ref": "identifiers.schema.json#/$defs/Revision"
+        },
+        "plan_digest": {
+          "$ref": "identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Dependency"
+          }
+        },
+        "eligible": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "dependencies": {
+                "contains": {
+                  "properties": {
+                    "disposition": {
+                      "const": "blocks"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "eligible": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "eligible": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "ordinary"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "dependencies": {
+                "items": {
+                  "properties": {
+                    "disposition": {
+                      "enum": [
+                        "blocks",
+                        "retain"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DeletionCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_id",
+        "expected_plan_revision",
+        "plan_digest",
+        "confirm_targets"
+      ],
+      "properties": {
+        "plan_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_plan_revision": {
+          "$ref": "identifiers.schema.json#/$defs/Revision"
+        },
+        "plan_digest": {
+          "$ref": "identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "confirm_targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/DeletionTarget"
+          }
+        }
+      }
+    },
+    "DeletionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deleted",
+        "retained_independent_copies",
+        "ledger_id",
+        "completed_at"
+      ],
+      "properties": {
+        "deleted": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/DeletionTarget"
+          }
+        },
+        "retained_independent_copies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/DeletionTarget"
+          }
+        },
+        "ledger_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Deletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "plan_id",
+        "plan_digest",
+        "status",
+        "cleanup_state",
+        "created_at",
+        "updated_at",
+        "result",
+        "error"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.deletion"
+        },
+        "plan_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "plan_digest": {
+          "$ref": "identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "blocked",
+            "succeeded",
+            "failed"
+          ]
+        },
+        "cleanup_state": {
+          "enum": [
+            "pending",
+            "quarantined",
+            "complete"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DeletionResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "errors.schema.json#/$defs/ErrorBody"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              },
+              "result": {
+                "$ref": "#/$defs/DeletionResult"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "result": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "blocked",
+                  "failed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "errors.schema.json#/$defs/ErrorBody"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "queued",
+                  "running"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "pending"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-speechnexus-errors": {
+    "deletion_owner_mismatch": 422,
+    "resource_not_found": 404,
+    "deletion_confirmation_mismatch": 422,
+    "deletion_plan_expired": 409,
+    "deletion_plan_changed": 409,
+    "deletion_dependency_conflict": 409,
+    "idempotency_conflict": 409,
+    "deletion_stop_unconfirmed": 409
+  }
+}

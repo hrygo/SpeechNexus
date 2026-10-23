@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/runtime-states.schema.json",
+  "title": "SpeechNexusSharedRuntimeStates",
+  "description": "Single source of truth for observed model-runtime instance states shared by the admin and internal lifecycle contracts.",
+  "$defs": {
+    "InstanceState": {
+      "type": "string",
+      "enum": [
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Observed lifecycle state. Only `stopped` proves that the process or container and its reserved resources are gone; `failed` and `quarantined` may still retain capacity."
+    },
+    "ObservedInstanceState": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Controller observation. `absent` means no matching instance generation was observed."
+    }
+  }
+}

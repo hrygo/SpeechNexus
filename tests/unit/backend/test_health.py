@@ -81,3 +81,20 @@ async def test_ready_fails_closed_when_a_dependency_fails() -> None:
         "status": "failed",
         "detail": "unavailable",
     }
+
+
+def test_settings_expose_explicit_cluster_identity() -> None:
+    settings = Settings(
+        service_name="speechnexus-scheduler",
+        process_role="scheduler",
+        node_id="node-gpu-01",
+        instance_id="scheduler-1",
+        database_url=SecretStr("postgresql://unused@127.0.0.1/unused"),
+        object_storage_endpoint=AnyHttpUrl("http://127.0.0.1:9000"),
+        object_storage_healthcheck_url=AnyHttpUrl("http://127.0.0.1:9000/health"),
+        object_storage_bucket="test",
+    )
+
+    assert settings.process_role == "scheduler"
+    assert settings.node_id == "node-gpu-01"
+    assert settings.instance_id == "scheduler-1"

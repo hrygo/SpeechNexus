@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 120" width="640" height="120" fill="none" role="img" aria-label="SpeechNexus · 声枢 — 自部署的语音服务与创作中枢">
+  <defs>
+    <linearGradient id="sn-banner-bg" x1="0" y1="0" x2="640" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B0F17" />
+      <stop offset="100%" stop-color="#131B26" />
+    </linearGradient>
+    <linearGradient id="sn-banner-icon-bg" x1="24" y1="24" x2="96" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#18222F" />
+      <stop offset="100%" stop-color="#0B0F17" />
+    </linearGradient>
+    <linearGradient id="sn-banner-ring" x1="32" y1="32" x2="88" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="52%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+  </defs>
+
+  <!-- Card Background -->
+  <rect width="640" height="120" rx="20" fill="url(#sn-banner-bg)" />
+  <rect x="0.5" y="0.5" width="639" height="119" rx="19.5" stroke="rgba(255,255,255,0.10)" />
+
+  <!-- Brand Icon Container -->
+  <rect x="24" y="24" width="72" height="72" rx="18" fill="url(#sn-banner-icon-bg)" />
+  <rect x="24.5" y="24.5" width="71" height="71" rx="17.5" stroke="rgba(255,255,255,0.14)" />
+
+  <!-- Acoustic Hub Ring & Waveform -->
+  <circle cx="60" cy="60" r="21" stroke="url(#sn-banner-ring)" stroke-width="4" stroke-linecap="round" stroke-dasharray="96 36" transform="rotate(-35 60 60)" />
+  <path d="M48 57V63M54 51V69M60 45V75M66 51V69M72 57V63" stroke="#F8FAFC" stroke-width="4" stroke-linecap="round" />
+  <circle cx="74.5" cy="45.5" r="4.2" fill="#5EEAD4" />
+
+  <!-- Typography Lockup -->
+  <text x="120" y="58" fill="#F8FAFC" font-family="'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="30" font-weight="700" letter-spacing="-0.03em">SpeechNexus</text>
+  <rect x="318" y="37" width="62" height="24" rx="12" fill="rgba(94,234,212,0.12)" stroke="rgba(94,234,212,0.32)" />
+  <text x="349" y="53" text-anchor="middle" fill="#5EEAD4" font-family="'PingFang SC', 'Noto Sans SC', sans-serif" font-size="13" font-weight="600" letter-spacing="0.06em">声枢</text>
+
+  <text x="120" y="84" fill="#94A3B8" font-family="'Inter Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', sans-serif" font-size="14" font-weight="500">自部署的语音服务与创作中枢 · Self-Hosted Speech Engine &amp; Studio</text>
+</svg>

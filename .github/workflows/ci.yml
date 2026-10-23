@@ -14,19 +14,46 @@ concurrency:
 
 env:
   UV_VERSION: "0.13.5"
-  PNPM_VERSION: "10.34.7"
+  PNPM_VERSION: "12.14.0"
 
 jobs:
   python:
     name: Python quality and tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_USER: speechnexus
+          POSTGRES_PASSWORD: speechnexus_test
+          POSTGRES_DB: speechnexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U speechnexus -d speechnexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4.8
+        env:
+          MYSQL_ROOT_PASSWORD: speechnexus_test
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -pspeechnexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
@@ -38,6 +65,12 @@ jobs:
 
       - name: Install locked dependencies
         run: uv sync --locked --all-packages --all-groups
+
+      - name: Check breaking changes to OpenAI-compatible contracts
+        if: github.event_name == 'pull_request'
+        env:
+          CONTRACT_BASE_REF: origin/${{ github.base_ref }}
+        run: uv run python scripts/dev-env/check-openai-contract-compat.py --base "$CONTRACT_BASE_REF"
 
       - name: Check formatting
         run: uv run ruff format --check .
@@ -56,6 +89,15 @@ jobs:
 
       - name: Run tests with coverage
         run: uv run pytest --cov --cov-report=term-missing
+
+      - name: Verify legacy PostgreSQL guards and shared PG/InnoDB transaction behavior
+        env:
+          SPEECHNEXUS_TEST_DATABASE_URL: postgresql://speechnexus:speechnexus_test@127.0.0.1:5432/speechnexus_test
+          SPEECHNEXUS_TEST_MYSQL_URL: mysql://root:speechnexus_test@127.0.0.1:3306/
+        run: |
+          test -n "$SPEECHNEXUS_TEST_DATABASE_URL"
+          test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
+          uv run pytest -m integration tests/integration -q
 
       - name: Verify media toolchain
         run: uv run python scripts/dev-env/media-smoke.py
@@ -81,14 +123,19 @@ jobs:
 
       - name: Activate pnpm
         run: |
-          corepack enable
-          corepack prepare pnpm@${PNPM_VERSION} --activate
+          npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify OpenAI JavaScript SDK contract parity
+        run: pnpm test:contracts-sdk
+
       - name: Check formatting
         run: pnpm format:check
+
+      - name: Validate design tokens and boundaries
+        run: pnpm lint:tokens
 
       - name: Lint
         run: pnpm lint

@@ -7,7 +7,7 @@ export function App() {
       tone="workbench"
       eyebrow="SpeechNexus / Workbench"
       title="语音任务集中完成"
-      description="这里将组织转写、配音、会议、助手、提词与有声书任务。当前版本先建立共享界面基线与可部署入口，任务数据模型和业务流程将在契约冻结后接入。"
+      description="这里将组织转写、配音、会议、助手、提词与有声书任务。机器契约已冻结，当前版本先建立共享界面基线与可部署入口，任务数据和业务流程将随 P1 服务实现接入。"
       boundaryNote="“个人”描述任务体验，不代表服务端按用户私有保存。当前部署中的项目、音色与结果由所有工作台使用者共享，浏览器本地标识不能充当身份。"
     >
       <section className="card-grid" aria-label="工作台初始化范围">
@@ -20,7 +20,7 @@ export function App() {
         <CapabilityCard
           label="02 / Speech"
           title="转写与配音"
-          description="文件上传、任务恢复、音频采集与播放等待语音 API、Job 和实时事件契约完成后再实现。"
+          description="文件上传、任务恢复、音频采集与播放将在语音 API、Job 和实时事件路由及其 worker 实现后接入。"
           state="contract"
         />
         <CapabilityCard

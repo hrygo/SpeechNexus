@@ -1,0 +1,1050 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/model-binding.schema.json",
+  "title": "ModelBindingRevision",
+  "description": "Immutable logical-model binding from a public model name to engine, artifacts, execution recipe, parameter domains, capacity manifest, and qualification evidence. It is separate from any runtime instance, generation, lease, or readiness fact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "binding_id",
+    "revision",
+    "revision_id",
+    "logical_model",
+    "tasks",
+    "engine",
+    "artifact_set",
+    "execution_recipe",
+    "parameter_domains",
+    "release_tier",
+    "publication"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "binding_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "revision": {
+      "$ref": "#/$defs/Revision"
+    },
+    "revision_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Globally unique immutable identifier for this exact (binding_id, revision). Capacity manifests, qualification reports, runtime instances, leases, submit intents, and receipts use this value as binding_revision_id."
+    },
+    "logical_model": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$",
+      "description": "Public logical model name returned by GET /v1/models and accepted in model request fields. It is not an engine model path."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/SpeechTaskKind"
+      }
+    },
+    "engine": {
+      "$ref": "#/$defs/EngineDescriptor"
+    },
+    "artifact_set": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      }
+    },
+    "execution_recipe": {
+      "$ref": "#/$defs/ExecutionRecipe"
+    },
+    "parameter_domains": {
+      "$ref": "#/$defs/ParameterDomains"
+    },
+    "release_tier": {
+      "$ref": "#/$defs/ReleaseTier",
+      "description": "Publication claim for this revision. A draft may target production without evidence identifiers; any published, retired, or disabled production revision requires the bound capacity manifest and qualification report."
+    },
+    "publication": {
+      "$ref": "#/$defs/PublicationState",
+      "description": "Mutable lifecycle projection over the immutable binding definition. Drafts cannot carry publication timestamps or evidence identifiers."
+    },
+    "supersedes_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "published_at",
+              "capacity_manifest_id",
+              "qualification_report_id"
+            ],
+            "properties": {
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "qualification_report_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "draft"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "published_at": {
+                "type": "null"
+              },
+              "retired_at": {
+                "type": "null"
+              },
+              "capacity_manifest_id": {
+                "type": "null"
+              },
+              "qualification_report_id": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "retired_at": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "retired"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "published_at",
+              "retired_at",
+              "capacity_manifest_id",
+              "qualification_report_id"
+            ],
+            "properties": {
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "retired_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "qualification_report_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "release_tier": {
+                "const": "production"
+              }
+            },
+            "required": ["release_tier"]
+          },
+          {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "not": {
+                      "const": "draft"
+                    }
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "status",
+              "published_at",
+              "capacity_manifest_id",
+              "qualification_report_id"
+            ],
+            "properties": {
+              "status": {
+                "enum": ["published", "retired", "disabled"]
+              },
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "qualification_report_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "disabled"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "disabled_reason"
+            ],
+            "properties": {
+              "disabled_reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "tasks": {
+            "contains": {
+              "const": "voice_design"
+            }
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      },
+      "then": {
+        "properties": {
+          "engine": {
+            "properties": {
+              "kind": {
+                "const": "vllm_omni"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Revision": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "Sha256Digest": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "ReleaseTier": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/ReleaseTier"
+    },
+    "SpeechTaskKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/SpeechTaskKind"
+    },
+    "EngineKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/EngineKind"
+    },
+    "StageRole": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/StageRole"
+    },
+    "EngineDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "image_digest",
+        "runtime_version"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EngineKind"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "runtime_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ArtifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "artifact_id",
+        "digest",
+        "media_type"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "weights",
+            "tokenizer",
+            "codec",
+            "config",
+            "vocab",
+            "connector"
+          ]
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ExecutionRecipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipe_revision",
+        "capacity_manifest_id",
+        "stage_roles"
+      ],
+      "properties": {
+        "recipe_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "capacity_manifest_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/StageRole"
+          }
+        },
+        "requires_complete_reservation": {
+          "type": "boolean",
+          "default": true,
+          "description": "True when every stage, including required review or auxiliary work, must be admitted before execution starts."
+        }
+      }
+    },
+    "AsrParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "max_segment_ms",
+        "finalization_modes",
+        "supports_prompt",
+        "alignment_modes",
+        "diarization_modes"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "finalization_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
+          }
+        },
+        "supports_prompt": {
+          "type": "boolean"
+        },
+        "supports_word_timestamps": {
+          "type": "boolean"
+        },
+        "alignment_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+          }
+        },
+        "diarization_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+          }
+        },
+        "max_speakers": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 64
+        },
+        "supports_rollback_tokens": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TtsParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "audio_formats",
+        "sample_rates_hz",
+        "text_commit_modes",
+        "audio_delivery_modes",
+        "supports_instructions",
+        "max_input_codepoints"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioFormat"
+          }
+        },
+        "sample_rates_hz": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 96000
+          }
+        },
+        "text_commit_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+          }
+        },
+        "audio_delivery_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+          }
+        },
+        "supports_instructions": {
+          "type": "boolean"
+        },
+        "supports_speed": {
+          "type": "boolean"
+        },
+        "speed_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "minimum",
+            "maximum"
+          ],
+          "properties": {
+            "minimum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            }
+          }
+        },
+        "max_input_codepoints": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "supports_seed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "VoiceParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "design_supported",
+        "clone_supported",
+        "reusable_voice_supported"
+      ],
+      "properties": {
+        "design_supported": {
+          "type": "boolean"
+        },
+        "clone_supported": {
+          "type": "boolean"
+        },
+        "preview_only_possible": {
+          "type": "boolean"
+        },
+        "reusable_voice_supported": {
+          "type": "boolean"
+        },
+        "validation_set_revisions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Revision"
+          }
+        }
+      }
+    },
+    "ParameterDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/AsrParameterDomain"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsParameterDomain"
+        },
+        "voice": {
+          "$ref": "#/$defs/VoiceParameterDomain"
+        }
+      },
+      "minProperties": 1
+    },
+    "PublicationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "retired",
+            "disabled"
+          ]
+        },
+        "published_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retired_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capacity_manifest_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qualification_report_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "binding_id": "asr-quality",
+      "revision": "7",
+      "revision_id": "mbrev-asr-quality-7",
+      "logical_model": "asr-quality",
+      "description": "File and full-segment review ASR binding.",
+      "tasks": [
+        "asr_file",
+        "asr_full_segment_review"
+      ],
+      "engine": {
+        "kind": "vllm",
+        "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "runtime_version": "vllm-2026.10"
+      },
+      "artifact_set": [
+        {
+          "role": "weights",
+          "artifact_id": "model-qwen3-asr-1.7b",
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "media_type": "application/x-safetensors",
+          "size_bytes": 4000000000
+        }
+      ],
+      "execution_recipe": {
+        "recipe_revision": "3",
+        "capacity_manifest_id": "cap-asr-quality-7",
+        "stage_roles": [
+          "asr_batch",
+          "asr_review"
+        ],
+        "requires_complete_reservation": true
+      },
+      "parameter_domains": {
+        "asr": {
+          "languages": [
+            "zh",
+            "en",
+            "auto"
+          ],
+          "max_segment_ms": 30000,
+          "finalization_modes": [
+            "full_segment"
+          ],
+          "supports_prompt": true,
+          "supports_word_timestamps": true,
+          "alignment_modes": [
+            "off",
+            "required",
+            "best_effort"
+          ],
+          "diarization_modes": [
+            "off",
+            "required",
+            "best_effort"
+          ],
+          "max_speakers": 8,
+          "supports_rollback_tokens": false
+        }
+      },
+      "release_tier": "experimental",
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "capacity_manifest_id": "cap-asr-quality-7",
+        "qualification_report_id": "qrep-asr-quality-7",
+        "disabled_reason": null
+      },
+      "supersedes_revision": "6",
+      "created_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "schema_version": "1.0.0",
+      "binding_id": "tts-interactive",
+      "revision": "5",
+      "revision_id": "mbrev-tts-interactive-5",
+      "logical_model": "tts-interactive",
+      "tasks": [
+        "tts_realtime",
+        "tts_file"
+      ],
+      "engine": {
+        "kind": "vllm_omni",
+        "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "runtime_version": "vllm-omni-2026.10"
+      },
+      "artifact_set": [
+        {
+          "role": "weights",
+          "artifact_id": "model-qwen3-tts-customvoice",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "media_type": "application/x-safetensors",
+          "size_bytes": 4000000000
+        }
+      ],
+      "execution_recipe": {
+        "recipe_revision": "2",
+        "capacity_manifest_id": "cap-tts-interactive-5",
+        "stage_roles": [
+          "tts_talker",
+          "tts_code2wav",
+          "tts_connector"
+        ],
+        "requires_complete_reservation": true
+      },
+      "parameter_domains": {
+        "tts": {
+          "languages": [
+            "zh",
+            "en"
+          ],
+          "audio_formats": [
+            "mp3",
+            "wav",
+            "pcm"
+          ],
+          "sample_rates_hz": [
+            24000
+          ],
+          "text_commit_modes": [
+            "explicit",
+            "sentence"
+          ],
+          "audio_delivery_modes": [
+            "complete",
+            "chunked"
+          ],
+          "supports_instructions": true,
+          "supports_speed": true,
+          "speed_range": {
+            "minimum": 0.75,
+            "maximum": 1.25
+          },
+          "max_input_codepoints": 2000,
+          "supports_seed": false
+        }
+      },
+      "release_tier": "experimental",
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "capacity_manifest_id": "cap-tts-interactive-5",
+        "qualification_report_id": "qrep-tts-interactive-5",
+        "disabled_reason": null
+      },
+      "supersedes_revision": "4",
+      "created_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "schema_version": "1.0.0",
+      "binding_id": "voice-design",
+      "revision": "3",
+      "revision_id": "mbrev-voice-design-3",
+      "logical_model": "voice-design",
+      "tasks": [
+        "voice_design",
+        "voice_validation"
+      ],
+      "engine": {
+        "kind": "vllm_omni",
+        "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "runtime_version": "vllm-omni-2026.10"
+      },
+      "artifact_set": [
+        {
+          "role": "weights",
+          "artifact_id": "model-qwen3-tts-voicedesign",
+          "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "media_type": "application/x-safetensors",
+          "size_bytes": 4000000000
+        }
+      ],
+      "execution_recipe": {
+        "recipe_revision": "1",
+        "capacity_manifest_id": "cap-voice-design-3",
+        "stage_roles": [
+          "voice_design",
+          "voice_clone_base"
+        ],
+        "requires_complete_reservation": true
+      },
+      "parameter_domains": {
+        "voice": {
+          "design_supported": true,
+          "clone_supported": true,
+          "preview_only_possible": true,
+          "reusable_voice_supported": true,
+          "validation_set_revisions": [
+            "1",
+            "2"
+          ]
+        }
+      },
+      "release_tier": "experimental",
+      "publication": {
+        "status": "draft",
+        "published_at": null,
+        "retired_at": null,
+        "capacity_manifest_id": null,
+        "qualification_report_id": null,
+        "disabled_reason": null
+      },
+      "supersedes_revision": null,
+      "created_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "schema_version": "1.0.0",
+      "binding_id": "asr-realtime",
+      "revision": "4",
+      "revision_id": "mbrev-asr-realtime-4",
+      "logical_model": "asr-realtime",
+      "description": "Realtime ASR binding with VAD preview and full-segment review.",
+      "tasks": [
+        "vad",
+        "asr_realtime",
+        "asr_full_segment_review"
+      ],
+      "engine": {
+        "kind": "vllm",
+        "image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "runtime_version": "vllm-2026.10"
+      },
+      "artifact_set": [
+        {
+          "role": "weights",
+          "artifact_id": "model-qwen3-asr-realtime",
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "media_type": "application/x-safetensors",
+          "size_bytes": 4000000000
+        }
+      ],
+      "execution_recipe": {
+        "recipe_revision": "4",
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "stage_roles": [
+          "vad",
+          "asr_preview",
+          "asr_review"
+        ],
+        "requires_complete_reservation": true
+      },
+      "parameter_domains": {
+        "asr": {
+          "languages": [
+            "zh",
+            "en",
+            "auto"
+          ],
+          "max_segment_ms": 30000,
+          "finalization_modes": [
+            "full_segment"
+          ],
+          "supports_prompt": true,
+          "supports_word_timestamps": false,
+          "alignment_modes": [
+            "off",
+            "best_effort"
+          ],
+          "diarization_modes": [
+            "off",
+            "best_effort"
+          ],
+          "max_speakers": 8,
+          "supports_rollback_tokens": true
+        }
+      },
+      "release_tier": "experimental",
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+        "disabled_reason": null
+      },
+      "supersedes_revision": "3",
+      "created_at": "2026-10-22T09:00:00Z"
+    }
+  ]
+}

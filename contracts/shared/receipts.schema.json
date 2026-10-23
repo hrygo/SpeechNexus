@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/receipts.schema.json",
+  "title": "SpeechNexusExecutionReceipt",
+  "description": "Single source of truth for redacted execution receipts shared by REST Operation projections and nexus realtime operation terminals. Receipts describe requested, effective, and observed execution facts; they never authorize replay or expose credentials, object keys, private paths, audio, or full content.",
+  "$defs": {
+    "ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "requested",
+        "effective",
+        "observed",
+        "missing",
+        "unknown"
+      ],
+      "properties": {
+        "receipt_id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested": {
+          "$ref": "#/$defs/PublicExecutionFacts"
+        },
+        "effective": {
+          "$ref": "#/$defs/PublicExecutionFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/PublicExecutionFacts"
+        },
+        "missing": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ReceiptFactPath"
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ReceiptFactPath"
+          }
+        }
+      }
+    },
+    "PublicExecutionFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "language.schema.json#/$defs/LanguageTag"
+        },
+        "seed": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/seed"
+        },
+        "speed": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/speed"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "response_format": {
+          "anyOf": [
+            {
+              "$ref": "capability-domains.schema.json#/$defs/AudioFormat"
+            },
+            {
+              "$ref": "capability-domains.schema.json#/$defs/TranscriptFormat"
+            }
+          ]
+        },
+        "max_segment_ms": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/max_segment_ms"
+        },
+        "model_binding": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        "profile": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        "voice": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        "pronunciation": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        "turn_detection": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/turn_detection"
+        },
+        "finalization": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/preview_interval_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/alignment"
+        },
+        "diarization": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "speech-overrides.schema.json#/$defs/AsrOverrides/properties/vocabulary_set_revision"
+        },
+        "text_commit_mode": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/audio_delivery"
+        },
+        "pronunciation_revision": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/pronunciation_revision"
+        },
+        "planner": {
+          "$ref": "speech-overrides.schema.json#/$defs/TtsOverrides/properties/planner"
+        },
+        "instructions_present": {
+          "type": "boolean"
+        },
+        "prompt_present": {
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        "vocabulary": {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        }
+      },
+      "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+    },
+    "ReceiptFactPath": {
+      "type": "string",
+      "enum": [
+        "requested.language",
+        "requested.seed",
+        "requested.speed",
+        "requested.sample_rate_hz",
+        "requested.response_format",
+        "requested.max_segment_ms",
+        "requested.model_binding",
+        "requested.profile",
+        "requested.voice",
+        "requested.pronunciation",
+        "requested.turn_detection",
+        "requested.finalization",
+        "requested.preview_interval_ms",
+        "requested.rollback_tokens",
+        "requested.final_deadline_ms",
+        "requested.auxiliary_deadline_ms",
+        "requested.alignment",
+        "requested.diarization",
+        "requested.vocabulary_set_revision",
+        "requested.text_commit_mode",
+        "requested.audio_delivery",
+        "requested.pronunciation_revision",
+        "requested.planner",
+        "requested.instructions_present",
+        "requested.prompt_present",
+        "requested.policy",
+        "requested.vocabulary",
+        "effective.language",
+        "effective.seed",
+        "effective.speed",
+        "effective.sample_rate_hz",
+        "effective.response_format",
+        "effective.max_segment_ms",
+        "effective.model_binding",
+        "effective.profile",
+        "effective.voice",
+        "effective.pronunciation",
+        "effective.turn_detection",
+        "effective.finalization",
+        "effective.preview_interval_ms",
+        "effective.rollback_tokens",
+        "effective.final_deadline_ms",
+        "effective.auxiliary_deadline_ms",
+        "effective.alignment",
+        "effective.diarization",
+        "effective.vocabulary_set_revision",
+        "effective.text_commit_mode",
+        "effective.audio_delivery",
+        "effective.pronunciation_revision",
+        "effective.planner",
+        "effective.instructions_present",
+        "effective.prompt_present",
+        "effective.policy",
+        "effective.vocabulary",
+        "observed.language",
+        "observed.seed",
+        "observed.speed",
+        "observed.sample_rate_hz",
+        "observed.response_format",
+        "observed.max_segment_ms",
+        "observed.model_binding",
+        "observed.profile",
+        "observed.voice",
+        "observed.pronunciation",
+        "observed.turn_detection",
+        "observed.finalization",
+        "observed.preview_interval_ms",
+        "observed.rollback_tokens",
+        "observed.final_deadline_ms",
+        "observed.auxiliary_deadline_ms",
+        "observed.alignment",
+        "observed.diarization",
+        "observed.vocabulary_set_revision",
+        "observed.text_commit_mode",
+        "observed.audio_delivery",
+        "observed.pronunciation_revision",
+        "observed.planner",
+        "observed.instructions_present",
+        "observed.prompt_present",
+        "observed.policy",
+        "observed.vocabulary",
+        "requested.planner.max_chars",
+        "requested.planner.max_wait_ms",
+        "requested.turn_detection.mode",
+        "requested.turn_detection.silence_duration_ms",
+        "effective.planner.max_chars",
+        "effective.planner.max_wait_ms",
+        "effective.turn_detection.mode",
+        "effective.turn_detection.silence_duration_ms",
+        "observed.planner.max_chars",
+        "observed.planner.max_wait_ms",
+        "observed.turn_detection.mode",
+        "observed.turn_detection.silence_duration_ms"
+      ]
+    }
+  },
+  "x-speechnexus-schema-version": "2.0.0"
+}

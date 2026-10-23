@@ -1,0 +1,2166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/realtime-events.schema.json",
+  "title": "SpeechNexusRealtimeEvent",
+  "description": "Public WebSocket event union for /v1/realtime. The standard subset mirrors the OpenAI Realtime transcription session and transcription event shapes; SpeechNexus capabilities and controls use only the nexus.* namespace. Unlisted OpenAI events such as response.*, conversation history, tool calls, and semantic VAD are rejected rather than silently ignored.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SessionUpdate"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferAppend"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferCommit"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferClear"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionUpdate"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsStart"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsAppendText"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsCommitText"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsFinishText"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsCancel"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionClose"
+    },
+    {
+      "$ref": "#/$defs/SessionCreated"
+    },
+    {
+      "$ref": "#/$defs/SessionUpdated"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferCommitted"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferCleared"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferSpeechStarted"
+    },
+    {
+      "$ref": "#/$defs/InputAudioBufferSpeechStopped"
+    },
+    {
+      "$ref": "#/$defs/TranscriptionDelta"
+    },
+    {
+      "$ref": "#/$defs/TranscriptionCompleted"
+    },
+    {
+      "$ref": "#/$defs/TranscriptionFailed"
+    },
+    {
+      "$ref": "#/$defs/ErrorEvent"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionReady"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionUpdated"
+    },
+    {
+      "$ref": "#/$defs/NexusInputAck"
+    },
+    {
+      "$ref": "#/$defs/NexusSegmentClosed"
+    },
+    {
+      "$ref": "#/$defs/NexusHypothesis"
+    },
+    {
+      "$ref": "#/$defs/NexusMetadata"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsStarted"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsTextAck"
+    },
+    {
+      "$ref": "#/$defs/NexusTtsAudioDelta"
+    },
+    {
+      "$ref": "#/$defs/NexusOperationDone"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionGap"
+    },
+    {
+      "$ref": "#/$defs/NexusSessionClosed"
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Revision": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "Base64Audio": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 65536,
+      "contentEncoding": "base64",
+      "description": "Base64-encoded PCM16 little-endian bytes. The decoded byte length must be even and must match the negotiated wire format. The negotiated max_message_bytes applies to the entire JSON message, including the event envelope."
+    },
+    "ErrorEnvelope": {
+      "$ref": "shared/errors.schema.json#/$defs/ErrorBody"
+    },
+    "CleanupState": {
+      "$ref": "shared/operation-states.schema.json#/$defs/CleanupState"
+    },
+    "VadMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/VadMode"
+    },
+    "FinalizationMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
+    },
+    "AuxiliaryMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+    },
+    "TextCommitMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+    },
+    "AudioDeliveryMode": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+    },
+    "OperationKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/OperationKind"
+    },
+    "TerminalOperationStatus": {
+      "$ref": "shared/operation-states.schema.json#/$defs/TerminalOperationStatus"
+    },
+    "SampleSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "Half-open wire-sample interval [start, end). Contract tests require end > start; JSON Schema cannot express that relation across properties."
+    },
+    "PcmDescriptor": {
+      "$ref": "shared/public-audio.schema.json#/$defs/PcmDescriptor"
+    },
+    "ModelReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
+    },
+    "ProfileReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
+    },
+    "Limits": {
+      "$ref": "shared/public-audio.schema.json#/$defs/RealtimeLimits"
+    },
+    "EffectiveRealtimeConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_revision",
+        "profile",
+        "models",
+        "parameters",
+        "policy_revision"
+      ],
+      "properties": {
+        "config_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileReference"
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/ModelReference"
+            },
+            "tts": {
+              "$ref": "#/$defs/ModelReference"
+            }
+          },
+          "minProperties": 1
+        },
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ModelReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/AsrEffectiveParameters"
+            },
+            "tts": {
+              "$ref": "#/$defs/TtsEffectiveParameters"
+            }
+          }
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "catalog_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "AsrEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "finalization",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "rollback_tokens",
+        "turn_detection",
+        "alignment",
+        "diarization"
+      ],
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "finalization": {
+          "$ref": "#/$defs/FinalizationMode"
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "silence_duration_ms"
+          ],
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alignment": {
+          "$ref": "#/$defs/AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "#/$defs/AuxiliaryMode"
+        }
+      }
+    },
+    "TtsEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "text_commit_mode",
+        "audio_delivery",
+        "speed",
+        "planner"
+      ],
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/AudioDeliveryMode"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2.0
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_chars",
+            "max_wait_ms"
+          ],
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "AsrOverrides": {
+      "$ref": "shared/speech-overrides.schema.json#/$defs/AsrOverrides"
+    },
+    "TtsOverrides": {
+      "allOf": [
+        {
+          "$ref": "shared/speech-overrides.schema.json#/$defs/TtsOverrides"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "speed": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 2.0
+            }
+          }
+        }
+      ]
+    },
+    "SessionNexusConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileReference"
+        },
+        "asr": {
+          "$ref": "#/$defs/AsrOverrides"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsOverrides"
+        }
+      }
+    },
+    "TranscriptionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "prompt": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
+    "ServerVad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "server_vad"
+        },
+        "prefix_padding_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3000
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "TranscriptionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/OpenAIPcmFormat"
+        },
+        "transcription": {
+          "$ref": "#/$defs/TranscriptionConfig"
+        },
+        "turn_detection": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ServerVad"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SessionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "transcription"
+        },
+        "audio": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/TranscriptionInput"
+            }
+          }
+        },
+        "nexus": {
+          "$ref": "#/$defs/SessionNexusConfig"
+        }
+      }
+    },
+    "SessionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "realtime.transcription_session"
+        },
+        "type": {
+          "const": "transcription"
+        },
+        "audio": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/TranscriptionInput"
+            }
+          }
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nexus": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "effective_configuration": {
+              "$ref": "#/$defs/EffectiveRealtimeConfiguration"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits"
+            },
+            "connection_url": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          }
+        }
+      }
+    },
+    "UsageDuration": {
+      "$ref": "shared/public-audio.schema.json#/$defs/UsageDuration"
+    },
+    "UsageTokens": {
+      "$ref": "shared/public-audio.schema.json#/$defs/UsageTokens"
+    },
+    "TranscriptionLogprob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token",
+        "bytes",
+        "logprob"
+      ],
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        },
+        "logprob": {
+          "type": "number"
+        }
+      },
+      "description": "OpenAI Realtime log-probability shape. Emit only when the binding supplies genuine token evidence."
+    },
+    "Receipt": {
+      "$ref": "shared/receipts.schema.json#/$defs/ExecutionReceipt"
+    },
+    "BaseClientEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "session_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "BaseStandardServerEvent": {
+      "type": "object",
+      "required": [
+        "event_id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "BaseNexusServerEvent": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "session_id",
+        "seq",
+        "stream_epoch",
+        "sent_at"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "session_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stream_epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "client_event_id": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SessionUpdate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.update"
+            },
+            "session": {
+              "$ref": "#/$defs/SessionRequest"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferAppend": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.append"
+            },
+            "audio": {
+              "$ref": "#/$defs/Base64Audio"
+            }
+          },
+          "required": [
+            "type",
+            "audio"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.commit"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferClear": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.clear"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "NexusSessionUpdate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.update"
+            },
+            "expected_config_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "overrides": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "asr": {
+                  "$ref": "#/$defs/AsrOverrides"
+                },
+                "tts": {
+                  "$ref": "#/$defs/TtsOverrides"
+                }
+              },
+              "minProperties": 1
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "expected_config_revision",
+            "overrides"
+          ]
+        }
+      ]
+    },
+    "NexusTtsStart": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.start"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "voice": {
+              "$ref": "#/$defs/ModelReference"
+            },
+            "text_commit_mode": {
+              "$ref": "#/$defs/TextCommitMode"
+            },
+            "audio_delivery": {
+              "$ref": "#/$defs/AudioDeliveryMode"
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "utterance_id"
+          ]
+        }
+      ]
+    },
+    "NexusTtsAppendText": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.append_text"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "utterance_id",
+            "text_seq",
+            "text"
+          ]
+        }
+      ]
+    },
+    "NexusTtsCommitText": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.commit_text"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "through_text_seq": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "utterance_id",
+            "through_text_seq"
+          ]
+        }
+      ]
+    },
+    "NexusTtsFinishText": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.finish_text"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "utterance_id"
+          ]
+        }
+      ]
+    },
+    "NexusTtsCancel": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.cancel"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "utterance_id"
+          ]
+        }
+      ]
+    },
+    "NexusSessionClose": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseClientEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.close"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "drain",
+                "abort"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "event_id",
+            "mode"
+          ]
+        }
+      ]
+    },
+    "SessionCreated": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.created"
+            },
+            "session": {
+              "$ref": "#/$defs/SessionResponse"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        }
+      ]
+    },
+    "SessionUpdated": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.updated"
+            },
+            "session": {
+              "$ref": "#/$defs/SessionResponse"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferCommitted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.committed"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "previous_item_id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Identifier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "item_id"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferCleared": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.cleared"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferSpeechStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.speech_started"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "audio_start_ms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "item_id",
+            "audio_start_ms"
+          ]
+        }
+      ]
+    },
+    "InputAudioBufferSpeechStopped": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "input_audio_buffer.speech_stopped"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "audio_end_ms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "item_id",
+            "audio_end_ms"
+          ]
+        }
+      ]
+    },
+    "TranscriptionDelta": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "conversation.item.input_audio_transcription.delta"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "content_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "delta": {
+              "type": "string"
+            },
+            "logprobs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TranscriptionLogprob"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "item_id",
+            "content_index",
+            "delta"
+          ]
+        }
+      ]
+    },
+    "TranscriptionCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "conversation.item.input_audio_transcription.completed"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "content_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transcript": {
+              "type": "string"
+            },
+            "usage": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/UsageDuration"
+                },
+                {
+                  "$ref": "#/$defs/UsageTokens"
+                }
+              ],
+              "description": "OpenAI-compatible usage. SpeechNexus reports duration measured from the accepted segment sample span; token usage is reported only when the binding provides real token evidence."
+            },
+            "languages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "maxLength": 35
+                  }
+                }
+              }
+            },
+            "logprobs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TranscriptionLogprob"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "item_id",
+            "content_index",
+            "transcript",
+            "usage"
+          ]
+        }
+      ]
+    },
+    "TranscriptionFailed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "conversation.item.input_audio_transcription.failed"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "content_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "message"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "param": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 128
+                }
+              }
+            }
+          },
+          "required": [
+            "type",
+            "item_id",
+            "content_index",
+            "error"
+          ]
+        }
+      ]
+    },
+    "ErrorEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseStandardServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "error"
+            },
+            "error": {
+              "$ref": "#/$defs/ErrorEnvelope"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ]
+        }
+      ]
+    },
+    "NexusSessionReady": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.ready"
+            },
+            "effective_configuration": {
+              "$ref": "#/$defs/EffectiveRealtimeConfiguration"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits"
+            },
+            "input_credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "effective_configuration",
+            "limits",
+            "input_credit_samples"
+          ]
+        }
+      ]
+    },
+    "NexusSessionUpdated": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.updated"
+            },
+            "effective_configuration": {
+              "$ref": "#/$defs/EffectiveRealtimeConfiguration"
+            },
+            "effective_from_segment_id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Identifier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "effective_configuration"
+          ]
+        }
+      ]
+    },
+    "NexusInputAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.input.ack"
+            },
+            "accepted_through_sample": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "accepted_through_sample",
+            "credit_samples"
+          ]
+        }
+      ]
+    },
+    "NexusSegmentClosed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.transcription.segment_closed"
+            },
+            "segment_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "content_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sample_span": {
+              "$ref": "#/$defs/SampleSpan"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "vad",
+                "client_commit",
+                "budget_rollover"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "segment_id",
+            "item_id",
+            "sample_span",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "NexusHypothesis": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.transcription.hypothesis"
+            },
+            "segment_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "item_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "sample_span": {
+              "$ref": "#/$defs/SampleSpan"
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "segment_id",
+            "revision",
+            "text",
+            "sample_span"
+          ]
+        }
+      ]
+    },
+    "AlignmentMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_requested",
+            "pending",
+            "complete",
+            "failed",
+            "unavailable"
+          ]
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "word",
+              "sample_span"
+            ],
+            "properties": {
+              "word": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "sample_span": {
+                "$ref": "#/$defs/SampleSpan"
+              }
+            }
+          }
+        }
+      }
+    },
+    "DiarizationMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_requested",
+            "pending",
+            "complete",
+            "failed",
+            "unavailable"
+          ]
+        },
+        "speaker_assignments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "speaker_label",
+              "sample_span"
+            ],
+            "properties": {
+              "speaker_label": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sample_span": {
+                "$ref": "#/$defs/SampleSpan"
+              },
+              "overlap": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "NexusMetadata": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.transcription.metadata"
+            },
+            "segment_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "text_revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "metadata_revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "alignment": {
+              "$ref": "#/$defs/AlignmentMetadata"
+            },
+            "diarization": {
+              "$ref": "#/$defs/DiarizationMetadata"
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "segment_id",
+            "text_revision",
+            "metadata_revision",
+            "alignment",
+            "diarization"
+          ]
+        }
+      ]
+    },
+    "NexusTtsStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.started"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "audio": {
+              "$ref": "#/$defs/PcmDescriptor"
+            },
+            "text_credit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "utterance_id",
+            "audio",
+            "text_credit"
+          ]
+        }
+      ]
+    },
+    "NexusTtsTextAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.text_ack"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "accepted_through_text_seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "text_credit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "utterance_id",
+            "accepted_through_text_seq",
+            "text_credit"
+          ]
+        }
+      ]
+    },
+    "NexusTtsAudioDelta": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.tts.audio.delta"
+            },
+            "utterance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "chunk_seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "audio": {
+              "$ref": "#/$defs/Base64Audio"
+            },
+            "start_sample": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "utterance_id",
+            "chunk_seq",
+            "audio",
+            "start_sample",
+            "sample_count"
+          ]
+        }
+      ]
+    },
+    "NexusOperationDone": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.operation.done"
+            },
+            "kind": {
+              "$ref": "#/$defs/OperationKind"
+            },
+            "status": {
+              "$ref": "#/$defs/TerminalOperationStatus"
+            },
+            "cleanup_state": {
+              "$ref": "#/$defs/CleanupState"
+            },
+            "receipt": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Receipt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 256
+            },
+            "error": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ErrorEnvelope"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "operation_id",
+            "kind",
+            "status",
+            "cleanup_state"
+          ]
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "failed"}},
+            "required": ["status"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["error"],
+                "properties": {"error": {"not": {"type": "null"}}}
+              },
+              {
+                "required": ["reason"],
+                "properties": {"reason": {"not": {"type": "null"}}}
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "succeeded"}},
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["receipt"],
+            "properties": {
+              "receipt": {
+                "not": {"type": "null"}
+              },
+              "error": {"type": "null"},
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "cancelled"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {"type": "null"},
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "NexusSessionGap": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.gap"
+            },
+            "sample_span": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SampleSpan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "input_overflow",
+                "reconnect",
+                "epoch_change",
+                "client_slow"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "NexusSessionClosed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseNexusServerEvent"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "nexus.session.closed"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "closed",
+                "failed",
+                "expired"
+              ]
+            },
+            "cleanup_state": {
+              "$ref": "#/$defs/CleanupState"
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operation_id",
+                  "kind",
+                  "status"
+                ],
+                "properties": {
+                  "operation_id": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "asr",
+                      "tts"
+                    ]
+                  },
+                  "status": {
+                    "$ref": "#/$defs/TerminalOperationStatus"
+                  },
+                  "receipt_id": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/Identifier"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "type",
+            "status",
+            "cleanup_state",
+            "operations"
+          ]
+        }
+      ]
+    },
+    "OpenAIPcmFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "audio/pcm"
+        },
+        "rate": {
+          "const": 24000,
+          "default": 24000
+        }
+      },
+      "description": "OpenAI Realtime PCM format projection: mono PCM16 little-endian, 24 kHz."
+    }
+  },
+  "examples": [
+    {
+      "type": "session.update",
+      "event_id": "evt_config_1",
+      "session": {
+        "type": "transcription",
+        "audio": {
+          "input": {
+            "format": {
+              "type": "audio/pcm",
+              "rate": 24000
+            },
+            "transcription": {
+              "model": "asr-quality",
+              "language": "zh"
+            },
+            "turn_detection": {
+              "type": "server_vad",
+              "silence_duration_ms": 900
+            }
+          }
+        },
+        "nexus": {
+          "profile": {
+            "id": "assistant-duplex",
+            "revision": "1"
+          },
+          "asr": {
+            "finalization": "full_segment"
+          }
+        }
+      }
+    },
+    {
+      "type": "input_audio_buffer.append",
+      "event_id": "evt_audio_1",
+      "audio": "AAAAAA=="
+    },
+    {
+      "type": "nexus.tts.start",
+      "event_id": "evt_tts_1",
+      "utterance_id": "utt_demo"
+    },
+    {
+      "type": "nexus.tts.append_text",
+      "event_id": "evt_text_1",
+      "utterance_id": "utt_demo",
+      "text_seq": 1,
+      "text": "Welcome to SpeechNexus."
+    },
+    {
+      "type": "session.created",
+      "event_id": "evt_created_1",
+      "session": {
+        "id": "sess_demo",
+        "object": "realtime.transcription_session",
+        "type": "transcription",
+        "audio": {
+          "input": {
+            "format": {
+              "type": "audio/pcm",
+              "rate": 24000
+            },
+            "transcription": {
+              "model": "asr-quality",
+              "language": "zh"
+            },
+            "turn_detection": {
+              "type": "server_vad",
+              "silence_duration_ms": 900
+            }
+          }
+        },
+        "expires_at": 1792659600,
+        "nexus": {
+          "effective_configuration": {
+            "config_revision": "1",
+            "profile": {
+              "id": "assistant-duplex",
+              "revision": "1"
+            },
+            "models": {
+              "asr": {
+                "id": "asr-quality",
+                "revision": "7"
+              },
+              "tts": {
+                "id": "tts-interactive",
+                "revision": "5"
+              }
+            },
+            "voice": {
+              "id": "voice_demo",
+              "revision": "1"
+            },
+            "parameters": {
+              "asr": {
+                "language": "zh",
+                "preview_interval_ms": 600,
+                "max_segment_ms": 20000,
+                "finalization": "full_segment",
+                "final_deadline_ms": 2000,
+                "auxiliary_deadline_ms": 5000,
+                "rollback_tokens": 5,
+                "turn_detection": {
+                  "mode": "server_vad",
+                  "silence_duration_ms": 900
+                },
+                "vocabulary_set_revision": null,
+                "alignment": "off",
+                "diarization": "off"
+              },
+              "tts": {
+                "language": "zh",
+                "text_commit_mode": "explicit",
+                "audio_delivery": "chunked",
+                "speed": 1.0,
+                "instructions": null,
+                "pronunciation_revision": null,
+                "seed": null,
+                "planner": {
+                  "max_chars": 120,
+                  "max_wait_ms": 800
+                }
+              }
+            },
+            "policy_revision": "2",
+            "catalog_revision": "3"
+          },
+          "limits": {
+            "max_input_chunk_ms": 250,
+            "max_message_bytes": 65536,
+            "input_credit_samples": 48000,
+            "output_credit_samples": 48000,
+            "max_segment_ms": 20000,
+            "max_session_duration_ms": 28800000
+          },
+          "connection_url": "/v1/realtime?session_id=sess_demo"
+        }
+      }
+    },
+    {
+      "type": "input_audio_buffer.committed",
+      "event_id": "evt_committed_1",
+      "item_id": "item_1",
+      "previous_item_id": null
+    },
+    {
+      "type": "conversation.item.input_audio_transcription.completed",
+      "event_id": "evt_final_1",
+      "item_id": "item_1",
+      "content_index": 0,
+      "transcript": "欢迎使用 SpeechNexus。",
+      "usage": {
+        "type": "duration",
+        "seconds": 1.0
+      },
+      "languages": [
+        {
+          "code": "zh"
+        }
+      ]
+    },
+    {
+      "type": "nexus.operation.done",
+      "event_id": "evt_done_1",
+      "session_id": "sess_demo",
+      "seq": 13,
+      "stream_epoch": 1,
+      "sent_at": "2026-10-22T09:00:10Z",
+      "client_event_id": "evt_commit_1",
+      "operation_id": "op_asr_1",
+      "kind": "asr",
+      "status": "succeeded",
+      "cleanup_state": "complete",
+      "receipt": {
+        "receipt_id": "rcpt_demo",
+        "request_id": "req_demo",
+        "requested": {
+          "language": "zh"
+        },
+        "effective": {
+          "language": "zh",
+          "max_segment_ms": 20000
+        },
+        "observed": {
+          "sample_rate_hz": 24000
+        },
+        "missing": [],
+        "unknown": []
+      },
+      "reason": null,
+      "error": null
+    }
+  ]
+}

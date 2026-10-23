@@ -1,0 +1,1055 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus internal execution control API
+  version: 0.2.0.dev0
+  description: |
+    Authoritative internal ExecutionControlPort protocol between the scheduler /
+    workers / realtime gateway and the execution-gateway. Every engine submission,
+    status query, abort request, gateway takeover barrier, and instance drain is
+    serialized through this protocol and bound to explicit node, instance,
+    reservation, attempt, and fencing identities.
+security:
+  - ComponentBearer: []
+paths:
+  /internal/v1/executions/submit:
+    post:
+      operationId: submitExecution
+      summary: Validate lease/fencing and persist a unique submit intent before engine dispatch
+      parameters:
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitExecutionRequest"
+      responses:
+        "200":
+          description: Submit intent recorded and execution accepted or replayed idempotently.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitExecutionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Fencing token stale, gateway barrier fenced, instance generation mismatch, or conflicting submit intent.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Request payload failed schema or capability validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/executions/{submit_intent_id}:
+    get:
+      operationId: getExecution
+      summary: Query authoritative submit intent, engine execution state, output watermark, and cleanup evidence
+      parameters:
+        - $ref: "#/components/parameters/SubmitIntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: Authoritative execution state and cleanup evidence.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Submit intent not found on this gateway control store.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/executions/{submit_intent_id}/abort:
+    post:
+      operationId: abortExecution
+      summary: Request engine abort and return verified stop or quarantine cleanup evidence
+      parameters:
+        - $ref: "#/components/parameters/SubmitIntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbortExecutionRequest"
+      responses:
+        "200":
+          description: Abort processed; returns observed execution state and cleanup evidence (never fabricates stop evidence).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Submit intent not found.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "409":
+          description: Stale fencing token or incompatible execution state transition.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Abort request failed schema or identifier validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/gateways/{gateway_id}/fencing-barrier:
+    post:
+      operationId: enforceGatewayFencingBarrier
+      summary: Seal a gateway pool ingress against stale fencing tokens prior to owner takeover
+      parameters:
+        - $ref: "#/components/parameters/GatewayIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayFencingBarrierRequest"
+      responses:
+        "200":
+          description: Ingress barrier recorded and active/submitting intents enumerated for reconciliation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayFencingBarrierResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Supplied fencing token is lower than the gateway's already-enforced barrier token.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Barrier request failed schema validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+  /internal/v1/instances/{instance_id}/drain:
+    post:
+      operationId: drainEngineInstance
+      summary: Stop new dispatches to a specific engine instance generation and reconcile in-flight intents
+      parameters:
+        - $ref: "#/components/parameters/InstanceIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DrainInstanceRequest"
+      responses:
+        "200":
+          description: Instance drain state and in-flight execution summary returned.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrainInstanceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Stale fencing token or instance generation mismatch.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Drain request failed schema validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+components:
+  securitySchemes:
+    ComponentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-component-token
+      description: |
+        Per-component credential issued by the deployment. It is distinct from
+        the public shared service key and must never be accepted by public
+        speech, realtime, admin, or workbench routes. Transport TLS is a
+        deployment requirement and is not relaxed by this HTTP credential.
+  headers:
+    XRequestId:
+      description: Correlation request ID propagated across control plane hops.
+      schema:
+        type: string
+  parameters:
+    XRequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    SubmitIntentIdPath:
+      name: submit_intent_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    GatewayIdPath:
+      name: gateway_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    InstanceIdPath:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+  schemas:
+    Identifier:
+      $ref: "../shared/identifiers.schema.json#/$defs/Identifier"
+    Sha256Digest:
+      $ref: "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    PoolId:
+      $ref: "../shared/identifiers.schema.json#/$defs/PoolId"
+    ExecutionState:
+      type: string
+      enum:
+        - submitting
+        - executing
+        - stopping
+        - succeeded
+        - failed
+        - aborted
+        - unknown_quarantined
+      description: |
+        Authoritative execution state on the gateway. `submitting` and `unknown_quarantined`
+        continue to hold reserved capacity until stop evidence is confirmed.
+    CleanupState:
+      $ref: "../shared/operation-states.schema.json#/$defs/CleanupState"
+    StopEvidenceKind:
+      type: string
+      enum:
+        - none
+        - engine_abort_ack
+        - engine_terminal_response
+        - instance_terminated_by_controller
+        - operator_verified_instance_terminated
+        - unconfirmed_timeout
+    ExecutionErrorCode:
+      type: string
+      enum:
+        - stale_fencing_token
+        - gateway_barrier_fenced
+        - submit_intent_conflict
+        - instance_generation_mismatch
+        - instance_draining
+        - lease_not_active
+        - policy_or_resource_disabled
+        - engine_transport_unknown
+        - cancellation_unconfirmed
+        - execution_cleanup_pending
+        - invalid_execution_request
+        - component_credential_invalid
+    ArtifactStorageReference:
+      $ref: "./execution-command.schema.json#/$defs/ArtifactStorageReference"
+    OutputWatermark:
+      type: object
+      additionalProperties: false
+      description: |
+        Monotonic high-water summary over the authoritative interval ledger.
+        `generated_pcm_samples` and `sample_rate_hz` are authoritative; audio
+        milliseconds are derived only for reporting as
+        `floor(generated_pcm_samples * 1000 / sample_rate_hz)` and are not a
+        stored or independently mutable meter. When
+        `hard_output_ceiling_samples` is non-null it must be greater than or
+        equal to `generated_pcm_samples`.
+      required:
+        - output_stream_id
+        - generated_pcm_samples
+        - sample_rate_hz
+        - hard_output_ceiling_samples
+      properties:
+        output_stream_id:
+          $ref: "#/components/schemas/Identifier"
+        generated_pcm_samples:
+          type: integer
+          minimum: 0
+        sample_rate_hz:
+          type: integer
+          enum: [16000, 24000, 48000]
+        hard_output_ceiling_samples:
+          type: [integer, "null"]
+          minimum: 1
+    SubmitExecutionRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        The execution gateway derives the private staging namespace from
+        `workspace_id` and `submit_intent_id`. command contains the complete frozen
+        input and effective parameters. command_digest is SHA-256 over RFC 8785
+        canonical command JSON; mismatch is invalid_execution_request. Same intent
+        with a different canonical command is submit_intent_conflict. Callers cannot supply an output object
+        key, path prefix, bucket, or external URL. Input storage references must
+        identify immutable owned assets and match the command workspace.
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - workspace_id
+        - pool_id
+        - host_node_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - fencing_token
+        - command_digest
+        - command
+        - deadline_at
+        - max_output_audio_ms
+        - sample_rate_hz
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        fencing_token:
+          type: integer
+          minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        command:
+          $ref: "./execution-command.schema.json#/$defs/ExecutionCommand"
+        deadline_at:
+          type: string
+          format: date-time
+        max_output_audio_ms:
+          type: [integer, "null"]
+          minimum: 100
+          description: |
+            Hard output-audio ceiling for stages that synthesize audio. Use
+            null for ASR, alignment, and other stages that cannot emit audio.
+            The referenced manifest stage must declare `emits_audio_pcm=true`
+            for a non-null value. The gateway stores
+            `hard_output_ceiling_samples` as
+            `floor(max_output_audio_ms * sample_rate_hz / 1000)`. A manifest
+            stage that emits audio PCM rejects a null value.
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
+          description: |
+            PCM sample rate used for output metering. Required and non-null
+            exactly when `max_output_audio_ms` is non-null; null for text-only
+            stages.
+      allOf:
+        - if:
+            properties:
+              max_output_audio_ms:
+                type: integer
+            required: [max_output_audio_ms]
+          then:
+            properties:
+              sample_rate_hz:
+                enum: [16000, 24000, 48000]
+        - if:
+            properties:
+              max_output_audio_ms:
+                type: "null"
+            required: [max_output_audio_ms]
+          then:
+            properties:
+              sample_rate_hz:
+                type: "null"
+    ExecutionStateInvariants:
+      type: object
+      description: |
+        Closed execution-state to cleanup-state matrix. Active states still own
+        capacity. A successful execution has completed cleanup. A failed
+        execution may clean up without a dispatched request (`not_required`) or
+        only after verified termination (`complete`); an unknown execution must
+        use `unknown_quarantined` together with quarantined cleanup.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting, executing, stopping]
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: pending
+        - if:
+            properties:
+              execution_state:
+                const: succeeded
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: complete
+        - if:
+            properties:
+              execution_state:
+                const: failed
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                enum: [not_required, complete]
+        - if:
+            properties:
+              execution_state:
+                const: aborted
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: complete
+        - if:
+            properties:
+              execution_state:
+                const: unknown_quarantined
+            required: [execution_state]
+          then:
+            properties:
+              cleanup_state:
+                const: quarantined
+    ExecutionTerminalEvidenceInvariants:
+      type: object
+      description: |
+        Terminal status must expose evidence consistent with its result.
+        A successful execution has an engine terminal response and no error. A
+        failed execution must carry a stable error code and either have no
+        dispatched request or verified termination evidence.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting, executing, stopping]
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                const: none
+        - if:
+            properties:
+              execution_state:
+                const: succeeded
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                const: engine_terminal_response
+              error_code:
+                type: "null"
+        - if:
+            properties:
+              execution_state:
+                const: failed
+            required: [execution_state]
+          then:
+            required: [error_code]
+            properties:
+              error_code:
+                not:
+                  type: "null"
+            allOf:
+              - if:
+                  properties:
+                    cleanup_state:
+                      const: not_required
+                  required: [cleanup_state]
+                then:
+                  properties:
+                    stop_evidence_kind:
+                      const: none
+              - if:
+                  properties:
+                    cleanup_state:
+                      const: complete
+                  required: [cleanup_state]
+                then:
+                  properties:
+                    stop_evidence_kind:
+                      enum:
+                        - engine_terminal_response
+                        - instance_terminated_by_controller
+                        - operator_verified_instance_terminated
+        - if:
+            properties:
+              execution_state:
+                const: aborted
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                enum:
+                  - engine_abort_ack
+                  - engine_terminal_response
+                  - instance_terminated_by_controller
+                  - operator_verified_instance_terminated
+        - if:
+            properties:
+              execution_state:
+                const: unknown_quarantined
+            required: [execution_state]
+          then:
+            properties:
+              stop_evidence_kind:
+                const: unconfirmed_timeout
+    ExecutionCleanupEvidenceInvariants:
+      type: object
+      description: |
+        A failed execution may use `cleanup_state=not_required` only when no
+        request reached the engine. `engine_request_id` and `dispatched_at` are
+        therefore required and null for that branch; omitting either would make
+        dispatch history ambiguous and could release capacity while an engine
+        request is still active.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                const: failed
+              cleanup_state:
+                const: not_required
+            required: [execution_state, cleanup_state]
+          then:
+            required: [engine_request_id, dispatched_at]
+            properties:
+              engine_request_id:
+                type: "null"
+              dispatched_at:
+                type: "null"
+    ExecutionDispatchEvidenceInvariants:
+      type: object
+      description: |
+        Submission is persisted before an engine request. Active execution,
+        successful completion, and verified abort therefore require an observed
+        dispatch time. `submitting` and a failure that never dispatched require
+        it to be null. An unknown quarantined execution may have an ambiguous
+        dispatch outcome and keeps capacity quarantined either way.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting]
+            required: [execution_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: "null"
+        - if:
+            properties:
+              execution_state:
+                enum: [executing, stopping, succeeded, aborted]
+            required: [execution_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: string
+                format: date-time
+        - if:
+            properties:
+              execution_state:
+                const: failed
+              cleanup_state:
+                const: complete
+            required: [execution_state, cleanup_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: string
+                format: date-time
+    SubmitExecutionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - workspace_id
+        - pool_id
+        - host_node_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - voice_revision_id
+        - fencing_token
+        - command_digest
+        - deadline_at
+        - dispatched_at
+        - sample_rate_hz
+        - execution_state
+        - cleanup_state
+        - idempotent_replay
+        - recorded_at
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        fencing_token:
+          type: integer
+          minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        deadline_at:
+          type: string
+          format: date-time
+        dispatched_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            Set when the gateway starts the engine request. Null before dispatch
+            and for failures that never dispatched.
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
+        engine_request_id:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 256
+        execution_state:
+          $ref: "#/components/schemas/ExecutionState"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        idempotent_replay:
+          type: boolean
+        recorded_at:
+          type: string
+          format: date-time
+      allOf:
+        - $ref: "#/components/schemas/ExecutionStateInvariants"
+        - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
+    AbortExecutionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation_id
+        - attempt_id
+        - fencing_token
+        - reason
+        - wait_timeout_ms
+      properties:
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          enum:
+            - client_cancelled
+            - deadline_exceeded
+            - quota_exceeded
+            - resource_force_disabled
+            - gateway_takeover_reconcile
+            - stream_disconnected
+        wait_timeout_ms:
+          type: integer
+          minimum: 100
+          maximum: 60000
+    ExecutionStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - submit_intent_id
+        - lease_id
+        - operation_id
+        - attempt_id
+        - stage_id
+        - workspace_id
+        - pool_id
+        - host_node_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - binding_revision_id
+        - policy_revision_id
+        - voice_revision_id
+        - fencing_token
+        - command_digest
+        - deadline_at
+        - dispatched_at
+        - sample_rate_hz
+        - execution_state
+        - cleanup_state
+        - stop_evidence_kind
+        - updated_at
+      properties:
+        submit_intent_id:
+          $ref: "#/components/schemas/Identifier"
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        attempt_id:
+          $ref: "#/components/schemas/Identifier"
+        stage_id:
+          $ref: "#/components/schemas/Identifier"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        policy_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        voice_revision_id:
+          anyOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        fencing_token:
+          type: integer
+          minimum: 1
+        command_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        deadline_at:
+          type: string
+          format: date-time
+        dispatched_at:
+          type: [string, "null"]
+          format: date-time
+        sample_rate_hz:
+          type: [integer, "null"]
+          enum: [16000, 24000, 48000, null]
+        engine_request_id:
+          type: [string, "null"]
+        execution_state:
+          $ref: "#/components/schemas/ExecutionState"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        stop_evidence_kind:
+          $ref: "#/components/schemas/StopEvidenceKind"
+        output_watermark:
+          anyOf:
+            - $ref: "#/components/schemas/OutputWatermark"
+            - type: "null"
+          description: |
+            Null for text-only stages. Otherwise its sample_rate_hz must equal
+            the response-level sample_rate_hz and its generated_pcm_samples must
+            not exceed hard_output_ceiling_samples when that ceiling is set.
+        staging_artifact_ref:
+          anyOf:
+            - $ref: "#/components/schemas/ArtifactStorageReference"
+            - type: "null"
+        error_code:
+          anyOf:
+            - $ref: "#/components/schemas/ExecutionErrorCode"
+            - type: "null"
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - $ref: "#/components/schemas/ExecutionStateInvariants"
+        - $ref: "#/components/schemas/ExecutionTerminalEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
+    GatewayFencingBarrierRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pool_id
+        - new_owner_scheduler_id
+        - min_accepted_fencing_token
+        - abort_in_flight
+      properties:
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        new_owner_scheduler_id:
+          $ref: "#/components/schemas/Identifier"
+        min_accepted_fencing_token:
+          type: integer
+          minimum: 1
+        abort_in_flight:
+          type: boolean
+    GatewayFencingBarrierResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - gateway_id
+        - pool_id
+        - enforced_min_fencing_token
+        - barrier_sealed
+        - submitting_intent_ids
+        - executing_intent_ids
+        - quarantined_intent_ids
+        - enforced_at
+      properties:
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        enforced_min_fencing_token:
+          type: integer
+          minimum: 1
+        barrier_sealed:
+          const: true
+        submitting_intent_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+        executing_intent_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+        quarantined_intent_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+        enforced_at:
+          type: string
+          format: date-time
+    DrainInstanceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - host_node_id
+        - pool_id
+        - instance_generation
+        - fencing_token
+        - max_drain_wait_ms
+      properties:
+        host_node_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        instance_generation:
+          type: integer
+          minimum: 1
+        fencing_token:
+          type: integer
+          minimum: 1
+        max_drain_wait_ms:
+          type: integer
+          minimum: 100
+          maximum: 120000
+    DrainInstanceResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - instance_generation
+        - drain_state
+        - active_intent_count
+        - submitting_intent_count
+        - quarantined_intent_count
+        - safe_to_stop_instance
+        - updated_at
+      properties:
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        drain_state:
+          type: string
+          enum: [draining, drained, quarantined]
+        active_intent_count:
+          type: integer
+          minimum: 0
+        submitting_intent_count:
+          type: integer
+          minimum: 0
+        quarantined_intent_count:
+          type: integer
+          minimum: 0
+        safe_to_stop_instance:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              drain_state:
+                const: drained
+            required: [drain_state]
+          then:
+            properties:
+              active_intent_count:
+                const: 0
+              submitting_intent_count:
+                const: 0
+              quarantined_intent_count:
+                const: 0
+              safe_to_stop_instance:
+                const: true
+        - if:
+            properties:
+              drain_state:
+                enum: [draining, quarantined]
+            required: [drain_state]
+          then:
+            properties:
+              safe_to_stop_instance:
+                const: false
+    ExecutionControlErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - retryable
+          properties:
+            code:
+              $ref: "#/components/schemas/ExecutionErrorCode"
+            message:
+              type: string
+              minLength: 1
+            retryable:
+              type: boolean
+            observed_fencing_token:
+              type: [integer, "null"]
+            submit_intent_id:
+              type: [string, "null"]
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or revoked component credential.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ExecutionControlErrorResponse"

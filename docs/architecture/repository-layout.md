@@ -1,20 +1,32 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.1.0"
-date: 2026-10-22
+version: "0.3.2"
+date: 2026-10-23
 ---
 
 # SpeechNexus 工程目录与依赖边界
 
-本文记录仓库初始化后的实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；当前机器契约只有运营健康检查，语音与工作台业务契约仍属于 P0 待交付范围。
+本文记录仓库初始化后的实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；P0 的公共语音、实时事件、工作台、预设、音色、管理面和内部绑定 / 实例 / 资格机器契约已交付，但对应业务路由与运行时行为仍待实现。
 
 ## 1. 工作区布局
 
 ```text
 .
-├── contracts/                   公共契约与契约校验入口
-│   └── operations.openapi.yaml  当前唯一已冻结的运营协议
+├── contracts/                   公共、管理与内部契约
+│   ├── speech-openapi.yaml      OpenAI 子集与 nexus 语音 / Job / 音色
+│   ├── workbench-openapi.yaml   可选工作台应用资源
+│   ├── admin-openapi.yaml       管理面、实例、策略与审计
+│   ├── realtime-events.schema.json
+│   ├── scenario-profile.schema.json
+│   ├── voice-resource.schema.json
+│   ├── model-binding.schema.json
+│   ├── model-instance.schema.json
+│   ├── capacity-manifest.schema.json
+│   ├── qualification-report.schema.json
+│   └── internal/               执行控制、运行时控制、执行流与应用事务契约
+├── migrations/                  部署角色执行的版本化 DDL 草案
+│   └── 0001_cluster_coordination_draft.sql
 ├── backend/                     FastAPI 语音底座
 │   └── src/speechnexus_backend/
 │       ├── app.py               ASGI 组合根
@@ -35,7 +47,9 @@ date: 2026-10-22
 ├── tests/
 │   ├── contract/               契约与实现一致性
 │   ├── fake/                   确定性端口替身
-│   ├── integration/            隔离 PG / 对象存储测试
+│   ├── integration/            隔离 PG / InnoDB 协调与对象存储测试
+│   ├── fixtures/coordination/  旧 PG SQL 历史证据与事务契约样例
+│   ├── support/                双库测试原型，不供产品导入
 │   └── unit/                   领域、应用与 HTTP 单元测试
 ├── scripts/dev-env/            本机开发环境与验证脚本
 └── docs/                       产品、架构、计划与验收记录
@@ -62,7 +76,7 @@ infrastructure ─┘
 composition root ──> any layer
 ```
 
-上层可以依赖下层，下层不得导入上层。`app.py` 是例外组合根；它装配接口、readiness 服务和基础设施 adapter，但不承载业务规则。
+上层可以依赖下层，下层不得导入上层；interfaces 与 infrastructure 为独立同层，互不导入。speech 与 workbench、backend 与 gateway 由 independence 门禁约束；工作台仅使用公开协议客户端，不能导入 speech 内部模块。`app.py` 是例外组合根；它装配接口、readiness 服务和基础设施 adapter，但不承载业务规则。
 
 配置由 `pydantic-settings` 验证。缺少 PostgreSQL、对象存储探针或桶配置时进程启动失败，避免以未声明的本地路径或共享服务地址静默运行。
 
@@ -86,7 +100,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
   → 应用用例 → adapter → 契约测试 → 真实环境资格
 ```
 
-当前 `contracts/operations.openapi.yaml` 是运营健康检查的权威定义。P0 需新增语音兼容子集、增强资源、Realtime 事件、工作台、预设、音色和容量 manifest 契约。以下规则适用于每个新契约：
+`contracts/operations.openapi.yaml` 仍是运营健康检查的权威定义。P0 公共语音、实时事件、工作台、预设、音色、管理面和内部执行 / 实例 / 资格契约已交付；它们冻结协议形状，不表示业务路由已实现。完整清单与 OpenAI SDK 兼容门禁见[契约索引](../../contracts/README.md)、[OpenAI 兼容与增强边界](openai-compatibility.md)和[整体技术方案](technical-blueprint.md#3-契约与类型生成)。以下规则适用于每个新契约：
 
 1. 先定义路径、字段、状态、默认值、单位与稳定错误码。
 2. 为正例、未知字段、非法枚举和状态竞争提供样例。
@@ -101,7 +115,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 | `tests/unit` | 无外部服务 | 领域规则、应用用例、HTTP 响应与配置 |
 | `tests/contract` | 无外部服务 | OpenAPI / Schema 结构与实现路径一致性 |
 | `tests/fake` | 无外部服务 | 确定性端口替身与故障注入 |
-| `tests/integration` | 隔离 PG / MinIO | 事务、租约、outbox、对象发布与恢复 |
+| `tests/integration` | 隔离 PG / MySQL / MinIO | 受控事务、旧 PG 独立兜底、租约、outbox、对象发布与恢复 |
 
 `make verify` 还执行媒体和浏览器基础冒烟检查。它们证明本机工具链可采集与播放，不证明真实麦克风、模型质量、容量或完整业务流程。
 
@@ -119,6 +133,12 @@ pnpm install --frozen-lockfile
 make verify
 ```
 
-只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试。
+只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试；当前协调 DDL 的 PostgreSQL 行为门禁为 `make integration-test`，必须设置 `SPEECHNEXUS_TEST_DATABASE_URL` 指向本项目隔离测试库。
+
+## 8. 后续工程交接
+
+[整体技术方案](technical-blueprint.md)确定显式 SQL / 有界连接池、版本化迁移、契约类型生成、内部 HTTP / WS 控制与数据流、受限实例控制器、Web 服务端缓存及部署内观测。它们是后续实施基线，不表示当前目录已有相应实现；新增工具应在对应工作包中锁定版本并验证现有 Python / Node 工具链兼容。
+
+公共协议、内部协议、领域对象和 vendor DTO 分别维护边界转换；生成类型不进入 domain。迁移、事务 / 故障样例、fake controller 与资格包是可交接产物，不能以新建占位目录作为完成证据。工作台 LLM 仅使用本机 / 内网服务，业务内容不得出网，详见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)。
 
 [架构文档](README.md) · [项目主设计](../speechnexus-product-architecture.md) · [开发环境](../development-environment.md)

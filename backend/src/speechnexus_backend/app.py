@@ -44,7 +44,7 @@ def create_app(
     app = FastAPI(
         title="SpeechNexus operational API",
         version=__version__,
-        description="Operational endpoints only; speech contracts remain pending P0.",
+        description="Operational endpoints only; speech business routes are not implemented.",
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

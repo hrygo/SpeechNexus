@@ -1,13 +1,13 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.3.0"
-date: 2026-10-22
+version: "0.5.14"
+date: 2026-10-23
 ---
 
 # SpeechNexus 语音接口设计
 
-本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。当前为待实现的公共接口设计；P0 将其固化为 OpenAPI、JSON Schema 与契约样例。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
+本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。P0 已将本文语义固化为 `contracts/` 下的 OpenAPI、JSON Schema 与正负样例；业务路由仍待实现。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
 
 阅读入口：[REST / Job / 音色](#1-统一接口与传输契约) · [实时状态与事件](#2-实时协议与状态机) · [调用示例](#3-调用示例)
 
@@ -23,7 +23,7 @@ date: 2026-10-22
 | SpeechNexus 增强层 | 音色创作、版本 / 预设、durable Job、能力 / 资源、管理；实时 nexus 扩展 | 公开增强 DTO / SDK；不依赖工作台 |
 | 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 /v1/workbench；不宣称 OpenAI 兼容 |
 
-Realtime 只兼容本文声明的 ASR 事件和配置子集，仍需 SpeechNexus 的会话协商；不承诺任意 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。
+Realtime 提供两条连接路径：预创建 SpeechNexus 会话后使用 `session_id`，或标准 SDK 直接以 `model` 打开仅转写的兼容会话。两者都只兼容本文声明的 ASR 事件和配置子集；不承诺依赖 `response.*`、conversation history 或 tool call 的 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。完整 SDK 调用与增强边界见 [OpenAI 兼容与增强边界](openai-compatibility.md)。
 
 ```text
 SpeechCommand
@@ -61,20 +61,25 @@ SpeechCommand
 | `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、session_id、连接地址和过期时间 |
 | `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话、operation 终态与输入确认位置；首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
-| `WS /v1/realtime?session_id={session_id}` | 实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |
+| `WS /v1/realtime?session_id={session_id}` | 预创建会话的实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |
+| `WS /v1/realtime?model={model}` | OpenAI SDK 兼容的 transcription-only 模式；服务端按部署默认值建立会话，不启用 TTS / `nexus.*` 能力 |
 | `GET /v1/nexus/voices`、`GET /v1/nexus/voices/{voice_id}/revisions/{revision}` | 部署共享音色目录与版本详情，含兼容绑定与校验事实 |
 
-增强资源包括 `/v1/nexus/workspaces`、`/profile-drafts`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision，普通 PATCH 只更新草稿。
+增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
+
+资产只有在完整接收并验证后才是 `ready`，且 `bytes>0`。音频用途（`asr_input` / `voice_reference`）的 ready 资产必须同时提供大于零的 `duration_ms`、实际 `sample_rate_hz` 与 `channels`；`text_input` 不得携带这三项音频元数据。验证失败保留 `rejected` 事实，后续 Job / 音色命令不能把 staging、rejected、expired 或 deleted 资产当作可执行输入。
 
 ### 1.3 同步 REST 子集
 
 文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用；不满足时返回 422，不伪造词级时间戳。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
+非 verbose `Transcription.usage` 可按绑定真实证据使用 duration 或 token；`verbose_json.usage` 固定为 duration，以匹配 OpenAI SDK 的响应模型。不得为了展示 token 数而破坏 `verbose_json` 的可解析性。
+
 TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instructions` 与 `stream_format=audio`，具体可选参数及取值域以绑定和音色快照为准。首期标准 voice 接受已发布的字符串 ID；不宣称支持 OpenAI 托管音色或任意 voice 对象。`response_format` 默认 `mp3`，基线为 `mp3 / wav / pcm`；MP3 由有界编码步骤提供并计入 CPU、缓冲与执行预算。REST `pcm` 固定为无头、24 kHz、单声道 signed 16-bit little-endian，adapter 负责必要重采样。默认 `speed=1`；非默认 speed 和 instructions 只有绑定实际支持时才接受。其他格式及 `stream_format=sse` 不在首期兼容子集，显式请求返回 `unsupported_parameter`。禁止静默忽略参数或将默认 MP3 替换为 WAV。[OpenAI TTS 格式与默认值](https://developers.openai.com/api/docs/guides/text-to-speech)
 
-增强参数放在 TTS JSON 的 `nexus` 对象、ASR multipart 的 `nexus` JSON 字符串中：`workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`voice_revision`、`pronunciation_revision`、`overrides`、`deadline_ms`。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
+增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
 普通同步 ASR/TTS 不建立永久业务记录，也不自动保存源文件或音频。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，客户端使用相同幂等键协调结果，不能盲目新建相同意图。
 
@@ -110,11 +115,16 @@ ASR `input` 只接受所选工作空间存在、功能策略允许且为 `ready`
   "execution_revision": "exec_demo",
   "progress": {"unit": "audio_ms", "completed": 0, "total": 120000},
   "artifacts": [],
+  "result": null,
   "error": null
 }
 ```
 
-`status` 取值为 `queued | running | retry_wait | cancelling | succeeded | failed | cancelled | expired`；cleanup_state 单独报告 not_required / pending / complete / quarantined，未清理的 Operation 以引用返回。取消确认超时为 failed / cancellation_unconfirmed，资源继续隔离，旧执行清理前 retry 返回 execution_cleanup_pending。结果成功后，`artifacts` 包含受控下载引用和 `receipt_id`。输入过期或任务超过执行前队列期限，转为 `expired`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期。
+`status` 取值为 `queued | running | retry_wait | cancelling | succeeded | failed | cancelled | expired`；cleanup_state 单独报告 not_required / pending / complete / quarantined，未清理的 Operation 以引用返回。取消确认超时为 failed / cancellation_unconfirmed，资源继续隔离，旧执行清理前 retry 返回 execution_cleanup_pending。
+
+`result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期。
+
+已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 使用与 REST Job 相同的跨数组规则，服务端在写入事件前完成校验。
 
 ASR 结果使用统一 `TranscriptDocument`：`id`、`revision`、`language`、`text`、`sample_rate_hz`、`coordinate_space`、`segments`、`auxiliary_status`。segment 包含 `segment_id`、`sample_span`、`text`、`text_revision`，以及可选 `words`、`speaker_assignments`。统一坐标为 `canonical_audio`、24 kHz，原文件解码 / 重采样映射的 revision 进入 receipt；不能把原文件 48 kHz 下标直接填入 sample_span。`auxiliary_status` 分别声明 alignment / diarization 的 `not_requested | pending | complete | failed | unavailable`。不把 segment 平均时长伪造成 word timestamps；未知说话人为 null / unknown。
 
@@ -123,6 +133,12 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 ### 1.5 能力协商与版本
 
 能力快照包含 `snapshot_id`、`catalog_revision`、`policy_revision`、生成时间、逻辑模型绑定、参数域、音色 revision、预设 revision、格式、辅助能力及限制。readiness 分别报告配置完整、引擎就绪、质量资格、当前可准入状态；`available` 不等于业务生产质量已通过。
+
+绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
+
+模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
+
+场景预设采用同样的不可变 revision / 当前指针分离规则。`POST /v1/nexus/admin/profiles` 以 `expected_latest_revision` 原子分配下一个只读 draft revision；draft 可以没有验证记录，但公共列表与公共 revision 查询不可见。`POST .../revisions/{revision}/publications` 必须提交与目标 revision 对应的 `ProfileValidation`，服务端重新核对参数域、能力组合、override 范围和 production 资格后，才写 `published_at` 并切换当前指针。回滚使用 `.../activations` 激活既有 published revision，不复制或改写 revision；退役 / 禁用使用 `.../retirements`，当前 revision 退役后指针为空，不静默选择另一版本。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 
 快照按部署、工作空间、catalog 与功能策略生成；ETag 与缓存键包含这些 revision，不混用不同部署配置。配置了外部网关或共享服务密钥时，入口检查先于 304。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 
@@ -134,7 +150,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 {
   "error": {
     "code": "capacity_unavailable",
-    "type": "resource_error",
+    "type": "api_error",
     "message": "当前实时容量已满，请稍后重试。",
     "param": null,
     "request_id": "req_demo",
@@ -158,9 +174,13 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 列表统一 `data`、`has_more`、`next_cursor`，按 `(created_at,id)` 排序；page limit 为 1–100，默认 50。游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
-创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
+`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.succeeded` 至少携带一个 committed Artifact 和与 Job kind 匹配的结构化 `result`，与 REST Job 终态使用同一判别规则；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
-同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及成功 receipt，绝不再次执行。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
+工作台终态还要求产物自洽：MinutesJob `succeeded` 至少提供非空 `minutes_text` 或 `artifact_id`，非成功状态只可保留明确的部分文本，不得发布成品 `artifact_id`；AssistantTurn `succeeded` 必须有非空 `output_text`；RenderUnit `generating` 必须带 `speech_job_id`，`ready` 还必须同时带 `source_artifact_id` 与 `source_receipt_id`；Meeting 的 `sealed` / `minutes_pending` / `minutes_ready` 必须带 seal revision 与结束时间，后两者还必须带 `minutes_id`。Meeting 的 `failed` 表示封存前的采集失败，必须带结束时间和结构化 `error`，且不得携带 seal revision 或 minutes 引用；纪要任务失败保留在 `minutes_pending` 并通过所引 MinutesJob 的结构化错误呈现，不把整个会议改判为采集失败。从语音 Artifact 导入转写、保存副本或 render unit 时必须同时固定 Artifact ID 与 receipt，saved asset 的 receipt 不可为空；非 succeeded 的 ExportJob 不得携带成品 Artifact，显式导出子集不得为空。这些约束不替代跨资源校验，服务端仍须确认 source receipt 等于 Artifact 的 receipt、source Artifact 属于目标项目工作空间、MinutesJob 成功、单元副本已保存且版本一致后才能宣称整书可导出。
+
+创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 `error.nexus.operation_id`；查询路径固定为 `GET /v1/nexus/operations/{operation_id}`。
+
+同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及 `error.nexus.operation_id`、`error.nexus.receipt` 中的原成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
 
 作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 创建新 Job 与新 key，旧 Job 保持原终态。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
 
@@ -184,7 +204,7 @@ Job 入口的音色 body 使用 kind、可选 workspace_id / client_reference、
 
 preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 必填 text，validation 使用能力矩阵中已冻结的测试集 revision，model 默认沿用候选绑定。便捷入口将 path 中的 draft_id 与 body 中的 expected_draft_revision 规范化为相同引用；preview / validation body 另带 text 或 validation_set_revision，不能隐式使用“当前最新”候选。草稿 GET 支持 draft_revision 查询；历史配方、候选和校验可追溯，不覆盖旧 revision。
 
-成功创作任务在 result 返回 voice_draft_id / draft_revision / preview_artifact_ids；preview 返回试听 Artifact，validation 返回 validation_id / validation_set_revision / checks / publication_eligible 与绑定 / 候选 revision。候选、校验引用、Artifact 与 Job 成功状态按 [作业与产物发布](runtime-governance.md#22-作业与产物发布) 的同一提交规则写入，不让半发布结果可见；未发布候选不进入生产音色目录。
+成功创作任务在 result 返回 voice_draft_id / draft_revision / preview_artifact_ids；preview 返回试听 Artifact，validation 返回 validation_id / validation_set_revision / checks / publication_eligible 与绑定 / 候选 revision。每个 check 显式标记 `required` 且名称在单个校验内唯一；只有所有 required check 均为 `passed`，且其中包含 required、passed 的 `reusable_tts` 检查时，`publication_eligible` 才能为 true。optional check 的 skipped 不冒充整体验证通过，`status=failed` 必须至少有一个 failed check。候选、校验引用、Artifact 与 Job 成功状态按 [作业与产物发布](runtime-governance.md#22-作业与产物发布) 的同一提交规则写入，不让半发布结果可见；未发布候选不进入生产音色目录。
 
 描述设计示例：
 
@@ -227,7 +247,7 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 }
 ```
 
-每个 draft_revision 的状态为 `draft → generating → candidate → validating → validated → published`，失败保留原因；生成配方与候选字节不可变。PATCH 修改声音描述、样本、参考正文、预览文本或绑定返回 `422 unsupported_parameter`，这些修改必须调用 generations 创建新 revision。新 head 在重新生成 / 校验前不能发布，旧校验不能满足新 revision；旧候选、旧校验和已经发布的 VoiceRevision 保留历史事实。新 head 与旧 validation 同时完成时，只更新各自 revision，不让迟到结果覆盖 head。试听与机器校验不自动构成发布确认。publication 固定当前 head 的 expected_draft_revision、对应 validation_job_id、素材 / 绑定和未过期资格；head 已变化返回 `409 configuration_changed`。每个草稿 revision 最多一次发布，初次建立 voice_id，后续发布追加同一 voice_id 的不可变 revision；重复发布返回原结果或明确冲突，不重复建立目录项。首期 manual_confirmation 是显式内容确认，不能证明审核者与创作者是两个人。
+每个 draft_revision 的状态为 `draft → generating → candidate → validating → validated → published`，失败保留原因；生成配方与候选字节不可变。`generating` 必须引用生成 Job 且尚无预览；`candidate` 必须有生成 Job 和至少一个试听 Artifact；`validating` / `validated` / `published` 还必须引用校验 Job 并保留候选期已产生的预览引用；只有 `published` 可以携带发布 Voice ID / revision，且该状态必须同时具备生成、校验和发布引用。`failure` 只允许出现在 `failed`，失败 revision 不能携带发布引用。PATCH 修改声音描述、样本、参考正文、预览文本或绑定返回 `422 unsupported_parameter`，这些修改必须调用 generations 创建新 revision。新 head 在重新生成 / 校验前不能发布，旧校验不能满足新 revision；旧候选、旧校验和已经发布的 VoiceRevision 保留历史事实。新 head 与旧 validation 同时完成时，只更新各自 revision，不让迟到结果覆盖 head。试听与机器校验不自动构成发布确认。publication 固定当前 head 的 expected_draft_revision、对应 validation_job_id、素材 / 绑定和未过期资格；head 已变化返回 `409 configuration_changed`。发布记录回显 `validation_job_id` 与 `validation_id`，生产者必须确认该 Job 已成功返回同一 draft / revision / validation，且 validation 已 passed、publication_eligible，再原子写入 draft revision、VoicePublication、VoiceRevision 和目录指针。VoiceRevision 与 validation 的 model binding 必须一致，其 source 必须指向同一 draft revision；design 不能携带来源音频摘要，clone 必须携带参考资产摘要，builtin 不带 draft 来源。每个草稿 revision 最多一次发布，初次建立 voice_id 和 revision 1，后续发布在已有 voice_id 上分配严格递增且连续的下一个 revision；重复发布返回原结果或明确冲突，不重复建立目录项。首期 manual_confirmation 是显式内容确认，不能证明审核者与创作者是两个人。
 
 VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本 / 语言能力、验证结果及私有 backend_voice_handle；公开结果不返回特征向量、任意文件路径或引擎内部句柄。调用 TTS 时仍检查音色与模型绑定兼容性，不把任意后端音色资产宣称为跨模型通用。
 
@@ -241,6 +261,8 @@ VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本
 
 创建会话时提交可选 workspace_id / client_reference、profile、modalities（asr、tts 或两者）、逻辑模型和输出需求。REST 校验部署入口、参数、资源状态、版本与能力，固定配置并建立 created 会话，30 秒内未连接即过期；此时不占推理槽。
 
+标准 OpenAI Realtime SDK 可省略 REST 会话创建，直接连接 `/v1/realtime?model={model}`。该兼容模式只建立 transcription-only 会话，使用部署默认工作空间、ASR 预设和音频格式；连接握手时完成准入并返回标准 `session.created`。它不接受 TTS、nexus 假设 / 辅助事件或双工能力。需要固定 profile、workspace、音色或 TTS 时，调用方必须先创建 nexus 会话。`session_id` 与 `model` 互斥，同时提供返回 400，两者都不进入 URL 作为凭据。
+
 首期浏览器无登录 cookie、access token 或用户会话，使用同源入口并校验 WebSocket Origin / Host；SDK 直接连接部署地址。若部署选择共享服务密钥，SDK 使用 Authorization Bearer，浏览器经同源部署代理注入服务端凭据。密钥不进入 URL、页面包、localStorage、日志或 WS 子协议。session_id 只用于路由；连接时检查存在性、工作空间、过期和是否已有活跃连接，不把它当作用户所有权或隐式秘密。
 
 WS 建立后进入 `admitting`，原子申请所需资源；最多等待已批准的实时等待预算。只有分配成功才发送 `session.created` 与 `nexus.session.ready`。失败发送结构化错误并关闭，不让客户端持续发送无人消费的音频。会话状态为：
@@ -252,11 +274,13 @@ created → admitting → active → draining → closed
 
 用户关闭时默认 drain 已接受的段与 TTS，`mode=abort` 则取消全部 operation；超过 drain deadline 进入失败清理。session terminal 记录保存 15 分钟供调用方协调，实时 PCM 与音频块不因此保留。
 
+会话 REST 投影必须让生命周期与清理事实同时可判定：`created` / `admitting` 返回非空 `connection_url`、`cleanup_state=not_required`、无终态 operation、`closed_at=null`；`active` / `draining` 仍返回连接地址但 `cleanup_state=pending`。`closed` / `failed` / `expired` 的 `connection_url` 为 null 且 `closed_at` 非空；`expired` 固定 `cleanup_state=not_required` 且没有终态 operation。`failed` 必须带结构化 `error`，其余状态 `error=null`；失败前后资源清理仍分别使用 not_required / pending / complete / quarantined，不由会话状态替代。终态 operation 的 `succeeded` 必须引用 receipt；`cancelled` 仍只允许 not_required / complete。`terminal_operations` 中的 operation_id 必须唯一，且每条引用必须解析为同一 session_id 的 Operation；kind、status、cleanup_state 与成功 receipt id 必须和 Operation 投影完全一致。生产者不能在会话中嵌入其他会话或仅存在于事件中的临时 Operation。
+
 ### 2.2 标准子集与命名空间
 
 ASR 客户端事件仅支持 `session.update`、`input_audio_buffer.append`、`input_audio_buffer.commit`、`input_audio_buffer.clear`。ASR 服务端事件支持 `session.created`、`session.updated`、`input_audio_buffer.committed`、`input_audio_buffer.cleared`、可用时的 `input_audio_buffer.speech_started` / `input_audio_buffer.speech_stopped`、`conversation.item.input_audio_transcription.delta`、`conversation.item.input_audio_transcription.completed`、`conversation.item.input_audio_transcription.failed` 与 `error`。下文 completed / failed 在明确 ASR 语境中是上述完整名称的简称。[官方事件参考](https://developers.openai.com/api/reference/resources/realtime/server-events)
 
-`session.update` 仅接受声明的 transcription 字段：`session.type=transcription` 及 `session.audio.input` 下的 `format`、`transcription`、`turn_detection`；PCM 投影为 `{type: "audio/pcm", rate: 24000}`。与 `nexus.session.update` 映射到同一个配置命令，禁止两套配置状态。首期 active 会话仅允许 ASR 策略白名单在下一段边界变更，固定模型、音色、格式 / 采样率与 TTS 配方不可热换；标准事件未带 expected revision 时由单连接内串行命令按当前 revision 处理。回显实际 config_revision 与生效段，尚未生效的值不能用于当前段。P0 固化字段 schema，不接受未声明的 `response.*`、conversation history 或 tool call 事件。[官方客户端字段](https://developers.openai.com/api/reference/resources/realtime/client-events)
+`session.update` 仅接受声明的 transcription 字段：`session.type=transcription` 及 `session.audio.input` 下的 `format`、`transcription`、`turn_detection`；PCM 投影为 `{type: "audio/pcm", rate: 24000}`，与当前 OpenAI Realtime transcription session 形状一致。`session.created` / `session.updated` 回显 `object=realtime.transcription_session` 的同一形状，并把绑定、profile、limits 与 config revision 放在可选 `nexus` 对象。与 `nexus.session.update` 映射到同一个配置命令，禁止两套配置状态。首期 active 会话仅允许 ASR 策略白名单在下一段边界变更，固定模型、音色、格式 / 采样率与 TTS 配方不可热换；标准事件未带 expected revision 时由单连接内串行命令按当前 revision 处理。回显实际 config_revision 与生效段，尚未生效的值不能用于当前段。P0 固化字段 schema，不接受未声明的 `include`、`response.*`、conversation history、semantic VAD 或 tool call 事件。[官方客户端字段](https://developers.openai.com/api/reference/resources/realtime/client-events)
 
 `commit` 表示关闭当前输入段并请求其最终结果；`clear` 只丢弃尚未提交的输入缓冲，不撤销已接受的 operation。重复 commit 用客户端 event_id 去重，无新音频且不是已知重试时返回 `empty_audio_buffer`。有实际音频但无语音时，最终 transcript 可以为空，reason 为 `no_speech`。
 
@@ -283,14 +307,16 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |
 | C→S `nexus.tts.cancel` | `event_id`、`utterance_id`；请求取消对应计算与发送 |
 | S→C `nexus.tts.audio.delta` | `operation_id`、`utterance_id`、`chunk_seq`、`audio`（Base64 PCM）、`start_sample`、`sample_count` |
-| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=completed/cancelled/failed`、receipt、error / reason；唯一逻辑终态 |
+| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`、receipt、error / reason；唯一逻辑终态。`cancelled` 只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined` |
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的 sample_span / 原因；不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态及未成功 operation 的引用 |
 
-所有 server event 附 `event_id`、连接内递增 `seq`、`session_id`、`stream_epoch` 和时间；与命令有关的事件附 `client_event_id`，与执行有关的事件附 `operation_id`。nexus 客户端命令必带 event_id；标准 ASR 事件可省略，但省略时不能安全重发 append。带 event_id 的命令在会话生命周期内唯一，重复同内容返回原接受结果，重复不同内容拒绝。术语 `S→C` 和 `C→S` 只描述传输方向。
+标准 OpenAI ASR server event 只保留 OpenAI 声明的字段（`event_id`、`item_id`、`content_index` 等），不附加 SpeechNexus 私有 envelope；客户端用 `item_id` 关联同一段的 completed / failed，通过 `nexus.operation.done` 取得整体 Operation 身份。所有 `nexus.*` server event 附 `event_id`、连接内递增 `seq`、`session_id`、`stream_epoch` 和时间；与命令有关的事件附 `client_event_id`，与执行有关的事件附 `operation_id`。nexus 客户端命令必带 event_id；标准 ASR 事件的 event_id 可省略，但省略时不能安全重发 append。带 event_id 的命令在会话生命周期内唯一，重复同内容返回原接受结果，重复不同内容拒绝。术语 `S→C` 和 `C→S` 只描述传输方向。
 
-ASR 的正文终态与整个 Operation 终态分层：completed / failed 只确定该 segment 的声学正文；`nexus.operation.done` 确定含 required 辅助工作的整体执行。SDK 用 operation_id / item_id 关联，不能把“正文已定稿”直接当作“所有所需结果已完成”。ASR 取消使用 `nexus.operation.done(cancelled)`；已经发布的正文成功事实保留，不再补发与其矛盾的 transcription.failed。ASR 标准事件必须包含与扩展 segment 对应的 item_id 和 content_index。
+标准 `conversation.item.input_audio_transcription.completed` 携带 OpenAI 形状的 `usage`：默认使用已接受段的样本时长生成 `{"type":"duration","seconds":...}`；只有绑定提供真实 token 证据时才允许 `{"type":"tokens",...}`。不得用估算 token 数或虚构 logprob 填充。`delta` 仅在具备稳定前缀证据时发送；`nexus.transcription.hypothesis` 才是可替换的完整预览。
+
+ASR 的正文终态与整个 Operation 终态分层：completed / failed 只确定该 segment 的声学正文；`nexus.operation.done` 确定含 required 辅助工作的整体执行。标准事件通过 item_id 关联，nexus 客户端再用 `nexus.operation.done` 的 operation_id 关联整体执行，不能把“正文已定稿”直接当作“所有所需结果已完成”。ASR 取消使用 `nexus.operation.done(cancelled)`；已经发布的正文成功事实保留，不再补发与其矛盾的 transcription.failed。ASR 标准事件必须包含与扩展 segment 对应的 item_id 和 content_index。
 
 同一会话最多有一个活跃 TTS utterance；它可以包含多个冻结文本单元，但各单元必须按文本顺序交付音频。新 start 须等待前一 utterance 的 operation.done；取消后可立即停止浏览器播放，新的计算仍须等待旧租约确认释放。utterance 状态为 `accepting → rendering → draining → completed`，任意未终结状态可进入 `stopping → cancelled/failed`。重复相同 text_seq / 内容去重，不连续序号或同序号不同内容返回冲突。
 
@@ -353,13 +379,13 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
     "profile_id": "speech-interactive",
     "profile_revision": "1",
     "voice_revision": "3",
-    "overrides": {"tts": {"audio_delivery": "chunked"}},
+    "overrides": {"tts": {"audio_delivery": "complete"}},
     "deadline_ms": 10000
   }
 }
 ```
 
-REST 的完整 input 在请求接受时一次性冻结。成功返回二进制 PCM，Content-Type 与协商 descriptor 在响应头回显，X-Request-ID / X-Operation-ID 供协调；中途失败不能再改 HTTP status，客户端据传输结束与 operation receipt 判断是否完整。需要明确事件化完成语义时使用实时接口，需要可恢复完整音频时使用 Job。
+REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能为 `complete`。成功返回二进制 PCM，Content-Type 与协商 descriptor 在响应头回显，X-Request-ID / X-Operation-ID 供协调；中途失败不能再改 HTTP status，客户端据传输结束与 operation receipt 判断是否完整。需要持续分块交付时使用实时接口，需要可恢复完整音频时使用 Job。
 
 同步 ASR 使用 multipart 的 `file`、`model=asr-quality`、`language=zh`、`response_format=json`；`nexus` 部分按 [同步 REST 子集](speech-api.md#13-同步-rest-子集) 传入相同工作空间与预设信息。file 是上传内容，不是服务器文件路径。成功 JSON 至少包含 text；完整原生结果与辅助状态通过 Job 的 TranscriptDocument 获取，不随意改变兼容子集响应形状。
 
@@ -480,3 +506,7 @@ finish_text 不重新合成已经 commit 的文本，只关闭输入并提交未
 ```
 
 生成失败时 revision=2 保留失败事实；修正后重新生成建立 revision=3。同一 Job 的受限自动重试仍执行 revision=2 的固定配方，全部 attempt 结束后才形成该 revision 的最终生成结果。对失败 voice_design / voice_clone 调用显式 `/jobs/{job_id}/retries`，以新 key 原子创建新 Job 与下一 draft_revision，复制失败任务的固定声音配方；仅当当前 head 仍等于该失败 revision 且无活跃生成时接受，否则返回 configuration_changed。旧候选、旧校验和已发布 voice 版本不被覆盖。
+
+
+主动删除、依赖预检、明确级联与恢复后的删除账本重放使用[数据删除协议](data-deletion.md)，
+不可用 retirement、TTL、archive 或取消完成代替内容删除。

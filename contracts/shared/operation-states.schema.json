@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/operation-states.schema.json",
+  "title": "SpeechNexusOperationStates",
+  "description": "Single source of truth for public Operation result states and cleanup states. Result state is terminal and must never encode resource cleanup: failed with cleanup_state=quarantined is a failed result whose capacity is still held.",
+  "$defs": {
+    "OperationStatus": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "TerminalOperationStatus": {
+      "type": "string",
+      "enum": [
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "description": "Terminal subset of OperationStatus. A failed operation may still have cleanup_state=pending or quarantined."
+    },
+    "CleanupState": {
+      "type": "string",
+      "enum": [
+        "not_required",
+        "pending",
+        "complete",
+        "quarantined"
+      ]
+    }
+  }
+}

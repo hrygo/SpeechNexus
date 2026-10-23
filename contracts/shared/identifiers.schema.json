@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/identifiers.schema.json",
+  "title": "SpeechNexusSharedIdentifiers",
+  "description": "Single source of truth for opaque identifiers, revisions, digests, and the logical resource-pool enum shared by public and internal contracts.",
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "EventSequence": {
+      "$ref": "#/$defs/Revision",
+      "description": "Monotonic decimal SSE event sequence used as Last-Event-ID."
+    },
+    "Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    }
+  }
+}

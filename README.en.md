@@ -1,64 +1,147 @@
-# SpeechNexus
+# SpeechNexus · Acoustic Hub (声枢)
 
-[简体中文](README.md)
+![SpeechNexus · Acoustic Hub — Self-Hosted Speech Engine & Studio](web/shared/src/assets/brand-banner.svg)
 
-SpeechNexus is an enterprise speech service foundation, primarily using vLLM / vLLM-Omni on Linux. Its backend provides declared OpenAI-compatible subsets for real-time and offline ASR/TTS, plus enhanced protocols such as voice creation. The WebUI has two surfaces: an **AdminUI** for deployment maintenance and a **personal speech workbench** for different speech tasks.
+**Self-hosted speech engine and voice creation studio**
 
-Current stage: **engineering bootstrap**. The repository now has buildable
-FastAPI service and execution-gateway processes, two Web entry shells, and
-PostgreSQL / object-storage readiness checks. Speech, voice, job, realtime, and
-workbench business contracts remain pending P0; documented performance and
-capacity targets have not been implemented or validated.
+[简体中文](README.md) · [Features](#features-and-use-cases) · [Quick start](#quick-start) · [Documentation](docs/README.md) · [Feedback](https://github.com/hrygo/SpeechNexus/issues)
+
+[![CI](https://github.com/hrygo/SpeechNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/hrygo/SpeechNexus/actions/workflows/ci.yml)
+
+SpeechNexus is for teams that want to deploy speech capabilities in their own Linux environment. The product brings together a **speech API, an AdminUI, and a personal speech workbench**. Its goal is to connect speech recognition, synthesis, voice creation, and everyday speech tasks: developers integrate through APIs, users work in the browser, and maintainers manage services and resources.
+
+> **Early development.** You can currently launch AdminUI and workbench previews and call service health endpoints. Transcription, synthesis, voice creation, and workbench business workflows are not yet available. The features below describe the product roadmap; real models and production deployments remain unverified.
+
+## Who it is for
+
+SpeechNexus is designed for three needs:
+
+- **Add speech to applications**: use a common API for file and realtime recognition, synthesis, and voice resources. The speech foundation can run independently of the WebUI and LLM integration.
+- **Complete speech tasks in the browser**: capture, edit, preview, resume, and export work across transcription, dubbing, meetings, captions, and audiobooks.
+- **Operate services in your own environment**: manage model services, scenario presets, shared voices, tasks, and resources, with local speech inference and optional intranet LLM integration.
+
+## Features and use cases
+
+| Feature                            | What you can use it for                                                                                           |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Speech recognition                 | Upload recordings or stream audio to produce editable transcripts, captions, and optional speaker labels          |
+| Speech synthesis                   | Turn text into speech using preset or published voices, with file generation and realtime output                  |
+| Voice creation                     | Design a voice from a description or clone a reference sample, then preview, validate, publish, and reuse it      |
+| Meetings and live captions         | Follow transcripts, mark key points, save records, and optionally generate meeting notes with an intranet LLM     |
+| Voice assistants and teleprompters | Combine recognition, text generation, and synthesis for voice interactions, or follow a script as you speak       |
+| Audiobook production               | Import manuscripts, organize chapters and characters, assign voices, generate chapters, redo sections, and export |
+
+Long-running tasks are planned to support progress tracking, cancellation, recovery, and downloads. Scenario presets will let users reuse recognition, review, and synthesis settings. See the [product design (Chinese)](docs/speechnexus-product-architecture.md) for the full scope.
+
+## Ways to use SpeechNexus
+
+### Complete tasks in the workbench
+
+The workbench organizes actions around tasks. Once business features are available, typical workflows will be:
+
+- **Transcribe a recording**: upload audio → choose a language and preset → follow progress → edit the text → export a transcript or captions.
+- **Create a voiceover**: enter text → choose a voice → generate and preview → revise the content → export audio.
+- **Create a voice**: submit a description or reference sample → generate candidates → preview and validate reuse → confirm publication → use it for future voiceovers.
+
+### Integrate through the API
+
+The P0 contracts freeze an OpenAI Audio-compatible subset plus `nexus` interfaces for voices, durable tasks, and scenario presets for applications, SDKs, and MCP callers. A standard OpenAI SDK can point `base_url` at the deployment's `/v1`. Realtime supports a transcription-only `model` connection mode and pre-created nexus sessions; both cover only the declared event subset.
+
+The currently available runtime endpoints are `/healthz` and `/readyz`; speech and workbench routes are not implemented yet. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
+
+Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not implemented as runtime routes.
+
+Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-cluster-coordination-and-storage-portability.md) excludes etcd and moves cross-table rules into controlled application transactions to reduce database coupling. PostgreSQL is the only database targeted for official product support; MySQL/InnoDB is limited to validating key coordination behavior. [Simplified DDL, application transaction design and contracts (Chinese)](docs/architecture/coordination-transactions.md) are delivered, with a shared test prototype on real PG/InnoDB. Production integration and full cluster fault qualification remain pending; see the [refactoring plan (Chinese)](docs/plans/2026-10-23-cluster-coordination-refactor.md).
+
+### Maintain a deployment through AdminUI
+
+AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.
 
 ## Quick start
 
+Preview the current version with Docker Compose. You will need Git, Docker, and the Compose plugin.
+
+### 1. Get the source and prepare configuration
+
 ```bash
-make dev-bootstrap
+git clone https://github.com/hrygo/SpeechNexus.git
+cd SpeechNexus
+cp deploy/compose.env.example deploy/compose.env
+```
+
+Edit `deploy/compose.env` to replace the example PostgreSQL and MinIO passwords. If you have enabled the native development environment, run `make dev-down` first to avoid database and object-storage port conflicts.
+
+### 2. Build and start
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -d
+```
+
+Once the services are running, open:
+
+| Entry                     | Address                         | Currently available                                 |
+| ------------------------- | ------------------------------- | --------------------------------------------------- |
+| AdminUI                   | <http://127.0.0.1:8080>         | Admin interface preview and capability status notes |
+| Personal speech workbench | <http://127.0.0.1:8081>         | Workbench preview and task scope notes              |
+| Speech service            | <http://127.0.0.1:8000/healthz> | Process liveness check                              |
+
+This startup does not load speech models. Check infrastructure readiness with:
+
+```bash
+curl --fail http://127.0.0.1:8000/readyz
+```
+
+### 3. Stop services
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml down
+```
+
+This preserves the database and object-storage volumes. See the [deployment guide](deploy/README.md) for configuration, the full port list, and deployment boundaries.
+
+## Deployment and data
+
+The initial scope is a shared deployment within a trusted network, without login, role permissions, or tenant isolation. **Users of a deployment share its data.** “Personal workbench” describes the task experience, not a private user space. The operator controls access through the deployment network and entry point.
+
+The product design requires local speech inference and keeps business audio, transcripts, manuscripts, voice references, and derived content within the deployment network. LLM integration for assistants and meeting notes is optional, disabled by default, and restricted to deployment-approved local / intranet services, with no public-cloud fallback. LLM integration and full egress restrictions remain unimplemented; see the [network boundary decision (Chinese)](docs/decisions/0003-workbench-llm-network-boundary.md).
+
+## Roadmap
+
+- [x] Runnable services, health checks, and two Web entry previews.
+- [ ] File and realtime recognition, synthesis, and model integration.
+- [ ] Voice design, cloning, validation, publication, and durable tasks.
+- [ ] Workbench transcription, dubbing, and AdminUI business features.
+- [ ] Meetings, captions, assistants, teleprompters, and audiobook workflows.
+- [ ] Real-model quality, capacity, recovery, and production deployment validation.
+
+See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md) for stages and dependencies, and the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for the preferred model and engine validation path.
+
+## Documentation
+
+| I want to learn about                | Start here                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| Product scope and complete workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md)      |
+| API compatibility and planned usage  | [Speech API design (Chinese)](docs/architecture/speech-api.md)            |
+| Deployment, ports, and configuration | [Deployment guide](deploy/README.md)                                      |
+| Native development and testing       | [Development environment (Chinese)](docs/development-environment.md)      |
+| Architecture and implementation      | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md) |
+| All designs and decisions            | [Documentation index (Chinese)](docs/README.md)                           |
+| Cluster architecture and single-node MVP | [Cluster-ready deployment decision (Chinese)](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
+
+## Contributing
+
+Use [Issues](https://github.com/hrygo/SpeechNexus/issues) to report problems, share use cases, or discuss features. Pull requests are welcome. Include your environment, reproduction steps, and expected behavior when reporting a problem; leave out credentials and private audio.
+
+Native development uses Python 3.14 / uv and Node 26 / pnpm 12. Follow the [development environment guide (Chinese)](docs/development-environment.md) to prepare your setup. Run checks appropriate to your changes before submitting; the full native verification command is:
+
+```bash
 make verify
 ```
 
-`make dev-bootstrap` initializes the isolated database, object store, locked
-Python / Node dependencies, and browser. On a machine whose development services
-already exist, run `make install && make verify`. Start the foundation and Web
-entries in separate terminals with `make api-dev`, `make gateway-dev`, and
-`make web-dev`.
+See [AGENTS.md (Chinese)](AGENTS.md) and the [repository layout guide (Chinese)](docs/architecture/repository-layout.md) for engineering rules and validation requirements.
 
-`make stack-config` validates the Compose development topology; see the
-[deployment bootstrap](deploy/README.md). The available endpoints are
-`/healthz`, `/readyz`, and the two interface shells, not speech business APIs.
+## License and acknowledgments
 
-## Engineering baseline
+The repository does not currently include a project `LICENSE` file. Model weights, third-party dependencies, and voice materials require separate license review.
 
-- Python 3.12 uses a `uv` workspace with separate `src/` packages, strict typing,
-  enforced dependency direction, and independent entry points for the backend
-  and execution gateway.
-- React 19, TypeScript 6, and Vite 8 use a `pnpm` workspace. AdminUI, workbench,
-  and shared components build separately with centralized dependency versions.
-- Public contracts live in `contracts/`. Only operational health is currently
-  frozen; unreviewed speech protocols are not invented ahead of P0.
-- Unit, contract, fake, and integration test boundaries are separated. CI checks
-  Python, Web, and Compose configuration.
-- The initial scope has no login, user directory, RBAC, or multi-tenancy. The UI
-  and documentation state that data is shared within the deployment.
-
-## Product direction
-
-- Deploy the foundation independently for SDKs, MCP and external applications, without requiring a WebUI or LLM.
-- Add voice design, cloning, previews, validation and version publication, alongside presets, durable jobs, resource scheduling and diagnostics.
-- Use the AdminUI for model services, presets, resource pools, jobs and operations; use the workbench for transcription, dubbing, voice creation, meetings, assistants, teleprompters, captions and audiobooks.
-- **Do not build a user identity or authentication system in the initial scope.** Login, user directories, roles and multi-tenancy are not prerequisites. Deployment data is shared; a personal workbench does not imply private per-user storage.
-- Define hardware-independent capabilities and capacity manifests, and qualify quality, concurrency, recovery and service targets on actual deployments.
-
-## Design and roadmap
-
-- [Product and architecture design (Chinese)](docs/speechnexus-product-architecture.md): compatible and enhanced protocols, voice creation, both WebUI surfaces, scenario presets, initial access boundaries and scheduling.
-- [Repository layout and dependency boundaries (Chinese)](docs/architecture/repository-layout.md): workspace layout, dependency direction, contract workflow, test layers and validation commands.
-- [Confirmed product boundaries and identity scope (Chinese)](docs/decisions/0001-product-boundaries-and-authentication-scope.md).
-- [Phased implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md): P0 contracts, P1 independent foundation, P2 both WebUI surfaces, P3 real-time applications, P4 audiobooks and P5 production qualification. Identity is a separate future initiative.
-- [Design review record (Chinese)](docs/audits/2026-10-22-speechnexus-design-review.md): issue decisions, upstream evidence, documentation checks and remaining runtime validation.
-- [Development environment (Chinese)](docs/development-environment.md): local toolchain, isolated services, media and headless browser checks.
-- [Development environment readiness review (Chinese)](docs/audits/2026-10-22-development-environment-readiness.md): verified capabilities, isolation boundary and remaining inference gaps.
-- [Deployment bootstrap](deploy/README.md): Compose development topology, ports, configuration authority and boundaries.
-- [Documentation index](docs/README.md).
-
-SpeechNexus is an independent project inspired by the product and architecture experience of [SpeechRail](https://github.com/hrygo/SpeechRail). Any source reuse must be reviewed against the [reuse boundaries (Chinese)](docs/architecture/speechrail-reuse.md) and the original license.
+SpeechNexus is an independent project inspired by the product and architecture experience of [SpeechRail](https://github.com/hrygo/SpeechRail). See the [SpeechRail reuse boundaries (Chinese)](docs/architecture/speechrail-reuse.md) for attribution and reuse requirements.

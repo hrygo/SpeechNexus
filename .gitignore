@@ -79,6 +79,7 @@ tmp/
 .vscode/
 .fleet/
 .history/
+.workbuddy-ai/
 *.swp
 *~
 *.code-workspace

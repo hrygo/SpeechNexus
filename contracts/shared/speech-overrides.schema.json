@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/speech-overrides.schema.json",
+  "title": "SpeechNexusSpeechOverrides",
+  "description": "Single source of truth for ASR and TTS override fields shared by REST and realtime nexus surfaces. Transport-specific schemas may narrow a shared range but must not redefine the same field with a different meaning.",
+  "$defs": {
+    "AsrOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "$ref": "capability-domains.schema.json#/$defs/VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "finalization": {
+          "$ref": "capability-domains.schema.json#/$defs/FinalizationMode"
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "alignment": {
+          "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "identifiers.schema.json#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "TtsOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "capability-domains.schema.json#/$defs/TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "capability-domains.schema.json#/$defs/AudioDeliveryMode"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "identifiers.schema.json#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    }
+  }
+}

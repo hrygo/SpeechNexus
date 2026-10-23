@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/language.schema.json",
+  "title": "SpeechNexusLanguageDomain",
+  "description": "Single source of truth for public language tags. The literal auto sentinel is internal and is not accepted as a standard OpenAI language value.",
+  "$defs": {
+    "LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    }
+  }
+}

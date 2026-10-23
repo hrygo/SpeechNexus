@@ -1,3 +1,203 @@
+---
+lockfileVersion: "9.0"
+
+importers:
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.14.0
+        version: 12.14.0
+
+packages:
+  "@pnpm/exe.android-arm64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-+iSh7x21C3A2hqc+Z0ZmbKTcn6YNlzrXM142PsnQH/dLj0DYxFzoBvc6XAnL/yfQ5nnH2ebBiRj/zVxr61fZbQ==,
+      }
+    cpu: [arm64]
+    os: [android]
+
+  "@pnpm/exe.android-x64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-qT+0LqEr2wBVaxcG2T8cX/R8SSRz2Rvpp8nRR4fh8tnGUZRch87gFmsHUAoSQh7w6j1h0qTjrA384j4xi8frvw==,
+      }
+    cpu: [x64]
+    os: [android]
+
+  "@pnpm/exe.darwin-arm64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-tnrdUB8ecJoehuKKqi1YHCBVl61xtJ9XVGcx5EviC6fWO4DeGI8GtXrjvJxDBM3nuVjJeWistgsUp/N142x4sw==,
+      }
+    cpu: [arm64]
+    os: [darwin]
+
+  "@pnpm/exe.darwin-x64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-vlBfGkruqQRsEHTW43cPwpYd7QlbIJ//cvpAdb3bVXkI8SgTPoXhCnc05m+ZNiPrrEkBsX/t7KHw9aXpkzPm3Q==,
+      }
+    cpu: [x64]
+    os: [darwin]
+
+  "@pnpm/exe.freebsd-x64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-Qg5rxBrGYl6Tfso+EyygPf84fY1Fzy55E/0or+iuYKtnf0vc0MlHJfVIlT7pBukMRntQHRik7hUi0Z4s7AlJsw==,
+      }
+    cpu: [x64]
+    os: [freebsd]
+
+  "@pnpm/exe.linux-arm64-musl@12.14.0":
+    resolution:
+      {
+        integrity: sha512-DRIe4yQkXBGA/PhVJdzlbnllxBdAtnMMvTVLLcGpsK5FvJz9kxD2Hyxtn68ovmNkVX06f6p45cQwfm3wx2jn1A==,
+      }
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  "@pnpm/exe.linux-arm64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-7joGShZ44Nk3WpNU+60JoOPjCXlgxhJAq11S2UiVtwCUDgTer1yTPPfxGW8pxaD6046actYLIYDbZNlubHWs0A==,
+      }
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  "@pnpm/exe.linux-ppc64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-gSoryn7ySdXd//gjgf3MvvA8ZerJayaSbuMZMtAWq4vb2/wlVEgpl0Kvqt54y58TRj533Qjq2txKgnxd4JyoAQ==,
+      }
+    cpu: [ppc64]
+    os: [linux]
+    libc: [glibc]
+
+  "@pnpm/exe.linux-riscv64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-EMjew1H9WqQ7pL+tYqCPwiuB+0PeCiJRV7fyWeuFw0wwYUajFBjcaPO3IGAVu9sdmJDU+e+HYv/Zey6aKae0Vw==,
+      }
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  "@pnpm/exe.linux-s390x@12.14.0":
+    resolution:
+      {
+        integrity: sha512-shYOj/SFoXD35fHe0pWr2JofwSXulC0BnEIXLj2QokDi0EF//AfKsui35yKIkTEl+s2VJybc3PO4iJNhKIj5Qw==,
+      }
+    cpu: [s390x]
+    os: [linux]
+    libc: [glibc]
+
+  "@pnpm/exe.linux-x64-musl@12.14.0":
+    resolution:
+      {
+        integrity: sha512-btZiZ2Ot0llKK1ndSfA5i3IRX7/S0VrmzseNH/BJ4c+Cady+S81H6vvU1zByggHMyqQhC8OgxO5PiIY7D9bH0Q==,
+      }
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  "@pnpm/exe.linux-x64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-F6K8e/jWxiuEYJaQtRRUG9ynBSTEHa+t7Lf86MKuOO5UA7WVVMbi+oB8nY6iKW++ncWS2yG6T9faXZGxqNsfoQ==,
+      }
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  "@pnpm/exe.win32-arm64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-DOjlkVB6TtTKeAAe0hNZXn5S7YqESmo1Z6SGbR4BZNQ4isRg31XVHjX2RFTbY8gnZq68IwzyLmPqlEjMmYxofg==,
+      }
+    cpu: [arm64]
+    os: [win32]
+
+  "@pnpm/exe.win32-x64@12.14.0":
+    resolution:
+      {
+        integrity: sha512-/LSX6mew/sLf08XqcjemuklNKf1K/Ftpgj4//hK/HKzI2dKbmxDB27a/2OaQ5a0O3/3OFzlssXDziZsi+yVBwQ==,
+      }
+    cpu: [x64]
+    os: [win32]
+
+  pnpm@12.14.0:
+    resolution:
+      {
+        integrity: sha512-wYum2HmT09Fky16JSPMrLAbuhUSH4GzY2GeBNC+z5btGNDZwNHEehoArqpw3vqkGzhkprQjXCITJfYAd8TOJpg==,
+      }
+    engines: { node: ">=18.*" }
+    hasBin: true
+
+snapshots:
+  "@pnpm/exe.android-arm64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.android-x64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.darwin-arm64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.darwin-x64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.freebsd-x64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-arm64-musl@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-arm64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-ppc64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-riscv64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-s390x@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-x64-musl@12.14.0":
+    optional: true
+
+  "@pnpm/exe.linux-x64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.win32-arm64@12.14.0":
+    optional: true
+
+  "@pnpm/exe.win32-x64@12.14.0":
+    optional: true
+
+  pnpm@12.14.0:
+    optionalDependencies:
+      "@pnpm/exe.android-arm64": 12.14.0
+      "@pnpm/exe.android-x64": 12.14.0
+      "@pnpm/exe.darwin-arm64": 12.14.0
+      "@pnpm/exe.darwin-x64": 12.14.0
+      "@pnpm/exe.freebsd-x64": 12.14.0
+      "@pnpm/exe.linux-arm64": 12.14.0
+      "@pnpm/exe.linux-arm64-musl": 12.14.0
+      "@pnpm/exe.linux-ppc64": 12.14.0
+      "@pnpm/exe.linux-riscv64": 12.14.0
+      "@pnpm/exe.linux-s390x": 12.14.0
+      "@pnpm/exe.linux-x64": 12.14.0
+      "@pnpm/exe.linux-x64-musl": 12.14.0
+      "@pnpm/exe.win32-arm64": 12.14.0
+      "@pnpm/exe.win32-x64": 12.14.0
+
+---
 lockfileVersion: "9.0"
 
 settings:
@@ -13,8 +213,8 @@ catalogs:
       specifier: 16.3.3
       version: 16.3.3
     "@types/node":
-      specifier: 22.20.5
-      version: 22.20.5
+      specifier: 26.6.5
+      version: 26.6.5
     "@types/react":
       specifier: 19.3.0
       version: 19.3.0
@@ -64,6 +264,9 @@ importers:
       globals:
         specifier: 17.13.0
         version: 17.13.0
+      openai:
+        specifier: 7.43.0
+        version: 7.43.0(undici@8.12.3)(ws@8.22.0)(zod@4.6.7)
       prettier:
         specifier: 3.9.10
         version: 3.9.10
@@ -91,13 +294,13 @@ importers:
     devDependencies:
       "@testing-library/jest-dom":
         specifier: "catalog:"
-        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5)))
+        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5)))
       "@testing-library/react":
         specifier: "catalog:"
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       "@types/node":
         specifier: "catalog:"
-        version: 22.20.5
+        version: 26.6.5
       "@types/react":
         specifier: "catalog:"
         version: 19.3.0
@@ -106,7 +309,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       "@vitejs/plugin-react":
         specifier: "catalog:"
-        version: 6.1.2(vite@8.3.5(@types/node@22.20.5))
+        version: 6.1.2(vite@8.3.5(@types/node@26.6.5))
       jsdom:
         specifier: "catalog:"
         version: 30.1.3
@@ -115,10 +318,10 @@ importers:
         version: 6.0.3
       vite:
         specifier: "catalog:"
-        version: 8.3.5(@types/node@22.20.5)
+        version: 8.3.5(@types/node@26.6.5)
       vitest:
         specifier: "catalog:"
-        version: 5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5))
+        version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5))
 
   web/shared:
     devDependencies:
@@ -149,13 +352,13 @@ importers:
     devDependencies:
       "@testing-library/jest-dom":
         specifier: "catalog:"
-        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5)))
+        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5)))
       "@testing-library/react":
         specifier: "catalog:"
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       "@types/node":
         specifier: "catalog:"
-        version: 22.20.5
+        version: 26.6.5
       "@types/react":
         specifier: "catalog:"
         version: 19.3.0
@@ -164,7 +367,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       "@vitejs/plugin-react":
         specifier: "catalog:"
-        version: 6.1.2(vite@8.3.5(@types/node@22.20.5))
+        version: 6.1.2(vite@8.3.5(@types/node@26.6.5))
       jsdom:
         specifier: "catalog:"
         version: 30.1.3
@@ -173,10 +376,10 @@ importers:
         version: 6.0.3
       vite:
         specifier: "catalog:"
-        version: 8.3.5(@types/node@22.20.5)
+        version: 8.3.5(@types/node@26.6.5)
       vitest:
         specifier: "catalog:"
-        version: 5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5))
+        version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5))
 
 packages:
   "@adobe/css-tools@4.5.0":
@@ -783,12 +986,6 @@ packages:
     resolution:
       {
         integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==,
-      }
-
-  "@types/node@22.20.5":
-    resolution:
-      {
-        integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==,
       }
 
   "@types/node@26.6.5":
@@ -1703,6 +1900,36 @@ packages:
       }
     engines: { node: ">=12.20.0" }
 
+  openai@7.43.0:
+    resolution:
+      {
+        integrity: sha512-fBjKaDFG8AVfkGYoIo/E+xNRlNk7nx2nQ9GoQtXfePzPjg4QcT6nejkhXayJnEwSpFGfthOrAPI2KXj5yAqg9A==,
+      }
+    engines: { node: ">=22.0.0" }
+    peerDependencies:
+      "@aws-sdk/credential-provider-node": ">=3.972.0 <4"
+      "@smithy/hash-node": ">=4.3.0 <5"
+      "@smithy/signature-v4": ">=5.4.0 <6"
+      google-auth-library: ">=9.15.1 <11"
+      undici: ">=5 <9"
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      "@aws-sdk/credential-provider-node":
+        optional: true
+      "@smithy/hash-node":
+        optional: true
+      "@smithy/signature-v4":
+        optional: true
+      google-auth-library:
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   optionator@0.9.4:
     resolution:
       {
@@ -2002,12 +2229,6 @@ packages:
       }
     engines: { node: ">=14.17" }
     hasBin: true
-
-  undici-types@6.21.0:
-    resolution:
-      {
-        integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==,
-      }
 
   undici-types@8.9.0:
     resolution:
@@ -2537,7 +2758,7 @@ snapshots:
       picocolors: 1.1.1
       pretty-format: 27.5.1
 
-  "@testing-library/jest-dom@7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5)))":
+  "@testing-library/jest-dom@7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5)))":
     dependencies:
       "@adobe/css-tools": 4.5.0
       "@testing-library/dom": 10.4.2
@@ -2547,7 +2768,7 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
     optionalDependencies:
-      vitest: 5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5))
+      vitest: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5))
 
   "@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)":
     dependencies:
@@ -2574,14 +2795,9 @@ snapshots:
 
   "@types/json-schema@7.0.15": {}
 
-  "@types/node@22.20.5":
-    dependencies:
-      undici-types: 6.21.0
-
   "@types/node@26.6.5":
     dependencies:
       undici-types: 8.9.0
-    optional: true
 
   "@types/react-dom@19.3.0(@types/react@19.3.0)":
     dependencies:
@@ -2682,19 +2898,19 @@ snapshots:
       "@typescript-eslint/types": 8.72.0
       eslint-visitor-keys: 5.0.1
 
-  "@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@22.20.5))":
+  "@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@26.6.5))":
     dependencies:
       "@rolldown/pluginutils": 1.0.1
-      vite: 8.3.5(@types/node@22.20.5)
+      vite: 8.3.5(@types/node@26.6.5)
 
-  "@vitest/mocker@5.0.5(vite@8.3.5(@types/node@22.20.5))":
+  "@vitest/mocker@5.0.5(vite@8.3.5(@types/node@26.6.5))":
     dependencies:
       "@jridgewell/trace-mapping": 0.3.31
       "@vitest/spy": 5.0.5
       estree-walker: 3.0.3
       magic-string: 1.4.3
     optionalDependencies:
-      vite: 8.3.5(@types/node@22.20.5)
+      vite: 8.3.5(@types/node@26.6.5)
 
   "@vitest/spy@5.0.5": {}
 
@@ -3093,6 +3309,12 @@ snapshots:
 
   obug@3.0.0: {}
 
+  openai@7.43.0(undici@8.12.3)(ws@8.22.0)(zod@4.6.7):
+    optionalDependencies:
+      undici: 8.12.3
+      ws: 8.22.0
+      zod: 4.6.7
+
   optionator@0.9.4:
     dependencies:
       deep-is: 0.1.4
@@ -3255,10 +3477,7 @@ snapshots:
 
   typescript@6.0.3: {}
 
-  undici-types@6.21.0: {}
-
-  undici-types@8.9.0:
-    optional: true
+  undici-types@8.9.0: {}
 
   undici@8.12.3: {}
 
@@ -3272,17 +3491,6 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  vite@8.3.5(@types/node@22.20.5):
-    dependencies:
-      lightningcss: 1.33.0
-      picomatch: 4.0.7
-      postcss: 8.5.31
-      rolldown: 1.2.15
-      tinyglobby: 0.2.17
-    optionalDependencies:
-      "@types/node": 22.20.5
-      fsevents: 2.3.3
-
   vite@8.3.5(@types/node@26.6.5):
     dependencies:
       lightningcss: 1.33.0
@@ -3294,10 +3502,10 @@ snapshots:
       "@types/node": 26.6.5
       fsevents: 2.3.3
 
-  vitest@5.0.5(@types/node@22.20.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@22.20.5)):
+  vitest@5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.5(@types/node@26.6.5)):
     dependencies:
       "@types/chai": 5.2.3
-      "@vitest/mocker": 5.0.5(vite@8.3.5(@types/node@22.20.5))
+      "@vitest/mocker": 5.0.5(vite@8.3.5(@types/node@26.6.5))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -3308,10 +3516,10 @@ snapshots:
       tinybench: 6.2.2
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.5(@types/node@22.20.5)
+      vite: 8.3.5(@types/node@26.6.5)
       why-is-node-running: 3.2.1
     optionalDependencies:
-      "@types/node": 22.20.5
+      "@types/node": 26.6.5
       jsdom: 30.1.3
     transitivePeerDependencies:
       - msw

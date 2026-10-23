@@ -1,27 +1,339 @@
+/**
+ * SpeechNexus Shared Design System & Tokens
+ *
+ * Architecture:
+ * 1. Primitive Tokens (--nexus-*)
+ * 2. Semantic Tokens (--page / --bg-*, --ink / --text-*, --line / --border-*, --status-*)
+ * 3. Domain & Tone Tokens (AdminUI: Emerald/Teal, Workbench: Cobalt/Cyan, Audio & Diarization)
+ * 4. Micro-Materiality (Glassmorphism 2.0, hairline specular borders, elevation)
+ */
+
 :root {
-  --font-sans:
-    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --page: #f5f2ea;
-  --surface: #fffdf7;
-  --surface-strong: #ffffff;
-  --ink: #18201c;
-  --muted: #66706a;
-  --line: #d9d7ce;
-  --accent: #087b62;
-  --accent-soft: #dff3eb;
-  --warning: #9b5a08;
-  --warning-soft: #fff0d5;
-  --shadow: 0 18px 50px rgb(31 43 37 / 8%);
-  --radius-large: 24px;
-  --radius-medium: 16px;
-  --page-width: 1180px;
+  /* ==========================================================================
+     1. Primitive Tokens: Colors (OKLCH Color Space)
+     ========================================================================== */
+  /* Obsidian Dark Neutrals */
+  --nexus-color-obsidian-950: oklch(0.12 0.015 250);
+  --nexus-color-obsidian-900: oklch(0.16 0.018 250);
+  --nexus-color-obsidian-850: oklch(0.2 0.02 250);
+  --nexus-color-obsidian-800: oklch(0.26 0.022 250);
+  --nexus-color-obsidian-700: oklch(0.34 0.02 250);
+  --nexus-color-obsidian-500: oklch(0.55 0.018 250);
+  --nexus-color-obsidian-300: oklch(0.72 0.012 250);
+  --nexus-color-obsidian-100: oklch(0.92 0.008 250);
+  --nexus-color-obsidian-50: oklch(0.98 0.002 250);
+
+  /* Parchment Light Neutrals */
+  --nexus-color-sand-50: oklch(0.985 0.008 85);
+  --nexus-color-sand-100: oklch(0.965 0.012 85);
+  --nexus-color-sand-200: oklch(0.92 0.015 85);
+  --nexus-color-sand-300: oklch(0.85 0.018 85);
+  --nexus-color-sand-700: oklch(0.42 0.025 85);
+  --nexus-color-sand-900: oklch(0.18 0.028 85);
+
+  /* Emerald / Teal - Admin Fleet Accent */
+  --nexus-color-emerald-300: oklch(0.82 0.12 168);
+  --nexus-color-emerald-400: oklch(0.72 0.15 168);
+  --nexus-color-emerald-500: oklch(0.6 0.17 165);
+  --nexus-color-emerald-600: oklch(0.48 0.15 165);
+  --nexus-color-emerald-900: oklch(0.24 0.08 165);
+
+  /* Cobalt / Cyan - Workbench Studio Accent */
+  --nexus-color-cobalt-300: oklch(0.8 0.14 255);
+  --nexus-color-cobalt-400: oklch(0.68 0.18 255);
+  --nexus-color-cobalt-500: oklch(0.55 0.22 260);
+  --nexus-color-cobalt-600: oklch(0.44 0.2 260);
+  --nexus-color-cobalt-900: oklch(0.22 0.1 260);
+
+  /* Status and Multi-Speaker Atoms */
+  --nexus-color-amber-400: oklch(0.8 0.15 75);
+  --nexus-color-amber-500: oklch(0.7 0.16 75);
+  --nexus-color-rose-500: oklch(0.62 0.21 25);
+  --nexus-color-violet-500: oklch(0.64 0.19 300);
+  --nexus-color-coral-500: oklch(0.68 0.18 45);
+
+  /* ==========================================================================
+     Primitive Tokens: Typography, Radii & Spacing
+     ========================================================================== */
+  --nexus-font-sans:
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --nexus-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--nexus-font-sans);
+  --font-mono: var(--nexus-font-mono);
+
+  /* Typography Scale */
+  --nexus-text-xs: 0.75rem;
+  --nexus-text-sm: 0.8125rem;
+  --nexus-text-base: 0.875rem;
+  --nexus-text-md: 1rem;
+  --nexus-text-lg: 1.125rem;
+  --nexus-text-xl: 1.375rem;
+  --nexus-text-2xl: 1.75rem;
+  --nexus-text-hero: clamp(2.3rem, 6.2vw, 4.8rem);
+
+  /* Radius Scale */
+  --nexus-radius-xs: 4px;
+  --nexus-radius-sm: 6px;
+  --nexus-radius-md: 10px;
+  --nexus-radius-lg: 16px;
+  --nexus-radius-xl: 24px;
+  --nexus-radius-full: 9999px;
+
+  --radius-xs: var(--nexus-radius-xs);
+  --radius-sm: var(--nexus-radius-sm);
+  --radius-md: var(--nexus-radius-md);
+  --radius-medium: var(--nexus-radius-lg);
+  --radius-large: var(--nexus-radius-xl);
+  --radius-full: var(--nexus-radius-full);
+
+  /* Spacing Scale (8px Grid Baseline) */
+  --nexus-space-1: 4px;
+  --nexus-space-2: 8px;
+  --nexus-space-3: 12px;
+  --nexus-space-4: 16px;
+  --nexus-space-5: 20px;
+  --nexus-space-6: 24px;
+  --nexus-space-8: 32px;
+  --nexus-space-12: 48px;
+  --nexus-space-16: 64px;
+
+  --page-width: 1200px;
+  --glass-blur: 16px;
+  --glass-saturation: 1.15;
+
+  /* ==========================================================================
+     2. Semantic Tokens (Light Default)
+     ========================================================================== */
   color-scheme: light;
+  --page: var(--nexus-color-sand-50);
+  --surface: var(--nexus-color-sand-100);
+  --surface-strong: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+  --surface-overlay: oklch(1 0 0);
+  --surface-glass: color-mix(in oklch, var(--surface-strong) 82%, transparent);
+
+  --bg-page: var(--page);
+  --bg-surface: var(--surface);
+  --bg-surface-raised: var(--surface-raised);
+  --bg-surface-overlay: var(--surface-overlay);
+  --bg-surface-glass: var(--surface-glass);
+
+  --ink: var(--nexus-color-sand-900);
+  --muted: var(--nexus-color-sand-700);
+  --muted-subtle: oklch(0.55 0.02 85);
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --text-muted: var(--muted-subtle);
+  --text-inverse: oklch(1 0 0);
+
+  --line: var(--nexus-color-sand-200);
+  --line-strong: var(--nexus-color-sand-300);
+  --specular-line: color-mix(in oklch, var(--ink) 6%, transparent);
+  --border-subtle: var(--line);
+  --border-strong: var(--line-strong);
+  --border-highlight: var(--specular-line);
+
+  --accent: var(--nexus-color-emerald-500);
+  --accent-primary: var(--accent);
+  --accent-soft: oklch(0.94 0.04 165);
+  --accent-glow: color-mix(in oklch, var(--accent) 24%, transparent);
+
+  --warning: oklch(0.58 0.16 75);
+  --warning-soft: oklch(0.96 0.04 75);
+  --warning-border: color-mix(in oklch, var(--warning) 28%, transparent);
+
+  --status-pill-ready-text: var(--nexus-color-emerald-600);
+  --status-pill-ready-bg: var(--accent-soft);
+  --status-ready-text: var(--status-pill-ready-text);
+  --status-ready-bg: var(--status-pill-ready-bg);
+  --status-ready-border: color-mix(in oklch, var(--accent) 30%, transparent);
+
+  --status-contract-text: var(--warning);
+  --status-contract-bg: var(--warning-soft);
+  --status-contract-border: var(--warning-border);
+
+  --status-planned-text: var(--muted-subtle);
+  --status-planned-bg: color-mix(in oklch, var(--surface) 60%, transparent);
+  --status-planned-border: var(--line);
+
+  --shadow-sm: 0 1px 3px color-mix(in oklch, var(--ink) 5%, transparent);
+  --shadow-md: 0 4px 12px color-mix(in oklch, var(--ink) 6%, transparent);
+  --shadow: 0 12px 36px color-mix(in oklch, var(--ink) 7%, transparent);
+  --shadow-lg: 0 20px 50px color-mix(in oklch, var(--ink) 11%, transparent);
+
+  /* Audio, Karaoke & Multi-Speaker Semantics */
+  --waveform-wave: var(--nexus-color-sand-300);
+  --waveform-progress: var(--accent);
+  --waveform-cursor: var(--ink);
+  --waveform-bg: var(--border-subtle);
+  --waveform-unplayed: var(--text-muted);
+  --waveform-played: var(--waveform-progress);
+  --waveform-scrubber: var(--waveform-cursor);
+  --waveform-region-select: color-mix(in oklch, var(--accent) 18%, transparent);
+
+  --karaoke-stable: var(--text-primary);
+  --karaoke-speculative: color-mix(in oklch, var(--text-primary) 60%, transparent);
+  --karaoke-highlight: var(--accent);
+
+  --speaker-1: var(--nexus-color-cobalt-500);
+  --speaker-2: var(--nexus-color-emerald-500);
+  --speaker-3: var(--nexus-color-violet-500);
+  --speaker-4: var(--nexus-color-coral-500);
+
+  /* Telemetry Semantics */
+  --metric-healthy: var(--nexus-color-emerald-500);
+  --metric-busy: var(--nexus-color-amber-500);
+  --metric-danger: var(--nexus-color-rose-500);
+  --telemetry-grid-line: color-mix(in oklch, var(--border-subtle) 60%, transparent);
+
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
+/* ==========================================================================
+   Semantic Tokens (Dark Mode — System Preference & Explicit data-theme="dark")
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: var(--nexus-color-obsidian-950);
+    --surface: var(--nexus-color-obsidian-900);
+    --surface-strong: var(--nexus-color-obsidian-850);
+    --surface-raised: var(--nexus-color-obsidian-850);
+    --surface-overlay: var(--nexus-color-obsidian-800);
+    --surface-glass: color-mix(in oklch, var(--nexus-color-obsidian-900) 80%, transparent);
+
+    --ink: var(--nexus-color-obsidian-50);
+    --muted: var(--nexus-color-obsidian-300);
+    --muted-subtle: var(--nexus-color-obsidian-500);
+    --text-inverse: var(--nexus-color-obsidian-950);
+
+    --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
+    --line-strong: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+    --specular-line: color-mix(in oklch, var(--nexus-color-obsidian-50) 9%, transparent);
+
+    --accent: var(--nexus-color-emerald-400);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+
+    --warning: var(--nexus-color-amber-400);
+    --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
+    --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
+
+    --shadow-sm: 0 1px 3px color-mix(in oklch, oklch(0 0 0) 35%, transparent);
+    --shadow-md: 0 6px 18px color-mix(in oklch, oklch(0 0 0) 50%, transparent);
+    --shadow: 0 16px 48px color-mix(in oklch, oklch(0 0 0) 45%, transparent);
+    --shadow-lg: 0 24px 64px color-mix(in oklch, oklch(0 0 0) 65%, transparent);
+
+    --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+    --waveform-progress: var(--accent);
+    --waveform-cursor: var(--nexus-color-obsidian-50);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: var(--nexus-color-obsidian-950);
+  --surface: var(--nexus-color-obsidian-900);
+  --surface-strong: var(--nexus-color-obsidian-850);
+  --surface-raised: var(--nexus-color-obsidian-850);
+  --surface-overlay: var(--nexus-color-obsidian-800);
+  --surface-glass: color-mix(in oklch, var(--nexus-color-obsidian-900) 80%, transparent);
+
+  --ink: var(--nexus-color-obsidian-50);
+  --muted: var(--nexus-color-obsidian-300);
+  --muted-subtle: var(--nexus-color-obsidian-500);
+  --text-inverse: var(--nexus-color-obsidian-950);
+
+  --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
+  --line-strong: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+  --specular-line: color-mix(in oklch, var(--nexus-color-obsidian-50) 9%, transparent);
+
+  --accent: var(--nexus-color-emerald-400);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+
+  --warning: var(--nexus-color-amber-400);
+  --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
+  --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
+
+  --shadow-sm: 0 1px 3px color-mix(in oklch, oklch(0 0 0) 35%, transparent);
+  --shadow-md: 0 6px 18px color-mix(in oklch, oklch(0 0 0) 50%, transparent);
+  --shadow: 0 16px 48px color-mix(in oklch, oklch(0 0 0) 45%, transparent);
+  --shadow-lg: 0 24px 64px color-mix(in oklch, oklch(0 0 0) 65%, transparent);
+
+  --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+  --waveform-progress: var(--accent);
+  --waveform-cursor: var(--nexus-color-obsidian-50);
+}
+
+/* ==========================================================================
+   3. Domain & Tone Specific Overrides
+   ========================================================================== */
+.app-shell[data-tone="admin"] {
+  --accent: var(--nexus-color-emerald-500);
+  --accent-primary: var(--accent);
+  --accent-soft: oklch(0.94 0.04 165);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-500) 25%, transparent);
+  --status-pill-ready-text: var(--nexus-color-emerald-600);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+.app-shell[data-tone="workbench"] {
+  --accent: var(--nexus-color-cobalt-500);
+  --accent-primary: var(--accent);
+  --accent-soft: oklch(0.93 0.05 260);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-500) 25%, transparent);
+  --waveform-progress: var(--nexus-color-cobalt-500);
+  --status-pill-ready-text: var(--nexus-color-cobalt-600);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app-shell[data-tone="admin"] {
+    --accent: var(--nexus-color-emerald-400);
+    --accent-primary: var(--accent);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+    --status-pill-ready-text: var(--nexus-color-emerald-300);
+    --status-pill-ready-bg: var(--accent-soft);
+  }
+
+  :root:not([data-theme="light"]) .app-shell[data-tone="workbench"] {
+    --accent: var(--nexus-color-cobalt-300);
+    --accent-primary: var(--accent);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-cobalt-300) 15%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-300) 35%, transparent);
+    --waveform-progress: var(--nexus-color-cobalt-300);
+    --status-pill-ready-text: var(--nexus-color-cobalt-300);
+    --status-pill-ready-bg: var(--accent-soft);
+  }
+}
+
+:root[data-theme="dark"] .app-shell[data-tone="admin"] {
+  --accent: var(--nexus-color-emerald-400);
+  --accent-primary: var(--accent);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+  --status-pill-ready-text: var(--nexus-color-emerald-300);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+:root[data-theme="dark"] .app-shell[data-tone="workbench"] {
+  --accent: var(--nexus-color-cobalt-300);
+  --accent-primary: var(--accent);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-cobalt-300) 15%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-300) 35%, transparent);
+  --waveform-progress: var(--nexus-color-cobalt-300);
+  --status-pill-ready-text: var(--nexus-color-cobalt-300);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+/* ==========================================================================
+   Global Base & Typography
+   ========================================================================== */
 * {
   box-sizing: border-box;
 }
@@ -37,8 +349,17 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 85% 8%, rgb(8 123 98 / 9%), transparent 28rem),
-    linear-gradient(180deg, #fbf9f3 0, var(--page) 24rem);
+    radial-gradient(
+      circle at 85% 8%,
+      color-mix(in oklch, var(--accent) 10%, transparent),
+      transparent 32rem
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 50%, var(--page)) 0%,
+      var(--page) 26rem
+    );
+  background-attachment: fixed;
 }
 
 button,
@@ -54,60 +375,73 @@ a {
 
 .skip-link {
   position: fixed;
-  z-index: 20;
-  top: 12px;
-  left: 12px;
-  padding: 10px 14px;
-  color: #fff;
+  z-index: 50;
+  top: var(--nexus-space-4);
+  left: var(--nexus-space-4);
+  padding: var(--nexus-space-2) var(--nexus-space-4);
+  color: var(--surface-strong);
   background: var(--ink);
-  border-radius: 8px;
-  transform: translateY(-180%);
+  border-radius: var(--radius-sm);
+  font-size: var(--nexus-text-sm);
+  font-weight: 500;
+  transform: translateY(-200%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow);
 }
 
 .skip-link:focus {
   transform: translateY(0);
 }
 
+/* ==========================================================================
+   App Shell & Masthead
+   ========================================================================== */
 .app-shell {
-  width: min(100% - 40px, var(--page-width));
+  width: min(100% - var(--nexus-space-12), var(--page-width));
   margin-inline: auto;
-  padding-bottom: 40px;
-}
-
-.app-shell[data-tone="workbench"] {
-  --accent: #315ea8;
-  --accent-soft: #e1eafc;
+  padding-bottom: var(--nexus-space-12);
 }
 
 .site-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-3);
   align-items: center;
   justify-content: space-between;
   min-height: 84px;
+  padding-block: var(--nexus-space-3);
   border-bottom: 1px solid var(--line);
+  position: relative;
 }
 
 .brand {
   display: inline-flex;
-  gap: 12px;
+  gap: var(--nexus-space-3);
   align-items: center;
-  font-size: 1rem;
+  font-size: var(--nexus-text-md);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.brand:hover {
+  opacity: 0.9;
 }
 
 .brand-mark {
   display: grid;
-  width: 34px;
-  height: 34px;
-  color: #fff;
+  width: 36px;
+  height: 36px;
+  color: var(--surface-strong);
   background: var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--nexus-text-xs);
+  font-weight: 700;
   letter-spacing: -0.04em;
+  box-shadow: 0 2px 6px color-mix(in oklch, var(--ink) 20%, transparent);
 }
 
 .surface-label,
@@ -115,28 +449,65 @@ a {
 .card-label,
 .boundary-label {
   font-family: var(--font-mono);
-  font-size: 0.73rem;
-  letter-spacing: 0.07em;
+  font-size: var(--nexus-text-xs);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .surface-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nexus-space-2);
+  padding: var(--nexus-space-1) var(--nexus-space-3);
   color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
+.header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nexus-space-3);
+}
+
+.airgap-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nexus-space-2);
+  padding: var(--nexus-space-1) var(--nexus-space-3);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: var(--nexus-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Hero Section & Status Gauge
+   ========================================================================== */
 main {
-  padding-top: clamp(48px, 7vw, 84px);
+  padding-top: clamp(var(--nexus-space-12), 6vw, 76px);
 }
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.3fr);
-  gap: 40px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.32fr);
+  gap: var(--nexus-space-8);
   align-items: end;
 }
 
 .eyebrow {
-  margin: 0 0 16px;
+  margin: 0 0 var(--nexus-space-4);
   color: var(--accent);
   font-weight: 700;
 }
@@ -148,31 +519,35 @@ p {
 }
 
 h1 {
-  max-width: 760px;
-  margin-bottom: 20px;
-  font-size: clamp(2.6rem, 7vw, 5.8rem);
+  max-width: 780px;
+  margin-bottom: var(--nexus-space-5);
+  font-size: var(--nexus-text-hero);
   font-weight: 650;
-  letter-spacing: -0.065em;
-  line-height: 0.98;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  text-wrap: balance;
 }
 
 .hero-description {
   max-width: 700px;
   margin-bottom: 0;
   color: var(--muted);
-  font-size: clamp(1rem, 2vw, 1.2rem);
-  line-height: 1.75;
+  font-size: clamp(var(--nexus-text-md), 1.8vw, var(--nexus-text-lg));
+  line-height: 1.72;
 }
 
 .hero-status {
   display: flex;
-  gap: 12px;
+  gap: var(--nexus-space-3);
   align-items: flex-start;
-  padding: 18px;
-  background: var(--surface);
+  padding: var(--nexus-space-5);
+  background: var(--surface-glass);
   border: 1px solid var(--line);
   border-radius: var(--radius-medium);
-  box-shadow: var(--shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow);
 }
 
 .hero-status strong,
@@ -181,72 +556,127 @@ h1 {
 }
 
 .hero-status strong {
-  margin-bottom: 5px;
-  font-size: 0.9rem;
+  margin-bottom: var(--nexus-space-1);
+  font-size: var(--nexus-text-base);
+  letter-spacing: -0.01em;
 }
 
 .hero-status small {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--nexus-text-xs);
   line-height: 1.5;
 }
 
 .status-dot {
-  width: 9px;
-  height: 9px;
-  margin-top: 5px;
+  width: 10px;
+  height: 10px;
+  margin-top: var(--nexus-space-1);
   background: var(--accent);
-  border-radius: 999px;
-  box-shadow: 0 0 0 5px var(--accent-soft);
+  border-radius: var(--radius-full);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 0 12px var(--accent-glow);
   flex: 0 0 auto;
+  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+.status-dot[data-state="contract"] {
+  background: var(--warning);
+  box-shadow:
+    0 0 0 4px var(--warning-soft),
+    0 0 12px var(--warning-border);
+}
+
+.status-dot[data-state="planned"] {
+  background: var(--muted-subtle);
+  box-shadow: 0 0 0 4px var(--status-planned-bg);
+  animation: none;
+}
+
+@keyframes pulse-ring {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px var(--accent-soft),
+      0 0 12px var(--accent-glow);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px var(--accent-soft),
+      0 0 18px var(--accent-glow);
+  }
+}
+
+/* ==========================================================================
+   Boundary Note (Shared Deployment Banner)
+   ========================================================================== */
 .boundary-note {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 18px;
-  margin: 44px 0 24px;
-  padding: 18px 20px;
+  gap: var(--nexus-space-4);
+  margin: var(--nexus-space-12) 0 var(--nexus-space-6);
+  padding: var(--nexus-space-4) var(--nexus-space-5);
   background: var(--warning-soft);
-  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-sm);
 }
 
 .boundary-note p {
   margin-bottom: 0;
-  color: #68420e;
-  font-size: 0.9rem;
+  color: var(--ink);
+  font-size: var(--nexus-text-base);
   line-height: 1.65;
 }
 
 .boundary-label {
   color: var(--warning);
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
 }
 
+/* ==========================================================================
+   Capability Cards (Strict Tri-State Grid)
+   ========================================================================== */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--nexus-space-5);
 }
 
 .capability-card {
   display: flex;
-  min-height: 240px;
-  padding: 22px;
+  min-height: 250px;
+  padding: var(--nexus-space-6);
   flex-direction: column;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--surface-glass);
   border: 1px solid var(--line);
   border-radius: var(--radius-large);
-  box-shadow: var(--shadow);
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.capability-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-line),
+    var(--shadow-lg);
 }
 
 .card-heading {
   display: flex;
-  gap: 12px;
+  gap: var(--nexus-space-3);
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 42px;
+  margin-bottom: var(--nexus-space-8);
 }
 
 .card-label {
@@ -254,62 +684,96 @@ h1 {
 }
 
 .card-state {
-  padding: 5px 8px;
+  padding: var(--nexus-space-1) var(--nexus-space-3);
   color: var(--muted);
-  background: #eeece5;
-  border-radius: 999px;
-  font-size: 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  font-size: var(--nexus-text-xs);
   font-weight: 650;
   white-space: nowrap;
 }
 
 .card-state[data-state="ready"] {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--status-ready-text);
+  background: var(--status-ready-bg);
+  border-color: var(--status-ready-border);
 }
 
 .card-state[data-state="contract"] {
-  color: var(--warning);
-  background: var(--warning-soft);
+  color: var(--status-contract-text);
+  background: var(--status-contract-bg);
+  border-color: var(--status-contract-border);
+}
+
+.card-state[data-state="planned"] {
+  color: var(--status-planned-text);
+  background: var(--status-planned-bg);
+  border-color: var(--status-planned-border);
 }
 
 .capability-card h2 {
-  margin-bottom: 12px;
-  font-size: 1.25rem;
+  margin-bottom: var(--nexus-space-3);
+  font-size: var(--nexus-text-lg);
   letter-spacing: -0.025em;
+  font-weight: 650;
 }
 
 .capability-card p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--nexus-text-base);
   line-height: 1.7;
 }
 
+/* ==========================================================================
+   Footer & Focus Accessibility
+   ========================================================================== */
 footer {
   display: flex;
-  gap: 16px;
+  gap: var(--nexus-space-4);
   justify-content: space-between;
-  margin-top: 64px;
-  padding-top: 20px;
+  margin-top: var(--nexus-space-16);
+  padding-top: var(--nexus-space-6);
   color: var(--muted);
   border-top: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--nexus-text-xs);
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 3px solid color-mix(in oklch, var(--accent) 60%, transparent);
   outline-offset: 3px;
 }
 
-@media (max-width: 820px) {
+/* ==========================================================================
+   Responsive Adaptations & Accessibility Hygiene
+   ========================================================================== */
+@media (max-width: 980px) and (min-width: 641px) {
   .hero {
     grid-template-columns: 1fr;
   }
 
   .hero-status {
-    max-width: 420px;
+    max-width: 480px;
+  }
+
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capability-card {
+    min-height: 220px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-status {
+    max-width: 100%;
   }
 
   .card-grid {
@@ -317,30 +781,60 @@ footer {
   }
 
   .capability-card {
-    min-height: 200px;
+    min-height: 190px;
   }
 }
 
 @media (max-width: 560px) {
   .app-shell {
-    width: min(100% - 24px, var(--page-width));
+    width: min(100% - var(--nexus-space-6), var(--page-width));
   }
 
   .site-header {
-    min-height: 72px;
+    min-height: 68px;
   }
 
-  .surface-label {
-    display: none;
+  .header-meta {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--nexus-space-2);
+  }
+
+  .surface-label,
+  .airgap-badge {
+    padding: var(--nexus-space-1) var(--nexus-space-2);
+    font-size: var(--nexus-text-xs);
   }
 
   .boundary-note {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: var(--nexus-space-2);
   }
 
   footer {
     flex-direction: column;
+    gap: var(--nexus-space-2);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --muted: var(--ink);
+    --muted-subtle: var(--ink);
+    --line: var(--line-strong);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hero-status,
+  .capability-card {
+    background: var(--surface);
+    backdrop-filter: none;
   }
 }
 
@@ -352,41 +846,5 @@ footer {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #111714;
-    --surface: #18211d;
-    --surface-strong: #1d2823;
-    --ink: #edf1ed;
-    --muted: #a5aea8;
-    --line: #344039;
-    --accent: #67d7b8;
-    --accent-soft: #173a31;
-    --warning: #f2b35e;
-    --warning-soft: #352916;
-    --shadow: 0 18px 50px rgb(0 0 0 / 22%);
-    color-scheme: dark;
-  }
-
-  body {
-    background:
-      radial-gradient(circle at 85% 8%, rgb(103 215 184 / 9%), transparent 28rem),
-      linear-gradient(180deg, #151c18 0, var(--page) 24rem);
-  }
-
-  .app-shell[data-tone="workbench"] {
-    --accent: #94b8ff;
-    --accent-soft: #1e2e4b;
-  }
-
-  .boundary-note p {
-    color: #efd09e;
-  }
-
-  .card-state {
-    background: #242c27;
   }
 }

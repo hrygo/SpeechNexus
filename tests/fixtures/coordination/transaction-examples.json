@@ -1,0 +1,1615 @@
+{
+  "valid_commands": [
+    {
+      "schema_version": "1.0.0",
+      "operation": "acquire_owner",
+      "request": {
+        "pool_id": "tts-realtime",
+        "owner_id": "scheduler-test",
+        "expected_version": "1",
+        "ttl_ms": 60000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "renew_owner",
+      "request": {
+        "authority": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "fencing_token": 1
+        },
+        "expected_version": "2",
+        "ttl_ms": 60000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "seal_barrier",
+      "request": {
+        "authority": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "fencing_token": 1
+        },
+        "barrier": {
+          "gateway_id": "gateway-test",
+          "pool_id": "tts-realtime",
+          "enforced_min_fencing_token": 1,
+          "barrier_sealed": true,
+          "submitting_intent_ids": [],
+          "executing_intent_ids": [],
+          "quarantined_intent_ids": [],
+          "enforced_at": "2026-10-23T12:00:00Z"
+        },
+        "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "activate_owner",
+      "request": {
+        "authority": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "fencing_token": 1
+        },
+        "expected_version": "2"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "admit_recipe",
+      "request": {
+        "identity": {
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test"
+        },
+        "workspace_id": "workspace-test",
+        "binding_revision_id": "binding-test",
+        "manifest_id": "manifest-test",
+        "recipe_digest": "sha256:d2c2a878bcf44d36de936819f8576af1cedd11bdeb5c93c5256d89550dda2766",
+        "policy_revision_id": "policy-test",
+        "expected_quota_version": "1",
+        "service_class": "realtime",
+        "authorities": [
+          {
+            "pool_id": "tts-realtime",
+            "owner_id": "scheduler-test",
+            "fencing_token": 1
+          }
+        ],
+        "deadline_at_us": 1792756860000000,
+        "stages": [
+          {
+            "stage_id": "stage-main",
+            "lease_id": "lease-test-stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "expected_instance_version": "1",
+            "reserved_slots": 1
+          }
+        ],
+        "job": {
+          "job_id": "job-test",
+          "event_id": "event-test",
+          "event_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_job",
+      "request": {
+        "job": {
+          "job_id": "job-test",
+          "event_id": "event-test",
+          "event_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "identity": {
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test"
+        },
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "claim_job",
+      "request": {
+        "job_id": "job-test",
+        "worker_id": "worker-test",
+        "expected_claim_version": 0,
+        "ttl_ms": 60000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "command": {
+            "schema_version": "1.0.0",
+            "kind": "tts",
+            "task_kind": "tts_file",
+            "stage_role": "tts_connector",
+            "resources": {
+              "voice": {
+                "id": "voice-demo",
+                "revision": "1"
+              },
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": "builtin",
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "text": "Synthetic narration.",
+            "text_stream": null,
+            "parameters": {
+              "text_commit_mode": "explicit",
+              "audio_delivery": "complete",
+              "language": "en",
+              "pronunciation_revision": null,
+              "instructions": null,
+              "speed": 1,
+              "seed": 7,
+              "planner": {
+                "max_chars": 200,
+                "max_wait_ms": 500
+              },
+              "response_format": "wav"
+            }
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "output_stream_id": "output-test"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "record_stop",
+      "request": {
+        "evidence": {
+          "evidence_id": "evidence-test",
+          "submit_intent_id": "submit-test",
+          "evidence_kind": "engine_abort_ack",
+          "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "observed_at_us": 1792756800000000,
+          "execution_stopped": true,
+          "resources_released": true,
+          "reason": null
+        },
+        "terminal_state": "aborted",
+        "error_code": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "mark_execution_unknown",
+      "request": {
+        "submit_intent_id": "submit-test",
+        "reason_code": "cancellation_unconfirmed",
+        "observed_at_us": 1792756800000000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "quarantine_lease",
+      "request": {
+        "lease_id": "lease-test-stage-main",
+        "reason_code": "cancellation_unconfirmed",
+        "observed_at_us": 1792756800000000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "release_lease",
+      "request": {
+        "lease_id": "lease-test-stage-main",
+        "expected_version": "1"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "append_interval",
+      "request": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "submit-test",
+        "output_stream_id": "output-test",
+        "sample_rate_hz": 24000,
+        "meter_kind": "generated",
+        "sample_start": 0,
+        "sample_end": 100
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_runtime_intent",
+      "request": {
+        "request": {
+          "intent_id": "runtime-test",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "action": "prepare",
+          "fencing_token": 1,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2026-10-23T13:00:00Z"
+        },
+        "expected_head_version": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "observe_runtime",
+      "request": {
+        "observation": {
+          "intent_id": "runtime-test",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "action": "prepare",
+          "fencing_token": 1,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "ready",
+          "created_at": "2026-10-23T12:00:00Z",
+          "updated_at": "2026-10-23T12:00:01Z",
+          "error_code": null
+        },
+        "expected_instance_version": "1",
+        "expected_intent_version": "1"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "query_outcome",
+      "request": {
+        "target": {
+          "kind": "attempt",
+          "identity": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test"
+          }
+        },
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "record_execution_observation",
+      "request": {
+        "observation": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "sample_rate_hz": 24000,
+          "voice_revision_id": null,
+          "dispatched_at": null,
+          "engine_request_id": null,
+          "execution_state": "failed",
+          "cleanup_state": "not_required",
+          "stop_evidence_kind": "none",
+          "output_watermark": null,
+          "staging_artifact_ref": null,
+          "error_code": "invalid_execution_request",
+          "updated_at": "2026-10-23T12:00:00Z"
+        },
+        "expected_version": "1"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-asr",
+          "lease_id": "lease-asr",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-asr",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:a28b5782959c5928a885a0875f706afe3b8596b25e01b163f3fa01006b5bb0b5",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "asr",
+            "task_kind": "asr_file",
+            "stage_role": "asr_batch",
+            "audio": {
+              "storage": {
+                "asset_or_artifact_id": "asset-demo",
+                "workspace_id": "workspace-test",
+                "storage_bucket": "synthetic",
+                "object_key": "synthetic/input.wav",
+                "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byte_length": 100
+              },
+              "media_type": "audio/wav",
+              "sample_rate_hz": 24000,
+              "channels": 1
+            },
+            "parameters": {
+              "language": "en",
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 500
+              },
+              "finalization": "full_segment",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 20000,
+              "rollback_tokens": 0,
+              "final_deadline_ms": 1000,
+              "auxiliary_deadline_ms": 1000,
+              "alignment": "off",
+              "diarization": "off",
+              "vocabulary_set_revision": null,
+              "prompt": null,
+              "temperature": 0,
+              "response_format": "json",
+              "timestamp_granularities": []
+            }
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": null,
+          "sample_rate_hz": null
+        },
+        "output_stream_id": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-voicedesign",
+          "lease_id": "lease-voicedesign",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-voicedesign",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:eb6b0eddb8f4fe9ed5269851accd8d71b2057377e436613df2a042417bcc6dd9",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "voicedesign",
+            "task_kind": "voice_design",
+            "stage_role": "voice_design",
+            "description": "Synthetic voice.",
+            "preview_text": "Synthetic preview.",
+            "language": "en",
+            "seed": 7
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "output_stream_id": "output-test"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-voiceclone",
+          "lease_id": "lease-voiceclone",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-voiceclone",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:5b1712666625e47bf65daf25e5f2f6670fc40c0f105b3953d34b571fb53a9487",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "voiceclone",
+            "task_kind": "voice_clone",
+            "stage_role": "voice_clone_base",
+            "reference_audio": {
+              "storage": {
+                "asset_or_artifact_id": "asset-demo",
+                "workspace_id": "workspace-test",
+                "storage_bucket": "synthetic",
+                "object_key": "synthetic/input.wav",
+                "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byte_length": 100
+              },
+              "media_type": "audio/wav",
+              "sample_rate_hz": 24000,
+              "channels": 1
+            },
+            "reference_text": null,
+            "preview_text": null,
+            "language": "en",
+            "source_use_confirmed": true
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "output_stream_id": "output-test"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-voicevalidation",
+          "lease_id": "lease-voicevalidation",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-voicevalidation",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:a0dd74ee859618fe2150684db23110a0572ee39e41fd0be408600e06f1293ad5",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": {
+                "id": "voice-demo",
+                "revision": "1"
+              },
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": "builtin",
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "voicevalidation",
+            "task_kind": "voice_validation",
+            "stage_role": "tts_connector",
+            "text": "Synthetic validation.",
+            "parameters": {
+              "text_commit_mode": "explicit",
+              "audio_delivery": "complete",
+              "language": "en",
+              "pronunciation_revision": null,
+              "instructions": null,
+              "speed": 1,
+              "seed": 7,
+              "planner": {
+                "max_chars": 200,
+                "max_wait_ms": 500
+              },
+              "response_format": "wav"
+            },
+            "validation_checks": [
+              "reusable_tts"
+            ]
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "output_stream_id": "output-test"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-alignment",
+          "lease_id": "lease-alignment",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-alignment",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:23f1c1a8eb7ffb3aac22907f3d021a4026c114d3088b03f99cb415cad5b21fd0",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "alignment",
+            "task_kind": "forced_alignment",
+            "stage_role": "alignment",
+            "audio": {
+              "storage": {
+                "asset_or_artifact_id": "asset-demo",
+                "workspace_id": "workspace-test",
+                "storage_bucket": "synthetic",
+                "object_key": "synthetic/input.wav",
+                "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byte_length": 100
+              },
+              "media_type": "audio/wav",
+              "sample_rate_hz": 24000,
+              "channels": 1
+            },
+            "transcript": "Synthetic.",
+            "language": "en"
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": null,
+          "sample_rate_hz": null
+        },
+        "output_stream_id": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-diarization",
+          "lease_id": "lease-diarization",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-diarization",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:6892a31e806b867f69597a9a28ad4950acb2c5242d60a77c7f9395542b1b4cac",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "diarization",
+            "task_kind": "speaker_diarization",
+            "stage_role": "diarization",
+            "audio": {
+              "storage": {
+                "asset_or_artifact_id": "asset-demo",
+                "workspace_id": "workspace-test",
+                "storage_bucket": "synthetic",
+                "object_key": "synthetic/input.wav",
+                "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byte_length": 100
+              },
+              "media_type": "audio/wav",
+              "sample_rate_hz": 24000,
+              "channels": 1
+            },
+            "min_speakers": 1,
+            "max_speakers": 2
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": null,
+          "sample_rate_hz": null
+        },
+        "output_stream_id": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-vad",
+          "lease_id": "lease-vad",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-vad",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:2ce95a5a33301ef9d6e6278c530d2291929db42cc5590d39478e25543249a7f3",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "vad",
+            "task_kind": "vad",
+            "stage_role": "vad",
+            "audio": {
+              "storage": {
+                "asset_or_artifact_id": "asset-demo",
+                "workspace_id": "workspace-test",
+                "storage_bucket": "synthetic",
+                "object_key": "synthetic/input.wav",
+                "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byte_length": 100
+              },
+              "media_type": "audio/wav",
+              "sample_rate_hz": 24000,
+              "channels": 1
+            },
+            "threshold": 0.5,
+            "silence_duration_ms": 500
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": null,
+          "sample_rate_hz": null
+        },
+        "output_stream_id": null
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "create_submit",
+      "request": {
+        "execution_request": {
+          "submit_intent_id": "submit-codec",
+          "lease_id": "lease-codec",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-codec",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:166cbb03c036a5559da3c28da8f1b52430c0867fe42ac5e8a8c9e5d34af25725",
+          "command": {
+            "schema_version": "1.0.0",
+            "resources": {
+              "voice": null,
+              "voice_material": null,
+              "vocabulary": [],
+              "pronunciation": [],
+              "voice_kind": null,
+              "vocabulary_source": null,
+              "pronunciation_source": null
+            },
+            "kind": "codec",
+            "task_kind": "tts_file",
+            "stage_role": "tts_code2wav",
+            "codec_tokens": {
+              "asset_or_artifact_id": "asset-demo",
+              "workspace_id": "workspace-test",
+              "storage_bucket": "synthetic",
+              "object_key": "synthetic/input.wav",
+              "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "byte_length": 100
+            },
+            "codec_format": "nexus.codec_tokens.v1",
+            "codebook_count": 2,
+            "sample_rate_hz": 24000
+          },
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "output_stream_id": "output-test"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "redact_execution_command",
+      "request": {
+        "submit_intent_id": "submit-test",
+        "expected_version": "2",
+        "deletion_job_id": "deletion-test",
+        "deletion_evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  ],
+  "invalid_commands": [
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "acquire_owner",
+        "request": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "expected_version": "1",
+          "ttl_ms": 60000,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "renew_owner",
+        "request": {
+          "authority": {
+            "pool_id": "tts-realtime",
+            "owner_id": "scheduler-test",
+            "fencing_token": 1
+          },
+          "expected_version": "2",
+          "ttl_ms": 60000,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "seal_barrier",
+        "request": {
+          "authority": {
+            "pool_id": "tts-realtime",
+            "owner_id": "scheduler-test",
+            "fencing_token": 1
+          },
+          "barrier": {
+            "gateway_id": "gateway-test",
+            "pool_id": "tts-realtime",
+            "enforced_min_fencing_token": 1,
+            "barrier_sealed": true,
+            "submitting_intent_ids": [],
+            "executing_intent_ids": [],
+            "quarantined_intent_ids": [],
+            "enforced_at": "2026-10-23T12:00:00Z"
+          },
+          "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "activate_owner",
+        "request": {
+          "authority": {
+            "pool_id": "tts-realtime",
+            "owner_id": "scheduler-test",
+            "fencing_token": 1
+          },
+          "expected_version": "2",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "admit_recipe",
+        "request": {
+          "identity": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test"
+          },
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "recipe_digest": "sha256:d2c2a878bcf44d36de936819f8576af1cedd11bdeb5c93c5256d89550dda2766",
+          "policy_revision_id": "policy-test",
+          "expected_quota_version": "1",
+          "service_class": "realtime",
+          "authorities": [
+            {
+              "pool_id": "tts-realtime",
+              "owner_id": "scheduler-test",
+              "fencing_token": 1
+            }
+          ],
+          "deadline_at_us": 1792756860000000,
+          "stages": [
+            {
+              "stage_id": "stage-main",
+              "lease_id": "lease-test-stage-main",
+              "pool_id": "tts-realtime",
+              "host_node_id": "host-test",
+              "gateway_id": "gateway-test",
+              "instance_id": "instance-test",
+              "instance_generation": 1,
+              "expected_instance_version": "1",
+              "reserved_slots": 1
+            }
+          ],
+          "job": {
+            "job_id": "job-test",
+            "event_id": "event-test",
+            "event_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "create_job",
+        "request": {
+          "job": {
+            "job_id": "job-test",
+            "event_id": "event-test",
+            "event_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "identity": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test"
+          },
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "claim_job",
+        "request": {
+          "job_id": "job-test",
+          "worker_id": "worker-test",
+          "expected_claim_version": 0,
+          "ttl_ms": 60000,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "create_submit",
+        "request": {
+          "execution_request": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "command": {
+              "schema_version": "1.0.0",
+              "kind": "tts",
+              "task_kind": "tts_file",
+              "stage_role": "tts_connector",
+              "resources": {
+                "voice": {
+                  "id": "voice-demo",
+                  "revision": "1"
+                },
+                "voice_material": null,
+                "vocabulary": [],
+                "pronunciation": [],
+                "voice_kind": "builtin",
+                "vocabulary_source": null,
+                "pronunciation_source": null
+              },
+              "text": "Synthetic narration.",
+              "text_stream": null,
+              "parameters": {
+                "text_commit_mode": "explicit",
+                "audio_delivery": "complete",
+                "language": "en",
+                "pronunciation_revision": null,
+                "instructions": null,
+                "speed": 1,
+                "seed": 7,
+                "planner": {
+                  "max_chars": 200,
+                  "max_wait_ms": 500
+                },
+                "response_format": "wav"
+              }
+            },
+            "deadline_at": "2026-10-23T12:01:00+00:00",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000
+          },
+          "output_stream_id": "output-test",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "record_stop",
+        "request": {
+          "evidence": {
+            "evidence_id": "evidence-test",
+            "submit_intent_id": "submit-test",
+            "evidence_kind": "engine_abort_ack",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "observed_at_us": 1792756800000000,
+            "execution_stopped": true,
+            "resources_released": true,
+            "reason": null
+          },
+          "terminal_state": "aborted",
+          "error_code": null,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "mark_execution_unknown",
+        "request": {
+          "submit_intent_id": "submit-test",
+          "reason_code": "cancellation_unconfirmed",
+          "observed_at_us": 1792756800000000,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "quarantine_lease",
+        "request": {
+          "lease_id": "lease-test-stage-main",
+          "reason_code": "cancellation_unconfirmed",
+          "observed_at_us": 1792756800000000,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "release_lease",
+        "request": {
+          "lease_id": "lease-test-stage-main",
+          "expected_version": "1",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "append_interval",
+        "request": {
+          "interval_id": "interval-test",
+          "submit_intent_id": "submit-test",
+          "output_stream_id": "output-test",
+          "sample_rate_hz": 24000,
+          "meter_kind": "generated",
+          "sample_start": 0,
+          "sample_end": 100,
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "create_runtime_intent",
+        "request": {
+          "request": {
+            "intent_id": "runtime-test",
+            "target_node_id": "host-test",
+            "pool_id": "tts-realtime",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "approved_template_id": "template-test",
+            "binding_revision_id": "binding-test",
+            "manifest_id": "manifest-test",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "prepare",
+            "fencing_token": 1,
+            "reserved_memory": {
+              "architecture": "unified_memory",
+              "peak": {
+                "unified_memory_bytes": 20,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              },
+              "steady": {
+                "unified_memory_bytes": 10,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              }
+            },
+            "deadline_at": "2026-10-23T13:00:00Z"
+          },
+          "expected_head_version": "1",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "observe_runtime",
+        "request": {
+          "observation": {
+            "intent_id": "runtime-test",
+            "target_node_id": "host-test",
+            "pool_id": "tts-realtime",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "approved_template_id": "template-test",
+            "binding_revision_id": "binding-test",
+            "manifest_id": "manifest-test",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "prepare",
+            "fencing_token": 1,
+            "reserved_memory": {
+              "architecture": "unified_memory",
+              "peak": {
+                "unified_memory_bytes": 20,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              },
+              "steady": {
+                "unified_memory_bytes": 10,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0
+              }
+            },
+            "intent_state": "succeeded",
+            "observed_instance_state": "ready",
+            "created_at": "2026-10-23T12:00:00Z",
+            "updated_at": "2026-10-23T12:00:01Z",
+            "error_code": null
+          },
+          "expected_instance_version": "1",
+          "expected_intent_version": "1",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "query_outcome",
+        "request": {
+          "target": {
+            "kind": "attempt",
+            "identity": {
+              "operation_id": "operation-test",
+              "attempt_id": "attempt-test"
+            }
+          },
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "boundary/type/state violation",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "acquire_owner",
+        "request": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "expected_version": "1",
+          "ttl_ms": 0
+        }
+      }
+    },
+    {
+      "reason": "boundary/type/state violation",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "admit_recipe",
+        "request": {
+          "identity": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test"
+          },
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "recipe_digest": "sha256:d2c2a878bcf44d36de936819f8576af1cedd11bdeb5c93c5256d89550dda2766",
+          "policy_revision_id": "policy-test",
+          "expected_quota_version": "1",
+          "service_class": "realtime",
+          "authorities": [
+            {
+              "pool_id": "tts-realtime",
+              "owner_id": "scheduler-test",
+              "fencing_token": 1
+            }
+          ],
+          "deadline_at_us": 9223372036854775808,
+          "stages": [
+            {
+              "stage_id": "stage-main",
+              "lease_id": "lease-test-stage-main",
+              "pool_id": "tts-realtime",
+              "host_node_id": "host-test",
+              "gateway_id": "gateway-test",
+              "instance_id": "instance-test",
+              "instance_generation": 1,
+              "expected_instance_version": "1",
+              "reserved_slots": 1
+            }
+          ],
+          "job": {
+            "job_id": "job-test",
+            "event_id": "event-test",
+            "event_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      }
+    },
+    {
+      "reason": "boundary/type/state violation",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "record_stop",
+        "request": {
+          "evidence": {
+            "evidence_id": "evidence-test",
+            "submit_intent_id": "submit-test",
+            "evidence_kind": "engine_abort_ack",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "observed_at_us": 1792756800000000,
+            "execution_stopped": true,
+            "resources_released": true,
+            "reason": null
+          },
+          "terminal_state": "cancelled",
+          "error_code": null
+        }
+      }
+    },
+    {
+      "reason": "boundary/type/state violation",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "append_interval",
+        "request": {
+          "interval_id": "interval-test",
+          "submit_intent_id": "submit-test",
+          "output_stream_id": "output-test",
+          "sample_rate_hz": 0,
+          "meter_kind": "generated",
+          "sample_start": 0,
+          "sample_end": 100
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "record_execution_observation",
+        "request": {
+          "observation": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00+00:00",
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null,
+            "dispatched_at": null,
+            "engine_request_id": null,
+            "execution_state": "failed",
+            "cleanup_state": "not_required",
+            "stop_evidence_kind": "none",
+            "output_watermark": null,
+            "staging_artifact_ref": null,
+            "error_code": "invalid_execution_request",
+            "updated_at": "2026-10-23T12:00:00Z"
+          },
+          "expected_version": "1",
+          "undeclared": true
+        }
+      }
+    },
+    {
+      "reason": "unknown request property",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "redact_execution_command",
+        "request": {
+          "submit_intent_id": "submit-test",
+          "expected_version": "2",
+          "deletion_job_id": "deletion-test",
+          "deletion_evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "undeclared": true
+        }
+      }
+    }
+  ],
+  "valid_results": [
+    {
+      "outcome": "committed",
+      "scope_id": "pool-test",
+      "recovery": "none",
+      "value": {
+        "kind": "owner",
+        "authority": {
+          "pool_id": "tts-realtime",
+          "owner_id": "scheduler-test",
+          "fencing_token": 1
+        },
+        "expires_at_us": 1792756860000000,
+        "owner_state": "reconciling_takeover",
+        "version": "2"
+      },
+      "schema_version": "1.0.0",
+      "operation": "acquire_owner"
+    },
+    {
+      "outcome": "unknown",
+      "scope_id": "operation-test",
+      "error_code": "outcome_unknown",
+      "recovery": "query_original",
+      "schema_version": "1.0.0",
+      "operation": "admit_recipe"
+    },
+    {
+      "outcome": "conflict",
+      "scope_id": "runtime-test",
+      "error_code": "intent_conflict",
+      "recovery": "none",
+      "schema_version": "1.0.0",
+      "operation": "create_runtime_intent"
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "admit_recipe",
+      "outcome": "committed",
+      "scope_id": "operation-test",
+      "recovery": "none",
+      "value": {
+        "kind": "admission",
+        "identity": {
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test"
+        },
+        "lease_ids": [
+          "lease-test-stage-main"
+        ],
+        "version": "1",
+        "reservations": [
+          {
+            "lease_id": "lease-test-stage-main",
+            "stage_id": "stage-main",
+            "reserved_slots": 1,
+            "physical": {
+              "unified_physical_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0,
+              "cpu_decode_millicores": 10,
+              "host_pcm_buffer_bytes": 10,
+              "scratch_disk_bytes": 10
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "claim_job",
+      "outcome": "committed",
+      "scope_id": "job-test",
+      "recovery": "none",
+      "value": {
+        "kind": "claim",
+        "job_id": "job-test",
+        "worker_id": "worker-test",
+        "claim_version": 1,
+        "expires_at_us": 1792756860000000
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "release_lease",
+      "outcome": "committed",
+      "scope_id": "lease-test-stage-main",
+      "recovery": "none",
+      "value": {
+        "kind": "lease",
+        "lease_id": "lease-test-stage-main",
+        "lease_state": "released",
+        "cleanup_state": "complete",
+        "version": "2"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "quarantine_lease",
+      "outcome": "committed",
+      "scope_id": "lease-test-stage-main",
+      "recovery": "none",
+      "value": {
+        "kind": "lease",
+        "lease_id": "lease-test-stage-main",
+        "lease_state": "quarantined",
+        "cleanup_state": "quarantined",
+        "version": "2"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "append_interval",
+      "outcome": "committed",
+      "scope_id": "interval-test",
+      "recovery": "none",
+      "value": {
+        "kind": "fact",
+        "fact_id": "interval-test",
+        "request_digest": "sha256:4ae108c3c7697bc3e05498f92ab695ff11d727fa223a6d98a01f5716a1eaa8a5"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "record_execution_observation",
+      "outcome": "committed",
+      "scope_id": "submit-test",
+      "recovery": "none",
+      "value": {
+        "kind": "execution",
+        "execution": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00+00:00",
+          "sample_rate_hz": 24000,
+          "voice_revision_id": null,
+          "dispatched_at": null,
+          "engine_request_id": null,
+          "execution_state": "failed",
+          "cleanup_state": "not_required",
+          "stop_evidence_kind": "none",
+          "output_watermark": null,
+          "staging_artifact_ref": null,
+          "error_code": "invalid_execution_request",
+          "updated_at": "2026-10-23T12:00:00Z"
+        }
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "observe_runtime",
+      "outcome": "committed",
+      "scope_id": "runtime-test",
+      "recovery": "none",
+      "value": {
+        "kind": "runtime",
+        "runtime": {
+          "intent_id": "runtime-test",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "action": "prepare",
+          "fencing_token": 1,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "ready",
+          "created_at": "2026-10-23T12:00:00Z",
+          "updated_at": "2026-10-23T12:00:01Z",
+          "error_code": null
+        }
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "operation": "redact_execution_command",
+      "outcome": "committed",
+      "scope_id": "submit-test",
+      "recovery": "none",
+      "value": {
+        "kind": "fact",
+        "fact_id": "submit-test",
+        "request_digest": "sha256:c30f227df2668416806026b0a8ab630ba6118bd1179e2e3ee65a3c6defaeef85"
+      }
+    }
+  ]
+}

@@ -7,6 +7,15 @@ from typing import Literal
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ProcessRole = Literal[
+    "api",
+    "realtime-gateway",
+    "scheduler",
+    "job-worker",
+    "workbench-api",
+    "workbench-export-worker",
+]
+
 
 class Settings(BaseSettings):
     """Runtime settings loaded from SPEECHNEXUS_* environment variables."""
@@ -21,6 +30,9 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "staging", "production"] = "development"
     service_name: str = Field(default="speechnexus-api", min_length=1, max_length=64)
+    process_role: ProcessRole = "api"
+    node_id: str = Field(default="node-local-1", min_length=1, max_length=128)
+    instance_id: str = Field(default="api-1", min_length=1, max_length=128)
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"

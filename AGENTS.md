@@ -1,45 +1,84 @@
-# SpeechNexus 工程规则
+# SpeechNexus — Agent 工作约定
 
-本文件适用于整个仓库。系统、开发者和当前用户指令优先；本文件补充跨任务稳定的工程约束，不替代专业文档、契约或实测记录。
+本文件适用于整个仓库。遵循系统、开发者和当前用户指令；深层 `AGENTS.md` 在其目录内补充或细化规则。这里保留影响 Agent 判断的稳定项目边界，具体设计和易变状态由链接文档维护。
 
-## 事实来源
+## 执行任务
 
-判断当前行为时按以下顺序取证：
+- 按当前请求确定交付物和验收条件。查询、解释与审查保持只读；实施任务推进到修改、必要验证和结果交付。对范围内的常规实现选择自行决定。
+- 写入前检查 `git status` 与目标 diff，保留现有改动。同一位置出现其他或来源不明的修改时，先核对其范围与归属，再编辑。
+- 已给出的授权持续适用。只有缺少会改变产品范围、公共协议、持久化数据或运行边界的关键决定时才询问；继续完成不依赖该决定的工作。
+- 简单任务直接执行。跨模块、高风险或长时任务才按需使用 `docs/plans/`；不要为每次编辑创建计划或过程文件。
+- commit、push、发布、删除数据和外部运行态变更须在当前请求中获得明确授权。
+- 需要追踪代码结构、调用关系或依赖时，若当前 Agent 提供 `codebase-memory`，先用结构查询并核对引用文件的索引覆盖；覆盖不全时直接读取遗漏源码。否则用 `rg` 和源码定位。配置、字面量与文档直接搜索和读取。
 
-1. 运行结果、代码和测试；
-2. `contracts/` 中的机器契约；
-3. `docs/` 中状态为 active 的设计与 ADR；
-4. 计划、审查和带日期记录只说明其记录时点，不能证明当前能力。
+## 按需阅读
 
-报告必须区分“已实现”“已通过实测”“契约要求”和“后续计划”。健康检查通过不等于语音质量、容量、长时稳定性或发布资格通过。
+先定位相关文件，再按任务读取所需范围；不要求每次任务通读仓库文档。
 
-## 产品与数据边界
+| 任务 | 入口 |
+| --- | --- |
+| 当前能力、启动入口 | [README.md](README.md)、[README.en.md](README.en.md) |
+| 文档与工程交接索引 | [docs/README.md](docs/README.md)、[technical-blueprint.md](docs/architecture/technical-blueprint.md) |
+| 模块边界与依赖方向 | [repository-layout.md](docs/architecture/repository-layout.md) |
+| 公共/内部协议与错误语义 | [contracts/README.md](contracts/README.md)、相关机器契约 |
+| 产品范围、身份与共享部署 | [ADR 0001](docs/decisions/0001-product-boundaries-and-authentication-scope.md)、[产品设计](docs/speechnexus-product-architecture.md) |
+| 模型选择、绑定与加载 | [ADR 0002](docs/decisions/0002-speech-models-engines-and-loading.md)、[runtime-governance.md](docs/architecture/runtime-governance.md) |
+| 工作台 LLM 与内容网络边界 | [ADR 0003](docs/decisions/0003-workbench-llm-network-boundary.md) |
+| 事务、租约、执行与恢复 | [technical-blueprint.md](docs/architecture/technical-blueprint.md)、[runtime-governance.md](docs/architecture/runtime-governance.md) 的相关章节 |
+| 本机环境、初始化或部署 | [development-environment.md](docs/development-environment.md)、[deploy/README.md](deploy/README.md) |
+| SpeechRail 代码或规则复用 | [speechrail-reuse.md](docs/architecture/speechrail-reuse.md) |
 
-- 首期没有登录、用户目录、RBAC、ACL、多租户或个人私有空间。一个部署默认共享 workspace；`/admin` 与 `/workbench` 只代表功能视图，不形成权限边界。
-- 语音底座可独立运行，不依赖 WebUI、工作台业务数据或 LLM。工作台通过公开语音协议调用底座。
-- PostgreSQL 是任务、版本、用量、租约和 outbox 的权威存储；对象存储保存明确提交的输入与制品。Redis 只可作为可选加速层。
-- 日志、fixture、测试和报告不得包含凭据、完整私有音频、Base64、完整转写、声音特征或内部模型路径。
-- 仓库不得提交 `.runtime/`、`.venv/`、`node_modules/`、模型、运行数据或真实凭据。
+当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线和已接受决定。发现冲突时指出具体差异，不能通过放宽校验掩盖。计划、占位目录和带日期记录不能单独证明能力已经实现。报告区分已实现、已验证、契约要求和计划状态。
 
-## 契约与模块
+## 产品、数据与安全边界
 
-- P0 业务契约尚未冻结。不得把 `/v1/audio/*`、Realtime、Job、音色或工作台占位目录当成已实现能力。
-- 先冻结生产者与消费者的机器契约，再实现业务路由。默认值、单位、范围、状态和稳定错误码只在契约中定义。
-- 保持 `domain → application → infrastructure/interfaces` 的方向；组合根可以装配各层。`uv run lint-imports` 是强制门禁。
-- `backend` 与 `execution-gateway` 独立部署。执行网关拥有引擎提交屏障、fencing、abort 与完成证据，其他进程不得直接持有引擎凭据。
-- SpeechRail 参考来源固定为 `3f57647a3ee79c04318d8bf097489b2b5185da4f`。只提取经验证的领域规则与测试思想；macOS、MLX、CoreML、私有 IPC 与本机生命周期代码不复用。提取时记录来源、许可证和变更范围。
+- 首期没有登录、用户目录、RBAC、ACL、多租户或个人私有空间。`/admin` 与 `/workbench` 是功能入口，不形成身份或数据隔离边界。
+- 语音底座可独立于 WebUI、工作台业务和 LLM 运行。工作台通过公开语音协议消费底座；工作台不共写底座表，项目、稿件、会议、助手、纪要和有声书编排留在工作台。
+- PostgreSQL 是任务、版本、用量、租约和 outbox 的权威存储；对象存储保存明确提交的输入和制品；Redis 仅可作可选加速层，不能承担唯一事实或协调保证。
+- 音频、转写、书稿、声音参考及派生内容不得离开部署网络。浏览器资源、代理、日志、追踪和错误报告遵守同一边界。工作台 LLM 默认关闭，只能使用服务端配置的本机或内网服务；客户端不能指定任意端点，失败不能回退公有云。内网地址本身不是出站受限的证据。
+- 测试用合成数据或最小脱敏样例。日志、fixture 和报告不得包含真实凭据、私有音频、完整业务转写、声音特征、音频 Base64 或内部模型路径。模型、运行数据、`.runtime/`、`.venv/` 与 `node_modules/` 不入库。
+- SpeechRail 仅作为领域规则与测试思想来源。提取时遵循复用文档中的固定 commit，记录来源文件、许可证与改动范围；不移植 macOS、MLX、CoreML、私有 IPC 或单机生命周期实现。
+
+## 契约、模块与运行时
+
+- 新增业务路由前先冻结生产者与消费者的机器契约，定义默认值、单位、范围、状态与稳定错误码。公共协议和内部执行/部署协议分开建模；为状态和错误变化提供正例、负例及必要事件序列，并验证所有消费者。schema 语法通过不代表语义已冻结。
+- Python / TypeScript 边界类型从契约生成或校验，不手改生成产物或维护独立语义副本。公共协议、内部协议、领域对象与 vendor DTO 分别建模并在边界转换。OpenAI 兼容范围限于明确声明的子集；扩展使用 `nexus` 命名空间。公开 DTO 不暴露内部端点、实例身份或凭据。
+- 依赖向内：`interfaces` / `infrastructure` → `application` → `domain`；`domain` 不依赖框架、生成 DTO、数据库或 vendor 类型。组合根负责装配，`uv run lint-imports` 检查依赖边界。
+- 部署控制器只管理获准模板对应的实例。业务 API、worker 和工作台不直接访问引擎，不持有任意容器管理权限，也不挂载 Docker socket。引擎凭据、执行提交屏障、fencing、abort 与完成证据由执行网关边界管理。
+- 持久化按表明确所有权，采用短事务和版本化迁移；运行角色不执行 DDL。推理、HTTP、对象写入和长时编码不占数据库事务；对象先写入私有 staging，再发布数据库引用。
+- 分开记录模型绑定、运行实例/generation、容量租约和资格。取消请求或任务结束不等于算力已停止；只有拿到停止与资源释放证据后才归还预算。音色及其他可复用制品按契约校验并显式发布不可变版本；细节以相关契约和架构文档为准。
+- `web/shared/` 只放两个入口以相同语义消费的稳定组件；未实现的能力不得用虚构任务、模型或容量填充界面。
+- 公共协议、架构或运行行为改变时，同步更新实现、消费者、相关测试和有效文档；README 中英文版的状态、命令和产品边界保持一致。历史计划与审查记录保留原时点事实。
 
 ## 工具链与验证
 
-- Python 3.12 由 `uv` 管理；workspace 必须从根目录运行 `uv sync --locked --all-packages --all-groups`、`uv run ...`，并提交 `uv.lock`。
-- Node 22 / `pnpm` 10。`web/admin`、`web/workbench`、`web/shared` 是 workspace 成员；版本集中定义在 `pnpm-workspace.yaml` catalog，并提交 `pnpm-lock.yaml`。
-- 修改后至少运行与风险匹配的测试；完整本地门禁为 `make verify`。涉及服务启动时使用隔离的 `.runtime` PostgreSQL / MinIO，不访问同机共享实例。
-- 确定性测试使用 fake adapter，不下载模型、不使用私人音频。真实引擎、质量与负载验证必须另记版本、绑定、拓扑和证据。
-- 自动化检查不得把跳过伪装为通过。尚不存在的契约或测试应明确报告缺少覆盖。
+从仓库根目录运行工具。精确 Python / Node 版本见 `.python-version`、`.nvmrc` 与 `package.json`；共享 Web 依赖版本由 `pnpm-workspace.yaml` catalog 管理。依赖变更更新相应 lockfile，不手改生成的 lockfile。
 
-## Git 与交付
+依赖尚未安装或 lockfile 改变且任务需要时，使用锁定安装：
 
-- 保留用户及并行任务的改动，不覆盖、回退或整文件还原来源不明的修改。
-- 一个提交只表达一个逻辑主题，消息使用 `<type>: <why>`。提交前检查 staged diff、空白错误和敏感字段。
-- 用户未明确要求时，不自动 commit、push、发布或修改外部运行态。
-- 公共契约、架构或运行行为变化时，同步更新实现、测试与对应文档；历史计划与审查记录保持原时点事实。
+```bash
+uv sync --locked --all-packages --all-groups
+pnpm install --frozen-lockfile
+```
+
+按改动运行针对性验证；相关内容未变化且证据仍有效时复用结果。
+
+| 改动 | 验证入口 |
+| --- | --- |
+| 文档或 Agent 指令 | 核对本地链接、命令与声明；运行 `git diff --check` |
+| Python | `uv run ruff format --check .`、`uv run ruff check .`、`uv run mypy`、`uv run lint-imports` 和覆盖改动的 `uv run pytest` 测试 |
+| Web | `pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` |
+| 机器契约 | `make contracts-check`，并验证正负样例、生产者与消费者语义 |
+| 持久化、调度或恢复 | fake 和隔离 PostgreSQL / MinIO 集成测试，覆盖相关事务与故障路径 |
+| 部署配置 | `make stack-config` 及受影响镜像或服务的针对性检查 |
+| 完整本机验证 | `make verify`；CI 检查范围见 [.github/workflows/ci.yml](.github/workflows/ci.yml) |
+
+`scripts/dev-env/` 服务管理针对 Linux ARM64、APT 与用户级 systemd。运行前确认宿主、脚本前置条件和现有服务；仅使用本项目隔离的 `.runtime/` PostgreSQL / MinIO，不访问同机共享实例。环境就绪记录不代表当前主机可运行。
+
+确定性测试使用 fake adapter，不下载或加载模型，不使用私人音频。真实引擎、质量与负载验证需另记模型和引擎版本、绑定、拓扑与结果。健康检查、schema 校验、合成媒体和浏览器冒烟各自只证明实际覆盖范围；跳过不算通过，缺少契约或测试覆盖时如实说明。
+
+## 交付与维护
+
+- 完成前审阅 diff 与验收范围，按需运行相关验证；报告实际检查、结果、未验证项和阻塞。不要声称未运行的测试或未经验证的能力已通过。
+- 仅在用户明确要求提交时创建原子提交，消息使用 `<type>: <why>`；提交前核对 staged diff 和敏感字段。
+- 修改本文件时保留仍影响 Agent 决策的项目约束。易变状态留给权威文档，长工作流留给按需文档或技能；新增规则写明适用条件和安全执行路径，机械检查交给工具与 CI。

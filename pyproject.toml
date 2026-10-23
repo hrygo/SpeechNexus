@@ -3,7 +3,7 @@ name = "speechnexus"
 version = "0.1.0.dev0"
 description = "Enterprise speech service with OpenAI-compatible and enhanced APIs"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = []
 
 [tool.uv]
@@ -16,7 +16,7 @@ members = ["backend", "execution-gateway"]
 dev = [
   "av>=19,<20",
   "coverage[toml]>=7.16.2,<8",
-  "cryptography>=44,<47",
+  "cryptography>=44,<51",
   "httpx>=0.28.1,<0.29",
   "imageio-ffmpeg>=0.6,<1",
   "import-linter>=2.15,<3",
@@ -24,15 +24,19 @@ dev = [
   "minio>=7.2,<8",
   "mypy>=2.4,<3",
   "numpy>=2.2,<3",
+  "openai>=2,<3",
   "openapi-spec-validator>=0.7,<1",
   "psycopg[binary]>=3.2,<4",
+  "pymysql>=1.1.2,<2",
   "pytest>=9.1.1,<10",
   "pytest-asyncio>=1.4,<2",
   "pytest-cov>=7.1,<8",
   "pyyaml>=6,<7",
+  "rfc8785>=0.1.4,<0.2",
   "ruff>=0.17.1,<1",
   "soundfile>=0.14,<1",
   "types-jsonschema>=4.23,<5",
+  "types-pymysql>=1.1,<2",
   "types-pyyaml>=6,<7",
 ]
 
@@ -42,7 +46,7 @@ addopts = "-ra --strict-config --strict-markers"
 asyncio_mode = "auto"
 pythonpath = ["."]
 markers = [
-  "integration: requires the isolated PostgreSQL and object-storage services",
+  "integration: requires explicitly configured isolated database/object-storage services",
 ]
 
 [tool.coverage.run]
@@ -59,7 +63,7 @@ skip_covered = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 src = ["backend/src", "execution-gateway/src", "tests"]
 
 [tool.ruff.lint]
@@ -67,7 +71,7 @@ select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "ASYNC", "RUF", 
 ignore = ["RUF001"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -92,8 +96,7 @@ root_packages = ["speechnexus_backend", "speechnexus_gateway"]
 name = "Speech backend dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_backend.speech.interfaces",
-  "speechnexus_backend.speech.infrastructure",
+  "speechnexus_backend.speech.interfaces | speechnexus_backend.speech.infrastructure",
   "speechnexus_backend.speech.application",
   "speechnexus_backend.speech.domain",
 ]
@@ -102,8 +105,7 @@ layers = [
 name = "Workbench backend dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_backend.workbench.interfaces",
-  "speechnexus_backend.workbench.infrastructure",
+  "speechnexus_backend.workbench.interfaces | speechnexus_backend.workbench.infrastructure",
   "speechnexus_backend.workbench.application",
   "speechnexus_backend.workbench.domain",
 ]
@@ -112,8 +114,17 @@ layers = [
 name = "Execution gateway dependency direction"
 type = "layers"
 layers = [
-  "speechnexus_gateway.interfaces",
-  "speechnexus_gateway.infrastructure",
+  "speechnexus_gateway.interfaces | speechnexus_gateway.infrastructure",
   "speechnexus_gateway.application",
   "speechnexus_gateway.domain",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Speech and workbench consume public protocols only"
+type = "independence"
+modules = ["speechnexus_backend.speech", "speechnexus_backend.workbench"]
+
+[[tool.importlinter.contracts]]
+name = "Backend and execution gateway are independent deployments"
+type = "independence"
+modules = ["speechnexus_backend", "speechnexus_gateway"]

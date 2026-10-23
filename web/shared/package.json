@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "sideEffects": [
-    "./src/styles.css"
+    "./src/ui/styles.css",
+    "**/*.css"
   ],
   "exports": {
     ".": {

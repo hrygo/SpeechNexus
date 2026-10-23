@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/references.schema.json",
+  "title": "SpeechNexusRevisionedReference",
+  "description": "Single source of truth for a reference to an immutable resource revision. Domain-specific aliases must reference this shape instead of copying it.",
+  "$defs": {
+    "ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "identifiers.schema.json#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    }
+  }
+}

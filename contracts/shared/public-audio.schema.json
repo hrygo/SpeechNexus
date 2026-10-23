@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/public-audio.schema.json",
+  "title": "SpeechNexusPublicAudioDomains",
+  "description": "Single source of truth for public PCM, usage, and realtime session limits shared by the REST and WebSocket projections.",
+  "$defs": {
+    "PcmDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "sample_rate_hz",
+        "channels"
+      ],
+      "properties": {
+        "encoding": {
+          "const": "pcm_s16le"
+        },
+        "sample_rate_hz": {
+          "const": 24000
+        },
+        "channels": {
+          "const": 1
+        }
+      }
+    },
+    "UsageDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seconds"
+      ],
+      "properties": {
+        "type": {
+          "const": "duration"
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "UsageTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens"
+      ],
+      "properties": {
+        "type": {
+          "const": "tokens"
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RealtimeLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_input_chunk_ms",
+        "max_message_bytes",
+        "input_credit_samples",
+        "output_credit_samples",
+        "max_segment_ms",
+        "max_session_duration_ms"
+      ],
+      "properties": {
+        "max_input_chunk_ms": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 250
+        },
+        "max_message_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65536
+        },
+        "input_credit_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_credit_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "max_session_duration_ms": {
+          "type": "integer",
+          "minimum": 60000
+        }
+      }
+    }
+  }
+}

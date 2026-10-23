@@ -1,0 +1,1666 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus administration API
+  version: 0.1.0.dev0
+  description: |
+    Deployment-scoped administration and observation API. These routes do not
+    establish a user identity, role, or tenant boundary. A deployment may expose
+    them on a separate listener or route allowlist, but the API itself must not
+    pretend that hiding a navigation entry is authorization.
+
+    Model binding revisions, runtime instances, capacity manifests, and
+    qualification reports are separate resources. No response exposes private
+    artifact paths, engine endpoints, credentials, or arbitrary container
+    control.
+servers:
+  - url: /
+security:
+  - SharedServiceKey: []
+  - {}
+tags:
+  - name: workspaces
+  - name: profiles
+  - name: model-bindings
+  - name: model-instances
+  - name: resource-pools
+  - name: quarantine
+  - name: policies
+  - name: diagnostics
+  - name: audit
+paths:
+  /v1/nexus/workspaces:
+    get:
+      tags: [workspaces]
+      operationId: listWorkspaces
+      summary: List content and budget groups
+      description: |
+        A workspace groups content and budget. It is not a user, tenant, ACL, or
+        privacy boundary.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Workspaces.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: Create a content and budget group
+      description: |
+        A workspace is not a user, tenant, ACL, or privacy boundary. Creation is
+        an administrative grouping action; it does not grant personal ownership.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceCreateRequest"
+      responses:
+        "201":
+          description: Workspace created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/workspaces/{workspace_id}:
+    get:
+      tags: [workspaces]
+      operationId: getWorkspace
+      summary: Get one workspace
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Workspace.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [workspaces]
+      operationId: updateWorkspace
+      summary: Update workspace display metadata or status
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspacePatch"
+      responses:
+        "200":
+          description: Updated workspace.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles:
+    get:
+      tags: [profiles]
+      operationId: listProfileFamilies
+      summary: List scenario-profile families and their immutable revisions
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, published, retired, disabled]
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Profile families. Filtering by status applies to latest_revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileFamilyList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [profiles]
+      operationId: createProfileRevision
+      summary: Create an immutable draft scenario-profile revision
+      description: |
+        Creates the next immutable revision in a profile family. The request
+        carries `expected_latest_revision` for revision allocation; null is
+        valid only for a new family. An existing mismatch returns 409
+        `configuration_changed`. The new revision starts in publication
+        `draft` state and is not returned by the public profile list until it
+        is published. Replaying the same Idempotency-Key and canonical intent
+        returns the original revision; the same key with a different intent
+        returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileRevisionCreateRequest"
+      responses:
+        "201":
+          description: Draft profile revision created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}:
+    get:
+      tags: [profiles]
+      operationId: getProfileRevisionForAdministration
+      summary: Get a draft or historical profile revision
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Profile revision, including unpublished drafts.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications:
+    post:
+      tags: [profiles]
+      operationId: publishProfileRevision
+      summary: Validate and publish a draft profile revision
+      description: |
+        The target revision must be a draft and the supplied validation evidence
+        must describe it. The server rechecks parameter domains, capability
+        composition, override allowlists, and production-tier evidence before
+        atomically changing the revision to `published` and activating the
+        family's current pointer. `expected_current_revision` is a
+        compare-and-swap guard; null is valid only when no revision is current.
+        A changed pointer returns 409 `configuration_changed`. An identical
+        Idempotency-Key replay returns the original publication; a changed
+        intent under the same key returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfilePublicationRequest"
+      responses:
+        "200":
+          description: Profile revision published and activated.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations:
+    post:
+      tags: [profiles]
+      operationId: activatePublishedProfileRevision
+      summary: Roll the current profile pointer back or forward to a published revision
+      description: |
+        Activates an existing `published` revision without modifying it. This is
+        the explicit rollback path. `expected_current_revision` is the current
+        pointer observed by the operator; a mismatch returns 409
+        `configuration_changed`. Retired, disabled, and draft revisions cannot be
+        activated. An identical Idempotency-Key replay returns the original
+        activation; a changed intent under the same key returns 409
+        `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileActivationRequest"
+      responses:
+        "200":
+          description: Published profile revision activated.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements:
+    post:
+      tags: [profiles]
+      operationId: retireProfileRevision
+      summary: Retire or disable a scenario-profile revision
+      description: |
+        `retire` stops new references while already fixed jobs and sessions keep
+        their pinned revision. `disable` additionally blocks new submissions
+        that would select this revision. If the revision is current, retirement
+        clears the family's current pointer; it does not silently roll back to
+        another revision. Use the activations endpoint to select a known-good
+        published revision explicitly. An identical Idempotency-Key replay
+        returns the original retirement; a changed intent under the same key
+        returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileRevisionRetirementRequest"
+      responses:
+        "200":
+          description: Profile revision retired or disabled.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/model-bindings:
+    get:
+      tags: [model-bindings]
+      operationId: listModelBindings
+      summary: List model binding families and their current revisions
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, published, retired, disabled]
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Model binding families.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelBindingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [model-bindings]
+      operationId: createModelBindingDraft
+      summary: Create an immutable draft binding revision
+      description: |
+        Creates a new revision in `draft` state. Publishing requires separate
+        capacity and qualification evidence.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelBindingCreateRequest"
+      responses:
+        "201":
+          description: Draft binding revision created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-binding.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}:
+    get:
+      tags: [model-bindings]
+      operationId: getModelBindingRevision
+      summary: Get one immutable binding revision
+      parameters:
+        - $ref: "#/components/parameters/BindingIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Binding revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-binding.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/model-bindings/{binding_id}/publications:
+    post:
+      tags: [model-bindings]
+      operationId: publishModelBindingRevision
+      summary: Publish a draft binding revision with capacity and qualification evidence
+      description: |
+        The referenced capacity manifest and qualification report must describe
+        the same binding revision and compatible topology. Production release
+        tier additionally requires every required qualification scenario to pass.
+        `expected_revision` is the exact draft revision to publish and activate
+        for new sessions and jobs; it is not the family head. The publication
+        atomically makes that revision current. `expected_current_revision` is
+        the active revision observed before the request and is a compare-and-swap
+        guard; null is valid only when no revision is active. A changed pointer
+        returns 409 `configuration_changed`. Replaying the same Idempotency-Key
+        and canonical intent returns 200 with the original result; the same key
+        with a different intent returns 409 `idempotency_conflict`. A target
+        revision that is not draft returns 409 `binding_not_draft`.
+      parameters:
+        - $ref: "#/components/parameters/BindingIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelBindingPublicationRequest"
+      responses:
+        "201":
+          description: Binding published.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-binding.schema.json"
+        "200":
+          description: Idempotent replay of the same publication.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-binding.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements:
+    post:
+      tags: [model-bindings]
+      operationId: retireModelBindingRevision
+      summary: Retire or disable a model binding revision
+      description: |
+        Retiring a binding stops new references but preserves immutable history.
+        Emergency disable also cancels confirmed in-flight use; unknown cleanup
+        stays quarantined and no budget is released without stop evidence.
+      parameters:
+        - $ref: "#/components/parameters/BindingIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelBindingRetirementRequest"
+      responses:
+        "200":
+          description: Updated binding revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-binding.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/model-instances:
+    get:
+      tags: [model-instances]
+      operationId: listModelInstances
+      summary: List observed runtime instances
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: host_node_id
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - name: state
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/InstanceState"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Runtime instances.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelInstanceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/admin/capacity-manifests/{manifest_id}:
+    get:
+      tags: [model-bindings]
+      operationId: getCapacityManifest
+      summary: Get an immutable capacity manifest
+      parameters:
+        - name: manifest_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Capacity manifest.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./capacity-manifest.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/qualification-reports/{report_id}:
+    get:
+      tags: [model-bindings]
+      operationId: getQualificationReport
+      summary: Get a qualification report
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Qualification report.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./qualification-report.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/model-instances/{instance_id}/generations/{generation}:
+    get:
+      tags: [model-instances]
+      operationId: getModelInstance
+      summary: Get one observed runtime instance
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - $ref: "#/components/parameters/GenerationPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Runtime instance.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./model-instance.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/resource-pools:
+    get:
+      tags: [resource-pools]
+      operationId: listResourcePools
+      summary: List logical resource pools and current reservations
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Resource pools.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourcePoolList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases:
+    post:
+      tags: [quarantine]
+      operationId: releaseQuarantinedAdmissionLease
+      summary: Release an irrecoverably unconfirmed lease after operator verification
+      description: |
+        This is the explicit operator recovery path for a quarantined admission
+        lease. The deployment uses it only after the execution gateway and node
+        controller cannot produce machine-readable terminal evidence and an
+        operator has independently verified that the old process or container is
+        gone. The server must still atomically release the lease, engine slot,
+        and host quarantine counters; recording evidence alone never frees
+        capacity. Machine-verifiable gateway/controller evidence is consumed by
+        the background reconciler and does not require this endpoint. Before
+        budget is released, every submit intent belonging to the lease must be
+        closed with complete cleanup evidence; the response lists those intents
+        in lexicographic order. `observed_at` is the operator-observed
+        termination time and must not be later than the server's
+        `budget_released_at`.
+
+        The `Idempotency-Key` scope is the deployment and lease. Replaying the
+        same key and canonical evidence returns 200 with the original
+        `budget_released_at`, sorted intent list, and `idempotent_replay: true`;
+        reusing that key with any different evidence or reason returns 409
+        `idempotency_conflict`. A lease already released by a background
+        reconciler may be queried idempotently only when the supplied evidence
+        matches the stored release facts; otherwise the endpoint returns 409
+        `quarantine_release_conflict`. Evidence and reason are persisted with
+        the release and never rewritten.
+      parameters:
+        - $ref: "#/components/parameters/LeaseIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuarantineReleaseRequest"
+      responses:
+        "200":
+          description: Quarantine released and capacity counters reconciled.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuarantineRelease"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/nexus/admin/policies:
+    get:
+      tags: [policies]
+      operationId: listPolicies
+      summary: List deployment and workspace policies
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Policies.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/admin/policies/{policy_id}:
+    get:
+      tags: [policies]
+      operationId: getPolicy
+      summary: Get current policy revision
+      parameters:
+        - $ref: "#/components/parameters/PolicyIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Policy.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [policies]
+      operationId: updatePolicy
+      summary: Create a new policy revision
+      description: |
+        The request carries `expected_revision`. A mismatch returns 409
+        `configuration_changed`. Governance changes are not inference overrides.
+      parameters:
+        - $ref: "#/components/parameters/PolicyIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyPatch"
+      responses:
+        "200":
+          description: New policy revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/diagnostics:
+    get:
+      tags: [diagnostics]
+      operationId: getDiagnostics
+      summary: Read redacted diagnostics
+      description: |
+        Diagnostics are read-only and never trigger model loading. Responses omit
+        content, audio, feature vectors, credentials, object keys, and private
+        model paths.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Diagnostics snapshot.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Diagnostics"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/audit-events:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      summary: List anonymous or shared-credential operation records
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Audit events ordered by (occurred_at, id).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+components:
+  securitySchemes:
+    SharedServiceKey:
+      type: http
+      scheme: bearer
+      description: Optional deployment-wide shared credential; not a user identity.
+  parameters:
+    XRequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    WorkspaceIdQuery:
+      name: workspace_id
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    WorkspaceIdPath:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    BindingIdPath:
+      name: binding_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    ProfileIdPath:
+      name: profile_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    RevisionPath:
+      name: revision
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Revision"
+    PolicyIdPath:
+      name: policy_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    LeaseIdPath:
+      name: lease_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    GenerationPath:
+      name: generation
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Range:
+      name: Range
+      in: header
+      required: false
+      schema:
+        type: string
+  headers:
+    XRequestId:
+      description: Validated client request ID or a server-generated correlation ID.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Malformed request or unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Shared service credential required or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Revision mismatch, idempotency conflict, or incompatible lifecycle transition.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Invalid binding, capacity, qualification, or policy composition.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Control-plane dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Identifier:
+      $ref: "shared/identifiers.schema.json#/$defs/Identifier"
+    Revision:
+      $ref: "shared/identifiers.schema.json#/$defs/Revision"
+    Sha256Digest:
+      $ref: "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    ReleaseTier:
+      $ref: "shared/capability-domains.schema.json#/$defs/ReleaseTier"
+    ServiceClass:
+      $ref: "shared/capability-domains.schema.json#/$defs/ServiceClass"
+    ErrorResponse:
+      $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
+    ProfileRevisionCreateRequest:
+      allOf:
+        - $ref: "./scenario-profile.schema.json#/$defs/ProfileDefinition"
+      type: object
+      unevaluatedProperties: false
+      required: [profile_id, expected_latest_revision]
+      properties:
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        expected_latest_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+    ProfileFamilySummary:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_id
+        - latest_revision
+        - current_revision
+        - kind
+        - release_tier
+        - publication_status
+      properties:
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        latest_revision:
+          $ref: "#/components/schemas/Revision"
+        current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        kind:
+          type: string
+          enum: [asr, tts, duplex]
+        release_tier:
+          $ref: "#/components/schemas/ReleaseTier"
+        publication_status:
+          type: string
+          enum: [draft, published, retired, disabled]
+    ProfileFamilyList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileFamilySummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ProfilePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, expected_current_revision, validation]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        validation:
+          $ref: "./scenario-profile.schema.json#/$defs/ProfileValidation"
+    ProfileActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_current_revision]
+      properties:
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+    ProfileRevisionRetirementRequest:
+      $ref: "shared/lifecycle.schema.json#/$defs/RetirementRequest"
+    Workspace:
+      type: object
+      additionalProperties: false
+      required: [id, object, display_name, status, metadata_revision, policy_revision, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.workspace
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [active, disabled]
+        metadata_revision:
+          type: integer
+          minimum: 1
+        policy_revision:
+          $ref: "#/components/schemas/Revision"
+        created_at:
+          type: string
+          format: date-time
+    WorkspaceCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        policy_id:
+          $ref: "#/components/schemas/Identifier"
+    WorkspacePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [expected_metadata_revision]
+      properties:
+        expected_metadata_revision:
+          type: integer
+          minimum: 1
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [active, disabled]
+    WorkspaceList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Workspace"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ModelBindingSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - binding_id
+        - latest_revision
+        - current_revision
+        - logical_model
+        - tasks
+        - release_tier
+        - publication_status
+      properties:
+        binding_id:
+          $ref: "#/components/schemas/Identifier"
+        latest_revision:
+          $ref: "#/components/schemas/Revision"
+          description: Highest immutable revision in this binding family.
+        current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+          description: Active revision used for new work; null when the family has never been published or its current revision was retired.
+        logical_model:
+          type: string
+        tasks:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "./model-binding.schema.json#/$defs/SpeechTaskKind"
+        release_tier:
+          $ref: "#/components/schemas/ReleaseTier"
+        publication_status:
+          type: string
+          enum: [draft, published, retired, disabled]
+          description: Publication status of latest_revision. A newer draft can coexist with a different current_revision.
+    ModelBindingList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelBindingSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ModelBindingCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - binding_id
+        - logical_model
+        - tasks
+        - engine
+        - artifact_set
+        - execution_recipe
+        - parameter_domains
+        - release_tier
+      properties:
+        binding_id:
+          $ref: "#/components/schemas/Identifier"
+        supersedes_revision:
+          $ref: "#/components/schemas/Revision"
+        logical_model:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        tasks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "./model-binding.schema.json#/$defs/SpeechTaskKind"
+        engine:
+          $ref: "./model-binding.schema.json#/$defs/EngineDescriptor"
+        artifact_set:
+          type: array
+          minItems: 1
+          items:
+            $ref: "./model-binding.schema.json#/$defs/ArtifactReference"
+        execution_recipe:
+          $ref: "./model-binding.schema.json#/$defs/ExecutionRecipe"
+        parameter_domains:
+          $ref: "./model-binding.schema.json#/$defs/ParameterDomains"
+        release_tier:
+          $ref: "./model-binding.schema.json#/$defs/ReleaseTier"
+    ModelBindingPublicationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          expected_revision,
+          expected_current_revision,
+          capacity_manifest_id,
+          qualification_report_id,
+        ]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        capacity_manifest_id:
+          $ref: "#/components/schemas/Identifier"
+        qualification_report_id:
+          $ref: "#/components/schemas/Identifier"
+    ModelBindingRetirementRequest:
+      $ref: "shared/lifecycle.schema.json#/$defs/RetirementRequest"
+    InstanceState:
+      $ref: "shared/runtime-states.schema.json#/$defs/InstanceState"
+    ModelInstanceList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "./model-instance.schema.json"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ResourcePool:
+      type: object
+      additionalProperties: false
+      description: |
+        A logical capability pool. The same pool may contain ready instances on
+        several host nodes; `node_ids` lists the nodes that currently contribute
+        to the aggregate counts.
+      required:
+        - id
+        - object
+        - node_ids
+        - service_class
+        - max_active_slots
+        - realtime_reserved_slots
+        - active_slots
+        - quarantine_slots
+        - status
+      properties:
+        id:
+          $ref: "./shared/identifiers.schema.json#/$defs/PoolId"
+        object:
+          const: nexus.resource_pool
+        node_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+        service_class:
+          $ref: "#/components/schemas/ServiceClass"
+        max_active_slots:
+          type: integer
+          minimum: 0
+        realtime_reserved_slots:
+          type: integer
+          minimum: 0
+        active_slots:
+          type: integer
+          minimum: 0
+        quarantine_slots:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [ready, degraded, unavailable]
+      allOf:
+        - if:
+            properties:
+              status:
+                const: ready
+            required: [status]
+          then:
+            properties:
+              node_ids:
+                minItems: 1
+              max_active_slots:
+                minimum: 1
+    ResourcePoolList:
+      type: object
+      additionalProperties: false
+      required: [object, data]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourcePool"
+    QuarantineReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [evidence_kind, evidence_digest, observed_at, reason]
+      properties:
+        evidence_kind:
+          type: string
+          const: operator_verified_instance_terminated
+        evidence_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        observed_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: "\\S"
+    QuarantineRelease:
+      type: object
+      additionalProperties: false
+      required:
+        - lease_id
+        - object
+        - lease_state
+        - cleanup_state
+        - budget_released_at
+        - evidence_kind
+        - evidence_digest
+        - evidence_observed_at
+        - reason
+        - idempotent_replay
+        - released_submit_intent_ids
+      properties:
+        lease_id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.quarantine_release
+        lease_state:
+          type: string
+          const: released
+        cleanup_state:
+          type: string
+          const: complete
+        budget_released_at:
+          type: string
+          format: date-time
+        evidence_kind:
+          type: string
+          const: operator_verified_instance_terminated
+        evidence_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        evidence_observed_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: "\\S"
+        idempotent_replay:
+          type: boolean
+        released_submit_intent_ids:
+          type: array
+          uniqueItems: true
+          description: Sorted lexicographically for stable idempotent responses. Producer validation rejects unsorted or repeated values.
+          items:
+            $ref: "#/components/schemas/Identifier"
+    PolicyQuotas:
+      type: object
+      additionalProperties: false
+      properties:
+        max_concurrent_jobs:
+          type: [integer, "null"]
+          minimum: 0
+        max_realtime_sessions:
+          type: [integer, "null"]
+          minimum: 0
+        max_queue_wait_ms:
+          type: [integer, "null"]
+          minimum: 0
+    PolicyRetention:
+      type: object
+      additionalProperties: false
+      properties:
+        asset_ttl_seconds:
+          type: integer
+          minimum: 60
+        artifact_ttl_seconds:
+          type: integer
+          minimum: 60
+        job_event_ttl_seconds:
+          type: integer
+          minimum: 60
+    PolicyQuotasPatch:
+      allOf:
+        - $ref: "#/components/schemas/PolicyQuotas"
+        - type: object
+          minProperties: 1
+    PolicyRetentionPatch:
+      allOf:
+        - $ref: "#/components/schemas/PolicyRetention"
+        - type: object
+          minProperties: 1
+    PolicyFeatures:
+      type: object
+      additionalProperties: false
+      required: [workbench_enabled, llm_enabled, voice_creation_enabled]
+      properties:
+        workbench_enabled:
+          type: boolean
+        llm_enabled:
+          type: boolean
+        voice_creation_enabled:
+          type: boolean
+    PolicyFeaturesPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        workbench_enabled:
+          type: boolean
+        llm_enabled:
+          type: boolean
+        voice_creation_enabled:
+          type: boolean
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [id, object, revision, scope, quotas, retention, features, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.policy
+        revision:
+          $ref: "#/components/schemas/Revision"
+        scope:
+          type: object
+          additionalProperties: false
+          required: [workspace_id]
+          properties:
+            workspace_id:
+              oneOf:
+                - $ref: "#/components/schemas/Identifier"
+                - type: "null"
+        quotas:
+          $ref: "#/components/schemas/PolicyQuotas"
+        retention:
+          $ref: "#/components/schemas/PolicyRetention"
+        features:
+          $ref: "#/components/schemas/PolicyFeatures"
+        updated_at:
+          type: string
+          format: date-time
+    PolicyList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Policy"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    PolicyPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [expected_revision]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        quotas:
+          $ref: "#/components/schemas/PolicyQuotasPatch"
+        retention:
+          $ref: "#/components/schemas/PolicyRetentionPatch"
+        features:
+          $ref: "#/components/schemas/PolicyFeaturesPatch"
+    Diagnostics:
+      type: object
+      additionalProperties: false
+      required: [status, generated_at, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unready]
+        generated_at:
+          type: string
+          format: date-time
+        checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, status, detail]
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [ok, degraded, failed]
+              detail:
+                type: [string, "null"]
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - actor_type
+        - request_id
+        - action
+        - resource_type
+        - resource_id
+        - occurred_at
+        - policy_revision
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.audit_event
+        actor_type:
+          type: string
+          enum: [anonymous, shared_credential]
+        credential_label:
+          type: [string, "null"]
+          maxLength: 128
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        action:
+          type: string
+          minLength: 1
+          maxLength: 128
+        resource_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        resource_id:
+          $ref: "#/components/schemas/Identifier"
+        occurred_at:
+          type: string
+          format: date-time
+        policy_revision:
+          $ref: "#/components/schemas/Revision"
+        change_summary:
+          oneOf:
+            - $ref: "#/components/schemas/AuditChangeSummary"
+            - type: "null"
+    AuditChangeSummary:
+      type: object
+      additionalProperties: false
+      required: [changed_fields]
+      properties:
+        changed_fields:
+          type: array
+          minItems: 1
+          maxItems: 128
+          uniqueItems: true
+          description: |
+            RFC 6901 JSON Pointers for fields changed by the audited action.
+            Store field names only; never include before/after values, request
+            bodies, credentials, content, audio, feature vectors, or paths.
+          items:
+            type: string
+            minLength: 2
+            maxLength: 256
+            pattern: "^/(?:[^/~]|~0|~1)+(?:/(?:[^/~]|~0|~1)+)*$"
+        reason:
+          type: [string, "null"]
+          maxLength: 2000
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]

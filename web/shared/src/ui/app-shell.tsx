@@ -1,14 +1,19 @@
 import type { ReactNode } from "react";
+import { BrandMark } from "./brand-mark";
+import type { CapabilityState, NexusTone } from "../tokens";
 
 import "./styles.css";
 
 export type AppShellProps = {
   surface: "AdminUI" | "个人语音工作台";
-  tone: "admin" | "workbench";
+  tone: NexusTone;
   eyebrow: string;
   title: string;
   description: string;
   boundaryNote: string;
+  statusTitle?: string;
+  statusDetail?: string;
+  statusState?: CapabilityState;
   children: ReactNode;
 };
 
@@ -19,6 +24,9 @@ export function AppShell({
   title,
   description,
   boundaryNote,
+  statusTitle = "工程外壳已就绪",
+  statusDetail = "契约已交付，业务实现待接入",
+  statusState = "ready",
   children,
 }: AppShellProps) {
   return (
@@ -28,12 +36,15 @@ export function AppShell({
       </a>
       <header className="site-header">
         <a className="brand" href="/" aria-label="SpeechNexus 首页">
-          <span className="brand-mark" aria-hidden="true">
-            SN
-          </span>
+          <BrandMark tone={tone} size={36} decorative />
           <span>SpeechNexus</span>
         </a>
-        <span className="surface-label">{surface}</span>
+        <div className="header-meta">
+          <span className="airgap-badge" title="模型本地离线推理，数据不出网">
+            本地离线 · 音频不出网
+          </span>
+          <span className="surface-label">{surface}</span>
+        </div>
       </header>
 
       <main id="main-content">
@@ -44,10 +55,10 @@ export function AppShell({
             <p className="hero-description">{description}</p>
           </div>
           <div className="hero-status" role="status">
-            <span className="status-dot" aria-hidden="true" />
+            <span className="status-dot" data-state={statusState} aria-hidden="true" />
             <span>
-              <strong>工程外壳已就绪</strong>
-              <small>业务能力仍待契约与实现</small>
+              <strong>{statusTitle}</strong>
+              <small>{statusDetail}</small>
             </span>
           </div>
         </section>

@@ -1,0 +1,638 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus internal runtime lifecycle control API
+  version: 0.1.0.dev0
+  description: |
+    Internal RuntimeLifecycleControlPort protocol between the scheduler and the
+    node-scoped deployment controller (`node-controller`). The controller only
+    accepts approved runtime templates, immutable instance generations, and
+    fenced prepare/stop intents for its own `node_id`. It never accepts arbitrary
+    container images, host volume mounts, or shell commands.
+security:
+  - ComponentBearer: []
+paths:
+  /internal/v1/nodes/{node_id}/instance-intents:
+    post:
+      operationId: submitRuntimeInstanceIntent
+      summary: Submit an approved instance prepare or stop intent to a target host node
+      description: |
+        `(node_id, intent_id)` is the node-controller-scoped idempotency key
+        for an immutable prepare or stop intent; the same `intent_id` may be
+        used independently on another node. Replaying the exact same canonical
+        request returns the originally recorded intent with
+        `idempotent_replay: true`. Reusing the key with any changed target,
+        pool, gateway, instance generation, approved template, binding
+        revision, manifest, config digest, action, fencing token, reserved
+        memory vector, or deadline returns `409 intent_conflict`. A terminal
+        `succeeded` or `failed` intent is never revived; a retry uses a new
+        `intent_id`.
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeInstanceIntentRequest"
+      responses:
+        "200":
+          description: Runtime instance intent accepted or replayed idempotently.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: |
+            Stable conflict codes: `target_node_mismatch`, `stale_fencing_token`,
+            `stale_instance_generation`, `gateway_drain_incomplete`, or
+            `intent_conflict` when an existing `(node_id, intent_id)` has a
+            different canonical request.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "422":
+          description: Runtime intent request failed schema or approved-template validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/instance-intents/{intent_id}:
+    get:
+      operationId: getRuntimeInstanceIntent
+      summary: Query observed container/process lifecycle state and verified stop evidence
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/IntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: Current runtime instance intent status and stop/readiness evidence.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Runtime instance intent not found on this node controller.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/reconcile:
+    post:
+      operationId: reconcileNodeInstances
+      summary: Report observed local runtime instances and container exit facts for node reconciliation
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeReconcileRequest"
+      responses:
+        "200":
+          description: Node reconciliation snapshot processed.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeReconcileResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Reconciliation fencing token or target node does not match the controller scope.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "422":
+          description: Reconciliation snapshot failed schema validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+components:
+  securitySchemes:
+    ComponentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-component-token
+      description: |
+        Per-node controller credential issued by the deployment. It is separate
+        from scheduler, gateway, public, and admin credentials. Transport TLS is
+        a deployment requirement and is not relaxed by this HTTP credential.
+  headers:
+    XRequestId:
+      description: Correlation request ID propagated across control plane hops.
+      schema:
+        type: string
+  parameters:
+    XRequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    NodeIdPath:
+      name: node_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    IntentIdPath:
+      name: intent_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+  schemas:
+    Identifier:
+      $ref: "../shared/identifiers.schema.json#/$defs/Identifier"
+    Sha256Digest:
+      $ref: "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    PoolId:
+      $ref: "../shared/identifiers.schema.json#/$defs/PoolId"
+    RuntimeActionKind:
+      type: string
+      enum: [prepare, stop]
+    RuntimeIntentState:
+      type: string
+      enum:
+        - pending
+        - reconciling
+        - succeeded
+        - failed
+        - quarantined
+    ObservedInstanceState:
+      $ref: "../shared/runtime-states.schema.json#/$defs/ObservedInstanceState"
+    RuntimeStopEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - process_or_container_exited
+        - resources_released_confirmed
+        - verified_at
+      properties:
+        process_or_container_exited:
+          const: true
+        resources_released_confirmed:
+          const: true
+        exit_code:
+          type: [integer, "null"]
+        runtime_container_id:
+          type: [string, "null"]
+          maxLength: 128
+        verified_at:
+          type: string
+          format: date-time
+    RuntimeMemoryArchitecture:
+      $ref: "../shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
+    RuntimeMemoryVector:
+      type: object
+      additionalProperties: false
+      required:
+        - unified_memory_bytes
+        - device_memory_bytes
+        - host_memory_bytes
+      properties:
+        unified_memory_bytes:
+          type: integer
+          minimum: 0
+        device_memory_bytes:
+          type: integer
+          minimum: 0
+        host_memory_bytes:
+          type: integer
+          minimum: 0
+    RuntimeMemoryReservation:
+      type: object
+      additionalProperties: false
+      description: |
+        Peak reservation must be greater than or equal to steady reservation in
+        every memory counter used by the selected architecture. Producer
+        validation rejects a smaller peak because cold-load headroom cannot be
+        released before steady state is reached.
+      required: [architecture, peak, steady]
+      properties:
+        architecture:
+          $ref: "#/components/schemas/RuntimeMemoryArchitecture"
+        peak:
+          $ref: "#/components/schemas/RuntimeMemoryVector"
+        steady:
+          $ref: "#/components/schemas/RuntimeMemoryVector"
+      allOf:
+        - if:
+            properties:
+              architecture:
+                const: unified_memory
+            required: [architecture]
+          then:
+            properties:
+              peak:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+              steady:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+        - if:
+            properties:
+              architecture:
+                const: discrete_device_memory
+            required: [architecture]
+          then:
+            properties:
+              peak:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
+              steady:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
+    RuntimeInstanceIntentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - intent_id
+        - target_node_id
+        - pool_id
+        - gateway_id
+        - instance_id
+        - instance_generation
+        - approved_template_id
+        - binding_revision_id
+        - manifest_id
+        - config_digest
+        - action
+        - fencing_token
+        - reserved_memory
+        - deadline_at
+      properties:
+        intent_id:
+          $ref: "#/components/schemas/Identifier"
+        target_node_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        manifest_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        action:
+          $ref: "#/components/schemas/RuntimeActionKind"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reserved_memory:
+          $ref: "#/components/schemas/RuntimeMemoryReservation"
+        deadline_at:
+          type: string
+          format: date-time
+    RuntimeInstanceIntentResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - intent_id
+        - target_node_id
+        - pool_id
+        - gateway_id
+        - approved_template_id
+        - binding_revision_id
+        - manifest_id
+        - config_digest
+        - instance_id
+        - instance_generation
+        - action
+        - fencing_token
+        - intent_state
+        - observed_instance_state
+        - reserved_memory
+        - created_at
+        - updated_at
+      properties:
+        intent_id:
+          $ref: "#/components/schemas/Identifier"
+        target_node_id:
+          $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        manifest_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        action:
+          $ref: "#/components/schemas/RuntimeActionKind"
+        fencing_token:
+          type: integer
+          minimum: 1
+        intent_state:
+          $ref: "#/components/schemas/RuntimeIntentState"
+        observed_instance_state:
+          $ref: "#/components/schemas/ObservedInstanceState"
+        reserved_memory:
+          $ref: "#/components/schemas/RuntimeMemoryReservation"
+        idempotent_replay:
+          type: boolean
+          description: |
+            Present only on POST. True when the response is the stored result
+            of an identical earlier intent with the same `intent_id`.
+        stop_evidence:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeStopEvidence"
+            - type: "null"
+        observed_peak_memory:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeMemoryVector"
+            - type: "null"
+        error_code:
+          anyOf:
+            - type: string
+              pattern: "^[a-z][a-z0-9_]{2,63}$"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+          description: Time the intent identity was first recorded; immutable across replay.
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              action:
+                const: prepare
+              intent_state:
+                const: succeeded
+            required: [action, intent_state]
+          then:
+            properties:
+              observed_instance_state:
+                const: ready
+        - if:
+            properties:
+              action:
+                const: stop
+              intent_state:
+                const: succeeded
+            required: [action, intent_state]
+          then:
+            required: [stop_evidence]
+            properties:
+              observed_instance_state:
+                enum: [stopped, absent]
+              stop_evidence:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              stop_evidence:
+                not:
+                  type: "null"
+            required: [stop_evidence]
+          then:
+            properties:
+              action:
+                const: stop
+              intent_state:
+                const: succeeded
+        - if:
+            properties:
+              intent_state:
+                const: failed
+            required: [intent_state]
+          then:
+            required: [error_code]
+            properties:
+              error_code:
+                type: string
+                pattern: "^[a-z][a-z0-9_]{2,63}$"
+        - if:
+            properties:
+              intent_state:
+                const: succeeded
+            required: [intent_state]
+          then:
+            properties:
+              error_code:
+                type: "null"
+        - if:
+            properties:
+              reserved_memory:
+                properties:
+                  architecture:
+                    const: unified_memory
+                required: [architecture]
+            required: [reserved_memory]
+          then:
+            properties:
+              observed_peak_memory:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+        - if:
+            properties:
+              reserved_memory:
+                properties:
+                  architecture:
+                    const: discrete_device_memory
+                required: [architecture]
+            required: [reserved_memory]
+          then:
+            properties:
+              observed_peak_memory:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
+    ObservedNodeInstanceFact:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - instance_generation
+        - approved_template_id
+        - config_digest
+        - observed_instance_state
+      properties:
+        instance_id:
+          $ref: "#/components/schemas/Identifier"
+        instance_generation:
+          type: integer
+          minimum: 1
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
+        observed_instance_state:
+          $ref: "#/components/schemas/ObservedInstanceState"
+        stop_evidence:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeStopEvidence"
+            - type: "null"
+      allOf:
+        - if:
+            properties:
+              stop_evidence:
+                not:
+                  type: "null"
+            required: [stop_evidence]
+          then:
+            properties:
+              observed_instance_state:
+                enum: [stopped, absent]
+        - if:
+            properties:
+              observed_instance_state:
+                const: stopped
+            required: [observed_instance_state]
+          then:
+            required: [stop_evidence]
+            properties:
+              stop_evidence:
+                not:
+                  type: "null"
+    NodeReconcileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - controller_id
+        - fencing_token
+        - reported_at
+        - instances
+      properties:
+        controller_id:
+          $ref: "#/components/schemas/Identifier"
+        fencing_token:
+          type: integer
+          minimum: 1
+        reported_at:
+          type: string
+          format: date-time
+        instances:
+          type: array
+          description: |
+            One fact per (instance_id, instance_generation). A snapshot that
+            reports the same generation more than once is rejected rather than
+            choosing a nondeterministic last observation.
+          items:
+            $ref: "#/components/schemas/ObservedNodeInstanceFact"
+    NodeReconcileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+        - accepted_at
+        - quarantined_instance_ids
+      properties:
+        node_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted_at:
+          type: string
+          format: date-time
+        quarantined_instance_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+    RuntimeControlErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - retryable
+          properties:
+            code:
+              type: string
+              enum:
+                - target_node_mismatch
+                - unapproved_runtime_template
+                - stale_fencing_token
+                - stale_instance_generation
+                - gateway_drain_incomplete
+                - intent_conflict
+                - runtime_controller_unavailable
+                - invalid_runtime_request
+                - component_credential_invalid
+            message:
+              type: string
+              minLength: 1
+            retryable:
+              type: boolean
+            observed_fencing_token:
+              type: [integer, "null"]
+              minimum: 1
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or revoked controller component credential.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RuntimeControlErrorResponse"

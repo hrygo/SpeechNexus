@@ -1,0 +1,1265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/internal/execution-stream.schema.json",
+  "title": "ExecutionStreamControlEvent",
+  "description": "Internal WebSocket control event between the realtime gateway and execution gateway. JSON control frames carry identity, credits, watermarks, backpressure, and terminal evidence. PCM payloads travel in the fixed binary frame described by x-speechnexus-binary-frame; they are never base64-encoded in this protocol.",
+  "x-speechnexus-transport-security": {
+    "description": "The WebSocket handshake requires a component credential and TLS on the internal management network. Credentials are carried only in an approved handshake header or client certificate, never in stream.open, query parameters, logs, or PCM frames."
+  },
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/StreamOpen"
+    },
+    {
+      "$ref": "#/$defs/StreamOpened"
+    },
+    {
+      "$ref": "#/$defs/StreamInputAck"
+    },
+    {
+      "$ref": "#/$defs/StreamOutputAck"
+    },
+    {
+      "$ref": "#/$defs/StreamBackpressure"
+    },
+    {
+      "$ref": "#/$defs/StreamClose"
+    },
+    {
+      "$ref": "#/$defs/StreamClosed"
+    },
+    {
+      "$ref": "#/$defs/StreamErrorEvent"
+    },
+    {
+      "$ref": "#/$defs/StreamHeartbeat"
+    },
+    {
+      "$ref": "#/$defs/StreamTextAppend"
+    },
+    {
+      "$ref": "#/$defs/StreamTextCommit"
+    },
+    {
+      "$ref": "#/$defs/StreamTextFinish"
+    },
+    {
+      "$ref": "#/$defs/StreamTextAck"
+    }
+  ],
+  "x-speechnexus-binary-frame": {
+    "description": "Exactly one binary WebSocket message carries one PCM chunk. All integers are unsigned big-endian. The JSON stream.open event must be acknowledged by stream.opened before any binary frame is sent.",
+    "header_bytes": 32,
+    "fields": [
+      {
+        "name": "magic",
+        "offset": 0,
+        "bytes": 4,
+        "value_ascii": "SNX1"
+      },
+      {
+        "name": "version",
+        "offset": 4,
+        "bytes": 1,
+        "value": 1
+      },
+      {
+        "name": "frame_type",
+        "offset": 5,
+        "bytes": 1,
+        "enum": {
+          "1": "input_pcm",
+          "2": "output_pcm"
+        }
+      },
+      {
+        "name": "flags",
+        "offset": 6,
+        "bytes": 2,
+        "value": 0
+      },
+      {
+        "name": "stream_epoch",
+        "offset": 8,
+        "bytes": 4
+      },
+      {
+        "name": "chunk_seq",
+        "offset": 12,
+        "bytes": 4
+      },
+      {
+        "name": "start_sample",
+        "offset": 16,
+        "bytes": 8
+      },
+      {
+        "name": "sample_count",
+        "offset": 24,
+        "bytes": 4
+      },
+      {
+        "name": "payload_bytes",
+        "offset": 28,
+        "bytes": 4
+      }
+    ],
+    "invariants": [
+      "payload_bytes equals the remaining message length and must be even for pcm_s16le.",
+      "sample_count * 2 equals payload_bytes for pcm_s16le mono.",
+      "chunk_seq is contiguous per frame_type and stream_epoch; a gap is a stream error, not silent loss.",
+      "[start_sample, start_sample + sample_count) is a half-open interval on the negotiated wire clock.",
+      "A frame with a stale stream_epoch is discarded and reported as stream.error without mutating execution state."
+    ]
+  },
+  "$defs": {
+    "Identifier": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "CleanupState": {
+      "$ref": "../shared/operation-states.schema.json#/$defs/CleanupState"
+    },
+    "TerminalOperationStatus": {
+      "$ref": "../shared/operation-states.schema.json#/$defs/TerminalOperationStatus"
+    },
+    "PcmDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "sample_rate_hz",
+        "channels"
+      ],
+      "properties": {
+        "encoding": {
+          "const": "pcm_s16le"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [
+            16000,
+            24000,
+            48000
+          ]
+        },
+        "channels": {
+          "const": 1
+        }
+      }
+    },
+    "StreamError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "invalid_envelope",
+            "stale_epoch",
+            "credit_exceeded",
+            "chunk_gap",
+            "sample_mismatch",
+            "unsupported_format",
+            "execution_not_found",
+            "execution_fenced",
+            "adapter_failure",
+            "cleanup_unknown",
+            "text_gap",
+            "text_conflict",
+            "text_finished",
+            "text_commit_invalid",
+            "input_kind_mismatch"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "BaseEnvelope": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "type",
+        "stream_id",
+        "stream_epoch",
+        "seq",
+        "sent_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.1.0"
+        },
+        "type": {
+          "type": "string"
+        },
+        "stream_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stream_epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic per stream connection. Reconnect starts a new stream_epoch and resets seq; history is never spliced across epochs."
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "StreamOpen": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "attempt_id",
+            "submit_intent_id",
+            "fencing_token",
+            "input",
+            "input_credit_samples",
+            "max_message_bytes",
+            "input_kind",
+            "input_credit_codepoints"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.open"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "attempt_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "submit_intent_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "fencing_token": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "input": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/PcmDescriptor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "output": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/PcmDescriptor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "input_credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_message_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            },
+            "input_kind": {
+              "enum": [
+                "pcm",
+                "text"
+              ]
+            },
+            "input_credit_codepoints": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "pcm"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_codepoints": {
+                    "const": 0
+                  },
+                  "input": {
+                    "$ref": "#/$defs/PcmDescriptor"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_samples": {
+                    "const": 0
+                  },
+                  "input": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "StreamOpened": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "attempt_id",
+            "submit_intent_id",
+            "fencing_token",
+            "input_credit_samples",
+            "output_credit_samples",
+            "max_message_bytes",
+            "input_kind",
+            "input_credit_codepoints"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.opened"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "attempt_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "submit_intent_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "fencing_token": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "input_credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_message_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            },
+            "input_kind": {
+              "enum": [
+                "pcm",
+                "text"
+              ]
+            },
+            "input_credit_codepoints": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "pcm"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_codepoints": {
+                    "const": 0
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "input_kind": {
+                    "const": "text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "input_credit_samples": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "StreamInputAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "accepted_through_sample",
+            "credit_samples"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.input.ack"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "accepted_through_sample": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamOutputAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "consumed_through_sample",
+            "credit_samples"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.output.ack"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "consumed_through_sample": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamBackpressure": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "direction",
+            "reason",
+            "credit_samples"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.backpressure"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "input",
+                "output"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "credit_exhausted",
+                "consumer_slow",
+                "engine_queue"
+              ]
+            },
+            "credit_samples": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retry_after_ms": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamClose": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "mode",
+            "reason"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.close"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "drain",
+                "abort"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "client_close",
+                "session_end",
+                "deadline",
+                "cancel",
+                "error"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "StreamClosed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "submit_intent_id",
+            "status",
+            "cleanup_state",
+            "input_watermark",
+            "output_watermark"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.closed"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "submit_intent_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "status": {
+              "$ref": "#/$defs/TerminalOperationStatus"
+            },
+            "cleanup_state": {
+              "$ref": "#/$defs/CleanupState"
+            },
+            "input_watermark": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cumulative accepted input sample position for stream transport. Authoritative input usage remains the canonical interval ledger."
+            },
+            "output_watermark": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cumulative emitted output sample position for stream transport. Authoritative output usage remains output_sample_intervals; this scalar is not an independent meter."
+            },
+            "receipt_ref": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Identifier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/StreamError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "succeeded",
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "receipt_ref"
+            ],
+            "properties": {
+              "receipt_ref": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": [
+                  "not_required",
+                  "complete"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "StreamErrorEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "error"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.error"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "error": {
+              "$ref": "#/$defs/StreamError"
+            }
+          }
+        }
+      ]
+    },
+    "StreamHeartbeat": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "type",
+            "stream_id",
+            "stream_epoch",
+            "seq",
+            "sent_at",
+            "operation_id",
+            "input_watermark",
+            "output_watermark"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "type": {
+              "const": "stream.heartbeat"
+            },
+            "stream_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "stream_epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "input_watermark": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cumulative accepted input sample position for stream transport. Authoritative input usage remains the canonical interval ledger."
+            },
+            "output_watermark": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cumulative emitted output sample position for stream transport. Authoritative output usage remains output_sample_intervals; this scalar is not an independent meter."
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextAppend": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "offset_codepoints",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.append"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "offset_codepoints": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextCommit": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "through_codepoint"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.commit"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextFinish": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "text_seq",
+            "final_codepoint"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.finish"
+            },
+            "text_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "final_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "StreamTextAck": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "operation_id",
+            "attempt_id",
+            "accepted_through_text_seq",
+            "accepted_through_codepoint",
+            "committed_through_codepoint",
+            "credit_through_codepoint",
+            "finished"
+          ],
+          "properties": {
+            "type": {
+              "const": "stream.text.ack"
+            },
+            "accepted_through_text_seq": {
+              "type": "integer",
+              "minimum": -1
+            },
+            "accepted_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "committed_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credit_through_codepoint": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "finished": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.1.0",
+      "type": "stream.open",
+      "stream_id": "stream_demo",
+      "stream_epoch": 1,
+      "seq": 0,
+      "sent_at": "2026-10-22T09:00:00Z",
+      "operation_id": "op_demo",
+      "attempt_id": "attempt_demo",
+      "submit_intent_id": "submit_demo",
+      "fencing_token": 42,
+      "input": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "output": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "input_credit_samples": 48000,
+      "max_message_bytes": 65536,
+      "input_kind": "pcm",
+      "input_credit_codepoints": 0
+    },
+    {
+      "schema_version": "1.1.0",
+      "type": "stream.opened",
+      "stream_id": "stream_demo",
+      "stream_epoch": 1,
+      "seq": 1,
+      "sent_at": "2026-10-22T09:00:01Z",
+      "operation_id": "op_demo",
+      "attempt_id": "attempt_demo",
+      "submit_intent_id": "submit_demo",
+      "fencing_token": 42,
+      "input_credit_samples": 48000,
+      "output_credit_samples": 48000,
+      "max_message_bytes": 65536,
+      "input_kind": "pcm",
+      "input_credit_codepoints": 0
+    },
+    {
+      "schema_version": "1.1.0",
+      "type": "stream.error",
+      "stream_id": "stream_demo",
+      "stream_epoch": 1,
+      "seq": 4,
+      "sent_at": "2026-10-22T09:00:20Z",
+      "operation_id": "op_demo",
+      "error": {
+        "code": "stale_epoch",
+        "message": "stale stream epoch rejected without mutating execution state",
+        "retryable": true,
+        "retry_after_ms": 1000
+      }
+    },
+    {
+      "schema_version": "1.1.0",
+      "type": "stream.closed",
+      "stream_id": "stream_demo",
+      "stream_epoch": 1,
+      "seq": 9,
+      "sent_at": "2026-10-22T09:01:00Z",
+      "operation_id": "op_demo",
+      "submit_intent_id": "submit_demo",
+      "status": "succeeded",
+      "cleanup_state": "complete",
+      "input_watermark": 24000,
+      "output_watermark": 24000,
+      "receipt_ref": "rcpt_demo",
+      "error": null
+    }
+  ],
+  "unevaluatedProperties": false,
+  "x-speechnexus-text-stream": {
+    "unit": "Unicode scalar values (codepoints), never UTF-8 bytes or UTF-16 code units; unpaired surrogates are invalid.",
+    "invariants": [
+      "Submit command must be tts with text_stream matching open stream_id/epoch. Open/opened input_kind must match; PCM input is forbidden in text mode. A stream epoch is never reused.",
+      "Before opened no append/commit/finish is accepted. text_seq starts at 0 and is contiguous over append/commit/finish per epoch. Only one unacknowledged sender event is in flight.",
+      "Append offset_codepoints equals accepted_through_codepoint; accepted length may not exceed absolute credit_through_codepoint. Open credit initializes this absolute limit; each ack grants a monotonic absolute limit, not an additive amount.",
+      "An exact retry of a previously accepted text_seq returns its original ack without regenerating text; changed kind/body at that sequence is text_conflict. Future sequence is text_gap. Store canonical event digest and ack through execution retention.",
+      "Commit through_codepoint lies between prior committed and accepted offsets. Only immutable committed prefix reaches the adapter. Repeating a commit cannot schedule the prefix twice.",
+      "Finish final_codepoint equals accepted offset and commits its remaining suffix once. Finished ack is required; subsequent new append/commit/finish is text_finished. Exact retries still return their original ack.",
+      "Ack satisfies committed <= accepted <= credit. Latest accepted text_seq/offsets/credit never decrease; an original ack replay for an older text_seq must not replace later high-water state. -1 means no accepted text event yet. Credit exceeding max_message_bytes is not permission to send an oversized frame.",
+      "Cancel/disconnect does not imply termination or release. New epoch resumes no unacknowledged text; query the original execution, abort or reconcile before creating a replacement. stream.closed follows verified execution and cleanup facts."
+    ]
+  }
+}

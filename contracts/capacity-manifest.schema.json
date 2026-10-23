@@ -1,0 +1,852 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/capacity-manifest.schema.json",
+  "title": "CapacityManifest",
+  "description": "Hardware-neutral capacity, execution stage graph, loading peak, cancellation/fencing capability, and deployment qualification manifest bound to an immutable ModelBindingRevision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "binding_revision_id",
+    "pool_id",
+    "service_class",
+    "management_mode",
+    "release_tier",
+    "loading_policy",
+    "topology_ref",
+    "supported_tasks",
+    "supported_input_formats",
+    "supported_output_formats",
+    "stage_graph",
+    "resource_envelope",
+    "rate_and_segment_limits",
+    "cancellation_and_fencing",
+    "qualification"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Frozen schema version for P0 capacity manifests."
+    },
+    "manifest_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Immutable identifier for this capacity manifest."
+    },
+    "binding_revision_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Must equal ModelBindingRevision.revision_id for the immutable binding revision governed by this manifest."
+    },
+    "pool_id": {
+      "$ref": "#/$defs/PoolId"
+    },
+    "service_class": {
+      "$ref": "#/$defs/ServiceClass"
+    },
+    "management_mode": {
+      "$ref": "#/$defs/ManagementMode"
+    },
+    "release_tier": {
+      "$ref": "#/$defs/ReleaseTier"
+    },
+    "loading_policy": {
+      "$ref": "#/$defs/LoadingPolicy"
+    },
+    "topology_ref": {
+      "$ref": "#/$defs/TopologyReference"
+    },
+    "supported_tasks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/SpeechTaskKind"
+      }
+    },
+    "supported_input_formats": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/MediaFormat"
+      }
+    },
+    "supported_output_formats": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/MediaFormat"
+      }
+    },
+    "stage_graph": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/StageResourceDeclaration"
+      },
+      "description": "Complete multi-stage execution recipe (including ASR 1.7B full_segment review, required alignment/diarization, or TTS Talker + Code2Wav + connector)."
+    },
+    "resource_envelope": {
+      "$ref": "#/$defs/ResourceEnvelope",
+      "description": "Admission envelope derived from stage_graph. Memory/CPU/PCM/bandwidth/object-storage vectors are summed across stages; engine_active_slots is the per-execution slot cardinality (max stage value); max_active_slots is the minimum stage max_active_slots."
+    },
+    "rate_and_segment_limits": {
+      "$ref": "#/$defs/RateAndSegmentLimits"
+    },
+    "cancellation_and_fencing": {
+      "$ref": "#/$defs/CancellationAndFencingSpec"
+    },
+    "qualification": {
+      "$ref": "#/$defs/QualificationEvidence"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stage_graph": {
+            "contains": {
+              "type": "object",
+              "required": ["emits_audio_pcm"],
+              "properties": {
+                "emits_audio_pcm": {
+                  "const": true
+                }
+              }
+            }
+          }
+        },
+        "required": ["stage_graph"]
+      },
+      "then": {
+        "properties": {
+          "supported_output_formats": {
+            "contains": {
+              "enum": [
+                "pcm_s16le_16k_mono",
+                "pcm_s16le_24k_mono",
+                "wav",
+                "mp3",
+                "flac",
+                "ogg_opus",
+                "m4a_aac",
+                "webm_opus"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "management_mode": {
+            "const": "external"
+          }
+        },
+        "required": ["management_mode"]
+      },
+      "then": {
+        "properties": {
+          "release_tier": {
+            "enum": ["best_effort", "experimental"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "loading_policy": {
+            "const": "on_demand"
+          }
+        },
+        "required": ["loading_policy"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "idle_reclaim_cooldown_ms": {
+                "type": "integer",
+                "minimum": 1000
+              }
+            },
+            "required": ["idle_reclaim_cooldown_ms"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "management_mode": {
+            "const": "managed"
+          }
+        },
+        "required": ["management_mode"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_fencing_barrier": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "cancellation_mode": {
+                "const": "engine_abort_confirmed"
+              }
+            },
+            "required": ["cancellation_mode"]
+          }
+        },
+        "required": ["cancellation_and_fencing"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_request_abort": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "cancellation_mode": {
+                "const": "connection_drop_with_quarantine"
+              }
+            },
+            "required": ["cancellation_mode"]
+          }
+        },
+        "required": ["cancellation_and_fencing"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_request_abort": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_tier": {
+            "const": "production"
+          }
+        },
+        "required": ["release_tier"]
+      },
+      "then": {
+        "properties": {
+          "rate_and_segment_limits": {
+            "properties": {
+              "hard_output_quota": {
+                "const": true
+              }
+            }
+          },
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_fencing_barrier": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Sha256Digest": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "PoolId": {
+      "$ref": "shared/identifiers.schema.json#/$defs/PoolId"
+    },
+    "ServiceClass": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/ServiceClass"
+    },
+    "ManagementMode": {
+      "type": "string",
+      "enum": ["managed", "external"],
+      "description": "managed requires exclusive execution-gateway ingress, full pool accounting, and fencing/abort barrier; external cannot claim production realtime SLO."
+    },
+    "ReleaseTier": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/ReleaseTier"
+    },
+    "LoadingPolicy": {
+      "type": "string",
+      "enum": ["resident", "on_demand"]
+    },
+    "MemoryArchitecture": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
+    },
+    "SpeechTaskKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/SpeechTaskKind"
+    },
+    "MediaFormat": {
+      "type": "string",
+      "enum": [
+        "pcm_s16le_16k_mono",
+        "pcm_s16le_24k_mono",
+        "wav",
+        "mp3",
+        "flac",
+        "ogg_opus",
+        "m4a_aac",
+        "webm_opus",
+        "utf8_text",
+        "json_segments"
+      ]
+    },
+    "StageRole": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/StageRole"
+    },
+    "EngineKind": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/EngineKind"
+    },
+    "CancellationMode": {
+      "type": "string",
+      "enum": [
+        "engine_abort_confirmed",
+        "connection_drop_with_quarantine",
+        "cooperative_checkpoint_only"
+      ]
+    },
+    "TopologyReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_node_profile_id",
+        "memory_architecture",
+        "requires_shared_parent_budget",
+        "topology_digest"
+      ],
+      "properties": {
+        "host_node_profile_id": {
+          "$ref": "#/$defs/Identifier",
+          "description": "Logical node topology profile identifier validated during deployment qualification."
+        },
+        "memory_architecture": {
+          "$ref": "#/$defs/MemoryArchitecture"
+        },
+        "requires_shared_parent_budget": {
+          "type": "boolean",
+          "const": true,
+          "description": "All instances mapped to the same host_node_id must share the node's parent physical budget."
+        },
+        "topology_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "ResourceVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_active_slots",
+        "device_memory_bytes",
+        "host_memory_bytes",
+        "unified_physical_memory_bytes",
+        "cpu_decode_millicores",
+        "host_pcm_buffer_bytes",
+        "scratch_disk_bytes",
+        "ingress_bandwidth_bps",
+        "egress_bandwidth_bps",
+        "object_storage_bytes"
+      ],
+      "properties": {
+        "engine_active_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "device_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unified_physical_memory_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total combined physical memory charged against a unified-memory HostNode parent budget to prevent double-counting host and device memory."
+        },
+        "cpu_decode_millicores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_pcm_buffer_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scratch_disk_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ingress_bandwidth_bps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "egress_bandwidth_bps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "object_storage_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "StageResourceDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "stage_role",
+        "engine_kind",
+        "model_revision_digest",
+        "required_for_admission",
+        "emits_audio_pcm",
+        "resident_budget",
+        "loading_peak_budget",
+        "per_slot_incremental_budget",
+        "max_active_slots"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_role": {
+          "$ref": "#/$defs/StageRole"
+        },
+        "engine_kind": {
+          "$ref": "#/$defs/EngineKind"
+        },
+        "model_revision_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "required_for_admission": {
+          "type": "boolean",
+          "description": "True when this stage's readiness and incremental budget must be reserved atomically at admission time (e.g. 1.7B full_segment review or required alignment)."
+        },
+        "emits_audio_pcm": {
+          "type": "boolean",
+          "description": "True exactly for stages that emit PCM samples metered against max_output_audio_ms and the output sample intervals. Upstream token stages and text-only stages are false."
+        },
+        "resident_budget": {
+          "$ref": "#/$defs/ResourceVector",
+          "description": "Steady-state model resident budget counted once per running engine instance."
+        },
+        "loading_peak_budget": {
+          "$ref": "#/$defs/ResourceVector",
+          "description": "Peak memory and buffer footprint during weight load, warmup, and stage handoff."
+        },
+        "per_slot_incremental_budget": {
+          "$ref": "#/$defs/ResourceVector",
+          "description": "Incremental resource upper bound reserved per active execution slot."
+        },
+        "max_active_slots": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ResourceEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Frozen aggregation of stage_graph: resident_budget, loading_peak_budget and per_slot_incremental_budget are element-wise sums for every resource except engine_active_slots; per-slot engine_active_slots is the maximum stage value because one end-to-end execution occupies one slot in each stage. max_active_slots is the minimum of stage max_active_slots.",
+      "required": [
+        "resident_budget",
+        "loading_peak_budget",
+        "per_slot_incremental_budget",
+        "max_active_slots",
+        "realtime_reserved_slots"
+      ],
+      "properties": {
+        "resident_budget": {
+          "$ref": "#/$defs/ResourceVector"
+        },
+        "loading_peak_budget": {
+          "$ref": "#/$defs/ResourceVector"
+        },
+        "per_slot_incremental_budget": {
+          "$ref": "#/$defs/ResourceVector"
+        },
+        "max_active_slots": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum max_active_slots across every declared stage_graph entry; optional stages constrain the binding too because they may execute."
+        },
+        "realtime_reserved_slots": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Realtime reservation within max_active_slots; cannot exceed it."
+        }
+      }
+    },
+    "RateAndSegmentLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_prefill_tokens_per_sec",
+        "max_output_tokens_per_sec",
+        "max_segment_audio_ms",
+        "max_render_unit_codepoints",
+        "max_output_audio_ms",
+        "hard_output_quota"
+      ],
+      "properties": {
+        "max_prefill_tokens_per_sec": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_tokens_per_sec": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_segment_audio_ms": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "max_render_unit_codepoints": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_audio_ms": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "hard_output_quota": {
+          "type": "boolean",
+          "description": "True only when the engine enforces a deterministic token/codec/sample ceiling prior to generation rather than relying on post-hoc disconnect."
+        }
+      }
+    },
+    "CancellationAndFencingSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cancellation_mode",
+        "supports_request_abort",
+        "supports_fencing_barrier",
+        "worst_case_non_preemptible_ms",
+        "max_drain_wait_ms",
+        "idle_reclaim_cooldown_ms"
+      ],
+      "properties": {
+        "cancellation_mode": {
+          "$ref": "#/$defs/CancellationMode"
+        },
+        "supports_request_abort": {
+          "type": "boolean"
+        },
+        "supports_fencing_barrier": {
+          "type": "boolean"
+        },
+        "worst_case_non_preemptible_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Measured worst-case non-preemptible execution duration per bounded unit."
+        },
+        "max_drain_wait_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "idle_reclaim_cooldown_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "QualificationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualification_report_id",
+        "qualified_at",
+        "expires_at",
+        "config_bundle_digest",
+        "verified_coexistence_profiles"
+      ],
+      "properties": {
+        "qualification_report_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "qualified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "config_bundle_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "verified_coexistence_profiles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "manifest_id": "capm-asr-realtime-full-segment-v1",
+      "binding_revision_id": "mbrev-asr-realtime-4",
+      "pool_id": "asr-realtime",
+      "service_class": "realtime",
+      "management_mode": "managed",
+      "release_tier": "experimental",
+      "loading_policy": "resident",
+      "topology_ref": {
+        "host_node_profile_id": "node-profile-arm64-unified-128g",
+        "memory_architecture": "unified_memory",
+        "requires_shared_parent_budget": true,
+        "topology_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "supported_tasks": ["vad", "asr_realtime", "asr_full_segment_review"],
+      "supported_input_formats": ["pcm_s16le_16k_mono"],
+      "supported_output_formats": ["utf8_text", "json_segments"],
+      "stage_graph": [
+        {
+          "stage_id": "stage-silero-vad",
+          "stage_role": "vad",
+          "engine_kind": "onnx_runtime",
+          "model_revision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "required_for_admission": true,
+          "emits_audio_pcm": false,
+          "resident_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 67108864,
+            "unified_physical_memory_bytes": 67108864,
+            "cpu_decode_millicores": 250,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "loading_peak_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 134217728,
+            "unified_physical_memory_bytes": 134217728,
+            "cpu_decode_millicores": 500,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "per_slot_incremental_budget": {
+            "engine_active_slots": 1,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 4194304,
+            "unified_physical_memory_bytes": 4194304,
+            "cpu_decode_millicores": 100,
+            "host_pcm_buffer_bytes": 2097152,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 512000,
+            "egress_bandwidth_bps": 64000,
+            "object_storage_bytes": 0
+          },
+          "max_active_slots": 4
+        },
+        {
+          "stage_id": "stage-qwen3-asr-0.6b-preview",
+          "stage_role": "asr_preview",
+          "engine_kind": "vllm",
+          "model_revision_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "required_for_admission": true,
+          "emits_audio_pcm": false,
+          "resident_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 3221225472,
+            "host_memory_bytes": 536870912,
+            "unified_physical_memory_bytes": 3758096384,
+            "cpu_decode_millicores": 500,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "loading_peak_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 4294967296,
+            "host_memory_bytes": 1073741824,
+            "unified_physical_memory_bytes": 5368709120,
+            "cpu_decode_millicores": 1000,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "per_slot_incremental_budget": {
+            "engine_active_slots": 1,
+            "device_memory_bytes": 268435456,
+            "host_memory_bytes": 33554432,
+            "unified_physical_memory_bytes": 301989888,
+            "cpu_decode_millicores": 150,
+            "host_pcm_buffer_bytes": 4194304,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 512000,
+            "egress_bandwidth_bps": 128000,
+            "object_storage_bytes": 0
+          },
+          "max_active_slots": 4
+        },
+        {
+          "stage_id": "stage-qwen3-asr-1.7b-review",
+          "stage_role": "asr_review",
+          "engine_kind": "vllm",
+          "model_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "required_for_admission": true,
+          "emits_audio_pcm": false,
+          "resident_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 6442450944,
+            "host_memory_bytes": 1073741824,
+            "unified_physical_memory_bytes": 7516192768,
+            "cpu_decode_millicores": 500,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "loading_peak_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 8589934592,
+            "host_memory_bytes": 1610612736,
+            "unified_physical_memory_bytes": 10200547328,
+            "cpu_decode_millicores": 1000,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "per_slot_incremental_budget": {
+            "engine_active_slots": 1,
+            "device_memory_bytes": 536870912,
+            "host_memory_bytes": 67108864,
+            "unified_physical_memory_bytes": 603979776,
+            "cpu_decode_millicores": 200,
+            "host_pcm_buffer_bytes": 4194304,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 512000,
+            "egress_bandwidth_bps": 128000,
+            "object_storage_bytes": 0
+          },
+          "max_active_slots": 2
+        }
+      ],
+      "resource_envelope": {
+        "resident_budget": {
+          "engine_active_slots": 0,
+          "device_memory_bytes": 9663676416,
+          "host_memory_bytes": 1677721600,
+          "unified_physical_memory_bytes": 11341398016,
+          "cpu_decode_millicores": 1250,
+          "host_pcm_buffer_bytes": 0,
+          "scratch_disk_bytes": 0,
+          "ingress_bandwidth_bps": 0,
+          "egress_bandwidth_bps": 0,
+          "object_storage_bytes": 0
+        },
+        "loading_peak_budget": {
+          "engine_active_slots": 0,
+          "device_memory_bytes": 12884901888,
+          "host_memory_bytes": 2818572288,
+          "unified_physical_memory_bytes": 15703474176,
+          "cpu_decode_millicores": 2500,
+          "host_pcm_buffer_bytes": 0,
+          "scratch_disk_bytes": 0,
+          "ingress_bandwidth_bps": 0,
+          "egress_bandwidth_bps": 0,
+          "object_storage_bytes": 0
+        },
+        "per_slot_incremental_budget": {
+          "engine_active_slots": 1,
+          "device_memory_bytes": 805306368,
+          "host_memory_bytes": 104857600,
+          "unified_physical_memory_bytes": 910163968,
+          "cpu_decode_millicores": 450,
+          "host_pcm_buffer_bytes": 10485760,
+          "scratch_disk_bytes": 0,
+          "ingress_bandwidth_bps": 1536000,
+          "egress_bandwidth_bps": 320000,
+          "object_storage_bytes": 0
+        },
+        "max_active_slots": 2,
+        "realtime_reserved_slots": 2
+      },
+      "rate_and_segment_limits": {
+        "max_prefill_tokens_per_sec": 4096,
+        "max_output_tokens_per_sec": 512,
+        "max_segment_audio_ms": 30000,
+        "max_render_unit_codepoints": 2000,
+        "max_output_audio_ms": 30000,
+        "hard_output_quota": true
+      },
+      "cancellation_and_fencing": {
+        "cancellation_mode": "engine_abort_confirmed",
+        "supports_request_abort": true,
+        "supports_fencing_barrier": true,
+        "worst_case_non_preemptible_ms": 450,
+        "max_drain_wait_ms": 5000,
+        "idle_reclaim_cooldown_ms": null
+      },
+      "qualification": {
+        "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+        "qualified_at": "2026-10-22T09:00:00Z",
+        "expires_at": "2027-04-22T09:00:00Z",
+        "config_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "verified_coexistence_profiles": [
+          "1_asr_realtime_plus_1_tts_realtime",
+          "voice_design_cold_load_under_realtime_load"
+        ]
+      }
+    }
+  ]
+}

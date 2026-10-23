@@ -43,6 +43,9 @@ services:
     command: ["speechnexus-api"]
     environment:
       SPEECHNEXUS_ENVIRONMENT: development
+      SPEECHNEXUS_PROCESS_ROLE: api
+      SPEECHNEXUS_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
+      SPEECHNEXUS_INSTANCE_ID: api-1
       SPEECHNEXUS_HOST: 0.0.0.0
       SPEECHNEXUS_PORT: "8000"
       SPEECHNEXUS_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}
@@ -83,6 +86,8 @@ services:
     command: ["speechnexus-gateway"]
     environment:
       SPEECHNEXUS_GATEWAY_ENVIRONMENT: development
+      SPEECHNEXUS_GATEWAY_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
+      SPEECHNEXUS_GATEWAY_GATEWAY_ID: gateway-1
       SPEECHNEXUS_GATEWAY_HOST: 0.0.0.0
       SPEECHNEXUS_GATEWAY_PORT: "8010"
       SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}

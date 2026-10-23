@@ -3,7 +3,7 @@ name = "speechnexus-backend"
 version = "0.1.0.dev0"
 description = "SpeechNexus speech service and administrative API"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
   "fastapi>=0.159.1,<0.160",
   "httpx>=0.28.1,<0.29",

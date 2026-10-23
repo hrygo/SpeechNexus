@@ -1479,6 +1479,22 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         with pytest.raises(ValidationError):
             validator.validate(succeeded_with_error)
 
+    export_job = copy.deepcopy(next(sample for name, sample in samples if name == "ExportJob"))
+    export_job["status"] = "succeeded"
+    export_job["error"] = None
+    with pytest.raises(ValidationError):
+        _component_validator(workbench, "ExportJob").validate(export_job)
+    export_job["artifact"] = {
+        "id": "export_artifact_demo",
+        "object": "nexus.export_artifact",
+        "export_id": "export_demo",
+        "media_type": "application/zip",
+        "bytes": 2048,
+        "sha256": "sha256:" + "a" * 64,
+        "created_at": "2026-10-23T00:00:02Z",
+    }
+    _component_validator(workbench, "ExportJob").validate(export_job)
+
 
 def test_transcription_logprobs_match_the_openai_sdk_shape() -> None:
     speech = _resolved_yaml(_SPEECH_OPENAPI)

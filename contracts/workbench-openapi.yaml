@@ -2242,6 +2242,17 @@ components:
             properties:
               error:
                 type: "null"
+        - if:
+            properties:
+              status:
+                const: succeeded
+            required: [status]
+          then:
+            required: [artifact]
+            properties:
+              artifact:
+                not:
+                  type: "null"
     ExportCreateRequest:
       type: object
       additionalProperties: false

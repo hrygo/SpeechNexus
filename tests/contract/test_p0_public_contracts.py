@@ -2374,6 +2374,13 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
         job_validator.validate(cancelled_job)
     cancelled_job["cleanup_state"] = "complete"
     job_validator.validate(cancelled_job)
+    expired_job = copy.deepcopy(job)
+    expired_job["status"] = "expired"
+    expired_job["cleanup_state"] = "pending"
+    with pytest.raises(ValidationError):
+        job_validator.validate(expired_job)
+    expired_job["cleanup_state"] = "not_required"
+    job_validator.validate(expired_job)
 
     operation: dict[str, Any] = {
         "id": "op-demo",

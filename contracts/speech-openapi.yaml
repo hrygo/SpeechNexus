@@ -2726,6 +2726,15 @@ components:
             properties:
               cleanup_state:
                 enum: [not_required, complete]
+        - if:
+            properties:
+              status:
+                const: expired
+            required: [status]
+          then:
+            properties:
+              cleanup_state:
+                const: not_required
     JobProgress:
       type: object
       additionalProperties: false
@@ -3199,7 +3208,7 @@ components:
         status:
           const: expired
         cleanup_state:
-          $ref: "#/components/schemas/CleanupState"
+          const: not_required
     JobCleanupUpdatedEvent:
       allOf:
         - $ref: "#/components/schemas/JobEventEnvelope"

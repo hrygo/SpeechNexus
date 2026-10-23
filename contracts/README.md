@@ -21,7 +21,9 @@ of defaults, units, enum domains, or stable error codes.
   entries of the same kind with the result receipt; committed artifacts have
   non-empty content. Realtime session projections require connection,
   terminal-time, structured failure, and cleanup facts to agree with the
-  session status. Ready assets carry non-empty validated media facts; audio
+  session status. A session's terminal operation references are unique and
+  resolve to Operations owned by that session with matching terminal facts.
+  Ready assets carry non-empty validated media facts; audio
   assets expose duration, sample rate, and channel count, while text assets
   cannot claim audio metadata.
 - `workbench-openapi.yaml`: optional workbench application resources: projects,

@@ -4072,6 +4072,11 @@ components:
           minimum: 0
         terminal_operations:
           type: array
+          description: |
+            Terminal Operations owned by this session. Producer validation
+            requires unique operation_id values and resolves each referenced
+            Operation to one whose session_id equals this session id and whose
+            kind, status, cleanup_state, and succeeded receipt id agree.
           items:
             $ref: "#/components/schemas/RealtimeTerminalOperation"
         cleanup_state:

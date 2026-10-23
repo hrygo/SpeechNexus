@@ -228,7 +228,7 @@ def _assert_job_success_evidence(data: dict[str, Any]) -> None:
         expected_artifacts = [(cast(str, result["audio_artifact_id"]), "audio")]
     elif result_kind in {"voice_design", "voice_clone"}:
         expected_artifacts = [
-            (cast(str, artifact_id), "preview")
+            (artifact_id, "preview")
             for artifact_id in cast(list[str], result["preview_artifact_ids"])
         ]
     elif result_kind == "voice_preview":
@@ -242,15 +242,15 @@ def _assert_job_success_evidence(data: dict[str, Any]) -> None:
 
     receipt_id = cast(str, result["receipt_id"])
     for artifact_id, expected_kind in expected_artifacts:
-        artifact = artifacts_by_id.get(artifact_id)
-        if artifact is None:
+        result_artifact = artifacts_by_id.get(artifact_id)
+        if result_artifact is None:
             raise ValueError(f"result artifact {artifact_id} is not committed in artifacts")
-        if artifact["kind"] != expected_kind:
+        if result_artifact["kind"] != expected_kind:
             raise ValueError(
-                f"result artifact {artifact_id} has kind {artifact['kind']}, "
+                f"result artifact {artifact_id} has kind {result_artifact['kind']}, "
                 f"expected {expected_kind}"
             )
-        if artifact["receipt_id"] != receipt_id:
+        if result_artifact["receipt_id"] != receipt_id:
             raise ValueError(f"result artifact {artifact_id} does not carry the result receipt")
 
 
@@ -264,6 +264,32 @@ def _assert_export_artifact_semantics(
         raise ValueError("export artifact belongs to a different export job")
     if artifact["manifest_revision"] != manifest_revision:
         raise ValueError("export artifact manifest revision differs from its job")
+
+
+def _assert_realtime_terminal_operations(
+    session: dict[str, Any],
+    operations: list[dict[str, Any]],
+) -> None:
+    """Executable ownership and terminal projection rules for a session."""
+    operations_by_id = {cast(str, operation["id"]): operation for operation in operations}
+    seen: set[str] = set()
+    for reference in cast(list[dict[str, Any]], session["terminal_operations"]):
+        operation_id = cast(str, reference["operation_id"])
+        if operation_id in seen:
+            raise ValueError(f"terminal operations repeat operation_id {operation_id}")
+        seen.add(operation_id)
+        operation = operations_by_id.get(operation_id)
+        if operation is None:
+            raise ValueError(f"terminal operation {operation_id} cannot be resolved")
+        if operation["session_id"] != session["id"]:
+            raise ValueError(f"terminal operation {operation_id} belongs to another session")
+        for field in ("kind", "status", "cleanup_state"):
+            if reference[field] != operation[field]:
+                raise ValueError(f"terminal operation {operation_id} has mismatched {field}")
+        if operation["status"] == "succeeded":
+            receipt = cast(dict[str, Any] | None, operation["receipt"])
+            if receipt is None or reference["receipt_id"] != receipt["receipt_id"]:
+                raise ValueError(f"terminal operation {operation_id} has mismatched receipt")
 
 
 def _assert_voice_validation_semantics(validation: dict[str, Any]) -> None:
@@ -3203,6 +3229,68 @@ def test_realtime_session_terminal_state_requires_cleanup_and_failure_facts() ->
                 "receipt_id": None,
             }
         )
+
+    terminal_reference: dict[str, Any] = {
+        "operation_id": "op-demo",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "receipt_id": "receipt-demo",
+    }
+    terminal_session = copy.deepcopy(closed)
+    terminal_session["connection_url"] = None
+    terminal_session["terminal_operations"] = [terminal_reference]
+    session_validator.validate(terminal_session)
+    operation: dict[str, Any] = {
+        "id": "op-demo",
+        "object": "nexus.operation",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "job_id": None,
+        "session_id": "session-demo",
+        "execution_revision": "1",
+        "receipt": {
+            "receipt_id": "receipt-demo",
+            "requested": {},
+            "effective": {},
+            "observed": {},
+            "missing": [],
+            "unknown": [],
+        },
+        "error": None,
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:10:00Z",
+    }
+    operation_validator = _component_validator(speech, "Operation")
+    operation_validator.validate(operation)
+    _assert_realtime_terminal_operations(terminal_session, [operation])
+
+    operation_from_other_session = copy.deepcopy(operation)
+    operation_from_other_session["session_id"] = "other-session"
+    operation_validator.validate(operation_from_other_session)
+    with pytest.raises(ValueError, match="another session"):
+        _assert_realtime_terminal_operations(terminal_session, [operation_from_other_session])
+
+    mismatched_terminal_receipt = copy.deepcopy(terminal_session)
+    mismatched_terminal_receipt["terminal_operations"][0]["receipt_id"] = "other-receipt"
+    session_validator.validate(mismatched_terminal_receipt)
+    with pytest.raises(ValueError, match="mismatched receipt"):
+        _assert_realtime_terminal_operations(mismatched_terminal_receipt, [operation])
+
+    repeated_terminal_operation = copy.deepcopy(terminal_session)
+    repeated_terminal_operation["terminal_operations"].append(
+        copy.deepcopy(repeated_terminal_operation["terminal_operations"][0])
+    )
+    session_validator.validate(repeated_terminal_operation)
+    with pytest.raises(ValueError, match="repeat operation_id"):
+        _assert_realtime_terminal_operations(repeated_terminal_operation, [operation])
+
+    unresolved_terminal_operation = copy.deepcopy(terminal_session)
+    unresolved_terminal_operation["terminal_operations"][0]["operation_id"] = "op-missing"
+    session_validator.validate(unresolved_terminal_operation)
+    with pytest.raises(ValueError, match="cannot be resolved"):
+        _assert_realtime_terminal_operations(unresolved_terminal_operation, [operation])
 
 
 def test_ready_assets_require_validated_media_facts() -> None:

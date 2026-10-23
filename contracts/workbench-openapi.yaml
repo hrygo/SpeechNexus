@@ -1422,6 +1422,7 @@ components:
     ProjectPatch:
       type: object
       additionalProperties: false
+      minProperties: 2
       required: [expected_metadata_revision]
       properties:
         expected_metadata_revision:
@@ -2157,6 +2158,7 @@ components:
     RenderUnitPatch:
       type: object
       additionalProperties: false
+      minProperties: 2
       required: [expected_revision]
       properties:
         expected_revision:

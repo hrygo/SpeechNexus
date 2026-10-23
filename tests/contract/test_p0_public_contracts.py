@@ -1675,6 +1675,59 @@ def test_model_binding_publication_separates_target_and_current_revision() -> No
         validator.validate(unknown_field)
 
 
+def test_model_binding_summary_distinguishes_latest_and_current_revision() -> None:
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    validator = _component_validator(admin, "ModelBindingSummary")
+    draft_only = {
+        "binding_id": "asr-quality",
+        "latest_revision": "1",
+        "current_revision": None,
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file"],
+        "release_tier": "production",
+        "publication_status": "draft",
+    }
+    validator.validate(draft_only)
+
+    active_with_new_draft = {
+        **draft_only,
+        "latest_revision": "2",
+        "current_revision": "1",
+        "publication_status": "draft",
+    }
+    validator.validate(active_with_new_draft)
+
+    for missing_field in ("latest_revision", "current_revision"):
+        missing = copy.deepcopy(active_with_new_draft)
+        del missing[missing_field]
+        with pytest.raises(ValidationError):
+            validator.validate(missing)
+
+
+def test_revisioned_patch_requires_an_actual_change() -> None:
+    validators = {
+        "WorkspacePatch": _component_validator(_resolved_yaml(_ADMIN_OPENAPI), "WorkspacePatch"),
+        "ProjectPatch": _component_validator(_resolved_yaml(_WORKBENCH_OPENAPI), "ProjectPatch"),
+        "RenderUnitPatch": _component_validator(
+            _resolved_yaml(_WORKBENCH_OPENAPI), "RenderUnitPatch"
+        ),
+    }
+    no_op_requests = {
+        "WorkspacePatch": {"expected_metadata_revision": 2},
+        "ProjectPatch": {"expected_metadata_revision": 2},
+        "RenderUnitPatch": {"expected_revision": "2"},
+    }
+    changed_requests = {
+        "WorkspacePatch": {"expected_metadata_revision": 2, "status": "disabled"},
+        "ProjectPatch": {"expected_metadata_revision": 2, "name": "Renamed"},
+        "RenderUnitPatch": {"expected_revision": "2", "text": "Revised text"},
+    }
+    for name, validator in validators.items():
+        with pytest.raises(ValidationError):
+            validator.validate(no_op_requests[name])
+        validator.validate(changed_requests[name])
+
+
 def test_runtime_state_domains_are_shared_by_admin_and_internal_contracts() -> None:
     shared = _load_json(_RUNTIME_STATES_SCHEMA)
     shared_defs = cast(dict[str, dict[str, Any]], shared["$defs"])

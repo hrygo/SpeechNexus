@@ -38,13 +38,18 @@ of defaults, units, enum domains, or stable error codes.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit
-  events. Model-binding publication uses separate target-revision and
-  expected-current-revision compare-and-swap fields. Quarantine release
-  persists and echoes the operator-observed evidence time, reason, and
-  idempotent replay status. A ready resource pool has at least one
+  events. A binding-family summary distinguishes its latest immutable revision
+  from the nullable current publication pointer, so a new draft remains visible
+  before it is published. Model-binding publication uses separate
+  target-revision and expected-current-revision compare-and-swap fields.
+  Quarantine release persists and echoes the operator-observed evidence time,
+  reason, and idempotent replay status. A ready resource pool has at least one
   contributing node and positive capacity; reserved slots do not exceed
   capacity, and active plus quarantined slots do not exceed capacity.
   Released submit-intent ids are sorted.
+- Patch requests that require an expected revision must also carry at least one
+  changed field. A compare-and-swap precondition alone cannot create a new
+  metadata revision without a change.
 - `shared/`: single-source definitions for opaque identifiers and digests
   (`identifiers.schema.json`), runtime and Operation states, the
   OpenAI-compatible public error envelope, revisioned references, language

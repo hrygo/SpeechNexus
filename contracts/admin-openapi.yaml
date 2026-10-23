@@ -836,6 +836,7 @@ components:
     WorkspacePatch:
       type: object
       additionalProperties: false
+      minProperties: 2
       required: [expected_metadata_revision]
       properties:
         expected_metadata_revision:
@@ -866,12 +867,25 @@ components:
     ModelBindingSummary:
       type: object
       additionalProperties: false
-      required: [binding_id, current_revision, logical_model, tasks, release_tier, publication_status]
+      required:
+        - binding_id
+        - latest_revision
+        - current_revision
+        - logical_model
+        - tasks
+        - release_tier
+        - publication_status
       properties:
         binding_id:
           $ref: "#/components/schemas/Identifier"
-        current_revision:
+        latest_revision:
           $ref: "#/components/schemas/Revision"
+          description: Highest immutable revision in this binding family.
+        current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+          description: Active revision used for new work; null when the family has never been published or its current revision was retired.
         logical_model:
           type: string
         tasks:
@@ -884,6 +898,7 @@ components:
         publication_status:
           type: string
           enum: [draft, published, retired, disabled]
+          description: Publication status of latest_revision. A newer draft can coexist with a different current_revision.
     ModelBindingList:
       type: object
       additionalProperties: false

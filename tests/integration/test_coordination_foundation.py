@@ -180,7 +180,20 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = %s",
         (db.schema,),
     )
-    assert {row["name"] for row in rows} - {"alembic_version"} == (
+    asset_tables = (
+        {
+            "speech_workspaces",
+            "speech_assets",
+            "speech_asset_commands",
+            "speech_asset_objects",
+            "speech_asset_references",
+            "speech_content_deletions",
+            "speech_asset_events",
+        }
+        if db.dialect == "postgresql"
+        else set()
+    )
+    assert {row["name"] for row in rows} - {"alembic_version"} - asset_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
     db.query(
@@ -413,7 +426,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0002_coordination"
+    assert sandbox.version() == "0003_assets"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -480,7 +493,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0002_coordination"
+        assert sandbox.version() == "0003_assets"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

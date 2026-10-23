@@ -28,6 +28,8 @@ The Compose development topology binds all published ports to loopback:
 - PostgreSQL: `127.0.0.1:55432`
 - MinIO: `127.0.0.1:59000`
 
+MinIO is built from checked official release DEB/license bytes rather than the unavailable community image tag. Its runtime uses UID/GID 10001 and disables the browser/update service; API health uses the included Python runtime. Existing data volumes need an ownership review before switching images; no startup command changes existing data ownership. Bucket versioning and dedicated product credentials are separately provisioned before enabling the [asset publication ports](../docs/architecture/production-assets.md). The bootstrap does not create a product bucket or publish asset HTTP routes.
+
 The repository's systemd development services use the same PostgreSQL and
 MinIO host ports. Stop one topology before starting the other.
 

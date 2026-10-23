@@ -59,6 +59,8 @@ The [`0002_coordination` production storage foundation (Chinese)](docs/architect
 
 [Production owner epoch transactions (Chinese)](docs/architecture/production-owners.md) provide acquire, renew, activate and current-authority queries, with database time after lock waits, complete snapshots and unknown-commit recovery. Real gateway barriers, scheduler loops and runtime admission remain separate delivery units.
 
+The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload routes and a persistent maintenance process remain pending; audio inspection depends on B03.
+
 ### Maintain a deployment through AdminUI
 
 AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.

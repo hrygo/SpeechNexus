@@ -49,7 +49,14 @@ def test_generated_entrypoints_have_shared_positive_and_negative_examples() -> N
         assert any(e["schema"] == name and not e["valid"] for e in EXAMPLES), name
 
 
-@pytest.mark.parametrize("filename", ["file.schema.json", "coordination.schema.json"])
+@pytest.mark.parametrize(
+    "filename",
+    ["file.schema.json", "coordination.schema.json"]
+    + [
+        f"{profile}.schema.json"
+        for profile in json.loads((ROOT / "contracts/bindings.json").read_text())["profiles"]
+    ],
+)
 def test_packaged_bundle_is_closed_and_unknown_contracts_fail(filename: str) -> None:
     bundle = json.loads(files("speechnexus_contracts").joinpath(filename).read_text())
     Draft202012Validator.check_schema(bundle)

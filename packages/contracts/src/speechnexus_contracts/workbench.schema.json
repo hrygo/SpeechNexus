@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkbenchContracts",
+  "x-nexus-bindings-version": "0.1.0.dev0",
+  "x-nexus-entrypoints": ["ProjectCreateRequest", "ProjectPatch"],
+  "$defs": {
+    "ProjectCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "ProjectPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "required": ["expected_metadata_revision"],
+      "properties": {
+        "expected_metadata_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"]
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/ProjectCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/ProjectPatch"
+    }
+  ]
+}

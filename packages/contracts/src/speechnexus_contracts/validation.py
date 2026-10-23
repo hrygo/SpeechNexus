@@ -9,6 +9,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from .profile_registry import PROFILES
+
 
 class ContractValidationError(ValueError):
     """Safe boundary error: excludes input content and validator diagnostics."""
@@ -41,6 +43,18 @@ def validate_coordination(name: str, value: Any) -> Any:
     validators = _validators("coordination.schema.json")
     if name not in validators:
         raise ValueError(f"Unknown coordination contract: {name}")
+    if not validators[name].is_valid(value):
+        raise ContractValidationError(f"Invalid {name}")
+    return value
+
+
+def validate_profile(profile: str, name: str, value: Any) -> Any:
+    """Explicit, offline producer/consumer namespace; no filesystem user input."""
+    if profile not in PROFILES:
+        raise ValueError("Unknown contract profile")
+    validators = _validators(f"{profile}.schema.json")
+    if name not in validators:
+        raise ValueError("Unknown profile contract")
     if not validators[name].is_valid(value):
         raise ContractValidationError(f"Invalid {name}")
     return value

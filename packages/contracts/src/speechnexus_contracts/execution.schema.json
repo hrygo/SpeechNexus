@@ -1,0 +1,1975 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExecutionContracts",
+  "x-nexus-bindings-version": "0.2.0.dev0",
+  "x-nexus-entrypoints": [
+    "SubmitExecutionRequest",
+    "SubmitExecutionResponse",
+    "ExecutionStatusResponse",
+    "AbortExecutionRequest"
+  ],
+  "$defs": {
+    "SubmitExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The execution gateway derives the private staging namespace from\n`workspace_id` and `submit_intent_id`. command contains the complete frozen\ninput and effective parameters. command_digest is SHA-256 over RFC 8785\ncanonical command JSON; mismatch is invalid_execution_request. Same intent\nwith a different canonical command is submit_intent_conflict. Callers cannot supply an output object\nkey, path prefix, bucket, or external URL. Input storage references must\nidentify immutable owned assets and match the command workspace.\n",
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "fencing_token",
+        "command_digest",
+        "command",
+        "deadline_at",
+        "max_output_audio_ms",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "command": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ExecutionCommand"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "max_output_audio_ms": {
+          "type": ["integer", "null"],
+          "minimum": 100,
+          "description": "Hard output-audio ceiling for stages that synthesize audio. Use\nnull for ASR, alignment, and other stages that cannot emit audio.\nThe referenced manifest stage must declare `emits_audio_pcm=true`\nfor a non-null value. The gateway stores\n`hard_output_ceiling_samples` as\n`floor(max_output_audio_ms * sample_rate_hz / 1000)`. A manifest\nstage that emits audio PCM rejects a null value.\n"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null],
+          "description": "PCM sample rate used for output metering. Required and non-null\nexactly when `max_output_audio_ms` is non-null; null for text-only\nstages.\n"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "max_output_audio_ms": {
+                "type": "integer"
+              }
+            },
+            "required": ["max_output_audio_ms"]
+          },
+          "then": {
+            "properties": {
+              "sample_rate_hz": {
+                "enum": [16000, 24000, 48000]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "max_output_audio_ms": {
+                "type": "null"
+              }
+            },
+            "required": ["max_output_audio_ms"]
+          },
+          "then": {
+            "properties": {
+              "sample_rate_hz": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "External_internal_execution_command_schema_json_ExecutionCommand": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AsrCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceDesignCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceCloneCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceValidationCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AlignmentCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_DiarizationCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VadCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_CodecCommand"
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AsrCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "asr"
+        },
+        "task_kind": {
+          "enum": ["asr_realtime", "asr_full_segment_review", "asr_file"]
+        },
+        "stage_role": {
+          "enum": ["asr_preview", "asr_review", "asr_batch"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioSource"
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AsrEffectiveParameters"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_ResolvedResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice",
+        "voice_material",
+        "vocabulary",
+        "pronunciation",
+        "voice_kind",
+        "vocabulary_source",
+        "pronunciation_source"
+      ],
+      "properties": {
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_material": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vocabulary": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_command_schema_json_VocabularyEntry"
+          }
+        },
+        "pronunciation": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_command_schema_json_PronunciationEntry"
+          }
+        },
+        "voice_kind": {
+          "enum": ["builtin", "custom", null]
+        },
+        "vocabulary_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "voice": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_kind": {
+                "type": "null"
+              },
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_kind": {
+                "enum": ["builtin", "custom"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "voice_kind": {
+                "const": "custom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_material": {
+                "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "External_internal_execution_command_schema_json_ArtifactStorageReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_or_artifact_id",
+        "workspace_id",
+        "storage_bucket",
+        "object_key",
+        "content_sha256",
+        "byte_length"
+      ],
+      "properties": {
+        "asset_or_artifact_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "storage_bucket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VocabularyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "weight"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_PronunciationEntry": {
+      "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationEntry"
+    },
+    "External_voice_resource_schema_json_PronunciationEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grapheme", "phonemes"],
+      "properties": {
+        "grapheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "phonemes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "language": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_LanguageTag"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_internal_execution_command_schema_json_AudioSource": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_StreamInput"
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AudioInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage", "media_type", "sample_rate_hz", "channels"],
+      "properties": {
+        "storage": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+        },
+        "media_type": {
+          "enum": ["audio/wav", "audio/flac", "audio/mpeg", "audio/ogg", "audio/pcm"]
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_StreamInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream_id", "stream_epoch"],
+      "properties": {
+        "stream_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "stream_epoch": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_AsrEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "turn_detection",
+        "finalization",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "rollback_tokens",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "alignment",
+        "diarization",
+        "vocabulary_set_revision",
+        "prompt",
+        "temperature",
+        "response_format",
+        "timestamp_granularities"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "turn_detection": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_shared_speech_overrides_schema_json_turn_detection"
+            },
+            {
+              "required": ["mode", "silence_duration_ms"]
+            }
+          ]
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_preview_interval_ms"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_max_segment_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_alignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+        },
+        "prompt": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "response_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+        },
+        "timestamp_granularities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["word", "segment"]
+          }
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_turn_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_speech_overrides_schema_json_finalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_speech_overrides_schema_json_max_segment_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "External_shared_speech_overrides_schema_json_rollback_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_alignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "External_shared_speech_overrides_schema_json_diarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "External_internal_execution_command_schema_json_TtsCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "text_stream",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "tts"
+        },
+        "task_kind": {
+          "enum": ["tts_realtime", "tts_file"]
+        },
+        "stage_role": {
+          "enum": ["tts_talker", "tts_connector"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text_stream": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_command_schema_json_StreamInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsEffectiveParameters"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "text_stream": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "text": {
+              "type": "null"
+            },
+            "text_stream": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_TtsEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text_commit_mode",
+        "audio_delivery",
+        "language",
+        "pronunciation_revision",
+        "instructions",
+        "speed",
+        "seed",
+        "planner",
+        "response_format"
+      ],
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_audio_delivery"
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 4096
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_speed"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        },
+        "planner": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_shared_speech_overrides_schema_json_planner"
+            },
+            {
+              "required": ["max_chars", "max_wait_ms"]
+            }
+          ]
+        },
+        "response_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_text_commit_mode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_speech_overrides_schema_json_audio_delivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_speed": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4.0
+    },
+    "External_shared_speech_overrides_schema_json_seed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_speech_overrides_schema_json_planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_internal_execution_command_schema_json_VoiceDesignCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "description",
+        "preview_text",
+        "language",
+        "seed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicedesign"
+        },
+        "task_kind": {
+          "enum": ["voice_design"]
+        },
+        "stage_role": {
+          "enum": ["voice_design"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VoiceCloneCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "reference_audio",
+        "reference_text",
+        "preview_text",
+        "language",
+        "source_use_confirmed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voiceclone"
+        },
+        "task_kind": {
+          "enum": ["voice_clone"]
+        },
+        "stage_role": {
+          "enum": ["voice_clone_base"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "reference_audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "reference_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "source_use_confirmed": {
+          "const": true
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VoiceValidationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "parameters",
+        "validation_checks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicevalidation"
+        },
+        "task_kind": {
+          "enum": ["voice_validation"]
+        },
+        "stage_role": {
+          "enum": ["tts_talker", "tts_connector"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsEffectiveParameters"
+        },
+        "validation_checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["reusable_tts", "reference_integrity", "language_support"]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AlignmentCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "transcript",
+        "language"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "alignment"
+        },
+        "task_kind": {
+          "enum": ["forced_alignment", "asr_file", "asr_full_segment_review"]
+        },
+        "stage_role": {
+          "enum": ["alignment"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "transcript": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_DiarizationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "min_speakers",
+        "max_speakers"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "diarization"
+        },
+        "task_kind": {
+          "enum": ["speaker_diarization", "asr_file", "asr_full_segment_review"]
+        },
+        "stage_role": {
+          "enum": ["diarization"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "min_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 128
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VadCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "threshold",
+        "silence_duration_ms"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "vad"
+        },
+        "task_kind": {
+          "enum": ["vad", "asr_realtime", "asr_file"]
+        },
+        "stage_role": {
+          "enum": ["vad"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioSource"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "silence_duration_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_silence_duration_ms"
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_silence_duration_ms": {
+      "type": "integer",
+      "minimum": 200,
+      "maximum": 3000
+    },
+    "External_internal_execution_command_schema_json_CodecCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "codec_tokens",
+        "codec_format",
+        "codebook_count",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "codec"
+        },
+        "task_kind": {
+          "enum": ["tts_realtime", "tts_file", "voice_design", "voice_clone", "voice_validation"]
+        },
+        "stage_role": {
+          "enum": ["tts_code2wav"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "codec_tokens": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+        },
+        "codec_format": {
+          "const": "nexus.codec_tokens.v1"
+        },
+        "codebook_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "sample_rate_hz": {
+          "enum": [16000, 24000, 48000]
+        }
+      }
+    },
+    "SubmitExecutionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "voice_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "dispatched_at",
+        "sample_rate_hz",
+        "execution_state",
+        "cleanup_state",
+        "idempotent_replay",
+        "recorded_at"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dispatched_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Set when the gateway starts the engine request. Null before dispatch\nand for failures that never dispatched.\n"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null]
+        },
+        "engine_request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "execution_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "idempotent_replay": {
+          "type": "boolean"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExecutionStateInvariants"
+        },
+        {
+          "$ref": "#/$defs/ExecutionCleanupEvidenceInvariants"
+        },
+        {
+          "$ref": "#/$defs/ExecutionDispatchEvidenceInvariants"
+        }
+      ]
+    },
+    "ExecutionState": {
+      "type": "string",
+      "enum": [
+        "submitting",
+        "executing",
+        "stopping",
+        "succeeded",
+        "failed",
+        "aborted",
+        "unknown_quarantined"
+      ],
+      "description": "Authoritative execution state on the gateway. `submitting` and `unknown_quarantined`\ncontinue to hold reserved capacity until stop evidence is confirmed.\n"
+    },
+    "CleanupState": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+    },
+    "External_shared_operation_states_schema_json_CleanupState": {
+      "type": "string",
+      "enum": ["not_required", "pending", "complete", "quarantined"]
+    },
+    "ExecutionStateInvariants": {
+      "type": "object",
+      "description": "Closed execution-state to cleanup-state matrix. Active states still own\ncapacity. A successful execution has completed cleanup. A failed\nexecution may clean up without a dispatched request (`not_required`) or\nonly after verified termination (`complete`); an unknown execution must\nuse `unknown_quarantined` together with quarantined cleanup.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting", "executing", "stopping"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "unknown_quarantined"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "quarantined"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionCleanupEvidenceInvariants": {
+      "type": "object",
+      "description": "A failed execution may use `cleanup_state=not_required` only when no\nrequest reached the engine. `engine_request_id` and `dispatched_at` are\ntherefore required and null for that branch; omitting either would make\ndispatch history ambiguous and could release capacity while an engine\nrequest is still active.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              },
+              "cleanup_state": {
+                "const": "not_required"
+              }
+            },
+            "required": ["execution_state", "cleanup_state"]
+          },
+          "then": {
+            "required": ["engine_request_id", "dispatched_at"],
+            "properties": {
+              "engine_request_id": {
+                "type": "null"
+              },
+              "dispatched_at": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionDispatchEvidenceInvariants": {
+      "type": "object",
+      "description": "Submission is persisted before an engine request. Active execution,\nsuccessful completion, and verified abort therefore require an observed\ndispatch time. `submitting` and a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["executing", "stopping", "succeeded", "aborted"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              },
+              "cleanup_state": {
+                "const": "complete"
+              }
+            },
+            "required": ["execution_state", "cleanup_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "voice_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "dispatched_at",
+        "sample_rate_hz",
+        "execution_state",
+        "cleanup_state",
+        "stop_evidence_kind",
+        "updated_at"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dispatched_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null]
+        },
+        "engine_request_id": {
+          "type": ["string", "null"]
+        },
+        "execution_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "stop_evidence_kind": {
+          "$ref": "#/$defs/StopEvidenceKind"
+        },
+        "output_watermark": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputWatermark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null for text-only stages. Otherwise its sample_rate_hz must equal\nthe response-level sample_rate_hz and its generated_pcm_samples must\nnot exceed hard_output_ceiling_samples when that ceiling is set.\n"
+        },
+        "staging_artifact_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExecutionStateInvariants"
+        },
+        {
+          "$ref": "#/$defs/ExecutionTerminalEvidenceInvariants"
+        },
+        {
+          "$ref": "#/$defs/ExecutionCleanupEvidenceInvariants"
+        },
+        {
+          "$ref": "#/$defs/ExecutionDispatchEvidenceInvariants"
+        }
+      ]
+    },
+    "StopEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "none",
+        "engine_abort_ack",
+        "engine_terminal_response",
+        "instance_terminated_by_controller",
+        "operator_verified_instance_terminated",
+        "unconfirmed_timeout"
+      ]
+    },
+    "OutputWatermark": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Monotonic high-water summary over the authoritative interval ledger.\n`generated_pcm_samples` and `sample_rate_hz` are authoritative; audio\nmilliseconds are derived only for reporting as\n`floor(generated_pcm_samples * 1000 / sample_rate_hz)` and are not a\nstored or independently mutable meter. When\n`hard_output_ceiling_samples` is non-null it must be greater than or\nequal to `generated_pcm_samples`.\n",
+      "required": [
+        "output_stream_id",
+        "generated_pcm_samples",
+        "sample_rate_hz",
+        "hard_output_ceiling_samples"
+      ],
+      "properties": {
+        "output_stream_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "generated_pcm_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [16000, 24000, 48000]
+        },
+        "hard_output_ceiling_samples": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
+    "ArtifactStorageReference": {
+      "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+    },
+    "ExecutionErrorCode": {
+      "type": "string",
+      "enum": [
+        "stale_fencing_token",
+        "gateway_barrier_fenced",
+        "submit_intent_conflict",
+        "instance_generation_mismatch",
+        "instance_draining",
+        "lease_not_active",
+        "policy_or_resource_disabled",
+        "engine_transport_unknown",
+        "cancellation_unconfirmed",
+        "execution_cleanup_pending",
+        "invalid_execution_request",
+        "component_credential_invalid"
+      ]
+    },
+    "ExecutionTerminalEvidenceInvariants": {
+      "type": "object",
+      "description": "Terminal status must expose evidence consistent with its result.\nA successful execution has an engine terminal response and no error. A\nfailed execution must carry a stable error code and either have no\ndispatched request or verified termination evidence.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting", "executing", "stopping"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "engine_terminal_response"
+              },
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["error_code"],
+            "properties": {
+              "error_code": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "cleanup_state": {
+                      "const": "not_required"
+                    }
+                  },
+                  "required": ["cleanup_state"]
+                },
+                "then": {
+                  "properties": {
+                    "stop_evidence_kind": {
+                      "const": "none"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "cleanup_state": {
+                      "const": "complete"
+                    }
+                  },
+                  "required": ["cleanup_state"]
+                },
+                "then": {
+                  "properties": {
+                    "stop_evidence_kind": {
+                      "enum": [
+                        "engine_terminal_response",
+                        "instance_terminated_by_controller",
+                        "operator_verified_instance_terminated"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "enum": [
+                  "engine_abort_ack",
+                  "engine_terminal_response",
+                  "instance_terminated_by_controller",
+                  "operator_verified_instance_terminated"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "unknown_quarantined"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "unconfirmed_timeout"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AbortExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "attempt_id", "fencing_token", "reason", "wait_timeout_ms"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "client_cancelled",
+            "deadline_exceeded",
+            "quota_exceeded",
+            "resource_force_disabled",
+            "gateway_takeover_reconcile",
+            "stream_disconnected"
+          ]
+        },
+        "wait_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/SubmitExecutionRequest"
+    },
+    {
+      "$ref": "#/$defs/SubmitExecutionResponse"
+    },
+    {
+      "$ref": "#/$defs/ExecutionStatusResponse"
+    },
+    {
+      "$ref": "#/$defs/AbortExecutionRequest"
+    }
+  ]
+}

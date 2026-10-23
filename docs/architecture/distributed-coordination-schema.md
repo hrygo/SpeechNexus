@@ -80,6 +80,8 @@ erDiagram
 2. **就绪切换（Ready）**：当 `node-controller` 与 `execution-gateway` 均确认实例通过加载与 warmup 后，Scheduler 在同一事务内将 `host_nodes` 上的 `reserved_peak_loading_unified_memory_bytes` 减去加载峰值、将 `reserved_resident_unified_memory_bytes` 加上常驻稳态值，并将 `engine_instances` 更新为 `instance_state = 'ready'`, `peak_reservation_active = FALSE`。
 3. **停止回收（Stop）**：先将实例设为 `draining`，由网关执行 `POST /internal/v1/instances/{instance_id}/drain`；确认 `active_intent_count = 0` 且 `submitting_intent_count = 0` 后下发 `runtime_instance_intents(action = 'stop')`。只有收到 `process_or_container_exited = TRUE` 与 `resources_released_confirmed = TRUE` 证据后，才从 `host_nodes.reserved_resident_unified_memory_bytes` 中扣减常驻预算。
 
+`node-controller` 以 `intent_id` 为节点内幂等键：完全相同的意图重放返回原记录与 `idempotent_replay = true`，响应回显 target / pool / gateway / instance generation / template / binding revision / manifest / config digest / action / fencing token 等不可变身份；同一 `intent_id` 携带任一不同字段时返回 `409 intent_conflict`，不得静默覆盖或创建第二份意图。终态意图不可复活，重试必须使用新 `intent_id`。
+
 ### 3.4 Execution Gateway 两阶段提交屏障（Submit Intent）
 
 Worker 或实时网关调用 `POST /internal/v1/executions/submit` 时，`execution-gateway` 在控制库短事务中：

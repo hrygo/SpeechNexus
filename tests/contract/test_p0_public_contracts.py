@@ -1614,6 +1614,12 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     stopped_intent: dict[str, Any] = {
         "intent_id": "intent-stop",
         "target_node_id": "node-demo",
+        "pool_id": "asr-realtime",
+        "gateway_id": "gateway-demo",
+        "approved_template_id": "template-asr-realtime",
+        "binding_revision_id": "mbrev-asr-realtime-4",
+        "manifest_id": "capm-asr-realtime-full-segment-v1",
+        "config_digest": "sha256:" + "3" * 64,
         "instance_id": "instance-demo",
         "instance_generation": 1,
         "action": "stop",
@@ -1638,9 +1644,15 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
             "resources_released_confirmed": True,
             "verified_at": "2026-10-22T00:00:00Z",
         },
+        "idempotent_replay": True,
+        "created_at": "2026-10-22T00:00:00Z",
         "updated_at": "2026-10-22T00:00:00Z",
     }
     intent_validator.validate(stopped_intent)
+    missing_intent_identity = copy.deepcopy(stopped_intent)
+    del missing_intent_identity["binding_revision_id"]
+    with pytest.raises(ValidationError):
+        intent_validator.validate(missing_intent_identity)
     missing_evidence = copy.deepcopy(stopped_intent)
     missing_evidence["stop_evidence"] = None
     with pytest.raises(ValidationError):
@@ -1649,6 +1661,27 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     false_evidence["stop_evidence"]["resources_released_confirmed"] = False
     with pytest.raises(ValidationError):
         intent_validator.validate(false_evidence)
+
+    runtime_error_validator = _component_validator(runtime, "RuntimeControlErrorResponse")
+    runtime_error_validator.validate(
+        {
+            "error": {
+                "code": "intent_conflict",
+                "message": "intent_id already records a different request",
+                "retryable": False,
+                "observed_fencing_token": 7,
+            }
+        }
+    )
+    unknown_runtime_error = {
+        "error": {
+            "code": "conflicting_intent",
+            "message": "unstable alias",
+            "retryable": False,
+        }
+    }
+    with pytest.raises(ValidationError):
+        runtime_error_validator.validate(unknown_runtime_error)
 
 
 def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:

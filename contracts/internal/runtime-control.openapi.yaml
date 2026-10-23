@@ -15,6 +15,16 @@ paths:
     post:
       operationId: submitRuntimeInstanceIntent
       summary: Submit an approved instance prepare or stop intent to a target host node
+      description: |
+        `intent_id` is the node-controller-scoped idempotency key for an
+        immutable prepare or stop intent. Replaying the exact same canonical
+        request returns the originally recorded intent with
+        `idempotent_replay: true`. Reusing the key with any changed target,
+        pool, gateway, instance generation, approved template, binding
+        revision, manifest, config digest, action, fencing token, reserved
+        memory vector, or deadline returns `409 intent_conflict`. A terminal
+        `succeeded` or `failed` intent is never revived; a retry uses a new
+        `intent_id`.
       parameters:
         - $ref: "#/components/parameters/NodeIdPath"
         - $ref: "#/components/parameters/XRequestIdHeader"
@@ -37,7 +47,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Target node mismatch, stale fencing token, stale instance generation, or conflicting intent.
+          description: |
+            Stable conflict codes: `target_node_mismatch`, `stale_fencing_token`,
+            `stale_instance_generation`, `gateway_drain_incomplete`, or
+            `intent_conflict` when an existing `intent_id` has a different
+            canonical request.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -323,6 +337,12 @@ components:
       required:
         - intent_id
         - target_node_id
+        - pool_id
+        - gateway_id
+        - approved_template_id
+        - binding_revision_id
+        - manifest_id
+        - config_digest
         - instance_id
         - instance_generation
         - action
@@ -330,12 +350,25 @@ components:
         - intent_state
         - observed_instance_state
         - reserved_memory
+        - created_at
         - updated_at
       properties:
         intent_id:
           $ref: "#/components/schemas/Identifier"
         target_node_id:
           $ref: "#/components/schemas/Identifier"
+        pool_id:
+          $ref: "#/components/schemas/PoolId"
+        gateway_id:
+          $ref: "#/components/schemas/Identifier"
+        approved_template_id:
+          $ref: "#/components/schemas/Identifier"
+        binding_revision_id:
+          $ref: "#/components/schemas/Identifier"
+        manifest_id:
+          $ref: "#/components/schemas/Identifier"
+        config_digest:
+          $ref: "#/components/schemas/Sha256Digest"
         instance_id:
           $ref: "#/components/schemas/Identifier"
         instance_generation:
@@ -352,6 +385,11 @@ components:
           $ref: "#/components/schemas/ObservedInstanceState"
         reserved_memory:
           $ref: "#/components/schemas/RuntimeMemoryReservation"
+        idempotent_replay:
+          type: boolean
+          description: |
+            Present only on POST. True when the response is the stored result
+            of an identical earlier intent with the same `intent_id`.
         stop_evidence:
           anyOf:
             - $ref: "#/components/schemas/RuntimeStopEvidence"
@@ -362,6 +400,10 @@ components:
             - type: "null"
         error_code:
           type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+          description: Time the intent identity was first recorded; immutable across replay.
         updated_at:
           type: string
           format: date-time
@@ -519,6 +561,7 @@ components:
                 - stale_fencing_token
                 - stale_instance_generation
                 - gateway_drain_incomplete
+                - intent_conflict
                 - runtime_controller_unavailable
                 - invalid_runtime_request
                 - component_credential_invalid
@@ -527,6 +570,9 @@ components:
               minLength: 1
             retryable:
               type: boolean
+            observed_fencing_token:
+              type: [integer, "null"]
+              minimum: 1
   responses:
     Unauthorized:
       description: Missing, invalid, or revoked controller component credential.

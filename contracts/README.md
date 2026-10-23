@@ -66,6 +66,9 @@ of defaults, units, enum domains, or stable error codes.
   `RuntimeLifecycleControlPort` protocol between the scheduler and the
   node-scoped deployment controller (`node-controller`). Its per-node component
   credential is independent from scheduler, gateway, and public credentials.
+  `intent_id` is a node-scoped idempotency key; replays echo the immutable
+  intent identity and a changed request under the same key is a stable
+  `409 intent_conflict`.
 
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision

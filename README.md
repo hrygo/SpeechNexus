@@ -59,7 +59,7 @@ SpeechNexus 希望服务于三类需求：
 
 [生产 owner 任期事务](docs/architecture/production-owners.md)已提供获取、续约、激活和当前权威查询，覆盖锁后数据库取时、完整快照及未知提交恢复；调度循环和 runtime 准入仍待对应单元。
 
-[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离与受控执行观察事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察与未外发失败保护也经 PG/InnoDB 合成验证。输出区间写入、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
+[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察和受信命令正文清理事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、未外发失败和正文清理保护也经 PG/InnoDB 合成验证。真实删除许可签发、输出区间写入、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 

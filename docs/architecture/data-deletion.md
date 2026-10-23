@@ -1,13 +1,15 @@
 ---
 title: 数据删除、依赖裁决与恢复屏障
 status: active
-version: "1.0.0"
+version: "1.0.1"
 date: 2026-10-23
 ---
 
 # 数据删除与依赖裁决
 
-本规范冻结契约，未实现业务路由或清理服务。机器定义为
+本规范冻结完整删除契约，业务路由、权威删除协调器和账本重放尚未实现。
+执行网关已实现需显式可信许可的[命令正文清理事务](execution-gateway.md#10-redact_execution_command)，
+未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
 [deletion.schema.json](../../contracts/shared/deletion.schema.json)，入口分别是
 Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 `/v1/workbench/deletion-plans`、`/v1/workbench/deletions`；查询使用对应的

@@ -13,7 +13,8 @@
     "mark_execution_unknown",
     "create_runtime_intent",
     "observe_runtime",
-    "record_execution_observation"
+    "record_execution_observation",
+    "redact_execution_command"
   ],
   "$defs": {
     "create_job": {
@@ -2196,6 +2197,31 @@
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         }
       }
+    },
+    "redact_execution_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "expected_version",
+        "deletion_job_id",
+        "deletion_evidence_digest"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "deletion_job_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "deletion_evidence_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      },
+      "description": "Trusted deletion coordinator permit only; verify the authoritative deletion job/dependency scope before calling. Clear private command content only after execution cleanup and lease release. Preserve identities, request/command digests, fencing, stop facts and an immutable deletion tombstone. Replays use deletion_job_id and evidence digest; never authorize re-execution."
     }
   },
   "anyOf": [
@@ -2231,6 +2257,9 @@
     },
     {
       "$ref": "#/$defs/record_execution_observation"
+    },
+    {
+      "$ref": "#/$defs/redact_execution_command"
     }
   ]
 }

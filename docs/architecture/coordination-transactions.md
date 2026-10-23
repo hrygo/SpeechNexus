@@ -65,6 +65,11 @@ schema 根入口同时接受命令与结果；`result.operation` 约束对应结
 同时保存删除任务/证据 tombstone，保留原摘要和最小协调事实；不能用永久保留执行历史
 为由永久保存业务正文。
 
+该正文清理已由 gateway 原生窄事务实现，要求显式可信删除许可，并在 pool → lease → submit
+行锁下确认执行清理和 A 的 lease release，原子清正文/留 tombstone，不写预算。
+默认没有许可签发器或 HTTP 删除入口，真实删除协调器仍待 A 接入；
+同 Job/摘要的幂等确认与 FactSnapshot 语义见[执行网关](execution-gateway.md#10-redact_execution_command)。
+
 契约示例与反例位于
 [`transaction-examples.json`](../../tests/fixtures/coordination/transaction-examples.json)，
 端口完整性检查位于

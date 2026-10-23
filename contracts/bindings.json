@@ -30,7 +30,8 @@
       "mark_execution_unknown",
       "create_runtime_intent",
       "observe_runtime",
-      "record_execution_observation"
+      "record_execution_observation",
+      "redact_execution_command"
     ]
   },
   "profiles": {

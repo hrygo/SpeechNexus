@@ -71,7 +71,7 @@ internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
 The coordination bundle also validates owner acquire/renew/activate,
 `claim_job`, `query_outcome`, `mark_execution_unknown` and
-`record_execution_observation` requests. The production
+`record_execution_observation` and `redact_execution_command` requests. The production
 owner boundary implements the pool target, the claim boundary handles Job
 current-authority queries, and the gateway implements its own submit snapshot.
 An unclaimed Job row returns unknown, and an expired/later claim snapshot neither
@@ -94,6 +94,13 @@ The trusted gateway observation boundary returns a complete validated
 output/staging publication and verified stop remain separate writers. A stale
 version requires a current-authority query, and an unknown commit never permits
 blind observation retry or engine redispatch.
+The native command-redaction boundary requires an explicitly injected trusted
+deletion authorizer and returns the existing `FactSnapshot`, with the original
+submit ID and canonical execution request digest. Its transaction verifies
+cleanup and A's lease release, then erases only the body and stores an immutable
+tombstone. Matching job/evidence replays preserve time/version; no default
+authorizer or HTTP deletion route is supplied. Shared recovery examples cover
+both boundary requests and their required result types.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

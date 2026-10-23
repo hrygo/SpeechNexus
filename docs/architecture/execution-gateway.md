@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.5.0"
+version: "1.6.0"
 date: 2026-10-23
 ---
 
@@ -12,7 +12,8 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 的锁序、摘要比较和未知结果规则实现，使用[生产协调存储基线](production-coordination-storage.md)
 冻结的表与网关最小权限角色。`record_stop` 已原子保存停止证据与执行终态；
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
-`mark_execution_unknown`、`record_execution_observation` 与自身 submit 分支的 `query_outcome` 已实现；
+`mark_execution_unknown`、`record_execution_observation`、受信命令正文清理
+与自身 submit 分支的 `query_outcome` 已实现；
 认证 HTTP 屏障与只读执行查询已接入生产组合根。输出区间写入、HTTP 提交与真实引擎装配仍待后续单元。
 本页区分已实现、已验证与未交付。
 
@@ -24,6 +25,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 | 提交/停止应用服务、重放与隔离对账 | `speechnexus_gateway.application.submit_execution` | 通过 domain 端口访问外部系统，不自己发 SQL |
 | 未知转换与只读执行快照 | `domain.recovery`、`application.query_execution` | 独立 recovery/query 端口；查询不调用引擎、不触发对账或状态转换 |
 | 观察裁决与受信事务边界 | `domain.observation`、`application.observe_execution`、`interfaces.observation_transactions` | 完整身份、版本与状态检查；生成契约校验与完整 TransactionResult，不新增 HTTP 路由 |
+| 命令正文清理与许可端口 | `domain.command_redaction`、`application.redact_execution_command`、`interfaces.command_redaction_transactions` | 必须显式接入可信删除协调器；仅清正文并原子留 tombstone，不提供默认许可或 HTTP 入口 |
 | 入口排序、屏障请求与证明 | `speechnexus_gateway.application.ingress`、`domain.fencing` | 同一个 guard 覆盖落 intent、完整外发握手与结果保存；网络期间不占数据库事务 |
 | 屏障控制用例与 HTTP 边界 | `application.barrier_control`、`interfaces.http.{barrier_control,control_schemas,control_errors,control_security}` | 专用组件凭据；契约生成类型、离线校验和同源 OpenAPI；不伪造引擎服务 |
 | 端口定义（`SubmissionLedger`、外发、观察） | `speechnexus_gateway.domain.ports` | 实现放 infrastructure 或测试 fake |
@@ -297,9 +299,41 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 已有真实外发时间时仍可对账原请求，始终不再次 dispatch。
 新增 Python 协调入口与 Python/TypeScript 正负例复用原 `0.4.0.dev0` 状态协议，不改变公开语音协议。
 
-## 10. 未交付与已知缺口
+## 10. `redact_execution_command`
 
-- `redact_execution_command`、`append_interval` 仍未交付；
+本端口已实现原生领域/应用/PG 事务与受信契约边界；它不实现完整删除计划、依赖确认、
+删除账本重放或对象删除。入口必须注入 `ExecutionCommandDeletionAuthorizer`：
+由服务端删除协调器先核验权威删除任务、确认范围和固定依赖，并在已接受的持久删除范围内
+阻断新引用/执行，才签发绑定完整执行身份及确切请求的 `AuthorizedCommandRedaction`。
+该值对象不是密码学凭据，不能从客户端 DTO 直接构造来替代授权。
+仓库未提供默认 authorizer，组合根不装配本端口，HTTP 未暴露此操作；
+A 的真实删除协调器仍待交付。测试使用明确命名的合成 authorizer。
+
+授权检查在数据库事务外完成，不在事务中等待外部服务。随后按 pool → lease → submit
+普通行锁重读完整执行身份及租约状态，锁后取数据库时间：
+
+1. 只有 terminal + cleanup complete/not_required，且 A 已将原 lease 置为 released，才可清除正文。
+   停止证据不能代替 lease release，released 也不能代替执行清理。B 不归还或改写任何预算。
+2. 首次清理必须命中 `expected_version`，并确认尚无 tombstone。只将 `request_document`
+   置空，同事务写 `command_redacted_at_us`、删除 Job/证据摘要、更新时间和一个新版本。
+   完整执行身份、原 request/command digest、输出边界、计量、停止证据与历史保留。
+3. 同删除 Job/证据摘要重放返回原 tombstone，先识别已提交事实，不因旧版本拒绝原重放，
+   不重写时间/版本。不同 Job 或证据摘要返回 idempotency_conflict/query_original；
+   尚未清理的版本冲突返回 version_conflict/query_current_authority。
+4. 提交确认丢失仅报告 unknown/query_original，adapter 不自动重写。原执行查询给出当前
+   执行状态及版本，不投影私有正文或删除 tombstone，也不能独自证明哪次清理已提交。
+   协调器查询后可用原许可作显式幂等确认；只有匹配 tombstone 的重放才确认原删除事实。
+   已清理执行的提交重放仍只返回原执行，不能再次 dispatch。
+
+机器结果沿用既有完整 `TransactionResult` + `FactSnapshot`：
+`fact_id` 为原 submit identity，`request_digest` 为原规范执行请求摘要，保留执行追溯；
+不把它改成 ExecutionSnapshot，也不扩展字段发布内部删除许可。原生结果额外携带匹配的
+不可变 tombstone 供受信协调使用。观察与清理边界复用统一错误/恢复映射，
+分别产生契约要求的具名快照。没有新增表、迁移、触发器、存储过程或预算权威。
+
+## 11. 未交付与已知缺口
+
+- `append_interval` 仍未交付；命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
   unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
   观察端口已有完整具名结果边界，其余 B 事务的统一结果入口仍待收敛。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，完整事务响应封装、HTTP 提交/中止路由、
@@ -310,7 +344,7 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
 - 提交端完整 deadline/运行资格校验仍需后续接入，当前没有公开执行入口，不可据本事务称为生产执行链路就绪。
 
-## 11. 验证
+## 12. 验证
 
 ```sh
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
@@ -318,6 +352,7 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
+    tests/integration/test_gateway_command_redaction.py \
     tests/integration/test_gateway_barrier_http.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
@@ -361,3 +396,11 @@ PG 另验证真实 pool 锁等待后的取时与提交确认丢失后的只读�
 
 按 ADR 0007 复核：本单元补齐观察路径，但遗留用例尚未逐项分类并映射全部有效不变量，
 退出条件未齐；本轮不删除旧 PG 原型或停用其门禁，也不把旧机制通过当作新事务证据。
+
+`test_gateway_command_redaction.py` 在 PG/InnoDB 使用同一产品 SQL/领域规则与最小 gateway 角色，
+验证正文/tombstone 原子性、A 的 release 与执行清理双条件、版本/身份/重放冲突、
+竞争单版本与约束失败回滚。两库均观察实际 lease 行锁等待，提交 A 的合成 release 后，
+清理须重读 released 并使用锁后时间；PG 另验证真实提交后丢确认及只读查询恢复。
+测试核对其他 submit 字段、停止历史、输出区间和 A 预算不变。
+许可和 A release 仅为合成 fixture，不是完整删除协调器或 A 生产释放的联合资格。
+按 ADR 0007 复核，新增正文清理路径仍不足以完成全部旧用例分类映射，旧门禁继续过渡保留。

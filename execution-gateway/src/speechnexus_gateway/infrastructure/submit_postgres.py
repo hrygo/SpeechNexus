@@ -17,6 +17,10 @@ from typing import Any, TypeVar, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_gateway.domain.command_redaction import (
+    AuthorizedCommandRedaction,
+    CommandRedactionResult,
+)
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
@@ -30,6 +34,9 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
 )
 from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.command_redaction_sql import (
+    redact_execution_command_in_transaction,
+)
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
 )
@@ -135,6 +142,16 @@ class PostgresSubmissionLedger:
             )
         except SubmissionIntentExistsError as error:
             raise StopEvidenceConflictError("stop evidence identity is already used") from error
+
+    def redact_execution_command(
+        self, permit: AuthorizedCommandRedaction
+    ) -> CommandRedactionResult:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: redact_execution_command_in_transaction(
+                cursor, permit, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
 
     def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot:
         return self._run(

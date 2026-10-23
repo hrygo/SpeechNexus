@@ -1347,6 +1347,8 @@ components:
       $ref: "shared/identifiers.schema.json#/$defs/EventSequence"
     Sha256Digest:
       $ref: "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    ResourceReference:
+      $ref: "shared/references.schema.json#/$defs/ResourceReference"
     ErrorResponse:
       $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
     WorkbenchStatus:
@@ -1915,14 +1917,7 @@ components:
           minLength: 1
           maxLength: 20000
         voice:
-          type: object
-          additionalProperties: false
-          required: [id, revision]
-          properties:
-            id:
-              $ref: "#/components/schemas/Identifier"
-            revision:
-              $ref: "#/components/schemas/Revision"
+          $ref: "#/components/schemas/ResourceReference"
         speech_job_id:
           oneOf:
             - $ref: "#/components/schemas/Identifier"
@@ -1997,27 +1992,13 @@ components:
           minLength: 1
           maxLength: 20000
         voice:
-          type: object
-          additionalProperties: false
-          required: [id, revision]
-          properties:
-            id:
-              $ref: "#/components/schemas/Identifier"
-            revision:
-              $ref: "#/components/schemas/Revision"
+          $ref: "#/components/schemas/ResourceReference"
         model:
           type: string
           minLength: 1
           maxLength: 128
         profile:
-          type: object
-          additionalProperties: false
-          required: [id, revision]
-          properties:
-            id:
-              $ref: "#/components/schemas/Identifier"
-            revision:
-              $ref: "#/components/schemas/Revision"
+          $ref: "#/components/schemas/ResourceReference"
     TeleprompterState:
       type: object
       additionalProperties: false
@@ -2127,7 +2108,7 @@ components:
           minLength: 1
           maxLength: 5000000
     RenderUnitVoice:
-      $ref: "shared/references.schema.json#/$defs/ResourceReference"
+      $ref: "#/components/schemas/ResourceReference"
     RenderUnit:
       type: object
       additionalProperties: false

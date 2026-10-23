@@ -2892,7 +2892,12 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     voice = {"id": "voice_demo", "revision": "1"}
     turn_create_validator = _component_validator(workbench, "AssistantTurnCreateRequest")
     turn_create_validator.validate(
-        {"input_text": "Synthetic input.", "voice": voice, "model": "local-llm"}
+        {
+            "input_text": "Synthetic input.",
+            "voice": voice,
+            "model": "local-llm",
+            "profile": {"id": "profile_demo", "revision": "3"},
+        }
     )
     with pytest.raises(ValidationError):
         turn_create_validator.validate(

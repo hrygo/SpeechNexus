@@ -6,12 +6,14 @@ from typing import TypeVar, cast
 
 import pymysql
 
+from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.submission import (
     RecordStop,
     StopEvidenceConflictError,
     SubmissionIntent,
     SubmissionStoreError,
 )
+from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
@@ -75,5 +77,12 @@ class MySQLSubmissionLedger:
         return self._run(
             lambda cursor: record_stop_in_transaction(
                 cursor, request, clock=lambda: self._clock(cursor)
+            )
+        )
+
+    def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot:
+        return self._run(
+            lambda cursor: seal_barrier_in_transaction(
+                cursor, fence, clock=lambda: self._clock(cursor)
             )
         )

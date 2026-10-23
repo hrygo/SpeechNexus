@@ -25,7 +25,7 @@ from speechnexus_gateway.domain.submission import (
     SubmitRequest,
     VerifiedStopEvidence,
 )
-from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine
+from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine, fake_ingress
 
 COMMAND: JsonValue = {
     "schema_version": "1",
@@ -84,7 +84,7 @@ def build_service(
     ledger = InMemorySubmissionLedger(now=lambda: NOW)
     engine = ScriptedEngine(before_dispatch=before_dispatch)  # type: ignore[arg-type]
     service = SubmitExecutionService(
-        ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
+        ingress=fake_ingress(), ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
     )
     return service, ledger, engine
 
@@ -105,7 +105,7 @@ def test_new_intent_is_persisted_before_the_engine_request() -> None:
         )
     )
     service = SubmitExecutionService(
-        ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
+        ingress=fake_ingress(), ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
     )
 
     outcome = service.submit(SubmitRequest(identity=identity_for(COMMAND), command=COMMAND))

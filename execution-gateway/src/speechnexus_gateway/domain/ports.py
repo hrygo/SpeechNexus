@@ -6,10 +6,12 @@ domain and application layers only see these protocols.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
     EngineObservedState,
@@ -67,3 +69,19 @@ class EngineObservationPort(Protocol):
     """Queries the engine by the identity the gateway already issued."""
 
     def observe(self, intent: SubmissionIntent) -> EngineObservation | None: ...
+
+
+class IngressOwnership(Protocol):
+    @property
+    def node_id(self) -> str: ...
+
+    @property
+    def gateway_id(self) -> str: ...
+
+    def bind_ingress(self) -> None: ...
+
+    def hold(self) -> AbstractContextManager[None]: ...
+
+
+class BarrierLedger(Protocol):
+    def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot: ...

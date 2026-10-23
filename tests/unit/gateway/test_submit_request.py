@@ -32,7 +32,7 @@ from speechnexus_gateway.domain.submission import (
     max_output_audio_ms_for,
     verify_submit_identity,
 )
-from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine
+from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine, fake_ingress
 
 ROOT = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
@@ -99,6 +99,7 @@ def request_for(identity: SubmissionIdentity, **overrides: object) -> SubmitRequ
 def build_service() -> SubmitExecutionService:
     engine = ScriptedEngine()
     return SubmitExecutionService(
+        ingress=fake_ingress(),
         ledger=InMemorySubmissionLedger(),
         dispatch=engine,
         observation=engine,

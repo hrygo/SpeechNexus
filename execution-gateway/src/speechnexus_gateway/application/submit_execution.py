@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.ports import (
     EngineDispatchPort,
@@ -46,11 +47,13 @@ class SubmitExecutionService:
         self,
         *,
         ledger: SubmissionLedger,
+        ingress: GatewayIngress,
         dispatch: EngineDispatchPort,
         observation: EngineObservationPort,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._ledger = ledger
+        self._ingress = ingress
         self._dispatch = dispatch
         self._observation = observation
         self._now = now or (lambda: datetime.now(UTC))
@@ -75,6 +78,17 @@ class SubmitExecutionService:
                 intent=self.query(identity.submit_intent_id) or existing, idempotent_replay=True
             )
 
+        with self._ingress.dispatch(identity):
+            # Another caller may have persisted this identity while we waited for entry.
+            existing = self._ledger.get(identity.submit_intent_id)
+            if existing is not None:
+                if existing.request_digest != request.request_digest:
+                    raise SubmitIntentConflictError("submit intent has another effective request")
+                return SubmissionOutcome(intent=existing, idempotent_replay=True)
+            return self._submit_new(request)
+
+    def _submit_new(self, request: SubmitRequest) -> SubmissionOutcome:
+        identity = request.identity
         at = self._now()
         intent = SubmissionIntent(
             identity=identity,

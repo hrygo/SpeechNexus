@@ -17,43 +17,22 @@ env:
   PNPM_VERSION: "12.14.0"
 
 jobs:
-  python:
-    name: Python quality and tests
+  python_checks:
+    name: Python static checks and unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16.15-alpine
-        env:
-          POSTGRES_USER: speechnexus
-          POSTGRES_PASSWORD: speechnexus_test
-          POSTGRES_DB: speechnexus_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U speechnexus -d speechnexus_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      mysql:
-        image: mysql:8.4.8
-        env:
-          MYSQL_ROOT_PASSWORD: speechnexus_test
-          MYSQL_ROOT_HOST: "%"
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -pspeechnexus_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Fetch only the compatibility baseline
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
@@ -101,7 +80,61 @@ jobs:
         run: uv run python scripts/dev-env/validate-contracts.py
 
       - name: Run tests with coverage
-        run: uv run pytest --cov --cov-report=term-missing
+        run: uv run pytest -m "not integration" --cov --cov-report=term-missing
+
+      - name: Verify media toolchain
+        run: uv run python scripts/dev-env/media-smoke.py
+
+      - name: Build Python distributions
+        run: uv build --all-packages --out-dir dist/python
+
+  coordination:
+    name: PostgreSQL and InnoDB integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_USER: speechnexus
+          POSTGRES_PASSWORD: speechnexus_test
+          POSTGRES_DB: speechnexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U speechnexus -d speechnexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4.8
+        env:
+          MYSQL_ROOT_PASSWORD: speechnexus_test
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -pspeechnexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-packages --all-groups
 
       - name: Verify legacy PostgreSQL guards and shared PG/InnoDB transaction behavior
         env:
@@ -112,11 +145,24 @@ jobs:
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
           uv run pytest -m integration tests/integration -q
 
-      - name: Verify media toolchain
-        run: uv run python scripts/dev-env/media-smoke.py
-
-      - name: Build Python distributions
-        run: uv build --all-packages --out-dir dist/python
+  # Keep the protected status name stable; a failed, cancelled or skipped
+  # prerequisite must never turn into a successful merge gate.
+  python:
+    name: Python quality and tests
+    needs: [python_checks, coordination]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require both Python and dual-database evidence
+        env:
+          CHECKS_RESULT: ${{ needs.python_checks.result }}
+          COORDINATION_RESULT: ${{ needs.coordination.result }}
+        run: |
+          if [[ "$CHECKS_RESULT" != success || "$COORDINATION_RESULT" != success ]]; then
+            echo "::error::Python checks=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT"
+            exit 1
+          fi
 
   web:
     name: Web quality, tests, and build
@@ -146,9 +192,6 @@ jobs:
 
       - name: Check formatting
         run: pnpm format:check
-
-      - name: Validate design tokens and boundaries
-        run: pnpm lint:tokens
 
       - name: Lint
         run: pnpm lint

@@ -55,6 +55,7 @@ class _SchemaSide(NamedTuple):
     document: Mapping[str, Any]
     path: str
     git_ref: str | None
+    documents: dict[tuple[str, str | None], Mapping[str, Any] | None] | None = None
 
 
 def _mapping(value: object) -> Mapping[str, Any] | None:
@@ -128,7 +129,13 @@ def _dereference_schema(
         path_part, separator, fragment = ref.partition("#")
         target_path = posixpath.normpath(posixpath.join(posixpath.dirname(side.path), path_part))
         target_git_ref = side.git_ref
-        loaded_document = _load_schema_document(target_path, target_git_ref)
+        cache_key = (target_path, target_git_ref)
+        if side.documents is not None and cache_key in side.documents:
+            loaded_document = side.documents[cache_key]
+        else:
+            loaded_document = _load_schema_document(target_path, target_git_ref)
+            if side.documents is not None:
+                side.documents[cache_key] = loaded_document
         if loaded_document is None:
             return schema
         resolved_document = loaded_document
@@ -139,7 +146,7 @@ def _dereference_schema(
         return schema
     resolved = _dereference_schema(
         target,
-        _SchemaSide(resolved_document, target_path, target_git_ref),
+        _SchemaSide(resolved_document, target_path, target_git_ref, side.documents),
         seen | {identity},
     )
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
@@ -550,10 +557,38 @@ def _compare_openapi(
     base_git_ref: str | None = None,
 ) -> list[str]:
     issues: list[str] = []
-    base_side = _SchemaSide(base, path, base_git_ref)
-    current_side = _SchemaSide(current, path, None)
-    base_paths = _mapping(_dereference_schema(base.get("paths"), base_side)) or {}
-    current_paths = _mapping(_dereference_schema(current.get("paths"), current_side)) or {}
+    # Each comparison owns fresh document snapshots. A process-global cache could
+    # hide edits to a shared schema during a later comparison in the same process.
+    base_side = _SchemaSide(base, path, base_git_ref, {})
+    current_side = _SchemaSide(current, path, None, {})
+    # Restrict the walk before expanding refs; the complete document stays on each
+    # side so shared parameters, responses and component refs still resolve.
+    base_paths = (
+        _mapping(
+            _dereference_schema(
+                {
+                    name: item
+                    for name, item in (_mapping(base.get("paths")) or {}).items()
+                    if name in _OPENAI_PATHS
+                },
+                base_side,
+            )
+        )
+        or {}
+    )
+    current_paths = (
+        _mapping(
+            _dereference_schema(
+                {
+                    name: item
+                    for name, item in (_mapping(current.get("paths")) or {}).items()
+                    if name in _OPENAI_PATHS
+                },
+                current_side,
+            )
+        )
+        or {}
+    )
     for path_name, base_path_item in base_paths.items():
         if path_name not in _OPENAI_PATHS:
             continue
@@ -724,8 +759,8 @@ def _compare_json_schema(
         path,
         issues,
         direction=direction,
-        base_side=_SchemaSide(base, path, base_git_ref),
-        current_side=_SchemaSide(current, path, None),
+        base_side=_SchemaSide(base, path, base_git_ref, {}),
+        current_side=_SchemaSide(current, path, None, {}),
     )
     removed_event_types = _collect_event_types(base) - _collect_event_types(current)
     if removed_event_types:
@@ -776,8 +811,8 @@ def _compare_realtime_events_schema(
     base_git_ref: str | None = None,
 ) -> list[str]:
     issues: list[str] = []
-    base_side = _SchemaSide(base, path, base_git_ref)
-    current_side = _SchemaSide(current, path, None)
+    base_side = _SchemaSide(base, path, base_git_ref, {})
+    current_side = _SchemaSide(current, path, None, {})
     base_defs = _mapping(base.get("$defs")) or {}
     current_defs = _mapping(current.get("$defs")) or {}
     standard_roots = _OPENAI_REALTIME_DEFS & set(base_defs)

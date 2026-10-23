@@ -14,6 +14,7 @@ from speechnexus_gateway.domain.submission import (
     CleanupState,
     DispatchResult,
     EngineObservedState,
+    ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
@@ -80,7 +81,7 @@ def intent_for(command: JsonValue = COMMAND, **overrides: object) -> SubmissionI
 def build_service(
     *, before_dispatch: object = None
 ) -> tuple[SubmitExecutionService, InMemorySubmissionLedger, ScriptedEngine]:
-    ledger = InMemorySubmissionLedger()
+    ledger = InMemorySubmissionLedger(now=lambda: NOW)
     engine = ScriptedEngine(before_dispatch=before_dispatch)  # type: ignore[arg-type]
     service = SubmitExecutionService(
         ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW
@@ -89,7 +90,7 @@ def build_service(
 
 
 def test_new_intent_is_persisted_before_the_engine_request() -> None:
-    ledger = InMemorySubmissionLedger()
+    ledger = InMemorySubmissionLedger(now=lambda: NOW)
     seen: list[bool] = []
     engine = ScriptedEngine(
         before_dispatch=lambda intent: seen.append(
@@ -259,7 +260,7 @@ def test_stop_evidence_requires_a_dispatched_intent() -> None:
     engine.script_outcome(DispatchOutcome(result=DispatchResult.NOT_SENT, observed_at=NOW))
     service.submit(SubmitRequest(identity=identity_for(COMMAND), command=COMMAND))
 
-    with pytest.raises(ValueError, match="dispatched intent"):
+    with pytest.raises(ExecutionCleanupPendingError):
         service.record_stop(stop_evidence())
 
 
@@ -363,7 +364,7 @@ def stop_evidence(
         submit_intent_id=submit_intent_id,
         evidence_kind=kind,
         evidence_digest=evidence_digest,
-        observed_at_us=1_800_000_000_000_000,
+        observed_at_us=int(NOW.timestamp()) * 1_000_000,
         execution_stopped=execution_stopped,
         resources_released=resources_released,
         reason="unit-test",

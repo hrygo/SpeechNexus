@@ -14,6 +14,7 @@ from typing import Any, Final, Protocol
 
 from speechnexus_gateway.domain.submission import (
     CleanupState,
+    ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
@@ -30,15 +31,6 @@ from speechnexus_gateway.domain.submission import (
 )
 
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
-
-#: Stop kinds that must exist as their own append-only ``execution_stop_evidence`` row.
-_EVIDENCE_ROW_KINDS: Final = frozenset(
-    {
-        StopEvidenceKind.ENGINE_ABORT_ACK,
-        StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
-        StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
-    }
-)
 
 #: Columns ``create_submit`` inserts; the gateway role holds table-wide INSERT here.
 SUBMIT_INTENT_INSERT_COLUMNS: Final = (
@@ -89,13 +81,14 @@ _UPDATE_INTENT = (
     + ", version = version + 1 WHERE submit_intent_id = %s AND version = %s"
 )
 
-_LOCK_POOL = "UPDATE resource_pools SET version = version WHERE pool_id = %s"
+_LOCK_POOL = "SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE"
 
 _LOCK_ATTEMPT = (
-    "UPDATE admission_attempts SET version = version WHERE operation_id = %s AND attempt_id = %s"
+    "SELECT operation_id FROM admission_attempts "
+    "WHERE operation_id = %s AND attempt_id = %s FOR UPDATE"
 )
 
-_LOCK_LEASE = "UPDATE admission_leases SET version = version WHERE lease_id = %s"
+_LOCK_LEASE = "SELECT lease_id FROM admission_leases WHERE lease_id = %s FOR UPDATE"
 
 _SELECT_AUTHORITY = """
 SELECT l.lease_id, l.operation_id, l.attempt_id, l.stage_id, l.host_node_id, l.instance_id,
@@ -126,7 +119,8 @@ SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_d
        s.request_digest, s.voice_revision_id, s.deadline_at_us, s.recorded_at_us,
        s.updated_at_us, s.execution_state, s.cleanup_state, s.engine_request_id,
        s.dispatched_at_us, s.error_code, s.output_stream_id, s.sample_rate_hz,
-       s.hard_output_ceiling_samples, s.version, e.evidence_kind, e.evidence_digest,
+       s.hard_output_ceiling_samples, s.version, s.terminated_at_us,
+       e.evidence_kind, e.evidence_digest,
        l.stage_id, l.pool_id, l.host_node_id, l.gateway_id, l.instance_id,
        l.instance_generation, l.fencing_token,
        a.workspace_id, a.binding_revision_id, a.policy_revision_id
@@ -225,7 +219,7 @@ def _lock_authority_rows(cursor: SubmitCursor, identity: SubmissionIdentity) -> 
         (_LOCK_LEASE, (identity.lease_id,), "lease"),
     ):
         cursor.execute(statement, parameters)
-        if cursor.rowcount != 1:
+        if len(cursor.fetchall()) != 1:
             raise InvalidExecutionRequestError(f"submit references an unknown {description}")
 
 
@@ -321,12 +315,30 @@ def save_submit_intent(
     """Write the state the caller derived, but only from the version it read."""
     if intent.version != expected_version + 1:
         raise ValueError("a saved intent carries exactly one version beyond the read version")
-    if intent.stop_evidence_kind in _EVIDENCE_ROW_KINDS:
-        # A verified stop is one fact in two tables; writing only the state here would
-        # claim a stop that no evidence row supports. The record_stop port owns that pair.
-        raise ValueError(
-            "verified stop evidence is appended by the record_stop port, which is not implemented"
+    if intent.cleanup_state is CleanupState.COMPLETE:
+        raise ExecutionCleanupPendingError("terminal writes with cleanup require record_stop")
+    intent.validate()
+    current = lock_submit_intent(cursor, intent.identity.submit_intent_id)
+    if current.version != expected_version:
+        raise StaleSubmissionVersionError("submit intent version changed since it was read")
+    if current.execution_state.is_terminal:
+        raise ExecutionCleanupPendingError("a terminal execution cannot be reversed")
+    if (
+        current.identity != intent.identity
+        or current.request_digest != intent.request_digest
+        or current.output_stream_id != intent.output_stream_id
+        or (
+            current.engine_request_id is not None
+            and current.engine_request_id != intent.engine_request_id
         )
+        or (current.dispatched_at is not None and current.dispatched_at != intent.dispatched_at)
+    ):
+        raise InvalidExecutionRequestError("a saved observation changes a frozen execution fact")
+    if (
+        intent.cleanup_state is CleanupState.NOT_REQUIRED
+        and current.execution_state is not ExecutionState.SUBMITTING
+    ):
+        raise ExecutionCleanupPendingError("only an unsent submission can omit stop evidence")
     values = submit_intent_update_values(intent)
     if tuple(values) != SUBMIT_INTENT_UPDATE_COLUMNS:
         raise RuntimeError("submit intent update columns drifted from the statement")
@@ -342,6 +354,33 @@ def save_submit_intent(
         raise StaleSubmissionVersionError(
             "submit intent was not updated at the version the caller read"
         )
+
+
+def lock_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> SubmissionIntent:
+    """Locate read-only, then lock pool → submit and re-read before a controlled write."""
+    cursor.execute(
+        "SELECT l.pool_id FROM submit_intents AS s "
+        "JOIN admission_leases AS l ON l.lease_id = s.lease_id "
+        "WHERE s.submit_intent_id = %s",
+        (submit_intent_id,),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        raise InvalidExecutionRequestError("unknown submit intent for execution observation")
+    pool_id = rows[0]["pool_id"]
+    cursor.execute("SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE", (pool_id,))
+    if not cursor.fetchall():
+        raise SubmissionStoreError("execution pool is missing")
+    cursor.execute(
+        "SELECT submit_intent_id FROM submit_intents WHERE submit_intent_id = %s FOR UPDATE",
+        (submit_intent_id,),
+    )
+    if not cursor.fetchall():
+        raise SubmissionStoreError("execution disappeared while acquiring its lock")
+    intent = read_submit_intent(cursor, submit_intent_id)
+    if intent is None or intent.identity.pool_id != pool_id:
+        raise SubmissionStoreError("execution authority changed while acquiring its lock")
+    return intent
 
 
 def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
@@ -375,6 +414,13 @@ def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
         )
         evidence_kind = row["evidence_kind"]
         state = ExecutionState(row["execution_state"])
+        if row["cleanup_state"] == CleanupState.COMPLETE and (
+            evidence_kind is None
+            or evidence_kind in {StopEvidenceKind.NONE, StopEvidenceKind.UNCONFIRMED_TIMEOUT}
+            or row["evidence_digest"] is None
+            or row["terminated_at_us"] is None
+        ):
+            raise ValueError("a cleaned-up execution needs a durable verified stop")
         return SubmissionIntent(
             identity=identity,
             recorded_at=from_unix_micros(row["recorded_at_us"]),
@@ -392,22 +438,18 @@ def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
             error_code=(
                 None if row["error_code"] is None else ExecutionErrorCode(row["error_code"])
             ),
-            stop_evidence_kind=_stored_stop_evidence_kind(state, evidence_kind),
+            stop_evidence_kind=(
+                StopEvidenceKind.NONE if evidence_kind is None else StopEvidenceKind(evidence_kind)
+            ),
             stop_evidence_digest=row["evidence_digest"],
+            terminated_at=(
+                None
+                if row["terminated_at_us"] is None
+                else from_unix_micros(row["terminated_at_us"])
+            ),
             version=row["version"],
         )
     except (KeyError, TypeError, ValueError) as error:
         raise SubmissionStoreError(
             f"stored submit intent is not readable: {type(error).__name__}"
         ) from None
-
-
-def _stored_stop_evidence_kind(
-    state: ExecutionState, evidence_kind: str | None
-) -> StopEvidenceKind:
-    """Read the stop kind from its own row; a success carries its own terminal evidence."""
-    if evidence_kind is not None:
-        return StopEvidenceKind(evidence_kind)
-    if state is ExecutionState.SUCCEEDED:
-        return StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
-    return StopEvidenceKind.NONE

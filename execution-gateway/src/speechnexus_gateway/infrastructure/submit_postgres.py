@@ -11,12 +11,15 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, TypeVar, cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_gateway.domain.submission import (
+    RecordStop,
+    StopEvidenceConflictError,
     SubmissionIntent,
     SubmissionIntentExistsError,
     SubmissionOutcomeUnknownError,
@@ -24,9 +27,11 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
 )
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
+from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
     create_submit_in_transaction,
+    from_unix_micros,
     read_submit_intent,
     save_submit_intent,
 )
@@ -62,6 +67,12 @@ class _DeadlineCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self._cursor.fetchall()
 
+    def clock(self) -> datetime:
+        self.execute(
+            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 AS BIGINT) AS now_us"
+        )
+        return from_unix_micros(self.fetchall()[0]["now_us"])
+
 
 class PostgresSubmissionLedger:
     """Implements the gateway's ``SubmissionLedger`` port on the frozen tables."""
@@ -94,6 +105,17 @@ class PostgresSubmissionLedger:
                 cursor, intent, expected_version=expected_version
             ),
         )
+
+    def record_stop(self, request: RecordStop) -> SubmissionIntent:
+        try:
+            return self._run(
+                read_only=False,
+                work=lambda cursor: record_stop_in_transaction(
+                    cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+                ),
+            )
+        except SubmissionIntentExistsError as error:
+            raise StopEvidenceConflictError("stop evidence identity is already used") from error
 
     def _run(self, *, read_only: bool, work: Callable[[SubmitCursor], _Result]) -> _Result:
         deadline = time.monotonic() + self._deadline_seconds

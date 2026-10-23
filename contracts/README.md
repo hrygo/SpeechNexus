@@ -68,7 +68,9 @@ of defaults, units, enum domains, or stable error codes.
   service key and public routes must reject it.
 - `internal/execution-stream.schema.json`: realtime gateway to execution
   gateway control envelopes, input/output credits, backpressure, watermarks,
-  terminal evidence, and the fixed binary PCM frame.
+  terminal evidence, and the fixed binary PCM frame. `stream.opened` echoes the
+  accepted submit intent, fencing token, and negotiated message limit; PCM
+  descriptors accept 16, 24, and 48 kHz.
 - `internal/runtime-control.openapi.yaml`: internal
   `RuntimeLifecycleControlPort` protocol between the scheduler and the
   node-scoped deployment controller (`node-controller`). Its per-node component

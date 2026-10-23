@@ -1387,6 +1387,20 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
     wrong_fence["fencing_token"] = "42"
     with pytest.raises(ValidationError):
         validator.validate(wrong_fence)
+    forty_eight_k = copy.deepcopy(stream_open)
+    forty_eight_k["input"]["sample_rate_hz"] = 48_000
+    forty_eight_k["output"]["sample_rate_hz"] = 48_000
+    validator.validate(forty_eight_k)
+
+    stream_opened = next(example for example in examples if example["type"] == "stream.opened")
+    missing_open_identity = copy.deepcopy(stream_opened)
+    del missing_open_identity["submit_intent_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_open_identity)
+    missing_open_limit = copy.deepcopy(stream_opened)
+    del missing_open_limit["max_message_bytes"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_open_limit)
 
     stream_closed = copy.deepcopy(
         next(example for example in examples if example["type"] == "stream.closed")
@@ -1402,6 +1416,17 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
         "retryable": False,
     }
     validator.validate(stream_closed)
+    succeeded_with_quarantine = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.closed")
+    )
+    succeeded_with_quarantine["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        validator.validate(succeeded_with_quarantine)
+    missing_closed_identity = copy.deepcopy(succeeded_with_quarantine)
+    missing_closed_identity["cleanup_state"] = "complete"
+    del missing_closed_identity["submit_intent_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_closed_identity)
 
     cancelled_stream = copy.deepcopy(
         next(example for example in examples if example["type"] == "stream.closed")

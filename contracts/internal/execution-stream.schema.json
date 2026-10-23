@@ -130,7 +130,8 @@
           "type": "integer",
           "enum": [
             16000,
-            24000
+            24000,
+            48000
           ]
         },
         "channels": {
@@ -319,8 +320,11 @@
             "sent_at",
             "operation_id",
             "attempt_id",
+            "submit_intent_id",
+            "fencing_token",
             "input_credit_samples",
-            "output_credit_samples"
+            "output_credit_samples",
+            "max_message_bytes"
           ],
           "properties": {
             "schema_version": {
@@ -349,6 +353,13 @@
             },
             "attempt_id": {
               "$ref": "#/$defs/Identifier"
+            },
+            "submit_intent_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "fencing_token": {
+              "type": "integer",
+              "minimum": 1
             },
             "input_credit_samples": {
               "type": "integer",
@@ -630,6 +641,7 @@
             "seq",
             "sent_at",
             "operation_id",
+            "submit_intent_id",
             "status",
             "cleanup_state",
             "input_watermark",
@@ -658,6 +670,9 @@
               "format": "date-time"
             },
             "operation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "submit_intent_id": {
               "$ref": "#/$defs/Identifier"
             },
             "status": {
@@ -740,6 +755,25 @@
             "properties": {
               "error": {
                 "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
               }
             }
           }
@@ -909,6 +943,8 @@
       "sent_at": "2026-10-22T09:00:01Z",
       "operation_id": "op_demo",
       "attempt_id": "attempt_demo",
+      "submit_intent_id": "submit_demo",
+      "fencing_token": 42,
       "input_credit_samples": 48000,
       "output_credit_samples": 48000,
       "max_message_bytes": 65536
@@ -921,6 +957,7 @@
       "seq": 9,
       "sent_at": "2026-10-22T09:01:00Z",
       "operation_id": "op_demo",
+      "submit_intent_id": "submit_demo",
       "status": "succeeded",
       "cleanup_state": "complete",
       "input_watermark": 24000,

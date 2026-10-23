@@ -18,7 +18,7 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
-from tests.fake.execution import ScriptedEngine
+from tests.fake.execution import ScriptedEngine, fake_ingress
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
@@ -137,7 +137,13 @@ def service_for(
 ) -> tuple[SubmitExecutionService, ScriptedEngine]:
     engine = ScriptedEngine()
     return (
-        SubmitExecutionService(ledger=ledger, dispatch=engine, observation=engine, now=lambda: NOW),
+        SubmitExecutionService(
+            ingress=fake_ingress(node_id="host-test", gateway_id="gateway-test"),
+            ledger=ledger,
+            dispatch=engine,
+            observation=engine,
+            now=lambda: NOW,
+        ),
         engine,
     )
 

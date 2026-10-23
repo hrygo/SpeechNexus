@@ -6,16 +6,22 @@ import copy
 import json
 from collections import deque
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.canonical import command_digest
+from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     DispatchResult,
     ExecutionCleanupPendingError,
+    GatewayBarrierFencedError,
     InvalidExecutionRequestError,
     RecordStop,
+    StaleFencingTokenError,
     StopEvidenceConflictError,
     SubmissionIntent,
     VerifiedStopEvidence,
@@ -27,6 +33,7 @@ class InMemorySubmissionLedger:
 
     def __init__(self, *, now: Callable[[], datetime] | None = None) -> None:
         self._intents: dict[str, SubmissionIntent] = {}
+        self._barriers: dict[tuple[str, str], BarrierSnapshot] = {}
         self._evidence: dict[str, VerifiedStopEvidence] = {}
         self._now = now or (lambda: datetime.now(UTC))
 
@@ -35,6 +42,9 @@ class InMemorySubmissionLedger:
         return copy.deepcopy(stored) if stored is not None else None
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
+        barrier = self._barriers.get((intent.identity.gateway_id, intent.identity.pool_id))
+        if barrier is not None and intent.identity.fencing_token < barrier.min_fencing_token:
+            raise GatewayBarrierFencedError("durable barrier rejects stale submit")
         key = intent.identity.submit_intent_id
         if key in self._intents:
             raise ValueError(f"submit intent {key} already stored")
@@ -68,6 +78,75 @@ class InMemorySubmissionLedger:
         self._evidence[key] = request.evidence
         self._intents[key] = copy.deepcopy(updated)
         return updated
+
+    def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot:
+        key = (fence.gateway_id, fence.request.pool_id)
+        previous = self._barriers.get(key)
+        token = fence.request.min_accepted_fencing_token
+        version = 1 if previous is None else previous.version + 1
+        if previous is not None:
+            if previous.min_fencing_token > token:
+                raise StaleFencingTokenError("durable minimum cannot decrease")
+            if previous.min_fencing_token == token:
+                if previous.evidence_digest != fence.evidence_digest:
+                    raise BarrierConflictError("barrier has another proof")
+                version = previous.version
+        intents = sorted(
+            (
+                i
+                for i in self._intents.values()
+                if (i.identity.gateway_id, i.identity.pool_id) == key
+            ),
+            key=lambda i: i.identity.submit_intent_id,
+        )
+        fact = BarrierSnapshot(
+            key[0],
+            key[1],
+            token,
+            fence.evidence_digest,
+            version,
+            int(self._now().timestamp() * 1_000_000),
+            tuple(
+                i.identity.submit_intent_id
+                for i in intents
+                if i.execution_state.value == "submitting"
+            ),
+            tuple(
+                i.identity.submit_intent_id
+                for i in intents
+                if i.execution_state.value in {"executing", "stopping"}
+            ),
+            tuple(
+                i.identity.submit_intent_id
+                for i in intents
+                if i.execution_state.value == "unknown_quarantined"
+            ),
+        )
+        self._barriers[key] = fact
+        return fact
+
+
+@dataclass
+class FakeIngressOwnership:
+    node_id: str = "node-1"
+    gateway_id: str = "gateway-1"
+    bound: bool = False
+
+    def bind_ingress(self) -> None:
+        if self.bound:
+            raise RuntimeError("test owner already has an ingress guard")
+        self.bound = True
+
+    def hold(self) -> AbstractContextManager[None]:
+        return nullcontext()
+
+
+def fake_ingress(
+    *, node_id: str = "node-1", gateway_id: str = "gateway-1", timeout_seconds: float = 1
+) -> GatewayIngress:
+    return GatewayIngress(
+        FakeIngressOwnership(node_id, gateway_id), timeout_seconds=timeout_seconds
+    )
 
 
 class ScriptedEngine:

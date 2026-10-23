@@ -17,6 +17,7 @@ from typing import Any, TypeVar, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.submission import (
     RecordStop,
     StopEvidenceConflictError,
@@ -26,6 +27,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
     SubmissionStoreUnavailableError,
 )
+from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
@@ -116,6 +118,14 @@ class PostgresSubmissionLedger:
             )
         except SubmissionIntentExistsError as error:
             raise StopEvidenceConflictError("stop evidence identity is already used") from error
+
+    def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: seal_barrier_in_transaction(
+                cursor, fence, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
 
     def _run(self, *, read_only: bool, work: Callable[[SubmitCursor], _Result]) -> _Result:
         deadline = time.monotonic() + self._deadline_seconds

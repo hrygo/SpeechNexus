@@ -14,7 +14,7 @@ from typing import Any
 import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
-from tests.fake.execution import ScriptedEngine
+from tests.fake.execution import ScriptedEngine, fake_ingress
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_submit_ledger import (
@@ -83,7 +83,12 @@ def start_execution(
     engine = ScriptedEngine()
     if unknown:
         engine.script_outcome(DispatchOutcome(DispatchResult.RESPONSE_LOST, datetime.now(UTC)))
-    service = SubmitExecutionService(ledger=ledger, dispatch=engine, observation=engine)
+    service = SubmitExecutionService(
+        ingress=fake_ingress(node_id="host-test", gateway_id="gateway-test"),
+        ledger=ledger,
+        dispatch=engine,
+        observation=engine,
+    )
     service.submit(request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a")))
     return service, engine
 

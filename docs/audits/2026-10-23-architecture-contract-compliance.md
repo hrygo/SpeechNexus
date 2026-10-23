@@ -130,3 +130,29 @@ date: 2026-10-23
 | `make verify` | 完整仓库门禁通过（环境、契约、Python、Web、媒体、部署配置与运营健康 smoke） |
 
 `make verify` 的服务 smoke 只覆盖当前已实现的运营健康端点、构建产物和隔离基础设施；语音 / 工作台业务 API、真实模型、质量、容量和长时恢复仍未验证。
+
+## 8. 后续收口（同日增量）
+
+上一节保留基线 `9492b9e` 的时点证据。后续复核继续修复了以下真实问题，并已分别提交、推送：
+
+1. `AssistantTurn=success` 原先只要求 `output_text`，可以不引用实际 TTS Job；现在成功必须同时固定生成文本与 `speech_job_id`，任何非空 Job 引用也必须带生成文本。
+2. `host_nodes` / `engine_instances` 的 reserved、incremental、quarantine 计数原先只依赖应用正确累加；现在事务结束时以实例基础预算与 admission lease 状态推导并校验计数，active / quarantine 槽位也分别与 lease 行对账。
+3. 隔离实例原先可清空原因后回到 `stopping`，实例基础预算也并非 generation 不可变字段；现在隔离 generation 只能保持隔离或经核验停止，内存向量、槽位容量与实时保留在 generation 内不可缩小。
+4. 新 admission lease 原先不与 pool / host / instance 的实时服务状态串行化；现在 active pool、ready node、ready generation 的检查使用行共享锁，与 drain / quarantine 转换竞争时不会放行错误准入。
+5. 工作台 assistant voice / profile 与 render-unit reference 重复内联；现在统一引用 `shared/references.schema.json`。
+6. 完整 Python 门禁发现 OpenAI 兼容脚本的本地变量类型过宽，已用显式拆分文档变量修复，未改变兼容比较行为。
+
+本轮最终验证：
+
+| 检查 | 结果 |
+| --- | --- |
+| `make verify` | 通过 |
+| `uv run pytest -q`（含隔离 PostgreSQL） | 96 passed |
+| `make contracts-check` | 25 个契约通过 |
+| `pnpm test:contracts-sdk` | OpenAI JavaScript SDK 契约通过 |
+| `CONTRACT_BASE_REF=e6aa84a make contracts-compat` | OpenAI 兼容路径无破坏性变化 |
+| `uv run ruff format --check .` / `uv run ruff check .` | 通过 |
+| `uv run mypy` / `uv run lint-imports` | 通过 / 3 个依赖方向通过 |
+| `pnpm format:check` / ESLint / `pnpm typecheck` / `pnpm test` / `pnpm build` | 通过 |
+
+这些证据仍不证明业务路由、真实引擎调用、端到端 SDK 请求、多节点容量、Alembic 迁移或生产恢复已经可用。对外可宣称的仍是：已声明的 OpenAI 子集与严格 `nexus` 扩展机器契约可由官方 SDK 形状消费；实现状态以仓库入口和后续真实运行验证为准。

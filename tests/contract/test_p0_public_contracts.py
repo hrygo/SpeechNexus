@@ -1273,6 +1273,10 @@ def test_realtime_events_positive_and_negative_examples() -> None:
     missing_success_receipt["receipt"] = None
     with pytest.raises(ValidationError):
         validator.validate(missing_success_receipt)
+    succeeded_with_unverified_cleanup = copy.deepcopy(operation_done)
+    succeeded_with_unverified_cleanup["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        validator.validate(succeeded_with_unverified_cleanup)
     operation_done["status"] = "failed"
     operation_done["error"] = None
     operation_done["reason"] = None
@@ -3810,6 +3814,10 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     }
     job_validator = _component_validator(speech, "Job")
     job_validator.validate(job)
+    succeeded_with_unverified_cleanup = copy.deepcopy(job)
+    succeeded_with_unverified_cleanup["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        job_validator.validate(succeeded_with_unverified_cleanup)
 
     queued_job = copy.deepcopy(job)
     queued_job["status"] = "queued"
@@ -3930,6 +3938,10 @@ def test_operation_result_status_is_separate_from_cleanup_state() -> None:
     }
     operation_validator = _component_validator(speech, "Operation")
     operation_validator.validate(operation)
+    succeeded_with_unverified_cleanup = copy.deepcopy(operation)
+    succeeded_with_unverified_cleanup["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        operation_validator.validate(succeeded_with_unverified_cleanup)
     operation_without_receipt = copy.deepcopy(operation)
     operation_without_receipt["receipt"] = None
     with pytest.raises(ValidationError):
@@ -4059,6 +4071,16 @@ def test_realtime_session_terminal_state_requires_cleanup_and_failure_facts() ->
             "receipt_id": "receipt-demo",
         }
     )
+    with pytest.raises(ValidationError):
+        terminal_operation_validator.validate(
+            {
+                "operation_id": "op-demo",
+                "kind": "asr",
+                "status": "succeeded",
+                "cleanup_state": "quarantined",
+                "receipt_id": "receipt-demo",
+            }
+        )
     with pytest.raises(ValidationError):
         terminal_operation_validator.validate(
             {

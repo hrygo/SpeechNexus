@@ -2649,6 +2649,8 @@ components:
                   type: "null"
               artifacts:
                 minItems: 1
+              cleanup_state:
+                enum: [not_required, complete]
         - if:
             properties:
               status:
@@ -3539,6 +3541,8 @@ components:
               receipt:
                 not:
                   type: "null"
+              cleanup_state:
+                enum: [not_required, complete]
         - if:
             properties:
               status:
@@ -3896,6 +3900,8 @@ components:
               receipt_id:
                 not:
                   type: "null"
+              cleanup_state:
+                enum: [not_required, complete]
         - if:
             properties:
               status:

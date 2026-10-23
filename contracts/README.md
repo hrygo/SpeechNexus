@@ -171,7 +171,10 @@ An Operation result is terminal (`succeeded` / `failed` / `cancelled`) and is
 reported separately from `cleanup_state`. In particular, cancellation with
 unverified cleanup is `failed` plus `cleanup_state=quarantined`; `quarantined`
 is not an Operation result status. A succeeded Operation requires a non-null
-execution receipt on both the REST projection and `nexus.operation.done`.
+execution receipt on both the REST projection and `nexus.operation.done`. A
+succeeded Job, Operation, and realtime terminal-operation projection require
+`cleanup_state=not_required` or `complete`; `pending` and `quarantined` are
+reserved for non-success states.
 
 Verified terminal execution, controller termination, and independently
 verified operator termination are cleanup evidence. They can close quarantined

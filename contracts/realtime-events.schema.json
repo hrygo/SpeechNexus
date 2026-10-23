@@ -1813,7 +1813,10 @@
               "receipt": {
                 "not": {"type": "null"}
               },
-              "error": {"type": "null"}
+              "error": {"type": "null"},
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
             }
           }
         },

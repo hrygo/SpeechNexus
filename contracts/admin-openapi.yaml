@@ -238,6 +238,15 @@ paths:
         The referenced capacity manifest and qualification report must describe
         the same binding revision and compatible topology. Production release
         tier additionally requires every required qualification scenario to pass.
+        `expected_revision` is the exact draft revision to publish and activate
+        for new sessions and jobs; it is not the family head. The publication
+        atomically makes that revision current. `expected_current_revision` is
+        the active revision observed before the request and is a compare-and-swap
+        guard; null is valid only when no revision is active. A changed pointer
+        returns 409 `configuration_changed`. Replaying the same Idempotency-Key
+        and canonical intent returns 200 with the original result; the same key
+        with a different intent returns 409 `idempotency_conflict`. A target
+        revision that is not draft returns 409 `binding_not_draft`.
       parameters:
         - $ref: "#/components/parameters/BindingIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -919,10 +928,20 @@ components:
     ModelBindingPublicationRequest:
       type: object
       additionalProperties: false
-      required: [expected_revision, capacity_manifest_id, qualification_report_id]
+      required:
+        [
+          expected_revision,
+          expected_current_revision,
+          capacity_manifest_id,
+          qualification_report_id,
+        ]
       properties:
         expected_revision:
           $ref: "#/components/schemas/Revision"
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
         capacity_manifest_id:
           $ref: "#/components/schemas/Identifier"
         qualification_report_id:

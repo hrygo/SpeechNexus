@@ -814,7 +814,9 @@
         "model_binding",
         "capabilities",
         "validation",
-        "published_at"
+        "published_at",
+        "retired_at",
+        "disabled_reason"
       ],
       "properties": {
         "resource_type": {
@@ -884,6 +886,18 @@
               "type": "null"
             }
           ]
+        },
+        "disabled_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "allOf": [
@@ -902,6 +916,9 @@
             "properties": {
               "retired_at": {
                 "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
               }
             }
           }
@@ -910,10 +927,7 @@
           "if": {
             "properties": {
               "status": {
-                "enum": [
-                  "retired",
-                  "disabled"
-                ]
+                "const": "retired"
               }
             },
             "required": [
@@ -925,10 +939,42 @@
               "retired_at": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "disabled_reason": {
+                "type": "null"
               }
             },
             "required": [
               "retired_at"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "disabled"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "retired_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "disabled_reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "retired_at",
+              "disabled_reason"
             ]
           }
         }
@@ -1143,7 +1189,8 @@
         "checked_at": "2026-10-22T09:05:00Z"
       },
       "published_at": "2026-10-22T09:10:00Z",
-      "retired_at": null
+      "retired_at": null,
+      "disabled_reason": null
     },
     {
       "resource_type": "pronunciation_revision",

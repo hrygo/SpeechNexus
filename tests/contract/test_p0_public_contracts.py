@@ -592,6 +592,47 @@ def test_voice_resource_positive_and_negative_examples() -> None:
     published_voice_with_retirement_time["retired_at"] = "2026-10-22T10:00:00Z"
     with pytest.raises(ValidationError):
         validator.validate(published_voice_with_retirement_time)
+    disabled_voice = copy.deepcopy(retired_voice)
+    disabled_voice["status"] = "disabled"
+    disabled_voice["disabled_reason"] = "operator emergency stop"
+    validator.validate(disabled_voice)
+    disabled_voice_without_reason = copy.deepcopy(disabled_voice)
+    disabled_voice_without_reason["disabled_reason"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(disabled_voice_without_reason)
+    retired_voice_with_disable_reason = copy.deepcopy(retired_voice)
+    retired_voice_with_disable_reason["disabled_reason"] = "not a disable"
+    with pytest.raises(ValidationError):
+        validator.validate(retired_voice_with_disable_reason)
+
+
+def test_disable_commands_require_a_reason_on_admin_and_speech_routes() -> None:
+    lifecycle = _load_json(_CONTRACTS / "shared" / "lifecycle.schema.json")
+    validator = _validator({"$ref": "#/$defs/RetirementRequest", "$defs": lifecycle["$defs"]})
+    validator.validate({"mode": "retire"})
+    validator.validate({"mode": "retire", "reason": "scheduled rollback"})
+    validator.validate({"mode": "disable", "reason": "operator emergency stop"})
+    for invalid in (
+        {"mode": "disable"},
+        {"mode": "disable", "reason": None},
+        {"mode": "disable", "reason": ""},
+        {"mode": "remove"},
+    ):
+        with pytest.raises(ValidationError):
+            validator.validate(invalid)
+
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    _component_validator(speech, "VoiceRetirementRequest").validate(
+        {"mode": "disable", "reason": "operator emergency stop"}
+    )
+    with pytest.raises(ValidationError):
+        _component_validator(speech, "VoiceRetirementRequest").validate({"mode": "disable"})
+    _component_validator(admin, "ModelBindingRetirementRequest").validate(
+        {"mode": "disable", "reason": "operator emergency stop"}
+    )
+    with pytest.raises(ValidationError):
+        _component_validator(admin, "ModelBindingRetirementRequest").validate({"mode": "disable"})
 
 
 def test_realtime_events_positive_and_negative_examples() -> None:
@@ -1043,6 +1084,33 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     stopped_instance["observed"]["stop_evidence"] = None
     with pytest.raises(ValidationError):
         instance_validator.validate(stopped_instance)
+
+
+def test_model_binding_publication_separates_target_and_current_revision() -> None:
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    validator = _component_validator(admin, "ModelBindingPublicationRequest")
+    request: dict[str, Any] = {
+        "expected_revision": "8",
+        "expected_current_revision": "7",
+        "capacity_manifest_id": "capm-asr-quality-8",
+        "qualification_report_id": "qrep-asr-quality-8",
+    }
+    validator.validate(request)
+    first_publication = copy.deepcopy(request)
+    first_publication["expected_current_revision"] = None
+    validator.validate(first_publication)
+    missing_current = copy.deepcopy(request)
+    del missing_current["expected_current_revision"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_current)
+    invalid_current = copy.deepcopy(request)
+    invalid_current["expected_current_revision"] = "0"
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_current)
+    unknown_field = copy.deepcopy(request)
+    unknown_field["binding_revision_id"] = "mbrev-asr-quality-8"
+    with pytest.raises(ValidationError):
+        validator.validate(unknown_field)
 
 
 def test_runtime_state_domains_are_shared_by_admin_and_internal_contracts() -> None:

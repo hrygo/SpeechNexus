@@ -21,7 +21,8 @@ of defaults, units, enum domains, or stable error codes.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit
-  events.
+  events. Model-binding publication uses separate target-revision and
+  expected-current-revision compare-and-swap fields.
 - `shared/`: single-source definitions for opaque identifiers and digests
   (`identifiers.schema.json`), runtime and Operation states, the
   OpenAI-compatible public error envelope, revisioned references, language

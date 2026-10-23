@@ -2060,6 +2060,46 @@ def test_public_errors_share_one_openai_compatible_envelope() -> None:
             )
 
 
+def test_audit_change_summary_records_field_names_without_payloads() -> None:
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    validator = _component_validator(admin, "AuditEvent")
+    event: dict[str, Any] = {
+        "id": "audit-demo",
+        "object": "nexus.audit_event",
+        "actor_type": "anonymous",
+        "request_id": "req-audit-demo",
+        "action": "policy.update",
+        "resource_type": "policy",
+        "resource_id": "policy-deployment",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "policy_revision": "7",
+        "change_summary": {
+            "changed_fields": ["/quotas/max_concurrent_jobs", "/features/llm_enabled"],
+            "reason": "increase admitted concurrency",
+        },
+    }
+    validator.validate(event)
+
+    without_summary = copy.deepcopy(event)
+    without_summary["change_summary"] = None
+    validator.validate(without_summary)
+
+    payload_summary = copy.deepcopy(event)
+    payload_summary["change_summary"]["before"] = "private request body"
+    with pytest.raises(ValidationError):
+        validator.validate(payload_summary)
+
+    non_pointer_field = copy.deepcopy(event)
+    non_pointer_field["change_summary"]["changed_fields"] = ["secret-token"]
+    with pytest.raises(ValidationError):
+        validator.validate(non_pointer_field)
+
+    duplicate_fields = copy.deepcopy(event)
+    duplicate_fields["change_summary"]["changed_fields"] = ["/status", "/status"]
+    with pytest.raises(ValidationError):
+        validator.validate(duplicate_fields)
+
+
 def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() -> None:
     admin = _resolved_yaml(_ADMIN_OPENAPI)
     pool_validator = _component_validator(admin, "ResourcePool")

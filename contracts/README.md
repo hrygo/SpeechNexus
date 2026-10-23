@@ -39,10 +39,12 @@ of defaults, units, enum domains, or stable error codes.
   and scenario-profile revision publication / activation / retirement,
   observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit
-  events. A binding-family summary distinguishes its latest immutable revision
-  from the nullable current publication pointer, so a new draft remains visible
-  before it is published. Model-binding publication uses separate
-  target-revision and expected-current-revision compare-and-swap fields.
+  events. Audit change summaries contain only unique RFC 6901 field pointers and
+  an optional reason, never before/after values or request payloads. A
+  binding-family summary distinguishes its latest immutable revision from the
+  nullable current publication pointer, so a new draft remains visible before
+  it is published. Model-binding publication uses separate target-revision and
+  expected-current-revision compare-and-swap fields.
   Quarantine release persists and echoes the operator-observed evidence time,
   reason, and idempotent replay status. A ready resource pool has at least one
   contributing node and positive capacity; reserved slots do not exceed

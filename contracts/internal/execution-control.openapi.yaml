@@ -559,6 +559,7 @@ components:
                 const: failed
             required: [execution_state]
           then:
+            required: [error_code]
             properties:
               error_code:
                 not:
@@ -607,6 +608,72 @@ components:
             properties:
               stop_evidence_kind:
                 const: unconfirmed_timeout
+    ExecutionCleanupEvidenceInvariants:
+      type: object
+      description: |
+        A failed execution may use `cleanup_state=not_required` only when no
+        request reached the engine. `engine_request_id` and `dispatched_at` are
+        therefore required and null for that branch; omitting either would make
+        dispatch history ambiguous and could release capacity while an engine
+        request is still active.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                const: failed
+              cleanup_state:
+                const: not_required
+            required: [execution_state, cleanup_state]
+          then:
+            required: [engine_request_id, dispatched_at]
+            properties:
+              engine_request_id:
+                type: "null"
+              dispatched_at:
+                type: "null"
+    ExecutionDispatchEvidenceInvariants:
+      type: object
+      description: |
+        Submission is persisted before an engine request. Active execution,
+        successful completion, and verified abort therefore require an observed
+        dispatch time. `submitting` and a failure that never dispatched require
+        it to be null. An unknown quarantined execution may have an ambiguous
+        dispatch outcome and keeps capacity quarantined either way.
+      allOf:
+        - if:
+            properties:
+              execution_state:
+                enum: [submitting]
+            required: [execution_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: "null"
+        - if:
+            properties:
+              execution_state:
+                enum: [executing, stopping, succeeded, aborted]
+            required: [execution_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: string
+                format: date-time
+        - if:
+            properties:
+              execution_state:
+                const: failed
+              cleanup_state:
+                const: complete
+            required: [execution_state, cleanup_state]
+          then:
+            required: [dispatched_at]
+            properties:
+              dispatched_at:
+                type: string
+                format: date-time
     SubmitExecutionResponse:
       type: object
       additionalProperties: false
@@ -628,6 +695,7 @@ components:
         - fencing_token
         - command_digest
         - deadline_at
+        - dispatched_at
         - sample_rate_hz
         - execution_state
         - cleanup_state
@@ -673,6 +741,12 @@ components:
         deadline_at:
           type: string
           format: date-time
+        dispatched_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            Set when the gateway starts the engine request. Null before dispatch
+            and for failures that never dispatched.
         sample_rate_hz:
           type: [integer, "null"]
           enum: [16000, 24000, 48000, null]
@@ -691,6 +765,8 @@ components:
           format: date-time
       allOf:
         - $ref: "#/components/schemas/ExecutionStateInvariants"
+        - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
     AbortExecutionRequest:
       type: object
       additionalProperties: false
@@ -742,6 +818,7 @@ components:
         - fencing_token
         - command_digest
         - deadline_at
+        - dispatched_at
         - sample_rate_hz
         - execution_state
         - cleanup_state
@@ -787,6 +864,9 @@ components:
         deadline_at:
           type: string
           format: date-time
+        dispatched_at:
+          type: [string, "null"]
+          format: date-time
         sample_rate_hz:
           type: [integer, "null"]
           enum: [16000, 24000, 48000, null]
@@ -820,6 +900,8 @@ components:
       allOf:
         - $ref: "#/components/schemas/ExecutionStateInvariants"
         - $ref: "#/components/schemas/ExecutionTerminalEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionCleanupEvidenceInvariants"
+        - $ref: "#/components/schemas/ExecutionDispatchEvidenceInvariants"
     GatewayFencingBarrierRequest:
       type: object
       additionalProperties: false

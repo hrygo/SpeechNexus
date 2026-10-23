@@ -124,12 +124,15 @@ of defaults, units, enum domains, or stable error codes.
   `RuntimeLifecycleControlPort` protocol between the scheduler and the
   node-scoped deployment controller (`node-controller`). Its per-node component
   credential is independent from scheduler, gateway, and public credentials.
-  `intent_id` is a node-scoped idempotency key; replays echo the immutable
-  intent identity and a changed request under the same key is a stable
-  `409 intent_conflict`. Runtime memory reservations require peak to be at least
-  steady in every architecture-specific counter. A reconciliation snapshot may
-  report each `(instance_id, instance_generation)` once, and stop evidence is
-  present only for a succeeded stop intent / stopped or absent observation.
+  `(node_id, intent_id)` is a node-scoped idempotency key, so the same
+  caller-generated `intent_id` can be reused independently on another node;
+  replays echo the immutable intent identity and a changed request under the
+  same node/key is a stable `409 intent_conflict`. A failed intent requires a
+  non-empty `error_code`. Runtime memory reservations require peak to be at
+  least steady in every architecture-specific counter. A reconciliation
+  snapshot may report each `(instance_id, instance_generation)` once, and stop
+  evidence is present only for a succeeded stop intent / stopped or absent
+  observation.
 
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision
@@ -155,6 +158,12 @@ Verified terminal execution, controller termination, and independently
 verified operator termination are cleanup evidence. They can close quarantined
 submit intents only after a successful stop is established; a disconnect,
 heartbeat loss, or record deletion is not evidence.
+
+A failed submit intent may use `cleanup_state=not_required` only when
+`engine_request_id` is explicitly null, no dispatch occurred, and no output or
+staging fact exists. Dispatched executions must provide verified termination
+evidence before capacity is released; a failed response without an error code
+is invalid.
 
 ## OpenAI compatibility
 

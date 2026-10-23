@@ -2828,7 +2828,7 @@ def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> N
 def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     execution = _resolved_yaml(_EXECUTION_CONTROL_OPENAPI)
     status_validator = _component_validator(execution, "ExecutionStatusResponse")
-    status = {
+    status: dict[str, Any] = {
         "submit_intent_id": "intent-demo",
         "lease_id": "lease-demo",
         "operation_id": "op-demo",
@@ -2846,7 +2846,9 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         "fencing_token": 1,
         "command_digest": "sha256:" + "2" * 64,
         "deadline_at": "2026-10-22T01:00:00Z",
+        "dispatched_at": "2026-10-22T00:00:01Z",
         "sample_rate_hz": 24_000,
+        "engine_request_id": None,
         "execution_state": "aborted",
         "cleanup_state": "complete",
         "stop_evidence_kind": "engine_abort_ack",
@@ -2903,6 +2905,9 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     status_validator.validate(failed)
     failed["cleanup_state"] = "not_required"
     failed["stop_evidence_kind"] = "none"
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed)
+    failed["dispatched_at"] = None
     status_validator.validate(failed)
     failed["cleanup_state"] = "quarantined"
     with pytest.raises(ValidationError):
@@ -2915,6 +2920,30 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     failed_without_error["error_code"] = None
     with pytest.raises(ValidationError):
         status_validator.validate(failed_without_error)
+    del failed_without_error["error_code"]
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_without_error)
+
+    failed_after_dispatch = copy.deepcopy(status)
+    failed_after_dispatch["execution_state"] = "failed"
+    failed_after_dispatch["cleanup_state"] = "not_required"
+    failed_after_dispatch["stop_evidence_kind"] = "none"
+    failed_after_dispatch["error_code"] = "invalid_execution_request"
+    failed_after_dispatch["dispatched_at"] = None
+    status_validator.validate(failed_after_dispatch)
+    failed_after_dispatch["engine_request_id"] = "engine-request-1"
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_after_dispatch)
+    del failed_after_dispatch["engine_request_id"]
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_after_dispatch)
+    failed_after_dispatch["engine_request_id"] = None
+    failed_after_dispatch["dispatched_at"] = "2026-10-22T00:00:01Z"
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_after_dispatch)
+    del failed_after_dispatch["dispatched_at"]
+    with pytest.raises(ValidationError):
+        status_validator.validate(failed_after_dispatch)
 
     quarantined = copy.deepcopy(status)
     quarantined["execution_state"] = "unknown_quarantined"
@@ -2999,6 +3028,19 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     with pytest.raises(ValidationError):
         intent_validator.validate(premature_evidence)
 
+    failed_intent = copy.deepcopy(stopped_intent)
+    failed_intent["action"] = "prepare"
+    failed_intent["intent_state"] = "failed"
+    failed_intent["observed_instance_state"] = "failed"
+    failed_intent["stop_evidence"] = None
+    with pytest.raises(ValidationError):
+        intent_validator.validate(failed_intent)
+    failed_intent["error_code"] = "runtime_start_failed"
+    intent_validator.validate(failed_intent)
+    failed_intent["error_code"] = None
+    with pytest.raises(ValidationError):
+        intent_validator.validate(failed_intent)
+
     runtime_error_validator = _component_validator(runtime, "RuntimeControlErrorResponse")
     runtime_error_validator.validate(
         {
@@ -3052,7 +3094,7 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         _assert_node_reconcile_semantics(reconcile)
 
     barrier_validator = _component_validator(execution, "GatewayFencingBarrierResponse")
-    barrier = {
+    barrier: dict[str, Any] = {
         "gateway_id": "gateway-demo",
         "pool_id": "tts-batch",
         "enforced_min_fencing_token": 3,
@@ -3090,6 +3132,7 @@ def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None
         "fencing_token": 7,
         "command_digest": "sha256:" + "2" * 64,
         "deadline_at": "2026-10-22T01:00:00Z",
+        "dispatched_at": "2026-10-22T00:00:01Z",
         "sample_rate_hz": 24_000,
         "execution_state": "executing",
         "cleanup_state": "pending",
@@ -3116,11 +3159,29 @@ def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None
     with pytest.raises(ValidationError):
         validator.validate(active_with_released_cleanup)
 
+    executing_without_dispatch = copy.deepcopy(response)
+    executing_without_dispatch["dispatched_at"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(executing_without_dispatch)
+
+    failed_before_dispatch = copy.deepcopy(response)
+    failed_before_dispatch["execution_state"] = "failed"
+    failed_before_dispatch["cleanup_state"] = "not_required"
+    failed_before_dispatch["dispatched_at"] = None
+    failed_before_dispatch["engine_request_id"] = None
+    validator.validate(failed_before_dispatch)
+    del failed_before_dispatch["engine_request_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(failed_before_dispatch)
+    failed_before_dispatch["engine_request_id"] = "engine-request-1"
+    with pytest.raises(ValidationError):
+        validator.validate(failed_before_dispatch)
+
 
 def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:
     runtime = _resolved_yaml(_RUNTIME_CONTROL_OPENAPI)
     validator = _component_validator(runtime, "RuntimeMemoryReservation")
-    discrete = {
+    discrete: dict[str, Any] = {
         "architecture": "discrete_device_memory",
         "peak": {
             "unified_memory_bytes": 0,

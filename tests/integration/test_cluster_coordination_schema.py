@@ -6,7 +6,7 @@ import os
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -290,6 +290,7 @@ def _insert_submit_intent(
     gateway_id: str = "gateway-1",
     binding_revision_id: str = "asr-quality@7",
     generated_pcm_samples: int = 0,
+    dispatched: bool = True,
 ) -> None:
     connection.execute(
         """
@@ -312,12 +313,14 @@ def _insert_submit_intent(
             output_stream_id,
             sample_rate_hz,
             generated_pcm_samples,
+            engine_request_id,
             execution_state,
             cleanup_state,
+            dispatched_at,
             deadline_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             CURRENT_TIMESTAMP + INTERVAL '1 hour'
         )
         """,
@@ -340,8 +343,10 @@ def _insert_submit_intent(
             "tts-main",
             24_000,
             generated_pcm_samples,
-            "executing",
+            f"engine-request-{submit_intent_id}" if dispatched else None,
+            "executing" if dispatched else "submitting",
             "pending",
+            datetime.now(UTC) if dispatched else None,
         ),
     )
 
@@ -546,10 +551,79 @@ def test_unresolved_intents_are_unique_while_history_is_retained(
             """
             UPDATE runtime_instance_intents
             SET config_digest = %s
-            WHERE intent_id = 'intent-active'
+            WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
             """,
             ("sha256:" + "b" * 64,),
         )
+
+    _insert_host(db, "node-intent-other")
+    _insert_instance(
+        db,
+        instance_id="inst-intent-other",
+        generation=1,
+        host_node_id="node-intent-other",
+        architecture="discrete_device_memory",
+    )
+    db.execute(
+        """
+        INSERT INTO runtime_instance_intents (
+            intent_id,
+            target_node_id,
+            pool_id,
+            gateway_id,
+            instance_id,
+            instance_generation,
+            memory_architecture,
+            approved_template_id,
+            binding_revision_id,
+            manifest_id,
+            config_digest,
+            action,
+            fencing_token,
+            intent_state,
+            observed_instance_state,
+            reserved_peak_device_bytes,
+            reserved_steady_device_bytes,
+            reserved_peak_host_bytes,
+            reserved_steady_host_bytes,
+            reserved_peak_unified_bytes,
+            reserved_steady_unified_bytes,
+            deadline_at
+        ) VALUES (
+            'intent-active', 'node-intent-other', 'asr-realtime', 'gateway-1',
+            'inst-intent-other', 1, 'discrete_device_memory', 'template-1',
+            'asr-quality@7', 'manifest-1', %s, 'prepare', 1, 'pending',
+            'loading', 20, 10, 20, 10, 0, 0,
+            CURRENT_TIMESTAMP + INTERVAL '1 hour'
+        )
+        """,
+        (_DIGEST,),
+    )
+    assert db.execute(
+        """
+            SELECT COUNT(*)
+            FROM runtime_instance_intents
+            WHERE intent_id = 'intent-active'
+            """
+    ).fetchone() == (2,)
+
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE runtime_instance_intents
+            SET intent_state = 'failed', observed_instance_state = 'failed'
+            WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
+            """
+        )
+    db.execute(
+        """
+        UPDATE runtime_instance_intents
+        SET intent_state = 'failed',
+            observed_instance_state = 'failed',
+            error_code = 'runtime_start_failed'
+        WHERE target_node_id = 'node-intent' AND intent_id = 'intent-active'
+        """
+    )
 
 
 def test_memory_architecture_counters_are_exclusive(
@@ -1181,6 +1255,7 @@ def test_submit_execution_cleanup_matrix_is_closed(
             host_node_id="node-cleanup-matrix",
             instance_id="inst-cleanup-matrix",
             generation=1,
+            dispatched=suffix == "success",
         )
 
     with pytest.raises(CheckViolation), db.transaction():
@@ -1217,11 +1292,36 @@ def test_submit_execution_cleanup_matrix_is_closed(
         db.execute(
             """
             UPDATE submit_intents
+            SET execution_state = 'executing'
+            WHERE submit_intent_id = 'intent-cleanup-failure'
+            """
+        )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
             SET execution_state = 'failed',
                 cleanup_state = 'complete',
                 stop_evidence_kind = 'none',
                 error_code = 'policy_or_resource_disabled',
                 terminated_at = CURRENT_TIMESTAMP
+            WHERE submit_intent_id = 'intent-cleanup-failure'
+            """
+        )
+    db.execute(
+        """
+        UPDATE submit_intents
+        SET execution_state = 'executing',
+            dispatched_at = CURRENT_TIMESTAMP,
+            engine_request_id = 'engine-request-cleanup-failure'
+        WHERE submit_intent_id = 'intent-cleanup-failure'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET dispatched_at = CURRENT_TIMESTAMP + INTERVAL '1 second'
             WHERE submit_intent_id = 'intent-cleanup-failure'
             """
         )
@@ -1231,7 +1331,8 @@ def test_submit_execution_cleanup_matrix_is_closed(
             UPDATE submit_intents
             SET execution_state = 'failed',
                 cleanup_state = 'not_required',
-                stop_evidence_kind = 'none'
+                stop_evidence_kind = 'none',
+                error_code = 'policy_or_resource_disabled'
             WHERE submit_intent_id = 'intent-cleanup-failure'
             """
         )

@@ -402,8 +402,8 @@ CREATE UNIQUE INDEX uq_engine_instances_active_identity
 -- 5. runtime_instance_intents: Durable Node-Scoped Controller Reconcile Intents
 -- ============================================================================
 CREATE TABLE runtime_instance_intents (
-    intent_id TEXT PRIMARY KEY,
     target_node_id TEXT NOT NULL REFERENCES host_nodes (host_node_id) ON DELETE RESTRICT,
+    intent_id TEXT NOT NULL,
     pool_id TEXT NOT NULL REFERENCES resource_pools (pool_id) ON DELETE RESTRICT,
     gateway_id TEXT NOT NULL,
     instance_id TEXT NOT NULL,
@@ -439,6 +439,9 @@ CREATE TABLE runtime_instance_intents (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    -- The idempotency scope is one node controller. The same caller-generated
+    -- key may be used independently on another node, but not twice here.
+    PRIMARY KEY (target_node_id, intent_id),
     CONSTRAINT fk_runtime_intents_instance
         FOREIGN KEY (instance_id, instance_generation, memory_architecture)
         REFERENCES engine_instances (instance_id, instance_generation, memory_architecture)
@@ -539,6 +542,14 @@ CREATE TABLE runtime_instance_intents (
                 AND stop_verified_at IS NOT NULL
                 AND observed_instance_state IN ('stopped', 'absent')
             )
+        ),
+    CONSTRAINT ck_runtime_intents_failed_error
+        CHECK (
+            intent_state <> 'failed'
+            OR (
+                error_code IS NOT NULL
+                AND error_code ~ '^[a-z][a-z0-9_]{2,63}$'
+            )
         )
 );
 
@@ -546,7 +557,8 @@ CREATE INDEX idx_runtime_instance_intents_node_pending
     ON runtime_instance_intents (target_node_id, intent_state, created_at)
     WHERE intent_state IN ('pending', 'reconciling');
 -- Historical intent rows are retained. Only one unresolved intent may exist for
--- a given generation/action; `intent_id` remains the idempotency key.
+-- a given generation/action; `(target_node_id, intent_id)` is the
+-- node-controller-scoped idempotency key.
 CREATE UNIQUE INDEX uq_runtime_instance_intents_active_action
     ON runtime_instance_intents (instance_id, instance_generation, action)
     WHERE intent_state IN ('pending', 'reconciling', 'quarantined');
@@ -902,6 +914,11 @@ CREATE TABLE submit_intents (
                     (
                         cleanup_state = 'not_required'
                         AND stop_evidence_kind = 'none'
+                        AND dispatched_at IS NULL
+                        AND engine_request_id IS NULL
+                        AND generated_pcm_samples = 0
+                        AND staging_output_object_key IS NULL
+                        AND terminated_at IS NULL
                     )
                     OR (
                         cleanup_state = 'complete'
@@ -938,6 +955,37 @@ CREATE TABLE submit_intents (
             OR (
                 cleanup_state = 'quarantined'
                 AND stop_evidence_kind = 'unconfirmed_timeout'
+            )
+        ),
+    -- A request is dispatched at most once and only after the durable
+    -- `submitting` row exists. Execution, terminal success, and verified abort
+    -- therefore require the observed dispatch time; an untouched submission
+    -- has no output or staging fact.
+    CONSTRAINT ck_submit_intents_dispatch_matrix
+        CHECK (
+            (
+                execution_state = 'submitting'
+                AND dispatched_at IS NULL
+                AND generated_pcm_samples = 0
+                AND staging_output_object_key IS NULL
+            )
+            OR (
+                execution_state IN ('executing', 'stopping', 'succeeded', 'aborted')
+                AND dispatched_at IS NOT NULL
+            )
+            OR execution_state = 'unknown_quarantined'
+            OR (
+                execution_state = 'failed'
+                AND (
+                    (
+                        cleanup_state = 'not_required'
+                        AND dispatched_at IS NULL
+                    )
+                    OR (
+                        cleanup_state = 'complete'
+                        AND dispatched_at IS NOT NULL
+                    )
+                )
             )
         ),
     CONSTRAINT ck_submit_intents_watermark_non_negative
@@ -1289,6 +1337,11 @@ BEGIN
     IF OLD.engine_request_id IS NOT NULL
         AND NEW.engine_request_id IS DISTINCT FROM OLD.engine_request_id THEN
         RAISE EXCEPTION 'engine request association is immutable once observed'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.dispatched_at IS NOT NULL
+        AND NEW.dispatched_at IS DISTINCT FROM OLD.dispatched_at THEN
+        RAISE EXCEPTION 'execution dispatch time is immutable once observed'
             USING ERRCODE = '23514';
     END IF;
     IF OLD.staging_output_object_key IS NOT NULL

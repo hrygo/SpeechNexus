@@ -16,8 +16,9 @@ paths:
       operationId: submitRuntimeInstanceIntent
       summary: Submit an approved instance prepare or stop intent to a target host node
       description: |
-        `intent_id` is the node-controller-scoped idempotency key for an
-        immutable prepare or stop intent. Replaying the exact same canonical
+        `(node_id, intent_id)` is the node-controller-scoped idempotency key
+        for an immutable prepare or stop intent; the same `intent_id` may be
+        used independently on another node. Replaying the exact same canonical
         request returns the originally recorded intent with
         `idempotent_replay: true`. Reusing the key with any changed target,
         pool, gateway, instance generation, approved template, binding
@@ -50,8 +51,8 @@ paths:
           description: |
             Stable conflict codes: `target_node_mismatch`, `stale_fencing_token`,
             `stale_instance_generation`, `gateway_drain_incomplete`, or
-            `intent_conflict` when an existing `intent_id` has a different
-            canonical request.
+            `intent_conflict` when an existing `(node_id, intent_id)` has a
+            different canonical request.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -404,7 +405,10 @@ components:
             - $ref: "#/components/schemas/RuntimeMemoryVector"
             - type: "null"
         error_code:
-          type: [string, "null"]
+          anyOf:
+            - type: string
+              pattern: "^[a-z][a-z0-9_]{2,63}$"
+            - type: "null"
         created_at:
           type: string
           format: date-time
@@ -451,6 +455,17 @@ components:
                 const: stop
               intent_state:
                 const: succeeded
+        - if:
+            properties:
+              intent_state:
+                const: failed
+            required: [intent_state]
+          then:
+            required: [error_code]
+            properties:
+              error_code:
+                type: string
+                pattern: "^[a-z][a-z0-9_]{2,63}$"
         - if:
             properties:
               reserved_memory:

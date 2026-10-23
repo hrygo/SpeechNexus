@@ -160,11 +160,13 @@ def _insert_instance(
             loading_peak_host_memory_bytes,
             per_slot_host_memory_bytes,
             max_active_slots,
-            last_fencing_token
+            last_fencing_token,
+            ready_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s,
+            CASE WHEN %s = 'ready' THEN CURRENT_TIMESTAMP ELSE NULL END
         )
         """,
         (
@@ -192,6 +194,7 @@ def _insert_instance(
             host[2],
             4,
             1,
+            state,
         ),
     )
 
@@ -487,6 +490,67 @@ def test_instance_generation_history_is_retained(
             WHERE instance_id = 'inst-generation' AND instance_generation = 2
             """,
             ("sha256:" + "b" * 64,),
+        )
+
+
+def test_instance_readiness_and_quarantine_reason_are_durable(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-instance-facts")
+    _insert_pool(db)
+
+    _insert_instance(
+        db,
+        instance_id="inst-ready-without-evidence",
+        generation=1,
+        host_node_id="node-instance-facts",
+        architecture="discrete_device_memory",
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET ready_at = NULL
+            WHERE instance_id = 'inst-ready-without-evidence'
+              AND instance_generation = 1
+            """
+        )
+
+    _insert_instance(
+        db,
+        instance_id="inst-quarantined-without-reason",
+        generation=1,
+        host_node_id="node-instance-facts",
+        architecture="discrete_device_memory",
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET instance_state = 'quarantined',
+                peak_reservation_active = FALSE
+            WHERE instance_id = 'inst-quarantined-without-reason'
+              AND instance_generation = 1
+            """
+        )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET instance_state = 'quarantined',
+            peak_reservation_active = FALSE,
+            quarantine_reason = 'synthetic unknown execution'
+        WHERE instance_id = 'inst-quarantined-without-reason'
+          AND instance_generation = 1
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE engine_instances
+            SET instance_state = 'stopping'
+            WHERE instance_id = 'inst-quarantined-without-reason'
+              AND instance_generation = 1
+            """
         )
 
 
@@ -1870,12 +1934,12 @@ def test_fencing_is_monotonic_and_updated_at_is_refreshed(
             resident_device_memory_bytes, loading_peak_device_memory_bytes,
             per_slot_device_memory_bytes, resident_host_memory_bytes,
             loading_peak_host_memory_bytes, per_slot_host_memory_bytes,
-            max_active_slots, last_fencing_token
+            max_active_slots, last_fencing_token, ready_at
         ) VALUES (
             'inst-fencing', 1, 'node-fencing', 'discrete_device_memory',
             'gateway-1', 'asr-realtime', 'asr-quality@7', 'manifest-1',
             'template-1', %s, 'resident', 'managed', 'ready',
-            0, 0, 0, 100, 100, 10, 100, 100, 10, 4, 7
+            0, 0, 0, 100, 100, 10, 100, 100, 10, 4, 7, CURRENT_TIMESTAMP
         )
         """,
         (_DIGEST,),

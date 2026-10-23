@@ -282,6 +282,7 @@ CREATE TABLE engine_instances (
     ready_at TIMESTAMPTZ,
     idle_since_at TIMESTAMPTZ,
     stopped_at TIMESTAMPTZ,
+    quarantine_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -368,11 +369,15 @@ CREATE TABLE engine_instances (
                 AND per_slot_unified_memory_bytes = 0
             )
         ),
-    -- Steady-state budget can replace loading peak only after instance reaches `ready` or later
+    -- Steady-state budget can replace loading peak only after readiness was
+    -- observed. A ready instance that later fails or is quarantined keeps
+    -- `ready_at`; a generation stopped before readiness releases the peak only
+    -- as part of the verified `stopped` transition.
     CONSTRAINT ck_engine_instances_peak_release_requires_ready
         CHECK (
             peak_reservation_active = TRUE
-            OR instance_state IN ('ready', 'draining', 'stopping', 'stopped')
+            OR ready_at IS NOT NULL
+            OR instance_state = 'stopped'
         ),
     -- `stopped` releases the active identity only after a stop time is observed
     -- and the loading peak, active slots, and quarantined slots are all released.
@@ -384,6 +389,25 @@ CREATE TABLE engine_instances (
                 AND peak_reservation_active = FALSE
                 AND reserved_active_slots = 0
                 AND quarantined_slots = 0
+            )
+        ),
+    -- Readiness is a durable observation, not a boolean inference from state.
+    CONSTRAINT ck_engine_instances_ready_evidence
+        CHECK (
+            instance_state <> 'ready'
+            OR (ready_at IS NOT NULL AND stopped_at IS NULL)
+        ),
+    -- The admin projection exposes a reason exactly for quarantined generations.
+    CONSTRAINT ck_engine_instances_quarantine_reason
+        CHECK (
+            (
+                instance_state = 'quarantined'
+                AND quarantine_reason IS NOT NULL
+                AND char_length(btrim(quarantine_reason)) BETWEEN 1 AND 2000
+            )
+            OR (
+                instance_state <> 'quarantined'
+                AND quarantine_reason IS NULL
             )
         )
 );

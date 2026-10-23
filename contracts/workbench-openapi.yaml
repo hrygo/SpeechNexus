@@ -1313,12 +1313,18 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     TooManyRequests:
       description: Queue or quota limit exceeded; follow Retry-After.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
       description: Workbench or optional LLM dependency unavailable.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:

@@ -11,6 +11,7 @@
     "host_node_id",
     "gateway_id",
     "binding",
+    "binding_revision_id",
     "pool_id",
     "generation",
     "config_digest",
@@ -34,6 +35,10 @@
     },
     "binding": {
       "$ref": "#/$defs/BindingReference"
+    },
+    "binding_revision_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Must equal ModelBindingRevision.revision_id for the referenced binding."
     },
     "pool_id": {
       "$ref": "#/$defs/PoolId"
@@ -258,6 +263,7 @@
       "host_node_id": "node-gb10-1",
       "gateway_id": "gateway-1",
       "binding": {"id": "asr-quality", "revision": "7"},
+      "binding_revision_id": "mbrev-asr-quality-7",
       "pool_id": "asr-realtime",
       "generation": 42,
       "config_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
@@ -290,6 +296,7 @@
       "host_node_id": "node-gb10-1",
       "gateway_id": "gateway-1",
       "binding": {"id": "tts-interactive", "revision": "5"},
+      "binding_revision_id": "mbrev-tts-interactive-5",
       "pool_id": "tts-realtime",
       "generation": 7,
       "config_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",

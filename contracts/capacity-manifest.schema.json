@@ -36,7 +36,7 @@
     },
     "binding_revision_id": {
       "$ref": "#/$defs/Identifier",
-      "description": "Immutable ModelBindingRevision identifier governed by this manifest."
+      "description": "Must equal ModelBindingRevision.revision_id for the immutable binding revision governed by this manifest."
     },
     "pool_id": {
       "$ref": "#/$defs/PoolId"
@@ -139,6 +139,107 @@
               }
             },
             "required": ["idle_reclaim_cooldown_ms"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "management_mode": {
+            "const": "managed"
+          }
+        },
+        "required": ["management_mode"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_fencing_barrier": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "cancellation_mode": {
+                "const": "engine_abort_confirmed"
+              }
+            },
+            "required": ["cancellation_mode"]
+          }
+        },
+        "required": ["cancellation_and_fencing"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_request_abort": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "cancellation_mode": {
+                "const": "connection_drop_with_quarantine"
+              }
+            },
+            "required": ["cancellation_mode"]
+          }
+        },
+        "required": ["cancellation_and_fencing"]
+      },
+      "then": {
+        "properties": {
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_request_abort": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_tier": {
+            "const": "production"
+          }
+        },
+        "required": ["release_tier"]
+      },
+      "then": {
+        "properties": {
+          "rate_and_segment_limits": {
+            "properties": {
+              "hard_output_quota": {
+                "const": true
+              }
+            }
+          },
+          "cancellation_and_fencing": {
+            "properties": {
+              "supports_fencing_barrier": {
+                "const": true
+              }
+            }
           }
         }
       }
@@ -487,11 +588,11 @@
     {
       "schema_version": "1.0.0",
       "manifest_id": "capm-asr-realtime-full-segment-v1",
-      "binding_revision_id": "mbrev-qwen3-asr-realtime-full-v1",
+      "binding_revision_id": "mbrev-asr-realtime-4",
       "pool_id": "asr-realtime",
       "service_class": "realtime",
       "management_mode": "managed",
-      "release_tier": "production",
+      "release_tier": "experimental",
       "loading_policy": "resident",
       "topology_ref": {
         "host_node_profile_id": "node-profile-arm64-unified-128g",

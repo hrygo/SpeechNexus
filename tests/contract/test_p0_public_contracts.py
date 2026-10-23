@@ -245,6 +245,10 @@ def test_public_specs_validate_and_declare_openai_compatible_paths() -> None:
         "/v1/workbench/projects/{project_id}/saved-assets",
     } <= set(workbench["paths"])
 
+    for document in (speech, workbench):
+        for response_name in ("TooManyRequests", "ServiceUnavailable"):
+            assert "Retry-After" in document["components"]["responses"][response_name]["headers"]
+
 
 def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
     """Prove the declared OpenAI subset is consumable by the official SDK.
@@ -870,6 +874,7 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     binding_schema = _load_json(_BINDING_SCHEMA)
     binding_validator = _validator(binding_schema)
     binding_example = copy.deepcopy(cast(list[dict[str, Any]], binding_schema["examples"])[0])
+    assert binding_example["revision_id"] == "mbrev-asr-quality-7"
     production_draft = copy.deepcopy(binding_example)
     production_draft["release_tier"] = "production"
     production_draft["publication"] = {
@@ -898,6 +903,7 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     instance_schema = _load_json(_INSTANCE_SCHEMA)
     instance_validator = _validator(instance_schema)
     ready_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
+    assert ready_instance["binding_revision_id"] == "mbrev-asr-quality-7"
     ready_instance["readiness"]["accepting_new_work"] = False
     with pytest.raises(ValidationError):
         instance_validator.validate(ready_instance)
@@ -908,6 +914,22 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     production["release_tier"] = "production"
     with pytest.raises(ValidationError):
         qualification_validator.validate(production)
+    completed_production = copy.deepcopy(production)
+    for scenario in completed_production["scenarios"]:
+        scenario["status"] = "passed"
+    completed_production["required_scenarios_passed"] = True
+    completed_production["overall_status"] = "pass"
+    qualification_validator.validate(completed_production)
+    production_without_expiry = copy.deepcopy(completed_production)
+    production_without_expiry["expires_at"] = None
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(production_without_expiry)
+    no_required_scenarios = copy.deepcopy(completed_production)
+    no_required_scenarios["release_tier"] = "experimental"
+    for scenario in no_required_scenarios["scenarios"]:
+        scenario["required"] = False
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(no_required_scenarios)
     false_required_pass_claim = copy.deepcopy(
         cast(list[dict[str, Any]], qualification_schema["examples"])[0]
     )
@@ -938,12 +960,16 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     engine_components = cast(
         dict[str, dict[str, Any]], qualification_example["software"]["engine_components"]
     )
-    assert len(engine_components) >= 2
-    assert {"stage-silero-vad", "stage-asr-review"} <= set(engine_components)
+    assert {
+        "stage-silero-vad",
+        "stage-qwen3-asr-0.6b-preview",
+        "stage-qwen3-asr-1.7b-review",
+    } == set(engine_components)
+    assert set(qualification_example["test_suite"]["scenario_ids"]) == {
+        scenario["scenario_id"] for scenario in qualification_example["scenarios"]
+    }
     missing_engine_identity = copy.deepcopy(qualification_example)
-    del missing_engine_identity["software"]["engine_components"]["stage-silero-vad"][
-        "image_digest"
-    ]
+    del missing_engine_identity["software"]["engine_components"]["stage-silero-vad"]["image_digest"]
     with pytest.raises(ValidationError):
         qualification_validator.validate(missing_engine_identity)
 
@@ -996,9 +1022,7 @@ def test_runtime_state_domains_are_shared_by_admin_and_internal_contracts() -> N
     with pytest.raises(ValidationError):
         instance_validator.validate(ready_instance)
 
-    canonical_instance = copy.deepcopy(
-        cast(list[dict[str, Any]], instance_schema["examples"])[0]
-    )
+    canonical_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
     assert canonical_instance["host_node_id"] == "node-gb10-1"
     assert canonical_instance["gateway_id"] == "gateway-1"
     legacy_node_alias = copy.deepcopy(canonical_instance)
@@ -1235,6 +1259,42 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
     wrong_fence["fencing_token"] = "42"
     with pytest.raises(ValidationError):
         validator.validate(wrong_fence)
+
+    stream_closed = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.closed")
+    )
+    stream_closed["status"] = "failed"
+    stream_closed["error"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(stream_closed)
+    stream_closed["cleanup_state"] = "quarantined"
+    stream_closed["error"] = {
+        "code": "cleanup_unknown",
+        "message": "engine termination could not be confirmed",
+        "retryable": False,
+    }
+    validator.validate(stream_closed)
+
+    cancelled_stream = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.closed")
+    )
+    cancelled_stream["status"] = "cancelled"
+    cancelled_stream["cleanup_state"] = "quarantined"
+    with pytest.raises(ValidationError):
+        validator.validate(cancelled_stream)
+    cancelled_stream["cleanup_state"] = "complete"
+    validator.validate(cancelled_stream)
+
+    succeeded_with_error = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.closed")
+    )
+    succeeded_with_error["error"] = {
+        "code": "adapter_failure",
+        "message": "synthetic failure",
+        "retryable": False,
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(succeeded_with_error)
 
 
 def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
@@ -1533,7 +1593,7 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
 
     runtime = _resolved_yaml(_RUNTIME_CONTROL_OPENAPI)
     intent_validator = _component_validator(runtime, "RuntimeInstanceIntentResponse")
-    stopped_intent = {
+    stopped_intent: dict[str, Any] = {
         "intent_id": "intent-stop",
         "target_node_id": "node-demo",
         "instance_id": "instance-demo",

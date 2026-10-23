@@ -9,6 +9,7 @@
     "schema_version",
     "report_id",
     "binding",
+    "binding_revision_id",
     "capacity_manifest_id",
     "release_tier",
     "topology",
@@ -32,6 +33,10 @@
     "binding": {
       "$ref": "#/$defs/BindingReference"
     },
+    "binding_revision_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Must equal ModelBindingRevision.revision_id and the capacity manifest binding_revision_id."
+    },
     "capacity_manifest_id": {
       "$ref": "#/$defs/Identifier"
     },
@@ -50,6 +55,7 @@
     "scenarios": {
       "type": "array",
       "minItems": 1,
+      "description": "One result per test_suite.scenario_id. Producer validation rejects missing or duplicate scenario evidence; a skipped result is evidence of non-qualification, not a pass.",
       "items": {
         "$ref": "#/$defs/ScenarioResult"
       }
@@ -93,6 +99,16 @@
       "then": {
         "properties": {
           "scenarios": {
+            "contains": {
+              "type": "object",
+              "required": ["required"],
+              "properties": {
+                "required": {
+                  "const": true
+                }
+              }
+            },
+            "minContains": 1,
             "items": {
               "if": {
                 "properties": {"required": {"const": true}},
@@ -114,8 +130,13 @@
       "then": {
         "properties": {
           "required_scenarios_passed": {"const": true},
-          "overall_status": {"const": "pass"}
-        }
+          "overall_status": {"const": "pass"},
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["expires_at"]
       }
     },
     {
@@ -325,7 +346,8 @@
       "schema_version": "1.0.0",
       "report_id": "qrep-gb10-realtime-asr-20261022",
       "binding": {"id": "asr-realtime", "revision": "4"},
-      "capacity_manifest_id": "cap-asr-realtime-4",
+      "binding_revision_id": "mbrev-asr-realtime-4",
+      "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
       "release_tier": "experimental",
       "topology": {
         "host_node_id": "node-gb10-1",
@@ -348,7 +370,12 @@
             "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
             "runtime_version": "onnxruntime-1.23"
           },
-          "stage-asr-review": {
+          "stage-qwen3-asr-0.6b-preview": {
+            "engine_kind": "vllm",
+            "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "runtime_version": "vllm-2026.10"
+          },
+          "stage-qwen3-asr-1.7b-review": {
             "engine_kind": "vllm",
             "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
             "runtime_version": "vllm-2026.10"
@@ -383,6 +410,14 @@
           "metrics": [],
           "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "notes": "TTS coexistence not yet measured on this topology."
+        },
+        {
+          "scenario_id": "asr-cancel-and-abort",
+          "required": true,
+          "status": "skipped",
+          "metrics": [],
+          "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "notes": "Cancellation and quarantine recovery were not exercised in this run."
         }
       ],
       "required_scenarios_passed": false,

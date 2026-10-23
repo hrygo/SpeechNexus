@@ -9,6 +9,7 @@
     "schema_version",
     "binding_id",
     "revision",
+    "revision_id",
     "logical_model",
     "tasks",
     "engine",
@@ -28,6 +29,10 @@
     },
     "revision": {
       "$ref": "#/$defs/Revision"
+    },
+    "revision_id": {
+      "$ref": "#/$defs/Identifier",
+      "description": "Globally unique immutable identifier for this exact (binding_id, revision). Capacity manifests, qualification reports, runtime instances, leases, submit intents, and receipts use this value as binding_revision_id."
     },
     "logical_model": {
       "type": "string",
@@ -791,6 +796,7 @@
       "schema_version": "1.0.0",
       "binding_id": "asr-quality",
       "revision": "7",
+      "revision_id": "mbrev-asr-quality-7",
       "logical_model": "asr-quality",
       "description": "File and full-segment review ASR binding.",
       "tasks": [
@@ -863,6 +869,7 @@
       "schema_version": "1.0.0",
       "binding_id": "tts-interactive",
       "revision": "5",
+      "revision_id": "mbrev-tts-interactive-5",
       "logical_model": "tts-interactive",
       "tasks": [
         "tts_realtime",
@@ -940,6 +947,7 @@
       "schema_version": "1.0.0",
       "binding_id": "voice-design",
       "revision": "3",
+      "revision_id": "mbrev-voice-design-3",
       "logical_model": "voice-design",
       "tasks": [
         "voice_design",

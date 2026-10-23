@@ -86,7 +86,7 @@ def test_compat_gate_rejects_removed_public_contract_surface() -> None:
 def test_compat_gate_rejects_removed_event_type() -> None:
     module = _load_compat_module()
     compare_json_schema = cast(Any, module._compare_json_schema)
-    base = {
+    base: dict[str, Any] = {
         "$defs": {
             "Event": {
                 "oneOf": [
@@ -102,7 +102,7 @@ def test_compat_gate_rejects_removed_event_type() -> None:
             }
         }
     }
-    current = {
+    current: dict[str, Any] = {
         "$defs": {
             "Event": {
                 "oneOf": [
@@ -146,14 +146,14 @@ def test_compat_gate_covers_shared_public_domains() -> None:
 def test_compat_gate_rejects_changed_public_defaults_and_formats() -> None:
     module = _load_compat_module()
     compare_json_schema = cast(Any, module._compare_json_schema)
-    base = {
+    base: dict[str, Any] = {
         "type": "object",
         "properties": {
             "response_format": {"type": "string", "default": "json"},
             "created_at": {"type": "string", "format": "date-time"},
         },
     }
-    current = {
+    current: dict[str, Any] = {
         "type": "object",
         "properties": {
             "response_format": {"type": "string", "default": "text"},

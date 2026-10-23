@@ -1624,12 +1624,18 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     TooManyRequests:
       description: Quota or queue limit exceeded; follow Retry-After.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
       description: Backend or capacity unavailable; retry only when `retryable` is true.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:

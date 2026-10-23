@@ -40,7 +40,9 @@ of defaults, units, enum domains, or stable error codes.
   paths.
 - `model-binding.schema.json`: immutable logical model binding to engine,
   artifact set, execution recipe, parameter domains, capacity manifest, and
-  qualification evidence. It is separate from runtime instances.
+  qualification evidence, including a globally unique immutable `revision_id`
+  used by capacity, qualification, instance, lease, intent, and receipt
+  identities. It is separate from runtime instances.
 - `model-instance.schema.json`: internal runtime instance identity, generation,
   configuration digest, readiness, observed facts, stop evidence, and
   quarantine state.
@@ -100,10 +102,13 @@ supported SDK calls, non-goals, and the extension rules.
 `tests/contract/test_p0_public_contracts.py` uses the repository-locked official
 OpenAI Python SDK (`2.54.0`) with a mock transport for REST requests and the
 SDK's real Realtime connection serialization path for `session.update` /
-`input_audio_buffer.*`. Captured requests, events, and parsed responses must
-match the declared schemas. This is a contract-parity gate, not a live-server
-integration test. The same assertions must run against HTTP and WebSocket
-routes once they are implemented.
+`input_audio_buffer.*`. `tests/contract/test_openai_js_sdk.mjs` runs the
+repository-locked OpenAI JavaScript SDK (`7.43.0`) against the same REST subset
+and verifies multipart, JSON, binary response, and rate-limit error shapes.
+Captured requests, events, and parsed responses must match the declared
+schemas. This is a contract-parity gate, not a live-server integration test.
+The same assertions must run against HTTP and WebSocket routes once they are
+implemented.
 
 ## Rules
 
@@ -133,6 +138,7 @@ Run:
 
 ```bash
 make contracts-check
+make contracts-sdk-test
 uv run pytest tests/contract
 CONTRACT_BASE_REF=origin/main make contracts-compat
 ```

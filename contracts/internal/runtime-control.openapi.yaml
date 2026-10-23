@@ -45,6 +45,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "422":
+          description: Runtime intent request failed schema or approved-template validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
   /internal/v1/nodes/{node_id}/instance-intents/{intent_id}:
     get:
       operationId: getRuntimeInstanceIntent
@@ -99,6 +108,24 @@ paths:
                 $ref: "#/components/schemas/NodeReconcileResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Reconciliation fencing token or target node does not match the controller scope.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "422":
+          description: Reconciliation snapshot failed schema validation.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
 components:
   securitySchemes:
     ComponentBearer:
@@ -493,6 +520,7 @@ components:
                 - stale_instance_generation
                 - gateway_drain_incomplete
                 - runtime_controller_unavailable
+                - invalid_runtime_request
                 - component_credential_invalid
             message:
               type: string

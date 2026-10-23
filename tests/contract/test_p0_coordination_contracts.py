@@ -17,6 +17,7 @@ from referencing import Registry, Resource
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CAPACITY_MANIFEST_SCHEMA_PATH = _ROOT / "contracts" / "capacity-manifest.schema.json"
+_QUALIFICATION_REPORT_SCHEMA_PATH = _ROOT / "contracts" / "qualification-report.schema.json"
 _EXECUTION_CONTROL_OPENAPI_PATH = (
     _ROOT / "contracts" / "internal" / "execution-control.openapi.yaml"
 )
@@ -74,10 +75,22 @@ def test_capacity_manifest_schema_and_positive_examples_are_valid() -> None:
     examples = schema.get("examples")
     assert isinstance(examples, list)
     assert len(examples) >= 1
+    qualification_schema = _load_json(_QUALIFICATION_REPORT_SCHEMA_PATH)
+    qualification_reports = {
+        report["report_id"]: report
+        for report in cast(
+            list[dict[str, Any]],
+            qualification_schema["examples"],
+        )
+    }
     for example in examples:
         validator.validate(example)
         stage_ids = [stage["stage_id"] for stage in example["stage_graph"]]
         assert len(stage_ids) == len(set(stage_ids))
+        report = qualification_reports[example["qualification"]["qualification_report_id"]]
+        assert report["binding_revision_id"] == example["binding_revision_id"]
+        assert report["capacity_manifest_id"] == example["manifest_id"]
+        assert set(report["software"]["engine_components"]) == set(stage_ids)
 
 
 def test_capacity_manifest_envelope_aggregation_is_frozen() -> None:
@@ -125,6 +138,29 @@ def test_capacity_manifest_rejects_external_production_and_missing_parent_budget
     external_exp["management_mode"] = "external"
     external_exp["release_tier"] = "experimental"
     validator.validate(external_exp)
+
+    production = copy.deepcopy(base_example)
+    production["release_tier"] = "production"
+    validator.validate(production)
+    production_without_fencing = copy.deepcopy(production)
+    production_without_fencing["cancellation_and_fencing"]["supports_fencing_barrier"] = False
+    with pytest.raises(ValidationError):
+        validator.validate(production_without_fencing)
+    production_without_output_quota = copy.deepcopy(production)
+    production_without_output_quota["rate_and_segment_limits"]["hard_output_quota"] = False
+    with pytest.raises(ValidationError):
+        validator.validate(production_without_output_quota)
+
+    abort_without_support = copy.deepcopy(base_example)
+    abort_without_support["cancellation_and_fencing"]["supports_request_abort"] = False
+    with pytest.raises(ValidationError):
+        validator.validate(abort_without_support)
+    quarantine_with_abort = copy.deepcopy(base_example)
+    quarantine_with_abort["cancellation_and_fencing"]["cancellation_mode"] = (
+        "connection_drop_with_quarantine"
+    )
+    with pytest.raises(ValidationError):
+        validator.validate(quarantine_with_abort)
 
     # 3. on_demand loading_policy requires integer idle_reclaim_cooldown_ms >= 1000
     on_demand_missing_cooldown = copy.deepcopy(base_example)
@@ -174,6 +210,11 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
             for method, operation in path_item.items():
                 if method in {"get", "post", "put", "patch", "delete"}:
                     assert "401" in operation["responses"], (method, operation["operationId"])
+                    if "requestBody" in operation:
+                        assert "422" in operation["responses"], (
+                            method,
+                            operation["operationId"],
+                        )
 
 
 def test_cluster_coordination_sql_draft_defines_required_tables_and_invariants() -> None:

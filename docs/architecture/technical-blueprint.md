@@ -79,7 +79,7 @@ P0 机器契约已按以下文件交付；它们冻结协议形状与样例，�
 | `workbench-openapi.yaml` | 工作台 API / Web；项目、转写、会议、助手、提词、有声书、保存副本与导出 |
 | `admin-openapi.yaml` | AdminUI、调度、部署与发布流程；工作空间、绑定发布、实例、资源池、策略、诊断与审计 |
 | `realtime-events.schema.json` | 实时网关与客户端；标准 ASR 事件子集、`nexus.*` 事件、联合、顺序、重放和终态语义 |
-| `scenario-profile.schema.json` / `voice-resource.schema.json` | 管理面、语音用例与 Web；预设 revision、覆盖范围、音色候选 / 校验 / 发布与不可变版本 |
+| `scenario-profile.schema.json` / `voice-resource.schema.json` | 管理面、语音用例与 Web；预设 draft / 发布 / 回滚 / 退役、覆盖范围、音色候选 / 校验 / 发布与不可变版本 |
 | `internal/execution-control.openapi.yaml` | scheduler / worker 与 gateway；提交、查询、取消、封锁与 drain |
 | `internal/execution-stream.schema.json` | 实时网关与 gateway；控制信封、音频 descriptor、序号、样本坐标、credit、背压和二进制 PCM framing |
 | `internal/runtime-control.openapi.yaml` | scheduler 与部署控制器；批准实例的准备、查询、停止及证据 |

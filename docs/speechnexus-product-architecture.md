@@ -284,6 +284,8 @@ effective_max_segment_ms = min(
 
 Profile revision 包含 schema_version、required_capabilities、parameters、override_allowlist、override_ranges、SLO 引用与验证记录。发布前执行 schema、能力组合、负样本与质量对照检查；可发布为 experimental 或 production。`override_ranges` 只能约束 allowlist 内的路径，显式范围必须满足 `minimum <= maximum`，allowlist 项没有范围时仅受基础参数 schema 和绑定域约束；同一 capability 只能出现一次，约束不能为空或反向；ASR 的 `max_segment_ms` 不得小于 `preview_interval_ms`。生产预设只绑定具备对应质量资格的模型 / 音色。回滚只是将默认指针切回旧 revision，不修改已固定的作业。
 
+管理面把预设编辑建模为不可变 revision：创建 draft 时以 `expected_latest_revision` 防止并发覆盖；发布时提交目标 revision、当前指针 CAS 与验证证据，原子切换默认指针；回滚通过激活既有 published revision 完成；退役 / 禁用不删除历史。公共 `/v1/nexus/profiles` 只列出当前发布 revision，draft 只能从管理面读取。这样既保留 AdminUI 的草稿、校验、发布、退役流程，也不把管理写能力塞进 OpenAI 标准字段或普通推理请求。
+
 ## 6. 首期访问边界与身份体系演进
 
 ### 6.1 首期明确不建设的体系

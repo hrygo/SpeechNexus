@@ -287,6 +287,9 @@ paths:
       tags: [profiles]
       operationId: getProfileRevision
       summary: Get one immutable scenario profile revision
+      description: |
+        Public readers may fetch published, retired, or disabled revisions.
+        Draft revisions are visible only through the administration API.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"

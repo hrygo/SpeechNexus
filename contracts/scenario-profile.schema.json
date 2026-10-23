@@ -2,23 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://speechnexus.internal/contracts/scenario-profile.schema.json",
   "title": "ScenarioProfileRevision",
-  "description": "Immutable scenario preset revision. A profile composes validated ASR/TTS policy parameters with capability requirements and an explicit override allowlist. It never carries scheduling priority, engine endpoints, model paths, credentials, or user identity.",
+  "description": "Immutable scenario preset revision. A profile composes explicit ASR/TTS policy parameters with capability requirements, validation evidence, and publication lifecycle metadata. It never carries scheduling priority, engine endpoints, model paths, credentials, or user identity.",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "schema_version",
     "profile_id",
     "revision",
-    "display_name",
-    "kind",
-    "release_tier",
-    "execution_classes",
-    "parameters",
-    "required_capabilities",
-    "override_allowlist",
-    "override_ranges",
-    "slo_ref",
-    "validation"
+    "publication"
   ],
   "properties": {
     "schema_version": {
@@ -32,89 +22,109 @@
     "revision": {
       "$ref": "#/$defs/Revision"
     },
-    "display_name": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128
-    },
-    "description": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 2000
-    },
-    "kind": {
-      "type": "string",
-      "enum": ["asr", "tts", "duplex"],
-      "description": "duplex profiles are valid only for realtime sessions that reserve both ASR and TTS resources atomically."
-    },
-    "release_tier": {
-      "$ref": "#/$defs/ProfileReleaseTier"
-    },
-    "execution_classes": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/ExecutionClass"
-      }
-    },
-    "parameters": {
-      "$ref": "#/$defs/ProfileParameters"
-    },
-    "required_capabilities": {
-      "type": "array",
-      "uniqueItems": true,
-      "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
-      "items": {
-        "$ref": "#/$defs/CapabilityRequirement"
-      }
-    },
-    "override_allowlist": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/ParameterPath"
-      },
-      "description": "Only these paths may be overridden by a request. Omitted paths are not overridable even when the value is within a declared range."
-    },
-    "override_ranges": {
+    "publication": {
       "type": "object",
-      "propertyNames": {
-        "$ref": "#/$defs/ParameterPath"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/OverrideRange"
-      },
-      "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
-    },
-    "slo_ref": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "description": "Reference to the deployment SLO document or qualification report scenario. It is not a numeric promise in this schema."
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "retired",
+            "disabled"
+          ]
+        },
+        "published_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retired_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "validation": {
       "$ref": "#/$defs/ProfileValidation"
     },
-    "published_at": {
-      "type": "string",
-      "format": "date-time"
+    "supersedes_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "allOf": [
     {
+      "$ref": "#/$defs/ProfileDefinition"
+    },
+    {
       "if": {
-        "properties": {"kind": {"const": "asr"}},
-        "required": ["kind"]
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "draft"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
       },
       "then": {
         "properties": {
-          "parameters": {
-            "required": ["asr"],
-            "not": {"required": ["tts"]},
+          "publication": {
             "properties": {
-              "output": {
-                "not": {"required": ["audio_format"]}
+              "published_at": {
+                "type": "null"
+              },
+              "retired_at": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
               }
             }
           }
@@ -123,17 +133,38 @@
     },
     {
       "if": {
-        "properties": {"kind": {"const": "tts"}},
-        "required": ["kind"]
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
       },
       "then": {
         "properties": {
-          "parameters": {
-            "required": ["tts"],
-            "not": {"required": ["asr"]},
+          "publication": {
+            "required": [
+              "published_at"
+            ],
             "properties": {
-              "output": {
-                "not": {"required": ["transcript_format"]}
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "retired_at": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "null"
               }
             }
           }
@@ -142,16 +173,208 @@
     },
     {
       "if": {
-        "properties": {"kind": {"const": "duplex"}},
-        "required": ["kind"]
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "retired"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "published_at",
+              "retired_at"
+            ],
+            "properties": {
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "retired_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "disabled_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "const": "disabled"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "properties": {
+          "publication": {
+            "required": [
+              "published_at",
+              "disabled_reason"
+            ],
+            "properties": {
+              "published_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "retired_at": {
+                "type": "null"
+              },
+              "disabled_reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publication": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "draft"
+                }
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "publication"
+        ]
+      },
+      "then": {
+        "required": [
+          "validation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "asr"
+          }
+        },
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
           "parameters": {
-            "required": ["asr", "tts"]
+            "required": [
+              "asr"
+            ],
+            "not": {
+              "required": [
+                "tts"
+              ]
+            },
+            "properties": {
+              "output": {
+                "not": {
+                  "required": [
+                    "audio_format"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tts"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "required": [
+              "tts"
+            ],
+            "not": {
+              "required": [
+                "asr"
+              ]
+            },
+            "properties": {
+              "output": {
+                "not": {
+                  "required": [
+                    "transcript_format"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "duplex"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "required": [
+              "asr",
+              "tts"
+            ]
           },
           "execution_classes": {
-            "contains": {"const": "realtime"},
+            "contains": {
+              "const": "realtime"
+            },
             "minContains": 1
           }
         }
@@ -159,19 +382,110 @@
     },
     {
       "if": {
-        "properties": {"release_tier": {"const": "production"}},
-        "required": ["release_tier"]
+        "properties": {
+          "release_tier": {
+            "const": "production"
+          }
+        },
+        "required": [
+          "release_tier"
+        ]
       },
       "then": {
         "properties": {
           "validation": {
-            "properties": {"status": {"const": "production"}}
+            "properties": {
+              "status": {
+                "const": "production"
+              }
+            }
           }
         }
       }
     }
   ],
   "$defs": {
+    "ProfileDefinition": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "asr",
+            "tts",
+            "duplex"
+          ],
+          "description": "duplex profiles are valid only for realtime sessions that reserve both ASR and TTS resources atomically."
+        },
+        "release_tier": {
+          "$ref": "#/$defs/ProfileReleaseTier"
+        },
+        "execution_classes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ExecutionClass"
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/ProfileParameters"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
+          "items": {
+            "$ref": "#/$defs/CapabilityRequirement"
+          }
+        },
+        "override_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ParameterPath"
+          },
+          "description": "Only these paths may be overridden by a request. Omitted paths are not overridable even when the value is within a declared range."
+        },
+        "override_ranges": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ParameterPath"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/OverrideRange"
+          },
+          "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
+        },
+        "slo_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Reference to the deployment SLO document or qualification report scenario. It is not a numeric promise in this schema."
+        }
+      },
+      "required": [
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes",
+        "parameters",
+        "required_capabilities",
+        "override_allowlist",
+        "override_ranges",
+        "slo_ref"
+      ]
+    },
     "Identifier": {
       "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
     },
@@ -226,19 +540,42 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "minimum": {"type": "number"},
-        "maximum": {"type": "number"},
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
         "enum": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"type": ["string", "number", "boolean", "null"]}
+          "items": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
         }
       },
       "anyOf": [
-        {"required": ["minimum"]},
-        {"required": ["maximum"]},
-        {"required": ["enum"]}
+        {
+          "required": [
+            "minimum"
+          ]
+        },
+        {
+          "required": [
+            "maximum"
+          ]
+        },
+        {
+          "required": [
+            "enum"
+          ]
+        }
       ]
     },
     "AsrParameters": {
@@ -257,7 +594,9 @@
         "diarization"
       ],
       "properties": {
-        "language": {"$ref": "#/$defs/LanguageTag"},
+        "language": {
+          "$ref": "#/$defs/LanguageTag"
+        },
         "preview_interval_ms": {
           "type": "integer",
           "minimum": 100,
@@ -271,7 +610,10 @@
         },
         "finalization": {
           "type": "string",
-          "enum": ["full_segment", "streaming_finalize"]
+          "enum": [
+            "full_segment",
+            "streaming_finalize"
+          ]
         },
         "final_deadline_ms": {
           "type": "integer",
@@ -293,11 +635,17 @@
         "turn_detection": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "silence_duration_ms"],
+          "required": [
+            "mode",
+            "silence_duration_ms"
+          ],
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["server_vad", "manual"]
+              "enum": [
+                "server_vad",
+                "manual"
+              ]
             },
             "silence_duration_ms": {
               "type": "integer",
@@ -308,17 +656,29 @@
         },
         "vocabulary_set_revision": {
           "oneOf": [
-            {"$ref": "#/$defs/ResourceReference"},
-            {"type": "null"}
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "alignment": {
           "type": "string",
-          "enum": ["off", "required", "best_effort"]
+          "enum": [
+            "off",
+            "required",
+            "best_effort"
+          ]
         },
         "diarization": {
           "type": "string",
-          "enum": ["off", "required", "best_effort"]
+          "enum": [
+            "off",
+            "required",
+            "best_effort"
+          ]
         }
       }
     },
@@ -333,14 +693,22 @@
         "planner"
       ],
       "properties": {
-        "language": {"$ref": "#/$defs/LanguageTag"},
+        "language": {
+          "$ref": "#/$defs/LanguageTag"
+        },
         "text_commit_mode": {
           "type": "string",
-          "enum": ["explicit", "sentence"]
+          "enum": [
+            "explicit",
+            "sentence"
+          ]
         },
         "audio_delivery": {
           "type": "string",
-          "enum": ["complete", "chunked"]
+          "enum": [
+            "complete",
+            "chunked"
+          ]
         },
         "speed": {
           "type": "number",
@@ -349,24 +717,37 @@
           "default": 1.0
         },
         "instructions": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 2000
         },
         "pronunciation_revision": {
           "oneOf": [
-            {"$ref": "#/$defs/ResourceReference"},
-            {"type": "null"}
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "seed": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0,
           "maximum": 2147483647
         },
         "planner": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["max_chars", "max_wait_ms"],
+          "required": [
+            "max_chars",
+            "max_wait_ms"
+          ],
           "properties": {
             "max_chars": {
               "type": "integer",
@@ -388,11 +769,21 @@
       "properties": {
         "transcript_format": {
           "type": "string",
-          "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+          "enum": [
+            "json",
+            "text",
+            "verbose_json",
+            "srt",
+            "vtt"
+          ]
         },
         "audio_format": {
           "type": "string",
-          "enum": ["mp3", "wav", "pcm"]
+          "enum": [
+            "mp3",
+            "wav",
+            "pcm"
+          ]
         },
         "save_artifacts": {
           "type": "boolean"
@@ -403,39 +794,72 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "asr": {"$ref": "#/$defs/AsrParameters"},
-        "tts": {"$ref": "#/$defs/TtsParameters"},
-        "output": {"$ref": "#/$defs/OutputParameters"}
+        "asr": {
+          "$ref": "#/$defs/AsrParameters"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsParameters"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputParameters"
+        }
       }
     },
     "CapabilityRequirement": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["capability", "required"],
+      "required": [
+        "capability",
+        "required"
+      ],
       "properties": {
         "capability": {
           "type": "string",
           "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
         },
-        "required": {"type": "boolean"},
+        "required": {
+          "type": "boolean"
+        },
         "constraint": {
           "type": "object",
           "additionalProperties": false,
           "minProperties": 1,
           "properties": {
-            "minimum": {"type": "number"},
-            "maximum": {"type": "number"},
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
             "enum": {
               "type": "array",
               "minItems": 1,
               "uniqueItems": true,
-              "items": {"type": ["string", "number", "boolean"]}
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
             }
           },
           "anyOf": [
-            {"required": ["minimum"]},
-            {"required": ["maximum"]},
-            {"required": ["enum"]}
+            {
+              "required": [
+                "minimum"
+              ]
+            },
+            {
+              "required": [
+                "maximum"
+              ]
+            },
+            {
+              "required": [
+                "enum"
+              ]
+            }
           ]
         }
       }
@@ -444,19 +868,37 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "profile_id",
+        "revision",
         "validation_report_id",
         "validated_at",
         "status",
         "evidence_digest"
       ],
       "properties": {
-        "validation_report_id": {"$ref": "#/$defs/Identifier"},
-        "validated_at": {"type": "string", "format": "date-time"},
+        "profile_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "validation_report_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "validated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
         "status": {
           "type": "string",
-          "enum": ["experimental", "production"]
+          "enum": [
+            "experimental",
+            "production"
+          ]
         },
-        "evidence_digest": {"$ref": "#/$defs/Sha256Digest"},
+        "evidence_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
         "corpus_revision": {
           "type": "string",
           "minLength": 1,
@@ -477,7 +919,9 @@
       "display_name": "Live captions",
       "kind": "asr",
       "release_tier": "experimental",
-      "execution_classes": ["realtime"],
+      "execution_classes": [
+        "realtime"
+      ],
       "parameters": {
         "asr": {
           "language": "zh",
@@ -487,27 +931,53 @@
           "final_deadline_ms": 2000,
           "auxiliary_deadline_ms": 5000,
           "rollback_tokens": 5,
-          "turn_detection": {"mode": "server_vad", "silence_duration_ms": 400},
+          "turn_detection": {
+            "mode": "server_vad",
+            "silence_duration_ms": 400
+          },
           "vocabulary_set_revision": null,
           "alignment": "off",
           "diarization": "off"
         },
-        "output": {"transcript_format": "json", "save_artifacts": false}
+        "output": {
+          "transcript_format": "json",
+          "save_artifacts": false
+        }
       },
       "required_capabilities": [
-        {"capability": "asr.streaming_preview", "required": true},
-        {"capability": "asr.full_segment_review", "required": true}
+        {
+          "capability": "asr.streaming_preview",
+          "required": true
+        },
+        {
+          "capability": "asr.full_segment_review",
+          "required": true
+        }
       ],
-      "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+      "override_allowlist": [
+        "asr.language",
+        "asr.preview_interval_ms"
+      ],
       "override_ranges": {
-        "asr.preview_interval_ms": {"minimum": 300, "maximum": 1000}
+        "asr.preview_interval_ms": {
+          "minimum": 300,
+          "maximum": 1000
+        }
       },
       "slo_ref": "slo/realtime-caption-v1",
       "validation": {
+        "profile_id": "caption-live",
+        "revision": "1",
         "validation_report_id": "profileval-caption-live-1",
         "validated_at": "2026-10-22T09:00:00Z",
         "status": "experimental",
         "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "disabled_reason": null
       }
     },
     {
@@ -517,7 +987,9 @@
       "display_name": "Audiobook consistent narration",
       "kind": "tts",
       "release_tier": "experimental",
-      "execution_classes": ["batch"],
+      "execution_classes": [
+        "batch"
+      ],
       "parameters": {
         "tts": {
           "language": "zh",
@@ -527,24 +999,50 @@
           "instructions": null,
           "pronunciation_revision": null,
           "seed": null,
-          "planner": {"max_chars": 400, "max_wait_ms": 3000}
+          "planner": {
+            "max_chars": 400,
+            "max_wait_ms": 3000
+          }
         },
-        "output": {"audio_format": "wav", "save_artifacts": true}
+        "output": {
+          "audio_format": "wav",
+          "save_artifacts": true
+        }
       },
       "required_capabilities": [
-        {"capability": "tts.reusable_voice", "required": true},
-        {"capability": "audio.wav_encode", "required": true}
+        {
+          "capability": "tts.reusable_voice",
+          "required": true
+        },
+        {
+          "capability": "audio.wav_encode",
+          "required": true
+        }
       ],
-      "override_allowlist": ["tts.speed", "tts.pronunciation_revision"],
+      "override_allowlist": [
+        "tts.speed",
+        "tts.pronunciation_revision"
+      ],
       "override_ranges": {
-        "tts.speed": {"minimum": 0.8, "maximum": 1.2}
+        "tts.speed": {
+          "minimum": 0.8,
+          "maximum": 1.2
+        }
       },
       "slo_ref": "slo/batch-audiobook-v1",
       "validation": {
+        "profile_id": "audiobook-consistent",
+        "revision": "1",
         "validation_report_id": "profileval-audiobook-1",
         "validated_at": "2026-10-22T09:00:00Z",
         "status": "experimental",
         "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "disabled_reason": null
       }
     },
     {
@@ -554,7 +1052,9 @@
       "display_name": "Assistant duplex",
       "kind": "duplex",
       "release_tier": "experimental",
-      "execution_classes": ["realtime"],
+      "execution_classes": [
+        "realtime"
+      ],
       "parameters": {
         "asr": {
           "language": "zh",
@@ -564,7 +1064,10 @@
           "final_deadline_ms": 2000,
           "auxiliary_deadline_ms": 5000,
           "rollback_tokens": 5,
-          "turn_detection": {"mode": "server_vad", "silence_duration_ms": 900},
+          "turn_detection": {
+            "mode": "server_vad",
+            "silence_duration_ms": 900
+          },
           "vocabulary_set_revision": null,
           "alignment": "off",
           "diarization": "off"
@@ -577,26 +1080,117 @@
           "instructions": null,
           "pronunciation_revision": null,
           "seed": null,
-          "planner": {"max_chars": 120, "max_wait_ms": 800}
+          "planner": {
+            "max_chars": 120,
+            "max_wait_ms": 800
+          }
         },
-        "output": {"audio_format": "pcm", "save_artifacts": false}
+        "output": {
+          "audio_format": "pcm",
+          "save_artifacts": false
+        }
       },
       "required_capabilities": [
-        {"capability": "asr.streaming_preview", "required": true},
-        {"capability": "tts.streaming_text", "required": true},
-        {"capability": "audio.pcm_stream", "required": true}
+        {
+          "capability": "asr.streaming_preview",
+          "required": true
+        },
+        {
+          "capability": "tts.streaming_text",
+          "required": true
+        },
+        {
+          "capability": "audio.pcm_stream",
+          "required": true
+        }
       ],
-      "override_allowlist": ["asr.language", "tts.speed"],
+      "override_allowlist": [
+        "asr.language",
+        "tts.speed"
+      ],
       "override_ranges": {
-        "tts.speed": {"minimum": 0.9, "maximum": 1.1}
+        "tts.speed": {
+          "minimum": 0.9,
+          "maximum": 1.1
+        }
       },
       "slo_ref": "slo/realtime-duplex-v1",
       "validation": {
+        "profile_id": "assistant-duplex",
+        "revision": "1",
         "validation_report_id": "profileval-assistant-duplex-1",
         "validated_at": "2026-10-22T09:00:00Z",
         "status": "experimental",
         "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "publication": {
+        "status": "published",
+        "published_at": "2026-10-22T09:00:00Z",
+        "retired_at": null,
+        "disabled_reason": null
       }
+    },
+    {
+      "schema_version": "1.0.0",
+      "profile_id": "caption-draft",
+      "revision": "2",
+      "display_name": "Caption draft",
+      "kind": "asr",
+      "release_tier": "experimental",
+      "execution_classes": [
+        "realtime"
+      ],
+      "parameters": {
+        "asr": {
+          "language": "zh",
+          "preview_interval_ms": 500,
+          "max_segment_ms": 8000,
+          "finalization": "full_segment",
+          "final_deadline_ms": 2000,
+          "auxiliary_deadline_ms": 5000,
+          "rollback_tokens": 5,
+          "turn_detection": {
+            "mode": "server_vad",
+            "silence_duration_ms": 400
+          },
+          "vocabulary_set_revision": null,
+          "alignment": "off",
+          "diarization": "off"
+        },
+        "output": {
+          "transcript_format": "json",
+          "save_artifacts": false
+        }
+      },
+      "required_capabilities": [
+        {
+          "capability": "asr.streaming_preview",
+          "required": true
+        },
+        {
+          "capability": "asr.full_segment_review",
+          "required": true
+        }
+      ],
+      "override_allowlist": [
+        "asr.language",
+        "asr.preview_interval_ms"
+      ],
+      "override_ranges": {
+        "asr.preview_interval_ms": {
+          "minimum": 300,
+          "maximum": 1000
+        }
+      },
+      "slo_ref": "slo/realtime-caption-v1",
+      "publication": {
+        "status": "draft",
+        "published_at": null,
+        "retired_at": null,
+        "disabled_reason": null
+      },
+      "supersedes_revision": "1"
     }
-  ]
+  ],
+  "unevaluatedProperties": false
 }

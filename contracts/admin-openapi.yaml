@@ -19,6 +19,7 @@ security:
   - {}
 tags:
   - name: workspaces
+  - name: profiles
   - name: model-bindings
   - name: model-instances
   - name: resource-pools
@@ -133,6 +134,231 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles:
+    get:
+      tags: [profiles]
+      operationId: listProfileFamilies
+      summary: List scenario-profile families and their immutable revisions
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, published, retired, disabled]
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Profile families. Filtering by status applies to latest_revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileFamilyList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [profiles]
+      operationId: createProfileRevision
+      summary: Create an immutable draft scenario-profile revision
+      description: |
+        Creates the next immutable revision in a profile family. The request
+        carries `expected_latest_revision` for revision allocation; null is
+        valid only for a new family. An existing mismatch returns 409
+        `configuration_changed`. The new revision starts in publication
+        `draft` state and is not returned by the public profile list until it
+        is published. Replaying the same Idempotency-Key and canonical intent
+        returns the original revision; the same key with a different intent
+        returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileRevisionCreateRequest"
+      responses:
+        "201":
+          description: Draft profile revision created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}:
+    get:
+      tags: [profiles]
+      operationId: getProfileRevisionForAdministration
+      summary: Get a draft or historical profile revision
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Profile revision, including unpublished drafts.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications:
+    post:
+      tags: [profiles]
+      operationId: publishProfileRevision
+      summary: Validate and publish a draft profile revision
+      description: |
+        The target revision must be a draft and the supplied validation evidence
+        must describe it. The server rechecks parameter domains, capability
+        composition, override allowlists, and production-tier evidence before
+        atomically changing the revision to `published` and activating the
+        family's current pointer. `expected_current_revision` is a
+        compare-and-swap guard; null is valid only when no revision is current.
+        A changed pointer returns 409 `configuration_changed`. An identical
+        Idempotency-Key replay returns the original publication; a changed
+        intent under the same key returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfilePublicationRequest"
+      responses:
+        "200":
+          description: Profile revision published and activated.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations:
+    post:
+      tags: [profiles]
+      operationId: activatePublishedProfileRevision
+      summary: Roll the current profile pointer back or forward to a published revision
+      description: |
+        Activates an existing `published` revision without modifying it. This is
+        the explicit rollback path. `expected_current_revision` is the current
+        pointer observed by the operator; a mismatch returns 409
+        `configuration_changed`. Retired, disabled, and draft revisions cannot be
+        activated. An identical Idempotency-Key replay returns the original
+        activation; a changed intent under the same key returns 409
+        `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileActivationRequest"
+      responses:
+        "200":
+          description: Published profile revision activated.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements:
+    post:
+      tags: [profiles]
+      operationId: retireProfileRevision
+      summary: Retire or disable a scenario-profile revision
+      description: |
+        `retire` stops new references while already fixed jobs and sessions keep
+        their pinned revision. `disable` additionally blocks new submissions
+        that would select this revision. If the revision is current, retirement
+        clears the family's current pointer; it does not silently roll back to
+        another revision. Use the activations endpoint to select a known-good
+        published revision explicitly. An identical Idempotency-Key replay
+        returns the original retirement; a changed intent under the same key
+        returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileRevisionRetirementRequest"
+      responses:
+        "200":
+          description: Profile revision retired or disabled.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -712,6 +938,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Identifier"
+    ProfileIdPath:
+      name: profile_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
     RevisionPath:
       name: revision
       in: path
@@ -798,6 +1030,85 @@ components:
       $ref: "shared/capability-domains.schema.json#/$defs/ServiceClass"
     ErrorResponse:
       $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
+    ProfileRevisionCreateRequest:
+      allOf:
+        - $ref: "./scenario-profile.schema.json#/$defs/ProfileDefinition"
+      type: object
+      unevaluatedProperties: false
+      required: [profile_id, expected_latest_revision]
+      properties:
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        expected_latest_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+    ProfileFamilySummary:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_id
+        - latest_revision
+        - current_revision
+        - kind
+        - release_tier
+        - publication_status
+      properties:
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        latest_revision:
+          $ref: "#/components/schemas/Revision"
+        current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        kind:
+          type: string
+          enum: [asr, tts, duplex]
+        release_tier:
+          $ref: "#/components/schemas/ReleaseTier"
+        publication_status:
+          type: string
+          enum: [draft, published, retired, disabled]
+    ProfileFamilyList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileFamilySummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ProfilePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, expected_current_revision, validation]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        validation:
+          $ref: "./scenario-profile.schema.json#/$defs/ProfileValidation"
+    ProfileActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_current_revision]
+      properties:
+        expected_current_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+    ProfileRevisionRetirementRequest:
+      $ref: "shared/lifecycle.schema.json#/$defs/RetirementRequest"
     Workspace:
       type: object
       additionalProperties: false

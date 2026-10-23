@@ -213,6 +213,13 @@ def _assert_qualification_semantics(report: dict[str, Any]) -> None:
 
 def _assert_scenario_profile_semantics(profile: dict[str, Any]) -> None:
     """Executable parameter-domain rules that JSON Schema cannot compare by name."""
+    validation = cast(dict[str, Any] | None, profile.get("validation"))
+    if validation is not None and (
+        validation["profile_id"] != profile["profile_id"]
+        or validation["revision"] != profile["revision"]
+    ):
+        raise ValueError("profile validation evidence does not identify this revision")
+
     allowlist = set(cast(list[str], profile["override_allowlist"]))
     ranges = cast(dict[str, dict[str, Any]], profile["override_ranges"])
     unexpected_ranges = set(ranges) - allowlist
@@ -546,6 +553,11 @@ def test_public_specs_validate_and_declare_openai_compatible_paths() -> None:
     validate(admin)
     assert {
         "/v1/nexus/workspaces",
+        "/v1/nexus/admin/profiles",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements",
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/publications",
         "/v1/nexus/admin/model-instances",
@@ -1702,6 +1714,82 @@ def test_model_binding_summary_distinguishes_latest_and_current_revision() -> No
         del missing[missing_field]
         with pytest.raises(ValidationError):
             validator.validate(missing)
+
+
+def test_profile_revisions_have_explicit_admin_lifecycle() -> None:
+    scenario = _load_json(_SCENARIO_SCHEMA)
+    profile_validator = _validator(scenario)
+    examples = cast(list[dict[str, Any]], scenario["examples"])
+    published = next(
+        example for example in examples if example["publication"]["status"] == "published"
+    )
+    draft = next(example for example in examples if example["publication"]["status"] == "draft")
+    profile_validator.validate(published)
+    profile_validator.validate(draft)
+
+    production_draft = copy.deepcopy(draft)
+    production_draft["release_tier"] = "production"
+    profile_validator.validate(production_draft)
+
+    production_with_experimental_validation = copy.deepcopy(published)
+    production_with_experimental_validation["release_tier"] = "production"
+    with pytest.raises(ValidationError):
+        profile_validator.validate(production_with_experimental_validation)
+
+    published_without_validation = copy.deepcopy(published)
+    del published_without_validation["validation"]
+    with pytest.raises(ValidationError):
+        profile_validator.validate(published_without_validation)
+
+    draft_with_publish_time = copy.deepcopy(draft)
+    draft_with_publish_time["publication"]["published_at"] = "2026-10-22T09:00:00Z"
+    with pytest.raises(ValidationError):
+        profile_validator.validate(draft_with_publish_time)
+
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    create_validator = _component_validator(admin, "ProfileRevisionCreateRequest")
+    create_request = {
+        key: copy.deepcopy(value)
+        for key, value in draft.items()
+        if key
+        not in {
+            "schema_version",
+            "revision",
+            "publication",
+            "supersedes_revision",
+        }
+    }
+    create_request["expected_latest_revision"] = None
+    create_validator.validate(create_request)
+    missing_cas = copy.deepcopy(create_request)
+    del missing_cas["expected_latest_revision"]
+    with pytest.raises(ValidationError):
+        create_validator.validate(missing_cas)
+    unknown_field = copy.deepcopy(create_request)
+    unknown_field["priority"] = 10
+    with pytest.raises(ValidationError):
+        create_validator.validate(unknown_field)
+
+    publication_validator = _component_validator(admin, "ProfilePublicationRequest")
+    publication_request = {
+        "expected_revision": "2",
+        "expected_current_revision": "1",
+        "validation": {
+            **copy.deepcopy(published["validation"]),
+            "profile_id": draft["profile_id"],
+            "revision": draft["revision"],
+        },
+    }
+    publication_validator.validate(publication_request)
+
+    mismatched_validation = copy.deepcopy(published)
+    mismatched_validation["validation"]["revision"] = "2"
+    with pytest.raises(ValueError, match="does not identify"):
+        _assert_scenario_profile_semantics(mismatched_validation)
+
+    activation_validator = _component_validator(admin, "ProfileActivationRequest")
+    activation_validator.validate({"expected_current_revision": "2"})
+    activation_validator.validate({"expected_current_revision": None})
 
 
 def test_revisioned_patch_requires_an_actual_change() -> None:

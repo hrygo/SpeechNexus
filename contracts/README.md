@@ -36,7 +36,8 @@ of defaults, units, enum domains, or stable error codes.
   progress cannot exceed its total; a succeeded export reports completed equal
   to total and the manifest-pinned artifact.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
-  publication, observed model instances, resource pools, policies,
+  and scenario-profile revision publication / activation / retirement,
+  observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit
   events. A binding-family summary distinguishes its latest immutable revision
   from the nullable current publication pointer, so a new draft remains visible
@@ -61,7 +62,11 @@ of defaults, units, enum domains, or stable error codes.
   hypotheses, metadata, credits, gaps, and operation terminals use `nexus.*`.
 - `scenario-profile.schema.json`: immutable profile revision, typed parameter
   domains, override allowlist and ranges, required capabilities, validation
-  evidence, and execution-class constraints. Producer validation rejects a
+  evidence, publication lifecycle, and execution-class constraints. Draft
+  revisions omit validation evidence, are not publicly listed, and become
+  immutable published revisions only through the admin publication endpoint.
+  Rollback explicitly activates an already-published revision without rewriting
+  it. Producer validation rejects a
   duplicate capability name, an empty/reversed capability constraint, a
   reversed override range, an override range for a non-allowlisted path, and
   `max_segment_ms < preview_interval_ms`.

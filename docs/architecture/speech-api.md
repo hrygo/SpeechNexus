@@ -65,7 +65,7 @@ SpeechCommand
 | `WS /v1/realtime?model={model}` | OpenAI SDK 兼容的 transcription-only 模式；服务端按部署默认值建立会话，不启用 TTS / `nexus.*` 能力 |
 | `GET /v1/nexus/voices`、`GET /v1/nexus/voices/{voice_id}/revisions/{revision}` | 部署共享音色目录与版本详情，含兼容绑定与校验事实 |
 
-增强资源包括 `/v1/nexus/workspaces`、`/profile-drafts`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision，普通 PATCH 只更新草稿。
+增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
 
@@ -137,6 +137,8 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
 模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
+
+场景预设采用同样的不可变 revision / 当前指针分离规则。`POST /v1/nexus/admin/profiles` 以 `expected_latest_revision` 原子分配下一个只读 draft revision；draft 可以没有验证记录，但公共列表与公共 revision 查询不可见。`POST .../revisions/{revision}/publications` 必须提交与目标 revision 对应的 `ProfileValidation`，服务端重新核对参数域、能力组合、override 范围和 production 资格后，才写 `published_at` 并切换当前指针。回滚使用 `.../activations` 激活既有 published revision，不复制或改写 revision；退役 / 禁用使用 `.../retirements`，当前 revision 退役后指针为空，不静默选择另一版本。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 
 快照按部署、工作空间、catalog 与功能策略生成；ETag 与缓存键包含这些 revision，不混用不同部署配置。配置了外部网关或共享服务密钥时，入口检查先于 304。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 

@@ -32,7 +32,9 @@ of defaults, units, enum domains, or stable error codes.
   compatibility and does not write speech-base Job or Artifact state. A
   workbench export artifact pins the same immutable manifest revision as its
   owning export job and carries non-empty content. Export success / publication
-  events must reference an artifact owned by the event's export job.
+  events must reference an artifact owned by the event's export job. Export
+  progress cannot exceed its total; a succeeded export reports completed equal
+  to total and the manifest-pinned artifact.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   publication, observed model instances, resource pools, policies,
   quarantine release, diagnostics, and anonymous / shared-credential audit

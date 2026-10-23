@@ -268,6 +268,25 @@ def _assert_export_artifact_semantics(
         raise ValueError("export artifact manifest revision differs from its job")
 
 
+def _assert_export_job_semantics(job: dict[str, Any]) -> None:
+    """Executable progress and artifact-pin rules for a workbench export job."""
+    completed = cast(int, job["progress_completed"])
+    total = cast(int, job["progress_total"])
+    if completed > total:
+        raise ValueError("export progress completed exceeds progress total")
+    artifact = cast(dict[str, Any] | None, job.get("artifact"))
+    if job["status"] == "succeeded":
+        if completed != total:
+            raise ValueError("a succeeded export requires completed progress equal to total")
+        if artifact is None:
+            raise ValueError("a succeeded export requires an artifact")
+        _assert_export_artifact_semantics(
+            cast(str, job["id"]),
+            cast(str, job["manifest_revision"]),
+            artifact,
+        )
+
+
 def _assert_resource_pool_semantics(pool: dict[str, Any]) -> None:
     """Executable aggregate-count rules for a logical resource pool."""
     max_active_slots = cast(int, pool["max_active_slots"])
@@ -2153,6 +2172,35 @@ def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
     succeeded_export = copy.deepcopy(
         next(example for example in export_examples if example["type"] == "export.succeeded")
     )
+    export_job_validator = _component_validator(workbench, "ExportJob")
+    export_job: dict[str, Any] = {
+        "id": "export_demo",
+        "object": "nexus.export_job",
+        "book_id": "book_demo",
+        "status": "succeeded",
+        "format": "zip",
+        "manifest_revision": "3",
+        "progress_completed": 5,
+        "progress_total": 5,
+        "artifact": copy.deepcopy(succeeded_export["data"]["artifact"]),
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:02Z",
+    }
+    export_job_validator.validate(export_job)
+    _assert_export_job_semantics(export_job)
+
+    incomplete_succeeded_export = copy.deepcopy(export_job)
+    incomplete_succeeded_export["progress_completed"] = 4
+    export_job_validator.validate(incomplete_succeeded_export)
+    with pytest.raises(ValueError, match="completed progress"):
+        _assert_export_job_semantics(incomplete_succeeded_export)
+
+    export_job_with_wrong_manifest = copy.deepcopy(export_job)
+    export_job_with_wrong_manifest["artifact"]["manifest_revision"] = "4"
+    export_job_validator.validate(export_job_with_wrong_manifest)
+    with pytest.raises(ValueError, match="manifest revision"):
+        _assert_export_job_semantics(export_job_with_wrong_manifest)
+
     artifact_with_wrong_owner = copy.deepcopy(succeeded_export)
     artifact_with_wrong_owner["data"]["artifact"]["export_id"] = "export_other"
     export_event_validator.validate(artifact_with_wrong_owner)

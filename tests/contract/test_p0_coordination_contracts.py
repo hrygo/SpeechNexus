@@ -9,12 +9,13 @@ from typing import Any, cast
 from urllib.parse import unquote, urlparse
 
 import pytest
-import yaml
 from jsonschema import FormatChecker
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validator_for
 from openapi_spec_validator import validate
 from referencing import Registry, Resource
+
+from tests.support.safe_yaml import load_yaml
 
 _ROOT = Path(__file__).resolve().parents[2]
 _BINDING_SCHEMA_PATH = _ROOT / "contracts" / "model-binding.schema.json"
@@ -41,7 +42,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw: object = load_yaml(path.read_text(encoding="utf-8"))
     assert isinstance(raw, dict)
     document = cast(dict[str, Any], raw)
     _resolve_local_refs(document, path)
@@ -291,7 +292,7 @@ def test_shared_speech_control_domains_have_one_source() -> None:
             f"shared/capability-domains.schema.json#/$defs/{name}"
         )
 
-    speech = yaml.safe_load(_SPEECH_OPENAPI_PATH.read_text(encoding="utf-8"))
+    speech = load_yaml(_SPEECH_OPENAPI_PATH.read_text(encoding="utf-8"))
     speech_schemas = speech["components"]["schemas"]
     for name in ("AudioFormat", "TranscriptFormat", "TextCommitMode", "OperationKind"):
         assert speech_schemas[name]["$ref"].endswith(

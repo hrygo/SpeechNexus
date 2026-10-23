@@ -24,8 +24,19 @@ tree. Git history preserves provenance; the shared transaction gate remains.
 Each test creates a unique namespace, installs the DDL, and drops it afterwards.
 Permission checks create fresh runtime roles/users and remove them after testing.
 PG uses a schema in the explicitly configured test database; MySQL creates a
-separate database on the explicitly configured isolated server. DDL remains
-outside the product packages and is not shipped in application wheels.
+separate database on the explicitly configured isolated server. Prototype DDL
+remains outside the product packages and is not shipped in application wheels.
+
+`test_production_jobs.py` independently exercises the production Job/outbox
+unit: PG uses its packaged Alembic migration and actual runtime adapter; InnoDB
+uses the same explicit SQL and domain replay decisions through test-only driver
+plumbing, with the column collation mapped from PG `C` to `utf8mb4_0900_bin`.
+Both configured engines are mandatory for the shared behavior suite. It proves
+atomicity, complete immutable identity conflicts, observed unique-key contention,
+minimum column grants and read-only unknown recovery. PG-only transport/migration
+tests additionally terminate a real session or simulate a lost reply after an
+actual commit; the latter is not packet-loss or HA qualification. See the
+[production unit and deployment instructions](../../docs/architecture/production-jobs.md).
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \

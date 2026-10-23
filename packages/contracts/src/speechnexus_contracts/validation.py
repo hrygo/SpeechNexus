@@ -15,8 +15,8 @@ class ContractValidationError(ValueError):
 
 
 @lru_cache
-def _validators() -> dict[str, Draft202012Validator]:
-    bundle = json.loads(files(__package__).joinpath("file.schema.json").read_text())
+def _validators(filename: str = "file.schema.json") -> dict[str, Draft202012Validator]:
+    bundle = json.loads(files(__package__).joinpath(filename).read_text())
     return {
         name: Draft202012Validator(
             {"$ref": f"#/$defs/{name}", "$defs": bundle["$defs"]},
@@ -31,6 +31,16 @@ def validate(name: str, value: Any) -> Any:
     validators = _validators()
     if name not in validators:
         raise ValueError(f"Unknown file contract: {name}")
+    if not validators[name].is_valid(value):
+        raise ContractValidationError(f"Invalid {name}")
+    return value
+
+
+def validate_coordination(name: str, value: Any) -> Any:
+    """Internal Job port shapes, with the same offline/no-coercion guarantee."""
+    validators = _validators("coordination.schema.json")
+    if name not in validators:
+        raise ValueError(f"Unknown coordination contract: {name}")
     if not validators[name].is_valid(value):
         raise ContractValidationError(f"Invalid {name}")
     return value

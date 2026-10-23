@@ -49,8 +49,9 @@ def test_generated_entrypoints_have_shared_positive_and_negative_examples() -> N
         assert any(e["schema"] == name and not e["valid"] for e in EXAMPLES), name
 
 
-def test_packaged_bundle_is_closed_and_unknown_contracts_fail() -> None:
-    bundle = json.loads(files("speechnexus_contracts").joinpath("file.schema.json").read_text())
+@pytest.mark.parametrize("filename", ["file.schema.json", "coordination.schema.json"])
+def test_packaged_bundle_is_closed_and_unknown_contracts_fail(filename: str) -> None:
+    bundle = json.loads(files("speechnexus_contracts").joinpath(filename).read_text())
     Draft202012Validator.check_schema(bundle)
 
     def check(node: Any) -> None:

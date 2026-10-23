@@ -1,0 +1,1759 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CoordinationJobContract",
+  "x-nexus-bindings-version": "1.0.0",
+  "x-nexus-entrypoints": ["create_job", "TransactionResult"],
+  "$defs": {
+    "create_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job", "identity", "request_digest"],
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/JobIdentity"
+        },
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      }
+    },
+    "JobIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "event_id", "event_digest"],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "event_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "event_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "AttemptIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "attempt_id"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        }
+      }
+    },
+    "TransactionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "scope_id", "recovery", "schema_version", "operation"],
+      "properties": {
+        "outcome": {
+          "enum": ["committed", "replayed", "conflict", "rejected", "unknown"]
+        },
+        "scope_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "error_code": {
+          "$ref": "#/$defs/TransactionErrorCode"
+        },
+        "recovery": {
+          "enum": [
+            "none",
+            "retry_transaction",
+            "query_original",
+            "query_current_authority",
+            "reconcile"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OwnerSnapshot"
+            },
+            {
+              "$ref": "#/$defs/AdmissionSnapshot"
+            },
+            {
+              "$ref": "#/$defs/ClaimSnapshot"
+            },
+            {
+              "$ref": "#/$defs/LeaseSnapshot"
+            },
+            {
+              "$ref": "#/$defs/FactSnapshot"
+            },
+            {
+              "$ref": "#/$defs/ExecutionSnapshot"
+            },
+            {
+              "$ref": "#/$defs/RuntimeSnapshot"
+            }
+          ]
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "enum": [
+            "acquire_owner",
+            "renew_owner",
+            "seal_barrier",
+            "activate_owner",
+            "admit_recipe",
+            "create_job",
+            "claim_job",
+            "create_submit",
+            "record_stop",
+            "quarantine_lease",
+            "release_lease",
+            "append_interval",
+            "create_runtime_intent",
+            "observe_runtime",
+            "query_outcome",
+            "mark_execution_unknown",
+            "record_execution_observation",
+            "redact_execution_command"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": ["committed", "replayed"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "recovery": {
+                "const": "none"
+              }
+            },
+            "not": {
+              "required": ["error_code"]
+            },
+            "required": ["value"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": ["conflict", "rejected", "unknown"]
+              }
+            }
+          },
+          "then": {
+            "required": ["error_code"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "const": "outcome_unknown"
+              },
+              "recovery": {
+                "enum": ["query_original", "query_current_authority", "reconcile"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": ["acquire_owner", "renew_owner", "activate_owner"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/OwnerSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": ["admit_recipe"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/AdmissionSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": ["claim_job"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/ClaimSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": ["release_lease", "quarantine_lease"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/LeaseSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "seal_barrier",
+                  "create_job",
+                  "append_interval",
+                  "redact_execution_command"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/FactSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "create_submit",
+                  "mark_execution_unknown",
+                  "record_stop",
+                  "record_execution_observation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/ExecutionSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": ["create_runtime_intent", "observe_runtime"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/RuntimeSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "release_lease"
+              },
+              "outcome": {
+                "enum": ["committed", "replayed"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "properties": {
+                  "lease_state": {
+                    "const": "released"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "TransactionErrorCode": {
+      "anyOf": [
+        {
+          "enum": [
+            "version_conflict",
+            "owner_busy",
+            "capacity_exhausted",
+            "quota_exceeded",
+            "recipe_mismatch",
+            "output_overlap",
+            "output_limit_exceeded",
+            "outcome_unknown",
+            "idempotency_conflict",
+            "not_found",
+            "invalid_counter",
+            "reconciliation_required"
+          ]
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+        },
+        {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_code"
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionErrorCode": {
+      "type": "string",
+      "enum": [
+        "stale_fencing_token",
+        "gateway_barrier_fenced",
+        "submit_intent_conflict",
+        "instance_generation_mismatch",
+        "instance_draining",
+        "lease_not_active",
+        "policy_or_resource_disabled",
+        "engine_transport_unknown",
+        "cancellation_unconfirmed",
+        "execution_cleanup_pending",
+        "invalid_execution_request",
+        "component_credential_invalid"
+      ]
+    },
+    "External_internal_runtime_control_openapi_yaml_code": {
+      "type": "string",
+      "enum": [
+        "target_node_mismatch",
+        "unapproved_runtime_template",
+        "stale_fencing_token",
+        "stale_instance_generation",
+        "gateway_drain_incomplete",
+        "intent_conflict",
+        "runtime_controller_unavailable",
+        "invalid_runtime_request",
+        "component_credential_invalid"
+      ]
+    },
+    "OwnerSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "authority", "expires_at_us", "owner_state", "version"],
+      "properties": {
+        "kind": {
+          "const": "owner"
+        },
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expires_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "owner_state": {
+          "enum": ["reconciling_takeover", "active"]
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "OwnerAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool_id", "owner_id", "fencing_token"],
+      "properties": {
+        "pool_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "owner_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "AdmissionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "lease_ids", "version", "reservations"],
+      "properties": {
+        "kind": {
+          "const": "admission"
+        },
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "lease_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+          }
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "reservations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lease_id", "stage_id", "reserved_slots", "physical"],
+            "properties": {
+              "lease_id": {
+                "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+              },
+              "stage_id": {
+                "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+              },
+              "reserved_slots": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "physical": {
+                "$ref": "#/$defs/PhysicalReservation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "PhysicalReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unified_physical_memory_bytes",
+        "device_memory_bytes",
+        "host_memory_bytes",
+        "cpu_decode_millicores",
+        "host_pcm_buffer_bytes",
+        "scratch_disk_bytes"
+      ],
+      "properties": {
+        "unified_physical_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_unified_physical_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "device_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_device_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "host_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_host_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "cpu_decode_millicores": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_cpu_decode_millicores"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "host_pcm_buffer_bytes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_host_pcm_buffer_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "scratch_disk_bytes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_capacity_manifest_schema_json_scratch_disk_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        }
+      }
+    },
+    "External_capacity_manifest_schema_json_unified_physical_memory_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total combined physical memory charged against a unified-memory HostNode parent budget to prevent double-counting host and device memory."
+    },
+    "External_capacity_manifest_schema_json_device_memory_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "External_capacity_manifest_schema_json_host_memory_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "External_capacity_manifest_schema_json_cpu_decode_millicores": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "External_capacity_manifest_schema_json_host_pcm_buffer_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "External_capacity_manifest_schema_json_scratch_disk_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ClaimSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "job_id", "worker_id", "claim_version", "expires_at_us"],
+      "properties": {
+        "kind": {
+          "const": "claim"
+        },
+        "job_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "worker_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "claim_version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expires_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "LeaseSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "lease_id", "lease_state", "cleanup_state", "version"],
+      "properties": {
+        "kind": {
+          "const": "lease"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "lease_state": {
+          "enum": ["reserved", "executing", "stopping", "released", "quarantined"]
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_operation_states_schema_json_CleanupState": {
+      "type": "string",
+      "enum": ["not_required", "pending", "complete", "quarantined"]
+    },
+    "FactSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fact_id", "request_digest"],
+      "properties": {
+        "kind": {
+          "const": "fact"
+        },
+        "fact_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      }
+    },
+    "ExecutionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "execution"],
+      "properties": {
+        "kind": {
+          "const": "execution"
+        },
+        "execution": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionStatusResponse"
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "voice_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "dispatched_at",
+        "sample_rate_hz",
+        "execution_state",
+        "cleanup_state",
+        "stop_evidence_kind",
+        "updated_at"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dispatched_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null]
+        },
+        "engine_request_id": {
+          "type": ["string", "null"]
+        },
+        "execution_state": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionState"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_CleanupState"
+        },
+        "stop_evidence_kind": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_StopEvidenceKind"
+        },
+        "output_watermark": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_OutputWatermark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null for text-only stages. Otherwise its sample_rate_hz must equal\nthe response-level sample_rate_hz and its generated_pcm_samples must\nnot exceed hard_output_ceiling_samples when that ceiling is set.\n"
+        },
+        "staging_artifact_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionStateInvariants"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionTerminalEvidenceInvariants"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionCleanupEvidenceInvariants"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionDispatchEvidenceInvariants"
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_internal_execution_control_openapi_yaml_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionState": {
+      "type": "string",
+      "enum": [
+        "submitting",
+        "executing",
+        "stopping",
+        "succeeded",
+        "failed",
+        "aborted",
+        "unknown_quarantined"
+      ],
+      "description": "Authoritative execution state on the gateway. `submitting` and `unknown_quarantined`\ncontinue to hold reserved capacity until stop evidence is confirmed.\n"
+    },
+    "External_internal_execution_control_openapi_yaml_CleanupState": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+    },
+    "External_internal_execution_control_openapi_yaml_StopEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "none",
+        "engine_abort_ack",
+        "engine_terminal_response",
+        "instance_terminated_by_controller",
+        "operator_verified_instance_terminated",
+        "unconfirmed_timeout"
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_OutputWatermark": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Monotonic high-water summary over the authoritative interval ledger.\n`generated_pcm_samples` and `sample_rate_hz` are authoritative; audio\nmilliseconds are derived only for reporting as\n`floor(generated_pcm_samples * 1000 / sample_rate_hz)` and are not a\nstored or independently mutable meter. When\n`hard_output_ceiling_samples` is non-null it must be greater than or\nequal to `generated_pcm_samples`.\n",
+      "required": [
+        "output_stream_id",
+        "generated_pcm_samples",
+        "sample_rate_hz",
+        "hard_output_ceiling_samples"
+      ],
+      "properties": {
+        "output_stream_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "generated_pcm_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [16000, 24000, 48000]
+        },
+        "hard_output_ceiling_samples": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_ArtifactStorageReference": {
+      "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+    },
+    "External_internal_execution_command_schema_json_ArtifactStorageReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_or_artifact_id",
+        "workspace_id",
+        "storage_bucket",
+        "object_key",
+        "content_sha256",
+        "byte_length"
+      ],
+      "properties": {
+        "asset_or_artifact_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "storage_bucket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionStateInvariants": {
+      "type": "object",
+      "description": "Closed execution-state to cleanup-state matrix. Active states still own\ncapacity. A successful execution has completed cleanup. A failed\nexecution may clean up without a dispatched request (`not_required`) or\nonly after verified termination (`complete`); an unknown execution must\nuse `unknown_quarantined` together with quarantined cleanup.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting", "executing", "stopping"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "complete"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "unknown_quarantined"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "quarantined"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionTerminalEvidenceInvariants": {
+      "type": "object",
+      "description": "Terminal status must expose evidence consistent with its result.\nA successful execution has an engine terminal response and no error. A\nfailed execution must carry a stable error code and either have no\ndispatched request or verified termination evidence.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting", "executing", "stopping"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "engine_terminal_response"
+              },
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["error_code"],
+            "properties": {
+              "error_code": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "cleanup_state": {
+                      "const": "not_required"
+                    }
+                  },
+                  "required": ["cleanup_state"]
+                },
+                "then": {
+                  "properties": {
+                    "stop_evidence_kind": {
+                      "const": "none"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "cleanup_state": {
+                      "const": "complete"
+                    }
+                  },
+                  "required": ["cleanup_state"]
+                },
+                "then": {
+                  "properties": {
+                    "stop_evidence_kind": {
+                      "enum": [
+                        "engine_terminal_response",
+                        "instance_terminated_by_controller",
+                        "operator_verified_instance_terminated"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "aborted"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "enum": [
+                  "engine_abort_ack",
+                  "engine_terminal_response",
+                  "instance_terminated_by_controller",
+                  "operator_verified_instance_terminated"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "unknown_quarantined"
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "properties": {
+              "stop_evidence_kind": {
+                "const": "unconfirmed_timeout"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionCleanupEvidenceInvariants": {
+      "type": "object",
+      "description": "A failed execution may use `cleanup_state=not_required` only when no\nrequest reached the engine. `engine_request_id` and `dispatched_at` are\ntherefore required and null for that branch; omitting either would make\ndispatch history ambiguous and could release capacity while an engine\nrequest is still active.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              },
+              "cleanup_state": {
+                "const": "not_required"
+              }
+            },
+            "required": ["execution_state", "cleanup_state"]
+          },
+          "then": {
+            "required": ["engine_request_id", "dispatched_at"],
+            "properties": {
+              "engine_request_id": {
+                "type": "null"
+              },
+              "dispatched_at": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionDispatchEvidenceInvariants": {
+      "type": "object",
+      "description": "Submission is persisted before an engine request. Active execution,\nsuccessful completion, and verified abort therefore require an observed\ndispatch time. `submitting` and a failure that never dispatched require\nit to be null. An unknown quarantined execution may have an ambiguous\ndispatch outcome and keeps capacity quarantined either way.\n",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["submitting"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "enum": ["executing", "stopping", "succeeded", "aborted"]
+              }
+            },
+            "required": ["execution_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_state": {
+                "const": "failed"
+              },
+              "cleanup_state": {
+                "const": "complete"
+              }
+            },
+            "required": ["execution_state", "cleanup_state"]
+          },
+          "then": {
+            "required": ["dispatched_at"],
+            "properties": {
+              "dispatched_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuntimeSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "runtime"],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        },
+        "runtime": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentResponse"
+        }
+      }
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "target_node_id",
+        "pool_id",
+        "gateway_id",
+        "approved_template_id",
+        "binding_revision_id",
+        "manifest_id",
+        "config_digest",
+        "instance_id",
+        "instance_generation",
+        "action",
+        "fencing_token",
+        "intent_state",
+        "observed_instance_state",
+        "reserved_memory",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "intent_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "target_node_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_PoolId"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "approved_template_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeActionKind"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "intent_state": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeIntentState"
+        },
+        "observed_instance_state": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_ObservedInstanceState"
+        },
+        "reserved_memory": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryReservation"
+        },
+        "idempotent_replay": {
+          "type": "boolean",
+          "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
+        },
+        "stop_evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeStopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_peak_memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{2,63}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time the intent identity was first recorded; immutable across replay."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "prepare"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "properties": {
+              "observed_instance_state": {
+                "const": "ready"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "required": ["stop_evidence"],
+            "properties": {
+              "observed_instance_state": {
+                "enum": ["stopped", "absent"]
+              },
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "required": ["stop_evidence"]
+          },
+          "then": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "required": ["error_code"],
+            "properties": {
+              "error_code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{2,63}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "unified_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "discrete_device_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_runtime_control_openapi_yaml_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_internal_runtime_control_openapi_yaml_PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_internal_runtime_control_openapi_yaml_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeActionKind": {
+      "type": "string",
+      "enum": ["prepare", "stop"]
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeIntentState": {
+      "type": "string",
+      "enum": ["pending", "reconciling", "succeeded", "failed", "quarantined"]
+    },
+    "External_internal_runtime_control_openapi_yaml_ObservedInstanceState": {
+      "$ref": "#/$defs/External_shared_runtime_states_schema_json_ObservedInstanceState"
+    },
+    "External_shared_runtime_states_schema_json_ObservedInstanceState": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Controller observation. `absent` means no matching instance generation was observed."
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeMemoryReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Peak reservation must be greater than or equal to steady reservation in\nevery memory counter used by the selected architecture. Producer\nvalidation rejects a smaller peak because cold-load headroom cannot be\nreleased before steady state is reached.\n",
+      "required": ["architecture", "peak", "steady"],
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryArchitecture"
+        },
+        "peak": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryVector"
+        },
+        "steady": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryVector"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "architecture": {
+                "const": "unified_memory"
+              }
+            },
+            "required": ["architecture"]
+          },
+          "then": {
+            "properties": {
+              "peak": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              },
+              "steady": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "architecture": {
+                "const": "discrete_device_memory"
+              }
+            },
+            "required": ["architecture"]
+          },
+          "then": {
+            "properties": {
+              "peak": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              },
+              "steady": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeMemoryArchitecture": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_MemoryArchitecture"
+    },
+    "External_shared_capability_domains_schema_json_MemoryArchitecture": {
+      "type": "string",
+      "enum": ["unified_memory", "discrete_device_memory"],
+      "description": "Unified memory shares one physical host/device pool; discrete memory accounts host RAM and device VRAM separately."
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeMemoryVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unified_memory_bytes", "device_memory_bytes", "host_memory_bytes"],
+      "properties": {
+        "unified_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "device_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeStopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+      "properties": {
+        "process_or_container_exited": {
+          "const": true
+        },
+        "resources_released_confirmed": {
+          "const": true
+        },
+        "exit_code": {
+          "type": ["integer", "null"]
+        },
+        "runtime_container_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/create_job"
+    },
+    {
+      "$ref": "#/$defs/TransactionResult"
+    }
+  ]
+}

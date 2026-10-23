@@ -13,5 +13,12 @@
     "Operation",
     "OperationCancellation",
     "ErrorResponse"
-  ]
+  ],
+  "coordination": {
+    "version": "1.0.0",
+    "source": "internal/coordination-transactions.schema.json",
+    "definitions_prefix": "/$defs/",
+    "title": "CoordinationJobContract",
+    "schemas": ["create_job", "TransactionResult"]
+  }
 }

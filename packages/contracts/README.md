@@ -66,6 +66,9 @@ client has no default remote endpoint and does not validate received JSON
 automatically: call `parse` on untrusted data. Full speech OpenAPI static types
 are available, but runtime entrypoints are limited to `bindings.json`: Jobs,
 Job events, cancellation, Assets, Artifacts, Operations and public errors.
+Python additionally exposes `validation.validate_coordination` for the first
+internal `create_job` request and full `TransactionResult`. These use a separate
+generated offline bundle; domain types remain independent of boundary DTOs.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

@@ -16,6 +16,9 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 原地升级。它位于产品 Python 包之外，不随应用 wheel 发布。迁移角色执行 DDL；
 运行角色只获最小 DML 权限。
 
+[首个生产 Job/outbox 单元](production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
+事件身份并以最低角色运行；不把本文件的 15 表草案作为生产迁移直接应用。
+
 程序的端口、原子步骤、锁序、错误/重放/未知结果、预算公式与后续编码交接详见
 [受控协调事务方案](coordination-transactions.md)；机器定义见
 [事务契约](../../contracts/internal/coordination-transactions.schema.json)。

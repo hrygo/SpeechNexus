@@ -97,7 +97,8 @@ coordination-test:
 		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
 	./scripts/dev-env/mysql-service.sh
 	uv run pytest tests/contract/test_coordination_transactions.py \
-		tests/integration/test_coordination_transactions.py -q
+		tests/integration/test_coordination_transactions.py \
+		tests/integration/test_production_jobs.py -q
 
 python-build:
 	uv build --all-packages --out-dir dist/python

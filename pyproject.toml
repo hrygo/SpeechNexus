@@ -14,6 +14,7 @@ members = ["backend", "execution-gateway", "packages/contracts"]
 
 [dependency-groups]
 dev = [
+  "alembic>=1.18,<2",
   "av>=19,<20",
   "coverage[toml]>=7.16.2,<8",
   "cryptography>=44,<51",

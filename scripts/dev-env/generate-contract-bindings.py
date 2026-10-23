@@ -118,10 +118,10 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
         return node
 
     for name in manifest["schemas"]:
-        include(primary, f"/components/schemas/{name}")
+        include(primary, manifest.get("definitions_prefix", "/components/schemas/") + name)
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "FileContract",
+        "title": manifest.get("title", "FileContract"),
         "x-nexus-bindings-version": manifest["version"],
         "x-nexus-entrypoints": manifest["schemas"],
         "$defs": definitions,
@@ -135,6 +135,10 @@ def generate(destination: Path) -> list[Path]:
     python.mkdir(parents=True, exist_ok=True)
     schema = python / "file.schema.json"
     schema.write_text(json.dumps(bundle_contracts(manifest), ensure_ascii=False, indent=2) + "\n")
+    coordination = python / "coordination.schema.json"
+    coordination.write_text(
+        json.dumps(bundle_contracts(manifest["coordination"]), ensure_ascii=False, indent=2) + "\n"
+    )
     subprocess.run(
         [
             sys.executable,
@@ -248,6 +252,7 @@ def generate(destination: Path) -> list[Path]:
     )
     outputs = [
         Path("src/speechnexus_contracts/file.schema.json"),
+        Path("src/speechnexus_contracts/coordination.schema.json"),
         Path("src/speechnexus_contracts/models.py"),
         Path("src/speechnexus_contracts/parsers.py"),
         Path("src/speech.generated.ts"),

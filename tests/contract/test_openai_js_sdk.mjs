@@ -68,7 +68,26 @@ test("OpenAI JavaScript SDK requests and responses match the declared subset", a
       });
     }
     if (url.pathname === "/v1/audio/transcriptions") {
-      return Response.json({ text: "hello" });
+      return Response.json({
+        duration: 1,
+        language: "en",
+        text: "hello",
+        segments: [
+          {
+            id: 0,
+            avg_logprob: -0.1,
+            compression_ratio: 1,
+            end: 1,
+            no_speech_prob: 0.01,
+            seek: 0,
+            start: 0,
+            temperature: 0,
+            text: "hello",
+            tokens: [1, 2],
+          },
+        ],
+        words: [{ word: "hello", start: 0, end: 1 }],
+      });
     }
     if (url.pathname === "/v1/audio/speech") {
       if (call.body.input === "fail") {
@@ -98,10 +117,11 @@ test("OpenAI JavaScript SDK requests and responses match the declared subset", a
   const transcription = await client.audio.transcriptions.create({
     file: new Blob(["RIFF"], { type: "audio/wav" }),
     model: "asr-quality",
-    response_format: "json",
+    response_format: "verbose_json",
     timestamp_granularities: ["segment", "word"],
   });
   assert.equal(transcription.text, "hello");
+  assert.equal(transcription.duration, 1);
 
   const speech = await client.audio.speech.create({
     model: "tts-interactive",

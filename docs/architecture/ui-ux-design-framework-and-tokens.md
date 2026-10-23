@@ -398,10 +398,10 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 | 规则项 | 拦截目标与检测模式 | 违规后果与修复建议 |
 | :--- | :--- | :--- |
-| **规则 1：Token 与样式对称性** | 扫描 `tokens.json` 中定义的所有 `var(--...)`，校验其必须在 `styles.css` 中有确定声明。 | 阻止在设计 Token 中引入未生效的幽灵 CSS 变量。必须在 `styles.css` 中补齐变量定义。 |
-| **规则 2：禁止硬编码色彩** | 扫描 `web/admin/src`、`web/workbench/src` 与 `web/shared/src/ui` 内的所有 TSX/TS 文件，检测硬编码十六进制色彩（`#[0-9a-fA-F]{3,8}`）或内联样式色值。 | **CI 阻断**。开发者必须从 `@speechnexus/shared` 引入 `NEXUS_TOKENS` 或使用 `var(--nexus-*)` / 语义变量。 |
+| **规则 1：Token 与样式精确集合对称** | 使用 `/(--[a-zA-Z0-9_-]+)\s*:/g` 提取 `styles.css` 声明的全部 CSS 变量集合，校验 `tokens.json` 与 `tokens/index.ts` 中所有 `var(--...)` 均精确存在（杜绝前缀子串误判）。 | 阻止在设计 Token 中引入未生效的幽灵 CSS 变量。必须在 `styles.css` 中补齐变量定义。 |
+| **规则 2：全面禁止硬编码色彩** | 扫描 `web/admin/src`、`web/workbench/src` 与 `web/shared/src` 内的所有 TS/TSX 文件（含 `brand-mark.tsx` 与 `tokens/index.ts`），拦截 `#hex`、`rgb()`、`rgba()`、`hsl()`、`hsla()` 与 `oklch()` 硬编码色值。 | **CI 阻断**。开发者必须从 `@speechnexus/shared` 引入 `NEXUS_TOKENS` 或使用 `var(--nexus-*)` / 语义变量。 |
 | **规则 3：架构边界文案守卫** | 检测 UI 中出现误导性私有化文案：`仅自己可见`、`私有空间`、`个人专属`、`仅管理员可见`、`仅管理员可操作`。 | **CI 阻断 (ADR 0001)**。首期为共享部署，必须标示为“当前部署共享”，严禁误导使用者拥有独立私有数据。 |
-| **规则 4：能力三态受控约束** | 检测 `CapabilityCard` 与能力组件的 `state` 属性，强制仅允许枚举值：`ready` \| `contract` \| `planned`。 | **CI 阻断**。严禁开发者自定义未受控的状态（如 `mock`、`beta`、`simulated`），必须实事求是。 |
+| **规则 4：能力三态受控约束** | 检测 `CapabilityCard` 与 `AppShell` 的 `state` / `statusState` 属性，强制仅允许枚举值：`ready` \| `contract` \| `planned`。 | **CI 阻断**。严禁开发者自定义未受控的状态（如 `mock`、`beta`、`simulated`），必须实事求是。 |
 | **规则 5：禁止生产组件伪造遥测** | 检测生产 UI 组件中调用 `Math.random()` 伪造 GPU/CPU 占用率、并发或时延。 | **CI 阻断**。真实数据未接入前，组件应展示确定的契约占位与能力状态，绝不伪造虚假数据。 |
 
 ### 8.2 CI 集成与本地验证链路

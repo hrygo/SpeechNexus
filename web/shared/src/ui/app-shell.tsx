@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { BrandMark } from "./brand-mark";
-import type { NexusTone } from "../tokens";
+import type { CapabilityState, NexusTone } from "../tokens";
 
 import "./styles.css";
 
@@ -11,6 +11,9 @@ export type AppShellProps = {
   title: string;
   description: string;
   boundaryNote: string;
+  statusTitle?: string;
+  statusDetail?: string;
+  statusState?: CapabilityState;
   children: ReactNode;
 };
 
@@ -21,6 +24,9 @@ export function AppShell({
   title,
   description,
   boundaryNote,
+  statusTitle = "工程外壳已就绪",
+  statusDetail = "契约已交付，业务实现待接入",
+  statusState = "ready",
   children,
 }: AppShellProps) {
   return (
@@ -30,7 +36,7 @@ export function AppShell({
       </a>
       <header className="site-header">
         <a className="brand" href="/" aria-label="SpeechNexus 首页">
-          <BrandMark tone={tone} size={36} />
+          <BrandMark tone={tone} size={36} decorative />
           <span>SpeechNexus</span>
         </a>
         <div className="header-meta">
@@ -49,10 +55,10 @@ export function AppShell({
             <p className="hero-description">{description}</p>
           </div>
           <div className="hero-status" role="status">
-            <span className="status-dot" aria-hidden="true" />
+            <span className="status-dot" data-state={statusState} aria-hidden="true" />
             <span>
-              <strong>工程外壳已就绪</strong>
-              <small>契约已交付，业务实现待接入</small>
+              <strong>{statusTitle}</strong>
+              <small>{statusDetail}</small>
             </span>
           </div>
         </section>

@@ -3,7 +3,7 @@
  *
  * Architecture:
  * 1. Primitive Tokens (--nexus-*)
- * 2. Semantic Tokens (--bg-*, --text-*, --border-*, --shadow-*, --status-*)
+ * 2. Semantic Tokens (--page / --bg-*, --ink / --text-*, --line / --border-*, --status-*)
  * 3. Domain & Tone Tokens (AdminUI: Emerald/Teal, Workbench: Cobalt/Cyan, Audio & Diarization)
  * 4. Micro-Materiality (Glassmorphism 2.0, hairline specular borders, elevation)
  */
@@ -55,18 +55,48 @@
   /* ==========================================================================
      Primitive Tokens: Typography, Radii & Spacing
      ========================================================================== */
-  --font-sans:
+  --nexus-font-sans:
     "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
     "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --nexus-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--nexus-font-sans);
+  --font-mono: var(--nexus-font-mono);
 
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-medium: 16px;
-  --radius-lg: 16px;
-  --radius-large: 24px;
-  --radius-full: 9999px;
+  /* Typography Scale */
+  --nexus-text-xs: 0.75rem;
+  --nexus-text-sm: 0.8125rem;
+  --nexus-text-base: 0.875rem;
+  --nexus-text-md: 1rem;
+  --nexus-text-lg: 1.125rem;
+  --nexus-text-xl: 1.375rem;
+  --nexus-text-2xl: 1.75rem;
+  --nexus-text-hero: clamp(2.3rem, 6.2vw, 4.8rem);
+
+  /* Radius Scale */
+  --nexus-radius-xs: 4px;
+  --nexus-radius-sm: 6px;
+  --nexus-radius-md: 10px;
+  --nexus-radius-lg: 16px;
+  --nexus-radius-xl: 24px;
+  --nexus-radius-full: 9999px;
+
+  --radius-xs: var(--nexus-radius-xs);
+  --radius-sm: var(--nexus-radius-sm);
+  --radius-md: var(--nexus-radius-md);
+  --radius-medium: var(--nexus-radius-lg);
+  --radius-large: var(--nexus-radius-xl);
+  --radius-full: var(--nexus-radius-full);
+
+  /* Spacing Scale (8px Grid Baseline) */
+  --nexus-space-1: 4px;
+  --nexus-space-2: 8px;
+  --nexus-space-3: 12px;
+  --nexus-space-4: 16px;
+  --nexus-space-5: 20px;
+  --nexus-space-6: 24px;
+  --nexus-space-8: 32px;
+  --nexus-space-12: 48px;
+  --nexus-space-16: 64px;
 
   --page-width: 1200px;
   --glass-blur: 16px;
@@ -78,34 +108,84 @@
   color-scheme: light;
   --page: var(--nexus-color-sand-50);
   --surface: var(--nexus-color-sand-100);
-  --surface-strong: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-overlay: #ffffff;
-  --surface-glass: color-mix(in srgb, #ffffff 82%, transparent);
+  --surface-strong: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+  --surface-overlay: oklch(1 0 0);
+  --surface-glass: color-mix(in oklch, var(--surface-strong) 82%, transparent);
+
+  --bg-page: var(--page);
+  --bg-surface: var(--surface);
+  --bg-surface-raised: var(--surface-raised);
+  --bg-surface-overlay: var(--surface-overlay);
+  --bg-surface-glass: var(--surface-glass);
 
   --ink: var(--nexus-color-sand-900);
   --muted: var(--nexus-color-sand-700);
   --muted-subtle: oklch(0.55 0.02 85);
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --text-muted: var(--muted-subtle);
+  --text-inverse: oklch(1 0 0);
+
   --line: var(--nexus-color-sand-200);
   --line-strong: var(--nexus-color-sand-300);
-  --specular-line: rgba(0, 0, 0, 0.05);
+  --specular-line: color-mix(in oklch, var(--ink) 6%, transparent);
+  --border-subtle: var(--line);
+  --border-strong: var(--line-strong);
+  --border-highlight: var(--specular-line);
 
   --accent: var(--nexus-color-emerald-500);
+  --accent-primary: var(--accent);
   --accent-soft: oklch(0.94 0.04 165);
-  --accent-glow: rgba(8, 123, 98, 0.2);
+  --accent-glow: color-mix(in oklch, var(--accent) 24%, transparent);
 
   --warning: oklch(0.58 0.16 75);
   --warning-soft: oklch(0.96 0.04 75);
-  --warning-border: color-mix(in srgb, var(--warning) 25%, transparent);
+  --warning-border: color-mix(in oklch, var(--warning) 28%, transparent);
+
+  --status-pill-ready-text: var(--nexus-color-emerald-600);
+  --status-pill-ready-bg: var(--accent-soft);
+  --status-ready-text: var(--status-pill-ready-text);
+  --status-ready-bg: var(--status-pill-ready-bg);
+  --status-ready-border: color-mix(in oklch, var(--accent) 30%, transparent);
+
+  --status-contract-text: var(--warning);
+  --status-contract-bg: var(--warning-soft);
+  --status-contract-border: var(--warning-border);
+
+  --status-planned-text: var(--muted-subtle);
+  --status-planned-bg: color-mix(in oklch, var(--surface) 60%, transparent);
+  --status-planned-border: var(--line);
 
   --shadow-sm: 0 1px 3px rgba(31, 43, 37, 0.04);
+  --shadow-md: 0 4px 12px rgba(31, 43, 37, 0.06);
   --shadow: 0 12px 36px rgba(31, 43, 37, 0.07);
   --shadow-lg: 0 20px 50px rgba(31, 43, 37, 0.1);
 
-  /* Audio and Waveform Semantics */
+  /* Audio, Karaoke & Multi-Speaker Semantics */
   --waveform-wave: var(--nexus-color-sand-300);
   --waveform-progress: var(--accent);
   --waveform-cursor: var(--ink);
+  --waveform-bg: var(--border-subtle);
+  --waveform-unplayed: var(--text-muted);
+  --waveform-played: var(--waveform-progress);
+  --waveform-scrubber: var(--waveform-cursor);
+  --waveform-region-select: color-mix(in oklch, var(--accent) 18%, transparent);
+
+  --karaoke-stable: var(--text-primary);
+  --karaoke-speculative: color-mix(in oklch, var(--text-primary) 60%, transparent);
+  --karaoke-highlight: var(--accent);
+
+  --speaker-1: var(--nexus-color-cobalt-500);
+  --speaker-2: var(--nexus-color-emerald-500);
+  --speaker-3: var(--nexus-color-violet-500);
+  --speaker-4: var(--nexus-color-coral-500);
+
+  /* Telemetry Semantics */
+  --metric-healthy: var(--nexus-color-emerald-500);
+  --metric-busy: var(--nexus-color-amber-500);
+  --metric-danger: var(--nexus-color-rose-500);
+  --telemetry-grid-line: color-mix(in oklch, var(--border-subtle) 60%, transparent);
 
   font-family: var(--font-sans);
   font-synthesis: none;
@@ -113,41 +193,80 @@
 }
 
 /* ==========================================================================
-   Semantic Tokens (Dark Mode)
+   Semantic Tokens (Dark Mode — System Preference & Explicit data-theme="dark")
    ========================================================================== */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --page: var(--nexus-color-obsidian-950);
     --surface: var(--nexus-color-obsidian-900);
     --surface-strong: var(--nexus-color-obsidian-850);
     --surface-raised: var(--nexus-color-obsidian-850);
     --surface-overlay: var(--nexus-color-obsidian-800);
-    --surface-glass: color-mix(in srgb, var(--nexus-color-obsidian-900) 80%, transparent);
+    --surface-glass: color-mix(in oklch, var(--nexus-color-obsidian-900) 80%, transparent);
 
     --ink: var(--nexus-color-obsidian-50);
     --muted: var(--nexus-color-obsidian-300);
     --muted-subtle: var(--nexus-color-obsidian-500);
-    --line: rgba(255, 255, 255, 0.08);
-    --line-strong: rgba(255, 255, 255, 0.16);
-    --specular-line: rgba(255, 255, 255, 0.08);
+    --text-inverse: var(--nexus-color-obsidian-950);
+
+    --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
+    --line-strong: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+    --specular-line: color-mix(in oklch, var(--nexus-color-obsidian-50) 9%, transparent);
 
     --accent: var(--nexus-color-emerald-400);
-    --accent-soft: rgba(94, 234, 212, 0.12);
-    --accent-glow: rgba(94, 234, 212, 0.35);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
 
     --warning: var(--nexus-color-amber-400);
-    --warning-soft: rgba(245, 158, 11, 0.12);
-    --warning-border: rgba(245, 158, 11, 0.3);
+    --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
+    --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
 
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
     --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
     --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
 
-    --waveform-wave: rgba(255, 255, 255, 0.15);
+    --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
     --waveform-progress: var(--accent);
     --waveform-cursor: var(--nexus-color-obsidian-50);
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: var(--nexus-color-obsidian-950);
+  --surface: var(--nexus-color-obsidian-900);
+  --surface-strong: var(--nexus-color-obsidian-850);
+  --surface-raised: var(--nexus-color-obsidian-850);
+  --surface-overlay: var(--nexus-color-obsidian-800);
+  --surface-glass: color-mix(in oklch, var(--nexus-color-obsidian-900) 80%, transparent);
+
+  --ink: var(--nexus-color-obsidian-50);
+  --muted: var(--nexus-color-obsidian-300);
+  --muted-subtle: var(--nexus-color-obsidian-500);
+  --text-inverse: var(--nexus-color-obsidian-950);
+
+  --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
+  --line-strong: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+  --specular-line: color-mix(in oklch, var(--nexus-color-obsidian-50) 9%, transparent);
+
+  --accent: var(--nexus-color-emerald-400);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+
+  --warning: var(--nexus-color-amber-400);
+  --warning-soft: color-mix(in oklch, var(--nexus-color-amber-400) 14%, transparent);
+  --warning-border: color-mix(in oklch, var(--nexus-color-amber-400) 32%, transparent);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
+
+  --waveform-wave: color-mix(in oklch, var(--nexus-color-obsidian-50) 16%, transparent);
+  --waveform-progress: var(--accent);
+  --waveform-cursor: var(--nexus-color-obsidian-50);
 }
 
 /* ==========================================================================
@@ -155,38 +274,61 @@
    ========================================================================== */
 .app-shell[data-tone="admin"] {
   --accent: var(--nexus-color-emerald-500);
+  --accent-primary: var(--accent);
   --accent-soft: oklch(0.94 0.04 165);
-  --accent-glow: rgba(8, 123, 98, 0.25);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-500) 25%, transparent);
   --status-pill-ready-text: var(--nexus-color-emerald-600);
   --status-pill-ready-bg: var(--accent-soft);
 }
 
 .app-shell[data-tone="workbench"] {
   --accent: var(--nexus-color-cobalt-500);
+  --accent-primary: var(--accent);
   --accent-soft: oklch(0.93 0.05 260);
-  --accent-glow: rgba(29, 78, 216, 0.25);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-500) 25%, transparent);
   --waveform-progress: var(--nexus-color-cobalt-500);
   --status-pill-ready-text: var(--nexus-color-cobalt-600);
   --status-pill-ready-bg: var(--accent-soft);
 }
 
 @media (prefers-color-scheme: dark) {
-  .app-shell[data-tone="admin"] {
+  :root:not([data-theme="light"]) .app-shell[data-tone="admin"] {
     --accent: var(--nexus-color-emerald-400);
-    --accent-soft: rgba(94, 234, 212, 0.12);
-    --accent-glow: rgba(94, 234, 212, 0.35);
+    --accent-primary: var(--accent);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
     --status-pill-ready-text: var(--nexus-color-emerald-300);
     --status-pill-ready-bg: var(--accent-soft);
   }
 
-  .app-shell[data-tone="workbench"] {
+  :root:not([data-theme="light"]) .app-shell[data-tone="workbench"] {
     --accent: var(--nexus-color-cobalt-300);
-    --accent-soft: rgba(96, 165, 250, 0.14);
-    --accent-glow: rgba(96, 165, 250, 0.35);
+    --accent-primary: var(--accent);
+    --accent-soft: color-mix(in oklch, var(--nexus-color-cobalt-300) 15%, transparent);
+    --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-300) 35%, transparent);
     --waveform-progress: var(--nexus-color-cobalt-300);
     --status-pill-ready-text: var(--nexus-color-cobalt-300);
     --status-pill-ready-bg: var(--accent-soft);
   }
+}
+
+:root[data-theme="dark"] .app-shell[data-tone="admin"] {
+  --accent: var(--nexus-color-emerald-400);
+  --accent-primary: var(--accent);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-emerald-400) 14%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-emerald-400) 35%, transparent);
+  --status-pill-ready-text: var(--nexus-color-emerald-300);
+  --status-pill-ready-bg: var(--accent-soft);
+}
+
+:root[data-theme="dark"] .app-shell[data-tone="workbench"] {
+  --accent: var(--nexus-color-cobalt-300);
+  --accent-primary: var(--accent);
+  --accent-soft: color-mix(in oklch, var(--nexus-color-cobalt-300) 15%, transparent);
+  --accent-glow: color-mix(in oklch, var(--nexus-color-cobalt-300) 35%, transparent);
+  --waveform-progress: var(--nexus-color-cobalt-300);
+  --status-pill-ready-text: var(--nexus-color-cobalt-300);
+  --status-pill-ready-bg: var(--accent-soft);
 }
 
 /* ==========================================================================
@@ -209,12 +351,12 @@ body {
   background:
     radial-gradient(
       circle at 85% 8%,
-      color-mix(in srgb, var(--accent) 10%, transparent),
+      color-mix(in oklch, var(--accent) 10%, transparent),
       transparent 32rem
     ),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--surface) 50%, var(--page)) 0%,
+      color-mix(in oklch, var(--surface) 50%, var(--page)) 0%,
       var(--page) 26rem
     );
   background-attachment: fixed;
@@ -237,10 +379,10 @@ a {
   top: 14px;
   left: 14px;
   padding: 10px 16px;
-  color: #fff;
+  color: var(--surface-strong);
   background: var(--ink);
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+  font-size: var(--nexus-text-sm);
   font-weight: 500;
   transform: translateY(-200%);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -255,16 +397,19 @@ a {
    App Shell & Masthead
    ========================================================================== */
 .app-shell {
-  width: min(100% - 48px, var(--page-width));
+  width: min(100% - var(--nexus-space-12), var(--page-width));
   margin-inline: auto;
-  padding-bottom: 48px;
+  padding-bottom: var(--nexus-space-12);
 }
 
 .site-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-3);
   align-items: center;
   justify-content: space-between;
   min-height: 84px;
+  padding-block: var(--nexus-space-3);
   border-bottom: 1px solid var(--line);
   position: relative;
 }
@@ -273,7 +418,7 @@ a {
   display: inline-flex;
   gap: 14px;
   align-items: center;
-  font-size: 1.05rem;
+  font-size: var(--nexus-text-md);
   font-weight: 700;
   letter-spacing: -0.02em;
   text-decoration: none;
@@ -288,15 +433,15 @@ a {
   display: grid;
   width: 36px;
   height: 36px;
-  color: #fff;
+  color: var(--surface-strong);
   background: var(--ink);
   border-radius: var(--radius-md);
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--nexus-text-xs);
   font-weight: 700;
   letter-spacing: -0.04em;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--ink) 20%, transparent);
+  box-shadow: 0 2px 6px color-mix(in oklch, var(--ink) 20%, transparent);
 }
 
 .surface-label,
@@ -304,7 +449,7 @@ a {
 .card-label,
 .boundary-label {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--nexus-text-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
@@ -313,7 +458,7 @@ a {
 .surface-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--nexus-space-2);
   padding: 6px 12px;
   color: var(--muted);
   background: var(--surface);
@@ -325,8 +470,9 @@ a {
 
 .header-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--nexus-space-3);
 }
 
 .airgap-badge {
@@ -336,10 +482,10 @@ a {
   padding: 5px 12px;
   color: var(--accent);
   background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
   border-radius: var(--radius-full);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--nexus-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
@@ -361,7 +507,7 @@ main {
 }
 
 .eyebrow {
-  margin: 0 0 16px;
+  margin: 0 0 var(--nexus-space-4);
   color: var(--accent);
   font-weight: 700;
 }
@@ -374,8 +520,8 @@ p {
 
 h1 {
   max-width: 780px;
-  margin-bottom: 20px;
-  font-size: clamp(2.3rem, 6.2vw, 4.8rem);
+  margin-bottom: var(--nexus-space-5);
+  font-size: var(--nexus-text-hero);
   font-weight: 650;
   letter-spacing: -0.035em;
   line-height: 1.12;
@@ -394,11 +540,10 @@ h1 {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  padding: 20px;
+  padding: var(--nexus-space-5);
   background: var(--surface-glass);
   border: 1px solid var(--line);
   border-radius: var(--radius-medium);
-  box-shadow: var(--shadow);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   box-shadow:
     inset 0 1px 0 0 var(--specular-line),
@@ -435,6 +580,19 @@ h1 {
   animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+.status-dot[data-state="contract"] {
+  background: var(--warning);
+  box-shadow:
+    0 0 0 4px var(--warning-soft),
+    0 0 12px var(--warning-border);
+}
+
+.status-dot[data-state="planned"] {
+  background: var(--muted-subtle);
+  box-shadow: 0 0 0 4px var(--status-planned-bg);
+  animation: none;
+}
+
 @keyframes pulse-ring {
   0%,
   100% {
@@ -467,7 +625,7 @@ h1 {
 .boundary-note p {
   margin-bottom: 0;
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: var(--nexus-text-base);
   line-height: 1.65;
 }
 
@@ -484,13 +642,13 @@ h1 {
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--nexus-space-5);
 }
 
 .capability-card {
   display: flex;
   min-height: 250px;
-  padding: 24px;
+  padding: var(--nexus-space-6);
   flex-direction: column;
   background: var(--surface-glass);
   border: 1px solid var(--line);
@@ -515,7 +673,7 @@ h1 {
 
 .card-heading {
   display: flex;
-  gap: 12px;
+  gap: var(--nexus-space-3);
   align-items: center;
   justify-content: space-between;
   margin-bottom: 38px;
@@ -531,31 +689,31 @@ h1 {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
-  font-size: 0.72rem;
+  font-size: var(--nexus-text-xs);
   font-weight: 650;
   white-space: nowrap;
 }
 
 .card-state[data-state="ready"] {
-  color: var(--status-pill-ready-text);
-  background: var(--status-pill-ready-bg);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--status-ready-text);
+  background: var(--status-ready-bg);
+  border-color: var(--status-ready-border);
 }
 
 .card-state[data-state="contract"] {
-  color: var(--warning);
-  background: var(--warning-soft);
-  border-color: var(--warning-border);
+  color: var(--status-contract-text);
+  background: var(--status-contract-bg);
+  border-color: var(--status-contract-border);
 }
 
 .card-state[data-state="planned"] {
-  color: var(--muted-subtle);
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
-  border-color: var(--line);
+  color: var(--status-planned-text);
+  background: var(--status-planned-bg);
+  border-color: var(--status-planned-border);
 }
 
 .capability-card h2 {
-  margin-bottom: 12px;
+  margin-bottom: var(--nexus-space-3);
   font-size: 1.25rem;
   letter-spacing: -0.025em;
   font-weight: 650;
@@ -564,7 +722,7 @@ h1 {
 .capability-card p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 0.91rem;
+  font-size: var(--nexus-text-base);
   line-height: 1.7;
 }
 
@@ -573,18 +731,18 @@ h1 {
    ========================================================================== */
 footer {
   display: flex;
-  gap: 16px;
+  gap: var(--nexus-space-4);
   justify-content: space-between;
   margin-top: 68px;
-  padding-top: 24px;
+  padding-top: var(--nexus-space-6);
   color: var(--muted);
   border-top: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--nexus-text-xs);
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline: 3px solid color-mix(in oklch, var(--accent) 60%, transparent);
   outline-offset: 3px;
 }
 
@@ -633,22 +791,29 @@ footer {
   }
 
   .site-header {
-    min-height: 72px;
+    min-height: 68px;
+  }
+
+  .header-meta {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--nexus-space-2);
   }
 
   .surface-label,
   .airgap-badge {
-    display: none;
+    padding: 4px 10px;
+    font-size: 0.68rem;
   }
 
   .boundary-note {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: var(--nexus-space-2);
   }
 
   footer {
     flex-direction: column;
-    gap: 8px;
+    gap: var(--nexus-space-2);
   }
 }
 

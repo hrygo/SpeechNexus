@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { NexusTone } from "../tokens";
 
 export interface BrandMarkProps {
@@ -5,6 +6,7 @@ export interface BrandMarkProps {
   tone?: NexusTone;
   className?: string;
   ariaLabel?: string;
+  decorative?: boolean;
 }
 
 export function BrandMark({
@@ -12,11 +14,18 @@ export function BrandMark({
   tone = "workbench",
   className,
   ariaLabel = "SpeechNexus · 声枢",
+  decorative = false,
 }: BrandMarkProps) {
-  const gradientId = `sn-brand-accent-${tone}`;
-  const accentStop1 = tone === "admin" ? "#087B62" : "#1D4ED8";
-  const accentStop2 = tone === "admin" ? "#5EEAD4" : "#60A5FA";
-  const satelliteColor = tone === "admin" ? "#5EEAD4" : "#93C5FD";
+  const rawId = useId().replace(/:/g, "");
+  const gradientId = `sn-brand-accent-${tone}-${rawId}`;
+  const bgGradientId = `sn-brand-bg-${rawId}`;
+
+  const accentStop1 =
+    tone === "admin" ? "var(--nexus-color-emerald-600)" : "var(--nexus-color-cobalt-600)";
+  const accentStop2 =
+    tone === "admin" ? "var(--nexus-color-emerald-300)" : "var(--nexus-color-cobalt-400)";
+  const satelliteColor =
+    tone === "admin" ? "var(--nexus-color-emerald-300)" : "var(--nexus-color-cobalt-300)";
 
   return (
     <svg
@@ -26,8 +35,9 @@ export function BrandMark({
       height={size}
       fill="none"
       className={className}
-      role="img"
-      aria-label={ariaLabel}
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : ariaLabel}
+      aria-hidden={decorative ? "true" : undefined}
     >
       <defs>
         <linearGradient
@@ -42,27 +52,27 @@ export function BrandMark({
           <stop offset="100%" stopColor={accentStop2} />
         </linearGradient>
         <linearGradient
-          id="sn-brand-bg"
+          id={bgGradientId}
           x1="0"
           y1="0"
           x2="36"
           y2="36"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0%" stopColor="var(--ink, #18201C)" />
-          <stop offset="100%" stopColor="color-mix(in srgb, var(--ink, #18201C) 80%, black)" />
+          <stop offset="0%" stopColor="var(--nexus-color-obsidian-900)" />
+          <stop offset="100%" stopColor="var(--nexus-color-obsidian-950)" />
         </linearGradient>
       </defs>
 
       {/* Base Squircle Container */}
-      <rect width="36" height="36" rx="10" fill="url(#sn-brand-bg)" />
+      <rect width="36" height="36" rx="10" fill={`url(#${bgGradientId})`} />
       <rect
         x="0.5"
         y="0.5"
         width="35"
         height="35"
         rx="9.5"
-        stroke="var(--specular-line, rgba(255,255,255,0.14))"
+        stroke="var(--specular-line)"
         strokeWidth="1"
       />
 
@@ -81,7 +91,7 @@ export function BrandMark({
       {/* Symmetrical 5-Bar Soundwave Pulse */}
       <path
         d="M12 16.5V19.5M15 13.5V22.5M18 10.5V25.5M21 13.5V22.5M24 16.5V19.5"
-        stroke="var(--surface-strong, #F8FAFC)"
+        stroke="var(--nexus-color-obsidian-50)"
         strokeWidth="2.2"
         strokeLinecap="round"
       />

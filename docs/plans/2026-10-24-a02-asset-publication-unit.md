@@ -53,3 +53,9 @@ Artifact/Operation/receipt、不可变模型/声音/预设/发音资源继续按
 ## 当前分批交付
 
 首个 PR 先交付步骤 1–3 的生产端口、实际对象适配器与保留期账本，以及真实 PG/MinIO CI 门禁。步骤 4 的 HTTP/组合根及步骤 5 的常驻维护进程随下一单元接入；本 PR 不声称三个公开路由已实现，也不关闭 A02/G1。实现与边界见 [production-assets.md](../architecture/production-assets.md)。
+
+## HTTP 接入单元（进行中）
+
+在 #58 的 `d7463fb` 之上接三个 Asset 路径、仅已实现路径的完整 schema/OpenAPI 投影、受限 multipart/Range 与原身份恢复；默认回环 Host、显式 Origin、非 owner 启动检查与独立维护进程一并验证。公开错误不制造 Operation ID，未知结果禁普通 SDK 重试。首批实际文本可验证，媒体/Artifact/receipt/不可变资源和 A07 全恢复资格继续分段。
+
+HTTP/worker 接入发现跨进程配置可能指向不同对象命名空间，新增 `0004_asset_storage` 不可变声明与逐事务核对；保留已发布 `0003_assets` DDL。新空权威可声明，旧有资产而无声明时阻止普通启动，须 A07 受控恢复，不猜测原存储。

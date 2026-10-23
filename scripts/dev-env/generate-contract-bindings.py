@@ -129,6 +129,79 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def bundle_http_surface(config: dict[str, Any]) -> dict[str, Any]:
+    """Close selected implemented paths into a portable OpenAPI document.
+
+    Keep parameters/responses/headers in their actual component namespaces;
+    external JSON Schemas become named schema components. Never flatten away
+    runtime conditionals or load references outside the reviewed contract tree.
+    """
+    primary = (CONTRACTS / config["source"]).resolve()
+    documents: dict[Path, Any] = {}
+    identities: dict[tuple[Path, str], tuple[str, str]] = {}
+    components: dict[str, dict[str, Any]] = {}
+
+    def document(path: Path) -> Any:
+        path.relative_to(CONTRACTS.resolve())
+        if path not in documents:
+            documents[path] = yaml.safe_load(path.read_text())
+        return documents[path]
+
+    def include(path: Path, fragment: str) -> str:
+        path = path.resolve()
+        identity = (path, fragment)
+        if identity in identities:
+            category, name = identities[identity]
+            return f"#/components/{category}/{name}"
+        tokens = fragment.removeprefix("/").split("/") if fragment else []
+        node = document(path)
+        for token in tokens:
+            node = node[unquote(token).replace("~1", "/").replace("~0", "~")]
+        if path == primary and len(tokens) == 3 and tokens[0] == "components":
+            category, name = tokens[1:]
+        else:
+            category = "schemas"
+            external = str(path.relative_to(CONTRACTS)).replace("/", "_").replace(".", "_")
+            name = (
+                "External_" + external.replace("-", "_") + "_" + (tokens[-1] if tokens else "Root")
+            )
+        namespace = components.setdefault(category, {})
+        if name in namespace:
+            raise ValueError("Conflicting HTTP surface component")
+        identities[identity] = category, name
+        namespace[name] = {}
+        namespace[name] = rewrite(copy.deepcopy(node), path)
+        return f"#/components/{category}/{name}"
+
+    def rewrite(node: Any, path: Path) -> Any:
+        if isinstance(node, dict):
+            node.pop("$id", None)
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                target, _, fragment = ref.partition("#")
+                if ":" in target or (fragment and not fragment.startswith("/")):
+                    raise ValueError("Unsupported HTTP surface reference")
+                node["$ref"] = include(path.parent / target if target else path, fragment)
+            return {key: rewrite(value, path) for key, value in node.items()}
+        if isinstance(node, list):
+            return [rewrite(value, path) for value in node]
+        return node
+
+    source = document(primary)
+    paths = {
+        path: rewrite(copy.deepcopy(source["paths"][path]), primary) for path in config["paths"]
+    }
+    for name in source.get("components", {}).get("securitySchemes", {}):
+        include(primary, "/components/securitySchemes/" + name)
+    return {
+        "openapi": source["openapi"],
+        "info": source["info"],
+        "security": source.get("security", []),
+        "paths": paths,
+        "components": components,
+    }
+
+
 def generate_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
     """One producer/consumer namespace; internal protocols are never default exports."""
     document = yaml.safe_load((CONTRACTS / config["source"]).read_text())
@@ -165,7 +238,16 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
     types = destination / f"src/{name}.generated.ts"
     source = CONTRACTS / config["source"]
     subprocess.run(
-        ["pnpm", "exec", "openapi-typescript", str(source), "--output", str(types)],
+        [
+            "pnpm",
+            "exec",
+            "openapi-typescript",
+            str(source),
+            "--output",
+            str(types),
+            "--default-non-nullable",
+            "false",
+        ],
         cwd=ROOT,
         check=True,
     )
@@ -358,6 +440,8 @@ def generate(destination: Path) -> list[Path]:
             str(CONTRACTS / manifest["source"]),
             "--output",
             str(destination / "src/speech.generated.ts"),
+            "--default-non-nullable",
+            "false",
         ],
         cwd=ROOT,
         check=True,
@@ -378,6 +462,12 @@ def generate(destination: Path) -> list[Path]:
         Path("src/file.generated.ts"),
     ]
     outputs.extend(profile_outputs)
+    for surface, config in manifest.get("http_surfaces", {}).items():
+        artifact = python / f"{surface}.openapi.json"
+        artifact.write_text(
+            json.dumps(bundle_http_surface(config), ensure_ascii=False, indent=2) + "\n"
+        )
+        outputs.append(artifact.relative_to(destination))
     inventory: dict[str, Any] = {}
     for path in sorted(CONTRACTS.rglob("*")):
         if path.name.endswith((".schema.json", ".yaml")):

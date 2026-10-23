@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, BinaryIO
@@ -20,6 +21,7 @@ from speechnexus_backend.speech.domain.assets import (
     AssetError,
     AssetRecord,
     VerifiedObject,
+    hash_bytes,
 )
 
 
@@ -84,6 +86,14 @@ class MinioAssetObjects:
             secure=parsed.scheme == "https",
             region="us-east-1",
             http_client=self._http,
+        )
+
+    @property
+    def namespace_digest(self) -> str:
+        # Credentials may rotate; origin and bucket identify the immutable
+        # logical object namespace. Normalize root slash, host and default port.
+        return hash_bytes(
+            json.dumps([*self._http._origin, self._bucket], separators=(",", ":")).encode()
         )
 
     def close(self) -> None:
@@ -184,8 +194,12 @@ class MinioAssetObjects:
                 length=length,
                 version_id=proof.version_id,
             )
+        except S3Error as error:
+            if error.code in ("NoSuchKey", "NoSuchObject", "NoSuchVersion"):
+                raise AssetError("asset_unavailable") from None
+            raise AssetError("asset_storage_unavailable") from None
         except Exception:
-            raise AssetError("asset_unavailable") from None
+            raise AssetError("asset_storage_unavailable") from None
         try:
             if (
                 response.status != 206

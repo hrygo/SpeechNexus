@@ -189,6 +189,7 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_asset_references",
             "speech_content_deletions",
             "speech_asset_events",
+            "speech_asset_storage_authority",
         }
         if db.dialect == "postgresql"
         else set()
@@ -426,7 +427,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0003_assets"
+    assert sandbox.version() == "0004_asset_storage"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -493,7 +494,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0003_assets"
+        assert sandbox.version() == "0004_asset_storage"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

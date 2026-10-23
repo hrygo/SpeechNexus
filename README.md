@@ -47,7 +47,7 @@ SpeechNexus 希望服务于三类需求：
 
 语音底座已冻结 P0 契约：OpenAI Audio 兼容子集，以及音色、持久任务和场景预设等 `nexus` 增强接口，适合接入已有应用、SDK 或 MCP 调用方。标准 OpenAI SDK 可将 `base_url` 指向部署的 `/v1`；实时接口支持 `model` 直连的仅转写兼容模式和预创建的 nexus 会话，两者都只覆盖明确声明的事件子集。
 
-当前运行时可调用的是 `/healthz` 与 `/readyz`；语音与工作台路由尚未实现。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
+当前提供 `/healthz`、`/readyz`，以及配置后可用的 Asset 上传、元数据与内容下载接口；首批检查实际 UTF-8 文本，音频检查待 B03 接入，其他语音与工作台路由继续实施。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
 
 契约修复补全了规范执行命令、同步幂等恢复、严格 receipt 与数据删除生命周期；范围及升级边界见 [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。这些业务协议尚未实现为运行时路由。
 
@@ -59,7 +59,7 @@ SpeechNexus 希望服务于三类需求：
 
 [生产 owner 任期事务](docs/architecture/production-owners.md)已提供获取、续约、激活和当前权威查询，覆盖锁后数据库取时、完整快照及未知提交恢复；真实网关屏障、调度循环和 runtime 准入仍待对应单元。
 
-[资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；公开上传路由及常驻维护进程尚待接入，音频检查依赖 B03。
+[资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。
 
 ### 通过 AdminUI 维护部署
 

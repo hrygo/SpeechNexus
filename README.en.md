@@ -47,7 +47,7 @@ The workbench organizes actions around tasks. Once business features are availab
 
 The P0 contracts freeze an OpenAI Audio-compatible subset plus `nexus` interfaces for voices, durable tasks, and scenario presets for applications, SDKs, and MCP callers. A standard OpenAI SDK can point `base_url` at the deployment's `/v1`. Realtime supports a transcription-only `model` connection mode and pre-created nexus sessions; both cover only the declared event subset.
 
-The currently available runtime endpoints are `/healthz` and `/readyz`; speech and workbench routes are not implemented yet. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
+Runtime endpoints include `/healthz`, `/readyz`, and configured Asset upload, metadata and content download. The initial path validates actual UTF-8 text; audio inspection depends on B03, and other speech/workbench routes remain in development. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
 
 Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not implemented as runtime routes.
 
@@ -59,7 +59,7 @@ The [`0002_coordination` production storage foundation (Chinese)](docs/architect
 
 [Production owner epoch transactions (Chinese)](docs/architecture/production-owners.md) provide acquire, renew, activate and current-authority queries, with database time after lock waits, complete snapshots and unknown-commit recovery. Real gateway barriers, scheduler loops and runtime admission remain separate delivery units.
 
-The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload routes and a persistent maintenance process remain pending; audio inspection depends on B03.
+The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.
 
 ### Maintain a deployment through AdminUI
 

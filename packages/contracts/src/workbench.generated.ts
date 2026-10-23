@@ -805,7 +805,7 @@ export interface components {
       speech_session_id?: components["schemas"]["Identifier"];
       transcript_id?: components["schemas"]["Identifier"];
       /** @default false */
-      save_audio: boolean;
+      save_audio?: boolean;
     } & (unknown | unknown);
     MeetingSealRequest: {
       expected_transcript_revision: components["schemas"]["Revision"];

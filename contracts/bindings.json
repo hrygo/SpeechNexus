@@ -60,5 +60,15 @@
         "NodeReconcileRequest"
       ]
     }
+  },
+  "http_surfaces": {
+    "assets": {
+      "source": "speech-openapi.yaml",
+      "paths": [
+        "/v1/nexus/assets",
+        "/v1/nexus/assets/{asset_id}",
+        "/v1/nexus/assets/{asset_id}/content"
+      ]
+    }
   }
 }

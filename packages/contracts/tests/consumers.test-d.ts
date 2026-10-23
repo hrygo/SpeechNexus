@@ -20,3 +20,10 @@ createClient();
 const client = createClient("http://deployment.invalid");
 // @ts-expect-error Unknown routes must not silently become typed requests.
 client.POST("/not-a-route", {});
+
+// Multipart binary transport retains the generated metadata shape.
+import { createSpeechClient, uploadAsset } from "../src/index";
+const speech = createSpeechClient("http://deployment.invalid");
+void uploadAsset(speech, { purpose: "text_input", file: new Blob(["synthetic"]) });
+// @ts-expect-error the helper never accepts a server path or URL instead of bytes
+void uploadAsset(speech, { purpose: "text_input", file: "http://unapproved.test/content" });

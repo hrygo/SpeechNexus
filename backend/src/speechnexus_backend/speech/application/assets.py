@@ -220,7 +220,8 @@ class AssetService:
         if proof is None:
             return UploadResult("unknown", asset, "asset_upload_unknown")
         proof.require_original(asset)
-        return self._metadata.publish(proof)
+        result = self._metadata.publish(proof)
+        return UploadResult(result.outcome, result.asset or asset, result.error_code)
 
     def metadata(self, asset_id: str) -> AssetRecord:
         asset, now = self._metadata.get(asset_id)

@@ -289,6 +289,7 @@ def _insert_submit_intent(
     workspace_id: str = "ws-default",
     gateway_id: str = "gateway-1",
     binding_revision_id: str = "asr-quality@7",
+    generated_pcm_samples: int = 0,
 ) -> None:
     connection.execute(
         """
@@ -310,12 +311,13 @@ def _insert_submit_intent(
             command_digest,
             output_stream_id,
             sample_rate_hz,
+            generated_pcm_samples,
             execution_state,
             cleanup_state,
             deadline_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s,
             CURRENT_TIMESTAMP + INTERVAL '1 hour'
         )
         """,
@@ -337,6 +339,7 @@ def _insert_submit_intent(
             _DIGEST,
             "tts-main",
             24_000,
+            generated_pcm_samples,
             "executing",
             "pending",
         ),
@@ -1489,13 +1492,21 @@ def test_output_intervals_are_non_overlapping_and_identity_bound(
         """
     ).fetchone()
     assert watermark == (100,)
-    db.execute(
+    with pytest.raises(CheckViolation), db.transaction():
+        db.execute(
+            """
+            UPDATE submit_intents
+            SET generated_pcm_samples = 24000
+            WHERE submit_intent_id = 'intent-metering'
+            """
+        )
+    assert db.execute(
         """
-        UPDATE submit_intents
-        SET generated_pcm_samples = 24000
-        WHERE submit_intent_id = 'intent-metering'
-        """
-    )
+            SELECT generated_pcm_samples
+            FROM submit_intents
+            WHERE submit_intent_id = 'intent-metering'
+            """
+    ).fetchone() == (100,)
     with pytest.raises(CheckViolation), db.transaction():
         db.execute(
             """
@@ -1594,6 +1605,28 @@ def test_output_intervals_are_non_overlapping_and_identity_bound(
         db.execute("DELETE FROM output_sample_intervals WHERE interval_id = 'interval-initial'")
     with pytest.raises(CheckViolation), db.transaction():
         db.execute("TRUNCATE output_sample_intervals")
+
+    _insert_lease(
+        db,
+        lease_id="lease-metering-insert",
+        operation_id="op-metering-insert",
+        attempt_id="att-metering-insert",
+        host_node_id="node-metering",
+        instance_id="inst-metering",
+        generation=1,
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_submit_intent(
+            db,
+            submit_intent_id="intent-metering-insert",
+            lease_id="lease-metering-insert",
+            operation_id="op-metering-insert",
+            attempt_id="att-metering-insert",
+            host_node_id="node-metering",
+            instance_id="inst-metering",
+            generation=1,
+            generated_pcm_samples=100,
+        )
 
 
 def test_output_ceiling_cannot_be_introduced_after_generated_output(

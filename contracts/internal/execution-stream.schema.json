@@ -768,7 +768,15 @@
             ]
           },
           "then": {
+            "required": [
+              "receipt_ref"
+            ],
             "properties": {
+              "receipt_ref": {
+                "not": {
+                  "type": "null"
+                }
+              },
               "cleanup_state": {
                 "const": "complete"
               }

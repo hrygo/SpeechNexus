@@ -1315,11 +1315,34 @@ CREATE TRIGGER trg_submit_intents_identity_and_terminality
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_identity_and_terminality();
 
 -- The scalar submit watermark is a query projection over interval rows. Keep
--- its position monotonic and freeze stream identity once it is declared so a
--- retry cannot rewrite the authoritative sample coordinate system.
+-- its position equal to the generated interval high-water mark, and freeze
+-- stream identity once it is declared so a retry cannot rewrite the
+-- authoritative sample coordinate system.
 CREATE FUNCTION enforce_submit_output_monotonic() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    interval_high_water BIGINT;
 BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.generated_pcm_samples <> 0 THEN
+            RAISE EXCEPTION 'generated PCM sample watermark must start at zero'
+                USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF NEW.generated_pcm_samples IS DISTINCT FROM OLD.generated_pcm_samples THEN
+        SELECT COALESCE(MAX(sample_end), 0)
+        INTO interval_high_water
+        FROM output_sample_intervals
+        WHERE submit_intent_id = NEW.submit_intent_id
+          AND meter_kind = 'generated';
+
+        IF NEW.generated_pcm_samples IS DISTINCT FROM interval_high_water THEN
+            RAISE EXCEPTION 'generated PCM watermark must equal the generated interval high-water mark'
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
     IF NEW.generated_pcm_samples < OLD.generated_pcm_samples THEN
         RAISE EXCEPTION 'generated PCM sample watermark cannot decrease'
             USING ERRCODE = '23514';
@@ -1353,6 +1376,9 @@ $$;
 
 CREATE TRIGGER trg_submit_output_monotonic
     BEFORE UPDATE ON submit_intents
+    FOR EACH ROW EXECUTE FUNCTION enforce_submit_output_monotonic();
+CREATE TRIGGER trg_submit_output_projection_insert
+    BEFORE INSERT ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_output_monotonic();
 
 -- Keep audit timestamps current even when application code forgets to set them.

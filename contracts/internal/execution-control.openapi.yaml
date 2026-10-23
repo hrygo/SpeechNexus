@@ -344,7 +344,9 @@ components:
         `generated_pcm_samples` and `sample_rate_hz` are authoritative; audio
         milliseconds are derived only for reporting as
         `floor(generated_pcm_samples * 1000 / sample_rate_hz)` and are not a
-        stored or independently mutable meter.
+        stored or independently mutable meter. When
+        `hard_output_ceiling_samples` is non-null it must be greater than or
+        equal to `generated_pcm_samples`.
       required:
         - output_stream_id
         - generated_pcm_samples
@@ -800,6 +802,10 @@ components:
           anyOf:
             - $ref: "#/components/schemas/OutputWatermark"
             - type: "null"
+          description: |
+            Null for text-only stages. Otherwise its sample_rate_hz must equal
+            the response-level sample_rate_hz and its generated_pcm_samples must
+            not exceed hard_output_ceiling_samples when that ceiling is set.
         staging_artifact_ref:
           anyOf:
             - $ref: "#/components/schemas/ArtifactStorageReference"
@@ -856,14 +862,17 @@ components:
           const: true
         submitting_intent_ids:
           type: array
+          uniqueItems: true
           items:
             $ref: "#/components/schemas/Identifier"
         executing_intent_ids:
           type: array
+          uniqueItems: true
           items:
             $ref: "#/components/schemas/Identifier"
         quarantined_intent_ids:
           type: array
+          uniqueItems: true
           items:
             $ref: "#/components/schemas/Identifier"
         enforced_at:

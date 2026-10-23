@@ -119,14 +119,17 @@ of defaults, units, enum domains, or stable error codes.
   accepted submit intent, fencing token, and negotiated message limit; PCM
   descriptors accept 16, 24, and 48 kHz. Structured `stream.error` envelopes
   carry stable error codes and stream identity without becoming a terminal
-  Operation result.
+  Operation result. A succeeded `stream.closed` requires a non-null receipt.
 - `internal/runtime-control.openapi.yaml`: internal
   `RuntimeLifecycleControlPort` protocol between the scheduler and the
   node-scoped deployment controller (`node-controller`). Its per-node component
   credential is independent from scheduler, gateway, and public credentials.
   `intent_id` is a node-scoped idempotency key; replays echo the immutable
   intent identity and a changed request under the same key is a stable
-  `409 intent_conflict`.
+  `409 intent_conflict`. Runtime memory reservations require peak to be at least
+  steady in every architecture-specific counter. A reconciliation snapshot may
+  report each `(instance_id, instance_generation)` once, and stop evidence is
+  present only for a succeeded stop intent / stopped or absent observation.
 
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision

@@ -238,6 +238,11 @@ components:
     RuntimeMemoryReservation:
       type: object
       additionalProperties: false
+      description: |
+        Peak reservation must be greater than or equal to steady reservation in
+        every memory counter used by the selected architecture. Producer
+        validation rejects a smaller peak because cold-load headroom cannot be
+        released before steady state is reached.
       required: [architecture, peak, steady]
       properties:
         architecture:
@@ -436,6 +441,18 @@ components:
                   type: "null"
         - if:
             properties:
+              stop_evidence:
+                not:
+                  type: "null"
+            required: [stop_evidence]
+          then:
+            properties:
+              action:
+                const: stop
+              intent_state:
+                const: succeeded
+        - if:
+            properties:
               reserved_memory:
                 properties:
                   architecture:
@@ -492,6 +509,16 @@ components:
       allOf:
         - if:
             properties:
+              stop_evidence:
+                not:
+                  type: "null"
+            required: [stop_evidence]
+          then:
+            properties:
+              observed_instance_state:
+                enum: [stopped, absent]
+        - if:
+            properties:
               observed_instance_state:
                 const: stopped
             required: [observed_instance_state]
@@ -520,6 +547,10 @@ components:
           format: date-time
         instances:
           type: array
+          description: |
+            One fact per (instance_id, instance_generation). A snapshot that
+            reports the same generation more than once is rejected rather than
+            choosing a nondeterministic last observation.
           items:
             $ref: "#/components/schemas/ObservedNodeInstanceFact"
     NodeReconcileResponse:
@@ -537,6 +568,7 @@ components:
           format: date-time
         quarantined_instance_ids:
           type: array
+          uniqueItems: true
           items:
             $ref: "#/components/schemas/Identifier"
     RuntimeControlErrorResponse:

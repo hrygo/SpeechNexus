@@ -359,6 +359,38 @@ def _assert_quarantine_release_semantics(
         raise ValueError("released submit intent ids are not sorted")
 
 
+def _assert_runtime_memory_reservation_semantics(reservation: dict[str, Any]) -> None:
+    peak = cast(dict[str, int], reservation["peak"])
+    steady = cast(dict[str, int], reservation["steady"])
+    for counter in ("unified_memory_bytes", "device_memory_bytes", "host_memory_bytes"):
+        if peak[counter] < steady[counter]:
+            raise ValueError(f"runtime memory peak is below steady for {counter}")
+
+
+def _assert_node_reconcile_semantics(snapshot: dict[str, Any]) -> None:
+    identities: set[tuple[str, int]] = set()
+    for fact in cast(list[dict[str, Any]], snapshot["instances"]):
+        identity = (cast(str, fact["instance_id"]), cast(int, fact["instance_generation"]))
+        if identity in identities:
+            raise ValueError(f"node reconciliation repeats instance generation {identity}")
+        identities.add(identity)
+
+
+def _assert_output_watermark_semantics(watermark: dict[str, Any]) -> None:
+    ceiling = cast(int | None, watermark["hard_output_ceiling_samples"])
+    if ceiling is not None and watermark["generated_pcm_samples"] > ceiling:
+        raise ValueError("generated output exceeds the hard output ceiling")
+
+
+def _assert_execution_status_semantics(status: dict[str, Any]) -> None:
+    watermark = cast(dict[str, Any] | None, status.get("output_watermark"))
+    if watermark is None:
+        return
+    _assert_output_watermark_semantics(watermark)
+    if status["sample_rate_hz"] != watermark["sample_rate_hz"]:
+        raise ValueError("execution and output-watermark sample rates differ")
+
+
 def _assert_realtime_terminal_operations(
     session: dict[str, Any],
     operations: list[dict[str, Any]],
@@ -2236,6 +2268,12 @@ def test_execution_stream_examples_and_unknown_field_rejection() -> None:
     del missing_closed_identity["submit_intent_id"]
     with pytest.raises(ValidationError):
         validator.validate(missing_closed_identity)
+    missing_receipt = copy.deepcopy(
+        next(example for example in examples if example["type"] == "stream.closed")
+    )
+    missing_receipt["receipt_ref"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(missing_receipt)
 
     cancelled_stream = copy.deepcopy(
         next(example for example in examples if example["type"] == "stream.closed")
@@ -2775,6 +2813,12 @@ def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> N
         "hard_output_ceiling_samples": 48_000,
     }
     watermark_validator.validate(watermark)
+    _assert_output_watermark_semantics(watermark)
+    over_ceiling = copy.deepcopy(watermark)
+    over_ceiling["generated_pcm_samples"] = 48_001
+    watermark_validator.validate(over_ceiling)
+    with pytest.raises(ValueError, match="hard output ceiling"):
+        _assert_output_watermark_semantics(over_ceiling)
     watermark_with_derived_ms = copy.deepcopy(watermark)
     watermark_with_derived_ms["generated_audio_ms"] = 1_000
     with pytest.raises(ValidationError):
@@ -2812,6 +2856,24 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
         "updated_at": "2026-10-22T00:00:00Z",
     }
     status_validator.validate(status)
+    _assert_execution_status_semantics(status)
+
+    output_watermark = {
+        "output_stream_id": "tts-main",
+        "generated_pcm_samples": 24_000,
+        "sample_rate_hz": 24_000,
+        "hard_output_ceiling_samples": 48_000,
+    }
+    status_with_watermark = copy.deepcopy(status)
+    status_with_watermark["sample_rate_hz"] = 24_000
+    status_with_watermark["output_watermark"] = output_watermark
+    status_validator.validate(status_with_watermark)
+    _assert_execution_status_semantics(status_with_watermark)
+    mismatched_watermark_rate = copy.deepcopy(status_with_watermark)
+    mismatched_watermark_rate["output_watermark"]["sample_rate_hz"] = 48_000
+    status_validator.validate(mismatched_watermark_rate)
+    with pytest.raises(ValueError, match="sample rates"):
+        _assert_execution_status_semantics(mismatched_watermark_rate)
 
     unconfirmed = copy.deepcopy(status)
     unconfirmed["execution_state"] = "aborted"
@@ -2932,6 +2994,10 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     false_evidence["stop_evidence"]["resources_released_confirmed"] = False
     with pytest.raises(ValidationError):
         intent_validator.validate(false_evidence)
+    premature_evidence = copy.deepcopy(stopped_intent)
+    premature_evidence["intent_state"] = "pending"
+    with pytest.raises(ValidationError):
+        intent_validator.validate(premature_evidence)
 
     runtime_error_validator = _component_validator(runtime, "RuntimeControlErrorResponse")
     runtime_error_validator.validate(
@@ -2953,6 +3019,54 @@ def test_internal_terminal_evidence_and_drain_state_are_consistent() -> None:
     }
     with pytest.raises(ValidationError):
         runtime_error_validator.validate(unknown_runtime_error)
+
+    reconcile_validator = _component_validator(runtime, "NodeReconcileRequest")
+    reconcile = {
+        "controller_id": "controller-demo",
+        "fencing_token": 3,
+        "reported_at": "2026-10-22T00:00:00Z",
+        "instances": [
+            {
+                "instance_id": "instance-demo",
+                "instance_generation": 1,
+                "approved_template_id": "template-asr-realtime",
+                "config_digest": "sha256:" + "4" * 64,
+                "observed_instance_state": "ready",
+            },
+            {
+                "instance_id": "instance-demo",
+                "instance_generation": 1,
+                "approved_template_id": "template-asr-realtime",
+                "config_digest": "sha256:" + "4" * 64,
+                "observed_instance_state": "stopped",
+                "stop_evidence": {
+                    "process_or_container_exited": True,
+                    "resources_released_confirmed": True,
+                    "verified_at": "2026-10-22T00:00:00Z",
+                },
+            },
+        ],
+    }
+    reconcile_validator.validate(reconcile)
+    with pytest.raises(ValueError, match="repeats instance generation"):
+        _assert_node_reconcile_semantics(reconcile)
+
+    barrier_validator = _component_validator(execution, "GatewayFencingBarrierResponse")
+    barrier = {
+        "gateway_id": "gateway-demo",
+        "pool_id": "tts-batch",
+        "enforced_min_fencing_token": 3,
+        "barrier_sealed": True,
+        "submitting_intent_ids": ["intent-demo"],
+        "executing_intent_ids": [],
+        "quarantined_intent_ids": [],
+        "enforced_at": "2026-10-22T00:00:00Z",
+    }
+    barrier_validator.validate(barrier)
+    duplicate_intent = copy.deepcopy(barrier)
+    duplicate_intent["submitting_intent_ids"].append("intent-demo")
+    with pytest.raises(ValidationError):
+        barrier_validator.validate(duplicate_intent)
 
 
 def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None:
@@ -3006,36 +3120,42 @@ def test_internal_submit_response_echoes_the_persisted_intent_identity() -> None
 def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:
     runtime = _resolved_yaml(_RUNTIME_CONTROL_OPENAPI)
     validator = _component_validator(runtime, "RuntimeMemoryReservation")
-    validator.validate(
-        {
-            "architecture": "discrete_device_memory",
-            "peak": {
-                "unified_memory_bytes": 0,
-                "device_memory_bytes": 1024,
-                "host_memory_bytes": 512,
-            },
-            "steady": {
-                "unified_memory_bytes": 0,
-                "device_memory_bytes": 768,
-                "host_memory_bytes": 384,
-            },
-        }
-    )
-    validator.validate(
-        {
-            "architecture": "unified_memory",
-            "peak": {
-                "unified_memory_bytes": 1024,
-                "device_memory_bytes": 0,
-                "host_memory_bytes": 0,
-            },
-            "steady": {
-                "unified_memory_bytes": 768,
-                "device_memory_bytes": 0,
-                "host_memory_bytes": 0,
-            },
-        }
-    )
+    discrete = {
+        "architecture": "discrete_device_memory",
+        "peak": {
+            "unified_memory_bytes": 0,
+            "device_memory_bytes": 1024,
+            "host_memory_bytes": 512,
+        },
+        "steady": {
+            "unified_memory_bytes": 0,
+            "device_memory_bytes": 768,
+            "host_memory_bytes": 384,
+        },
+    }
+    validator.validate(discrete)
+    _assert_runtime_memory_reservation_semantics(discrete)
+    smaller_peak = copy.deepcopy(discrete)
+    smaller_peak["peak"]["device_memory_bytes"] = 512
+    validator.validate(smaller_peak)
+    with pytest.raises(ValueError, match="peak is below steady"):
+        _assert_runtime_memory_reservation_semantics(smaller_peak)
+
+    unified = {
+        "architecture": "unified_memory",
+        "peak": {
+            "unified_memory_bytes": 1024,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+        },
+        "steady": {
+            "unified_memory_bytes": 768,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+        },
+    }
+    validator.validate(unified)
+    _assert_runtime_memory_reservation_semantics(unified)
     with pytest.raises(ValidationError):
         validator.validate(
             {

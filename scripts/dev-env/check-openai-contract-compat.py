@@ -279,7 +279,17 @@ def _collect_local_component_refs(node: object, references: set[tuple[str, str]]
             parts = ref.split("/")
             if len(parts) == 4 and parts[2] in _COMPONENT_SECTIONS:
                 references.add((parts[2], parts[3]))
-        for value in mapping.values():
+        properties = _mapping(mapping.get("properties"))
+        if properties is not None:
+            for name, value in properties.items():
+                # `nexus` is the explicitly optional enhancement namespace.
+                # Its components are not part of the OpenAI compatibility
+                # promise even when nested inside a standard request or model.
+                if name != "nexus":
+                    _collect_local_component_refs(value, references)
+        for key, value in mapping.items():
+            if key == "properties":
+                continue
             _collect_local_component_refs(value, references)
         return
     for value in _sequence(node) or []:
@@ -502,7 +512,14 @@ def _collect_local_def_refs(node: object, references: set[str]) -> None:
         ref = mapping.get("$ref")
         if isinstance(ref, str) and ref.startswith("#/$defs/"):
             references.add(ref.rsplit("/", 1)[-1])
-        for value in mapping.values():
+        properties = _mapping(mapping.get("properties"))
+        if properties is not None:
+            for name, value in properties.items():
+                if name != "nexus":
+                    _collect_local_def_refs(value, references)
+        for key, value in mapping.items():
+            if key == "properties":
+                continue
             _collect_local_def_refs(value, references)
         return
     for value in _sequence(node) or []:

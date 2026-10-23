@@ -2056,45 +2056,7 @@ components:
               minimum: 100
               maximum: 3000
     TtsOverrides:
-      type: object
-      additionalProperties: false
-      properties:
-        language:
-          type: string
-          maxLength: 35
-        text_commit_mode:
-          type: string
-          enum: [explicit, sentence]
-        audio_delivery:
-          type: string
-          enum: [complete, chunked]
-        speed:
-          type: number
-          minimum: 0.25
-          maximum: 4.0
-        instructions:
-          type: [string, "null"]
-          maxLength: 2000
-        pronunciation_revision:
-          oneOf:
-            - $ref: "#/components/schemas/Revision"
-            - type: "null"
-        seed:
-          type: [integer, "null"]
-          minimum: 0
-          maximum: 2147483647
-        planner:
-          type: object
-          additionalProperties: false
-          properties:
-            max_chars:
-              type: integer
-              minimum: 40
-              maximum: 400
-            max_wait_ms:
-              type: integer
-              minimum: 100
-              maximum: 3000
+      $ref: "shared/speech-overrides.schema.json#/$defs/TtsOverrides"
     CapabilitySnapshot:
       type: object
       additionalProperties: false
@@ -2438,56 +2400,7 @@ components:
         expected_revision:
           $ref: "#/components/schemas/Revision"
     AsrOverrides:
-      type: object
-      additionalProperties: false
-      properties:
-        language:
-          type: string
-          maxLength: 35
-        preview_interval_ms:
-          type: integer
-          minimum: 100
-          maximum: 5000
-        max_segment_ms:
-          type: integer
-          minimum: 1000
-          maximum: 30000
-        finalization:
-          type: string
-          enum: [full_segment, streaming_finalize]
-        final_deadline_ms:
-          type: integer
-          minimum: 100
-          maximum: 10000
-        auxiliary_deadline_ms:
-          type: integer
-          minimum: 100
-          maximum: 10000
-        rollback_tokens:
-          type: integer
-          minimum: 0
-          maximum: 32
-        turn_detection:
-          type: object
-          additionalProperties: false
-          properties:
-            mode:
-              type: string
-              enum: [server_vad, manual]
-            silence_duration_ms:
-              type: integer
-              minimum: 200
-              maximum: 3000
-        vocabulary_set_revision:
-          oneOf:
-            - $ref: "#/components/schemas/Revision"
-            - type: "null"
-        alignment:
-          type: string
-          enum: ["off", required, best_effort]
-        diarization:
-          type: string
-          enum: ["off", required, best_effort]
+      $ref: "shared/speech-overrides.schema.json#/$defs/AsrOverrides"
     AsrJobCreate:
       allOf:
         - $ref: "#/components/schemas/JobCreateBase"

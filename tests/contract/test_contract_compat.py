@@ -230,6 +230,58 @@ def test_openai_compat_gate_ignores_unreferenced_nexus_extensions() -> None:
     )
 
 
+def test_openai_compat_gate_ignores_optional_nexus_nested_schemas() -> None:
+    module = _load_compat_module()
+    compare_openapi = cast(Any, module._compare_openapi)
+    base: dict[str, Any] = {
+        "paths": {
+            "/v1/audio/speech": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/SpeechRequest"}
+                            }
+                        },
+                    },
+                    "responses": {},
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "SpeechRequest": {
+                    "type": "object",
+                    "properties": {
+                        "input": {"type": "string"},
+                        "nexus": {"$ref": "#/components/schemas/NexusOptions"},
+                    },
+                },
+                "NexusOptions": {
+                    "type": "object",
+                    "properties": {"profile_revision": {"type": "string"}},
+                },
+            }
+        },
+    }
+    current = copy.deepcopy(base)
+    current["components"]["schemas"]["NexusOptions"] = {
+        "type": "object",
+        "required": ["new_nexus_option"],
+        "properties": {"new_nexus_option": {"type": "string"}},
+    }
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert not issues
+
+    del current["components"]["schemas"]["SpeechRequest"]["properties"]["input"]
+    issues = compare_openapi(base, current, "speech-openapi.yaml")
+    assert any(
+        "components/schemas/SpeechRequest/properties/input: property removed" in issue
+        for issue in issues
+    )
+
+
 def test_realtime_compat_gate_checks_only_standard_event_definitions() -> None:
     module = _load_compat_module()
     compare_realtime = cast(Any, module._compare_realtime_events_schema)
@@ -267,3 +319,47 @@ def test_realtime_compat_gate_checks_only_standard_event_definitions() -> None:
     del current["$defs"]["SessionUpdate"]
     issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
     assert any("standard event definition removed" in issue for issue in issues)
+
+
+def test_realtime_compat_gate_ignores_optional_nexus_nested_definitions() -> None:
+    module = _load_compat_module()
+    compare_realtime = cast(Any, module._compare_realtime_events_schema)
+    base: dict[str, Any] = {
+        "oneOf": [{"$ref": "#/$defs/SessionUpdate"}],
+        "$defs": {
+            "SessionUpdate": {
+                "type": "object",
+                "properties": {
+                    "type": {"const": "session.update"},
+                    "session": {"$ref": "#/$defs/SessionRequest"},
+                },
+                "required": ["type", "session"],
+            },
+            "SessionRequest": {
+                "type": "object",
+                "properties": {
+                    "type": {"const": "transcription"},
+                    "nexus": {"$ref": "#/$defs/NexusOptions"},
+                },
+                "required": ["type"],
+            },
+            "NexusOptions": {
+                "type": "object",
+                "properties": {"profile_revision": {"type": "string"}},
+            },
+        },
+    }
+    current = copy.deepcopy(base)
+    current["$defs"]["NexusOptions"] = {
+        "type": "object",
+        "required": ["new_nexus_option"],
+        "properties": {"new_nexus_option": {"type": "string"}},
+    }
+    issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
+    assert not issues
+
+    del current["$defs"]["SessionRequest"]["properties"]["type"]
+    issues = compare_realtime(current=current, base=base, path="realtime-events.schema.json")
+    assert any(
+        "$defs/SessionRequest/properties/type: property removed" in issue for issue in issues
+    )

@@ -2133,6 +2133,55 @@ def test_execution_receipt_is_shared_by_rest_and_realtime() -> None:
         realtime_receipt.validate(private_receipt)
 
 
+def test_speech_overrides_are_shared_with_transport_specific_narrowing() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    rest_tts = _component_validator(speech, "TtsOverrides")
+    rest_asr = _component_validator(speech, "AsrOverrides")
+
+    realtime = _load_json(_REALTIME_SCHEMA)
+    realtime_tts = _validator(
+        {
+            "$ref": "#/$defs/TtsOverrides",
+            "$defs": realtime["$defs"],
+        }
+    )
+    realtime_asr = _validator(
+        {
+            "$ref": "#/$defs/AsrOverrides",
+            "$defs": realtime["$defs"],
+        }
+    )
+
+    tts = {
+        "language": "zh",
+        "text_commit_mode": "sentence",
+        "audio_delivery": "chunked",
+        "speed": 1.0,
+        "seed": 7,
+    }
+    rest_tts.validate(tts)
+    realtime_tts.validate(tts)
+
+    faster = {**tts, "speed": 4.0}
+    rest_tts.validate(faster)
+    with pytest.raises(ValidationError):
+        realtime_tts.validate(faster)
+
+    asr = {
+        "language": "zh",
+        "preview_interval_ms": 500,
+        "max_segment_ms": 20_000,
+        "finalization": "full_segment",
+        "alignment": "best_effort",
+        "diarization": "off",
+    }
+    rest_asr.validate(asr)
+    realtime_asr.validate(asr)
+    for validator in (rest_asr, realtime_asr):
+        with pytest.raises(ValidationError):
+            validator.validate({**asr, "max_segment_ms": 100})
+
+
 def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() -> None:
     admin = _resolved_yaml(_ADMIN_OPENAPI)
     pool_validator = _component_validator(admin, "ResourcePool")

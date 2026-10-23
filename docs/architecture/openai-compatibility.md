@@ -152,6 +152,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 REST 测试使用 `httpx.MockTransport`，Realtime 测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；两者共同证明契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端实现后，还须以同一组样例运行 HTTP / WebSocket 集成测试，并记录实际 binding、拓扑和验证范围。
 
 PR CI 使用 `CONTRACT_BASE_REF=<target-branch> make contracts-compat` 对比目标分支：删除标准路径 / 操作 / 字段 / 响应状态 / 事件类型或枚举值、增加必填字段、收紧参数域、改变默认值或字段格式都会失败。对 `speech-openapi.yaml`，门禁只沿 `/v1/models`、`/v1/audio/*` 与 `/v1/realtime` 递归追踪实际可达的组件；对 `realtime-events.schema.json`，只比较声明的标准事件定义、公开 union 中的标准事件及其递归引用，再覆盖 `contracts/shared/` 公共域。这样标准表面不会因共享 schema 变更绕过检查，`/v1/nexus` 专属组件与 `nexus.*` 事件也不会被误报为 OpenAI 破坏性变更。内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
+标准请求、模型和实时会话中的可选 `nexus` 属性属于增强边界，兼容门禁不沿该属性递归比较；其正例、负例与传输收敛由契约测试单独负责。其余标准字段仍递归检查，因此不能用“扩展”名义删除或改写标准字段。内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
 
 `make contracts-sdk-test`（即 `pnpm test:contracts-sdk`）锁定 OpenAI JavaScript SDK 的实际 REST 形状；与 Python
 SDK 门禁一起，CI 同时检查两个官方客户端的请求序列化、响应解析和错误映射。两者仍不替代未来服务端 HTTP 集成测试。

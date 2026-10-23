@@ -58,8 +58,10 @@ of defaults, units, enum domains, or stable error codes.
   OpenAI-compatible public error envelope, revisioned references, language
   tags, capability and execution domains, public PCM / usage / realtime
   limits, retire/disable commands, and the redacted execution receipt shared by
-  REST Operation and `nexus.operation.done` projections. Public, admin, and
-  internal contracts reference these definitions instead of copying domains.
+  REST Operation and `nexus.operation.done` projections. ASR and TTS override
+  fields are also shared; transport-specific schemas may narrow a range but do
+  not redefine the same option. Public, admin, and internal contracts reference
+  these definitions instead of copying domains.
 - `realtime-events.schema.json`: the public WebSocket event union. The
   standard transcription subset keeps OpenAI event names and shapes; TTS,
   hypotheses, metadata, credits, gaps, and operation terminals use `nexus.*`.
@@ -232,10 +234,12 @@ OpenAPI and every component schema reachable from those paths, the declared
 standard Realtime event definitions and their reachable definitions, and the
 public `shared/` domains they reference with a Git baseline. It rejects removed
 standard paths, operations, fields, response statuses, event types, enum values,
-or newly required request/response fields. Nexus-only paths, components, and
-events remain governed by their own positive / negative examples rather than
-being misreported as OpenAI breakage. Pull requests run this check against the
-target branch. Database coordination checks are separate:
+or newly required request/response fields. The optional `nexus` property and
+everything reachable only through it are excluded from that walk; Nexus-only
+paths, components, and events remain governed by their own positive / negative
+examples rather than being misreported as OpenAI breakage. Pull requests run
+this check against the target branch. Database coordination checks are
+separate:
 
 ```bash
 SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnexus_test \

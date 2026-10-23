@@ -929,6 +929,125 @@ def test_capacity_aggregates_must_match_authoritative_rows(
         db.execute("DELETE FROM admission_leases WHERE lease_id = 'lease-capacity-accounting'")
 
 
+def test_admission_requires_ready_topology(
+    db: psycopg.Connection[Any],
+) -> None:
+    _insert_host(db, "node-admission-topology")
+    _insert_pool(db, pool_id="admission-topology")
+    _insert_instance(
+        db,
+        instance_id="inst-admission-topology",
+        generation=1,
+        host_node_id="node-admission-topology",
+        architecture="discrete_device_memory",
+        pool_id="admission-topology",
+        state="warming_up",
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-admission-warming-up",
+            operation_id="op-admission-warming-up",
+            attempt_id="att-admission-warming-up",
+            host_node_id="node-admission-topology",
+            instance_id="inst-admission-topology",
+            generation=1,
+            pool_id="admission-topology",
+        )
+
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET instance_state = 'ready',
+            ready_at = CURRENT_TIMESTAMP
+        WHERE instance_id = 'inst-admission-topology'
+          AND instance_generation = 1
+        """
+    )
+    _insert_lease(
+        db,
+        lease_id="lease-admission-ready",
+        operation_id="op-admission-ready",
+        attempt_id="att-admission-ready",
+        host_node_id="node-admission-topology",
+        instance_id="inst-admission-topology",
+        generation=1,
+        pool_id="admission-topology",
+    )
+
+    db.execute(
+        """
+        UPDATE resource_pools
+        SET pool_state = 'draining'
+        WHERE pool_id = 'admission-topology'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-admission-draining-pool",
+            operation_id="op-admission-draining-pool",
+            attempt_id="att-admission-draining-pool",
+            host_node_id="node-admission-topology",
+            instance_id="inst-admission-topology",
+            generation=1,
+            pool_id="admission-topology",
+        )
+
+    db.execute(
+        """
+        UPDATE resource_pools
+        SET pool_state = 'active'
+        WHERE pool_id = 'admission-topology'
+        """
+    )
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET node_state = 'draining'
+        WHERE host_node_id = 'node-admission-topology'
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-admission-draining-node",
+            operation_id="op-admission-draining-node",
+            attempt_id="att-admission-draining-node",
+            host_node_id="node-admission-topology",
+            instance_id="inst-admission-topology",
+            generation=1,
+            pool_id="admission-topology",
+        )
+
+    db.execute(
+        """
+        UPDATE host_nodes
+        SET node_state = 'ready'
+        WHERE host_node_id = 'node-admission-topology'
+        """
+    )
+    db.execute(
+        """
+        UPDATE engine_instances
+        SET instance_state = 'draining'
+        WHERE instance_id = 'inst-admission-topology'
+          AND instance_generation = 1
+        """
+    )
+    with pytest.raises(CheckViolation), db.transaction():
+        _insert_lease(
+            db,
+            lease_id="lease-admission-draining-instance",
+            operation_id="op-admission-draining-instance",
+            attempt_id="att-admission-draining-instance",
+            host_node_id="node-admission-topology",
+            instance_id="inst-admission-topology",
+            generation=1,
+            pool_id="admission-topology",
+        )
+
+
 def test_unified_capacity_aggregates_move_with_quarantine(
     db: psycopg.Connection[Any],
 ) -> None:

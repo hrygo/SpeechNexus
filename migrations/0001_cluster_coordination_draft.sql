@@ -1495,6 +1495,66 @@ CREATE TRIGGER trg_submit_intents_live_lease
     BEFORE INSERT ON submit_intents
     FOR EACH ROW EXECUTE FUNCTION enforce_submit_intent_live_lease();
 
+-- New admission is allowed only while its pool, host, and instance generation
+-- are all serving. Row-share locks serialize the check with a concurrent
+-- draining / quarantine transition.
+CREATE FUNCTION enforce_admission_lease_live_topology() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    pool_state_value TEXT;
+    node_state_value TEXT;
+    instance_state_value TEXT;
+BEGIN
+    SELECT pool_state
+    INTO pool_state_value
+    FROM resource_pools
+    WHERE pool_id = NEW.pool_id
+    FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'admission lease requires an existing resource pool'
+            USING ERRCODE = '23503';
+    END IF;
+    IF pool_state_value <> 'active' THEN
+        RAISE EXCEPTION 'admission lease requires an active resource pool'
+            USING ERRCODE = '23514';
+    END IF;
+
+    SELECT node_state
+    INTO node_state_value
+    FROM host_nodes
+    WHERE host_node_id = NEW.host_node_id
+    FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'admission lease requires an existing host node'
+            USING ERRCODE = '23503';
+    END IF;
+    IF node_state_value <> 'ready' THEN
+        RAISE EXCEPTION 'admission lease requires a ready host node'
+            USING ERRCODE = '23514';
+    END IF;
+
+    SELECT instance_state
+    INTO instance_state_value
+    FROM engine_instances
+    WHERE instance_id = NEW.instance_id
+      AND instance_generation = NEW.instance_generation
+    FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'admission lease requires an existing instance generation'
+            USING ERRCODE = '23503';
+    END IF;
+    IF instance_state_value <> 'ready' THEN
+        RAISE EXCEPTION 'admission lease requires a ready instance generation'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_admission_leases_live_topology
+    BEFORE INSERT ON admission_leases
+    FOR EACH ROW EXECUTE FUNCTION enforce_admission_lease_live_topology();
+
 -- Aggregate capacity counters are projections of authoritative instance and
 -- lease rows. They are checked at transaction end so an admission transaction
 -- may update host and instance counters after inserting the complete stage

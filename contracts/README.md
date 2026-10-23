@@ -202,7 +202,9 @@ Host and instance capacity counters are transaction-end projections of the
 authoritative instance base budgets and admission-lease states. A committed
 transaction cannot leave reserved, incremental, or quarantined counters stale,
 and capacity-accounting history cannot be deleted or truncated to bypass that
-check.
+check. A new admission lease also requires an active pool, ready host node, and
+ready instance generation; the row locks serialize that check with concurrent
+draining or quarantine transitions.
 
 ## OpenAI compatibility
 

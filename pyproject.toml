@@ -24,6 +24,7 @@ dev = [
   "minio>=7.2,<8",
   "mypy>=2.4,<3",
   "numpy>=2.2,<3",
+  "openai>=2,<3",
   "openapi-spec-validator>=0.7,<1",
   "psycopg[binary]>=3.2,<4",
   "pytest>=9.1.1,<10",

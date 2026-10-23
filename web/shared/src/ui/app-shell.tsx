@@ -47,7 +47,7 @@ export function AppShell({
             <span className="status-dot" aria-hidden="true" />
             <span>
               <strong>工程外壳已就绪</strong>
-              <small>业务能力仍待契约与实现</small>
+              <small>契约已交付，业务实现待接入</small>
             </span>
           </div>
         </section>

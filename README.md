@@ -43,9 +43,9 @@ SpeechNexus 希望服务于三类需求：
 
 ### 通过 API 集成到应用
 
-语音底座规划提供 OpenAI Audio 兼容子集，以及音色、持久任务和场景预设等增强接口，适合接入已有应用、SDK 或 MCP 调用方。实时接口只支持明确声明的兼容子集，并需要 SpeechNexus 会话协商。
+语音底座已冻结 P0 契约：OpenAI Audio 兼容子集，以及音色、持久任务和场景预设等 `nexus` 增强接口，适合接入已有应用、SDK 或 MCP 调用方。标准 OpenAI SDK 可将 `base_url` 指向部署的 `/v1`；实时接口支持 `model` 直连的仅转写兼容模式和预创建的 nexus 会话，两者都只覆盖明确声明的事件子集。
 
-当前可调用的是 `/healthz` 与 `/readyz`。语音调用方式和示例见[语音接口设计](docs/architecture/speech-api.md)，业务协议仍待冻结。
+当前运行时可调用的是 `/healthz` 与 `/readyz`；语音与工作台路由尚未实现。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
 
 ### 通过 AdminUI 维护部署
 

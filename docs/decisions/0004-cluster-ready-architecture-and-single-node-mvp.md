@@ -30,6 +30,8 @@ SpeechNexus 的首轮交付（MVP）采用单节点 Docker Compose 部署，不�
 | **4. 算力执行与节点控制层** | `execution-gateway`、`node-controller`、各类推理引擎容器 | 每个 `execution-gateway` 绑定 `node_id` 与受管引擎入口，串行化 `submit_intent` 屏障；`node-controller` 按 `target_node_id == self.node_id` 认领持久启停意图 | 本机部署 1 个 `execution-gateway`（`gateway-1`）与 1 个本地受限控制器，纳管本机推理容器 |
 | **5. 共享权威数据层** | PostgreSQL、S3 兼容对象存储（MinIO） | 按 `speech`、`gateway_control`、`workbench` 划分表所有权与数据库凭据；对象存储隔离 `staging/` 与已提交 `artifacts/` | 单实例 PostgreSQL 16 与单实例 MinIO 容器，仅切换环境变量 DSN / Endpoint 即可对接外部高可用集群 |
 
+单机 MVP 允许把 `scheduler` 与 `job-worker` 的逻辑角色折叠进 `api` 进程，以减少容器数量；折叠后仍须保留独立进程身份、数据库连接池、scheduler 租约与 worker claim 语义，不能因为同进程就绕过 fencing、outbox 或短事务边界。`node-controller` 继续与业务 API 隔离，仅纳管批准模板；`execution-gateway` 继续独占引擎入口与凭据。集群部署时可把这些逻辑角色拆回独立进程，不改变机器契约。
+
 ### 3. 三级资源拓扑与同机父物理预算
 
 为同时满足单台统一内存主机（如 Linux ARM64 / NVIDIA GB10）的防超卖保护与未来多 GPU 节点的横向扩容，资源治理采用**数据驱动的三级拓扑模型**：
@@ -37,12 +39,15 @@ SpeechNexus 的首轮交付（MVP）采用单节点 Docker Compose 部署，不�
 ```text
 HostNode (host_node_id, 节点级共享父物理预算: 统一内存 / 显存 / CPU / 临时磁盘)
   └── EngineInstance (instance_id, host_node_id, gateway_id, binding_revision_id, generation, 常驻与增量槽位)
-        └── ResourcePool (pool_id, 逻辑能力池: asr-realtime / tts-realtime / voice-creation 等)
+          │
+          └── belongs-to ──> ResourcePool (pool_id, 逻辑能力池: asr-realtime / tts-realtime / voice-creation 等)
 ```
 
-1. **按节点核算父物理预算**：映射到同一 `host_node_id` 的所有运行实例与按需加载峰值共享该节点的父物理预算；不同 `host_node_id` 的物理预算彼此独立。
+`ResourcePool` 是逻辑能力隔离边界，不属于某个节点的子资源，也不要求独立物理设备：同一池可以跨多个 `HostNode`，每个 `EngineInstance` 恰好属于一个池并运行在一个节点上。池级调度 owner 以 `owner_scheduler_id` 与 fencing token 标识，不以容量节点身份代替。
+
+1. **按节点核算父物理预算**：映射到同一 `host_node_id` 的所有运行实例与按需加载峰值共享该节点的父物理预算；不同 `host_node_id` 的物理预算彼此独立。统一内存节点只用 unified 父预算，离散设备节点分列 device 与 host 预算。
 2. **跨层级原子准入**：Scheduler 在分配容量租约或编排按需实例（如 VoiceDesign）加载时，在同一 PostgreSQL 事务中同时校验并扣减全局 / 工作空间配额、目标 `EngineInstance` 槽位以及所属 `HostNode` 的父物理预算余量。
-3. **零代码扩容算力节点**：MVP 单机阶段 `host_nodes` 仅注册 `node-local-1` 一条记录；集群扩容时只需新增算力节点记录并启动对应节点的 `execution-gateway`、`node-controller` 与模型实例，准入事务与调度算法无需改动。
+3. **数据驱动扩容**：MVP 单机阶段 `host_nodes` 仅注册 `node-local-1` 一条记录；集群扩容时新增算力节点记录并启动对应节点的 `execution-gateway`、`node-controller` 与模型实例。准入事务与调度算法不固化节点数量，但同一节点的父预算行仍是并发准入热点，扩容吞吐须以实际压测结果而不是“增加节点即线性扩容”的假设验收。
 
 ### 4. 实时会话路由、执行网关接管与节点控制器边界
 

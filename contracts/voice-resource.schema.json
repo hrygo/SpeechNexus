@@ -1,0 +1,1077 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/voice-resource.schema.json",
+  "title": "VoiceResource",
+  "description": "Voice draft, generation candidate, validation, publication, immutable VoiceRevision, and pronunciation-set resources. Public projections never contain backend voice handles, feature vectors, object keys, filesystem paths, or engine credentials.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/VoiceDraft"
+    },
+    {
+      "$ref": "#/$defs/VoiceDraftRevision"
+    },
+    {
+      "$ref": "#/$defs/VoiceValidation"
+    },
+    {
+      "$ref": "#/$defs/VoicePublication"
+    },
+    {
+      "$ref": "#/$defs/VoiceRevision"
+    },
+    {
+      "$ref": "#/$defs/PronunciationRevision"
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Revision": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "Sha256Digest": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "LanguageTag": {
+      "$ref": "shared/language.schema.json#/$defs/LanguageTag"
+    },
+    "BindingReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
+    },
+    "VoiceKind": {
+      "type": "string",
+      "enum": [
+        "design",
+        "clone"
+      ]
+    },
+    "VoiceDraftStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "generating",
+        "candidate",
+        "validating",
+        "validated",
+        "published",
+        "failed",
+        "preview_only"
+      ]
+    },
+    "VoiceRevisionStatus": {
+      "type": "string",
+      "enum": [
+        "published",
+        "retired",
+        "disabled"
+      ]
+    },
+    "CheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        }
+      }
+    },
+    "DesignInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "description",
+        "preview_text"
+      ],
+      "properties": {
+        "kind": {
+          "const": "design"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/LanguageTag"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "CloneInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reference_audio_asset_id",
+        "source_use_confirmed"
+      ],
+      "properties": {
+        "kind": {
+          "const": "clone"
+        },
+        "reference_audio_asset_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "reference_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 10000
+        },
+        "preview_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/LanguageTag"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_use_confirmed": {
+          "const": true,
+          "description": "Records the caller's explicit use confirmation for this submission. It is not identity verification, independent authorization, or dual review."
+        }
+      }
+    },
+    "VoiceInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DesignInput"
+        },
+        {
+          "$ref": "#/$defs/CloneInput"
+        }
+      ]
+    },
+    "VoiceDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "kind",
+        "status",
+        "head_revision",
+        "metadata_revision",
+        "display_name",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_draft"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_draft"
+        },
+        "kind": {
+          "$ref": "#/$defs/VoiceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/VoiceDraftStatus"
+        },
+        "head_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "metadata_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "current_voice_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "VoiceDraftRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "draft_id",
+        "revision",
+        "object",
+        "kind",
+        "status",
+        "input",
+        "model_binding",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_draft_revision"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "object": {
+          "const": "nexus.voice_draft_revision"
+        },
+        "kind": {
+          "$ref": "#/$defs/VoiceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/VoiceDraftStatus"
+        },
+        "input": {
+          "$ref": "#/$defs/VoiceInput"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/BindingReference"
+        },
+        "generation_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_artifact_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "validation_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_voice_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_voice_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FailureDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "design"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "properties": {
+                  "kind": {
+                    "const": "design"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "clone"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "properties": {
+                  "kind": {
+                    "const": "clone"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "failure"
+            ],
+            "properties": {
+              "failure": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "published_voice_id",
+              "published_voice_revision"
+            ],
+            "properties": {
+              "published_voice_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "published_voice_revision": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "preview_only"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "published_voice_id": {
+                "type": "null"
+              },
+              "published_voice_revision": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "FailureDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "VoiceValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "draft_id",
+        "draft_revision",
+        "validation_set_revision",
+        "model_binding",
+        "status",
+        "checks",
+        "publication_eligible",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_validation"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_validation"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "validation_set_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/BindingReference"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "running",
+            "passed",
+            "failed"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          }
+        },
+        "publication_eligible": {
+          "type": "boolean",
+          "description": "True only when every required check passed and the candidate has a verified reusable path to later TTS. Preview-only candidates are never publication eligible."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "passed",
+                        "skipped"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication_eligible": {
+                "const": true
+              }
+            },
+            "required": [
+              "publication_eligible"
+            ]
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "VoicePublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "draft_id",
+        "draft_revision",
+        "voice_id",
+        "voice_revision",
+        "validation_id",
+        "manual_confirmation",
+        "published_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_publication"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_publication"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "validation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "manual_confirmation": {
+          "const": true,
+          "description": "Records explicit content confirmation for this publication. It does not prove a second reviewer or a role-based approval."
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "VoiceCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "sample_rates_hz",
+        "audio_formats",
+        "modes"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/LanguageTag"
+          }
+        },
+        "sample_rates_hz": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 96000
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "wav",
+              "pcm"
+            ]
+          }
+        },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "chunked"
+            ]
+          }
+        },
+        "max_input_codepoints": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "VoiceSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "designed",
+            "cloned",
+            "builtin"
+          ]
+        },
+        "draft_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "draft_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_asset_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sha256Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "VoiceRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "voice_id",
+        "revision",
+        "object",
+        "status",
+        "display_name",
+        "source",
+        "model_binding",
+        "capabilities",
+        "validation",
+        "published_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_revision"
+        },
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "object": {
+          "const": "nexus.voice_revision"
+        },
+        "status": {
+          "$ref": "#/$defs/VoiceRevisionStatus"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/VoiceSource"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/BindingReference"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/VoiceCapabilities"
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation_id",
+            "status",
+            "checked_at"
+          ],
+          "properties": {
+            "validation_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "passed"
+              ]
+            },
+            "checked_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "PronunciationEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grapheme",
+        "phonemes"
+      ],
+      "properties": {
+        "grapheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "phonemes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "language": {
+          "$ref": "#/$defs/LanguageTag"
+        }
+      }
+    },
+    "PronunciationRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "revision",
+        "object",
+        "status",
+        "encoding",
+        "entries",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "pronunciation_revision"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "object": {
+          "const": "nexus.pronunciation_revision"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "retired"
+          ]
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "pinyin",
+            "ipa"
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/PronunciationEntry"
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "resource_type": "voice_draft",
+      "id": "vdraft_demo",
+      "object": "nexus.voice_draft",
+      "kind": "design",
+      "status": "generating",
+      "head_revision": "1",
+      "metadata_revision": 1,
+      "display_name": "Narration candidate",
+      "current_voice_id": null,
+      "created_at": "2026-10-22T09:00:00Z",
+      "updated_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "resource_type": "voice_draft_revision",
+      "draft_id": "vdraft_demo",
+      "revision": "1",
+      "object": "nexus.voice_draft_revision",
+      "kind": "design",
+      "status": "candidate",
+      "input": {
+        "kind": "design",
+        "description": "Warm, clear Mandarin narration with a calm pace.",
+        "preview_text": "Welcome to today's story.",
+        "language": "zh",
+        "display_name": "Narration candidate"
+      },
+      "model_binding": {
+        "id": "voice-design",
+        "revision": "3"
+      },
+      "generation_job_id": "job_design_demo",
+      "preview_artifact_ids": [
+        "art_preview_demo"
+      ],
+      "validation_job_id": null,
+      "published_voice_id": null,
+      "published_voice_revision": null,
+      "failure": null,
+      "created_at": "2026-10-22T09:00:00Z"
+    },
+    {
+      "resource_type": "voice_validation",
+      "id": "vval_demo",
+      "object": "nexus.voice_validation",
+      "draft_id": "vdraft_demo",
+      "draft_revision": "1",
+      "validation_set_revision": "2",
+      "model_binding": {
+        "id": "voice-clone",
+        "revision": "3"
+      },
+      "status": "passed",
+      "checks": [
+        {
+          "name": "format",
+          "status": "passed",
+          "detail": null
+        },
+        {
+          "name": "reusable_tts",
+          "status": "passed",
+          "detail": null
+        },
+        {
+          "name": "quality_subjective",
+          "status": "skipped",
+          "detail": "not required by the validation set"
+        }
+      ],
+      "publication_eligible": true,
+      "created_at": "2026-10-22T09:05:00Z"
+    },
+    {
+      "resource_type": "voice_publication",
+      "id": "vpub_demo",
+      "object": "nexus.voice_publication",
+      "draft_id": "vdraft_demo",
+      "draft_revision": "1",
+      "voice_id": "voice_demo",
+      "voice_revision": "1",
+      "validation_id": "vval_demo",
+      "manual_confirmation": true,
+      "published_at": "2026-10-22T09:10:00Z"
+    },
+    {
+      "resource_type": "voice_revision",
+      "voice_id": "voice_demo",
+      "revision": "1",
+      "object": "nexus.voice_revision",
+      "status": "published",
+      "display_name": "Narration candidate",
+      "source": {
+        "type": "designed",
+        "draft_id": "vdraft_demo",
+        "draft_revision": "1",
+        "source_asset_digest": null
+      },
+      "model_binding": {
+        "id": "voice-clone",
+        "revision": "3"
+      },
+      "capabilities": {
+        "languages": [
+          "zh"
+        ],
+        "sample_rates_hz": [
+          24000
+        ],
+        "audio_formats": [
+          "mp3",
+          "wav",
+          "pcm"
+        ],
+        "modes": [
+          "complete",
+          "chunked"
+        ],
+        "max_input_codepoints": 2000
+      },
+      "validation": {
+        "validation_id": "vval_demo",
+        "status": "passed",
+        "checked_at": "2026-10-22T09:05:00Z"
+      },
+      "published_at": "2026-10-22T09:10:00Z",
+      "retired_at": null
+    },
+    {
+      "resource_type": "pronunciation_revision",
+      "id": "pron_demo",
+      "revision": "1",
+      "object": "nexus.pronunciation_revision",
+      "status": "published",
+      "encoding": "pinyin",
+      "entries": [
+        {
+          "grapheme": "SpeechNexus",
+          "phonemes": "si pi chi ne ke si",
+          "language": "zh"
+        }
+      ],
+      "created_at": "2026-10-22T09:00:00Z"
+    }
+  ]
+}

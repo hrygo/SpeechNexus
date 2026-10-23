@@ -1,0 +1,2464 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus workbench API
+  version: 0.1.0.dev0
+  description: |
+    Optional application layer for projects, transcripts, meetings, assistant
+    turns, teleprompter state, audiobook rendering, saved copies, and exports.
+
+    This API is not OpenAI-compatible and never replaces the public speech API.
+    It calls the speech base through public Job/Artifact APIs and keeps its own
+    records, staging, outbox, and export artifacts. Every workspace is shared in
+    P0; no route establishes a user identity or personal private space.
+servers:
+  - url: /
+security:
+  - SharedServiceKey: []
+  - {}
+tags:
+  - name: status
+  - name: projects
+  - name: transcripts
+  - name: meetings
+  - name: assistant
+  - name: teleprompter
+  - name: audiobooks
+  - name: saved-assets
+  - name: exports
+paths:
+  /v1/workbench/status:
+    get:
+      tags: [status]
+      operationId: getWorkbenchStatus
+      summary: Report workbench feature availability
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Workbench status.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/workbench/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List projects
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Projects.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreateRequest"
+      responses:
+        "201":
+          description: Project created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/projects/{project_id}:
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Get a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Project.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Update project metadata
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPatch"
+      responses:
+        "200":
+          description: Updated project.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/projects/{project_id}/transcripts:
+    get:
+      tags: [transcripts]
+      operationId: listTranscripts
+      summary: List project transcripts
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Transcripts.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [transcripts]
+      operationId: createTranscript
+      summary: Create a transcript from a speech artifact or plain text
+      description: |
+        A speech artifact import records its source artifact and receipt. A
+        manual transcript starts as a draft revision. The workbench never writes
+        the speech base artifact or Job state.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscriptCreateRequest"
+      responses:
+        "201":
+          description: Transcript created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/transcripts/{transcript_id}:
+    get:
+      tags: [transcripts]
+      operationId: getTranscript
+      summary: Get a transcript and its current revision
+      parameters:
+        - $ref: "#/components/parameters/TranscriptIdPath"
+        - name: revision
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Revision"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Transcript view.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/transcripts/{transcript_id}/revisions:
+    post:
+      tags: [transcripts]
+      operationId: createTranscriptRevision
+      summary: Create a new transcript revision
+      description: |
+        Creates a new revision from the expected current head. Sealed revisions
+        are immutable; a later correction creates another revision and preserves
+        the source relation. Downstream minutes become stale when their source
+        revision changes.
+      parameters:
+        - $ref: "#/components/parameters/TranscriptIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscriptRevisionCreateRequest"
+      responses:
+        "201":
+          description: Transcript revision created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptRevision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/transcripts/{transcript_id}/revisions/{revision}:
+    get:
+      tags: [transcripts]
+      operationId: getTranscriptRevision
+      summary: Get one transcript revision
+      parameters:
+        - $ref: "#/components/parameters/TranscriptIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Transcript revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptRevision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/projects/{project_id}/meetings:
+    post:
+      tags: [meetings]
+      operationId: createMeeting
+      summary: Create a meeting record
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingCreateRequest"
+      responses:
+        "201":
+          description: Meeting created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/meetings/{meeting_id}:
+    get:
+      tags: [meetings]
+      operationId: getMeeting
+      summary: Get a meeting
+      parameters:
+        - $ref: "#/components/parameters/MeetingIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Meeting.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/meetings/{meeting_id}/seal:
+    post:
+      tags: [meetings]
+      operationId: sealMeeting
+      summary: Seal a meeting transcript revision
+      parameters:
+        - $ref: "#/components/parameters/MeetingIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingSealRequest"
+      responses:
+        "200":
+          description: Meeting sealed.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/meetings/{meeting_id}/minutes:
+    post:
+      tags: [meetings]
+      operationId: createMeetingMinutes
+      summary: Create a meeting-minutes job from a sealed transcript
+      description: |
+        LLM integration is optional and disabled by default. Only a sealed
+        transcript revision is accepted. The model and template revisions are
+        pinned. Failure does not modify the transcript.
+      parameters:
+        - $ref: "#/components/parameters/MeetingIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MinutesCreateRequest"
+      responses:
+        "202":
+          description: Minutes job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MinutesJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}:
+    get:
+      tags: [meetings]
+      operationId: getMeetingMinutes
+      summary: Get a meeting-minutes job
+      parameters:
+        - $ref: "#/components/parameters/MeetingIdPath"
+        - name: minutes_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Minutes job.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MinutesJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/projects/{project_id}/assistant-turns:
+    post:
+      tags: [assistant]
+      operationId: createAssistantTurn
+      summary: Create an assistant turn and speech job
+      description: |
+        The workbench controls the business turn. It calls the public speech Job
+        API for text-to-speech; the speech base does not create assistant turns.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantTurnCreateRequest"
+      responses:
+        "202":
+          description: Assistant turn accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTurn"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/workbench/assistant-turns/{turn_id}:
+    get:
+      tags: [assistant]
+      operationId: getAssistantTurn
+      summary: Get an assistant turn
+      parameters:
+        - $ref: "#/components/parameters/TurnIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Assistant turn.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTurn"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/assistant-turns/{turn_id}/cancellations:
+    post:
+      tags: [assistant]
+      operationId: cancelAssistantTurn
+      summary: Cancel an assistant turn
+      parameters:
+        - $ref: "#/components/parameters/TurnIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Turn already terminal.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTurn"
+        "202":
+          description: Cancellation accepted.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTurn"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/workbench/projects/{project_id}/teleprompter:
+    get:
+      tags: [teleprompter]
+      operationId: getTeleprompterState
+      summary: Get teleprompter state
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Teleprompter state.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeleprompterState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [teleprompter]
+      operationId: updateTeleprompterState
+      summary: Update teleprompter position and manual takeover
+      description: |
+        The state stores the script revision and position. Matches from an older
+        script revision or stream epoch must not move the current position.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeleprompterUpdateRequest"
+      responses:
+        "200":
+          description: Updated teleprompter state.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeleprompterState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/workbench/projects/{project_id}/books:
+    post:
+      tags: [audiobooks]
+      operationId: createBook
+      summary: Create an audiobook project
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookCreateRequest"
+      responses:
+        "201":
+          description: Book created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/books/{book_id}:
+    get:
+      tags: [audiobooks]
+      operationId: getBook
+      summary: Get an audiobook project
+      parameters:
+        - $ref: "#/components/parameters/BookIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Book.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/books/{book_id}/chapters:
+    post:
+      tags: [audiobooks]
+      operationId: createChapter
+      summary: Create a chapter
+      parameters:
+        - $ref: "#/components/parameters/BookIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChapterCreateRequest"
+      responses:
+        "201":
+          description: Chapter created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/chapters/{chapter_id}:
+    get:
+      tags: [audiobooks]
+      operationId: getChapter
+      summary: Get a chapter
+      parameters:
+        - $ref: "#/components/parameters/ChapterIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Chapter.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/chapters/{chapter_id}/render-units:
+    post:
+      tags: [audiobooks]
+      operationId: createRenderUnit
+      summary: Create a fixed render unit
+      description: |
+        Pins text, voice, pronunciation, model, and profile revisions. The
+        speech base only receives a bounded text unit Job; the workbench owns
+        chapter and book composition.
+      parameters:
+        - $ref: "#/components/parameters/ChapterIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitCreateRequest"
+      responses:
+        "201":
+          description: Render unit created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/render-units/{unit_id}:
+    get:
+      tags: [audiobooks]
+      operationId: getRenderUnit
+      summary: Get a render unit
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Render unit.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [audiobooks]
+      operationId: updateRenderUnit
+      summary: Update render-unit text or casting
+      description: |
+        A changed text, voice, pronunciation, model, or profile creates a new
+        unit revision and marks dependent output stale. Unchanged units remain
+        reusable.
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitPatch"
+      responses:
+        "200":
+          description: Updated render unit.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/render-units/{unit_id}/generations:
+    post:
+      tags: [audiobooks]
+      operationId: generateRenderUnit
+      summary: Submit a speech Job for a render unit
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitGenerationRequest"
+      responses:
+        "202":
+          description: Speech Job submitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitGenerationAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/workbench/saved-assets/{asset_id}:
+    get:
+      tags: [saved-assets]
+      operationId: getSavedAsset
+      summary: Get a saved project asset
+      parameters:
+        - $ref: "#/components/parameters/SavedAssetIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Saved asset metadata.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedAsset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/projects/{project_id}/saved-assets:
+    post:
+      tags: [saved-assets]
+      operationId: saveProjectAsset
+      summary: Copy a committed speech artifact into a project
+      description: |
+        Downloads the speech artifact through the public API, verifies its
+        digest and receipt, then writes a workbench-owned copy. A base artifact
+        expiration or deletion never mutates the speech Job; the workbench copy
+        has its own lifecycle.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedAssetCreateRequest"
+      responses:
+        "201":
+          description: Saved asset created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedAsset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/saved-assets/{asset_id}/content:
+    get:
+      tags: [saved-assets]
+      operationId: downloadSavedAsset
+      summary: Download a saved project asset
+      parameters:
+        - $ref: "#/components/parameters/SavedAssetIdPath"
+        - $ref: "#/components/parameters/Range"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Full content.
+          headers:
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content.
+          headers:
+            Content-Range:
+              $ref: "#/components/headers/ContentRange"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/books/{book_id}/exports:
+    post:
+      tags: [exports]
+      operationId: createBookExport
+      summary: Create a book export job
+      description: |
+        Requires every required render unit to have a saved copy whose source
+        revisions match the requested manifest. The export is workbench-owned
+        and never creates or modifies speech-base JobStep or Artifact records.
+      parameters:
+        - $ref: "#/components/parameters/BookIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportCreateRequest"
+      responses:
+        "202":
+          description: Export job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/workbench/exports/{export_id}:
+    get:
+      tags: [exports]
+      operationId: getBookExport
+      summary: Get a book export job
+      parameters:
+        - $ref: "#/components/parameters/ExportIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Export job.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/workbench/exports/{export_id}/cancellations:
+    post:
+      tags: [exports]
+      operationId: cancelBookExport
+      summary: Cancel a book export job
+      parameters:
+        - $ref: "#/components/parameters/ExportIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Export already terminal.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "202":
+          description: Cancellation accepted.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/workbench/exports/{export_id}/events:
+    get:
+      tags: [exports]
+      operationId: streamExportEvents
+      summary: Stream export events with SSE
+      parameters:
+        - $ref: "#/components/parameters/ExportIdPath"
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/EventSequence"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Server-sent event stream.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+            Cache-Control:
+              schema:
+                type: string
+                const: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-sse-event-schema:
+                $ref: "#/components/schemas/ExportEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/workbench/exports/{export_id}/content:
+    get:
+      tags: [exports]
+      operationId: downloadBookExport
+      summary: Download a completed export artifact
+      parameters:
+        - $ref: "#/components/parameters/ExportIdPath"
+        - $ref: "#/components/parameters/Range"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Full export content.
+          headers:
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial export content.
+          headers:
+            Content-Range:
+              $ref: "#/components/headers/ContentRange"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+components:
+  securitySchemes:
+    SharedServiceKey:
+      type: http
+      scheme: bearer
+      description: Optional deployment-wide shared credential; not a user identity.
+  parameters:
+    XRequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    WorkspaceIdQuery:
+      name: workspace_id
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    ProjectIdPath:
+      name: project_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    TranscriptIdPath:
+      name: transcript_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    RevisionPath:
+      name: revision
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Revision"
+    MeetingIdPath:
+      name: meeting_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    TurnIdPath:
+      name: turn_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    BookIdPath:
+      name: book_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    ChapterIdPath:
+      name: chapter_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    RenderUnitIdPath:
+      name: unit_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    SavedAssetIdPath:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    ExportIdPath:
+      name: export_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    Range:
+      name: Range
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: "^bytes=[0-9]*-[0-9]*$"
+  headers:
+    XRequestId:
+      description: Validated client request ID or a server-generated correlation ID.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before retrying cancellation coordination.
+      schema:
+        type: integer
+        minimum: 0
+    AcceptRanges:
+      schema:
+        type: string
+        const: bytes
+    ContentRange:
+      schema:
+        type: string
+        pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
+  responses:
+    BadRequest:
+      description: Malformed request or unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Shared service credential required or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Revision mismatch, idempotency conflict, or incompatible lifecycle transition.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Invalid source, unsupported unit composition, or feature disabled.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Queue or quota limit exceeded; follow Retry-After.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Workbench or optional LLM dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Gone:
+      description: Event history or content expired.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Identifier:
+      $ref: "shared/identifiers.schema.json#/$defs/Identifier"
+    Revision:
+      $ref: "shared/identifiers.schema.json#/$defs/Revision"
+    EventSequence:
+      $ref: "shared/identifiers.schema.json#/$defs/EventSequence"
+    Sha256Digest:
+      $ref: "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    ErrorResponse:
+      $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
+    WorkbenchStatus:
+      type: object
+      additionalProperties: false
+      required: [object, workbench_enabled, llm_enabled, shared_deployment_notice, capabilities]
+      properties:
+        object:
+          const: nexus.workbench_status
+        workbench_enabled:
+          type: boolean
+        llm_enabled:
+          type: boolean
+          description: True only when a deployment-approved intranet LLM is configured.
+        shared_deployment_notice:
+          type: string
+          const: shared_deployment
+          description: UI must localize this code as "all workspaces are shared within this deployment; no personal isolation is implied".
+        capabilities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, status]
+            properties:
+              name:
+                type: string
+                enum: [transcription, meeting_minutes, assistant, teleprompter, audiobook_export]
+              status:
+                type: string
+                enum: [available, disabled, unavailable]
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, object, workspace_id, name, status, metadata_revision, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.workbench_project
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+        status:
+          type: string
+          enum: [active, archived]
+        metadata_revision:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+    ProjectPatch:
+      type: object
+      additionalProperties: false
+      required: [expected_metadata_revision]
+      properties:
+        expected_metadata_revision:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+        status:
+          type: string
+          enum: [active, archived]
+    ProjectList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    Transcript:
+      type: object
+      additionalProperties: false
+      required: [id, object, project_id, display_name, head_revision, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.transcript
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        head_revision:
+          $ref: "#/components/schemas/Revision"
+        source_artifact_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TranscriptSource:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, artifact_id]
+          properties:
+            kind:
+              const: speech_artifact
+            artifact_id:
+              $ref: "#/components/schemas/Identifier"
+            receipt_id:
+              $ref: "#/components/schemas/Identifier"
+        - type: object
+          additionalProperties: false
+          required: [kind, text]
+          properties:
+            kind:
+              const: manual
+            text:
+              type: string
+              minLength: 1
+              maxLength: 1000000
+    TranscriptCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name, source]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source:
+          $ref: "#/components/schemas/TranscriptSource"
+    TranscriptRevision:
+      type: object
+      additionalProperties: false
+      required: [id, object, transcript_id, revision, status, text, source_revision, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.transcript_revision
+        transcript_id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        status:
+          type: string
+          enum: [sealed, draft]
+        text:
+          type: string
+          maxLength: 1000000
+        source_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        source_artifact_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+    TranscriptRevisionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, text]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          maxLength: 1000000
+        source_revision:
+          $ref: "#/components/schemas/Revision"
+    TranscriptView:
+      type: object
+      additionalProperties: false
+      required: [object, transcript, revision]
+      properties:
+        object:
+          const: nexus.transcript_view
+        transcript:
+          $ref: "#/components/schemas/Transcript"
+        revision:
+          $ref: "#/components/schemas/TranscriptRevision"
+    TranscriptList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transcript"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    Meeting:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - project_id
+        - display_name
+        - status
+        - transcript_id
+        - save_audio
+        - started_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.meeting
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [capturing, sealed, minutes_pending, minutes_ready, failed]
+        transcript_id:
+          $ref: "#/components/schemas/Identifier"
+        sealed_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        minutes_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        save_audio:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    MeetingCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      oneOf:
+        - required: [speech_session_id]
+        - required: [transcript_id]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        speech_session_id:
+          $ref: "#/components/schemas/Identifier"
+        transcript_id:
+          $ref: "#/components/schemas/Identifier"
+        save_audio:
+          type: boolean
+          default: false
+    MeetingSealRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_transcript_revision]
+      properties:
+        expected_transcript_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          maxLength: 1000000
+    WorkbenchJobError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{2,63}$"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        retryable:
+          type: boolean
+        param:
+          type: [string, "null"]
+          maxLength: 128
+    MinutesJob:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - meeting_id
+        - status
+        - source_revision
+        - template_revision
+        - llm_model
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.minutes_job
+        meeting_id:
+          $ref: "#/components/schemas/Identifier"
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled, expired]
+        source_revision:
+          $ref: "#/components/schemas/Revision"
+        template_revision:
+          $ref: "#/components/schemas/Revision"
+        llm_model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        minutes_text:
+          type: [string, "null"]
+          maxLength: 1000000
+        artifact_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/WorkbenchJobError"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                not:
+                  const: failed
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+    MinutesCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [template_revision]
+      properties:
+        template_revision:
+          $ref: "#/components/schemas/Revision"
+        llm_model:
+          type: string
+          maxLength: 128
+    AssistantTurn:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - project_id
+        - status
+        - input_text
+        - voice
+        - playback_generation
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.assistant_turn
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        input_text:
+          type: string
+          maxLength: 20000
+        output_text:
+          type: [string, "null"]
+          maxLength: 20000
+        voice:
+          type: object
+          additionalProperties: false
+          required: [id, revision]
+          properties:
+            id:
+              $ref: "#/components/schemas/Identifier"
+            revision:
+              $ref: "#/components/schemas/Revision"
+        speech_job_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        playback_generation:
+          type: integer
+          minimum: 1
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/WorkbenchJobError"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                not:
+                  const: failed
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+    AssistantTurnCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [input_text, voice]
+      properties:
+        input_text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        voice:
+          type: object
+          additionalProperties: false
+          required: [id, revision]
+          properties:
+            id:
+              $ref: "#/components/schemas/Identifier"
+            revision:
+              $ref: "#/components/schemas/Revision"
+        model:
+          type: string
+          maxLength: 128
+        profile:
+          type: object
+          additionalProperties: false
+          required: [id, revision]
+          properties:
+            id:
+              $ref: "#/components/schemas/Identifier"
+            revision:
+              $ref: "#/components/schemas/Revision"
+    TeleprompterState:
+      type: object
+      additionalProperties: false
+      required: [object, project_id, script_revision, visible_position, manual_hold, updated_at]
+      properties:
+        object:
+          const: nexus.teleprompter_state
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        script_revision:
+          $ref: "#/components/schemas/Revision"
+        visible_position:
+          type: integer
+          minimum: 0
+        manual_hold:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+    TeleprompterUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [script_revision, visible_position, manual_hold]
+      properties:
+        script_revision:
+          $ref: "#/components/schemas/Revision"
+        visible_position:
+          type: integer
+          minimum: 0
+        manual_hold:
+          type: boolean
+    Book:
+      type: object
+      additionalProperties: false
+      required: [id, object, project_id, title, status, casting_revision, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.book
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        status:
+          type: string
+          enum: [draft, ready, exporting]
+        casting_revision:
+          $ref: "#/components/schemas/Revision"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BookCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        source_text:
+          type: [string, "null"]
+          maxLength: 5000000
+    Chapter:
+      type: object
+      additionalProperties: false
+      required: [id, object, book_id, title, ordinal, text_revision, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.chapter
+        book_id:
+          $ref: "#/components/schemas/Identifier"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        ordinal:
+          type: integer
+          minimum: 0
+        text_revision:
+          $ref: "#/components/schemas/Revision"
+        created_at:
+          type: string
+          format: date-time
+    ChapterCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [title, ordinal, text]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        ordinal:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+          minLength: 1
+          maxLength: 5000000
+    RenderUnitVoice:
+      $ref: "shared/references.schema.json#/$defs/ResourceReference"
+    RenderUnit:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - chapter_id
+        - ordinal
+        - revision
+        - text
+        - voice
+        - model
+        - status
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.render_unit
+        chapter_id:
+          $ref: "#/components/schemas/Identifier"
+        ordinal:
+          type: integer
+          minimum: 0
+        revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        model:
+          type: string
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        status:
+          type: string
+          enum: [pending, generating, ready, stale, failed]
+        saved_asset_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        speech_job_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        source_artifact_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        source_receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        updated_at:
+          type: string
+          format: date-time
+    RenderUnitCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [ordinal, text, voice, model]
+      properties:
+        ordinal:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          $ref: "#/components/schemas/RenderUnitVoice"
+    RenderUnitPatch:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+    RenderUnitGenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_unit_revision]
+      properties:
+        expected_unit_revision:
+          $ref: "#/components/schemas/Revision"
+    RenderUnitGenerationAccepted:
+      type: object
+      additionalProperties: false
+      required: [render_unit, speech_job_id, accepted_at]
+      properties:
+        render_unit:
+          $ref: "#/components/schemas/RenderUnit"
+        speech_job_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted_at:
+          type: string
+          format: date-time
+    SavedAssetCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [source_artifact_id]
+      properties:
+        source_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        source_receipt_id:
+          $ref: "#/components/schemas/Identifier"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    SavedAsset:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - project_id
+        - media_type
+        - bytes
+        - sha256
+        - source_artifact_id
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.saved_asset
+        project_id:
+          $ref: "#/components/schemas/Identifier"
+        display_name:
+          type: [string, "null"]
+          maxLength: 128
+        media_type:
+          type: string
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        source_artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        source_receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+    ExportArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, object, export_id, media_type, bytes, sha256, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.export_artifact
+        export_id:
+          $ref: "#/components/schemas/Identifier"
+        media_type:
+          type: string
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        created_at:
+          type: string
+          format: date-time
+    ExportJob:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - book_id
+        - status
+        - format
+        - manifest_revision
+        - progress_completed
+        - progress_total
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.export_job
+        book_id:
+          $ref: "#/components/schemas/Identifier"
+        status:
+          type: string
+          enum: [queued, running, cancelling, succeeded, failed, cancelled, expired]
+        format:
+          type: string
+          enum: [wav, mp3, zip]
+        manifest_revision:
+          $ref: "#/components/schemas/Revision"
+        progress_completed:
+          type: integer
+          minimum: 0
+        progress_total:
+          type: integer
+          minimum: 1
+        artifact:
+          oneOf:
+            - $ref: "#/components/schemas/ExportArtifact"
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/WorkbenchJobError"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                not:
+                  const: failed
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+    ExportCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_casting_revision, format]
+      properties:
+        expected_casting_revision:
+          $ref: "#/components/schemas/Revision"
+        format:
+          type: string
+          enum: [wav, mp3, zip]
+        unit_ids:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Identifier"
+    ExportEvent:
+      oneOf:
+        - $ref: "#/components/schemas/ExportQueuedEvent"
+        - $ref: "#/components/schemas/ExportProgressEvent"
+        - $ref: "#/components/schemas/ExportSucceededEvent"
+        - $ref: "#/components/schemas/ExportFailedEvent"
+        - $ref: "#/components/schemas/ExportCancelledEvent"
+        - $ref: "#/components/schemas/ExportArtifactPublishedEvent"
+      discriminator:
+        propertyName: type
+        mapping:
+          export.queued: "#/components/schemas/ExportQueuedEvent"
+          export.progress: "#/components/schemas/ExportProgressEvent"
+          export.succeeded: "#/components/schemas/ExportSucceededEvent"
+          export.failed: "#/components/schemas/ExportFailedEvent"
+          export.cancelled: "#/components/schemas/ExportCancelledEvent"
+          export.artifact_published: "#/components/schemas/ExportArtifactPublishedEvent"
+      examples:
+        - id: "1"
+          type: export.queued
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:00Z"
+          data:
+            status: queued
+        - id: "2"
+          type: export.progress
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:01Z"
+          data:
+            status: running
+            progress_completed: 2
+            progress_total: 5
+        - id: "3"
+          type: export.succeeded
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:02Z"
+          data:
+            status: succeeded
+            artifact:
+              id: export_artifact_demo
+              object: nexus.export_artifact
+              export_id: export_demo
+              media_type: application/zip
+              bytes: 2048
+              sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              created_at: "2026-10-23T00:00:02Z"
+        - id: "4"
+          type: export.failed
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:03Z"
+          data:
+            status: failed
+            error:
+              code: export_failure
+              message: synthetic export failure
+              retryable: false
+        - id: "5"
+          type: export.cancelled
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:04Z"
+          data:
+            status: cancelled
+        - id: "6"
+          type: export.artifact_published
+          export_id: export_demo
+          occurred_at: "2026-10-23T00:00:05Z"
+          data:
+            artifact:
+              id: export_artifact_demo
+              object: nexus.export_artifact
+              export_id: export_demo
+              media_type: application/zip
+              bytes: 2048
+              sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              created_at: "2026-10-23T00:00:02Z"
+    ExportEventEnvelope:
+      type: object
+      additionalProperties: false
+      required: [id, type, export_id, occurred_at, data]
+      properties:
+        id:
+          $ref: "#/components/schemas/EventSequence"
+        type:
+          type: string
+          enum:
+            - export.queued
+            - export.progress
+            - export.succeeded
+            - export.failed
+            - export.cancelled
+            - export.artifact_published
+        export_id:
+          $ref: "#/components/schemas/Identifier"
+        occurred_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-type-specific payload; see the concrete ExportEvent variant.
+    ExportQueuedEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.queued
+            data:
+              $ref: "#/components/schemas/ExportQueuedEventData"
+          required: [type, data]
+    ExportQueuedEventData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: queued
+    ExportProgressEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.progress
+            data:
+              $ref: "#/components/schemas/ExportProgressEventData"
+          required: [type, data]
+    ExportProgressEventData:
+      type: object
+      additionalProperties: false
+      required: [status, progress_completed, progress_total]
+      properties:
+        status:
+          const: running
+        progress_completed:
+          type: integer
+          minimum: 0
+        progress_total:
+          type: integer
+          minimum: 1
+    ExportSucceededEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.succeeded
+            data:
+              $ref: "#/components/schemas/ExportSucceededEventData"
+          required: [type, data]
+    ExportSucceededEventData:
+      type: object
+      additionalProperties: false
+      required: [status, artifact]
+      properties:
+        status:
+          const: succeeded
+        artifact:
+          $ref: "#/components/schemas/ExportArtifact"
+    ExportFailedEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.failed
+            data:
+              $ref: "#/components/schemas/ExportFailedEventData"
+          required: [type, data]
+    ExportFailedEventData:
+      type: object
+      additionalProperties: false
+      required: [status, error]
+      properties:
+        status:
+          const: failed
+        error:
+          $ref: "#/components/schemas/WorkbenchJobError"
+    ExportCancelledEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.cancelled
+            data:
+              $ref: "#/components/schemas/ExportCancelledEventData"
+          required: [type, data]
+    ExportCancelledEventData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: cancelled
+    ExportArtifactPublishedEvent:
+      allOf:
+        - $ref: "#/components/schemas/ExportEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: export.artifact_published
+            data:
+              $ref: "#/components/schemas/ExportArtifactPublishedEventData"
+          required: [type, data]
+    ExportArtifactPublishedEventData:
+      type: object
+      additionalProperties: false
+      required: [artifact]
+      properties:
+        artifact:
+          $ref: "#/components/schemas/ExportArtifact"

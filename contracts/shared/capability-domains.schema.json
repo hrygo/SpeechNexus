@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/capability-domains.schema.json",
+  "title": "SpeechNexusCapabilityDomains",
+  "description": "Single source of truth for speech task, execution stage, engine, service-class, release-tier, and memory-architecture domains shared by public, admin, and internal contracts.",
+  "$defs": {
+    "ServiceClass": {
+      "type": "string",
+      "enum": [
+        "realtime",
+        "interactive",
+        "batch"
+      ]
+    },
+    "ReleaseTier": {
+      "type": "string",
+      "enum": [
+        "experimental",
+        "best_effort",
+        "production"
+      ]
+    },
+    "ProfileReleaseTier": {
+      "type": "string",
+      "enum": [
+        "experimental",
+        "production"
+      ],
+      "description": "Scenario profiles do not claim the model-binding-only best_effort tier."
+    },
+    "MemoryArchitecture": {
+      "type": "string",
+      "enum": [
+        "unified_memory",
+        "discrete_device_memory"
+      ],
+      "description": "Unified memory shares one physical host/device pool; discrete memory accounts host RAM and device VRAM separately."
+    },
+    "SpeechTaskKind": {
+      "type": "string",
+      "enum": [
+        "asr_realtime",
+        "asr_full_segment_review",
+        "asr_file",
+        "tts_realtime",
+        "tts_file",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+        "forced_alignment",
+        "speaker_diarization",
+        "vad"
+      ]
+    },
+    "StageRole": {
+      "type": "string",
+      "enum": [
+        "vad",
+        "asr_preview",
+        "asr_review",
+        "asr_batch",
+        "tts_talker",
+        "tts_code2wav",
+        "tts_connector",
+        "voice_design",
+        "voice_clone_base",
+        "alignment",
+        "diarization"
+      ]
+    },
+    "EngineKind": {
+      "type": "string",
+      "enum": [
+        "vllm",
+        "vllm_omni",
+        "nemo",
+        "qwen_forced_aligner",
+        "onnx_runtime",
+        "cpu_native"
+      ]
+    }
+  }
+}

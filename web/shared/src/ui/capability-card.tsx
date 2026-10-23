@@ -7,7 +7,7 @@ export type CapabilityCardProps = {
 
 const stateLabels = {
   ready: "基础就绪",
-  contract: "等待 P0 契约",
+  contract: "契约已交付",
   planned: "后续阶段",
 } as const;
 

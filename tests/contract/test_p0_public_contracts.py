@@ -1,0 +1,1800 @@
+"""Semantic contract tests for the P0 public, workbench, and internal schemas."""
+
+from __future__ import annotations
+
+import copy
+import json
+import re
+from email.message import Message
+from email.parser import BytesParser
+from email.policy import HTTP
+from fnmatch import fnmatch
+from pathlib import Path
+from typing import Any, cast
+from urllib.parse import unquote, urlparse
+
+import httpx
+import jsonschema
+import pytest
+import yaml
+from jsonschema.exceptions import ValidationError
+from openai import OpenAI, RateLimitError
+from openai.resources.realtime.realtime import RealtimeConnection
+from openai.types.audio import Transcription
+from openai.types.audio.transcription_verbose import TranscriptionVerbose
+from openai.types.realtime import (
+    ConversationItemInputAudioTranscriptionDeltaEvent,
+    ConversationItemInputAudioTranscriptionFailedEvent,
+    InputAudioBufferClearedEvent,
+    InputAudioBufferCommittedEvent,
+    InputAudioBufferSpeechStartedEvent,
+    InputAudioBufferSpeechStoppedEvent,
+    SessionUpdatedEvent,
+)
+from openai.types.realtime.conversation_item_input_audio_transcription_completed_event import (
+    ConversationItemInputAudioTranscriptionCompletedEvent,
+)
+from openai.types.realtime.realtime_error_event import RealtimeErrorEvent
+from openai.types.realtime.session_created_event import SessionCreatedEvent
+from openapi_spec_validator import validate
+from referencing import Registry, Resource
+
+_ROOT = Path(__file__).resolve().parents[2]
+_CONTRACTS = _ROOT / "contracts"
+_SPEECH_OPENAPI = _CONTRACTS / "speech-openapi.yaml"
+_ADMIN_OPENAPI = _CONTRACTS / "admin-openapi.yaml"
+_WORKBENCH_OPENAPI = _CONTRACTS / "workbench-openapi.yaml"
+_REALTIME_SCHEMA = _CONTRACTS / "realtime-events.schema.json"
+_SCENARIO_SCHEMA = _CONTRACTS / "scenario-profile.schema.json"
+_VOICE_SCHEMA = _CONTRACTS / "voice-resource.schema.json"
+_BINDING_SCHEMA = _CONTRACTS / "model-binding.schema.json"
+_INSTANCE_SCHEMA = _CONTRACTS / "model-instance.schema.json"
+_QUALIFICATION_SCHEMA = _CONTRACTS / "qualification-report.schema.json"
+_EXECUTION_STREAM_SCHEMA = _CONTRACTS / "internal" / "execution-stream.schema.json"
+_EXECUTION_CONTROL_OPENAPI = _CONTRACTS / "internal" / "execution-control.openapi.yaml"
+_RUNTIME_CONTROL_OPENAPI = _CONTRACTS / "internal" / "runtime-control.openapi.yaml"
+_RUNTIME_STATES_SCHEMA = _CONTRACTS / "shared" / "runtime-states.schema.json"
+_SHARED_ERRORS_SCHEMA = _CONTRACTS / "shared" / "errors.schema.json"
+_OPERATION_STATES_SCHEMA = _CONTRACTS / "shared" / "operation-states.schema.json"
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    raw: object = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+    document = cast(dict[str, Any], raw)
+    _resolve_local_refs(document, path)
+    return document
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+    return cast(dict[str, Any], raw)
+
+
+def _resolve_local_refs(node: Any, source: Path) -> None:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and not ref.startswith(("#", "http://", "https://", "file://")):
+            path_part, separator, fragment = ref.partition("#")
+            if path_part:
+                target = (source.parent / path_part).resolve()
+                node["$ref"] = target.as_uri() + (f"#{fragment}" if separator else "")
+        for value in node.values():
+            _resolve_local_refs(value, source)
+    elif isinstance(node, list):
+        for value in node:
+            _resolve_local_refs(value, source)
+
+
+def _resolved_yaml(path: Path) -> dict[str, Any]:
+    document = _load_yaml(path)
+    _resolve_local_refs(document, path)
+    return document
+
+
+def _retrieve_contract(uri: str) -> Resource[Any]:
+    parsed = urlparse(uri)
+    assert parsed.scheme == "file"
+    path = Path(unquote(parsed.path))
+    return Resource.from_contents(_load_json(path))
+
+
+_REGISTRY: Registry[Any] = cast(Any, Registry)(retrieve=_retrieve_contract)
+
+
+def _validator(schema: dict[str, Any]) -> jsonschema.Draft202012Validator:
+    return jsonschema.Draft202012Validator(schema, registry=_REGISTRY)
+
+
+def _component_validator(document: dict[str, Any], name: str) -> jsonschema.Draft202012Validator:
+    schemas = copy.deepcopy(document["components"]["schemas"])
+
+    def rewrite(node: Any) -> None:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+                node["$ref"] = "#/$defs/" + ref.rsplit("/", 1)[-1]
+            for value in node.values():
+                rewrite(value)
+        elif isinstance(node, list):
+            for value in node:
+                rewrite(value)
+
+    rewrite(schemas)
+    bundle: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": schemas,
+    }
+    jsonschema.Draft202012Validator.check_schema(bundle)
+    schema: dict[str, Any] = {"$ref": f"#/$defs/{name}", "$defs": schemas}
+    return _validator(schema)
+
+
+def _multipart_fields(request: httpx.Request) -> dict[str, bytes]:
+    content_type = request.headers["content-type"]
+    raw = b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + request.content
+    message = BytesParser(policy=HTTP).parsebytes(raw)
+    assert isinstance(message, Message)
+    fields: dict[str, bytes] = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if isinstance(name, str):
+            payload = part.get_payload(decode=True)
+            fields[name] = payload if isinstance(payload, bytes) else b""
+    return fields
+
+
+def _matches_declared_path(path: str, declared_paths: set[str]) -> bool:
+    return any(fnmatch(path, re.sub(r"\{[^}]+\}", "*", template)) for template in declared_paths)
+
+
+def _assert_string_enum_values_are_quoted(node: Any, pointer: str = "") -> None:
+    if isinstance(node, dict):
+        if node.get("type") == "string" and isinstance(node.get("enum"), list):
+            invalid = [value for value in node["enum"] if not isinstance(value, str)]
+            assert not invalid, f"{pointer}: string enum contains non-string values {invalid!r}"
+        for key, value in node.items():
+            _assert_string_enum_values_are_quoted(value, f"{pointer}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _assert_string_enum_values_are_quoted(value, f"{pointer}/{index}")
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        assert key not in result, f"duplicate JSON object key: {key!r}"
+        result[key] = value
+    return result
+
+
+class _UniqueKeyYamlLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_yaml_mapping(
+    loader: _UniqueKeyYamlLoader,
+    node: yaml.MappingNode,
+    deep: bool = False,
+) -> dict[Any, Any]:
+    loader.flatten_mapping(node)
+    result: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        assert key not in result, f"duplicate YAML object key: {key!r}"
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_UniqueKeyYamlLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_yaml_mapping,
+)
+
+
+def test_public_specs_validate_and_declare_openai_compatible_paths() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    validate(speech)
+    paths = set(speech["paths"])
+    assert {
+        "/v1/models",
+        "/v1/models/{model}",
+        "/v1/audio/transcriptions",
+        "/v1/audio/speech",
+        "/v1/realtime",
+        "/v1/nexus/capabilities",
+        "/v1/nexus/jobs",
+        "/v1/nexus/jobs/{job_id}",
+        "/v1/nexus/jobs/{job_id}/events",
+        "/v1/nexus/assets",
+        "/v1/nexus/artifacts/{artifact_id}",
+        "/v1/nexus/realtime/sessions",
+        "/v1/nexus/voice-drafts/{draft_id}/publications",
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}/retirements",
+    } <= paths
+
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    validate(admin)
+    assert {
+        "/v1/nexus/workspaces",
+        "/v1/nexus/admin/model-bindings",
+        "/v1/nexus/admin/model-bindings/{binding_id}/publications",
+        "/v1/nexus/admin/model-instances",
+        "/v1/nexus/admin/model-instances/{instance_id}/generations/{generation}",
+        "/v1/nexus/admin/capacity-manifests/{manifest_id}",
+        "/v1/nexus/admin/qualification-reports/{report_id}",
+        "/v1/nexus/admin/resource-pools",
+        "/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases",
+        "/v1/nexus/admin/policies",
+        "/v1/nexus/admin/diagnostics",
+        "/v1/nexus/audit-events",
+    } <= set(admin["paths"])
+    assert "/v1/nexus/admin/model-instances/{instance_id}" not in admin["paths"]
+
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    validate(workbench)
+    assert {
+        "/v1/workbench/projects",
+        "/v1/workbench/transcripts/{transcript_id}",
+        "/v1/workbench/meetings/{meeting_id}/minutes",
+        "/v1/workbench/assistant-turns/{turn_id}",
+        "/v1/workbench/render-units/{unit_id}/generations",
+        "/v1/workbench/books/{book_id}/exports",
+        "/v1/workbench/exports/{export_id}/content",
+        "/v1/workbench/projects/{project_id}/saved-assets",
+    } <= set(workbench["paths"])
+
+
+def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
+    """Prove the declared OpenAI subset is consumable by the official SDK.
+
+    This is a contract-parity test with a mock transport, not a running-server
+    integration test. It captures the SDK's actual request shape and validates
+    it against the OpenAPI schema; a future HTTP integration test must run the
+    same assertions against the implemented routes.
+    """
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    captured: list[httpx.Request] = []
+    transcription_payload: dict[str, Any] = {
+        "text": "hello",
+        "languages": [{"code": "en"}],
+        "logprobs": [{"token": "hello", "bytes": [104, 101, 108, 108, 111], "logprob": -0.1}],
+        "usage": {"type": "duration", "seconds": 1.0},
+    }
+    verbose_payload: dict[str, Any] = {
+        "duration": 1.0,
+        "language": "en",
+        "text": "hello",
+        "segments": [
+            {
+                "id": 0,
+                "avg_logprob": -0.1,
+                "compression_ratio": 1.0,
+                "end": 1.0,
+                "no_speech_prob": 0.01,
+                "seek": 0,
+                "start": 0.0,
+                "temperature": 0.0,
+                "text": "hello",
+                "tokens": [1, 2],
+            }
+        ],
+        "words": [{"word": "hello", "start": 0.0, "end": 1.0}],
+        "usage": {"type": "duration", "seconds": 1.0},
+    }
+    model_payload: dict[str, Any] = {
+        "object": "list",
+        "data": [
+            {
+                "id": "asr-quality",
+                "object": "model",
+                "created": 1700000000,
+                "owned_by": "speechnexus",
+                "nexus": {
+                    "logical_model": "asr-quality",
+                    "binding": {"id": "asr-quality", "revision": "7"},
+                    "tasks": ["asr_file", "asr_full_segment_review"],
+                    "release_tier": "experimental",
+                    "readiness": {
+                        "configured": True,
+                        "engine_ready": True,
+                        "quality_qualified": False,
+                        "admission_state": "queueable",
+                    },
+                },
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        assert request.headers["authorization"] == "Bearer test-key"
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json=model_payload)
+        if request.url.path == "/v1/models/asr-quality":
+            return httpx.Response(200, json=model_payload["data"][0])
+        if request.url.path == "/v1/audio/transcriptions":
+            fields = _multipart_fields(request)
+            response_format = fields.get("response_format", b"json").decode()
+            if response_format in {"text", "srt", "vtt"}:
+                return httpx.Response(
+                    200,
+                    content=b"hello text",
+                    headers={"content-type": "text/plain"},
+                )
+            if response_format == "verbose_json":
+                return httpx.Response(200, json=verbose_payload)
+            return httpx.Response(200, json=transcription_payload)
+        if request.url.path == "/v1/audio/speech":
+            body = json.loads(request.content)
+            if body.get("input") == "fail":
+                return httpx.Response(
+                    429,
+                    json={
+                        "error": {
+                            "code": "quota_exceeded",
+                            "type": "rate_limit_error",
+                            "message": "quota exceeded",
+                            "param": None,
+                            "request_id": "req_mock",
+                            "retryable": True,
+                            "retry_after_ms": 1000,
+                        }
+                    },
+                    headers={"retry-after": "1"},
+                )
+            return httpx.Response(
+                200,
+                content=b"RIFFmock",
+                headers={"content-type": "audio/wav"},
+            )
+        raise AssertionError(f"unexpected SDK path: {request.url.path}")
+
+    client = OpenAI(
+        base_url="http://testserver/v1",
+        api_key="test-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    models = client.models.list()
+    assert models.data[0].id == "asr-quality"
+    assert client.models.retrieve("asr-quality").id == "asr-quality"
+
+    transcription = client.audio.transcriptions.create(
+        file=("clip.wav", b"RIFFmock", "audio/wav"),
+        model="asr-quality",
+        response_format="json",
+    )
+    assert transcription.text == "hello"
+    assert transcription.languages is not None
+    assert transcription.languages[0].code == "en"
+    assert transcription.logprobs is not None
+    assert transcription.logprobs[0].token == "hello"
+
+    verbose = client.audio.transcriptions.create(
+        file=("clip.wav", b"RIFFmock", "audio/wav"),
+        model="asr-quality",
+        response_format="verbose_json",
+        timestamp_granularities=["segment", "word"],
+    )
+    assert verbose.duration == 1.0
+    assert verbose.segments is not None
+    assert verbose.segments[0].text == "hello"
+    TranscriptionVerbose.model_validate(verbose_payload)
+
+    text = client.audio.transcriptions.create(
+        file=("clip.wav", b"RIFFmock", "audio/wav"),
+        model="asr-quality",
+        response_format="text",
+    )
+    assert text == "hello text"
+
+    speech_response = client.audio.speech.create(
+        model="tts-interactive",
+        voice="narrator",
+        input="hello",
+        response_format="wav",
+    )
+    assert speech_response.read() == b"RIFFmock"
+
+    with pytest.raises(RateLimitError):
+        client.audio.speech.create(
+            model="tts-interactive",
+            voice="narrator",
+            input="fail",
+            response_format="wav",
+        )
+
+    declared_paths = set(speech["paths"])
+    assert all(_matches_declared_path(request.url.path, declared_paths) for request in captured)
+
+    transcription_requests = [
+        request for request in captured if request.url.path == "/v1/audio/transcriptions"
+    ]
+    assert transcription_requests
+    request_schema = speech["components"]["schemas"]["TranscriptionRequest"]
+    allowed_multipart = set(request_schema["properties"])
+    for request in transcription_requests:
+        assert request.headers["content-type"].startswith("multipart/form-data")
+        assert set(_multipart_fields(request)) <= allowed_multipart
+
+    speech_requests = [request for request in captured if request.url.path == "/v1/audio/speech"]
+    assert speech_requests
+    speech_validator = _component_validator(speech, "SpeechRequest")
+    for request in speech_requests:
+        speech_validator.validate(json.loads(request.content))
+
+    _component_validator(speech, "ModelList").validate(model_payload)
+    _component_validator(speech, "Transcription").validate(transcription_payload)
+    _component_validator(speech, "TranscriptionVerbose").validate(verbose_payload)
+    token_usage_payload = copy.deepcopy(transcription_payload)
+    token_usage_payload["usage"] = {
+        "type": "tokens",
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "total_tokens": 2,
+    }
+    _component_validator(speech, "Transcription").validate(token_usage_payload)
+    parsed_token_usage = Transcription.model_validate(token_usage_payload)
+    assert parsed_token_usage.usage is not None
+    assert parsed_token_usage.usage.type == "tokens"
+
+    token_usage_verbose = copy.deepcopy(verbose_payload)
+    token_usage_verbose["usage"] = {
+        "type": "tokens",
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "total_tokens": 2,
+    }
+    with pytest.raises(ValidationError):
+        _component_validator(speech, "TranscriptionVerbose").validate(token_usage_verbose)
+
+
+def test_scenario_profile_positive_and_negative_examples() -> None:
+    schema = _load_json(_SCENARIO_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(schema)
+    validator = _validator(schema)
+    examples = cast(list[dict[str, Any]], schema["examples"])
+    for example in examples:
+        validator.validate(example)
+
+    unknown_field = copy.deepcopy(examples[0])
+    unknown_field["priority"] = 10
+    with pytest.raises(ValidationError):
+        validator.validate(unknown_field)
+
+    wrong_kind = copy.deepcopy(examples[0])
+    wrong_kind["parameters"]["tts"] = copy.deepcopy(examples[1]["parameters"]["tts"])
+    with pytest.raises(ValidationError):
+        validator.validate(wrong_kind)
+
+    experimental_production = copy.deepcopy(examples[0])
+    experimental_production["release_tier"] = "production"
+    with pytest.raises(ValidationError):
+        validator.validate(experimental_production)
+
+    for example in examples:
+        asr = example.get("parameters", {}).get("asr")
+        if isinstance(asr, dict):
+            assert asr["max_segment_ms"] >= asr["preview_interval_ms"]
+
+
+def test_voice_resource_positive_and_negative_examples() -> None:
+    schema = _load_json(_VOICE_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(schema)
+    validator = _validator(schema)
+    examples = cast(list[dict[str, Any]], schema["examples"])
+    for example in examples:
+        validator.validate(example)
+
+    clone_schema = {"$ref": "#/$defs/CloneInput", "$defs": schema["$defs"]}
+    clone_validator = _validator(clone_schema)
+    clone_validator.validate(
+        {
+            "kind": "clone",
+            "reference_audio_asset_id": "ast_reference",
+            "source_use_confirmed": True,
+        }
+    )
+    with pytest.raises(ValidationError):
+        clone_validator.validate(
+            {
+                "kind": "clone",
+                "reference_audio_asset_id": "ast_reference",
+                "source_use_confirmed": False,
+            }
+        )
+
+    published_without_ids = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_draft_revision")
+    )
+    published_without_ids["status"] = "published"
+    published_without_ids["published_voice_id"] = None
+    published_without_ids["published_voice_revision"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(published_without_ids)
+
+    candidate = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_draft_revision")
+    )
+    mismatched_kind = copy.deepcopy(candidate)
+    mismatched_kind["kind"] = "clone"
+    with pytest.raises(ValidationError):
+        validator.validate(mismatched_kind)
+
+    failed_without_detail = copy.deepcopy(candidate)
+    failed_without_detail["status"] = "failed"
+    failed_without_detail["failure"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(failed_without_detail)
+
+    pending_validation = copy.deepcopy(
+        next(e for e in examples if e["resource_type"] == "voice_validation")
+    )
+    pending_validation["status"] = "pending"
+    pending_validation["publication_eligible"] = False
+    pending_validation["checks"] = []
+    validator.validate(pending_validation)
+
+
+def test_realtime_events_positive_and_negative_examples() -> None:
+    schema = _load_json(_REALTIME_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(schema)
+    validator = _validator(schema)
+    examples = cast(list[dict[str, Any]], schema["examples"])
+    for example in examples:
+        validator.validate(example)
+
+    minimal_standard_update: dict[str, Any] = {
+        "type": "session.update",
+        "session": {
+            "type": "transcription",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm"},
+                    "transcription": {"model": "asr-quality"},
+                },
+            },
+        },
+    }
+    validator.validate(minimal_standard_update)
+
+    unsupported_include = copy.deepcopy(minimal_standard_update)
+    unsupported_include["session"]["include"] = ["item.input_audio_transcription.logprobs"]
+    with pytest.raises(ValidationError):
+        validator.validate(unsupported_include)
+
+    unsupported_response = copy.deepcopy(examples[0])
+    unsupported_response["type"] = "response.create"
+    with pytest.raises(ValidationError):
+        validator.validate(unsupported_response)
+
+    missing_event_id = copy.deepcopy(
+        next(e for e in examples if e["type"] == "nexus.tts.append_text")
+    )
+    del missing_event_id["event_id"]
+    with pytest.raises(ValidationError):
+        validator.validate(missing_event_id)
+
+    missing_content_index = {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "evt_delta_missing_content_index",
+        "session_id": "sess_demo",
+        "seq": 14,
+        "stream_epoch": 1,
+        "sent_at": "2026-10-22T00:00:12Z",
+        "item_id": "item_1",
+        "delta": "hel",
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(missing_content_index)
+
+    operation_done = copy.deepcopy(next(e for e in examples if e["type"] == "nexus.operation.done"))
+    operation_done["status"] = "failed"
+    operation_done["error"] = None
+    operation_done["reason"] = None
+    with pytest.raises(ValidationError):
+        validator.validate(operation_done)
+    operation_done["reason"] = "cancellation_unconfirmed"
+    validator.validate(operation_done)
+    operation_done["status"] = "succeeded"
+    operation_done["reason"] = None
+    operation_done["error"] = {
+        "code": "engine_failure",
+        "type": "api_error",
+        "message": "synthetic failure",
+        "param": None,
+        "request_id": "req_demo",
+        "retryable": False,
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(operation_done)
+
+    for example in examples:
+        unknown_field = copy.deepcopy(example)
+        unknown_field["unexpected"] = True
+        with pytest.raises(ValidationError):
+            validator.validate(unknown_field)
+
+
+def test_openai_realtime_sdk_events_match_declared_contract() -> None:
+    """Prove the official SDK's transcription-session event shape is accepted."""
+
+    class CapturingWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        def send(self, message: str) -> None:
+            self.messages.append(message)
+
+    schema = _load_json(_REALTIME_SCHEMA)
+    validator = _validator(schema)
+    websocket = CapturingWebSocket()
+    connection = RealtimeConnection(cast(Any, websocket))
+
+    connection.session.update(
+        session={
+            "type": "transcription",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "transcription": {"model": "asr-quality", "language": "zh"},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "silence_duration_ms": 900,
+                    },
+                }
+            },
+        }
+    )
+    connection.input_audio_buffer.append(audio="AAAAAA==")
+    connection.input_audio_buffer.commit()
+    connection.input_audio_buffer.clear()
+
+    events = [json.loads(message) for message in websocket.messages]
+    assert [event["type"] for event in events] == [
+        "session.update",
+        "input_audio_buffer.append",
+        "input_audio_buffer.commit",
+        "input_audio_buffer.clear",
+    ]
+    for event in events:
+        validator.validate(event)
+
+    session_event: dict[str, Any] = {
+        "type": "session.created",
+        "event_id": "evt_created",
+        "session_id": "sess_demo",
+        "seq": 0,
+        "stream_epoch": 1,
+        "sent_at": "2026-10-22T00:00:00Z",
+        "session": {
+            "id": "sess_demo",
+            "object": "realtime.transcription_session",
+            "type": "transcription",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "transcription": {"model": "asr-quality"},
+                    "turn_detection": None,
+                }
+            },
+            "expires_at": 1761091200,
+            "nexus": {
+                "limits": {
+                    "max_input_chunk_ms": 100,
+                    "max_message_bytes": 65536,
+                    "input_credit_samples": 24000,
+                    "output_credit_samples": 0,
+                    "max_segment_ms": 20000,
+                    "max_session_duration_ms": 3600000,
+                }
+            },
+        },
+    }
+    validator.validate(session_event)
+    parsed = SessionCreatedEvent.model_validate(session_event)
+    assert parsed.session.type == "transcription"
+    parsed_session = cast(Any, parsed.session)
+    assert parsed_session.nexus == {"limits": session_event["session"]["nexus"]["limits"]}
+
+    committed_event = {
+        "type": "input_audio_buffer.committed",
+        "event_id": "evt_committed",
+        "session_id": "sess_demo",
+        "seq": 2,
+        "stream_epoch": 1,
+        "sent_at": "2026-10-22T00:00:01Z",
+        "item_id": "item_1",
+        "previous_item_id": None,
+    }
+    validator.validate(committed_event)
+    committed = InputAudioBufferCommittedEvent.model_validate(committed_event)
+    assert committed.item_id == "item_1"
+
+    session_updated_event = {
+        **session_event,
+        "type": "session.updated",
+        "event_id": "evt_updated",
+        "seq": 3,
+    }
+    validator.validate(session_updated_event)
+    SessionUpdatedEvent.model_validate(session_updated_event)
+
+    standard_server_events: list[tuple[dict[str, Any], type[Any]]] = [
+        (
+            {
+                "type": "input_audio_buffer.cleared",
+                "event_id": "evt_cleared",
+                "session_id": "sess_demo",
+                "seq": 4,
+                "stream_epoch": 1,
+                "sent_at": "2026-10-22T00:00:02Z",
+            },
+            InputAudioBufferClearedEvent,
+        ),
+        (
+            {
+                "type": "input_audio_buffer.speech_started",
+                "event_id": "evt_speech_started",
+                "session_id": "sess_demo",
+                "seq": 5,
+                "stream_epoch": 1,
+                "sent_at": "2026-10-22T00:00:03Z",
+                "item_id": "item_1",
+                "audio_start_ms": 100,
+            },
+            InputAudioBufferSpeechStartedEvent,
+        ),
+        (
+            {
+                "type": "input_audio_buffer.speech_stopped",
+                "event_id": "evt_speech_stopped",
+                "session_id": "sess_demo",
+                "seq": 6,
+                "stream_epoch": 1,
+                "sent_at": "2026-10-22T00:00:04Z",
+                "item_id": "item_1",
+                "audio_end_ms": 900,
+            },
+            InputAudioBufferSpeechStoppedEvent,
+        ),
+        (
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "event_id": "evt_delta",
+                "session_id": "sess_demo",
+                "seq": 7,
+                "stream_epoch": 1,
+                "sent_at": "2026-10-22T00:00:05Z",
+                "item_id": "item_1",
+                "content_index": 0,
+                "delta": "hel",
+            },
+            ConversationItemInputAudioTranscriptionDeltaEvent,
+        ),
+        (
+            {
+                "type": "conversation.item.input_audio_transcription.failed",
+                "event_id": "evt_failed",
+                "session_id": "sess_demo",
+                "seq": 8,
+                "stream_epoch": 1,
+                "sent_at": "2026-10-22T00:00:06Z",
+                "item_id": "item_1",
+                "content_index": 0,
+                "error": {
+                    "type": "invalid_request_error",
+                    "code": "invalid_audio",
+                    "message": "synthetic audio cannot be decoded",
+                    "param": None,
+                },
+            },
+            ConversationItemInputAudioTranscriptionFailedEvent,
+        ),
+    ]
+    for payload, sdk_type in standard_server_events:
+        validator.validate(payload)
+        sdk_type.model_validate(payload)
+
+    completed_event = {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "evt_completed",
+        "session_id": "sess_demo",
+        "seq": 12,
+        "stream_epoch": 1,
+        "sent_at": "2026-10-22T00:00:10Z",
+        "item_id": "item_1",
+        "content_index": 0,
+        "transcript": "hello",
+        "usage": {"type": "duration", "seconds": 1.0},
+    }
+    validator.validate(completed_event)
+    completed = ConversationItemInputAudioTranscriptionCompletedEvent.model_validate(
+        completed_event
+    )
+    assert completed.transcript == "hello"
+    assert cast(Any, completed.usage).seconds == 1.0
+
+    error_event = {
+        "type": "error",
+        "event_id": "evt_error",
+        "session_id": "sess_demo",
+        "seq": 13,
+        "stream_epoch": 1,
+        "sent_at": "2026-10-22T00:00:11Z",
+        "error": {
+            "type": "invalid_request_error",
+            "code": "invalid_event",
+            "message": "unsupported event",
+            "param": None,
+            "request_id": "req_demo",
+            "retryable": False,
+        },
+    }
+    validator.validate(error_event)
+    parsed_error = RealtimeErrorEvent.model_validate(error_event)
+    assert parsed_error.error.code == "invalid_event"
+
+
+def test_binding_instance_and_qualification_positive_and_negative_examples() -> None:
+    for path in (_BINDING_SCHEMA, _INSTANCE_SCHEMA, _QUALIFICATION_SCHEMA):
+        schema = _load_json(path)
+        jsonschema.Draft202012Validator.check_schema(schema)
+        validator = _validator(schema)
+        examples = cast(list[dict[str, Any]], schema["examples"])
+        assert examples
+        for example in examples:
+            validator.validate(example)
+
+    instance_schema = _load_json(_INSTANCE_SCHEMA)
+    instance_validator = _validator(instance_schema)
+    ready_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
+    ready_instance["readiness"]["accepting_new_work"] = False
+    with pytest.raises(ValidationError):
+        instance_validator.validate(ready_instance)
+
+    qualification_schema = _load_json(_QUALIFICATION_SCHEMA)
+    qualification_validator = _validator(qualification_schema)
+    production = copy.deepcopy(cast(list[dict[str, Any]], qualification_schema["examples"])[0])
+    production["release_tier"] = "production"
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(production)
+    false_required_pass_claim = copy.deepcopy(
+        cast(list[dict[str, Any]], qualification_schema["examples"])[0]
+    )
+    false_required_pass_claim["required_scenarios_passed"] = True
+    with pytest.raises(ValidationError):
+        qualification_validator.validate(false_required_pass_claim)
+
+    stopped_instance = copy.deepcopy(
+        next(
+            example
+            for example in cast(list[dict[str, Any]], instance_schema["examples"])
+            if example["state"] == "stopped"
+        )
+    )
+    stopped_instance["observed"]["stop_evidence"] = None
+    with pytest.raises(ValidationError):
+        instance_validator.validate(stopped_instance)
+
+
+def test_runtime_state_domains_are_shared_by_admin_and_internal_contracts() -> None:
+    shared = _load_json(_RUNTIME_STATES_SCHEMA)
+    shared_defs = cast(dict[str, dict[str, Any]], shared["$defs"])
+    instance_states = cast(list[str], shared_defs["InstanceState"]["enum"])
+    observed_states = cast(list[str], shared_defs["ObservedInstanceState"]["enum"])
+    assert instance_states == [
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined",
+    ]
+    assert observed_states == ["absent", *instance_states]
+
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    _component_validator(admin, "InstanceState").validate("warming_up")
+    with pytest.raises(ValidationError):
+        _component_validator(admin, "InstanceState").validate("warming")
+
+    instance_schema = _load_json(_INSTANCE_SCHEMA)
+    instance_validator = _validator(instance_schema)
+    ready_instance = copy.deepcopy(cast(list[dict[str, Any]], instance_schema["examples"])[0])
+    ready_instance["state"] = "failed"
+    ready_instance["readiness"]["accepting_new_work"] = False
+    instance_validator.validate(ready_instance)
+    ready_instance["readiness"]["accepting_new_work"] = True
+    with pytest.raises(ValidationError):
+        instance_validator.validate(ready_instance)
+    ready_instance["readiness"]["accepting_new_work"] = False
+    ready_instance["state"] = "unknown_quarantined"
+    with pytest.raises(ValidationError):
+        instance_validator.validate(ready_instance)
+
+
+def test_public_contract_enums_do_not_contain_yaml_boolean_typos() -> None:
+    for path in sorted(_CONTRACTS.glob("**/*")):
+        if path.suffix not in {".json", ".yaml", ".yml"}:
+            continue
+        raw = path.read_text(encoding="utf-8")
+        document = json.loads(raw) if path.suffix == ".json" else yaml.safe_load(raw)
+        _assert_string_enum_values_are_quoted(document, str(path.relative_to(_ROOT)))
+
+
+def test_contract_documents_do_not_contain_duplicate_keys() -> None:
+    for path in sorted(_CONTRACTS.glob("**/*")):
+        if path.suffix == ".json":
+            json.loads(
+                path.read_text(encoding="utf-8"),
+                object_pairs_hook=_reject_duplicate_keys,
+            )
+        elif path.suffix in {".yaml", ".yml"}:
+            yaml.load(
+                path.read_text(encoding="utf-8"),
+                Loader=_UniqueKeyYamlLoader,
+            )
+
+
+def test_contract_schema_arrays_do_not_repeat_semantic_values() -> None:
+    """Reject duplicated required fields, enum members, and scalar type entries."""
+
+    checked_keywords = {"required", "enum", "type"}
+
+    def walk(node: Any, path: Path, pointer: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in checked_keywords and isinstance(value, list):
+                    encoded = [
+                        json.dumps(item, sort_keys=True, separators=(",", ":")) for item in value
+                    ]
+                    duplicates = sorted({item for item in encoded if encoded.count(item) > 1})
+                    assert not duplicates, f"{path}:{pointer}/{key}: {duplicates!r}"
+                walk(value, path, f"{pointer}/{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, path, f"{pointer}/{index}")
+
+    for path in sorted(_CONTRACTS.glob("**/*")):
+        if path.suffix == ".json":
+            raw: object = json.loads(path.read_text(encoding="utf-8"))
+        elif path.suffix in {".yaml", ".yml"}:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        else:
+            continue
+        walk(raw, path.relative_to(_ROOT), "")
+
+
+def test_contract_definitions_do_not_duplicate_inline_schema_bodies() -> None:
+    """Keep cross-protocol domains in shared schemas instead of copied definitions."""
+
+    documents = list(_CONTRACTS.rglob("*.schema.json")) + list(_CONTRACTS.rglob("*.openapi.yaml"))
+    definitions: dict[str, list[str]] = {}
+    for path in documents:
+        raw: object
+        if path.suffix == ".json":
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert isinstance(raw, dict)
+        document = cast(dict[str, Any], raw)
+        candidates = {
+            **cast(dict[str, Any], document.get("$defs", {})),
+            **cast(
+                dict[str, Any],
+                cast(dict[str, Any], document.get("components", {})).get("schemas", {}),
+            ),
+        }
+        for name, value in candidates.items():
+            if not isinstance(value, dict):
+                continue
+            if "$ref" in value and set(value) <= {"$ref", "description"}:
+                continue
+            canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+            definitions.setdefault(canonical, []).append(f"{path.relative_to(_ROOT)}:{name}")
+
+    duplicates = [places for places in definitions.values() if len(places) > 1]
+    assert not duplicates, "duplicate inline schemas; use a shared $ref:\n" + "\n".join(
+        repr(places) for places in duplicates
+    )
+
+
+def test_public_errors_share_one_openai_compatible_envelope() -> None:
+    shared = _load_json(_SHARED_ERRORS_SCHEMA)
+    sample = {
+        "error": {
+            "code": "unsupported_parameter",
+            "type": "invalid_request_error",
+            "message": "synthetic parameter is not supported",
+            "param": "temperature",
+            "request_id": "req_contract",
+            "retryable": False,
+            "retry_after_ms": None,
+        }
+    }
+    _validator({"$ref": "#/$defs/ErrorResponse", "$defs": shared["$defs"]}).validate(sample)
+
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    for schema, name in (
+        (speech, "ErrorResponse"),
+        (admin, "ErrorResponse"),
+        (workbench, "ErrorResponse"),
+    ):
+        _component_validator(schema, name).validate(sample)
+
+    realtime = _load_json(_REALTIME_SCHEMA)
+    _validator({"$ref": "#/$defs/ErrorEnvelope", "$defs": realtime["$defs"]}).validate(
+        sample["error"]
+    )
+    for schema, name in ((admin, "ErrorResponse"), (workbench, "ErrorResponse")):
+        with pytest.raises(ValidationError):
+            _component_validator(schema, name).validate(
+                {
+                    "error": {
+                        **sample["error"],
+                        "code": "Not-A-Stable-Code",
+                    }
+                }
+            )
+
+
+def test_resource_pool_is_cross_node_and_quarantine_release_requires_evidence() -> None:
+    admin = _resolved_yaml(_ADMIN_OPENAPI)
+    pool_validator = _component_validator(admin, "ResourcePool")
+    pool_validator.validate(
+        {
+            "id": "asr-realtime",
+            "object": "nexus.resource_pool",
+            "node_ids": ["node-a", "node-b"],
+            "service_class": "realtime",
+            "max_active_slots": 4,
+            "realtime_reserved_slots": 2,
+            "active_slots": 1,
+            "quarantine_slots": 0,
+            "status": "ready",
+        }
+    )
+    pool_validator.validate(
+        {
+            "id": "voice-creation",
+            "object": "nexus.resource_pool",
+            "node_ids": [],
+            "service_class": "interactive",
+            "max_active_slots": 0,
+            "realtime_reserved_slots": 0,
+            "active_slots": 0,
+            "quarantine_slots": 0,
+            "status": "unavailable",
+        }
+    )
+    with pytest.raises(ValidationError):
+        pool_validator.validate(
+            {
+                "id": "asr-realtime",
+                "object": "nexus.resource_pool",
+                "node_id": "node-a",
+                "service_class": "realtime",
+                "max_active_slots": 4,
+                "realtime_reserved_slots": 2,
+                "active_slots": 1,
+                "quarantine_slots": 0,
+                "status": "ready",
+            }
+        )
+
+    request_validator = _component_validator(admin, "QuarantineReleaseRequest")
+    request_validator.validate(
+        {
+            "evidence_kind": "operator_verified_instance_terminated",
+            "evidence_digest": "sha256:" + "1" * 64,
+            "observed_at": "2026-10-22T00:00:00Z",
+            "reason": "Operator verified the old container exited.",
+        }
+    )
+    with pytest.raises(ValidationError):
+        request_validator.validate(
+            {
+                "evidence_kind": "engine_abort_ack",
+                "evidence_digest": "sha256:" + "1" * 64,
+                "observed_at": "2026-10-22T00:00:00Z",
+                "reason": "Not an operator-verification request.",
+            }
+        )
+
+    _component_validator(admin, "QuarantineRelease").validate(
+        {
+            "lease_id": "lease-demo",
+            "object": "nexus.quarantine_release",
+            "lease_state": "released",
+            "cleanup_state": "complete",
+            "budget_released_at": "2026-10-22T00:01:00Z",
+            "evidence_kind": "operator_verified_instance_terminated",
+            "evidence_digest": "sha256:" + "1" * 64,
+            "released_submit_intent_ids": ["intent-demo"],
+        }
+    )
+
+
+def test_execution_stream_examples_and_unknown_field_rejection() -> None:
+    schema = _load_json(_EXECUTION_STREAM_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(schema)
+    validator = _validator(schema)
+    examples = cast(list[dict[str, Any]], schema["examples"])
+    for example in examples:
+        validator.validate(example)
+
+    for example in examples:
+        unknown = copy.deepcopy(example)
+        unknown["raw_audio_base64"] = "AAAA"
+        with pytest.raises(ValidationError):
+            validator.validate(unknown)
+
+    stream_open = next(example for example in examples if example["type"] == "stream.open")
+    assert isinstance(stream_open["fencing_token"], int)
+    wrong_fence = copy.deepcopy(stream_open)
+    wrong_fence["fencing_token"] = "42"
+    with pytest.raises(ValidationError):
+        validator.validate(wrong_fence)
+
+
+def test_nexus_sse_event_payloads_are_discriminated_and_strict() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    job_event_validator = _component_validator(speech, "JobEvent")
+    job_examples = cast(
+        list[dict[str, Any]],
+        speech["components"]["schemas"]["JobEvent"]["examples"],
+    )
+    assert {example["type"] for example in job_examples} == {
+        "job.queued",
+        "job.started",
+        "job.progress",
+        "job.retry_scheduled",
+        "job.cancelling",
+        "job.succeeded",
+        "job.failed",
+        "job.cancelled",
+        "job.expired",
+        "job.cleanup_updated",
+        "artifact.published",
+    }
+    for example in job_examples:
+        job_event_validator.validate(example)
+
+    invalid_sequence = copy.deepcopy(job_examples[0])
+    invalid_sequence["id"] = "job-event-1"
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(invalid_sequence)
+
+    failed_job_event: dict[str, Any] = {
+        "id": "18",
+        "type": "job.failed",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+            "status": "failed",
+            "error": {
+                "code": "engine_failure",
+                "message": "synthetic engine failure",
+                "retryable": True,
+            },
+        },
+    }
+    job_event_validator.validate(failed_job_event)
+
+    unknown_job_data = copy.deepcopy(failed_job_event)
+    unknown_job_data["data"]["internal_endpoint"] = "http://engine.invalid"
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(unknown_job_data)
+
+    mismatched_job_data = copy.deepcopy(failed_job_event)
+    mismatched_job_data["data"] = {"status": "queued"}
+    with pytest.raises(ValidationError):
+        job_event_validator.validate(mismatched_job_data)
+
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    export_event_validator = _component_validator(workbench, "ExportEvent")
+    export_examples = cast(
+        list[dict[str, Any]],
+        workbench["components"]["schemas"]["ExportEvent"]["examples"],
+    )
+    assert {example["type"] for example in export_examples} == {
+        "export.queued",
+        "export.progress",
+        "export.succeeded",
+        "export.failed",
+        "export.cancelled",
+        "export.artifact_published",
+    }
+    for example in export_examples:
+        export_event_validator.validate(example)
+
+    invalid_export_sequence = copy.deepcopy(export_examples[0])
+    invalid_export_sequence["id"] = "export-event-1"
+    with pytest.raises(ValidationError):
+        export_event_validator.validate(invalid_export_sequence)
+
+    progress_event: dict[str, Any] = {
+        "id": "7",
+        "type": "export.progress",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5,
+        },
+    }
+    export_event_validator.validate(progress_event)
+
+    unknown_export_data = copy.deepcopy(progress_event)
+    unknown_export_data["data"]["object_key"] = "private/path.wav"
+    with pytest.raises(ValidationError):
+        export_event_validator.validate(unknown_export_data)
+
+    mismatched_export_data = copy.deepcopy(progress_event)
+    mismatched_export_data["data"]["status"] = "succeeded"
+    with pytest.raises(ValidationError):
+        export_event_validator.validate(mismatched_export_data)
+
+
+def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    error = {
+        "code": "llm_unavailable",
+        "message": "configured internal LLM is unavailable",
+        "retryable": True,
+        "param": None,
+    }
+    samples: list[tuple[str, dict[str, Any]]] = [
+        (
+            "MinutesJob",
+            {
+                "id": "minutes_demo",
+                "object": "nexus.minutes_job",
+                "meeting_id": "meeting_demo",
+                "status": "failed",
+                "source_revision": "1",
+                "template_revision": "1",
+                "llm_model": "local-llm",
+                "created_at": "2026-10-23T00:00:00Z",
+                "updated_at": "2026-10-23T00:01:00Z",
+            },
+        ),
+        (
+            "AssistantTurn",
+            {
+                "id": "turn_demo",
+                "object": "nexus.assistant_turn",
+                "project_id": "project_demo",
+                "status": "failed",
+                "input_text": "synthetic input",
+                "voice": {"id": "voice_demo", "revision": "1"},
+                "playback_generation": 1,
+                "created_at": "2026-10-23T00:00:00Z",
+                "updated_at": "2026-10-23T00:01:00Z",
+            },
+        ),
+        (
+            "ExportJob",
+            {
+                "id": "export_demo",
+                "object": "nexus.export_job",
+                "book_id": "book_demo",
+                "status": "failed",
+                "format": "wav",
+                "manifest_revision": "1",
+                "progress_completed": 0,
+                "progress_total": 1,
+                "created_at": "2026-10-23T00:00:00Z",
+                "updated_at": "2026-10-23T00:01:00Z",
+            },
+        ),
+    ]
+    for component, sample in samples:
+        validator = _component_validator(workbench, component)
+        with pytest.raises(ValidationError):
+            validator.validate(sample)
+
+        failed_with_error = copy.deepcopy(sample)
+        failed_with_error["error"] = error
+        validator.validate(failed_with_error)
+
+        failed_with_unknown_error = copy.deepcopy(failed_with_error)
+        failed_with_unknown_error["error"]["object_key"] = "private/path.wav"
+        with pytest.raises(ValidationError):
+            validator.validate(failed_with_unknown_error)
+
+        succeeded_with_error = copy.deepcopy(failed_with_error)
+        succeeded_with_error["status"] = "succeeded"
+        with pytest.raises(ValidationError):
+            validator.validate(succeeded_with_error)
+
+
+def test_transcription_logprobs_match_the_openai_sdk_shape() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    validator = _component_validator(speech, "TranscriptionLogprob")
+    validator.validate({"token": "hello", "bytes": [104, 101], "logprob": -0.25})
+
+    unknown = {"token": "hello", "bytes": [104, 101], "logprob": -0.25, "index": 1}
+    with pytest.raises(ValidationError):
+        validator.validate(unknown)
+
+
+def test_internal_submit_contract_derives_paths_and_output_sample_metrics() -> None:
+    execution = _resolved_yaml(_EXECUTION_CONTROL_OPENAPI)
+    submit_validator = _component_validator(execution, "SubmitExecutionRequest")
+    request = {
+        "submit_intent_id": "intent-demo",
+        "lease_id": "lease-demo",
+        "operation_id": "op-demo",
+        "attempt_id": "att-demo",
+        "stage_id": "stage-demo",
+        "workspace_id": "ws-demo",
+        "pool_id": "tts-batch",
+        "host_node_id": "node-demo",
+        "gateway_id": "gateway-demo",
+        "instance_id": "instance-demo",
+        "instance_generation": 1,
+        "binding_revision_id": "tts-binding-rev-1",
+        "policy_revision_id": "policy-1",
+        "fencing_token": 1,
+        "command_digest": "sha256:" + "2" * 64,
+        "deadline_at": "2026-10-22T01:00:00Z",
+        "max_output_audio_ms": 30_000,
+    }
+    submit_validator.validate(request)
+    text_only_request = copy.deepcopy(request)
+    text_only_request["max_output_audio_ms"] = None
+    submit_validator.validate(text_only_request)
+
+    caller_path = copy.deepcopy(request)
+    caller_path["staging_output_prefix"] = "staging/caller-controlled/"
+    with pytest.raises(ValidationError):
+        submit_validator.validate(caller_path)
+
+    watermark_validator = _component_validator(execution, "OutputWatermark")
+    watermark = {
+        "output_stream_id": "tts-main",
+        "generated_pcm_samples": 24_000,
+        "sample_rate_hz": 24_000,
+        "hard_output_ceiling_samples": 48_000,
+    }
+    watermark_validator.validate(watermark)
+    watermark_with_derived_ms = copy.deepcopy(watermark)
+    watermark_with_derived_ms["generated_audio_ms"] = 1_000
+    with pytest.raises(ValidationError):
+        watermark_validator.validate(watermark_with_derived_ms)
+
+
+def test_runtime_memory_reservation_uses_architecture_specific_counters() -> None:
+    runtime = _resolved_yaml(_RUNTIME_CONTROL_OPENAPI)
+    validator = _component_validator(runtime, "RuntimeMemoryReservation")
+    validator.validate(
+        {
+            "architecture": "discrete_device_memory",
+            "peak": {
+                "unified_memory_bytes": 0,
+                "device_memory_bytes": 1024,
+                "host_memory_bytes": 512,
+            },
+            "steady": {
+                "unified_memory_bytes": 0,
+                "device_memory_bytes": 768,
+                "host_memory_bytes": 384,
+            },
+        }
+    )
+    validator.validate(
+        {
+            "architecture": "unified_memory",
+            "peak": {
+                "unified_memory_bytes": 1024,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0,
+            },
+            "steady": {
+                "unified_memory_bytes": 768,
+                "device_memory_bytes": 0,
+                "host_memory_bytes": 0,
+            },
+        }
+    )
+    with pytest.raises(ValidationError):
+        validator.validate(
+            {
+                "architecture": "unified_memory",
+                "peak": {
+                    "unified_memory_bytes": 1024,
+                    "device_memory_bytes": 1,
+                    "host_memory_bytes": 0,
+                },
+                "steady": {
+                    "unified_memory_bytes": 768,
+                    "device_memory_bytes": 0,
+                    "host_memory_bytes": 0,
+                },
+            }
+        )
+
+
+def test_openapi_request_schemas_reject_unknown_fields() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    speech_validator = _component_validator(speech, "SpeechRequest")
+    with pytest.raises(ValidationError):
+        speech_validator.validate(
+            {
+                "model": "tts-interactive",
+                "input": "hello",
+                "voice": "narrator",
+                "response_format": "wav",
+                "unknown": True,
+            }
+        )
+    with pytest.raises(ValidationError):
+        speech_validator.validate(
+            {
+                "model": "tts-interactive",
+                "input": "hello",
+                "voice": "narrator",
+                "nexus": {"profile_id": "narrator-dialogue"},
+            }
+        )
+    speech_validator.validate(
+        {
+            "model": "tts-interactive",
+            "input": "hello",
+            "voice": "narrator",
+            "nexus": {
+                "workspace_id": "ws-default",
+                "overrides": {"tts": {"audio_delivery": "complete"}},
+            },
+        }
+    )
+    with pytest.raises(ValidationError):
+        speech_validator.validate(
+            {
+                "model": "tts-interactive",
+                "input": "hello",
+                "voice": "narrator",
+                "nexus": {
+                    "workspace_id": "ws-default",
+                    "overrides": {"tts": {"audio_delivery": "chunked"}},
+                },
+            }
+        )
+    for duplicate_rest_field in (
+        {"speed": 1.0},
+        {"instructions": "calm"},
+        {"pronunciation_revision": "1"},
+    ):
+        with pytest.raises(ValidationError):
+            speech_validator.validate(
+                {
+                    "model": "tts-interactive",
+                    "input": "hello",
+                    "voice": "narrator",
+                    "nexus": {
+                        "workspace_id": "ws-default",
+                        "overrides": {"tts": duplicate_rest_field},
+                    },
+                }
+            )
+
+    transcription_nexus_validator = _component_validator(speech, "TranscriptionNexusOptions")
+    transcription_nexus_validator.validate(
+        {
+            "workspace_id": "ws_default",
+            "profile_id": "caption-file",
+            "profile_revision": "3",
+            "overrides": {"asr": {"language": "zh", "finalization": "full_segment"}},
+        }
+    )
+    with pytest.raises(ValidationError):
+        transcription_nexus_validator.validate(
+            {
+                "workspace_id": "ws_default",
+                "voice_revision": "1",
+            }
+        )
+    with pytest.raises(ValidationError):
+        transcription_nexus_validator.validate(
+            {
+                "workspace_id": "ws_default",
+                "profile_id": "caption-file",
+            }
+        )
+    with pytest.raises(ValidationError):
+        transcription_nexus_validator.validate(
+            {
+                "workspace_id": "ws_default",
+                "overrides": {"tts": {"speed": 1.0}},
+            }
+        )
+
+    transcription_request_validator = _component_validator(speech, "TranscriptionRequest")
+    transcription_request_validator.validate(
+        {
+            "file": "synthetic.wav",
+            "model": "asr-quality",
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": ["segment", "word"],
+        }
+    )
+    with pytest.raises(ValidationError):
+        transcription_request_validator.validate(
+            {
+                "file": "synthetic.wav",
+                "model": "asr-quality",
+                "response_format": "json",
+                "timestamp_granularities[]": ["word"],
+            }
+        )
+
+    job_validator = _component_validator(speech, "JobCreateRequest")
+    job_validator.validate(
+        {
+            "kind": "asr",
+            "model": "asr-quality",
+            "input": {"audio_asset_id": "ast_input"},
+            "output": {"transcript_format": "json", "save_artifacts": True},
+        }
+    )
+    with pytest.raises(ValidationError):
+        job_validator.validate(
+            {
+                "kind": "asr",
+                "model": "asr-quality",
+                "input": {"audio_asset_id": "ast_input"},
+                "unknown": True,
+            }
+        )
+
+    pronunciation_validator = _component_validator(speech, "PronunciationCreateRequest")
+    pronunciation_validator.validate(
+        {
+            "id": "pron-demo",
+            "expected_revision": "1",
+            "encoding": "pinyin",
+            "entries": [{"grapheme": "SpeechNexus", "phonemes": "si pi chi ne ke si"}],
+        }
+    )
+    for incomplete in (
+        {
+            "id": "pron-demo",
+            "encoding": "pinyin",
+            "entries": [{"grapheme": "SpeechNexus", "phonemes": "si pi chi ne ke si"}],
+        },
+        {
+            "expected_revision": "1",
+            "encoding": "pinyin",
+            "entries": [{"grapheme": "SpeechNexus", "phonemes": "si pi chi ne ke si"}],
+        },
+    ):
+        with pytest.raises(ValidationError):
+            pronunciation_validator.validate(incomplete)
+
+    policy_patch_validator = _component_validator(_resolved_yaml(_ADMIN_OPENAPI), "PolicyPatch")
+    policy_patch_validator.validate(
+        {"expected_revision": "2", "features": {"workbench_enabled": False}}
+    )
+    with pytest.raises(ValidationError):
+        policy_patch_validator.validate(
+            {"expected_revision": "2", "quotas": {"max_concurrent_job": 2}}
+        )
+    with pytest.raises(ValidationError):
+        policy_patch_validator.validate({"expected_revision": "2", "quotas": {}})
+    with pytest.raises(ValidationError):
+        policy_patch_validator.validate({"expected_revision": "2"})
+
+
+def test_operation_result_status_is_separate_from_cleanup_state() -> None:
+    shared = _load_json(_OPERATION_STATES_SCHEMA)
+    shared_defs = cast(dict[str, dict[str, Any]], shared["$defs"])
+    assert shared_defs["OperationStatus"]["enum"] == [
+        "accepted",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    assert shared_defs["TerminalOperationStatus"]["enum"] == [
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    assert shared_defs["CleanupState"]["enum"] == [
+        "not_required",
+        "pending",
+        "complete",
+        "quarantined",
+    ]
+
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    terminal_validator = _component_validator(speech, "RealtimeTerminalOperation")
+    terminal_validator.validate(
+        {
+            "operation_id": "op-demo",
+            "kind": "asr",
+            "status": "failed",
+            "cleanup_state": "quarantined",
+        }
+    )
+    with pytest.raises(ValidationError):
+        terminal_validator.validate(
+            {
+                "operation_id": "op-demo",
+                "kind": "asr",
+                "status": "quarantined",
+                "cleanup_state": "quarantined",
+            }
+        )
+
+    job: dict[str, Any] = {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "not_required",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {"unit": "audio_ms", "completed": 1, "total": 1},
+        "artifacts": [],
+        "operations": [],
+        "effective_configuration": {
+            "models": {"asr": {"id": "asr-quality", "revision": "1"}},
+            "policy_revision": "1",
+            "catalog_revision": "1",
+        },
+        "error": None,
+        "created_at": "2026-10-22T00:00:00Z",
+        "updated_at": "2026-10-22T00:00:01Z",
+    }
+    job_validator = _component_validator(speech, "Job")
+    job_validator.validate(job)
+    failed_job = copy.deepcopy(job)
+    failed_job["status"] = "failed"
+    failed_job["error"] = None
+    with pytest.raises(ValidationError):
+        job_validator.validate(failed_job)
+    failed_job["error"] = {
+        "code": "engine_failure",
+        "message": "synthetic failure",
+        "retryable": False,
+    }
+    job_validator.validate(failed_job)
+    failed_job["status"] = "succeeded"
+    with pytest.raises(ValidationError):
+        job_validator.validate(failed_job)
+
+    operation: dict[str, Any] = {
+        "id": "op-demo",
+        "object": "nexus.operation",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "not_required",
+        "execution_revision": "1",
+        "error": None,
+        "created_at": "2026-10-22T00:00:00Z",
+        "updated_at": "2026-10-22T00:00:01Z",
+    }
+    operation_validator = _component_validator(speech, "Operation")
+    operation_validator.validate(operation)
+    failed_operation = copy.deepcopy(operation)
+    failed_operation["status"] = "failed"
+    failed_operation["error"] = None
+    with pytest.raises(ValidationError):
+        operation_validator.validate(failed_operation)
+    failed_operation["error"] = {
+        "code": "engine_failure",
+        "message": "synthetic failure",
+        "retryable": False,
+    }
+    operation_validator.validate(failed_operation)
+    failed_operation["status"] = "cancelled"
+    with pytest.raises(ValidationError):
+        operation_validator.validate(failed_operation)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "kind": "tts",
+            "model": "tts-interactive",
+            "input": {"text": "hello"},
+            "voice": {"id": "narrator", "revision": "1"},
+        },
+        {
+            "kind": "voice_design",
+            "model": "voice-design",
+            "input": {
+                "description": "Calm narration voice",
+                "preview_text": "Welcome.",
+            },
+        },
+        {
+            "kind": "voice_clone",
+            "model": "voice-clone",
+            "input": {
+                "reference_audio_asset_id": "ast_reference",
+                "source_use_confirmed": True,
+            },
+        },
+        {
+            "kind": "voice_preview",
+            "input": {
+                "voice_draft_id": "vdraft_demo",
+                "draft_revision": "1",
+                "text": "Welcome.",
+            },
+        },
+        {
+            "kind": "voice_validation",
+            "input": {
+                "voice_draft_id": "vdraft_demo",
+                "draft_revision": "1",
+                "validation_set_revision": "2",
+            },
+        },
+    ],
+)
+def test_job_create_discriminators_validate(payload: dict[str, Any]) -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    _component_validator(speech, "JobCreateRequest").validate(payload)
+
+
+def test_realtime_session_models_match_modalities() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    validator = _component_validator(speech, "RealtimeSessionCreateRequest")
+    validator.validate(
+        {
+            "profile": {"id": "caption-live", "revision": "1"},
+            "modalities": ["asr"],
+            "models": {"asr": {"id": "asr-quality", "revision": "7"}},
+        }
+    )
+    with pytest.raises(ValidationError):
+        validator.validate(
+            {
+                "profile": {"id": "caption-live", "revision": "1"},
+                "modalities": ["asr"],
+                "models": {"tts": {"id": "tts-interactive", "revision": "5"}},
+            }
+        )
+
+
+def test_voice_creation_inputs_do_not_require_an_extra_kind_field() -> None:
+    speech = _resolved_yaml(_SPEECH_OPENAPI)
+    _component_validator(speech, "VoiceDesignCreateRequest").validate(
+        {
+            "model": "voice-design",
+            "input": {
+                "description": "Warm narration voice",
+                "preview_text": "Welcome.",
+            },
+        }
+    )
+    _component_validator(speech, "VoiceCloneCreateRequest").validate(
+        {
+            "model": "voice-clone",
+            "input": {
+                "reference_audio_asset_id": "ast_reference",
+                "source_use_confirmed": True,
+            },
+        }
+    )
+
+
+def test_workbench_meeting_requires_a_transcript_or_speech_source() -> None:
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    validator = _component_validator(workbench, "MeetingCreateRequest")
+    with pytest.raises(ValidationError):
+        validator.validate({"display_name": "Weekly sync"})

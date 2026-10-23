@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.1.0"
+version: "0.2.1"
 date: 2026-10-22
 ---
 
@@ -31,7 +31,7 @@ date: 2026-10-22
 
 ## 2. 进程、网络与所有权
 
-首轮部署使用单节点 Compose / 运维基础设施，架构层面遵循 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的集群原生同构原则（单节点为 `Node=1, Replica=1` 特例）：应用角色按职责分进程，每个进程显式声明 `node_id`、`process_role` 与唯一实例身份（`instance_id` / `gateway_id`），backend 与 execution-gateway 独立部署，禁止使用单进程内存态或共享本地目录传递业务状态。单节点验收覆盖受控故障与恢复，不声称节点级高可用；扩容先增加已资格化节点与实例，再验证按节点划分的父物理预算与 owner 路由。
+首轮部署使用单节点 Compose / 运维基础设施，架构层面遵循 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的集群原生同构原则（单节点为 `Node=1, Replica=1` 特例）：逻辑角色按职责分离，每个进程显式声明 `node_id`、`process_role` 与唯一实例身份（`instance_id` / `gateway_id`），backend 与 execution-gateway 独立部署，禁止使用进程内存态或共享本地目录传递业务状态。单机 MVP 可将 scheduler / job-worker 折叠进 `api` 进程以减少容器数量，但必须保留独立身份、连接池、租约、worker claim 与协议边界；`node-controller` 不与业务 API 合并。单节点验收覆盖受控故障与恢复，不声称节点级高可用；扩容先增加已资格化节点与实例，再验证按节点划分的父物理预算与 owner 路由。
 
 ```mermaid
 flowchart LR
@@ -71,18 +71,21 @@ flowchart LR
 
 ## 3. 契约与类型生成
 
-P0 除公共契约外，必须补齐以下内部交接产物。文件名是待交付清单，当前不创建空文件冒充已冻结协议。
+P0 机器契约已按以下文件交付；它们冻结协议形状与样例，但业务路由、运行时行为和真实模型资格仍待实现。公共、管理与内部契约分别维护，不用空文件冒充已冻结协议。
 
 | 交接契约 | 生产者 / 消费者与职责 |
 | --- | --- |
-| 公共 speech / workbench OpenAPI 与共享资源 schema | API、Web、SDK、MCP；分别描述底座与应用资源 |
-| Realtime / Job 事件 schema | 实时网关 / Job 事件投影与客户端；联合事件、顺序、重放和终态语义 |
-| `execution-control.openapi.yaml` | scheduler / worker 与 gateway；提交、查询、取消、封锁与 drain |
-| `execution-stream.schema.json` | 实时网关与 gateway；控制信封、音频 descriptor、序号、样本坐标和背压 |
-| `runtime-control.openapi.yaml` | scheduler 与部署控制器；批准实例的准备、查询、停止及证据 |
-| binding / instance / capacity / qualification schema | 管理面、调度、控制器与发布流程；分离静态版本、动态实例和资格 |
+| `speech-openapi.yaml` | API、Web、SDK、MCP；OpenAI Audio / Realtime 声明子集与 `/v1/nexus` 语音、Job、资产、音色和发音资源 |
+| `workbench-openapi.yaml` | 工作台 API / Web；项目、转写、会议、助手、提词、有声书、保存副本与导出 |
+| `admin-openapi.yaml` | AdminUI、调度、部署与发布流程；工作空间、绑定发布、实例、资源池、策略、诊断与审计 |
+| `realtime-events.schema.json` | 实时网关与客户端；标准 ASR 事件子集、`nexus.*` 事件、联合、顺序、重放和终态语义 |
+| `scenario-profile.schema.json` / `voice-resource.schema.json` | 管理面、语音用例与 Web；预设 revision、覆盖范围、音色候选 / 校验 / 发布与不可变版本 |
+| `internal/execution-control.openapi.yaml` | scheduler / worker 与 gateway；提交、查询、取消、封锁与 drain |
+| `internal/execution-stream.schema.json` | 实时网关与 gateway；控制信封、音频 descriptor、序号、样本坐标、credit、背压和二进制 PCM framing |
+| `internal/runtime-control.openapi.yaml` | scheduler 与部署控制器；批准实例的准备、查询、停止及证据 |
+| `model-binding.schema.json` / `model-instance.schema.json` / `capacity-manifest.schema.json` / `qualification-report.schema.json` | 管理面、调度、控制器与发布流程；分离静态绑定、动态实例、容量租约和资格证据 |
 
-公共、内部控制和 vendor DTO 分别建模，不能把私有字段通过公共响应泄漏。规范源放在 `contracts/`，公共与内部文件分目录组织；跨文件引用在构建时解析，不在运行时访问网络。
+公共、内部控制和 vendor DTO 分别建模，不能把私有字段通过公共响应泄漏。规范源放在 `contracts/`，公共与内部文件分目录组织；跨文件引用在构建时按所在文件解析，不在运行时访问网络。OpenAI SDK 的 REST 请求 / 响应形状与 Realtime 客户端事件由 `tests/contract/test_p0_public_contracts.py` 使用官方 Python SDK 的 mock transport / 实际序列化路径校验；这只是契约门禁，服务端实现后还须以同一组样例运行 HTTP / WebSocket 集成测试。兼容范围与扩展规则见[OpenAI 兼容与增强边界](openai-compatibility.md)。
 
 Python 首选 datamodel-code-generator 生成 Pydantic v2 边界 DTO，再映射为领域命令。TypeScript 的 OpenAPI 类型与客户端使用 openapi-typescript / openapi-fetch；独立事件 schema 生成对应类型，并用 Ajv 的 2020-12 实现校验运行时消息。生成产物不手改，业务层不得依赖生成 DTO 的内部布局。
 
@@ -208,9 +211,20 @@ Prometheus 分别统计队列等待、准入、模型准备 / 热身、引擎排
 | P2–P4 | 两个 Web 入口、客户端资格及可选工作台 / 内网 LLM / 有声书 | 公开底座调用、业务版本依赖、播放 / 取消、内容网络边界和独立导出验证 |
 | P5 | 长时、故障注入、容量、恢复、迁移 / 回滚与部署交付 | 只对实际通过的功能 / binding / 拓扑发布资格；缺失和跳过明确列出 |
 
+P1-B 的“首轮延迟达标”必须先冻结同一套测量口径，再附实测分解。场次、并发、绑定 revision、模型 / 引擎版本、主机拓扑、采样率和客户端组合进入资格报告；任一阶段没有测量时不能只用端到端一次结果宣称达标，也不能把跳过项算作通过。
+
+| 指标 | 计时起点 | 服务端归因观测点 | 计时终点 | 首轮门槛 |
+| --- | --- | --- | --- | --- |
+| ASR 首个有效预览 | 服务端已接受使最低识别窗完整所需的最后一个 PCM sample | VAD / 段边界、预览请求入队、0.6B 首个有效 hypothesis 生成 | realtime gateway 写出首个有效标准 delta 或 `nexus.transcription.hypothesis` | 同一绑定 / 拓扑下 p95 ≤ 1000 ms |
+| TTS 首个可播放 PCM | 首个可合成文本单元被 commit / finish 接受并冻结 | 准入完成、模型首个 codec 输出、解码与编码完成 | 交付 transport 写出首个完整非空 PCM frame | 同一绑定 / 拓扑下 p95 ≤ 800 ms |
+
+网络接入到客户端接收、浏览器解码 / 播放启动和 1.7B 复核分别记录 p50 / p95，作为独立观测，不用客户端慢速播放掩盖服务端首块超时。每段预算上限在 P1-A 真实 adapter 基线后按实际测量冻结；没有基线时不填写推测数字。样本量与并发组合在资格报告中固定，至少覆盖 1 路实时 ASR 与 1 路实时 TTS 共存的批准负载。
+
+首个真实 adapter 接入后设置一次契约复审点：核对 `engine_request_id` 关联、commit 顺序、terminal 与 abort 证据、`stop_evidence_kind`、输出 watermark / reset、TTS 首帧与 `stream_format`、以及 duration / token usage 的真实可观测性。复审只允许在上述证据语义与内部协议字段上作有 ADR 的兼容修订；OpenAI 标准路径、字段含义和错误 envelope 不得因此漂移，扩展仍只使用 `nexus` 命名空间。
+
 质量阈值应按首批普通话 / 中英混说与代表性噪声、数字、专名、说话人和音色语料冻结。先建立对照基线再锁阈值，不因暂缺真实测量就编造 CER / WER / DER 或音色相似度指标。默认确定性测试使用 fake、合成或获准公开材料，不使用私人音频。
 
-本文的交付是技术方案；并未新增上述契约、数据库迁移、业务路由、控制器或真实模型测试。落地时按仓库门禁验证，并分别提交实现证据与部署资格。
+P0 机器契约与协调 DDL 已交付并通过仓库门禁，但业务路由、完整迁移体系、控制器实现和真实模型测试仍待落地。实现时按仓库门禁验证，并分别提交实现证据与部署资格。
 
 ## 13. 上游依据与版本锁定
 

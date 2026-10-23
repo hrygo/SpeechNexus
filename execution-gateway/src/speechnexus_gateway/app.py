@@ -35,7 +35,7 @@ def create_app(
     app = FastAPI(
         title="SpeechNexus execution gateway API",
         version=__version__,
-        description="Operational endpoints only; engine control remains pending P0/P1.",
+        description="Operational endpoints only; engine control routes are not implemented.",
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

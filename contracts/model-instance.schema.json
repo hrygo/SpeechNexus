@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/model-instance.schema.json",
+  "title": "ModelRuntimeInstance",
+  "description": "Dynamic runtime instance fact for a node-scoped engine process or container. This schema is internal to admin, scheduler, deployment controller, and execution gateway; it is not a public model or voice DTO. A new generation is required after every restart.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "instance_id",
+    "node_id",
+    "binding",
+    "pool_id",
+    "generation",
+    "config_digest",
+    "state",
+    "readiness",
+    "observed"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "instance_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "node_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "binding": {
+      "$ref": "#/$defs/BindingReference"
+    },
+    "pool_id": {
+      "$ref": "#/$defs/PoolId"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic per-instance generation allocated by the deployment controller. Stale generations must be fenced."
+    },
+    "config_digest": {
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "state": {
+      "$ref": "#/$defs/InstanceState"
+    },
+    "readiness": {
+      "$ref": "#/$defs/ReadinessFacts"
+    },
+    "observed": {
+      "$ref": "#/$defs/ObservedFacts"
+    },
+    "controller": {
+      "$ref": "#/$defs/ControllerFacts"
+    },
+    "quarantine_reason": {
+      "oneOf": [
+        {"type": "string", "minLength": 1, "maxLength": 2000},
+        {"type": "null"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"state": {"const": "ready"}},
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "readiness": {
+            "required": ["accepting_new_work", "ready_at"],
+            "properties": {
+              "accepting_new_work": {"const": true},
+              "ready_at": {"type": "string", "format": "date-time"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"state": {"not": {"const": "ready"}}},
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "readiness": {
+            "properties": {"accepting_new_work": {"const": false}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"state": {"const": "draining"}},
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "readiness": {
+            "properties": {"accepting_new_work": {"const": false}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"state": {"const": "stopped"}},
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["observed"],
+        "properties": {
+          "observed": {
+            "required": ["stopped_at", "stop_evidence"],
+            "properties": {
+              "stop_evidence": {
+                "$ref": "#/$defs/StopEvidence"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"state": {"const": "quarantined"}},
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["quarantine_reason"],
+        "properties": {
+          "quarantine_reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Revision": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "Sha256Digest": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "PoolId": {
+      "$ref": "shared/identifiers.schema.json#/$defs/PoolId"
+    },
+    "InstanceState": {
+      "$ref": "shared/runtime-states.schema.json#/$defs/InstanceState"
+    },
+    "BindingReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
+    },
+    "ReadinessFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepting_new_work", "loaded_artifact_digests"],
+      "properties": {
+        "accepting_new_work": {"type": "boolean"},
+        "loaded_artifact_digests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Sha256Digest"}
+        },
+        "warmed_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+          }
+        },
+        "ready_at": {
+          "oneOf": [
+            {"type": "string", "format": "date-time"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "StopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "observed_at", "digest"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "process_exit",
+            "container_exit",
+            "engine_abort_confirmed",
+            "controller_stop_confirmed",
+            "operator_verified_instance_terminated"
+          ]
+        },
+        "observed_at": {"type": "string", "format": "date-time"},
+        "digest": {"$ref": "#/$defs/Sha256Digest"},
+        "detail": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
+    "ObservedFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["started_at", "last_heartbeat_at"],
+      "properties": {
+        "started_at": {"type": "string", "format": "date-time"},
+        "last_heartbeat_at": {"type": "string", "format": "date-time"},
+        "stopped_at": {
+          "oneOf": [
+            {"type": "string", "format": "date-time"},
+            {"type": "null"}
+          ]
+        },
+        "stop_evidence": {
+          "oneOf": [
+            {"$ref": "#/$defs/StopEvidence"},
+            {"type": "null"}
+          ]
+        },
+        "exit_code": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "ControllerFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controller_id", "intent_id"],
+      "properties": {
+        "controller_id": {"$ref": "#/$defs/Identifier"},
+        "intent_id": {"$ref": "#/$defs/Identifier"},
+        "template_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "instance_id": "inst-asr-1",
+      "node_id": "node-gb10-1",
+      "binding": {"id": "asr-quality", "revision": "7"},
+      "pool_id": "asr-realtime",
+      "generation": 42,
+      "config_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "state": "ready",
+      "readiness": {
+        "accepting_new_work": true,
+        "loaded_artifact_digests": [
+          "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "warmed_capabilities": ["asr.streaming_preview", "asr.full_segment_review"],
+        "ready_at": "2026-10-22T09:00:10Z"
+      },
+      "observed": {
+        "started_at": "2026-10-22T09:00:00Z",
+        "last_heartbeat_at": "2026-10-22T09:10:00Z",
+        "stopped_at": null,
+        "stop_evidence": null,
+        "exit_code": null
+      },
+      "controller": {
+        "controller_id": "node-controller-1",
+        "intent_id": "intent-prepare-42",
+        "template_id": "approved-asr-realtime-v7"
+      },
+      "quarantine_reason": null
+    },
+    {
+      "schema_version": "1.0.0",
+      "instance_id": "inst-tts-2",
+      "node_id": "node-gb10-1",
+      "binding": {"id": "tts-interactive", "revision": "5"},
+      "pool_id": "tts-realtime",
+      "generation": 7,
+      "config_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "state": "stopped",
+      "readiness": {
+        "accepting_new_work": false,
+        "loaded_artifact_digests": [],
+        "warmed_capabilities": [],
+        "ready_at": "2026-10-22T08:00:00Z"
+      },
+      "observed": {
+        "started_at": "2026-10-22T07:00:00Z",
+        "last_heartbeat_at": "2026-10-22T10:00:00Z",
+        "stopped_at": "2026-10-22T10:00:05Z",
+        "stop_evidence": {
+          "kind": "container_exit",
+          "observed_at": "2026-10-22T10:00:05Z",
+          "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "detail": "container exited after verified drain"
+        },
+        "exit_code": 0
+      },
+      "controller": {
+        "controller_id": "node-controller-1",
+        "intent_id": "intent-stop-7",
+        "template_id": "approved-tts-realtime-v7"
+      },
+      "quarantine_reason": null
+    }
+  ]
+}

@@ -43,9 +43,9 @@ The workbench organizes actions around tasks. Once business features are availab
 
 ### Integrate through the API
 
-The speech foundation is planned to provide an OpenAI Audio-compatible subset, plus enhanced interfaces for voices, durable tasks, and scenario presets, for applications, SDKs, and MCP callers. Realtime compatibility is limited to the declared subset and requires SpeechNexus session negotiation.
+The P0 contracts freeze an OpenAI Audio-compatible subset plus `nexus` interfaces for voices, durable tasks, and scenario presets for applications, SDKs, and MCP callers. A standard OpenAI SDK can point `base_url` at the deployment's `/v1`. Realtime supports a transcription-only `model` connection mode and pre-created nexus sessions; both cover only the declared event subset.
 
-The currently available endpoints are `/healthz` and `/readyz`. Planned calls and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md); business contracts are still pending.
+The currently available runtime endpoints are `/healthz` and `/readyz`; speech and workbench routes are not implemented yet. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
 
 ### Maintain a deployment through AdminUI
 

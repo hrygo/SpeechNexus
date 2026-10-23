@@ -1,6 +1,6 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已建立可构建的 FastAPI / 执行网关与两个 Web 入口外壳，但尚未实现语音或工作台业务，接口、性能与容量不得据此标为已实现。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已建立可构建的 FastAPI / 执行网关与两个 Web 入口外壳，并交付 P0 公共、管理与内部机器契约，但尚未实现语音或工作台业务。契约冻结、schema 校验和 OpenAI SDK 形状测试不等于服务端路由或真实模型已可用。文档版本独立于软件版本。
 
 | 文档 | 职责 |
 | --- | --- |
@@ -8,6 +8,7 @@
 | [整体技术方案](architecture/technical-blueprint.md) | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [工程目录与依赖边界](architecture/repository-layout.md) | Python / Web workspace、模块方向、契约生命周期、测试层级与部署入口 |
 | [语音接口](architecture/speech-api.md) | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例 |
+| [OpenAI 兼容与增强边界](architecture/openai-compatibility.md) | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁 |
 | [资源治理与持久化](architecture/runtime-governance.md) | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除 |
 | [分布式协调与容量治理 Schema（P0-B 草案）](architecture/distributed-coordination-schema.md) | 三级资源拓扑表、分池租约、网关提交屏障、全局锁顺序与六大原子事务模板 |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md) | 固定来源、可提取规则、需重写的基础设施和许可证 |
@@ -21,5 +22,7 @@
 | [集群就绪架构与单机 MVP 同构部署](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) | 架构层集群原生、三级资源拓扑、分池租约、节点控制器与单机 MVP 演进边界 |
 
 领域设计使用稳定文件名持续维护；实施计划与审查保留日期；ADR 以四位编号记录决定。协议 / 数据规则分别在其负责文档集中维护，主文档给出职责与入口。冲突需修订设计，不能以工作记录或历史材料静默覆盖公共语义。
+
+机器契约入口为 [contracts/README.md](../contracts/README.md)。`make contracts-check` 与 `uv run pytest tests/contract` 校验 OpenAPI / JSON Schema、正负样例、事件联合与 OpenAI SDK REST / Realtime 形状；这些检查不启动业务服务。协调 DDL 另有隔离 PostgreSQL 行为测试，按 [集成测试说明](../tests/integration/README.md) 使用独立测试库运行；CI 以一次性 PostgreSQL 16 服务执行。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

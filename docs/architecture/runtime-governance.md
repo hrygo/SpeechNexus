@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 资源治理与持久化设计"
 status: active
-version: "0.5.0"
+version: "0.5.2"
 date: 2026-10-22
 ---
 
@@ -75,6 +75,8 @@ date: 2026-10-22
 
 资源租约状态为 `reserved → executing → stopping → released`，不确定时进入 `quarantined`。Operation 结果状态与资源清理分开：cleanup_state 为 `not_required / pending / complete / quarantined`。只有确认停止才允许 cancelled；取消确认或 drain 期限到期但执行仍未知时，操作以 failed / cancellation_unconfirmed 终结，cleanup_state=quarantined，预算继续被占用且禁止自动重试。后台协调只更新清理事实，不反转唯一结果终态。`quarantined` 不是可重新调度的空闲状态。DB / 调度协调不可用时停止新准入，当前工作只在已有有限策略租期内运行，失效后停止外发并转入停止 / 协调；不能切到未协调的本地计数器继续接单。
 
+隔离账目覆盖统一内存、设备内存、主机内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
+
 ### 1.5 准入与引擎内部 batching 的关系
 
 企业队列只把已准入、受总量上限控制的请求送入引擎，引擎内部等候也计入 active / deadline 预算。不得同时在平台与 vLLM 各排无限长队列。模型跨副本路由在提交前完成，实时会话固定 owner；引擎故障后实时会话明确失败并新建 epoch，后台任务可以在取消旧 attempt 并完成协调后重试。
@@ -140,7 +142,7 @@ queued / retry_wait → cancelled / expired
 
 失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。
 
-用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出计量按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重，使用已确认的生成样本或单调水位，失败 / 重试实际重新生成仍计消耗。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
+用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；数据库拒绝同一 meter 的重叠区间和既有区间改写 / 删除，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
 
 ### 2.3 保存与删除默认值
 

@@ -1,0 +1,3850 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus public speech API
+  version: 0.1.0.dev0
+  description: |
+    SpeechNexus public speech protocol.
+
+    The OpenAI-compatible subset is limited to the paths, fields, formats, and
+    events explicitly declared here. A standard OpenAI SDK can use this API by
+    setting base_url to <deployment>/v1 and supplying any api_key value unless
+    the deployment enables a shared service key. SpeechNexus enhancements live
+    under /v1/nexus and the optional `nexus` request field; a standard request
+    never needs an enhancement wrapper. Unsupported standard parameters are
+    rejected with 422 `unsupported_parameter`, never silently ignored.
+
+    Realtime has two connection modes at GET /v1/realtime: a pre-created
+    nexus session (`session_id`) and a compatibility transcription session
+    opened with `model`. Both accept the declared standard transcription
+    event subset. TTS, previews, metadata, and operation coordination remain
+    nexus.* events and are available only in a nexus-created session.
+servers:
+  - url: /
+security:
+  - SharedServiceKey: []
+  - {}
+tags:
+  - name: openai-compatible
+  - name: capabilities
+  - name: profiles
+  - name: voices
+  - name: jobs
+  - name: operations
+  - name: assets
+  - name: artifacts
+  - name: realtime
+  - name: voice-creation
+paths:
+  /v1/models:
+    get:
+      tags: [openai-compatible]
+      operationId: listModels
+      summary: List published logical models
+      description: |
+        Returns the OpenAI model-list shape. The `nexus` object on each model
+        separates binding revision, support, quality qualification, and current
+        admission facts. This endpoint never exposes model paths or endpoints.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published logical models.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/models/{model}:
+    get:
+      tags: [openai-compatible]
+      operationId: retrieveModel
+      summary: Retrieve one published logical model
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published logical model.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/audio/transcriptions:
+    post:
+      tags: [openai-compatible]
+      operationId: createTranscription
+      summary: Create a synchronous file transcription
+      description: |
+        OpenAI Audio transcription subset. `file`, `model`, `language`,
+        `prompt`, `response_format`, and `timestamp_granularities[]` are
+        declared. `response_format=verbose_json` is accepted only when the
+        selected binding can provide real segment and word evidence; a lack of
+        evidence returns 422 `unsupported_parameter` instead of fabricated
+        timestamps. The optional `nexus` form field is a JSON string and is
+        never required for standard clients.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TranscriptionRequest"
+            encoding:
+              file:
+                contentType: application/octet-stream
+              nexus:
+                contentType: application/json
+      responses:
+        "200":
+          description: |
+            JSON for `json` / `verbose_json`; plain text for `text`, `srt`, and
+            `vtt`. The response shape follows the requested format.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+            X-Operation-ID:
+              $ref: "#/components/headers/XOperationId"
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Transcription"
+                  - $ref: "#/components/schemas/TranscriptionVerbose"
+            text/plain:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+  /v1/audio/speech:
+    post:
+      tags: [openai-compatible]
+      operationId: createSpeech
+      summary: Create synchronous text-to-speech audio
+      description: |
+        OpenAI Audio speech subset. The declared response formats are mp3, wav,
+        and raw PCM. `stream_format` accepts only `audio` in P0; `sse` is
+        rejected as unsupported. A standard request returns complete audio.
+        Chunked audio delivery is a nexus realtime capability, not an OpenAI
+        speech response mode.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeechRequest"
+      responses:
+        "200":
+          description: Complete audio in the negotiated format.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+            X-Operation-ID:
+              $ref: "#/components/headers/XOperationId"
+            X-Audio-Format:
+              $ref: "#/components/headers/XAudioFormat"
+            X-Sample-Rate-Hz:
+              $ref: "#/components/headers/XSampleRateHz"
+            X-Channels:
+              $ref: "#/components/headers/XChannels"
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/pcm:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+  /v1/nexus/capabilities:
+    get:
+      tags: [capabilities]
+      operationId: getCapabilities
+      summary: Get an atomic capability snapshot
+      description: |
+        Returns one consistent snapshot for the deployment, workspace, catalog,
+        and policy revision. The endpoint is side-effect free: it never loads,
+        warms, downloads, or evicts a model. `ETag` covers the same revisions.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/XRequestId"
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current capability snapshot.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitySnapshot"
+        "304":
+          description: The supplied ETag still matches the current snapshot.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/profiles:
+    get:
+      tags: [profiles]
+      operationId: listProfiles
+      summary: List published scenario profiles
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published profile revisions.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/profiles/{profile_id}/revisions/{revision}:
+    get:
+      tags: [profiles]
+      operationId: getProfileRevision
+      summary: Get one immutable scenario profile revision
+      parameters:
+        - $ref: "#/components/parameters/ProfileIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Immutable profile revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./scenario-profile.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/voices:
+    get:
+      tags: [voices]
+      operationId: listVoices
+      summary: List published voices visible to the deployment
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 35
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published voice revisions.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/voices/{voice_id}/revisions/{revision}:
+    get:
+      tags: [voices]
+      operationId: getVoiceRevision
+      summary: Get one immutable published voice revision
+      parameters:
+        - $ref: "#/components/parameters/VoiceIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Immutable published voice revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/VoiceRevision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/voices/{voice_id}/revisions/{revision}/retirements:
+    post:
+      tags: [voices]
+      operationId: retireVoiceRevision
+      summary: Retire or disable a published voice revision
+      description: |
+        `retire` stops new references while fixed in-flight jobs with a valid
+        dependency lease may finish. `disable` is an emergency action that also
+        cancels confirmed in-flight use; unknown cleanup remains quarantined.
+      parameters:
+        - $ref: "#/components/parameters/VoiceIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceRetirementRequest"
+      responses:
+        "200":
+          description: Updated voice revision state.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/VoiceRevision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/pronunciation-sets:
+    get:
+      tags: [voices]
+      operationId: listPronunciationSets
+      summary: List pronunciation sets
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Pronunciation-set heads.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PronunciationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [voices]
+      operationId: createPronunciationRevision
+      summary: Create an immutable pronunciation-set revision
+      description: |
+        Omit `id` to create a new pronunciation set. Supply `id` and
+        `expected_revision` to append a revision to an existing set. Entries are
+        validated and published atomically; an existing revision is never
+        modified.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PronunciationCreateRequest"
+      responses:
+        "201":
+          description: Pronunciation revision created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/PronunciationRevision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}:
+    get:
+      tags: [voices]
+      operationId: getPronunciationRevision
+      summary: Get one immutable pronunciation-set revision
+      parameters:
+        - name: pronunciation_id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Immutable pronunciation revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/PronunciationRevision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/nexus/jobs:
+    post:
+      tags: [jobs]
+      operationId: createJob
+      summary: Create a durable ASR, TTS, or voice-creation job
+      description: |
+        The request discriminator is `kind`. The service resolves mutable
+        defaults once, pins the model binding and all dependent revisions, and
+        returns an immutable effective configuration. A repeated Idempotency-Key
+        with the same canonical intent replays the original job; a different
+        intent returns 409 `idempotency_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobCreateRequest"
+      responses:
+        "202":
+          description: Job accepted.
+          headers:
+            Location:
+              description: Relative or absolute job URL.
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: List durable jobs
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/JobStatus"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/JobKind"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Jobs ordered by (created_at, id).
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Get job state and committed artifacts
+      parameters:
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Current job state.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/jobs/{job_id}/cancellations:
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      summary: Request idempotent job cancellation
+      description: |
+        Returns 202 while the cancellation is being confirmed and 200 when the
+        job is already terminal. A cancellation request is not stop evidence;
+        `cleanup_state` reports the actual resource state.
+      parameters:
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Job already terminal.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCancellation"
+        "202":
+          description: Cancellation accepted and awaiting stop evidence.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCancellation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/jobs/{job_id}/retries:
+    post:
+      tags: [jobs]
+      operationId: retryJob
+      summary: Create a new job from a terminal job intent
+      description: |
+        Retry creates a new Job with a new attempt history; it never revives the
+        old job. While the old execution is not verifiably stopped, returns 409
+        `execution_cleanup_pending`.
+      parameters:
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: Replacement job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/jobs/{job_id}/events:
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      summary: Stream durable job events with SSE
+      description: |
+        SSE `id` is the persistent job_event_seq. `Last-Event-ID` resumes after
+        that sequence. Expired event history returns 410
+        `event_history_expired`; clients then read current job state. Event data
+        is a JobEvent JSON object.
+      parameters:
+        - $ref: "#/components/parameters/JobIdPath"
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/EventSequence"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Server-sent event stream.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+            Cache-Control:
+              description: Always no-cache for event streams.
+              schema:
+                type: string
+                const: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-sse-event-schema:
+                $ref: "#/components/schemas/JobEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/operations/{operation_id}:
+    get:
+      tags: [operations]
+      operationId: getOperation
+      summary: Get execution coordination state
+      parameters:
+        - $ref: "#/components/parameters/OperationIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Operation state and receipt.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/operations/{operation_id}/cancellations:
+    post:
+      tags: [operations]
+      operationId: cancelOperation
+      summary: Request cancellation of a synchronous or realtime operation
+      description: |
+        For an operation owned by a Job, this creates a cancellation request for
+        the owning job so that a required step cannot be left without a result.
+      parameters:
+        - $ref: "#/components/parameters/OperationIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Operation already terminal.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationCancellation"
+        "202":
+          description: Cancellation accepted and awaiting stop evidence.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationCancellation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/nexus/assets:
+    post:
+      tags: [assets]
+      operationId: uploadAsset
+      summary: Upload a bounded input asset
+      description: |
+        The body is streamed to private staging, validated, and only then marked
+        ready. No remote URL, object key, or server path is accepted.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AssetUploadRequest"
+      responses:
+        "201":
+          description: Asset accepted and ready or awaiting validation.
+          headers:
+            Location:
+              description: Relative or absolute asset URL.
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/nexus/assets/{asset_id}:
+    get:
+      tags: [assets]
+      operationId: getAsset
+      summary: Get asset metadata
+      parameters:
+        - $ref: "#/components/parameters/AssetIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Asset metadata.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/assets/{asset_id}/content:
+    get:
+      tags: [assets]
+      operationId: downloadAssetContent
+      summary: Download ready input content
+      parameters:
+        - $ref: "#/components/parameters/AssetIdPath"
+        - $ref: "#/components/parameters/Range"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Full content.
+          headers:
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+            Content-Length:
+              $ref: "#/components/headers/ContentLength"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content.
+          headers:
+            Content-Range:
+              $ref: "#/components/headers/ContentRange"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/artifacts/{artifact_id}:
+    get:
+      tags: [artifacts]
+      operationId: getArtifact
+      summary: Get committed artifact metadata
+      parameters:
+        - $ref: "#/components/parameters/ArtifactIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Artifact metadata.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/artifacts/{artifact_id}/content:
+    get:
+      tags: [artifacts]
+      operationId: downloadArtifactContent
+      summary: Download committed artifact content
+      parameters:
+        - $ref: "#/components/parameters/ArtifactIdPath"
+        - $ref: "#/components/parameters/Range"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Full content.
+          headers:
+            Accept-Ranges:
+              $ref: "#/components/headers/AcceptRanges"
+            Content-Length:
+              $ref: "#/components/headers/ContentLength"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content.
+          headers:
+            Content-Range:
+              $ref: "#/components/headers/ContentRange"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/realtime/sessions:
+    post:
+      tags: [realtime]
+      operationId: createRealtimeSession
+      summary: Create and validate a realtime session
+      description: |
+        Validates entry policy, parameters, versions, and capacity policy and
+        records a session in `created` state. The session expires if no
+        WebSocket connects within 30 seconds; no inference slot is held before
+        admission. Resource reservation happens atomically when the socket
+        connects.
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealtimeSessionCreateRequest"
+      responses:
+        "201":
+          description: Session created.
+          headers:
+            Location:
+              description: Relative or absolute session URL.
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/realtime/sessions/{session_id}:
+    get:
+      tags: [realtime]
+      operationId: getRealtimeSession
+      summary: Get realtime session and terminal operation state
+      parameters:
+        - $ref: "#/components/parameters/SessionIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Session state.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+  /v1/nexus/realtime/sessions/{session_id}/cancellations:
+    post:
+      tags: [realtime]
+      operationId: cancelRealtimeSession
+      summary: Close a realtime session over HTTP
+      parameters:
+        - $ref: "#/components/parameters/SessionIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealtimeSessionCancelRequest"
+      responses:
+        "200":
+          description: Session already terminal.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeSession"
+        "202":
+          description: Cancellation accepted and session draining.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/realtime:
+    get:
+      tags: [realtime]
+      operationId: connectRealtime
+      summary: Upgrade to the realtime WebSocket
+      description: |
+        WebSocket upgrade endpoint. Supply exactly one of `session_id` or
+        `model`.
+
+        * `session_id` connects to a pre-created nexus session and enables the
+          declared standard ASR subset plus nexus.* TTS, metadata, and operation
+          events.
+        * `model` opens an OpenAI-compatible transcription-only session using
+          deployment defaults. This mode is for standard Realtime SDKs and does
+          not enable TTS, response.*, tool calls, or conversation history.
+
+        The server validates Origin/Host for browser connections. A shared
+        service key, when enabled, is supplied through the Authorization header
+        and never in the URL. session_id is a routing identifier, not a
+        credential.
+      parameters:
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Identifier"
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: OpenAI-Beta
+          in: header
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "101":
+          description: |
+            WebSocket protocol switch. JSON events conform to
+            realtime-events.schema.json. Binary audio is not used on the public
+            WebSocket in P0; ASR audio is base64 inside
+            input_audio_buffer.append and TTS audio is base64 inside
+            nexus.tts.audio.delta.
+          x-websocket-event-schema:
+            $ref: "./realtime-events.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/nexus/voice-designs:
+    post:
+      tags: [voice-creation]
+      operationId: createVoiceDesign
+      summary: Create a voice-design draft and generation job
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceDesignCreateRequest"
+      responses:
+        "202":
+          description: Draft and generation job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceCreationAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/nexus/voice-clones:
+    post:
+      tags: [voice-creation]
+      operationId: createVoiceClone
+      summary: Create a voice-clone draft and generation job
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceCloneCreateRequest"
+      responses:
+        "202":
+          description: Draft and generation job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceCreationAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/nexus/voice-drafts/{draft_id}:
+    get:
+      tags: [voice-creation]
+      operationId: getVoiceDraft
+      summary: Get a voice draft and optional revision
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - name: draft_revision
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Revision"
+      responses:
+        "200":
+          description: Voice draft view.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceDraftView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [voice-creation]
+      operationId: updateVoiceDraftMetadata
+      summary: Update draft metadata only
+      description: |
+        Only display metadata is mutable. Changing the voice description, sample,
+        reference text, preview text, or binding requires a new generation
+        revision and returns 422 for PATCH.
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceDraftPatch"
+      responses:
+        "200":
+          description: Updated draft metadata.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/VoiceDraft"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/voice-drafts/{draft_id}/generations:
+    post:
+      tags: [voice-creation]
+      operationId: generateVoiceDraftRevision
+      summary: Create the next draft revision and generation job
+      description: |
+        Compares the expected head revision, allocates the next revision, and
+        commits the revision, job, and outbox atomically. Reusing an idempotency
+        key replays the original intent even if the head has advanced.
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceGenerationRequest"
+      responses:
+        "202":
+          description: Next revision and generation job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGenerationAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/voice-drafts/{draft_id}/previews:
+    post:
+      tags: [voice-creation]
+      operationId: createVoicePreview
+      summary: Synthesize a preview for a fixed candidate revision
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoicePreviewRequest"
+      responses:
+        "202":
+          description: Preview job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/voice-drafts/{draft_id}/validations:
+    post:
+      tags: [voice-creation]
+      operationId: validateVoiceDraftRevision
+      summary: Validate a fixed candidate revision
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceValidationRequest"
+      responses:
+        "202":
+          description: Validation job accepted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/nexus/voice-drafts/{draft_id}/publications:
+    post:
+      tags: [voice-creation]
+      operationId: publishVoiceDraftRevision
+      summary: Publish a validated draft revision as an immutable voice revision
+      description: |
+        The first publication creates voice_id; later publications append an
+        immutable revision to the same voice_id. A stale head, stale validation,
+        or expired qualification returns 409/422. Replaying the same intent
+        returns the original publication.
+      parameters:
+        - $ref: "#/components/parameters/DraftIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoicePublicationRequest"
+      responses:
+        "201":
+          description: Voice revision published.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/VoicePublication"
+        "200":
+          description: Idempotent replay of the same publication.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./voice-resource.schema.json#/$defs/VoicePublication"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+components:
+  securitySchemes:
+    SharedServiceKey:
+      type: http
+      scheme: bearer
+      description: |
+        Optional deployment-wide shared credential. It grants access to the
+        shared deployment, not a user identity. When disabled, any Authorization
+        header value is accepted for SDK compatibility and is not interpreted as
+        a user.
+  parameters:
+    XRequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: |
+        Optional idempotency key. The scope is (deployment_id, workspace_id,
+        operation_family, key). Standard OpenAI clients may omit it.
+    WorkspaceIdQuery:
+      name: workspace_id
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    ProfileIdPath:
+      name: profile_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    RevisionPath:
+      name: revision
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Revision"
+    VoiceIdPath:
+      name: voice_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    JobIdPath:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    OperationIdPath:
+      name: operation_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    AssetIdPath:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    ArtifactIdPath:
+      name: artifact_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    SessionIdPath:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    DraftIdPath:
+      name: draft_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    Range:
+      name: Range
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: "^bytes=[0-9]*-[0-9]*$"
+  headers:
+    XRequestId:
+      description: Validated client request ID or a server-generated correlation ID.
+      schema:
+        type: string
+    XOperationId:
+      description: Operation identity for receipt and cancellation coordination.
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    XAudioFormat:
+      description: Actual audio encoding of the response body.
+      schema:
+        type: string
+        enum: [mp3, wav, pcm]
+    XSampleRateHz:
+      description: Actual output sample rate.
+      schema:
+        type: integer
+        minimum: 8000
+        maximum: 96000
+    XChannels:
+      description: Actual output channel count.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2
+    ETag:
+      description: Opaque validator derived from deployment, workspace, catalog, and policy revisions.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before retrying a capacity or cancellation coordination request.
+      schema:
+        type: integer
+        minimum: 0
+    AcceptRanges:
+      schema:
+        type: string
+        const: bytes
+    ContentLength:
+      schema:
+        type: integer
+        minimum: 0
+    ContentRange:
+      schema:
+        type: string
+        pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
+  responses:
+    BadRequest:
+      description: Malformed request, invalid JSON, invalid audio, or unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Shared service credential required or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Origin/Host policy rejected the request or the feature is disabled.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found or not visible to the requested workspace.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Configuration changed, idempotency conflict, operation in progress, or cleanup pending.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Gone:
+      description: Content or event history has expired and is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Upload or request body exceeds the declared bound.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Unsupported parameter, incompatible profile, or async_required.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Quota or queue limit exceeded; follow Retry-After.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Backend or capacity unavailable; retry only when `retryable` is true.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    GatewayTimeout:
+      description: Operation deadline exceeded; coordinate the original intent before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Identifier:
+      $ref: "shared/identifiers.schema.json#/$defs/Identifier"
+    Revision:
+      $ref: "shared/identifiers.schema.json#/$defs/Revision"
+    EventSequence:
+      $ref: "shared/identifiers.schema.json#/$defs/EventSequence"
+    Sha256Digest:
+      $ref: "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    ResourceReference:
+      $ref: "shared/references.schema.json#/$defs/ResourceReference"
+    ReleaseTier:
+      $ref: "shared/capability-domains.schema.json#/$defs/ReleaseTier"
+    ProfileReleaseTier:
+      $ref: "shared/capability-domains.schema.json#/$defs/ProfileReleaseTier"
+    ServiceClass:
+      $ref: "shared/capability-domains.schema.json#/$defs/ServiceClass"
+    ErrorResponse:
+      $ref: "shared/errors.schema.json#/$defs/ErrorResponse"
+    ErrorBody:
+      $ref: "shared/errors.schema.json#/$defs/ErrorBody"
+    ModelList:
+      type: object
+      additionalProperties: false
+      required: [object, data]
+      properties:
+        object:
+          const: list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+    Model:
+      type: object
+      additionalProperties: false
+      required: [id, object, created, owned_by]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        object:
+          const: model
+        created:
+          type: integer
+          minimum: 0
+        owned_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+        nexus:
+          $ref: "#/components/schemas/ModelNexus"
+    ModelNexus:
+      type: object
+      additionalProperties: false
+      required: [logical_model, binding, tasks, release_tier, readiness]
+      properties:
+        logical_model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        binding:
+          $ref: "#/components/schemas/ResourceReference"
+        tasks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/SpeechTaskKind"
+        release_tier:
+          $ref: "#/components/schemas/ReleaseTier"
+        readiness:
+          $ref: "#/components/schemas/ModelReadiness"
+    SpeechTaskKind:
+      $ref: "shared/capability-domains.schema.json#/$defs/SpeechTaskKind"
+    ModelReadiness:
+      type: object
+      additionalProperties: false
+      required: [configured, engine_ready, quality_qualified, admission_state]
+      properties:
+        configured:
+          type: boolean
+        engine_ready:
+          type: boolean
+        quality_qualified:
+          type: boolean
+        admission_state:
+          type: string
+          enum: [available, queueable, capacity_full, unavailable]
+          description: |
+            available means currently admissible; queueable means the binding can
+            accept work that waits for capacity; capacity_full means a required
+            reservation is currently unavailable; unavailable means the model
+            cannot be admitted now. None of these fields implies quality.
+    TranscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [file, model]
+      allOf:
+        - if:
+            required: ["timestamp_granularities[]"]
+          then:
+            required: [response_format]
+            properties:
+              response_format:
+                const: verbose_json
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Bounded audio file. Remote URLs and server paths are rejected.
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        language:
+          type: string
+          maxLength: 35
+          description: |
+            Omit for automatic language detection. This field keeps the OpenAI
+            language value semantics; `auto` is not a standard sentinel.
+        prompt:
+          type: string
+          maxLength: 4000
+        response_format:
+          type: string
+          enum: [json, text, verbose_json, srt, vtt]
+          default: json
+        timestamp_granularities[]:
+          type: array
+          uniqueItems: true
+          maxItems: 2
+          items:
+            type: string
+            enum: [segment, word]
+          description: Only valid with response_format=verbose_json.
+        nexus:
+          type: string
+          maxLength: 8192
+          contentMediaType: application/json
+          contentSchema:
+            $ref: "#/components/schemas/TranscriptionNexusOptions"
+          description: |
+            JSON-encoded SpeechNexus options. Standard OpenAI clients omit it.
+            Accepted keys are workspace_id, client_reference, profile_id,
+            profile_revision, overrides, and deadline_ms. `overrides` contains
+            only ASR policy fields; voice and pronunciation belong to TTS or
+            nexus Jobs, not this endpoint.
+    Transcription:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+        languages:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code]
+            properties:
+              code:
+                type: string
+                maxLength: 35
+        logprobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionLogprob"
+        usage:
+          $ref: "#/components/schemas/TranscriptionUsage"
+    TranscriptionLogprob:
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: [string, "null"]
+        bytes:
+          type: [array, "null"]
+          items:
+            type: number
+        logprob:
+          type: [number, "null"]
+      description: |
+        OpenAI SDK-compatible token log-probability shape. SpeechNexus returns
+        this only when a binding supplies genuine log-probability evidence.
+    TranscriptionVerbose:
+      type: object
+      additionalProperties: false
+      required: [duration, language, text]
+      properties:
+        duration:
+          type: number
+          minimum: 0
+        language:
+          type: string
+          maxLength: 35
+        text:
+          type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionSegment"
+        words:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionWord"
+        usage:
+          $ref: "#/components/schemas/UsageDuration"
+          description: |
+            OpenAI verbose_json uses duration usage only. Token usage is declared
+            only for the non-verbose Transcription response, matching the
+            official SDK's response model.
+    TranscriptionSegment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - avg_logprob
+        - compression_ratio
+        - end
+        - no_speech_prob
+        - seek
+        - start
+        - temperature
+        - text
+        - tokens
+      properties:
+        id:
+          type: integer
+          minimum: 0
+        avg_logprob:
+          type: number
+        compression_ratio:
+          type: number
+        end:
+          type: number
+          minimum: 0
+        no_speech_prob:
+          type: number
+          minimum: 0
+          maximum: 1
+        seek:
+          type: integer
+          minimum: 0
+        start:
+          type: number
+          minimum: 0
+        temperature:
+          type: number
+        text:
+          type: string
+        tokens:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+    TranscriptionWord:
+      type: object
+      additionalProperties: false
+      required: [word, start, end]
+      properties:
+        word:
+          type: string
+        start:
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+    TranscriptionUsage:
+      oneOf:
+        - $ref: "#/components/schemas/UsageDuration"
+        - $ref: "#/components/schemas/UsageTokens"
+    UsageDuration:
+      $ref: "shared/public-audio.schema.json#/$defs/UsageDuration"
+    UsageTokens:
+      $ref: "shared/public-audio.schema.json#/$defs/UsageTokens"
+    SpeechRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input, voice]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        input:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Published voice ID. OpenAI hosted voice names are not implied.
+        instructions:
+          type: string
+          maxLength: 2000
+        response_format:
+          type: string
+          enum: [mp3, wav, pcm]
+          default: mp3
+        speed:
+          type: number
+          minimum: 0.25
+          maximum: 4.0
+          default: 1.0
+        stream_format:
+          type: string
+          enum: [audio]
+          default: audio
+          description: P0 supports only complete audio. `sse` is rejected as unsupported.
+        nexus:
+          $ref: "#/components/schemas/SpeechNexusOptions"
+    SpeechNexusOptions:
+      type: object
+      additionalProperties: false
+      dependentRequired:
+        profile_id: [profile_revision]
+        profile_revision: [profile_id]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        profile_revision:
+          $ref: "#/components/schemas/Revision"
+        voice_revision:
+          $ref: "#/components/schemas/Revision"
+        pronunciation_revision:
+          $ref: "#/components/schemas/Revision"
+        overrides:
+          $ref: "#/components/schemas/SpeechOverrides"
+        deadline_ms:
+          type: integer
+          minimum: 1
+          maximum: 600000
+    TranscriptionNexusOptions:
+      type: object
+      additionalProperties: false
+      dependentRequired:
+        profile_id: [profile_revision]
+        profile_revision: [profile_id]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        profile_id:
+          $ref: "#/components/schemas/Identifier"
+        profile_revision:
+          $ref: "#/components/schemas/Revision"
+        overrides:
+          $ref: "#/components/schemas/TranscriptionOverrides"
+        deadline_ms:
+          type: integer
+          minimum: 1
+          maximum: 600000
+    TranscriptionOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        asr:
+          $ref: "#/components/schemas/AsrOverrides"
+    SpeechOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        tts:
+          $ref: "#/components/schemas/RestTtsOverrides"
+    RestTtsOverrides:
+      type: object
+      additionalProperties: false
+      description: |
+        REST speech always returns one complete audio response. Chunked delivery
+        is available only through realtime sessions and durable Jobs. Standard
+        `speed`, `instructions`, and the top-level `pronunciation_revision` are
+        the canonical REST fields and cannot be duplicated here.
+      properties:
+        language:
+          type: string
+          maxLength: 35
+        text_commit_mode:
+          type: string
+          enum: [explicit, sentence]
+        audio_delivery:
+          const: complete
+        seed:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 2147483647
+        planner:
+          type: object
+          additionalProperties: false
+          properties:
+            max_chars:
+              type: integer
+              minimum: 40
+              maximum: 400
+            max_wait_ms:
+              type: integer
+              minimum: 100
+              maximum: 3000
+    TtsOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        language:
+          type: string
+          maxLength: 35
+        text_commit_mode:
+          type: string
+          enum: [explicit, sentence]
+        audio_delivery:
+          type: string
+          enum: [complete, chunked]
+        speed:
+          type: number
+          minimum: 0.25
+          maximum: 4.0
+        instructions:
+          type: [string, "null"]
+          maxLength: 2000
+        pronunciation_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        seed:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 2147483647
+        planner:
+          type: object
+          additionalProperties: false
+          properties:
+            max_chars:
+              type: integer
+              minimum: 40
+              maximum: 400
+            max_wait_ms:
+              type: integer
+              minimum: 100
+              maximum: 3000
+    CapabilitySnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - snapshot_id
+        - catalog_revision
+        - policy_revision
+        - generated_at
+        - workspace_id
+        - models
+        - profiles
+        - voices
+        - limits
+      properties:
+        snapshot_id:
+          $ref: "#/components/schemas/Identifier"
+        catalog_revision:
+          $ref: "#/components/schemas/Revision"
+        policy_revision:
+          $ref: "#/components/schemas/Revision"
+        generated_at:
+          type: string
+          format: date-time
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityModel"
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileSummary"
+        voices:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceSummary"
+        limits:
+          $ref: "#/components/schemas/CapabilityLimits"
+        auxiliary:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuxiliaryCapability"
+    CapabilityModel:
+      type: object
+      additionalProperties: false
+      required: [logical_model, binding, tasks, release_tier, parameter_domains, readiness]
+      properties:
+        logical_model:
+          type: string
+        binding:
+          $ref: "#/components/schemas/ResourceReference"
+        tasks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/SpeechTaskKind"
+        release_tier:
+          $ref: "#/components/schemas/ReleaseTier"
+        parameter_domains:
+          $ref: "./model-binding.schema.json#/$defs/ParameterDomains"
+        readiness:
+          $ref: "#/components/schemas/ModelReadiness"
+    CapabilityLimits:
+      type: object
+      additionalProperties: false
+      required:
+        - max_audio_bytes
+        - max_text_codepoints
+        - max_segment_ms
+        - max_realtime_session_ms
+        - max_queue_wait_ms
+      properties:
+        max_audio_bytes:
+          type: integer
+          minimum: 1
+        max_text_codepoints:
+          type: integer
+          minimum: 1
+        max_segment_ms:
+          type: integer
+          minimum: 1000
+          maximum: 30000
+        max_realtime_session_ms:
+          type: integer
+          minimum: 60000
+        max_queue_wait_ms:
+          type: integer
+          minimum: 0
+    AuxiliaryCapability:
+      type: object
+      additionalProperties: false
+      required: [name, status, supported_modes]
+      properties:
+        name:
+          type: string
+          enum: [alignment, diarization]
+        status:
+          type: string
+          enum: [available, unavailable, experimental]
+        supported_modes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: ["off", required, best_effort]
+        max_speakers:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 64
+    ProfileList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [id, revision, display_name, kind, release_tier, execution_classes]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+        kind:
+          type: string
+          enum: [asr, tts, duplex]
+        release_tier:
+          $ref: "#/components/schemas/ProfileReleaseTier"
+        execution_classes:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ServiceClass"
+    VoiceList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    VoiceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - display_name
+        - source_type
+        - status
+        - languages
+        - audio_formats
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+        source_type:
+          type: string
+          enum: [designed, cloned, builtin]
+        status:
+          type: string
+          enum: [published, retired, disabled]
+        languages:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 35
+        audio_formats:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [mp3, wav, pcm]
+    PronunciationList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PronunciationSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    PronunciationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, head_revision, encoding, entry_count, status]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        head_revision:
+          $ref: "#/components/schemas/Revision"
+        encoding:
+          type: string
+          enum: [pinyin, ipa]
+        entry_count:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [draft, published, retired]
+    PronunciationCreateRequest:
+      type: object
+      additionalProperties: false
+      dependentRequired:
+        id: [expected_revision]
+        expected_revision: [id]
+      required: [encoding, entries]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        encoding:
+          type: string
+          enum: [pinyin, ipa]
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: "./voice-resource.schema.json#/$defs/PronunciationEntry"
+        publish:
+          type: boolean
+          default: true
+    JobKind:
+      type: string
+      enum: [asr, tts, voice_design, voice_clone, voice_preview, voice_validation]
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - retry_wait
+        - cancelling
+        - succeeded
+        - failed
+        - cancelled
+        - expired
+    CleanupState:
+      $ref: "shared/operation-states.schema.json#/$defs/CleanupState"
+    JobCreateBase:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          $ref: "#/components/schemas/ResourceReference"
+        overrides:
+          $ref: "#/components/schemas/JobOverrides"
+        constraints:
+          $ref: "#/components/schemas/JobConstraints"
+        draft_target:
+          $ref: "#/components/schemas/DraftTarget"
+    JobCreateRequest:
+      oneOf:
+        - $ref: "#/components/schemas/AsrJobCreate"
+        - $ref: "#/components/schemas/TtsJobCreate"
+        - $ref: "#/components/schemas/VoiceDesignJobCreate"
+        - $ref: "#/components/schemas/VoiceCloneJobCreate"
+        - $ref: "#/components/schemas/VoicePreviewJobCreate"
+        - $ref: "#/components/schemas/VoiceValidationJobCreate"
+      discriminator:
+        propertyName: kind
+        mapping:
+          asr: "#/components/schemas/AsrJobCreate"
+          tts: "#/components/schemas/TtsJobCreate"
+          voice_design: "#/components/schemas/VoiceDesignJobCreate"
+          voice_clone: "#/components/schemas/VoiceCloneJobCreate"
+          voice_preview: "#/components/schemas/VoicePreviewJobCreate"
+          voice_validation: "#/components/schemas/VoiceValidationJobCreate"
+      unevaluatedProperties: false
+    JobOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        asr:
+          $ref: "#/components/schemas/AsrOverrides"
+        tts:
+          $ref: "#/components/schemas/TtsOverrides"
+    JobConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        max_queue_wait_ms:
+          type: integer
+          minimum: 0
+          maximum: 86400000
+        allow_degradation:
+          type: boolean
+          default: false
+        require_exact_parameters:
+          type: boolean
+          default: false
+    DraftTarget:
+      type: object
+      additionalProperties: false
+      required: [id, expected_revision]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+    AsrOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        language:
+          type: string
+          maxLength: 35
+        preview_interval_ms:
+          type: integer
+          minimum: 100
+          maximum: 5000
+        max_segment_ms:
+          type: integer
+          minimum: 1000
+          maximum: 30000
+        finalization:
+          type: string
+          enum: [full_segment, streaming_finalize]
+        final_deadline_ms:
+          type: integer
+          minimum: 100
+          maximum: 10000
+        auxiliary_deadline_ms:
+          type: integer
+          minimum: 100
+          maximum: 10000
+        rollback_tokens:
+          type: integer
+          minimum: 0
+          maximum: 32
+        turn_detection:
+          type: object
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [server_vad, manual]
+            silence_duration_ms:
+              type: integer
+              minimum: 200
+              maximum: 3000
+        vocabulary_set_revision:
+          oneOf:
+            - $ref: "#/components/schemas/Revision"
+            - type: "null"
+        alignment:
+          type: string
+          enum: ["off", required, best_effort]
+        diarization:
+          type: string
+          enum: ["off", required, best_effort]
+    AsrJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: asr
+            input:
+              $ref: "#/components/schemas/AsrJobInput"
+            output:
+              $ref: "#/components/schemas/AsrJobOutput"
+          required: [kind, model, input]
+    AsrJobInput:
+      type: object
+      additionalProperties: false
+      required: [audio_asset_id]
+      properties:
+        audio_asset_id:
+          $ref: "#/components/schemas/Identifier"
+    AsrJobOutput:
+      type: object
+      additionalProperties: false
+      properties:
+        transcript_format:
+          type: string
+          enum: [json, text, verbose_json, srt, vtt]
+          default: json
+        save_artifacts:
+          type: boolean
+          const: true
+          default: true
+    TtsJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: tts
+            input:
+              $ref: "#/components/schemas/TtsJobInput"
+            voice:
+              $ref: "#/components/schemas/ResourceReference"
+            pronunciation:
+              $ref: "#/components/schemas/ResourceReference"
+            output:
+              $ref: "#/components/schemas/TtsJobOutput"
+          required: [kind, model, input, voice]
+    TtsJobInput:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [text]
+          properties:
+            text:
+              type: string
+              minLength: 1
+              maxLength: 200000
+        - type: object
+          additionalProperties: false
+          required: [text_asset_id]
+          properties:
+            text_asset_id:
+              $ref: "#/components/schemas/Identifier"
+    TtsJobOutput:
+      type: object
+      additionalProperties: false
+      properties:
+        audio_format:
+          type: string
+          enum: [mp3, wav, pcm]
+          default: mp3
+        save_artifacts:
+          type: boolean
+          const: true
+          default: true
+    VoiceDesignJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: voice_design
+            input:
+              $ref: "#/components/schemas/VoiceDesignJobInput"
+          required: [kind, model, input]
+    VoiceDesignJobInput:
+      $ref: "#/components/schemas/VoiceDesignInput"
+    VoiceCloneJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: voice_clone
+            input:
+              $ref: "#/components/schemas/VoiceCloneJobInput"
+          required: [kind, model, input]
+    VoiceCloneJobInput:
+      $ref: "#/components/schemas/VoiceCloneInput"
+    VoicePreviewJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: voice_preview
+            input:
+              $ref: "#/components/schemas/VoicePreviewJobInput"
+          required: [kind, input]
+    VoicePreviewJobInput:
+      type: object
+      additionalProperties: false
+      required: [voice_draft_id, draft_revision, text]
+      properties:
+        voice_draft_id:
+          $ref: "#/components/schemas/Identifier"
+        draft_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    VoiceValidationJobCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobCreateBase"
+        - type: object
+          properties:
+            kind:
+              const: voice_validation
+            input:
+              $ref: "#/components/schemas/VoiceValidationJobInput"
+          required: [kind, input]
+    VoiceValidationJobInput:
+      type: object
+      additionalProperties: false
+      required: [voice_draft_id, draft_revision, validation_set_revision]
+      properties:
+        voice_draft_id:
+          $ref: "#/components/schemas/Identifier"
+        draft_revision:
+          $ref: "#/components/schemas/Revision"
+        validation_set_revision:
+          $ref: "#/components/schemas/Revision"
+    Job:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - kind
+        - status
+        - cleanup_state
+        - request_id
+        - workspace_id
+        - execution_revision
+        - progress
+        - artifacts
+        - operations
+        - effective_configuration
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.job
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: [string, "null"]
+          maxLength: 256
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceReference"
+            - type: "null"
+        execution_revision:
+          $ref: "#/components/schemas/Revision"
+        progress:
+          $ref: "#/components/schemas/JobProgress"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobArtifact"
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationReference"
+        effective_configuration:
+          $ref: "#/components/schemas/EffectiveConfiguration"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                enum: [succeeded, cancelled]
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+    JobProgress:
+      type: object
+      additionalProperties: false
+      required: [unit, completed]
+      properties:
+        unit:
+          type: string
+          enum: [audio_ms, text_codepoints, items]
+        completed:
+          type: integer
+          minimum: 0
+        total:
+          type: [integer, "null"]
+          minimum: 0
+    JobArtifact:
+      type: object
+      additionalProperties: false
+      required: [artifact_id, kind, media_type, bytes, sha256]
+      properties:
+        artifact_id:
+          $ref: "#/components/schemas/Identifier"
+        kind:
+          $ref: "#/components/schemas/ArtifactKind"
+        media_type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        expires_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    OperationReference:
+      type: object
+      additionalProperties: false
+      required: [operation_id, kind, status]
+      properties:
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        kind:
+          $ref: "#/components/schemas/OperationKind"
+        status:
+          $ref: "#/components/schemas/OperationStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+    EffectiveConfiguration:
+      type: object
+      additionalProperties: false
+      required: [models, policy_revision, catalog_revision]
+      properties:
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceReference"
+            - type: "null"
+        models:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            asr:
+              $ref: "#/components/schemas/ResourceReference"
+            tts:
+              $ref: "#/components/schemas/ResourceReference"
+            voice:
+              $ref: "#/components/schemas/ResourceReference"
+        voice:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceReference"
+            - type: "null"
+        pronunciation:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceReference"
+            - type: "null"
+        parameters:
+          type: object
+          additionalProperties: false
+          properties:
+            asr:
+              $ref: "#/components/schemas/AsrOverrides"
+            tts:
+              $ref: "#/components/schemas/TtsOverrides"
+        policy_revision:
+          $ref: "#/components/schemas/Revision"
+        catalog_revision:
+          $ref: "#/components/schemas/Revision"
+        degradation:
+          type: string
+          enum: [none, resource_tightened, quality_reduced]
+          default: none
+    JobError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{2,63}$"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        retryable:
+          type: boolean
+        param:
+          type: [string, "null"]
+          maxLength: 128
+    JobList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    JobEvent:
+      oneOf:
+        - $ref: "#/components/schemas/JobQueuedEvent"
+        - $ref: "#/components/schemas/JobStartedEvent"
+        - $ref: "#/components/schemas/JobProgressEvent"
+        - $ref: "#/components/schemas/JobRetryScheduledEvent"
+        - $ref: "#/components/schemas/JobCancellingEvent"
+        - $ref: "#/components/schemas/JobSucceededEvent"
+        - $ref: "#/components/schemas/JobFailedEvent"
+        - $ref: "#/components/schemas/JobCancelledEvent"
+        - $ref: "#/components/schemas/JobExpiredEvent"
+        - $ref: "#/components/schemas/JobCleanupUpdatedEvent"
+        - $ref: "#/components/schemas/ArtifactPublishedEvent"
+      discriminator:
+        propertyName: type
+        mapping:
+          job.queued: "#/components/schemas/JobQueuedEvent"
+          job.started: "#/components/schemas/JobStartedEvent"
+          job.progress: "#/components/schemas/JobProgressEvent"
+          job.retry_scheduled: "#/components/schemas/JobRetryScheduledEvent"
+          job.cancelling: "#/components/schemas/JobCancellingEvent"
+          job.succeeded: "#/components/schemas/JobSucceededEvent"
+          job.failed: "#/components/schemas/JobFailedEvent"
+          job.cancelled: "#/components/schemas/JobCancelledEvent"
+          job.expired: "#/components/schemas/JobExpiredEvent"
+          job.cleanup_updated: "#/components/schemas/JobCleanupUpdatedEvent"
+          artifact.published: "#/components/schemas/ArtifactPublishedEvent"
+      examples:
+        - id: "1"
+          type: job.queued
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:00Z"
+          data:
+            status: queued
+        - id: "2"
+          type: job.started
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:01Z"
+          data:
+            status: running
+            execution_revision: "1"
+        - id: "3"
+          type: job.progress
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:02Z"
+          data:
+            status: running
+            progress:
+              unit: text_codepoints
+              completed: 4
+              total: 10
+        - id: "4"
+          type: job.retry_scheduled
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:03Z"
+          data:
+            status: retry_wait
+            attempt: 1
+            max_attempts: 3
+            retry_at: "2026-10-23T00:00:08Z"
+            error:
+              code: engine_unavailable
+              message: synthetic transient engine failure
+              retryable: true
+        - id: "5"
+          type: job.cancelling
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:04Z"
+          data:
+            status: cancelling
+        - id: "6"
+          type: job.succeeded
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:05Z"
+          data:
+            status: succeeded
+            artifacts:
+              - artifact_id: artifact_demo
+                kind: audio
+                media_type: audio/wav
+                bytes: 1024
+                sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        - id: "7"
+          type: job.failed
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:06Z"
+          data:
+            status: failed
+            error:
+              code: engine_failure
+              message: synthetic terminal engine failure
+              retryable: false
+        - id: "8"
+          type: job.cancelled
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:07Z"
+          data:
+            status: cancelled
+            cleanup_state: complete
+        - id: "9"
+          type: job.expired
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:08Z"
+          data:
+            status: expired
+        - id: "10"
+          type: job.cleanup_updated
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:09Z"
+          data:
+            cleanup_state: pending
+            operations:
+              - operation_id: op_demo
+                kind: tts
+                status: running
+                cleanup_state: pending
+        - id: "11"
+          type: artifact.published
+          job_id: job_demo
+          occurred_at: "2026-10-23T00:00:10Z"
+          data:
+            artifact:
+              artifact_id: artifact_demo
+              kind: audio
+              media_type: audio/wav
+              bytes: 1024
+              sha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    JobEventEnvelope:
+      type: object
+      additionalProperties: false
+      required: [id, type, job_id, occurred_at, data]
+      properties:
+        id:
+          $ref: "#/components/schemas/EventSequence"
+          description: Persistent job_event_seq used as the SSE id.
+        type:
+          type: string
+          enum:
+            - job.queued
+            - job.started
+            - job.progress
+            - job.retry_scheduled
+            - job.cancelling
+            - job.succeeded
+            - job.failed
+            - job.cancelled
+            - job.expired
+            - job.cleanup_updated
+            - artifact.published
+        job_id:
+          $ref: "#/components/schemas/Identifier"
+        occurred_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-type-specific payload; see the concrete JobEvent variant.
+    JobQueuedEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.queued
+            data:
+              $ref: "#/components/schemas/JobQueuedEventData"
+          required: [type, data]
+    JobQueuedEventData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: queued
+    JobStartedEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.started
+            data:
+              $ref: "#/components/schemas/JobStartedEventData"
+          required: [type, data]
+    JobStartedEventData:
+      type: object
+      additionalProperties: false
+      required: [status, execution_revision]
+      properties:
+        status:
+          const: running
+        execution_revision:
+          $ref: "#/components/schemas/Revision"
+    JobProgressEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.progress
+            data:
+              $ref: "#/components/schemas/JobProgressEventData"
+          required: [type, data]
+    JobProgressEventData:
+      type: object
+      additionalProperties: false
+      required: [status, progress]
+      properties:
+        status:
+          const: running
+        progress:
+          $ref: "#/components/schemas/JobProgress"
+    JobRetryScheduledEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.retry_scheduled
+            data:
+              $ref: "#/components/schemas/JobRetryScheduledEventData"
+          required: [type, data]
+    JobRetryScheduledEventData:
+      type: object
+      additionalProperties: false
+      required: [status, attempt, retry_at]
+      properties:
+        status:
+          const: retry_wait
+        attempt:
+          type: integer
+          minimum: 1
+        max_attempts:
+          type: integer
+          minimum: 1
+        retry_at:
+          type: string
+          format: date-time
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+    JobCancellingEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.cancelling
+            data:
+              $ref: "#/components/schemas/JobCancellingEventData"
+          required: [type, data]
+    JobCancellingEventData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: cancelling
+    JobSucceededEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.succeeded
+            data:
+              $ref: "#/components/schemas/JobSucceededEventData"
+          required: [type, data]
+    JobSucceededEventData:
+      type: object
+      additionalProperties: false
+      required: [status, artifacts]
+      properties:
+        status:
+          const: succeeded
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobArtifact"
+    JobFailedEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.failed
+            data:
+              $ref: "#/components/schemas/JobFailedEventData"
+          required: [type, data]
+    JobFailedEventData:
+      type: object
+      additionalProperties: false
+      required: [status, error]
+      properties:
+        status:
+          const: failed
+        error:
+          $ref: "#/components/schemas/JobError"
+    JobCancelledEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.cancelled
+            data:
+              $ref: "#/components/schemas/JobCancelledEventData"
+          required: [type, data]
+    JobCancelledEventData:
+      type: object
+      additionalProperties: false
+      required: [status, cleanup_state]
+      properties:
+        status:
+          const: cancelled
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+    JobExpiredEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.expired
+            data:
+              $ref: "#/components/schemas/JobExpiredEventData"
+          required: [type, data]
+    JobExpiredEventData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: expired
+    JobCleanupUpdatedEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: job.cleanup_updated
+            data:
+              $ref: "#/components/schemas/JobCleanupUpdatedEventData"
+          required: [type, data]
+    JobCleanupUpdatedEventData:
+      type: object
+      additionalProperties: false
+      required: [cleanup_state, operations]
+      properties:
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationReference"
+    ArtifactPublishedEvent:
+      allOf:
+        - $ref: "#/components/schemas/JobEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: artifact.published
+            data:
+              $ref: "#/components/schemas/ArtifactPublishedEventData"
+          required: [type, data]
+    ArtifactPublishedEventData:
+      type: object
+      additionalProperties: false
+      required: [artifact]
+      properties:
+        artifact:
+          $ref: "#/components/schemas/JobArtifact"
+    JobCancellation:
+      type: object
+      additionalProperties: false
+      required: [job_id, accepted, status, cleanup_state, cancellation_requested_at, operations]
+      properties:
+        job_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        cancellation_requested_at:
+          type: string
+          format: date-time
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperationReference"
+    OperationKind:
+      type: string
+      enum: [asr, tts, voice_preview, voice_validation]
+    OperationStatus:
+      $ref: "shared/operation-states.schema.json#/$defs/OperationStatus"
+    Operation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - kind
+        - status
+        - cleanup_state
+        - execution_revision
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.operation
+        kind:
+          $ref: "#/components/schemas/OperationKind"
+        status:
+          $ref: "#/components/schemas/OperationStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        job_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        session_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        execution_revision:
+          $ref: "#/components/schemas/Revision"
+        receipt:
+          oneOf:
+            - $ref: "#/components/schemas/ExecutionReceipt"
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: failed
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                not:
+                  type: "null"
+        - if:
+            properties:
+              status:
+                enum: [succeeded, cancelled]
+            required: [status]
+          then:
+            properties:
+              error:
+                type: "null"
+    JsonValue:
+      anyOf:
+        - type: string
+        - type: number
+        - type: boolean
+        - type: "null"
+        - type: array
+          items:
+            $ref: "#/components/schemas/JsonValue"
+        - type: object
+          additionalProperties:
+            $ref: "#/components/schemas/JsonValue"
+    ExecutionReceipt:
+      type: object
+      additionalProperties: false
+      required: [receipt_id, requested, effective, observed, missing, unknown]
+      properties:
+        receipt_id:
+          $ref: "#/components/schemas/Identifier"
+        request_id:
+          type: [string, "null"]
+          maxLength: 128
+        requested:
+          $ref: "#/components/schemas/JsonValue"
+        effective:
+          $ref: "#/components/schemas/JsonValue"
+        observed:
+          $ref: "#/components/schemas/JsonValue"
+        missing:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+        unknown:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+    OperationCancellation:
+      type: object
+      additionalProperties: false
+      required: [operation_id, accepted, status, cleanup_state, cancellation_requested_at]
+      properties:
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/OperationStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        cancellation_requested_at:
+          type: string
+          format: date-time
+    AssetPurpose:
+      type: string
+      enum: [asr_input, voice_reference, text_input]
+    AssetStatus:
+      type: string
+      enum: [staging, ready, rejected, expired, deleted]
+    AssetUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [file, purpose]
+      properties:
+        file:
+          type: string
+          format: binary
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        purpose:
+          $ref: "#/components/schemas/AssetPurpose"
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 31536000
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+    Asset:
+      type: object
+      additionalProperties: false
+      required: [id, object, workspace_id, purpose, status, media_type, bytes, sha256, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.asset
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        purpose:
+          $ref: "#/components/schemas/AssetPurpose"
+        status:
+          $ref: "#/components/schemas/AssetStatus"
+        media_type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        duration_ms:
+          type: [integer, "null"]
+          minimum: 0
+        sample_rate_hz:
+          type: [integer, "null"]
+          minimum: 8000
+          maximum: 192000
+        channels:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 8
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    ArtifactKind:
+      type: string
+      enum: [transcript, audio, preview, validation_report, export_manifest]
+    ArtifactStatus:
+      type: string
+      enum: [ready, expired, deleted]
+    Artifact:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - workspace_id
+        - kind
+        - status
+        - media_type
+        - bytes
+        - sha256
+        - created_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.artifact
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        kind:
+          $ref: "#/components/schemas/ArtifactKind"
+        status:
+          $ref: "#/components/schemas/ArtifactStatus"
+        media_type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        source_operation_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+    PcmDescriptor:
+      $ref: "shared/public-audio.schema.json#/$defs/PcmDescriptor"
+    RealtimeModelSelection:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        asr:
+          $ref: "#/components/schemas/ResourceReference"
+        tts:
+          $ref: "#/components/schemas/ResourceReference"
+    RealtimeAudioSelection:
+      type: object
+      additionalProperties: false
+      properties:
+        input:
+          $ref: "#/components/schemas/PcmDescriptor"
+        output:
+          $ref: "#/components/schemas/PcmDescriptor"
+    RealtimeOverrides:
+      $ref: "#/components/schemas/JobOverrides"
+    RealtimeConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        max_admission_wait_ms:
+          type: integer
+          minimum: 0
+          maximum: 60000
+        allow_degradation:
+          type: boolean
+          default: false
+    RealtimeSessionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [profile, modalities, models]
+      allOf:
+        - if:
+            properties:
+              modalities:
+                contains: {const: asr}
+            required: [modalities]
+          then:
+            properties:
+              models:
+                required: [asr]
+        - if:
+            properties:
+              modalities:
+                contains: {const: tts}
+            required: [modalities]
+          then:
+            properties:
+              models:
+                required: [tts]
+        - if:
+            properties:
+              modalities:
+                not:
+                  contains: {const: asr}
+            required: [modalities]
+          then:
+            properties:
+              models:
+                not:
+                  required: [asr]
+        - if:
+            properties:
+              modalities:
+                not:
+                  contains: {const: tts}
+            required: [modalities]
+          then:
+            properties:
+              models:
+                not:
+                  required: [tts]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        profile:
+          $ref: "#/components/schemas/ResourceReference"
+        modalities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [asr, tts]
+        models:
+          $ref: "#/components/schemas/RealtimeModelSelection"
+        voice:
+          $ref: "#/components/schemas/ResourceReference"
+        audio:
+          $ref: "#/components/schemas/RealtimeAudioSelection"
+        overrides:
+          $ref: "#/components/schemas/RealtimeOverrides"
+        constraints:
+          $ref: "#/components/schemas/RealtimeConstraints"
+        expires_in_s:
+          type: integer
+          minimum: 5
+          maximum: 300
+          default: 30
+    RealtimeSessionStatus:
+      type: string
+      enum: [created, admitting, active, draining, closed, failed, expired]
+    RealtimeSessionLimits:
+      $ref: "shared/public-audio.schema.json#/$defs/RealtimeLimits"
+    RealtimeTerminalOperation:
+      type: object
+      additionalProperties: false
+      required: [operation_id, kind, status, cleanup_state]
+      properties:
+        operation_id:
+          $ref: "#/components/schemas/Identifier"
+        kind:
+          $ref: "#/components/schemas/OperationKind"
+        status:
+          $ref: "shared/operation-states.schema.json#/$defs/TerminalOperationStatus"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+        receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+    RealtimeSession:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - status
+        - expires_at
+        - connection_url
+        - effective_configuration
+        - limits
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.realtime_session
+        status:
+          $ref: "#/components/schemas/RealtimeSessionStatus"
+        expires_at:
+          type: string
+          format: date-time
+        connection_url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Relative or absolute WebSocket URL containing session_id. The URL is not a credential.
+        effective_configuration:
+          $ref: "#/components/schemas/EffectiveConfiguration"
+        limits:
+          $ref: "#/components/schemas/RealtimeSessionLimits"
+        input_ack_sample:
+          type: integer
+          minimum: 0
+        terminal_operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/RealtimeTerminalOperation"
+        cleanup_state:
+          $ref: "#/components/schemas/CleanupState"
+    RealtimeSessionCancelRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [drain, abort]
+    VoiceDesignCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        input:
+          $ref: "#/components/schemas/VoiceDesignInput"
+        constraints:
+          $ref: "#/components/schemas/JobConstraints"
+    VoiceCloneCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input]
+      properties:
+        workspace_id:
+          $ref: "#/components/schemas/Identifier"
+        client_reference:
+          type: string
+          maxLength: 256
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        input:
+          $ref: "#/components/schemas/VoiceCloneInput"
+        constraints:
+          $ref: "#/components/schemas/JobConstraints"
+    VoiceDesignInput:
+      type: object
+      additionalProperties: false
+      required: [description, preview_text]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        preview_text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        language:
+          type: string
+          maxLength: 35
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    VoiceCloneInput:
+      type: object
+      additionalProperties: false
+      required: [reference_audio_asset_id, source_use_confirmed]
+      properties:
+        reference_audio_asset_id:
+          $ref: "#/components/schemas/Identifier"
+        reference_text:
+          type: [string, "null"]
+          maxLength: 10000
+        preview_text:
+          type: [string, "null"]
+          maxLength: 2000
+        language:
+          type: string
+          maxLength: 35
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source_use_confirmed:
+          type: boolean
+          const: true
+    VoiceCreationAccepted:
+      type: object
+      additionalProperties: false
+      required: [object, draft, job]
+      properties:
+        object:
+          const: nexus.voice_creation
+        draft:
+          $ref: "./voice-resource.schema.json#/$defs/VoiceDraft"
+        job:
+          $ref: "#/components/schemas/Job"
+    VoiceDraftView:
+      type: object
+      additionalProperties: false
+      required: [object, draft, revision]
+      properties:
+        object:
+          const: nexus.voice_draft_view
+        draft:
+          $ref: "./voice-resource.schema.json#/$defs/VoiceDraft"
+        revision:
+          oneOf:
+            - $ref: "./voice-resource.schema.json#/$defs/VoiceDraftRevision"
+            - type: "null"
+    VoiceDraftPatch:
+      type: object
+      additionalProperties: false
+      required: [expected_metadata_revision, display_name]
+      properties:
+        expected_metadata_revision:
+          type: integer
+          minimum: 1
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    VoiceGenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision, model, input]
+      properties:
+        expected_draft_revision:
+          $ref: "#/components/schemas/Revision"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        input:
+          oneOf:
+            - $ref: "#/components/schemas/VoiceDesignInput"
+            - $ref: "#/components/schemas/VoiceCloneInput"
+        constraints:
+          $ref: "#/components/schemas/JobConstraints"
+    VoiceGenerationAccepted:
+      type: object
+      additionalProperties: false
+      required: [object, draft, revision, job]
+      properties:
+        object:
+          const: nexus.voice_generation
+        draft:
+          $ref: "./voice-resource.schema.json#/$defs/VoiceDraft"
+        revision:
+          $ref: "./voice-resource.schema.json#/$defs/VoiceDraftRevision"
+        job:
+          $ref: "#/components/schemas/Job"
+    VoicePreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision, text]
+      properties:
+        expected_draft_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        model:
+          type: string
+          maxLength: 128
+    VoiceValidationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision, validation_set_revision]
+      properties:
+        expected_draft_revision:
+          $ref: "#/components/schemas/Revision"
+        validation_set_revision:
+          $ref: "#/components/schemas/Revision"
+        model:
+          type: string
+          maxLength: 128
+    VoicePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision, validation_job_id, manual_confirmation]
+      properties:
+        expected_draft_revision:
+          $ref: "#/components/schemas/Revision"
+        validation_job_id:
+          $ref: "#/components/schemas/Identifier"
+        manual_confirmation:
+          type: boolean
+          const: true
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    VoiceRetirementRequest:
+      $ref: "shared/lifecycle.schema.json#/$defs/RetirementRequest"

@@ -8,6 +8,8 @@ info:
     accepts approved runtime templates, immutable instance generations, and
     fenced prepare/stop intents for its own `node_id`. It never accepts arbitrary
     container images, host volume mounts, or shell commands.
+security:
+  - ComponentBearer: []
 paths:
   /internal/v1/nodes/{node_id}/instance-intents:
     post:
@@ -32,6 +34,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "409":
           description: Target node mismatch, stale fencing token, stale instance generation, or conflicting intent.
           headers:
@@ -59,6 +63,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: Runtime instance intent not found on this node controller.
           headers:
@@ -91,7 +97,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodeReconcileResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
+  securitySchemes:
+    ComponentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-component-token
+      description: |
+        Per-node controller credential issued by the deployment. It is separate
+        from scheduler, gateway, public, and admin credentials. Transport TLS is
+        a deployment requirement and is not relaxed by this HTTP credential.
   headers:
     XRequestId:
       description: Correlation request ID propagated across control plane hops.
@@ -120,22 +137,11 @@ components:
         $ref: "#/components/schemas/Identifier"
   schemas:
     Identifier:
-      type: string
-      pattern: "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
-      minLength: 3
-      maxLength: 128
+      $ref: "../shared/identifiers.schema.json#/$defs/Identifier"
     Sha256Digest:
-      type: string
-      pattern: "^sha256:[0-9a-f]{64}$"
+      $ref: "../shared/identifiers.schema.json#/$defs/Sha256Digest"
     PoolId:
-      type: string
-      enum:
-        - asr-realtime
-        - tts-realtime
-        - asr-batch
-        - tts-batch
-        - voice-creation
-        - auxiliary
+      $ref: "../shared/identifiers.schema.json#/$defs/PoolId"
     RuntimeActionKind:
       type: string
       enum: [prepare, stop]
@@ -148,16 +154,7 @@ components:
         - failed
         - quarantined
     ObservedInstanceState:
-      type: string
-      enum:
-        - absent
-        - loading
-        - warming_up
-        - ready
-        - draining
-        - stopping
-        - stopped
-        - unknown_quarantined
+      $ref: "../shared/runtime-states.schema.json#/$defs/ObservedInstanceState"
     RuntimeStopEvidence:
       type: object
       additionalProperties: false
@@ -178,6 +175,71 @@ components:
         verified_at:
           type: string
           format: date-time
+    RuntimeMemoryArchitecture:
+      $ref: "../shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
+    RuntimeMemoryVector:
+      type: object
+      additionalProperties: false
+      required:
+        - unified_memory_bytes
+        - device_memory_bytes
+        - host_memory_bytes
+      properties:
+        unified_memory_bytes:
+          type: integer
+          minimum: 0
+        device_memory_bytes:
+          type: integer
+          minimum: 0
+        host_memory_bytes:
+          type: integer
+          minimum: 0
+    RuntimeMemoryReservation:
+      type: object
+      additionalProperties: false
+      required: [architecture, peak, steady]
+      properties:
+        architecture:
+          $ref: "#/components/schemas/RuntimeMemoryArchitecture"
+        peak:
+          $ref: "#/components/schemas/RuntimeMemoryVector"
+        steady:
+          $ref: "#/components/schemas/RuntimeMemoryVector"
+      allOf:
+        - if:
+            properties:
+              architecture:
+                const: unified_memory
+            required: [architecture]
+          then:
+            properties:
+              peak:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+              steady:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+        - if:
+            properties:
+              architecture:
+                const: discrete_device_memory
+            required: [architecture]
+          then:
+            properties:
+              peak:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
+              steady:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
     RuntimeInstanceIntentRequest:
       type: object
       additionalProperties: false
@@ -194,8 +256,7 @@ components:
         - config_digest
         - action
         - fencing_token
-        - reserved_peak_unified_bytes
-        - reserved_steady_unified_bytes
+        - reserved_memory
         - deadline_at
       properties:
         intent_id:
@@ -224,12 +285,8 @@ components:
         fencing_token:
           type: integer
           minimum: 1
-        reserved_peak_unified_bytes:
-          type: integer
-          minimum: 0
-        reserved_steady_unified_bytes:
-          type: integer
-          minimum: 0
+        reserved_memory:
+          $ref: "#/components/schemas/RuntimeMemoryReservation"
         deadline_at:
           type: string
           format: date-time
@@ -245,6 +302,7 @@ components:
         - fencing_token
         - intent_state
         - observed_instance_state
+        - reserved_memory
         - updated_at
       properties:
         intent_id:
@@ -265,18 +323,52 @@ components:
           $ref: "#/components/schemas/RuntimeIntentState"
         observed_instance_state:
           $ref: "#/components/schemas/ObservedInstanceState"
+        reserved_memory:
+          $ref: "#/components/schemas/RuntimeMemoryReservation"
         stop_evidence:
           anyOf:
             - $ref: "#/components/schemas/RuntimeStopEvidence"
             - type: "null"
-        observed_peak_unified_bytes:
-          type: [integer, "null"]
-          minimum: 0
+        observed_peak_memory:
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeMemoryVector"
+            - type: "null"
         error_code:
           type: [string, "null"]
         updated_at:
           type: string
           format: date-time
+      allOf:
+        - if:
+            properties:
+              reserved_memory:
+                properties:
+                  architecture:
+                    const: unified_memory
+                required: [architecture]
+            required: [reserved_memory]
+          then:
+            properties:
+              observed_peak_memory:
+                properties:
+                  device_memory_bytes:
+                    const: 0
+                  host_memory_bytes:
+                    const: 0
+        - if:
+            properties:
+              reserved_memory:
+                properties:
+                  architecture:
+                    const: discrete_device_memory
+                required: [architecture]
+            required: [reserved_memory]
+          then:
+            properties:
+              observed_peak_memory:
+                properties:
+                  unified_memory_bytes:
+                    const: 0
     ObservedNodeInstanceFact:
       type: object
       additionalProperties: false
@@ -363,8 +455,16 @@ components:
                 - stale_instance_generation
                 - gateway_drain_incomplete
                 - runtime_controller_unavailable
+                - component_credential_invalid
             message:
               type: string
               minLength: 1
             retryable:
               type: boolean
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or revoked controller component credential.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RuntimeControlErrorResponse"

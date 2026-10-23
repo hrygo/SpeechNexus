@@ -7,7 +7,7 @@ export function App() {
       tone="admin"
       eyebrow="SpeechNexus / Admin"
       title="运行事实管理"
-      description="这里将承载模型绑定、资源预算、任务维护与诊断。当前版本提供可构建、可部署的入口外壳，业务页面会随 P0 契约和 P1 服务闭环逐步接入。"
+      description="这里将承载模型绑定、资源预算、任务维护与诊断。机器契约已交付，当前版本提供可构建、可部署的入口外壳，业务页面会随 P1 服务闭环逐步接入。"
       boundaryNote="首期没有登录与角色隔离。AdminUI 与工作台在同一部署内共享数据，入口切换只改变任务视图，管理 API 仍需由部署网络与入口网关限制。"
     >
       <section className="card-grid" aria-label="AdminUI 初始化范围">
@@ -20,7 +20,7 @@ export function App() {
         <CapabilityCard
           label="02 / Contract"
           title="语音与管理协议"
-          description="业务路由保持关闭。OpenAI 兼容子集、音色、Job、预设及管理资源需要先在 P0 冻结机器契约。"
+          description="业务路由尚未实现。OpenAI 兼容子集、音色、Job、预设及管理资源的机器契约已冻结并通过门禁。"
           state="contract"
         />
         <CapabilityCard

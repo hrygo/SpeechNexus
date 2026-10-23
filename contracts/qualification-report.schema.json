@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/qualification-report.schema.json",
+  "title": "DeploymentQualificationReport",
+  "description": "Evidence that a specific immutable binding, engine image, model artifact set, topology, and contract revision passed the declared scenarios. A production release tier requires every required scenario to pass; skipped, failed, or missing evidence stays experimental or best_effort.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "binding",
+    "capacity_manifest_id",
+    "release_tier",
+    "topology",
+    "software",
+    "test_suite",
+    "scenarios",
+    "required_scenarios_passed",
+    "overall_status",
+    "limitations",
+    "evidence_digest",
+    "qualified_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "report_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "binding": {
+      "$ref": "#/$defs/BindingReference"
+    },
+    "capacity_manifest_id": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "release_tier": {
+      "$ref": "#/$defs/ReleaseTier"
+    },
+    "topology": {
+      "$ref": "#/$defs/Topology"
+    },
+    "software": {
+      "$ref": "#/$defs/SoftwareSet"
+    },
+    "test_suite": {
+      "$ref": "#/$defs/TestSuite"
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ScenarioResult"
+      }
+    },
+    "required_scenarios_passed": {
+      "type": "boolean",
+      "description": "Computed over scenarios with required=true. Production reports must set this to true."
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": ["pass", "fail", "incomplete"]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "evidence_digest": {
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "qualified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "oneOf": [
+        {"type": "string", "format": "date-time"},
+        {"type": "null"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"required_scenarios_passed": {"const": true}},
+        "required": ["required_scenarios_passed"]
+      },
+      "then": {
+        "properties": {
+          "scenarios": {
+            "items": {
+              "if": {
+                "properties": {"required": {"const": true}},
+                "required": ["required"]
+              },
+              "then": {
+                "properties": {"status": {"const": "passed"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"release_tier": {"const": "production"}},
+        "required": ["release_tier"]
+      },
+      "then": {
+        "properties": {
+          "required_scenarios_passed": {"const": true},
+          "overall_status": {"const": "pass"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"release_tier": {"const": "experimental"}},
+        "required": ["release_tier"]
+      },
+      "then": {
+        "properties": {
+          "limitations": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "Revision": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "Sha256Digest": {
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "ReleaseTier": {
+      "$ref": "shared/capability-domains.schema.json#/$defs/ReleaseTier"
+    },
+    "BindingReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
+    },
+    "Topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "cpu_arch",
+        "hardware_class",
+        "memory_architecture",
+        "total_physical_memory_bytes"
+      ],
+      "properties": {
+        "node_id": {"$ref": "#/$defs/Identifier"},
+        "cpu_arch": {
+          "type": "string",
+          "enum": ["x86_64", "arm64"]
+        },
+        "hardware_class": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "memory_architecture": {
+          "type": "string",
+          "enum": ["unified", "discrete", "host_only"]
+        },
+        "total_physical_memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "device_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shared_memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parent_budget_id": {"$ref": "#/$defs/Identifier"},
+            "shared_with_roles": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["speech", "workbench_llm", "auxiliary"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "SoftwareSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application_version",
+        "contract_version",
+        "engine_image_digest",
+        "engine_runtime_version"
+      ],
+      "properties": {
+        "application_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "contract_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "engine_image_digest": {"$ref": "#/$defs/Sha256Digest"},
+        "engine_runtime_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "TestSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "corpus_revision", "scenario_ids"],
+      "properties": {
+        "revision": {"$ref": "#/$defs/Revision"},
+        "corpus_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scenario_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Identifier"}
+        }
+      }
+    },
+    "Metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "unit"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+        },
+        "value": {"type": "number"},
+        "unit": {
+          "type": "string",
+          "enum": ["ms", "s", "bytes", "percent", "ratio", "count", "cpms"]
+        },
+        "percentile": {
+          "oneOf": [
+            {"type": "number", "minimum": 0, "maximum": 100},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "ScenarioResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_id",
+        "required",
+        "status",
+        "evidence_digest"
+      ],
+      "properties": {
+        "scenario_id": {"$ref": "#/$defs/Identifier"},
+        "required": {"type": "boolean"},
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed", "skipped"]
+        },
+        "metrics": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/Metric"}
+        },
+        "evidence_digest": {"$ref": "#/$defs/Sha256Digest"},
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "report_id": "qrep-gb10-realtime-asr-20261022",
+      "binding": {"id": "asr-realtime", "revision": "4"},
+      "capacity_manifest_id": "cap-asr-realtime-4",
+      "release_tier": "experimental",
+      "topology": {
+        "node_id": "node-gb10-1",
+        "cpu_arch": "arm64",
+        "hardware_class": "nvidia-gb10-single-node",
+        "memory_architecture": "unified",
+        "total_physical_memory_bytes": 137438953472,
+        "device_memory_bytes": 137438953472,
+        "shared_memory": {
+          "parent_budget_id": "parent-gb10-1",
+          "shared_with_roles": ["speech", "workbench_llm", "auxiliary"]
+        }
+      },
+      "software": {
+        "application_version": "0.1.0.dev0",
+        "contract_version": "1.0.0",
+        "engine_image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "engine_runtime_version": "vllm-2026.10"
+      },
+      "test_suite": {
+        "revision": "1",
+        "corpus_revision": "corpus-zh-en-smoke-1",
+        "scenario_ids": [
+          "asr-realtime-1-session",
+          "asr-realtime-plus-tts",
+          "asr-cancel-and-abort"
+        ]
+      },
+      "scenarios": [
+        {
+          "scenario_id": "asr-realtime-1-session",
+          "required": true,
+          "status": "passed",
+          "metrics": [
+            {"name": "first_preview_latency", "value": 820, "unit": "ms", "percentile": 95},
+            {"name": "final_latency", "value": 1450, "unit": "ms", "percentile": 95}
+          ],
+          "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "notes": "Synthetic approved corpus only."
+        },
+        {
+          "scenario_id": "asr-realtime-plus-tts",
+          "required": true,
+          "status": "skipped",
+          "metrics": [],
+          "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "notes": "TTS coexistence not yet measured on this topology."
+        }
+      ],
+      "required_scenarios_passed": false,
+      "overall_status": "incomplete",
+      "limitations": [
+        "TTS coexistence was not measured; this report cannot qualify a mixed realtime deployment.",
+        "No production quality threshold has been frozen for the target corpus."
+      ],
+      "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "qualified_at": "2026-10-22T09:00:00Z",
+      "expires_at": "2027-04-22T09:00:00Z"
+    }
+  ]
+}

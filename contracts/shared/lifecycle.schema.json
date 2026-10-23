@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/lifecycle.schema.json",
+  "title": "SpeechNexusLifecycleCommands",
+  "description": "Single source of truth for retire/disable requests shared by voice revisions and model-binding revisions.",
+  "$defs": {
+    "RetirementRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "retire",
+            "disable"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

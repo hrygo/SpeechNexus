@@ -1,13 +1,13 @@
 ---
 title: "SpeechNexus 语音接口设计"
 status: active
-version: "0.4.0"
-date: 2026-10-22
+version: "0.5.4"
+date: 2026-10-23
 ---
 
 # SpeechNexus 语音接口设计
 
-本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。当前为待实现的公共接口设计；P0 将其固化为 OpenAPI、JSON Schema 与契约样例。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
+本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。P0 已将本文语义固化为 `contracts/` 下的 OpenAPI、JSON Schema 与正负样例；业务路由仍待实现。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
 
 阅读入口：[REST / Job / 音色](#1-统一接口与传输契约) · [实时状态与事件](#2-实时协议与状态机) · [调用示例](#3-调用示例)
 
@@ -23,7 +23,7 @@ date: 2026-10-22
 | SpeechNexus 增强层 | 音色创作、版本 / 预设、durable Job、能力 / 资源、管理；实时 nexus 扩展 | 公开增强 DTO / SDK；不依赖工作台 |
 | 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 /v1/workbench；不宣称 OpenAI 兼容 |
 
-Realtime 只兼容本文声明的 ASR 事件和配置子集，仍需 SpeechNexus 的会话协商；不承诺任意 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。
+Realtime 提供两条连接路径：预创建 SpeechNexus 会话后使用 `session_id`，或标准 SDK 直接以 `model` 打开仅转写的兼容会话。两者都只兼容本文声明的 ASR 事件和配置子集；不承诺依赖 `response.*`、conversation history 或 tool call 的 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。完整 SDK 调用与增强边界见 [OpenAI 兼容与增强边界](openai-compatibility.md)。
 
 ```text
 SpeechCommand
@@ -61,10 +61,11 @@ SpeechCommand
 | `POST /v1/nexus/realtime/sessions` | 验证并固定会话配置，返回 `201`、session_id、连接地址和过期时间 |
 | `GET /v1/nexus/realtime/sessions/{session_id}` | 查询会话、operation 终态与输入确认位置；首期没有人级 owner 授权 |
 | `POST /v1/nexus/realtime/sessions/{session_id}/cancellations` | 从 HTTP 请求关闭会话，便于 WS 不可达时停止执行 |
-| `WS /v1/realtime?session_id={session_id}` | 实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |
+| `WS /v1/realtime?session_id={session_id}` | 预创建会话的实时 ASR 子集与 `nexus.*` 扩展；session_id 不是访问凭据 |
+| `WS /v1/realtime?model={model}` | OpenAI SDK 兼容的 transcription-only 模式；服务端按部署默认值建立会话，不启用 TTS / `nexus.*` 能力 |
 | `GET /v1/nexus/voices`、`GET /v1/nexus/voices/{voice_id}/revisions/{revision}` | 部署共享音色目录与版本详情，含兼容绑定与校验事实 |
 
-增强资源包括 `/v1/nexus/workspaces`、`/profile-drafts`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision，普通 PATCH 只更新草稿。
+增强资源包括 `/v1/nexus/workspaces`、`/profile-drafts`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision，普通 PATCH 只更新草稿。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
 
@@ -72,9 +73,11 @@ SpeechCommand
 
 文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用；不满足时返回 422，不伪造词级时间戳。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
+非 verbose `Transcription.usage` 可按绑定真实证据使用 duration 或 token；`verbose_json.usage` 固定为 duration，以匹配 OpenAI SDK 的响应模型。不得为了展示 token 数而破坏 `verbose_json` 的可解析性。
+
 TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instructions` 与 `stream_format=audio`，具体可选参数及取值域以绑定和音色快照为准。首期标准 voice 接受已发布的字符串 ID；不宣称支持 OpenAI 托管音色或任意 voice 对象。`response_format` 默认 `mp3`，基线为 `mp3 / wav / pcm`；MP3 由有界编码步骤提供并计入 CPU、缓冲与执行预算。REST `pcm` 固定为无头、24 kHz、单声道 signed 16-bit little-endian，adapter 负责必要重采样。默认 `speed=1`；非默认 speed 和 instructions 只有绑定实际支持时才接受。其他格式及 `stream_format=sse` 不在首期兼容子集，显式请求返回 `unsupported_parameter`。禁止静默忽略参数或将默认 MP3 替换为 WAV。[OpenAI TTS 格式与默认值](https://developers.openai.com/api/docs/guides/text-to-speech)
 
-增强参数放在 TTS JSON 的 `nexus` 对象、ASR multipart 的 `nexus` JSON 字符串中：`workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`voice_revision`、`pronunciation_revision`、`overrides`、`deadline_ms`。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
+增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
 普通同步 ASR/TTS 不建立永久业务记录，也不自动保存源文件或音频。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，客户端使用相同幂等键协调结果，不能盲目新建相同意图。
 
@@ -136,7 +139,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 {
   "error": {
     "code": "capacity_unavailable",
-    "type": "resource_error",
+    "type": "api_error",
     "message": "当前实时容量已满，请稍后重试。",
     "param": null,
     "request_id": "req_demo",
@@ -159,6 +162,8 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 先协调原意图；只有声明 retryable 才重试 |
 
 列表统一 `data`、`has_more`、`next_cursor`，按 `(created_at,id)` 排序；page limit 为 1–100，默认 50。游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
+
+`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度和产物字段必须与该事件类型匹配。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
 创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 operation 查询引用。
 
@@ -243,6 +248,8 @@ VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本
 
 创建会话时提交可选 workspace_id / client_reference、profile、modalities（asr、tts 或两者）、逻辑模型和输出需求。REST 校验部署入口、参数、资源状态、版本与能力，固定配置并建立 created 会话，30 秒内未连接即过期；此时不占推理槽。
 
+标准 OpenAI Realtime SDK 可省略 REST 会话创建，直接连接 `/v1/realtime?model={model}`。该兼容模式只建立 transcription-only 会话，使用部署默认工作空间、ASR 预设和音频格式；连接握手时完成准入并返回标准 `session.created`。它不接受 TTS、nexus 假设 / 辅助事件或双工能力。需要固定 profile、workspace、音色或 TTS 时，调用方必须先创建 nexus 会话。`session_id` 与 `model` 互斥，同时提供返回 400，两者都不进入 URL 作为凭据。
+
 首期浏览器无登录 cookie、access token 或用户会话，使用同源入口并校验 WebSocket Origin / Host；SDK 直接连接部署地址。若部署选择共享服务密钥，SDK 使用 Authorization Bearer，浏览器经同源部署代理注入服务端凭据。密钥不进入 URL、页面包、localStorage、日志或 WS 子协议。session_id 只用于路由；连接时检查存在性、工作空间、过期和是否已有活跃连接，不把它当作用户所有权或隐式秘密。
 
 WS 建立后进入 `admitting`，原子申请所需资源；最多等待已批准的实时等待预算。只有分配成功才发送 `session.created` 与 `nexus.session.ready`。失败发送结构化错误并关闭，不让客户端持续发送无人消费的音频。会话状态为：
@@ -258,7 +265,7 @@ created → admitting → active → draining → closed
 
 ASR 客户端事件仅支持 `session.update`、`input_audio_buffer.append`、`input_audio_buffer.commit`、`input_audio_buffer.clear`。ASR 服务端事件支持 `session.created`、`session.updated`、`input_audio_buffer.committed`、`input_audio_buffer.cleared`、可用时的 `input_audio_buffer.speech_started` / `input_audio_buffer.speech_stopped`、`conversation.item.input_audio_transcription.delta`、`conversation.item.input_audio_transcription.completed`、`conversation.item.input_audio_transcription.failed` 与 `error`。下文 completed / failed 在明确 ASR 语境中是上述完整名称的简称。[官方事件参考](https://developers.openai.com/api/reference/resources/realtime/server-events)
 
-`session.update` 仅接受声明的 transcription 字段：`session.type=transcription` 及 `session.audio.input` 下的 `format`、`transcription`、`turn_detection`；PCM 投影为 `{type: "audio/pcm", rate: 24000}`。与 `nexus.session.update` 映射到同一个配置命令，禁止两套配置状态。首期 active 会话仅允许 ASR 策略白名单在下一段边界变更，固定模型、音色、格式 / 采样率与 TTS 配方不可热换；标准事件未带 expected revision 时由单连接内串行命令按当前 revision 处理。回显实际 config_revision 与生效段，尚未生效的值不能用于当前段。P0 固化字段 schema，不接受未声明的 `response.*`、conversation history 或 tool call 事件。[官方客户端字段](https://developers.openai.com/api/reference/resources/realtime/client-events)
+`session.update` 仅接受声明的 transcription 字段：`session.type=transcription` 及 `session.audio.input` 下的 `format`、`transcription`、`turn_detection`；PCM 投影为 `{type: "audio/pcm", rate: 24000}`，与当前 OpenAI Realtime transcription session 形状一致。`session.created` / `session.updated` 回显 `object=realtime.transcription_session` 的同一形状，并把绑定、profile、limits 与 config revision 放在可选 `nexus` 对象。与 `nexus.session.update` 映射到同一个配置命令，禁止两套配置状态。首期 active 会话仅允许 ASR 策略白名单在下一段边界变更，固定模型、音色、格式 / 采样率与 TTS 配方不可热换；标准事件未带 expected revision 时由单连接内串行命令按当前 revision 处理。回显实际 config_revision 与生效段，尚未生效的值不能用于当前段。P0 固化字段 schema，不接受未声明的 `include`、`response.*`、conversation history、semantic VAD 或 tool call 事件。[官方客户端字段](https://developers.openai.com/api/reference/resources/realtime/client-events)
 
 `commit` 表示关闭当前输入段并请求其最终结果；`clear` 只丢弃尚未提交的输入缓冲，不撤销已接受的 operation。重复 commit 用客户端 event_id 去重，无新音频且不是已知重试时返回 `empty_audio_buffer`。有实际音频但无语音时，最终 transcript 可以为空，reason 为 `no_speech`。
 
@@ -285,12 +292,14 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |
 | C→S `nexus.tts.cancel` | `event_id`、`utterance_id`；请求取消对应计算与发送 |
 | S→C `nexus.tts.audio.delta` | `operation_id`、`utterance_id`、`chunk_seq`、`audio`（Base64 PCM）、`start_sample`、`sample_count` |
-| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=completed/cancelled/failed`、receipt、error / reason；唯一逻辑终态 |
+| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、receipt、error / reason；唯一逻辑终态，资源清理另报 `cleanup_state` |
 | S→C `nexus.session.gap` | 输入缺口或新 epoch 的 sample_span / 原因；不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态及未成功 operation 的引用 |
 
 所有 server event 附 `event_id`、连接内递增 `seq`、`session_id`、`stream_epoch` 和时间；与命令有关的事件附 `client_event_id`，与执行有关的事件附 `operation_id`。nexus 客户端命令必带 event_id；标准 ASR 事件可省略，但省略时不能安全重发 append。带 event_id 的命令在会话生命周期内唯一，重复同内容返回原接受结果，重复不同内容拒绝。术语 `S→C` 和 `C→S` 只描述传输方向。
+
+标准 `conversation.item.input_audio_transcription.completed` 携带 OpenAI 形状的 `usage`：默认使用已接受段的样本时长生成 `{"type":"duration","seconds":...}`；只有绑定提供真实 token 证据时才允许 `{"type":"tokens",...}`。不得用估算 token 数或虚构 logprob 填充。`delta` 仅在具备稳定前缀证据时发送；`nexus.transcription.hypothesis` 才是可替换的完整预览。
 
 ASR 的正文终态与整个 Operation 终态分层：completed / failed 只确定该 segment 的声学正文；`nexus.operation.done` 确定含 required 辅助工作的整体执行。SDK 用 operation_id / item_id 关联，不能把“正文已定稿”直接当作“所有所需结果已完成”。ASR 取消使用 `nexus.operation.done(cancelled)`；已经发布的正文成功事实保留，不再补发与其矛盾的 transcription.failed。ASR 标准事件必须包含与扩展 segment 对应的 item_id 和 content_index。
 
@@ -355,13 +364,13 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
     "profile_id": "speech-interactive",
     "profile_revision": "1",
     "voice_revision": "3",
-    "overrides": {"tts": {"audio_delivery": "chunked"}},
+    "overrides": {"tts": {"audio_delivery": "complete"}},
     "deadline_ms": 10000
   }
 }
 ```
 
-REST 的完整 input 在请求接受时一次性冻结。成功返回二进制 PCM，Content-Type 与协商 descriptor 在响应头回显，X-Request-ID / X-Operation-ID 供协调；中途失败不能再改 HTTP status，客户端据传输结束与 operation receipt 判断是否完整。需要明确事件化完成语义时使用实时接口，需要可恢复完整音频时使用 Job。
+REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能为 `complete`。成功返回二进制 PCM，Content-Type 与协商 descriptor 在响应头回显，X-Request-ID / X-Operation-ID 供协调；中途失败不能再改 HTTP status，客户端据传输结束与 operation receipt 判断是否完整。需要持续分块交付时使用实时接口，需要可恢复完整音频时使用 Job。
 
 同步 ASR 使用 multipart 的 `file`、`model=asr-quality`、`language=zh`、`response_format=json`；`nexus` 部分按 [同步 REST 子集](speech-api.md#13-同步-rest-子集) 传入相同工作空间与预设信息。file 是上传内容，不是服务器文件路径。成功 JSON 至少包含 text；完整原生结果与辅助状态通过 Job 的 TranscriptDocument 获取，不随意改变兼容子集响应形状。
 

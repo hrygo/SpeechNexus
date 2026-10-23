@@ -7,7 +7,7 @@ date: 2026-10-22
 
 # SpeechNexus 分阶段实施计划
 
-计划基准日期为 2026-10-22，依据[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)与[资源治理](../architecture/runtime-governance.md)。阶段均为待实施，文档整理与评审不等于 P0 机器契约已交付。
+计划基准日期为 2026-10-22，依据[项目主设计](../speechnexus-product-architecture.md)、[语音接口](../architecture/speech-api.md)与[资源治理](../architecture/runtime-governance.md)。P0 的公共、管理与内部机器契约已交付并通过仓库校验；领域实现、fake、服务端路由、真实模型适配、容量与质量资格仍待实施。契约文件不等于运行时能力。
 
 ## 1. 阶段与退出条件
 
@@ -23,6 +23,8 @@ date: 2026-10-22
 | P5 生产资格与交付 | 多副本 / owner 路由、故障注入、混合负载 / 长时、备份恢复、迁移 / 回滚、SDK / MCP 与运维文档 | 针对目标部署冻结容量 / SLO、质量 / 恢复 / 数据生命周期报告；访问边界明确，未验证能力禁用 | 已发布功能；6–9 人周 |
 
 总量初估 36–53 人周。2–3 名有相关经验的工程师在部分并行条件下约为 4–7 个月量级，真实模型适配和浏览器验证会影响关键路径。第一项可独立验收的底座试点包含标准文件 ASR、文本 TTS、实时 ASR/TTS 及一条可复用音色创作路径；对应 WebUI 在 P2 交付，不把已有 API 误报为已有页面。
+
+截至 2026-10-22，P0 已交付 `contracts/` 下的公共 speech / workbench / admin OpenAPI、Realtime 事件、预设、音色、绑定、实例、容量与资格 schema，以及执行控制和部署控制内部协议；OpenAI Python SDK 的 REST 请求 / 响应形状由 mock transport 覆盖，Realtime 客户端事件由 SDK 实际连接序列化路径覆盖。协调 DDL 已在隔离 PostgreSQL 16 schema 中应用并验证关键正负事务不变量。上述交付不包含业务路由、完整迁移体系、真实 adapter、模型加载、质量阈值或部署资格。
 
 身份与授权列入后续独立候选阶段，触发条件见 [身份体系演进](../speechnexus-product-architecture.md#65-未来身份体系的独立演进)；未确定需求、迁移与投入前，不放入当前关键路径，也不据此声称首期可服务不互信多租户。
 
@@ -81,12 +83,13 @@ flowchart LR
 
 ## 4. P0 交接产物
 
-以下目录定义交付职责；当前仓库尚未创建这些代码与机器契约。
+以下目录定义交付职责；P0 机器契约已创建，代码与运行时交付仍待完成。
 
 ```text
 contracts/
-  speech-openapi.yaml           OpenAI 子集、nexus 语音 / 音色与管理资源
+  speech-openapi.yaml           OpenAI 子集、nexus 语音 / Job / 资产 / 音色
   workbench-openapi.yaml        可选工作台应用资源
+  admin-openapi.yaml            管理面、绑定、实例、资源池、策略与审计
   realtime-events.schema.json   实时事件 union 与字段域
   scenario-profile.schema.json  预设、覆盖与所需能力
   voice-resource.schema.json    候选、校验、发布与兼容绑定
@@ -106,7 +109,7 @@ deploy/                         拓扑、入口、配置 schema 与发布资格
 docs/                           产品、ADR、运维与验收记录
 ```
 
-P0 产生机器可校验 schema 与 fake 契约样例；P1 才据此实现运行路径。默认值、单位、范围与错误码从 schema 生成或检查，不在 Python、TypeScript、MCP 三处手写独立副本。SpeechNexus 契约保存在自己的仓库中，不与 SpeechRail 公共契约混用。
+P0 已产生机器可校验 schema、正负样例与 OpenAI SDK 形状测试；P1 才据此实现运行路径。默认值、单位、范围与错误码从 schema 生成或检查，不在 Python、TypeScript、MCP 三处手写独立副本。SpeechNexus 契约保存在自己的仓库中，不与 SpeechRail 公共契约混用。
 
 ## 5. 预算与关键路径
 

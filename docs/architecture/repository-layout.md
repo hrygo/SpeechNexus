@@ -1,20 +1,32 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.2.0"
+version: "0.3.1"
 date: 2026-10-22
 ---
 
 # SpeechNexus 工程目录与依赖边界
 
-本文记录仓库初始化后的实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；当前机器契约只有运营健康检查，语音与工作台业务契约仍属于 P0 待交付范围。
+本文记录仓库初始化后的实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；P0 的公共语音、实时事件、工作台、预设、音色、管理面和内部绑定 / 实例 / 资格机器契约已交付，但对应业务路由与运行时行为仍待实现。
 
 ## 1. 工作区布局
 
 ```text
 .
-├── contracts/                   公共契约与契约校验入口
-│   └── operations.openapi.yaml  当前唯一已冻结的运营协议
+├── contracts/                   公共、管理与内部契约
+│   ├── speech-openapi.yaml      OpenAI 子集与 nexus 语音 / Job / 音色
+│   ├── workbench-openapi.yaml   可选工作台应用资源
+│   ├── admin-openapi.yaml       管理面、实例、策略与审计
+│   ├── realtime-events.schema.json
+│   ├── scenario-profile.schema.json
+│   ├── voice-resource.schema.json
+│   ├── model-binding.schema.json
+│   ├── model-instance.schema.json
+│   ├── capacity-manifest.schema.json
+│   ├── qualification-report.schema.json
+│   └── internal/               执行控制、运行时控制与执行流
+├── migrations/                  部署角色执行的版本化 DDL 草案
+│   └── 0001_cluster_coordination_draft.sql
 ├── backend/                     FastAPI 语音底座
 │   └── src/speechnexus_backend/
 │       ├── app.py               ASGI 组合根
@@ -86,7 +98,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
   → 应用用例 → adapter → 契约测试 → 真实环境资格
 ```
 
-当前 `contracts/operations.openapi.yaml` 是运营健康检查的权威定义。P0 需新增语音兼容子集、增强资源、Realtime 事件、工作台、预设、音色和容量 manifest 契约，并补齐 execution-gateway 与部署控制器的内部协议、实例与资格契约。公共和内部协议分目录组织，完整交接清单见[整体技术方案](technical-blueprint.md#3-契约与类型生成)。以下规则适用于每个新契约：
+`contracts/operations.openapi.yaml` 仍是运营健康检查的权威定义。P0 公共语音、实时事件、工作台、预设、音色、管理面和内部执行 / 实例 / 资格契约已交付；它们冻结协议形状，不表示业务路由已实现。完整清单与 OpenAI SDK 兼容门禁见[契约索引](../../contracts/README.md)、[OpenAI 兼容与增强边界](openai-compatibility.md)和[整体技术方案](technical-blueprint.md#3-契约与类型生成)。以下规则适用于每个新契约：
 
 1. 先定义路径、字段、状态、默认值、单位与稳定错误码。
 2. 为正例、未知字段、非法枚举和状态竞争提供样例。
@@ -119,7 +131,7 @@ pnpm install --frozen-lockfile
 make verify
 ```
 
-只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试。
+只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试；当前协调 DDL 的 PostgreSQL 行为门禁为 `make integration-test`，必须设置 `SPEECHNEXUS_TEST_DATABASE_URL` 指向本项目隔离测试库。
 
 ## 8. 后续工程交接
 

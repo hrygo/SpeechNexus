@@ -89,7 +89,8 @@
       "description": "Complete multi-stage execution recipe (including ASR 1.7B full_segment review, required alignment/diarization, or TTS Talker + Code2Wav + connector)."
     },
     "resource_envelope": {
-      "$ref": "#/$defs/ResourceEnvelope"
+      "$ref": "#/$defs/ResourceEnvelope",
+      "description": "Admission envelope derived from stage_graph. Memory/CPU/PCM/bandwidth/object-storage vectors are summed across stages; engine_active_slots is the per-execution slot cardinality (max stage value); max_active_slots is the minimum stage max_active_slots."
     },
     "rate_and_segment_limits": {
       "$ref": "#/$defs/RateAndSegmentLimits"
@@ -145,30 +146,16 @@
   ],
   "$defs": {
     "Identifier": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
-      "minLength": 3,
-      "maxLength": 128
+      "$ref": "shared/identifiers.schema.json#/$defs/Identifier"
     },
     "Sha256Digest": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
+      "$ref": "shared/identifiers.schema.json#/$defs/Sha256Digest"
     },
     "PoolId": {
-      "type": "string",
-      "enum": [
-        "asr-realtime",
-        "tts-realtime",
-        "asr-batch",
-        "tts-batch",
-        "voice-creation",
-        "auxiliary"
-      ],
-      "description": "Logical capability resource pool identifier."
+      "$ref": "shared/identifiers.schema.json#/$defs/PoolId"
     },
     "ServiceClass": {
-      "type": "string",
-      "enum": ["realtime", "interactive", "batch"]
+      "$ref": "shared/capability-domains.schema.json#/$defs/ServiceClass"
     },
     "ManagementMode": {
       "type": "string",
@@ -176,33 +163,17 @@
       "description": "managed requires exclusive execution-gateway ingress, full pool accounting, and fencing/abort barrier; external cannot claim production realtime SLO."
     },
     "ReleaseTier": {
-      "type": "string",
-      "enum": ["production", "best_effort", "experimental"]
+      "$ref": "shared/capability-domains.schema.json#/$defs/ReleaseTier"
     },
     "LoadingPolicy": {
       "type": "string",
       "enum": ["resident", "on_demand"]
     },
     "MemoryArchitecture": {
-      "type": "string",
-      "enum": ["unified_memory", "discrete_device_memory"],
-      "description": "Indicates whether host and device share a unified physical memory pool (e.g. ARM64 + GB10) or use separate host RAM and discrete GPU VRAM."
+      "$ref": "shared/capability-domains.schema.json#/$defs/MemoryArchitecture"
     },
     "SpeechTaskKind": {
-      "type": "string",
-      "enum": [
-        "asr_realtime",
-        "asr_full_segment_review",
-        "asr_file",
-        "tts_realtime",
-        "tts_file",
-        "voice_design",
-        "voice_clone",
-        "voice_validation",
-        "forced_alignment",
-        "speaker_diarization",
-        "vad"
-      ]
+      "$ref": "shared/capability-domains.schema.json#/$defs/SpeechTaskKind"
     },
     "MediaFormat": {
       "type": "string",
@@ -220,31 +191,10 @@
       ]
     },
     "StageRole": {
-      "type": "string",
-      "enum": [
-        "vad",
-        "asr_preview",
-        "asr_review",
-        "asr_batch",
-        "tts_talker",
-        "tts_code2wav",
-        "tts_connector",
-        "voice_design",
-        "voice_clone_base",
-        "alignment",
-        "diarization"
-      ]
+      "$ref": "shared/capability-domains.schema.json#/$defs/StageRole"
     },
     "EngineKind": {
-      "type": "string",
-      "enum": [
-        "vllm",
-        "vllm_omni",
-        "nemo",
-        "qwen_forced_aligner",
-        "onnx_runtime",
-        "cpu_native"
-      ]
+      "$ref": "shared/capability-domains.schema.json#/$defs/EngineKind"
     },
     "CancellationMode": {
       "type": "string",
@@ -392,6 +342,7 @@
     "ResourceEnvelope": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Frozen aggregation of stage_graph: resident_budget, loading_peak_budget and per_slot_incremental_budget are element-wise sums for every resource except engine_active_slots; per-slot engine_active_slots is the maximum stage value because one end-to-end execution occupies one slot in each stage. max_active_slots is the minimum of stage max_active_slots.",
       "required": [
         "resident_budget",
         "loading_peak_budget",
@@ -411,11 +362,13 @@
         },
         "max_active_slots": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Minimum max_active_slots across every declared stage_graph entry; optional stages constrain the binding too because they may execute."
         },
         "realtime_reserved_slots": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Realtime reservation within max_active_slots; cannot exceed it."
         }
       }
     },

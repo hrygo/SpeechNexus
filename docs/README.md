@@ -25,6 +25,7 @@
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md)                     | 初验与终审补充的修复映射、验证证据及未验证运行边界                              |
 | [集群协调重构后的架构与契约审查](audits/2026-10-23-architecture-contract-post-refactor-review.md)   | 运行角色最小权限、双库门禁、契约结果覆盖、端口原型一致性与开放项                |
 | [B00 MegaCube 环境与能力缺口前检](audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | GB10 主机与既有 GPU 占用、制品获取与摘要、首个真实 ASR 生命周期探针与停止证据   |
+| [B02 控制器容器生命周期探针](audits/2026-10-24-b02-controller-container-lifecycle-probe.md)         | 合成容器的 prepare / ready / stop 与停止双证据、`Init` 缺口与清理结果           |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力           |
 | [开发与测试环境](development-environment.md)                                                        | 当前主机工具链、独立服务、媒体与无头浏览器验证、初始化和隔离边界                |

@@ -1,12 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExecutionContracts",
-  "x-nexus-bindings-version": "0.2.0.dev0",
+  "x-nexus-bindings-version": "0.3.0.dev0",
   "x-nexus-entrypoints": [
     "SubmitExecutionRequest",
     "SubmitExecutionResponse",
     "ExecutionStatusResponse",
-    "AbortExecutionRequest"
+    "AbortExecutionRequest",
+    "GatewayFencingBarrierRequest",
+    "GatewayFencingBarrierResponse",
+    "ExecutionControlErrorResponse"
   ],
   "$defs": {
     "SubmitExecutionRequest": {
@@ -1956,6 +1959,241 @@
           "maximum": 60000
         }
       }
+    },
+    "GatewayFencingBarrierRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pool_id",
+        "new_owner_scheduler_id",
+        "min_accepted_fencing_token",
+        "abort_in_flight"
+      ],
+      "properties": {
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "new_owner_scheduler_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "min_accepted_fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "abort_in_flight": {
+          "type": "boolean"
+        }
+      }
+    },
+    "GatewayFencingBarrierResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateway_id",
+        "pool_id",
+        "enforced_min_fencing_token",
+        "barrier_sealed",
+        "submitting_intent_ids",
+        "executing_intent_ids",
+        "quarantined_intent_ids",
+        "enforced_at"
+      ],
+      "properties": {
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "enforced_min_fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "barrier_sealed": {
+          "const": true
+        },
+        "submitting_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "executing_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "quarantined_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "enforced_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of this successful enforcement confirmation. Replay may refresh inventory and this time while preserving the same durable minimum and proof."
+        }
+      }
+    },
+    "ExecutionControlErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExecutionErrorCode"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control_store_unavailable",
+                    "control_outcome_unknown",
+                    "control_reconciliation_required",
+                    "control_state_conflict"
+                  ]
+                }
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "recovery": {
+              "type": "string",
+              "enum": [
+                "none",
+                "retry_transaction",
+                "query_original",
+                "query_current_authority",
+                "reconcile"
+              ]
+            },
+            "observed_fencing_token": {
+              "type": ["integer", "null"]
+            },
+            "submit_intent_id": {
+              "type": ["string", "null"]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "control_store_unavailable",
+                      "control_outcome_unknown",
+                      "control_reconciliation_required",
+                      "control_state_conflict"
+                    ]
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "required": ["recovery"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_store_unavailable"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": true
+                  },
+                  "recovery": {
+                    "const": "retry_transaction"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_outcome_unknown"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "query_original"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_reconciliation_required"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "reconcile"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_state_conflict"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "query_current_authority"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   },
   "anyOf": [
@@ -1970,6 +2208,15 @@
     },
     {
       "$ref": "#/$defs/AbortExecutionRequest"
+    },
+    {
+      "$ref": "#/$defs/GatewayFencingBarrierRequest"
+    },
+    {
+      "$ref": "#/$defs/GatewayFencingBarrierResponse"
+    },
+    {
+      "$ref": "#/$defs/ExecutionControlErrorResponse"
     }
   ]
 }

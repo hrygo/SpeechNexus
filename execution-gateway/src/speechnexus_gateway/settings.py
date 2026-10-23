@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
         env_prefix="SPEECHNEXUS_GATEWAY_",
         extra="ignore",
         frozen=True,
+        hide_input_in_errors=True,
     )
 
     environment: Literal["development", "test", "staging", "production"] = "development"
@@ -25,11 +27,32 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=64,
     )
-    node_id: str = Field(default="node-local-1", min_length=1, max_length=128)
-    gateway_id: str = Field(default="gateway-1", min_length=1, max_length=128)
+    node_id: str = Field(default="node-local-1", pattern=r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
+    gateway_id: str = Field(default="gateway-1", pattern=r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
     host: str = "127.0.0.1"
     port: int = Field(default=8010, ge=1, le=65535)
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
     control_database_url: SecretStr
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    component_token: SecretStr | None = Field(default=None, min_length=1)
+    ingress_lock_directory: Path | None = None
+    control_schema: str = Field(default="speech", pattern=r"^[a-z][a-z0-9_]{2,62}$")
+    control_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+
+    @model_validator(mode="after")
+    def validate_control_configuration(self) -> Settings:
+        if (self.component_token is None) != (self.ingress_lock_directory is None):
+            raise ValueError(
+                "execution control requires both a component token and a lock directory"
+            )
+        if self.ingress_lock_directory is not None:
+            if not self.ingress_lock_directory.is_absolute():
+                raise ValueError("ingress lock directory must be an absolute host-mounted path")
+            if not {"node_id", "gateway_id"} <= self.model_fields_set:
+                raise ValueError("execution control requires explicit node and gateway identities")
+        return self
+
+    @property
+    def execution_control_enabled(self) -> bool:
+        return self.component_token is not None

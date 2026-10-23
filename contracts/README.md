@@ -133,7 +133,11 @@ of defaults, units, enum domains, or stable error codes.
   execution status and output watermark query, verified abort vs quarantine,
   gateway takeover fencing barrier, and instance drain). It requires a
   per-component bearer credential; this credential is not the public shared
-  service key and public routes must reject it.
+  service key and public routes must reject it. Version `0.3.0.dev0` separates
+  retryable control-store unavailability from unknown commits and required
+  reconciliation, with schema-enforced recovery hints. The authenticated
+  [barrier HTTP operation](../docs/architecture/execution-gateway.md) is implemented;
+  the remaining engine HTTP operations and qualification are pending.
 - `internal/coordination-transactions.schema.json`: ADR 0006 application
   transaction ports for owner/fencing, complete-recipe admission, claim,
   execution evidence, quarantine/release, runtime lifecycle and interval

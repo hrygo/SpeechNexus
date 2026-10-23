@@ -1,6 +1,176 @@
 {
   "examples": [
     {
+      "id": "execution-GatewayFencingBarrierRequest-valid",
+      "profile": "execution",
+      "schema": "GatewayFencingBarrierRequest",
+      "valid": true,
+      "value": {
+        "pool_id": "tts-realtime",
+        "new_owner_scheduler_id": "scheduler-new",
+        "min_accepted_fencing_token": 2,
+        "abort_in_flight": false
+      }
+    },
+    {
+      "id": "execution-GatewayFencingBarrierRequest-string-token",
+      "profile": "execution",
+      "schema": "GatewayFencingBarrierRequest",
+      "valid": false,
+      "value": {
+        "pool_id": "tts-realtime",
+        "new_owner_scheduler_id": "scheduler-new",
+        "min_accepted_fencing_token": "2",
+        "abort_in_flight": false
+      }
+    },
+    {
+      "id": "execution-GatewayFencingBarrierResponse-valid",
+      "profile": "execution",
+      "schema": "GatewayFencingBarrierResponse",
+      "valid": true,
+      "value": {
+        "gateway_id": "gateway-test",
+        "pool_id": "tts-realtime",
+        "enforced_min_fencing_token": 2,
+        "barrier_sealed": true,
+        "submitting_intent_ids": [
+          "intent-submitting"
+        ],
+        "executing_intent_ids": [],
+        "quarantined_intent_ids": [],
+        "enforced_at": "2026-10-23T21:00:00Z"
+      }
+    },
+    {
+      "id": "execution-GatewayFencingBarrierResponse-not-sealed",
+      "profile": "execution",
+      "schema": "GatewayFencingBarrierResponse",
+      "valid": false,
+      "value": {
+        "gateway_id": "gateway-test",
+        "pool_id": "tts-realtime",
+        "enforced_min_fencing_token": 2,
+        "barrier_sealed": false,
+        "submitting_intent_ids": [],
+        "executing_intent_ids": [],
+        "quarantined_intent_ids": [],
+        "enforced_at": "2026-10-23T21:00:00Z"
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-unknown-valid",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_outcome_unknown",
+          "message": "The commit acknowledgment was lost.",
+          "retryable": false,
+          "recovery": "query_original"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-unknown-blind-retry",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "control_outcome_unknown",
+          "message": "The commit acknowledgment was lost.",
+          "retryable": true,
+          "recovery": "retry_transaction"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_store_unavailable-valid",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_store_unavailable",
+          "message": "Synthetic control failure.",
+          "retryable": true,
+          "recovery": "retry_transaction"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_store_unavailable-invalid-recovery",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "control_store_unavailable",
+          "message": "Synthetic control failure.",
+          "retryable": true,
+          "recovery": "none"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_reconciliation_required-valid",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_reconciliation_required",
+          "message": "Synthetic control failure.",
+          "retryable": false,
+          "recovery": "reconcile"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_reconciliation_required-invalid-recovery",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "control_reconciliation_required",
+          "message": "Synthetic control failure.",
+          "retryable": false,
+          "recovery": "none"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_state_conflict-valid",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_state_conflict",
+          "message": "Synthetic control failure.",
+          "retryable": false,
+          "recovery": "query_current_authority"
+        }
+      }
+    },
+    {
+      "id": "execution-ExecutionControlErrorResponse-control_state_conflict-invalid-recovery",
+      "profile": "execution",
+      "schema": "ExecutionControlErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "control_state_conflict",
+          "message": "Synthetic control failure.",
+          "retryable": false,
+          "recovery": "none"
+        }
+      }
+    },
+    {
       "id": "admin-WorkspaceCreateRequest-valid",
       "profile": "admin",
       "schema": "WorkspaceCreateRequest",
@@ -1215,7 +1385,9 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": ["reusable_tts"]
+          "validation_checks": [
+            "reusable_tts"
+          ]
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",
         "max_output_audio_ms": 1000,
@@ -1275,7 +1447,9 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": ["reusable_tts"],
+          "validation_checks": [
+            "reusable_tts"
+          ],
           "undeclared": true
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",

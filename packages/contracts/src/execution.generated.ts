@@ -347,7 +347,10 @@ export interface components {
       submitting_intent_ids: components["schemas"]["Identifier"][];
       executing_intent_ids: components["schemas"]["Identifier"][];
       quarantined_intent_ids: components["schemas"]["Identifier"][];
-      /** Format: date-time */
+      /**
+       * Format: date-time
+       * @description Time of this successful enforcement confirmation. Replay may refresh inventory and this time while preserving the same durable minimum and proof.
+       */
       enforced_at: string;
     };
     DrainInstanceRequest: {
@@ -371,12 +374,22 @@ export interface components {
     } & (unknown & unknown);
     ExecutionControlErrorResponse: {
       error: {
-        code: components["schemas"]["ExecutionErrorCode"];
+        code:
+          | components["schemas"]["ExecutionErrorCode"]
+          | (
+              | "control_store_unavailable"
+              | "control_outcome_unknown"
+              | "control_reconciliation_required"
+              | "control_state_conflict"
+            );
         message: string;
         retryable: boolean;
+        /** @enum {string} */
+        recovery?:
+          "none" | "retry_transaction" | "query_original" | "query_current_authority" | "reconcile";
         observed_fencing_token?: number | null;
         submit_intent_id?: string | null;
-      };
+      } & (unknown & unknown & unknown & unknown & unknown);
     };
     /** @description Monotonic decimal revision represented as a string. */
     Revision: string;
@@ -638,6 +651,21 @@ export interface components {
       | components["schemas"]["CodecCommand"];
   };
   responses: {
+    /**
+     * @description No success acknowledgment. control_store_unavailable permits retrying the same
+     *     transaction; control_outcome_unknown requires querying/reconfirming the original
+     *     identity without resubmitting engine work; control_reconciliation_required needs
+     *     reconciliation. A barrier caller must not activate an owner on any of these errors.
+     */
+    ControlUnavailable: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+      };
+    };
     /** @description Missing, invalid, or revoked component credential. */
     Unauthorized: {
       headers: {
@@ -709,6 +737,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
+      503: components["responses"]["ControlUnavailable"];
     };
   };
   getExecution: {
@@ -745,6 +774,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
+      503: components["responses"]["ControlUnavailable"];
     };
   };
   abortExecution: {
@@ -805,6 +835,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
+      503: components["responses"]["ControlUnavailable"];
     };
   };
   enforceGatewayFencingBarrier: {
@@ -835,7 +866,7 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
-      /** @description Supplied fencing token is lower than the gateway's already-enforced barrier token. */
+      /** @description Stale owner/token, conflicting barrier proof, or abort cleanup not yet supported or complete. */
       409: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
@@ -845,7 +876,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
-      /** @description Barrier request failed schema validation. */
+      /** @description Barrier request failed schema or target identity validation. */
       422: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
@@ -855,6 +886,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
+      503: components["responses"]["ControlUnavailable"];
     };
   };
   drainEngineInstance: {
@@ -905,6 +937,7 @@ export interface operations {
           "application/json": components["schemas"]["ExecutionControlErrorResponse"];
         };
       };
+      503: components["responses"]["ControlUnavailable"];
     };
   };
 }

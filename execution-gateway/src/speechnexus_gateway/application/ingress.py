@@ -45,6 +45,14 @@ class GatewayIngress:
         self._pools = {pool: _PoolIngress() for pool in POOLS}
         self._state_lock = Lock()
 
+    @property
+    def gateway_id(self) -> str:
+        return self._ownership.gateway_id
+
+    def check_ownership(self) -> None:
+        with self._ownership.hold():
+            pass
+
     @contextmanager
     def dispatch(self, identity: SubmissionIdentity) -> Iterator[None]:
         if identity.pool_id not in self._pools:

@@ -12,6 +12,11 @@ from datetime import UTC, datetime
 
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.canonical import command_digest
+from speechnexus_gateway.domain.command_redaction import (
+    AuthorizedCommandRedaction,
+    CommandDeletionTombstone,
+    CommandRedactionResult,
+)
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
@@ -20,6 +25,7 @@ from speechnexus_gateway.domain.submission import (
     DispatchResult,
     GatewayBarrierFencedError,
     InvalidExecutionRequestError,
+    LeaseState,
     RecordStop,
     StaleFencingTokenError,
     StopEvidenceConflictError,
@@ -35,6 +41,9 @@ class InMemorySubmissionLedger:
         self._intents: dict[str, SubmissionIntent] = {}
         self._barriers: dict[tuple[str, str], BarrierSnapshot] = {}
         self._evidence: dict[str, VerifiedStopEvidence] = {}
+        self._request_documents: dict[str, str | None] = {}
+        self._redactions: dict[str, CommandDeletionTombstone] = {}
+        self._lease_states: dict[str, LeaseState] = {}
         self._now = now or (lambda: datetime.now(UTC))
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
@@ -64,6 +73,8 @@ class InMemorySubmissionLedger:
         if command_digest(json.loads(request_document)) != intent.request_digest:
             raise ValueError("request document does not match the recorded request digest")
         self._intents[key] = copy.deepcopy(intent)
+        self._request_documents[key] = request_document
+        self._lease_states.setdefault(intent.identity.lease_id, LeaseState.RESERVED)
 
     def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
         key = request.observation.identity.submit_intent_id
@@ -135,6 +146,29 @@ class InMemorySubmissionLedger:
         )
         self._barriers[key] = fact
         return fact
+
+    def set_test_lease_state(self, lease_id: str, state: LeaseState) -> None:
+        """Synthetic fixture fact only; this fake does not implement A's release transaction."""
+        self._lease_states[lease_id] = state
+
+    def redact_execution_command(
+        self, permit: AuthorizedCommandRedaction
+    ) -> CommandRedactionResult:
+        key = permit.request.submit_intent_id
+        current = self.get(key)
+        if current is None:
+            raise InvalidExecutionRequestError("unknown command deletion execution")
+        result = permit.apply(
+            current,
+            lease_state=self._lease_states[current.identity.lease_id],
+            document_present=self._request_documents[key] is not None,
+            previous=self._redactions.get(key),
+            at=self._now(),
+        )
+        self._intents[key] = copy.deepcopy(result.intent)
+        self._redactions[key] = result.tombstone
+        self._request_documents[key] = None
+        return result
 
 
 @dataclass

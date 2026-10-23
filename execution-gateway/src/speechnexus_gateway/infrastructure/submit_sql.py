@@ -360,10 +360,12 @@ def save_submit_intent(
         )
 
 
-def lock_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> SubmissionIntent:
-    """Locate read-only, then lock pool → submit and re-read before a controlled write."""
+def lock_submit_intent(
+    cursor: SubmitCursor, submit_intent_id: str, *, lock_lease: bool = False
+) -> SubmissionIntent:
+    """Lock pool → optional lease → submit, then re-read the frozen authority."""
     cursor.execute(
-        "SELECT l.pool_id FROM submit_intents AS s "
+        "SELECT l.pool_id, l.lease_id FROM submit_intents AS s "
         "JOIN admission_leases AS l ON l.lease_id = s.lease_id "
         "WHERE s.submit_intent_id = %s",
         (submit_intent_id,),
@@ -375,6 +377,13 @@ def lock_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> Submissio
     cursor.execute("SELECT pool_id FROM resource_pools WHERE pool_id = %s FOR UPDATE", (pool_id,))
     if not cursor.fetchall():
         raise SubmissionStoreError("execution pool is missing")
+    if lock_lease:
+        cursor.execute(
+            "SELECT lease_id FROM admission_leases WHERE lease_id = %s FOR UPDATE",
+            (rows[0]["lease_id"],),
+        )
+        if not cursor.fetchall():
+            raise SubmissionStoreError("execution lease is missing")
     cursor.execute(
         "SELECT submit_intent_id FROM submit_intents WHERE submit_intent_id = %s FOR UPDATE",
         (submit_intent_id,),
@@ -382,7 +391,11 @@ def lock_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> Submissio
     if not cursor.fetchall():
         raise SubmissionStoreError("execution disappeared while acquiring its lock")
     intent = read_submit_intent(cursor, submit_intent_id)
-    if intent is None or intent.identity.pool_id != pool_id:
+    if (
+        intent is None
+        or intent.identity.pool_id != pool_id
+        or (lock_lease and intent.identity.lease_id != rows[0]["lease_id"])
+    ):
         raise SubmissionStoreError("execution authority changed while acquiring its lock")
     return intent
 

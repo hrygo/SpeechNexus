@@ -14,16 +14,13 @@ from speechnexus_gateway.domain.recovery import ExecutionSnapshot
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     ExecutionErrorCode,
-    ExecutionRejectedError,
     ExecutionState,
     InvalidExecutionRequestError,
-    StaleSubmissionVersionError,
     StopEvidenceKind,
     SubmissionIdentity,
-    SubmissionOutcomeUnknownError,
-    SubmissionStoreError,
     max_output_audio_ms_for,
 )
+from speechnexus_gateway.interfaces.execution_transactions import execution_transaction_result
 
 
 def observation_command(request: Any) -> RecordExecutionObservation:
@@ -93,44 +90,19 @@ class ExecutionObservationBoundary:
 
     def record_execution_observation(self, request: Any) -> dict[str, Any]:
         validate_coordination("record_execution_observation", request)
-        result: dict[str, Any] = {
-            "schema_version": "1.0.0",
-            "operation": "record_execution_observation",
-            "scope_id": request["observation"]["submit_intent_id"],
-            "recovery": "none",
-        }
-        try:
+
+        def observe() -> tuple[bool, int, dict[str, object]]:
             try:
                 command = observation_command(request)
             except KeyError, TypeError, ValueError:
                 raise InvalidExecutionRequestError("incomplete execution observation") from None
             saved = self._service.record_execution_observation(command)
-            result.update(
-                outcome="replayed" if saved.version == command.expected_version else "committed",
-                version=str(saved.version),
-                value=ExecutionSnapshot(saved).response(),
+            return (
+                saved.version == command.expected_version,
+                saved.version,
+                ExecutionSnapshot(saved).response(),
             )
-        except SubmissionOutcomeUnknownError:
-            result.update(
-                outcome="unknown", error_code="outcome_unknown", recovery="query_original"
-            )
-        except SubmissionStoreError as error:
-            result.update(
-                outcome="conflict"
-                if isinstance(error, StaleSubmissionVersionError)
-                else "rejected",
-                error_code=error.code,
-                recovery=error.recovery,
-            )
-        except ExecutionRejectedError as error:
-            result.update(
-                outcome="rejected",
-                error_code=error.error_code.value,
-                recovery=(
-                    "reconcile"
-                    if error.error_code is ExecutionErrorCode.EXECUTION_CLEANUP_PENDING
-                    else "none"
-                ),
-            )
-        validate_coordination("TransactionResult", result)
-        return result
+
+        return execution_transaction_result(
+            "record_execution_observation", request["observation"]["submit_intent_id"], observe
+        )

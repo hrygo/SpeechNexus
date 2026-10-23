@@ -6,6 +6,10 @@ from typing import TypeVar, cast
 
 import pymysql
 
+from speechnexus_gateway.domain.command_redaction import (
+    AuthorizedCommandRedaction,
+    CommandRedactionResult,
+)
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
@@ -16,6 +20,9 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
 )
 from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.command_redaction_sql import (
+    redact_execution_command_in_transaction,
+)
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
 )
@@ -102,5 +109,14 @@ class MySQLSubmissionLedger:
         return self._run(
             lambda cursor: seal_barrier_in_transaction(
                 cursor, fence, clock=lambda: self._clock(cursor)
+            )
+        )
+
+    def redact_execution_command(
+        self, permit: AuthorizedCommandRedaction
+    ) -> CommandRedactionResult:
+        return self._run(
+            lambda cursor: redact_execution_command_in_transaction(
+                cursor, permit, clock=lambda: self._clock(cursor)
             )
         )

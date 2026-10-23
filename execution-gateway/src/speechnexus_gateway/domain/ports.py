@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from speechnexus_gateway.domain.command_redaction import (
+    AuthorizedCommandRedaction,
+    CommandRedactionResult,
+    RedactExecutionCommand,
+)
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
@@ -100,3 +105,19 @@ class ExecutionRecoveryLedger(Protocol):
 
 class ExecutionQueryPort(Protocol):
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None: ...
+
+
+class ExecutionCommandDeletionAuthorizer(Protocol):
+    """Verify the durable deletion job and immutable dependency scope before issuing a permit.
+
+    No default or wire-derived implementation is provided. An accepted durable deletion
+    scope must already prevent new references/executions, including during this transaction.
+    """
+
+    def authorize(self, request: RedactExecutionCommand) -> AuthorizedCommandRedaction: ...
+
+
+class ExecutionCommandRedactionLedger(Protocol):
+    def redact_execution_command(
+        self, permit: AuthorizedCommandRedaction
+    ) -> CommandRedactionResult: ...

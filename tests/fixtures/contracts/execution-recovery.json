@@ -208,6 +208,88 @@
         "expected_version": "1",
         "release_budget": true
       }
+    },
+    {
+      "id": "redaction-permit-valid",
+      "schema": "redact_execution_command",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "expected_version": "3",
+        "deletion_job_id": "deletion-test",
+        "deletion_evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    {
+      "id": "redaction-numeric-version",
+      "schema": "redact_execution_command",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "expected_version": 3,
+        "deletion_job_id": "deletion-test",
+        "deletion_evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    {
+      "id": "redaction-fabricated-evidence",
+      "schema": "redact_execution_command",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "expected_version": "3",
+        "deletion_job_id": "deletion-test",
+        "deletion_evidence_digest": "unverified"
+      }
+    },
+    {
+      "id": "redaction-wire-authority",
+      "schema": "redact_execution_command",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-test",
+        "expected_version": "3",
+        "deletion_job_id": "deletion-test",
+        "deletion_evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "authorized": true
+      }
+    },
+    {
+      "id": "redaction-full-fact-result",
+      "schema": "TransactionResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "operation": "redact_execution_command",
+        "scope_id": "intent-test",
+        "outcome": "committed",
+        "version": "4",
+        "recovery": "none",
+        "value": {
+          "kind": "fact",
+          "fact_id": "intent-test",
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "id": "redaction-uncontracted-fact",
+      "schema": "TransactionResult",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "operation": "redact_execution_command",
+        "scope_id": "intent-test",
+        "outcome": "committed",
+        "version": "4",
+        "recovery": "none",
+        "value": {
+          "kind": "fact",
+          "fact_id": "intent-test",
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "deletion_job_id": "deletion-test"
+        }
+      }
     }
   ]
 }

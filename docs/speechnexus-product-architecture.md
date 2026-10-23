@@ -398,13 +398,13 @@ VoiceDesign 随允许等待的音色创作任务按需加载并在空闲时回�
 
 每个 render_unit 固定原稿 / 工作稿 revision、章节与角色、voice_revision、pronunciation_revision、model_binding_revision、profile_revision 与文本规划 revision。编辑一段文字或换角色声音后，只将依赖该版本的单元标为 stale；未变单元可复用其已验证制品。
 
-工作台将明确选择保存的 render_unit 音频通过底座公开下载 API 获取，校验 source Artifact 摘要 / receipt 后写入自己的 saved_assets；项目引用已提交副本，而非把底座普通 30 天结果 TTL 当作永久保存承诺。复制未完成或底座源已过期时，该单元不能被标为可导出，需恢复或重做；不会把底座 Job 成功状态改成失败。
+工作台将明确选择保存的 render_unit 音频通过底座公开下载 API 获取，校验 source Artifact 摘要 / receipt 后写入自己的 saved_assets；请求、副本和 render unit 都固定 Artifact ID 与 receipt，saved asset 的 source receipt 不可为空。项目引用已提交副本，而非把底座普通 30 天结果 TTL 当作永久保存承诺。复制未完成或底座源已过期时，该单元不能被标为可导出，需恢复或重做；不会把底座 Job 成功状态改成失败。
 
-整章 / 整书合并属于工作台：`POST /v1/workbench/books/{book_id}/exports` 接收固定的 casting revision、可选单元子集和目标格式，在服务端解析不可变导出清单并分配 `manifest_revision`，以 Idempotency-Key 创建 `202 WorkbenchExportJob`。`GET /v1/workbench/exports/{export_id}` 查询，`POST .../{export_id}/cancellations` 取消，`GET .../{export_id}/content` 下载已成功的 WorkbenchExportArtifact。状态与取消 / 提交竞争采用 [作业与产物发布](architecture/runtime-governance.md#22-作业与产物发布) 的同类规则，但记录、outbox、staging 和制品提交全部位于工作台 schema / 对象区，不创建或修改底座 JobStep / Artifact。
+整章 / 整书合并属于工作台：`POST /v1/workbench/books/{book_id}/exports` 接收固定的 casting revision、可选非空单元子集和目标格式，在服务端解析不可变导出清单并分配 `manifest_revision`，以 Idempotency-Key 创建 `202 WorkbenchExportJob`。`GET /v1/workbench/exports/{export_id}` 查询，`POST .../{export_id}/cancellations` 取消，`GET .../{export_id}/content` 下载已成功的 WorkbenchExportArtifact。状态与取消 / 提交竞争采用 [作业与产物发布](architecture/runtime-governance.md#22-作业与产物发布) 的同类规则，但记录、outbox、staging 和制品提交全部位于工作台 schema / 对象区，不创建或修改底座 JobStep / Artifact。
 
 可选 workbench-export-worker 负责有界解码、格式统一、音量处理与拼接；使用单独配置的 CPU / 内存 / 并发 / 临时磁盘上限，其预留计入部署整体预算，不借用语音 realtime 保留。工作台导出不调用推理引擎，关闭工作台或导出 worker 不影响底座。导出按单元检查取消，恢复只认已提交检查点；结果先 staging、校验后原子发布，不因对象已存在就宣称成功。
 
-只有所有 required 单元存在已保存副本、版本一致、质量与格式校验通过，才发布整章 / 整书 WorkbenchExportArtifact。成品同时固定 `export_id`、与所属 Job 完全相等的 `manifest_revision`、内容摘要和大于零的字节数，使 Job 记录到期后仍能追溯实际导出清单；发布事务校验这些字段后才提交。`progress_completed` 不得超过 `progress_total`；Job 进入 `succeeded` 时两者必须相等，且存在通过上述校验的 Artifact。导出成功与 artifact.published 事件必须引用属于同一 `export_id` 的成品，不能把其他任务或旧清单的 Artifact 混入本事件流。部分成功显示明确进度，禁止将不完整 WAV、缺章清单或空文件标为成品。质量检查、试听和确认记录独立保存；首期确认者只能是匿名操作记录，不承诺角色审核或双人分权。
+只有所有 required 单元存在已保存副本、版本一致、质量与格式校验通过，才发布整章 / 整书 WorkbenchExportArtifact。成品同时固定 `export_id`、与所属 Job 完全相等的 `manifest_revision`、内容摘要和大于零的字节数，使 Job 记录到期后仍能追溯实际导出清单；发布事务校验这些字段后才提交。`progress_completed` 不得超过 `progress_total`；Job 进入 `succeeded` 时两者必须相等，且存在通过上述校验的 Artifact；queued / running / cancelling / failed / cancelled / expired 的 `artifact` 必须为 null。导出成功与 artifact.published 事件必须引用属于同一 `export_id` 的成品，不能把其他任务或旧清单的 Artifact 混入本事件流。部分成功显示明确进度，禁止将不完整 WAV、缺章清单或空文件标为成品。质量检查、试听和确认记录独立保存；首期确认者只能是匿名操作记录，不承诺角色审核或双人分权。
 
 ### 9.4 本机 / 内网 LLM
 

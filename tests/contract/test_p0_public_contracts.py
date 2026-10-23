@@ -2695,13 +2695,81 @@ def test_committed_artifacts_require_non_empty_content() -> None:
         "bytes": 1,
         "sha256": "sha256:" + "a" * 64,
         "source_artifact_id": "artifact_demo",
+        "source_receipt_id": "receipt_demo",
         "created_at": "2026-10-23T00:00:00Z",
     }
     saved_asset_validator.validate(saved_asset)
+    without_source_receipt = copy.deepcopy(saved_asset)
+    del without_source_receipt["source_receipt_id"]
+    with pytest.raises(ValidationError):
+        saved_asset_validator.validate(without_source_receipt)
     with pytest.raises(ValidationError):
         saved_asset_validator.validate({**saved_asset, "bytes": 0})
     with pytest.raises(ValidationError):
         saved_asset_validator.validate({**saved_asset, "media_type": ""})
+
+
+def test_workbench_speech_sources_pin_receipts() -> None:
+    workbench = _resolved_yaml(_WORKBENCH_OPENAPI)
+    source_validator = _component_validator(workbench, "TranscriptSource")
+    source = {
+        "kind": "speech_artifact",
+        "artifact_id": "artifact_demo",
+        "receipt_id": "receipt_demo",
+    }
+    source_validator.validate(source)
+    without_receipt = copy.deepcopy(source)
+    del without_receipt["receipt_id"]
+    with pytest.raises(ValidationError):
+        source_validator.validate(without_receipt)
+    source_validator.validate({"kind": "manual", "text": "Synthetic transcript."})
+
+    transcript = {
+        "id": "transcript_demo",
+        "object": "nexus.transcript",
+        "project_id": "project_demo",
+        "display_name": "Synthetic transcript",
+        "head_revision": "1",
+        "source_artifact_id": "artifact_demo",
+        "source_receipt_id": "receipt_demo",
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z",
+    }
+    transcript_validator = _component_validator(workbench, "Transcript")
+    transcript_validator.validate(transcript)
+    transcript_without_receipt = copy.deepcopy(transcript)
+    del transcript_without_receipt["source_receipt_id"]
+    with pytest.raises(ValidationError):
+        transcript_validator.validate(transcript_without_receipt)
+
+    revision = {
+        "id": "transcript_revision_demo",
+        "object": "nexus.transcript_revision",
+        "transcript_id": "transcript_demo",
+        "revision": "1",
+        "status": "sealed",
+        "text": "Synthetic transcript.",
+        "source_revision": None,
+        "source_artifact_id": "artifact_demo",
+        "source_receipt_id": "receipt_demo",
+        "created_at": "2026-10-23T00:00:00Z",
+    }
+    revision_validator = _component_validator(workbench, "TranscriptRevision")
+    revision_validator.validate(revision)
+    revision_without_receipt = copy.deepcopy(revision)
+    del revision_without_receipt["source_receipt_id"]
+    with pytest.raises(ValidationError):
+        revision_validator.validate(revision_without_receipt)
+
+    saved_asset_validator = _component_validator(workbench, "SavedAssetCreateRequest")
+    saved_asset_validator.validate(
+        {
+            "source_artifact_id": "artifact_demo",
+            "source_receipt_id": "receipt_demo",
+        }
+    )
+    with pytest.raises(ValidationError):
+        saved_asset_validator.validate({"source_artifact_id": "artifact_demo"})
 
 
 def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
@@ -2797,6 +2865,17 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     del artifact_without_manifest["artifact"]["manifest_revision"]
     with pytest.raises(ValidationError):
         export_job_validator.validate(artifact_without_manifest)
+    cancelled_export_with_artifact = copy.deepcopy(export_job)
+    cancelled_export_with_artifact["status"] = "cancelled"
+    with pytest.raises(ValidationError):
+        export_job_validator.validate(cancelled_export_with_artifact)
+
+    export_create_validator = _component_validator(workbench, "ExportCreateRequest")
+    export_create = {"expected_casting_revision": "2", "format": "zip"}
+    export_create_validator.validate(export_create)
+    export_create_validator.validate({**export_create, "unit_ids": ["unit_demo"]})
+    with pytest.raises(ValidationError):
+        export_create_validator.validate({**export_create, "unit_ids": []})
 
     minutes_job = copy.deepcopy(next(sample for name, sample in samples if name == "MinutesJob"))
     minutes_job["status"] = "succeeded"
@@ -2850,6 +2929,9 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     with pytest.raises(ValidationError):
         render_validator.validate(render_unit)
     render_unit["source_artifact_id"] = "speech_artifact_demo"
+    with pytest.raises(ValidationError):
+        render_validator.validate(render_unit)
+    render_unit["source_receipt_id"] = "speech_receipt_demo"
     render_validator.validate(render_unit)
 
 

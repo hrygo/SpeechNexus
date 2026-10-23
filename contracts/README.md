@@ -34,7 +34,11 @@ of defaults, units, enum domains, or stable error codes.
   owning export job and carries non-empty content. Export success / publication
   events must reference an artifact owned by the event's export job. Export
   progress cannot exceed its total; a succeeded export reports completed equal
-  to total and the manifest-pinned artifact.
+  to total and the manifest-pinned artifact. Non-succeeded jobs never expose an
+  artifact. Speech Artifact imports for transcripts, saved assets, and render
+  units pin both source Artifact and receipt; a saved asset always retains the
+  receipt, a ready render unit requires both source identities, and an explicit
+  export unit subset cannot be empty.
 - `admin-openapi.yaml`: deployment-scoped workspaces, model-binding
   and scenario-profile revision publication / activation / retirement,
   observed model instances, resource pools, policies,

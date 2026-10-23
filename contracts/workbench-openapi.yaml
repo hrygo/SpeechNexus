@@ -904,7 +904,9 @@ paths:
         Downloads the speech artifact through the public API, verifies its
         digest and receipt, then writes a workbench-owned copy. A base artifact
         expiration or deletion never mutates the speech Job; the workbench copy
-        has its own lifecycle.
+        has its own lifecycle. The request pins both the source Artifact and
+        its receipt; the persisted copy must equal the verified source digest,
+        byte count, and receipt.
       parameters:
         - $ref: "#/components/parameters/ProjectIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -984,6 +986,7 @@ paths:
         Requires every required render unit to have a saved copy whose source
         revisions match the requested manifest. The export is workbench-owned
         and never creates or modifies speech-base JobStep or Artifact records.
+        When `unit_ids` is supplied, it must select at least one unit.
       parameters:
         - $ref: "#/components/parameters/BookIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -1474,17 +1477,24 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Identifier"
             - type: "null"
+        source_receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+      dependentRequired:
+        source_artifact_id: [source_receipt_id]
+        source_receipt_id: [source_artifact_id]
     TranscriptSource:
       oneOf:
         - type: object
           additionalProperties: false
-          required: [kind, artifact_id]
+          required: [kind, artifact_id, receipt_id]
           properties:
             kind:
               const: speech_artifact
@@ -1540,9 +1550,16 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Identifier"
             - type: "null"
+        source_receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
         created_at:
           type: string
           format: date-time
+      dependentRequired:
+        source_artifact_id: [source_receipt_id]
+        source_receipt_id: [source_artifact_id]
     TranscriptRevisionCreateRequest:
       type: object
       additionalProperties: false
@@ -2113,6 +2130,38 @@ components:
       allOf:
         - if:
             properties:
+              source_artifact_id:
+                type: string
+            required: [source_artifact_id]
+          then:
+            required: [source_receipt_id]
+            properties:
+              source_receipt_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              source_receipt_id:
+                type: string
+            required: [source_receipt_id]
+          then:
+            required: [source_artifact_id]
+            properties:
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              saved_asset_id:
+                type: string
+            required: [saved_asset_id]
+          then:
+            required: [source_artifact_id, source_receipt_id]
+            properties:
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+              source_receipt_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
               status:
                 const: generating
             required: [status]
@@ -2127,11 +2176,13 @@ components:
                 const: ready
             required: [status]
           then:
-            required: [speech_job_id, source_artifact_id]
+            required: [speech_job_id, source_artifact_id, source_receipt_id]
             properties:
               speech_job_id:
                 $ref: "#/components/schemas/Identifier"
               source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+              source_receipt_id:
                 $ref: "#/components/schemas/Identifier"
     RenderUnitCreateRequest:
       type: object
@@ -2203,7 +2254,7 @@ components:
     SavedAssetCreateRequest:
       type: object
       additionalProperties: false
-      required: [source_artifact_id]
+      required: [source_artifact_id, source_receipt_id]
       properties:
         source_artifact_id:
           $ref: "#/components/schemas/Identifier"
@@ -2224,6 +2275,7 @@ components:
         - bytes
         - sha256
         - source_artifact_id
+        - source_receipt_id
         - created_at
       properties:
         id:
@@ -2247,9 +2299,7 @@ components:
         source_artifact_id:
           $ref: "#/components/schemas/Identifier"
         source_receipt_id:
-          oneOf:
-            - $ref: "#/components/schemas/Identifier"
-            - type: "null"
+          $ref: "#/components/schemas/Identifier"
         created_at:
           type: string
           format: date-time
@@ -2328,6 +2378,9 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ExportArtifact"
             - type: "null"
+          description: |
+            Present only when the export succeeds. The artifact must belong to
+            this export and pin exactly this job's manifest revision.
         error:
           oneOf:
             - $ref: "#/components/schemas/WorkbenchJobError"
@@ -2371,6 +2424,16 @@ components:
               artifact:
                 not:
                   type: "null"
+        - if:
+            properties:
+              status:
+                not:
+                  const: succeeded
+            required: [status]
+          then:
+            properties:
+              artifact:
+                type: "null"
     ExportCreateRequest:
       type: object
       additionalProperties: false
@@ -2383,6 +2446,7 @@ components:
           enum: [wav, mp3, zip]
         unit_ids:
           type: array
+          minItems: 1
           uniqueItems: true
           items:
             $ref: "#/components/schemas/Identifier"

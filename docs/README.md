@@ -45,6 +45,7 @@
 
 包内生产迁移已交付 [Job/outbox 创建与恢复](architecture/production-jobs.md)和
 [`0002_coordination` 存储/权限基线](architecture/production-coordination-storage.md)；
-这与根目录设计/测试草案分离，其余生产事务与真实集群资格继续按所有权取证。
+新增 [资产发布存储单元](architecture/production-assets.md) 使用 `0003_assets` 接入真实文本、版本化 MinIO 与保留期账本。
+这些包内实现与根目录设计/测试草案分离，其余生产事务与真实集群资格继续按所有权取证。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

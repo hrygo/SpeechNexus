@@ -59,6 +59,8 @@ SpeechNexus 希望服务于三类需求：
 
 [生产 owner 任期事务](docs/architecture/production-owners.md)已提供获取、续约、激活和当前权威查询，覆盖锁后数据库取时、完整快照及未知提交恢复；真实网关屏障、调度循环和 runtime 准入仍待对应单元。
 
+[资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；公开上传路由及常驻维护进程尚待接入，音频检查依赖 B03。
+
 ### 通过 AdminUI 维护部署
 
 AdminUI 面向部署维护者，规划提供服务概览、模型与音色管理、预设配置、资源预算、全局任务和诊断入口。工作台与 AdminUI 分别组织使用任务和维护任务。

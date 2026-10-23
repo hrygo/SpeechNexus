@@ -90,6 +90,9 @@ integration-test:
 	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \
 		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
 	./scripts/dev-env/mysql-service.sh
+	@test -n "$$SPEECHNEXUS_TEST_MINIO_ENDPOINT" && test -n "$$SPEECHNEXUS_TEST_MINIO_ACCESS_KEY" && test -n "$$SPEECHNEXUS_TEST_MINIO_SECRET_KEY" || \
+		{ echo "Isolated MinIO endpoint and test keys are required" >&2; exit 2; }
+	./scripts/dev-env/minio-test-service.sh
 	uv run pytest -m integration tests/integration -q
 
 coordination-test:

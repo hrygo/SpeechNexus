@@ -62,7 +62,7 @@ SPEECHNEXUS_TEST_MYSQL_URL=mysql://root:speechnexus_test@127.0.0.1:55434/ \
 ```
 
 This target fails immediately unless **both** DSNs are set, and
-`make integration-test` requires the same pair. The shared transaction suite
+`make integration-test` additionally requires explicit isolated MinIO endpoint/test keys (see below). The shared transaction suite
 also reports a failure, not a skip, when exactly one engine is configured:
 one engine alone is never dual-database evidence. A normal pytest run with
 neither DSN skips the integration cases; a skip is not qualification evidence.
@@ -123,3 +123,18 @@ and [application handoff](../../docs/architecture/coordination-transactions.md).
 Cluster support is mandatory; the current single-node environment does not
 relax any of those acceptance requirements. MySQL coordination qualification
 does not add full product MySQL support.
+
+## Asset publication
+
+`test_assets.py` exercises the PG product adapter and actual versioned MinIO with synthetic UTF-8 content. It applies migration head `0003_assets`, fresh minimum runtime grants, unique disposable buckets, uncertain write/commit replies, same-key contention, verified Range and reference/retention cleanup. It is PG-only product coverage; InnoDB continues to qualify the shared coordination paths. When database DSNs are configured, missing object-storage inputs fail rather than skip.
+
+```bash
+./scripts/dev-env/minio-test-service.sh
+export SPEECHNEXUS_TEST_MINIO_ENDPOINT=http://127.0.0.1:59000
+export SPEECHNEXUS_TEST_MINIO_ACCESS_KEY=speechnexus_test
+export SPEECHNEXUS_TEST_MINIO_SECRET_KEY=synthetic_asset_test_secret
+# Set both isolated database DSNs above.
+make integration-test
+```
+
+The helper provisions an isolated synthetic service only; tests enable versioning on their own buckets. The product never creates a bucket or changes its policy. See [production assets](../../docs/architecture/production-assets.md) for recovery limits, explicit TTL configuration, minimum-role boundaries and the subsequent HTTP/maintenance integration.

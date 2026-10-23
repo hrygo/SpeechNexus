@@ -1566,6 +1566,9 @@ def test_binding_instance_and_qualification_positive_and_negative_examples() -> 
     quarantined_instance["quarantine_reason"] = None
     with pytest.raises(ValidationError):
         instance_validator.validate(quarantined_instance)
+    quarantined_instance["quarantine_reason"] = "   "
+    with pytest.raises(ValidationError):
+        instance_validator.validate(quarantined_instance)
 
     qualification_schema = _load_json(_QUALIFICATION_SCHEMA)
     qualification_validator = _validator(qualification_schema)
@@ -2877,6 +2880,40 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
     with pytest.raises(ValidationError):
         export_create_validator.validate({**export_create, "unit_ids": []})
 
+    minutes_create_validator = _component_validator(workbench, "MinutesCreateRequest")
+    minutes_create_validator.validate({"template_revision": "1", "llm_model": "local-llm"})
+    with pytest.raises(ValidationError):
+        minutes_create_validator.validate({"template_revision": "1", "llm_model": ""})
+
+    voice = {"id": "voice_demo", "revision": "1"}
+    turn_create_validator = _component_validator(workbench, "AssistantTurnCreateRequest")
+    turn_create_validator.validate(
+        {"input_text": "Synthetic input.", "voice": voice, "model": "local-llm"}
+    )
+    with pytest.raises(ValidationError):
+        turn_create_validator.validate(
+            {"input_text": "Synthetic input.", "voice": voice, "model": ""}
+        )
+
+    render_create_validator = _component_validator(workbench, "RenderUnitCreateRequest")
+    render_create_validator.validate(
+        {
+            "ordinal": 0,
+            "text": "Synthetic narration unit.",
+            "voice": voice,
+            "model": "tts-quality",
+        }
+    )
+    with pytest.raises(ValidationError):
+        render_create_validator.validate(
+            {
+                "ordinal": 0,
+                "text": "Synthetic narration unit.",
+                "voice": voice,
+                "model": "",
+            }
+        )
+
     minutes_job = copy.deepcopy(next(sample for name, sample in samples if name == "MinutesJob"))
     minutes_job["status"] = "succeeded"
     minutes_job["error"] = None
@@ -2947,6 +2984,9 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         render_validator.validate(render_unit)
     render_unit["source_receipt_id"] = "speech_receipt_demo"
     render_validator.validate(render_unit)
+    render_unit["model"] = ""
+    with pytest.raises(ValidationError):
+        render_validator.validate(render_unit)
 
 
 def test_workbench_meeting_terminal_states_are_consistent() -> None:

@@ -65,7 +65,7 @@
     },
     "quarantine_reason": {
       "oneOf": [
-        {"type": "string", "minLength": 1, "maxLength": 2000},
+        {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
         {"type": "null"}
       ]
     }

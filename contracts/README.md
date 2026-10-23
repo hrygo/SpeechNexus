@@ -107,7 +107,7 @@ of defaults, units, enum domains, or stable error codes.
 - `model-instance.schema.json`: internal runtime instance identity, generation,
   configuration digest, readiness, observed facts, stop evidence, and
   quarantine state. `quarantine_reason` is present only for a quarantined
-  instance.
+  instance and cannot be whitespace-only.
 - `qualification-report.schema.json`: per-binding, per-topology qualification
   evidence, including the exact image and runtime identity for every execution
   stage. A production release tier requires all required scenarios to pass.

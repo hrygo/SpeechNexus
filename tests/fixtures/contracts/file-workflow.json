@@ -1,0 +1,1031 @@
+{
+  "version": "0.1.0",
+  "examples": [
+    {
+      "id": "asr-request",
+      "schema": "JobCreateRequest",
+      "valid": true,
+      "value": {
+        "kind": "asr",
+        "model": "asr-quality",
+        "input": {
+          "audio_asset_id": "asset-demo"
+        },
+        "output": {
+          "transcript_format": "json",
+          "save_artifacts": true
+        }
+      }
+    },
+    {
+      "id": "tts-request",
+      "schema": "JobCreateRequest",
+      "valid": true,
+      "value": {
+        "kind": "tts",
+        "model": "tts-quality",
+        "input": {
+          "text": "Synthetic test."
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "1"
+        }
+      }
+    },
+    {
+      "id": "ready-audio",
+      "schema": "Asset",
+      "valid": true,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "artifact",
+      "schema": "Artifact",
+      "valid": true,
+      "value": {
+        "id": "artifact-demo",
+        "object": "nexus.artifact",
+        "workspace_id": "ws-default",
+        "kind": "transcript",
+        "status": "ready",
+        "media_type": "application/json",
+        "bytes": 128,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "succeeded-job",
+      "schema": "Job",
+      "valid": true,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [
+          {
+            "artifact_id": "artifact-demo",
+            "kind": "transcript",
+            "media_type": "application/json",
+            "bytes": 128,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "receipt_id": "receipt-demo"
+          }
+        ],
+        "result": {
+          "kind": "asr",
+          "transcript_artifact_id": "artifact-demo",
+          "receipt_id": "receipt-demo"
+        },
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "queued-job",
+      "schema": "Job",
+      "valid": true,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "queued",
+        "cleanup_state": "pending",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [],
+        "result": null,
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "job-list",
+      "schema": "JobList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "job-demo",
+            "object": "nexus.job",
+            "kind": "asr",
+            "status": "queued",
+            "cleanup_state": "pending",
+            "request_id": "req-demo",
+            "workspace_id": "ws-default",
+            "execution_revision": "1",
+            "progress": {
+              "unit": "audio_ms",
+              "completed": 1,
+              "total": 1
+            },
+            "artifacts": [],
+            "result": null,
+            "operations": [],
+            "effective_configuration": {
+              "models": {
+                "asr": {
+                  "id": "asr-quality",
+                  "revision": "1"
+                }
+              },
+              "policy_revision": "1",
+              "catalog_revision": "1"
+            },
+            "created_at": "2026-10-23T00:00:00Z",
+            "updated_at": "2026-10-23T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "asset-upload",
+      "schema": "AssetUploadRequest",
+      "valid": true,
+      "value": {
+        "file": "synthetic.wav",
+        "purpose": "asr_input"
+      }
+    },
+    {
+      "id": "cancel-job",
+      "schema": "JobCancellation",
+      "valid": true,
+      "value": {
+        "job_id": "job-demo",
+        "accepted": true,
+        "status": "cancelling",
+        "cleanup_state": "pending",
+        "cancellation_requested_at": "2026-10-23T00:00:00Z",
+        "operations": []
+      }
+    },
+    {
+      "id": "operation",
+      "schema": "Operation",
+      "valid": true,
+      "value": {
+        "id": "op-demo",
+        "object": "nexus.operation",
+        "kind": "asr",
+        "status": "running",
+        "cleanup_state": "pending",
+        "execution_revision": "1",
+        "job_id": "job-demo",
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "cancel-operation",
+      "schema": "OperationCancellation",
+      "valid": true,
+      "value": {
+        "operation_id": "op-demo",
+        "accepted": true,
+        "status": "running",
+        "cleanup_state": "pending",
+        "cancellation_requested_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "recover-operation",
+      "schema": "ErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "operation_in_progress",
+          "type": "invalid_request_error",
+          "message": "Query the original operation.",
+          "param": null,
+          "request_id": "req-demo",
+          "retryable": false,
+          "nexus": {
+            "operation_id": "op-demo"
+          }
+        }
+      }
+    },
+    {
+      "id": "job.queued",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "1",
+        "type": "job.queued",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "id": "job.started",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "2",
+        "type": "job.started",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:01Z",
+        "data": {
+          "status": "running",
+          "execution_revision": "1"
+        }
+      }
+    },
+    {
+      "id": "job.progress",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "3",
+        "type": "job.progress",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:02Z",
+        "data": {
+          "status": "running",
+          "progress": {
+            "unit": "text_codepoints",
+            "completed": 4,
+            "total": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "job.retry_scheduled",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "4",
+        "type": "job.retry_scheduled",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:03Z",
+        "data": {
+          "status": "retry_wait",
+          "attempt": 1,
+          "max_attempts": 3,
+          "retry_at": "2026-10-23T00:00:08Z",
+          "error": {
+            "code": "engine_unavailable",
+            "message": "synthetic transient engine failure",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "job.cancelling",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "5",
+        "type": "job.cancelling",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:04Z",
+        "data": {
+          "status": "cancelling"
+        }
+      }
+    },
+    {
+      "id": "job.succeeded",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "6",
+        "type": "job.succeeded",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:05Z",
+        "data": {
+          "status": "succeeded",
+          "cleanup_state": "complete",
+          "artifacts": [
+            {
+              "artifact_id": "artifact_demo",
+              "kind": "audio",
+              "media_type": "audio/wav",
+              "bytes": 1024,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "receipt_id": "receipt_demo"
+            }
+          ],
+          "result": {
+            "kind": "tts",
+            "audio_artifact_id": "artifact_demo",
+            "receipt_id": "receipt_demo"
+          }
+        }
+      }
+    },
+    {
+      "id": "job.failed",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "7",
+        "type": "job.failed",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:06Z",
+        "data": {
+          "status": "failed",
+          "cleanup_state": "quarantined",
+          "error": {
+            "code": "engine_failure",
+            "message": "synthetic terminal engine failure",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "job.cancelled",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "8",
+        "type": "job.cancelled",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:07Z",
+        "data": {
+          "status": "cancelled",
+          "cleanup_state": "complete"
+        }
+      }
+    },
+    {
+      "id": "job.expired",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "9",
+        "type": "job.expired",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:08Z",
+        "data": {
+          "status": "expired",
+          "cleanup_state": "not_required"
+        }
+      }
+    },
+    {
+      "id": "job.cleanup_updated",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "10",
+        "type": "job.cleanup_updated",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:09Z",
+        "data": {
+          "cleanup_state": "pending",
+          "operations": [
+            {
+              "operation_id": "op_demo",
+              "kind": "tts",
+              "status": "running",
+              "cleanup_state": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "artifact.published",
+      "schema": "JobEvent",
+      "valid": true,
+      "value": {
+        "id": "11",
+        "type": "artifact.published",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:10Z",
+        "data": {
+          "artifact": {
+            "artifact_id": "artifact_demo",
+            "kind": "audio",
+            "media_type": "audio/wav",
+            "bytes": 1024,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      }
+    },
+    {
+      "id": "unknown-field",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "asr",
+        "model": "asr-quality",
+        "input": {
+          "audio_asset_id": "asset-demo"
+        },
+        "output": {
+          "transcript_format": "json",
+          "save_artifacts": true
+        },
+        "unexpected": true
+      }
+    },
+    {
+      "id": "numeric-string",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": "4096",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "boolean-number",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": true,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "fraction-number",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 1.5,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "empty-ready-audio",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 0,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "audio-missing-duration",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": null,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "text-has-audio-metadata",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "text_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "invalid-date",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "ready",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "yesterday"
+      }
+    },
+    {
+      "id": "unknown-asset-state",
+      "schema": "Asset",
+      "valid": false,
+      "value": {
+        "id": "asset-demo",
+        "object": "nexus.asset",
+        "workspace_id": "ws-default",
+        "purpose": "asr_input",
+        "status": "success",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "duration_ms": 1000,
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "empty-artifact",
+      "schema": "Artifact",
+      "valid": false,
+      "value": {
+        "id": "artifact-demo",
+        "object": "nexus.artifact",
+        "workspace_id": "ws-default",
+        "kind": "transcript",
+        "status": "ready",
+        "media_type": "application/json",
+        "bytes": 0,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "unreleased-success",
+      "schema": "Job",
+      "valid": false,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "quarantined",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [
+          {
+            "artifact_id": "artifact-demo",
+            "kind": "transcript",
+            "media_type": "application/json",
+            "bytes": 128,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "receipt_id": "receipt-demo"
+          }
+        ],
+        "result": {
+          "kind": "asr",
+          "transcript_artifact_id": "artifact-demo",
+          "receipt_id": "receipt-demo"
+        },
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "missing-success-result",
+      "schema": "Job",
+      "valid": false,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [
+          {
+            "artifact_id": "artifact-demo",
+            "kind": "transcript",
+            "media_type": "application/json",
+            "bytes": 128,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "receipt_id": "receipt-demo"
+          }
+        ],
+        "result": null,
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "queued-has-result",
+      "schema": "Job",
+      "valid": false,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "queued",
+        "cleanup_state": "pending",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [],
+        "result": {
+          "kind": "asr",
+          "transcript_artifact_id": "artifact-demo",
+          "receipt_id": "receipt-demo"
+        },
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "failed-without-error",
+      "schema": "Job",
+      "valid": false,
+      "value": {
+        "id": "job-demo",
+        "object": "nexus.job",
+        "kind": "asr",
+        "status": "failed",
+        "cleanup_state": "pending",
+        "request_id": "req-demo",
+        "workspace_id": "ws-default",
+        "execution_revision": "1",
+        "progress": {
+          "unit": "audio_ms",
+          "completed": 1,
+          "total": 1
+        },
+        "artifacts": [],
+        "result": null,
+        "operations": [],
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-quality",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "cancelled-retains-capacity",
+      "schema": "JobCancellation",
+      "valid": false,
+      "value": {
+        "job_id": "job-demo",
+        "accepted": true,
+        "status": "cancelled",
+        "cleanup_state": "quarantined",
+        "cancellation_requested_at": "2026-10-23T00:00:00Z",
+        "operations": []
+      }
+    },
+    {
+      "id": "operation-dual-owner",
+      "schema": "Operation",
+      "valid": false,
+      "value": {
+        "id": "op-demo",
+        "object": "nexus.operation",
+        "kind": "asr",
+        "status": "running",
+        "cleanup_state": "pending",
+        "execution_revision": "1",
+        "job_id": "job-demo",
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z",
+        "session_id": "session-demo"
+      }
+    },
+    {
+      "id": "operation-success-no-receipt",
+      "schema": "Operation",
+      "valid": false,
+      "value": {
+        "id": "op-demo",
+        "object": "nexus.operation",
+        "kind": "asr",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "execution_revision": "1",
+        "job_id": "job-demo",
+        "created_at": "2026-10-23T00:00:00Z",
+        "updated_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "cancel-bool-coercion",
+      "schema": "OperationCancellation",
+      "valid": false,
+      "value": {
+        "operation_id": "op-demo",
+        "accepted": "true",
+        "status": "running",
+        "cleanup_state": "pending",
+        "cancellation_requested_at": "2026-10-23T00:00:00Z"
+      }
+    },
+    {
+      "id": "recovery-missing-identity",
+      "schema": "ErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "operation_in_progress",
+          "type": "invalid_request_error",
+          "message": "Query the original operation.",
+          "param": null,
+          "request_id": "req-demo",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "id": "tts-input-union",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "tts-quality",
+        "input": {
+          "text": "Synthetic test.",
+          "text_asset_id": "asset-text"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "1"
+        }
+      }
+    },
+    {
+      "id": "disable-durable-output",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "asr",
+        "model": "asr-quality",
+        "input": {
+          "audio_asset_id": "asset-demo"
+        },
+        "output": {
+          "transcript_format": "json",
+          "save_artifacts": false
+        }
+      }
+    },
+    {
+      "id": "event-private-field",
+      "schema": "JobEvent",
+      "valid": false,
+      "value": {
+        "id": "1",
+        "type": "job.queued",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "queued",
+          "object_key": "must-not-leak"
+        }
+      }
+    },
+    {
+      "id": "event-kind-mismatch",
+      "schema": "JobEvent",
+      "valid": false,
+      "value": {
+        "id": "1",
+        "type": "job.queued",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "succeeded"
+        }
+      }
+    },
+    {
+      "id": "event-success-no-artifact",
+      "schema": "JobEvent",
+      "valid": false,
+      "value": {
+        "id": "6",
+        "type": "job.succeeded",
+        "job_id": "job_demo",
+        "occurred_at": "2026-10-23T00:00:05Z",
+        "data": {
+          "status": "succeeded",
+          "cleanup_state": "complete",
+          "artifacts": [],
+          "result": {
+            "kind": "tts",
+            "audio_artifact_id": "artifact_demo",
+            "receipt_id": "receipt_demo"
+          }
+        }
+      }
+    },
+    {
+      "id": "JobList-unknown-field",
+      "schema": "JobList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "job-demo",
+            "object": "nexus.job",
+            "kind": "asr",
+            "status": "queued",
+            "cleanup_state": "pending",
+            "request_id": "req-demo",
+            "workspace_id": "ws-default",
+            "execution_revision": "1",
+            "progress": {
+              "unit": "audio_ms",
+              "completed": 1,
+              "total": 1
+            },
+            "artifacts": [],
+            "result": null,
+            "operations": [],
+            "effective_configuration": {
+              "models": {
+                "asr": {
+                  "id": "asr-quality",
+                  "revision": "1"
+                }
+              },
+              "policy_revision": "1",
+              "catalog_revision": "1"
+            },
+            "created_at": "2026-10-23T00:00:00Z",
+            "updated_at": "2026-10-23T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "AssetUploadRequest-unknown-field",
+      "schema": "AssetUploadRequest",
+      "valid": false,
+      "value": {
+        "file": "synthetic.wav",
+        "purpose": "asr_input",
+        "unexpected": true
+      }
+    }
+  ]
+}

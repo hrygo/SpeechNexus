@@ -66,6 +66,19 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --all-packages --all-groups
 
+      - name: Set up Node.js for reproducible contract generation
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install locked contract generation tools
+        run: |
+          npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
+          pnpm install --frozen-lockfile
+
+      - name: Reject generated contract drift
+        run: make contracts-drift
+
       - name: Check breaking changes to OpenAI-compatible contracts
         if: github.event_name == 'pull_request'
         env:

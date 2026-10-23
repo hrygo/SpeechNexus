@@ -1,0 +1,17 @@
+{
+  "version": "0.1.0",
+  "source": "speech-openapi.yaml",
+  "schemas": [
+    "JobCreateRequest",
+    "Job",
+    "JobList",
+    "JobEvent",
+    "JobCancellation",
+    "AssetUploadRequest",
+    "Asset",
+    "Artifact",
+    "Operation",
+    "OperationCancellation",
+    "ErrorResponse"
+  ]
+}

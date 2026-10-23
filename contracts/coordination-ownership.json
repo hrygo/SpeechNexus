@@ -1,0 +1,192 @@
+{
+  "version": "1.0.0",
+  "contract": "internal/coordination-transactions.schema.json",
+  "ports": {
+    "acquire_owner": {
+      "owner": "A",
+      "writes": ["resource_pools"],
+      "producer": "Scheduler",
+      "consumer": "owner repository"
+    },
+    "renew_owner": {
+      "owner": "A",
+      "writes": ["resource_pools"],
+      "producer": "Scheduler",
+      "consumer": "owner repository"
+    },
+    "activate_owner": {
+      "owner": "A",
+      "writes": ["resource_pools"],
+      "producer": "Scheduler reconciler",
+      "consumer": "owner repository"
+    },
+    "admit_recipe": {
+      "owner": "A",
+      "writes": [
+        "workspace_quotas",
+        "host_nodes",
+        "engine_instances",
+        "admission_attempts",
+        "admission_leases",
+        "coordination_jobs",
+        "coordination_outbox"
+      ],
+      "producer": "Scheduler",
+      "consumer": "admission transaction"
+    },
+    "create_job": {
+      "owner": "A",
+      "writes": ["coordination_jobs", "coordination_outbox"],
+      "producer": "speech application",
+      "consumer": "job transaction"
+    },
+    "claim_job": {
+      "owner": "A",
+      "writes": ["coordination_jobs"],
+      "producer": "Worker",
+      "consumer": "job repository"
+    },
+    "quarantine_lease": {
+      "owner": "A",
+      "writes": [
+        "admission_leases",
+        "admission_attempts",
+        "workspace_quotas",
+        "engine_instances",
+        "host_nodes"
+      ],
+      "producer": "Scheduler reconciler",
+      "consumer": "admission transaction"
+    },
+    "release_lease": {
+      "owner": "A",
+      "writes": [
+        "admission_leases",
+        "admission_attempts",
+        "workspace_quotas",
+        "engine_instances",
+        "host_nodes"
+      ],
+      "producer": "Scheduler reconciler",
+      "consumer": "admission transaction"
+    },
+    "create_runtime_intent": {
+      "owner": "A",
+      "writes": [
+        "runtime_instance_heads",
+        "runtime_instance_intents",
+        "engine_instances",
+        "host_nodes",
+        "coordination_outbox"
+      ],
+      "producer": "Scheduler",
+      "consumer": "runtime transaction"
+    },
+    "observe_runtime": {
+      "owner": "A",
+      "writes": [
+        "runtime_instance_intents",
+        "engine_instances",
+        "host_nodes",
+        "runtime_instance_heads"
+      ],
+      "producer": "controller/gateway observations",
+      "consumer": "runtime transaction"
+    },
+    "seal_barrier": {
+      "owner": "B",
+      "writes": ["gateway_fencing_barriers"],
+      "producer": "gateway ingress",
+      "consumer": "gateway transaction"
+    },
+    "create_submit": {
+      "owner": "B",
+      "writes": ["submit_intents", "output_stream_heads"],
+      "producer": "gateway application",
+      "consumer": "execution transaction"
+    },
+    "mark_execution_unknown": {
+      "owner": "B",
+      "writes": ["submit_intents"],
+      "producer": "gateway reconciler",
+      "consumer": "execution transaction"
+    },
+    "record_stop": {
+      "owner": "B",
+      "writes": ["execution_stop_evidence", "submit_intents"],
+      "producer": "verified engine/controller/operator observation",
+      "consumer": "execution transaction"
+    },
+    "record_execution_observation": {
+      "owner": "B",
+      "writes": ["submit_intents"],
+      "producer": "gateway adapter",
+      "consumer": "execution transaction"
+    },
+    "redact_execution_command": {
+      "owner": "B",
+      "writes": ["submit_intents"],
+      "producer": "deletion coordinator",
+      "consumer": "gateway cleanup transaction"
+    },
+    "append_interval": {
+      "owner": "B",
+      "writes": ["output_stream_heads", "output_sample_intervals", "submit_intents"],
+      "producer": "gateway meter",
+      "consumer": "interval transaction"
+    },
+    "query_outcome": {
+      "owner": "fact-owner",
+      "writes": [],
+      "producer": "original caller",
+      "consumer": "owning repository"
+    }
+  },
+  "tables": {
+    "resource_pools": "A",
+    "workspace_quotas": "A",
+    "host_nodes": "A",
+    "engine_instances": "A",
+    "admission_attempts": "A",
+    "admission_leases": "A",
+    "coordination_jobs": "A",
+    "coordination_outbox": "A",
+    "runtime_instance_heads": "A",
+    "runtime_instance_intents": "A",
+    "gateway_fencing_barriers": "B",
+    "submit_intents": "B",
+    "output_stream_heads": "B",
+    "execution_stop_evidence": "B",
+    "output_sample_intervals": "B"
+  },
+  "query_outcome": {
+    "pool": {
+      "owner": "A",
+      "snapshot": "OwnerSnapshot"
+    },
+    "attempt": {
+      "owner": "A",
+      "snapshot": "AdmissionSnapshot"
+    },
+    "job": {
+      "owner": "A",
+      "snapshot": "ClaimSnapshot"
+    },
+    "submit": {
+      "owner": "B",
+      "snapshot": "ExecutionSnapshot"
+    },
+    "lease": {
+      "owner": "A",
+      "snapshot": "LeaseSnapshot"
+    },
+    "interval": {
+      "owner": "B",
+      "snapshot": "FactSnapshot"
+    },
+    "runtime_intent": {
+      "owner": "A",
+      "snapshot": "RuntimeSnapshot"
+    }
+  }
+}

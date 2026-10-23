@@ -1,0 +1,62 @@
+# 契约与协调事务交接责任
+
+本文件配合 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)。机器矩阵为
+[`coordination-ownership.json`](../../contracts/coordination-ownership.json)，
+测试核对 18 端口、15 张当前草案表和 `query_outcome` 快照映射。
+矩阵描述目标归属，不证明端口已实现。生产事务进度继续在 A01/B00–B06 跟踪。
+
+## 契约生产者与消费者
+
+| 契约                                 | 实现/事实所有者             | 消费者                            | 交接状态                                          |
+| ------------------------------------ | --------------------------- | --------------------------------- | ------------------------------------------------- |
+| speech OpenAPI                       | A                           | C 工作台后端/Web、MCP；A 公共接口 | 首批文件闭环类型/校验见独立契约包；实际路由待实施 |
+| admin OpenAPI                        | A；B 提供实例/资格事实      | C 管理界面                        | 源契约和变更清单；生成/消费联调待补               |
+| workbench OpenAPI                    | C                           | C Web/MCP                         | 源契约和变更清单；生成/消费联调待补               |
+| realtime events                      | A；B 提供执行流事实         | C 浏览器/A 实时入口               | 源契约；生成/序列消费验证待补                     |
+| execution control / stream / command | B；A 编排调用方             | A Scheduler/Worker/实时服务       | 源契约；生产联调待补                              |
+| runtime control                      | B 控制器；A 生命周期编排    | A/B                               | 源契约；生产联调待补                              |
+| coordination transactions            | A speech/runtime；B gateway | 各自 application 与 adapter       | 下表冻结归属；生产事务分别实施                    |
+
+公共契约、生成器、锁文件和 CI 由 A 串行集成。C 不导入 speech 内部模块，也不共写
+speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、类型、运行时校验和样例见
+[`packages/contracts`](../../packages/contracts/README.md)。Python 使用生成 TypedDict
+加权威 JSON Schema 校验；类型本身不承诺状态或跨字段约束。
+
+## 18 个端口
+
+| 端口                                                  | 主责           | 权威写入范围                                                             |
+| ----------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |
+| acquire_owner / renew_owner / activate_owner          | A              | resource_pools                                                           |
+| admit_recipe                                          | A              | quota、host/instance 投影、attempt、完整阶段 leases、Job/outbox 同一事务 |
+| create_job                                            | A              | coordination_jobs、coordination_outbox 同一事务                          |
+| claim_job                                             | A              | coordination_jobs                                                        |
+| quarantine_lease / release_lease                      | A              | lease、attempt、quota、host/instance 投影                                |
+| create_runtime_intent / observe_runtime               | A              | runtime head/intent、instance、host；创建 intent 同事务 outbox           |
+| seal_barrier                                          | B              | gateway_fencing_barriers                                                 |
+| create_submit                                         | B              | submit_intents、output_stream_heads                                      |
+| mark_execution_unknown / record_execution_observation | B              | submit_intents                                                           |
+| record_stop                                           | B              | execution_stop_evidence、submit_intents                                  |
+| redact_execution_command                              | B              | submit_intents 正文清除与删除证据；不删最小执行事实                      |
+| append_interval                                       | B              | output_stream_heads、output_sample_intervals、submit 计量投影            |
+| query_outcome                                         | 对应事实 owner | 只读原身份，不发起执行                                                   |
+
+机器矩阵逐个列出 producer/consumer 和表。表名不授予任意列修改权；实际最低权限以
+[`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 和版本化迁移为准。
+配置列由控制面维护，运行角色不能提高配额或预算；跨 owner 的锁定版本列不代表
+业务所有权转移。该表是草案协调表范围，不是全产品表清单。
+
+## 未知结果恢复映射
+
+| 查询目标       | 快照              | owner |
+| -------------- | ----------------- | ----- |
+| pool           | OwnerSnapshot     | A     |
+| attempt        | AdmissionSnapshot | A     |
+| job            | ClaimSnapshot     | A     |
+| submit         | ExecutionSnapshot | B     |
+| lease          | LeaseSnapshot     | A     |
+| interval       | FactSnapshot      | B     |
+| runtime_intent | RuntimeSnapshot   | A     |
+
+unknown 只能查询原身份或协调，不能新建执行普通重试。B 的区间账本由 A 消费用于
+配额与结算。取消请求、TTL 和断线不是停止/释放证据。完整锁序、跨表裁决及最低
+证据要求仍以[协调事务设计](coordination-transactions.md)为准。

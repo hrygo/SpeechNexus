@@ -9,7 +9,9 @@
 - [资源治理与持久化](runtime-governance.md)：调度、fencing、用量、发布与数据生命周期。
 - [规范执行命令](execution-command.md)：完整参数、摘要与内部 TTS 文本流。
 - [数据删除](data-deletion.md)：依赖预检、级联确认、清理证据和恢复账本。
-- [分布式协调与容量治理 Schema（P0-B 草案）](distributed-coordination-schema.md)：三级资源拓扑表、分池租约、网关提交屏障、锁顺序与原子事务模板。
+- [精简协调 Schema](distributed-coordination-schema.md)：普通约束、当前指针、表所有权与历史保护；[旧 PG 原型](legacy-postgresql-coordination.md)保留历史证据。
+- [应用事务方案与契约](coordination-transactions.md)：程序职责、锁序、预算、恢复身份、旧规则映射和后续编码交接。
+- [集群协调与存储可移植性决定](../decisions/0006-cluster-coordination-and-storage-portability.md)：集群能力不降级、应用事务边界与数据库支持范围；[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)记录实际交付与待验收范围。
 - [UI/UX 设计框架与设计 Token 系统](ui-ux-design-framework-and-tokens.md)：2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系。
 - [SpeechRail 复用边界](speechrail-reuse.md)：领域经验、来源和移植条件。
 

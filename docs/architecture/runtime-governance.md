@@ -1,13 +1,20 @@
 ---
 title: "SpeechNexus 资源治理与持久化设计"
 status: active
-version: "0.5.5"
+version: "0.5.7"
 date: 2026-10-23
 ---
 
 # SpeechNexus 资源治理与持久化设计
 
 本文负责容量准入、调度、取消 / 接管、用量、持久任务与数据生命周期，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。首期按部署 / 工作空间 / 执行类别治理，不建设用户或租户权限。硬件配置由部署资格确定；以下规则是待实现的不变量，不能代替实际容量、质量与恢复验证。
+
+[ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)已将跨表
+规则的主要执行边界调整为受控应用事务。PostgreSQL 是唯一正式交付数据库，
+MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承担协调权威。
+活动 DDL 已精简，规则的程序实现见[受控事务方案与契约](coordination-transactions.md)；
+测试/工具原型在真实 PostgreSQL 与 MySQL 上验证关键路径。生产调度、运行时接入与完整
+集群故障资格仍按[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)完成。
 
 ## 1. 硬件无关的资源准入与调度
 
@@ -69,9 +76,9 @@ date: 2026-10-23
 
 ### 1.4 多进程一致性与 fencing
 
-每个 pool 的调度 owner 使用 PostgreSQL 租约与递增 fencing token。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
+每个 pool 的调度 owner 使用关系数据库持久租约与递增 fencing token，正式适配器为 PostgreSQL。容量预留在事务中原子完成，lease 绑定 operation、engine 与 token；所有回写都验证 attempt 与 fencing。API 副本不能使用各自内存中的 semaphore 充当全局准入。
 
-管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。数据库在事务结束时校验 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与全部 admission lease 状态推导值；计数不一致、删除或 truncate 会计历史都必须回滚。
+管理面 `ResourcePool` 是跨节点聚合投影：`realtime_reserved_slots <= max_active_slots`，`active_slots + quarantine_slots <= max_active_slots`；任何计数都不能把隔离容量当成空闲容量。`status=ready` 必须至少有一个贡献节点和正容量，否则只能是 `degraded` / `unavailable`。聚合计数变化与节点租约账目保持同一事务口径，不能先展示可接单再补扣隔离槽位。受控应用事务必须使 host 与 instance 的 reserved / incremental / quarantine 投影等于实例基础预算与 admission lease 状态推导值；通过同一事务维护租约和预算、核对参与资源的当前状态/版本保证一致性，检查失败整体回滚。历史保护和最小写入权限继续保留，后台对账不能替代同步防超卖；不再强制由 PostgreSQL 延迟约束触发器完成跨表校验。
 
 `ExecutionControlPort` 的权威实现是每个 engine / stage 的受控 execution gateway，它独占该引擎网络入口与凭据。gateway 将“核验当前 reservation、attempt、policy / 资源 revision 与 token → 写入唯一 submit intent → 放行本次提交”串行化；先将状态记为 submitting 并占住预算，再向引擎发送。每个 intent 有可查询的 engine request_id 或确定的引擎侧关联证据；submitting 与传输结果未知都仍占用资源，不能当作未开始而免费重试。
 
@@ -83,7 +90,7 @@ date: 2026-10-23
 
 隔离账目覆盖统一内存、设备内存、主机内存、CPU 解码、PCM 缓冲和 scratch 磁盘，并与 reserved 计数共同受节点 allocatable 上限约束。隔离量超过 `quarantine_threshold_ratio` 时，节点不得保持 `ready`，同一事务转入 `quarantined` 或 `draining`。退出隔离只能依据执行网关或节点控制器确认旧执行终止且资源释放的证据，或人工独立核验后的 `operator_verified_instance_terminated` 证据；释放事务必须同时扣减隔离账目、关闭 admission lease 并恢复对应槽位。人工释放还必须保存证据摘要、观察时间和原因，观察时间不得晚于实际预算释放时间；重复请求回显原事实，不重新解释证据。阈值以下不会自动恢复接单，仍须通过部署健康检查重新确认节点、入口和容量资格。
 
-数据库是上述终止与释放规则的兜底边界，而不是只靠应用顺序：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；隔离观察时间与释放证据不可改写；gateway fencing barrier 保持 sealed 且 token 不下降；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一约束失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。
+依照 ADR 0006，受控应用事务必须执行以下规则：`submit_intents` 只能在仍可执行的 admission lease 上插入；活动 `submit_intents` 不得附上停止证据；终态执行的状态、稳定错误码与停止证据不可改写；admission lease 只有在附属执行离开活动状态后才能进入 `released` / `quarantined`，`released` 不得遗留未关闭的 `unknown_quarantined`；隔离观察时间与释放证据不可改写；gateway fencing barrier 保持 sealed 且 token 不下降；engine generation 只有在所有 lease 已释放且没有非终态 intent 时才能转为 `stopped`。任一检查失败都必须回滚整个协调事务，不能先释放部分预算再等待后台补偿。数据库提供原子性、基础约束和最小权限，不再承诺独立拦截所有绕过受控入口的直接 SQL 跨表违例；所有正常运行写入必须经过明确事务操作，并接受同一套真实并发与故障测试。
 
 ### 1.5 准入与引擎内部 batching 的关系
 
@@ -187,5 +194,6 @@ queued / retry_wait → cancelled / expired
 
 
 主动删除的机器入口、依赖版本 pin、确认范围、异步清理状态、独立副本和恢复屏障
-见[数据删除与依赖裁决](data-deletion.md)。容量每槽六维下限、运行角色权限与活跃
-对账队列见[协调事务草案](distributed-coordination-schema.md)，删除不得清除其证据。
+见[数据删除与依赖裁决](data-deletion.md)。容量每槽六维下限、运行角色权限与同步
+事务投影见[应用事务方案](coordination-transactions.md)和[精简协调草案](distributed-coordination-schema.md)，
+删除不得清除协调与执行证据。

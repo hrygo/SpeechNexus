@@ -1,15 +1,21 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.2.2"
-date: 2026-10-22
+version: "0.2.4"
+date: 2026-10-23
 ---
 
 # SpeechNexus 整体技术方案
 
 本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义仍由语音协议及后续机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-**当前实现仅包含工程骨架、运营健康检查与两个 Web 外壳。** 下文新增工具、控制协议、迁移、调度、音色、LLM 和观测路径均待实现；模型选型不等于运行资格。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+**当前产品运行时仅包含工程骨架、运营健康检查与两个 Web 外壳。** 已交付的契约和测试原型另行列明；下文业务控制、生产迁移、调度、音色、LLM 和观测路径仍待实现，模型选型不等于运行资格。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+
+[ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
+完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
+MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)；
+目标 DDL、[应用事务方案与契约](coordination-transactions.md)及双库测试原型已交付，
+旧 PG 独立兜底测试另存历史 fixture。生产协调用例与完整集群故障资格仍待实施。
 
 ## 1. 技术基线与职责
 
@@ -17,9 +23,9 @@ date: 2026-10-22
 | --- | --- | --- |
 | 应用运行时 | Python 3.14、FastAPI、Pydantic、Uvicorn、HTTPX | 保持现有 uv workspace；重型解码和推理不在事件循环内执行 |
 | 领域与应用 | 领域对象、服务中立端口、显式用例、Repository / Unit of Work | domain 不导入框架、生成 DTO、数据库或 vendor；adapter 在边界转换 |
-| 数据访问 | 现有 Psycopg 3，业务实现增加有界异步连接池与显式 SQL | 每个进程管理自身连接池；不跨实时会话长期占用连接 |
+| 数据访问 | PostgreSQL 正式适配器沿用 Psycopg 3、有界连接池与显式 SQL；关键协调事务由端口隔离 | 规则留在领域/应用层；MySQL/InnoDB 仅作协调行为验证，不承诺全产品双库支持 |
 | 数据迁移 | Alembic 版本化迁移，SQLAlchemy 仅用于迁移环境 | 不将 ORM 模型作为业务权威，不以自动建表代替迁移 |
-| 任务与协调 | PostgreSQL Job / outbox / 租约，短事务 claim 与 reconcile | 不引入 Celery、Kafka 或强制 Redis 作为首期基础依赖 |
+| 任务与协调 | 关系数据库 Job / outbox / 租约，短事务 claim 与 reconcile，正式实现为 PostgreSQL | 不采用 etcd；Redis 仅可选非权威缓存/唤醒，不引入 Celery 或 Kafka 作为首期依赖 |
 | 对象与媒体 | S3 兼容存储、MinIO 开发验证；PyAV / FFmpeg 有界媒体处理 | 对象提交和数据库引用分开协调；编码、重采样、临时磁盘纳入预算 |
 | 公共和内部协议 | HTTP / JSON 控制、SSE 持久事件、WebSocket 实时流 | 公共、执行网关、部署控制器分别拥有契约，不透传 vendor 协议 |
 | 契约工具 | OpenAPI 3.1、JSON Schema 2020-12；Python DTO 生成 / 校验；TypeScript 类型与客户端生成 | 生成器与模板锁版本，验证语义而非只检查 schema 语法 |
@@ -136,7 +142,7 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 
 ## 7. PostgreSQL 事务、迁移与对象一致性
 
-运行时采用显式短事务、行锁、条件更新与唯一约束。默认业务事务使用 Read Committed；需要跨行不变量时锁定对应权威行，统一锁顺序，并在明确可安全重试的事务边界处理死锁 / 序列化失败。不能用“先读余量，再无条件写入”维护容量。
+运行时采用显式短事务、行锁、条件更新与唯一约束。PostgreSQL 默认业务事务使用 Read Committed；需要跨行不变量时锁定对应权威行，统一锁顺序，并在明确可安全重试的事务边界处理死锁 / 序列化失败。其他数据库适配器必须证明等价的事务行为，不能仅凭相同隔离级别名称判定兼容。跨表规则由受控应用事务保证，数据库保留基础约束、历史保护和最小权限。不能用“先读余量，再无条件写入”维护容量。
 
 | 原子边界 | 同一事务内必须成立的事实 |
 | --- | --- |
@@ -147,7 +153,7 @@ VAD 的滞回、去抖和前缀缓冲与识别段策略版本化；预览与正�
 | 用量 | 稳定输入区间、各 attempt 输出区间、预留转消耗和余额释放一致 |
 | 默认指针与版本 | 新 revision 不可变，发布 / 退役 / 强制禁用与正在提交的使用有明确串行化边界 |
 
-claim Job / outbox 可使用 `FOR UPDATE SKIP LOCKED`，仅用于竞争分派；容量校验仍需锁定对应预算权威，不能把跳过锁当成配额证明。领取后尽快提交，推理、HTTP、对象写入和长时编码不占用数据库事务。PostgreSQL 通知仅用于唤醒，轮询 / reconcile 以持久记录为准。
+claim Job / outbox 通过持久认领版本和条件更新确定归属；适配器可使用 `FOR UPDATE SKIP LOCKED` 优化竞争分派，缺少该优化不能改变认领语义。容量校验仍需锁定对应预算权威，不能把跳过锁当成配额证明。领取后尽快提交，推理、HTTP、对象写入和长时编码不占用数据库事务。数据库或 Redis 通知仅用于唤醒，轮询 / reconcile 以持久记录为准。
 
 用量按稳定样本 / 文本区间和单调水位校验；唯一键只能防完全相同记录，还必须处理部分重叠区间。输入跨 attempt 去重，输出按实际生成分别计入；清理未知时不伪造零消耗或提前释放。
 

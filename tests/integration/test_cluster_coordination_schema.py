@@ -1,4 +1,4 @@
-"""Behavioral checks for the P0-B PostgreSQL coordination invariants."""
+"""Historical database-enforced rules; not the ADR 0006 transaction prototype."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from psycopg.errors import CheckViolation, ExclusionViolation, ForeignKeyViolati
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).resolve().parents[2]
-_DDL_PATH = _ROOT / "migrations" / "0001_cluster_coordination_draft.sql"
+_DDL_PATH = _ROOT / "tests" / "fixtures" / "coordination" / "legacy_postgresql.sql"
 _DIGEST = "sha256:" + "a" * 64
 _DATABASE_URL_ENV = "SPEECHNEXUS_TEST_DATABASE_URL"
 
@@ -2823,6 +2823,85 @@ def test_runtime_roles_cannot_erase_evidence_or_bypass_verification(
                     "UPDATE host_nodes SET reserved_cpu_decode_millicores = 1 "
                     "WHERE host_node_id = 'node-role'"
                 )
+    finally:
+        db.execute("RESET ROLE")
+
+
+@pytest.mark.parametrize("plane", ["speech", "gateway_control"])
+@pytest.mark.parametrize(
+    "trigger_function", ["enqueue_capacity_verification", "verify_queued_capacity"]
+)
+def test_capacity_trigger_functions_reject_untrusted_attachment_before_type_conversion(
+    db: psycopg.Connection[Any], plane: str, trigger_function: str
+) -> None:
+    from psycopg.errors import InsufficientPrivilege
+
+    role = "sn_test_" + uuid.uuid4().hex[:12]
+    db.execute(
+        sql.SQL("CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB").format(
+            sql.Identifier(role)
+        )
+    )
+    db.execute("SELECT configure_coordination_runtime_role(%s::name, %s)", (role, plane))
+    probe_table = (
+        "host_nodes"
+        if trigger_function == "enqueue_capacity_verification"
+        else "capacity_verification_queue"
+    )
+    db.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+    try:
+        db.execute("CREATE TEMP TABLE capacity_trigger_probe_init (id integer)")
+        db.execute("CREATE TYPE pg_temp.capacity_probe_type AS ENUM ('probe')")
+        # A harmless sentinel detects any caller-controlled conversion under the
+        # function owner's identity. No privileged action or persistent data.
+        db.execute("""
+            CREATE FUNCTION pg_temp.capacity_probe_cast(pg_temp.capacity_probe_type)
+            RETURNS TEXT LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'untrusted type conversion executed as %', current_user;
+            END;
+            $$
+        """)
+        db.execute("""
+            CREATE CAST (pg_temp.capacity_probe_type AS TEXT)
+            WITH FUNCTION pg_temp.capacity_probe_cast(pg_temp.capacity_probe_type) AS IMPLICIT
+        """)
+        db.execute(
+            sql.SQL("""
+            CREATE TEMP TABLE {} (
+                transaction_id BIGINT, target_kind TEXT,
+                target_id pg_temp.capacity_probe_type, generation INTEGER,
+                host_node_id pg_temp.capacity_probe_type
+            )
+        """).format(sql.Identifier(probe_table))
+        )
+        attach = sql.SQL(
+            "CREATE TRIGGER capacity_probe AFTER INSERT ON pg_temp.{} "
+            "FOR EACH ROW EXECUTE FUNCTION {}()"
+        ).format(sql.Identifier(probe_table), sql.Identifier(trigger_function))
+        with pytest.raises(InsufficientPrivilege), db.transaction():
+            db.execute(attach)
+
+        # Even an accidental future EXECUTE grant must not expose NEW fields
+        # from an untrusted table to SECURITY DEFINER expression evaluation.
+        db.execute("RESET ROLE")
+        db.execute(
+            sql.SQL("GRANT EXECUTE ON FUNCTION {}() TO {}").format(
+                sql.Identifier(trigger_function), sql.Identifier(role)
+            )
+        )
+        db.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+        db.execute(attach)
+        with (
+            pytest.raises(InsufficientPrivilege, match="untrusted trigger source"),
+            db.transaction(),
+        ):
+            db.execute(
+                sql.SQL("""
+                INSERT INTO pg_temp.{}
+                VALUES (txid_current(), 'host', 'probe', 0, 'probe')
+            """).format(sql.Identifier(probe_table))
+            )
     finally:
         db.execute("RESET ROLE")
 

@@ -68,4 +68,11 @@ HostNode (host_node_id, 节点级共享父物理预算: 统一内存 / 显存 / 
 - 单机 MVP 交付聚焦于在单节点拓扑上跑通上述集群就绪状态机、事务边界与受控故障恢复；跨主机网络策略、多副本负载均衡、外部高可用 PostgreSQL / 对象存储切换及多节点故障注入属于 P5 生产资格验证范围。
 - `accepted` 表示该集群就绪架构与单机 MVP 同构部署原则已确认，不代表多节点运行、自动故障接管或生产高可用已经交付和验证。
 
+## 后续决定
+
+[ADR 0006](0006-cluster-coordination-and-storage-portability.md)保留本决定的完整集群
+要求，明确单节点仅是环境，并将 PostgreSQL 特定协调机制改为适配器实现选择。
+跨表规则的主要执行边界调整为受控应用事务；PostgreSQL 仍为唯一正式交付数据库，
+MySQL/InnoDB 仅验证关键协调路径，不采用 etcd。
+
 [决策索引](README.md) · [整体技术方案](../architecture/technical-blueprint.md) · [资源治理](../architecture/runtime-governance.md) · [项目主设计](../speechnexus-product-architecture.md)

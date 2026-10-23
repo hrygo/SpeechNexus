@@ -27,6 +27,7 @@ dev = [
   "openai>=2,<3",
   "openapi-spec-validator>=0.7,<1",
   "psycopg[binary]>=3.2,<4",
+  "pymysql>=1.1.2,<2",
   "pytest>=9.1.1,<10",
   "pytest-asyncio>=1.4,<2",
   "pytest-cov>=7.1,<8",
@@ -35,6 +36,7 @@ dev = [
   "ruff>=0.17.1,<1",
   "soundfile>=0.14,<1",
   "types-jsonschema>=4.23,<5",
+  "types-pymysql>=1.1,<2",
   "types-pyyaml>=6,<7",
 ]
 
@@ -44,7 +46,7 @@ addopts = "-ra --strict-config --strict-markers"
 asyncio_mode = "auto"
 pythonpath = ["."]
 markers = [
-  "integration: requires the isolated PostgreSQL and object-storage services",
+  "integration: requires explicitly configured isolated database/object-storage services",
 ]
 
 [tool.coverage.run]

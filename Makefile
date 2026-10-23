@@ -1,7 +1,7 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-sdk-test \
 	service-smoke stack-config \
-	format lint typecheck test integration-test python-build build verify
+	format lint typecheck test integration-test coordination-test python-build build verify
 
 install:
 	uv sync --locked --all-packages --all-groups
@@ -79,6 +79,12 @@ integration-test:
 	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" || \
 		{ echo "SPEECHNEXUS_TEST_DATABASE_URL is required" >&2; exit 2; }
 	uv run pytest -m integration tests/integration -q
+
+coordination-test:
+	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \
+		{ echo "Both isolated PostgreSQL and MySQL test URLs are required" >&2; exit 2; }
+	uv run pytest tests/contract/test_coordination_transactions.py \
+		tests/integration/test_coordination_transactions.py -q
 
 python-build:
 	uv build --all-packages --out-dir dist/python

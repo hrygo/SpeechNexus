@@ -1,8 +1,8 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.3.1"
-date: 2026-10-22
+version: "0.3.2"
+date: 2026-10-23
 ---
 
 # SpeechNexus 工程目录与依赖边界
@@ -24,7 +24,7 @@ date: 2026-10-22
 │   ├── model-instance.schema.json
 │   ├── capacity-manifest.schema.json
 │   ├── qualification-report.schema.json
-│   └── internal/               执行控制、运行时控制与执行流
+│   └── internal/               执行控制、运行时控制、执行流与应用事务契约
 ├── migrations/                  部署角色执行的版本化 DDL 草案
 │   └── 0001_cluster_coordination_draft.sql
 ├── backend/                     FastAPI 语音底座
@@ -47,7 +47,9 @@ date: 2026-10-22
 ├── tests/
 │   ├── contract/               契约与实现一致性
 │   ├── fake/                   确定性端口替身
-│   ├── integration/            隔离 PG / 对象存储测试
+│   ├── integration/            隔离 PG / InnoDB 协调与对象存储测试
+│   ├── fixtures/coordination/  旧 PG SQL 历史证据与事务契约样例
+│   ├── support/                双库测试原型，不供产品导入
 │   └── unit/                   领域、应用与 HTTP 单元测试
 ├── scripts/dev-env/            本机开发环境与验证脚本
 └── docs/                       产品、架构、计划与验收记录
@@ -113,7 +115,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 | `tests/unit` | 无外部服务 | 领域规则、应用用例、HTTP 响应与配置 |
 | `tests/contract` | 无外部服务 | OpenAPI / Schema 结构与实现路径一致性 |
 | `tests/fake` | 无外部服务 | 确定性端口替身与故障注入 |
-| `tests/integration` | 隔离 PG / MinIO | 事务、租约、outbox、对象发布与恢复 |
+| `tests/integration` | 隔离 PG / MySQL / MinIO | 受控事务、旧 PG 独立兜底、租约、outbox、对象发布与恢复 |
 
 `make verify` 还执行媒体和浏览器基础冒烟检查。它们证明本机工具链可采集与播放，不证明真实麦克风、模型质量、容量或完整业务流程。
 

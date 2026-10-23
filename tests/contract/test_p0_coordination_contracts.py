@@ -29,7 +29,7 @@ _SCENARIO_PROFILE_SCHEMA_PATH = _ROOT / "contracts" / "scenario-profile.schema.j
 _VOICE_RESOURCE_SCHEMA_PATH = _ROOT / "contracts" / "voice-resource.schema.json"
 _REALTIME_EVENTS_SCHEMA_PATH = _ROOT / "contracts" / "realtime-events.schema.json"
 _CAPABILITY_DOMAINS_SCHEMA_PATH = _ROOT / "contracts" / "shared" / "capability-domains.schema.json"
-_COORDINATION_SQL_PATH = _ROOT / "migrations" / "0001_cluster_coordination_draft.sql"
+_COORDINATION_SQL_PATH = _ROOT / "tests" / "fixtures" / "coordination" / "legacy_postgresql.sql"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -408,7 +408,7 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
                         )
 
 
-def test_cluster_coordination_sql_draft_defines_required_tables_and_invariants() -> None:
+def test_legacy_coordination_fixture_retains_original_database_guards() -> None:
     sql_text = _COORDINATION_SQL_PATH.read_text(encoding="utf-8")
     required_tables = (
         "CREATE TABLE host_nodes",

@@ -203,6 +203,51 @@ def _constraint_break(base: Mapping[str, Any], current: Mapping[str, Any]) -> st
     return None
 
 
+def _compatibility_shape(schema: object) -> object:
+    """Keep constraints, ignoring only annotations and the Nexus extension."""
+    if isinstance(schema, list):
+        return [_compatibility_shape(item) for item in schema]
+    mapping = _mapping(schema)
+    if mapping is None:
+        return schema
+    result: dict[str, Any] = {}
+    for key, value in mapping.items():
+        if key in {"title", "description", "examples", "$comment"}:
+            continue
+        if key in {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}:
+            children = _mapping(value)
+            result[key] = (
+                {
+                    name: _compatibility_shape(child)
+                    for name, child in children.items()
+                    if key != "properties" or name != "nexus"
+                }
+                if children is not None
+                else value
+            )
+        elif key in {
+            "oneOf",
+            "anyOf",
+            "allOf",
+            "prefixItems",
+            "items",
+            "contains",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "propertyNames",
+            "not",
+            "if",
+            "then",
+            "else",
+        }:
+            result[key] = _compatibility_shape(value)
+        else:
+            # In particular, const/enum contain data, not nested schemas.
+            result[key] = value
+    return result
+
+
 def _compare_schema(
     base: object,
     current: object,
@@ -253,7 +298,7 @@ def _compare_schema(
     )
     if (
         "const" in constrained
-        and constrained.get("const") != accepted.get("const")
+        and ("const" not in accepted or constrained["const"] != accepted["const"])
         and accepted.get("enum") != [constrained["const"]]
     ):
         _issue(issues, pointer, "const value changed")
@@ -335,6 +380,21 @@ def _compare_schema(
                     current_side=current_side,
                 )
 
+    # A newly named property replaces the previous additionalProperties domain.
+    # This can narrow a request or widen a response even when it is optional.
+    for name, current_property in (current_properties or {}).items():
+        if name == "nexus" or name in (base_properties or {}):
+            continue
+        _compare_schema(
+            base_schema.get("additionalProperties", True),
+            current_property,
+            f"{pointer}/properties/{name}",
+            issues,
+            direction=direction,
+            base_side=base_side,
+            current_side=current_side,
+        )
+
     for definitions_key in ("$defs", "definitions"):
         base_definitions = _mapping(base_schema.get(definitions_key))
         current_definitions = _mapping(current_schema.get(definitions_key))
@@ -415,6 +475,17 @@ def _compare_schema(
                 f"{pointer}/{keyword}",
                 "variant count changed; compatibility needs explicit proof",
             )
+            continue
+        if keyword == "oneOf":
+            # oneOf is not monotone in its branches: widening a request branch
+            # can reject old inputs by making two branches match. Require the
+            # resolved constraints to stay equal unless compatibility is proven.
+            if _compatibility_shape(base_variants) != _compatibility_shape(current_variants):
+                _issue(
+                    issues,
+                    f"{pointer}/{keyword}",
+                    "exclusive variants changed; compatibility needs explicit proof",
+                )
             continue
         for index, variant in enumerate(base_variants):
             _compare_schema(

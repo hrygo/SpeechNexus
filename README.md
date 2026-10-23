@@ -51,6 +51,8 @@ SpeechNexus 希望服务于三类需求：
 
 契约修复补全了规范执行命令、同步幂等恢复、严格 receipt 与数据删除生命周期；范围及升级边界见 [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。这些业务协议尚未实现为运行时路由。
 
+集群支持保持完整；[ADR 0006](docs/decisions/0006-cluster-coordination-and-storage-portability.md)确定不采用 etcd、以受控应用事务降低数据库绑定，PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 仅作关键协调验证。已交付[精简 DDL、应用事务方案与契约](docs/architecture/coordination-transactions.md)，共享测试在真实 PG/InnoDB 上验证协调原型；生产业务接入和完整集群故障资格仍待完成，进度见[重构计划](docs/plans/2026-10-23-cluster-coordination-refactor.md)。
+
 ### 通过 AdminUI 维护部署
 
 AdminUI 面向部署维护者，规划提供服务概览、模型与音色管理、预设配置、资源预算、全局任务和诊断入口。工作台与 AdminUI 分别组织使用任务和维护任务。

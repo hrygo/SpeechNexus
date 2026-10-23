@@ -9,6 +9,7 @@ from types import ModuleType
 from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "scripts" / "dev-env" / "check-openai-contract-compat.py"
@@ -551,3 +552,151 @@ def test_response_header_guarantees_are_compared(mutation: str) -> None:
     else:
         headers["X-Receipt"]["schema"]["type"] = "integer"
     assert module._compare_openapi(base, current, "speech-openapi.yaml")
+
+
+def _openapi_with_schema(schema: dict[str, Any], direction: str) -> dict[str, Any]:
+    content = {"application/json": {"schema": schema}}
+    operation: dict[str, Any] = {"responses": {}}
+    if direction == "request":
+        operation["requestBody"] = {"content": content}
+    else:
+        operation["responses"]["200"] = {"content": content}
+    return {"paths": {"/v1/audio/speech": {"post": operation}}}
+
+
+@pytest.mark.parametrize("direction", ["request", "response"])
+def test_null_const_cannot_silently_remove_accepted_values(direction: str) -> None:
+    module = _load_compat_module()
+    unconstrained = {"type": ["string", "null"]}
+    constrained = {**unconstrained, "const": None}
+    base, current = (
+        (unconstrained, constrained) if direction == "request" else (constrained, unconstrained)
+    )
+    assert Draft202012Validator(unconstrained).is_valid("previously accepted")
+    assert not Draft202012Validator(constrained).is_valid("previously accepted")
+    assert module._compare_openapi(
+        _openapi_with_schema(base, direction),
+        _openapi_with_schema(current, direction),
+        "speech-openapi.yaml",
+    )
+
+
+@pytest.mark.parametrize("direction", ["request", "response"])
+@pytest.mark.parametrize("equivalent_enum", [False, True])
+def test_null_const_equivalence_and_safe_relaxations(direction: str, equivalent_enum: bool) -> None:
+    module = _load_compat_module()
+    constrained = {"type": ["string", "null"], "const": None}
+    other: dict[str, Any] = {"type": ["string", "null"]}
+    if equivalent_enum:
+        other["enum"] = [None]
+    base, current = (constrained, other) if direction == "request" else (other, constrained)
+    assert not module._compare_openapi(
+        _openapi_with_schema(base, direction),
+        _openapi_with_schema(current, direction),
+        "speech-openapi.yaml",
+    )
+
+
+@pytest.mark.parametrize(
+    "direction,additional,new_property,payload",
+    [
+        ("response", False, {"type": "integer"}, {"extra": 1}),
+        ("response", {"type": "string"}, {"type": "integer"}, {"extra": 1}),
+        ("request", True, {"type": "integer"}, {"extra": "previously accepted"}),
+        ("request", {"type": "integer"}, {"maximum": 0}, {"extra": 1}),
+    ],
+)
+def test_new_properties_respect_previous_additional_property_domain(
+    direction: str, additional: Any, new_property: dict[str, Any], payload: dict[str, Any]
+) -> None:
+    module = _load_compat_module()
+    base = {"type": "object", "additionalProperties": additional, "properties": {}}
+    current = copy.deepcopy(base)
+    current["properties"]["extra"] = new_property
+    accepted, constrained = (base, current) if direction == "request" else (current, base)
+    assert Draft202012Validator(accepted).is_valid(payload)
+    assert not Draft202012Validator(constrained).is_valid(payload)
+    assert module._compare_openapi(
+        _openapi_with_schema(base, direction),
+        _openapi_with_schema(current, direction),
+        "speech-openapi.yaml",
+    )
+
+
+@pytest.mark.parametrize(
+    "direction,additional,new_property",
+    [
+        ("request", False, {"type": "integer"}),
+        ("response", True, {"type": "integer"}),
+        ("request", {"type": "string", "minLength": 1}, {"type": "string"}),
+        ("response", {"type": "string"}, {"type": "string", "minLength": 1}),
+    ],
+)
+def test_new_properties_allow_compatible_additional_property_domains(
+    direction: str, additional: Any, new_property: dict[str, Any]
+) -> None:
+    module = _load_compat_module()
+    base = {"type": "object", "additionalProperties": additional, "properties": {}}
+    current = copy.deepcopy(base)
+    current["properties"]["extra"] = new_property
+    assert not module._compare_openapi(
+        _openapi_with_schema(base, direction),
+        _openapi_with_schema(current, direction),
+        "speech-openapi.yaml",
+    )
+
+
+@pytest.mark.parametrize("direction", ["request", "response"])
+def test_oneof_overlap_changes_require_explicit_compatibility_proof(direction: str) -> None:
+    module = _load_compat_module()
+    disjoint = {
+        "oneOf": [
+            {"type": "integer", "minimum": 0, "maximum": 9},
+            {"type": "integer", "minimum": 10, "maximum": 19},
+        ]
+    }
+    overlapping = copy.deepcopy(disjoint)
+    overlapping["oneOf"][0]["maximum"] = 19
+    assert Draft202012Validator(disjoint).is_valid(10)
+    assert not Draft202012Validator(overlapping).is_valid(10)
+    base, current = (disjoint, overlapping) if direction == "request" else (overlapping, disjoint)
+    assert module._compare_openapi(
+        _openapi_with_schema(base, direction),
+        _openapi_with_schema(current, direction),
+        "speech-openapi.yaml",
+    )
+
+
+def test_oneof_equivalent_refs_annotations_and_optional_nexus_remain_compatible() -> None:
+    module = _load_compat_module()
+    variant: dict[str, Any] = {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {"kind": {"const": "example"}, "nexus": {"type": "object"}},
+    }
+    base = _openapi_with_schema({"oneOf": [{"$ref": "#/components/schemas/Variant"}]}, "request")
+    base["components"] = {"schemas": {"Variant": variant}}
+    current = copy.deepcopy(base)
+    inline = copy.deepcopy(variant)
+    inline["description"] = "An annotation does not change accepted values."
+    inline["properties"]["nexus"] = {"type": "object", "required": ["new_extension"]}
+    current["paths"]["/v1/audio/speech"]["post"]["requestBody"]["content"]["application/json"][
+        "schema"
+    ]["oneOf"] = [inline]
+    assert not module._compare_openapi(base, current, "speech-openapi.yaml")
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+def test_oneof_data_values_are_not_mistaken_for_schema_annotations(keyword: str) -> None:
+    module = _load_compat_module()
+    old_value = {"description": "old", "nexus": {"value": 1}}
+    new_value = {"description": "new", "nexus": {"value": 2}}
+    base = {"oneOf": [{keyword: [old_value] if keyword == "enum" else old_value}]}
+    current = {"oneOf": [{keyword: [new_value] if keyword == "enum" else new_value}]}
+    assert Draft202012Validator(base).is_valid(old_value)
+    assert not Draft202012Validator(current).is_valid(old_value)
+    assert module._compare_openapi(
+        _openapi_with_schema(base, "request"),
+        _openapi_with_schema(current, "request"),
+        "speech-openapi.yaml",
+    )

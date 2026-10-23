@@ -51,6 +51,8 @@ The currently available runtime endpoints are `/healthz` and `/readyz`; speech a
 
 Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not implemented as runtime routes.
 
+Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-cluster-coordination-and-storage-portability.md) excludes etcd and moves cross-table rules into controlled application transactions to reduce database coupling. PostgreSQL is the only database targeted for official product support; MySQL/InnoDB is limited to validating key coordination behavior. [Simplified DDL, application transaction design and contracts (Chinese)](docs/architecture/coordination-transactions.md) are delivered, with a shared test prototype on real PG/InnoDB. Production integration and full cluster fault qualification remain pending; see the [refactoring plan (Chinese)](docs/plans/2026-10-23-cluster-coordination-refactor.md).
+
 ### Maintain a deployment through AdminUI
 
 AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.

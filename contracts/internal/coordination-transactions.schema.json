@@ -1,0 +1,1868 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/internal/coordination-transactions.schema.json",
+  "title": "ControlledCoordinationTransactions",
+  "description": "ADR 0006 internal application transaction ports, not HTTP routes and not a production implementation. Validate wire shape and format before semantic validation and locks. Reuse existing execution/runtime protocol definitions. See coordination-transactions.md for atomicity, lock order, replay identity, error mapping and unknown commit recovery. Integers and products must fit signed BIGINT; decimal revisions above that limit are rejected before SQL. Canonical request digests use RFC 8785 SHA-256 over the validated request, without the result or transport metadata. JSON numeric inputs are bounded to 2^53-1 for exact RFC 8785 canonicalization; arithmetic intermediates and decimal revisions must fit signed BIGINT. Reject exhaustion; never wrap. The document root accepts both command envelopes and TransactionResult envelopes; result.operation selects its typed value.",
+  "x-speechnexus-schema-version": "1.0.0",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "acquire_owner"
+        },
+        "request": {
+          "$ref": "#/$defs/acquire_owner"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "renew_owner"
+        },
+        "request": {
+          "$ref": "#/$defs/renew_owner"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "seal_barrier"
+        },
+        "request": {
+          "$ref": "#/$defs/seal_barrier"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "activate_owner"
+        },
+        "request": {
+          "$ref": "#/$defs/activate_owner"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "admit_recipe"
+        },
+        "request": {
+          "$ref": "#/$defs/admit_recipe"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "create_job"
+        },
+        "request": {
+          "$ref": "#/$defs/create_job"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "claim_job"
+        },
+        "request": {
+          "$ref": "#/$defs/claim_job"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "create_submit"
+        },
+        "request": {
+          "$ref": "#/$defs/create_submit"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "record_stop"
+        },
+        "request": {
+          "$ref": "#/$defs/record_stop"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "quarantine_lease"
+        },
+        "request": {
+          "$ref": "#/$defs/quarantine_lease"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "release_lease"
+        },
+        "request": {
+          "$ref": "#/$defs/release_lease"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "append_interval"
+        },
+        "request": {
+          "$ref": "#/$defs/append_interval"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "create_runtime_intent"
+        },
+        "request": {
+          "$ref": "#/$defs/create_runtime_intent"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "observe_runtime"
+        },
+        "request": {
+          "$ref": "#/$defs/observe_runtime"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "query_outcome"
+        },
+        "request": {
+          "$ref": "#/$defs/query_outcome"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "mark_execution_unknown"
+        },
+        "request": {
+          "$ref": "#/$defs/mark_execution_unknown"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "record_execution_observation"
+        },
+        "request": {
+          "$ref": "#/$defs/record_execution_observation"
+        }
+      }
+    },
+    {
+      "$ref": "#/$defs/TransactionResult"
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "request"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "const": "redact_execution_command"
+        },
+        "request": {
+          "$ref": "#/$defs/redact_execution_command"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "OwnerAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pool_id",
+        "owner_id",
+        "fencing_token"
+      ],
+      "properties": {
+        "pool_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/PoolId"
+        },
+        "owner_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "AttemptIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "attempt_id"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "attempt_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        }
+      }
+    },
+    "StageAllocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "lease_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "expected_instance_version",
+        "reserved_slots"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "lease_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/PoolId"
+        },
+        "host_node_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expected_instance_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "reserved_slots": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "PhysicalReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unified_physical_memory_bytes",
+        "device_memory_bytes",
+        "host_memory_bytes",
+        "cpu_decode_millicores",
+        "host_pcm_buffer_bytes",
+        "scratch_disk_bytes"
+      ],
+      "properties": {
+        "unified_physical_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/unified_physical_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "device_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/device_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "host_memory_bytes": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/host_memory_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "cpu_decode_millicores": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/cpu_decode_millicores"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "host_pcm_buffer_bytes": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/host_pcm_buffer_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "scratch_disk_bytes": {
+          "allOf": [
+            {
+              "$ref": "../capacity-manifest.schema.json#/$defs/ResourceVector/properties/scratch_disk_bytes"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        }
+      }
+    },
+    "VerifiedStopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "submit_intent_id",
+        "evidence_kind",
+        "evidence_digest",
+        "observed_at_us",
+        "execution_stopped",
+        "resources_released",
+        "reason"
+      ],
+      "properties": {
+        "evidence_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "submit_intent_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "evidence_kind": {
+          "allOf": [
+            {
+              "$ref": "./execution-control.openapi.yaml#/components/schemas/StopEvidenceKind"
+            },
+            {
+              "not": {
+                "enum": [
+                  "none",
+                  "unconfirmed_timeout"
+                ]
+              }
+            }
+          ]
+        },
+        "evidence_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "execution_stopped": {
+          "const": true
+        },
+        "resources_released": {
+          "const": true
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "../admin-openapi.yaml#/components/schemas/QuarantineReleaseRequest/properties/reason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidence_kind": {
+                "const": "operator_verified_instance_terminated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "description": "Verified termination of this submitted execution and release of its incremental resources. This does not imply that the shared engine process exited; instance baseline release requires the separate RuntimeStopEvidence contract."
+    },
+    "JobIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "event_id",
+        "event_digest"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "event_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "event_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "acquire_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pool_id",
+        "owner_id",
+        "expected_version",
+        "ttl_ms"
+      ],
+      "properties": {
+        "pool_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/PoolId"
+        },
+        "owner_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "renew_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "expected_version",
+        "ttl_ms"
+      ],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "seal_barrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "barrier",
+        "evidence_digest"
+      ],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "barrier": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/GatewayFencingBarrierResponse"
+        },
+        "evidence_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "activate_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "expected_version"
+      ],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "admit_recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "workspace_id",
+        "binding_revision_id",
+        "manifest_id",
+        "recipe_digest",
+        "policy_revision_id",
+        "expected_quota_version",
+        "service_class",
+        "authorities",
+        "stages",
+        "deadline_at_us",
+        "job"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "workspace_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "manifest_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "recipe_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "policy_revision_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_quota_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "service_class": {
+          "$ref": "../shared/capability-domains.schema.json#/$defs/ServiceClass"
+        },
+        "authorities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/OwnerAuthority"
+          }
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/StageAllocation"
+          }
+        },
+        "deadline_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "job": {
+          "$ref": "#/$defs/JobIdentity"
+        }
+      }
+    },
+    "create_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job",
+        "identity",
+        "request_digest"
+      ],
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/JobIdentity"
+        },
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "request_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "claim_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "worker_id",
+        "expected_claim_version",
+        "ttl_ms"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "worker_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_claim_version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      }
+    },
+    "create_submit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_request",
+        "output_stream_id"
+      ],
+      "properties": {
+        "execution_request": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest"
+        },
+        "output_stream_id": {
+          "anyOf": [
+            {
+              "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_request": {
+                "properties": {
+                  "sample_rate_hz": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "output_stream_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "output_stream_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "record_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence",
+        "terminal_state",
+        "error_code"
+      ],
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/VerifiedStopEvidence"
+        },
+        "terminal_state": {
+          "allOf": [
+            {
+              "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionState"
+            },
+            {
+              "enum": [
+                "succeeded",
+                "failed",
+                "aborted"
+              ]
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "terminal_state": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "properties": {
+                  "evidence_kind": {
+                    "const": "engine_terminal_response"
+                  }
+                }
+              },
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "terminal_state": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "type": "string"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "quarantine_lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_id",
+        "reason_code",
+        "observed_at_us"
+      ],
+      "properties": {
+        "lease_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "reason_code": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionErrorCode"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "release_lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_id",
+        "expected_version"
+      ],
+      "properties": {
+        "lease_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "append_interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interval_id",
+        "submit_intent_id",
+        "output_stream_id",
+        "sample_rate_hz",
+        "meter_kind",
+        "sample_start",
+        "sample_end"
+      ],
+      "properties": {
+        "interval_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "submit_intent_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "output_stream_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "meter_kind": {
+          "enum": [
+            "generated",
+            "delivered",
+            "played"
+          ]
+        },
+        "sample_start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sample_end": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "create_runtime_intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "expected_head_version"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentRequest"
+        },
+        "expected_head_version": {
+          "anyOf": [
+            {
+              "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null means the initial head must be absent; first creation is serialized by host and unique instance identity. A revision requires that exact existing head."
+        }
+      }
+    },
+    "observe_runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation",
+        "expected_instance_version",
+        "expected_intent_version"
+      ],
+      "properties": {
+        "observation": {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentResponse"
+        },
+        "expected_instance_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "expected_intent_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "query_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ],
+      "properties": {
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "pool_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "pool"
+                },
+                "pool_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/PoolId"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "identity"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "attempt"
+                },
+                "identity": {
+                  "$ref": "#/$defs/AttemptIdentity"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "job_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "job"
+                },
+                "job_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "submit_intent_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "submit"
+                },
+                "submit_intent_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "lease_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "lease"
+                },
+                "lease_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "interval_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "interval"
+                },
+                "interval_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "target_node_id",
+                "intent_id"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "runtime_intent"
+                },
+                "target_node_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                },
+                "intent_id": {
+                  "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+                }
+              }
+            }
+          ]
+        },
+        "request_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "TransactionErrorCode": {
+      "anyOf": [
+        {
+          "enum": [
+            "version_conflict",
+            "owner_busy",
+            "capacity_exhausted",
+            "quota_exceeded",
+            "recipe_mismatch",
+            "output_overlap",
+            "output_limit_exceeded",
+            "outcome_unknown",
+            "idempotency_conflict",
+            "not_found",
+            "invalid_counter",
+            "reconciliation_required"
+          ]
+        },
+        {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionErrorCode"
+        },
+        {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeControlErrorResponse/properties/error/properties/code"
+        }
+      ]
+    },
+    "TransactionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "scope_id",
+        "recovery",
+        "schema_version",
+        "operation"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "committed",
+            "replayed",
+            "conflict",
+            "rejected",
+            "unknown"
+          ]
+        },
+        "scope_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "error_code": {
+          "$ref": "#/$defs/TransactionErrorCode"
+        },
+        "recovery": {
+          "enum": [
+            "none",
+            "retry_transaction",
+            "query_original",
+            "query_current_authority",
+            "reconcile"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OwnerSnapshot"
+            },
+            {
+              "$ref": "#/$defs/AdmissionSnapshot"
+            },
+            {
+              "$ref": "#/$defs/ClaimSnapshot"
+            },
+            {
+              "$ref": "#/$defs/LeaseSnapshot"
+            },
+            {
+              "$ref": "#/$defs/FactSnapshot"
+            },
+            {
+              "$ref": "#/$defs/ExecutionSnapshot"
+            },
+            {
+              "$ref": "#/$defs/RuntimeSnapshot"
+            }
+          ]
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "operation": {
+          "enum": [
+            "acquire_owner",
+            "renew_owner",
+            "seal_barrier",
+            "activate_owner",
+            "admit_recipe",
+            "create_job",
+            "claim_job",
+            "create_submit",
+            "record_stop",
+            "quarantine_lease",
+            "release_lease",
+            "append_interval",
+            "create_runtime_intent",
+            "observe_runtime",
+            "query_outcome",
+            "mark_execution_unknown",
+            "record_execution_observation",
+            "redact_execution_command"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "committed",
+                  "replayed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "recovery": {
+                "const": "none"
+              }
+            },
+            "not": {
+              "required": [
+                "error_code"
+              ]
+            },
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "conflict",
+                  "rejected",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "error_code"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "const": "outcome_unknown"
+              },
+              "recovery": {
+                "enum": [
+                  "query_original",
+                  "query_current_authority",
+                  "reconcile"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "acquire_owner",
+                  "renew_owner",
+                  "activate_owner"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/OwnerSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "admit_recipe"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/AdmissionSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "claim_job"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/ClaimSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "release_lease",
+                  "quarantine_lease"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/LeaseSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "seal_barrier",
+                  "create_job",
+                  "append_interval",
+                  "redact_execution_command"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/FactSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "create_submit",
+                  "mark_execution_unknown",
+                  "record_stop",
+                  "record_execution_observation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/ExecutionSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "create_runtime_intent",
+                  "observe_runtime"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/RuntimeSnapshot"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "release_lease"
+              },
+              "outcome": {
+                "enum": [
+                  "committed",
+                  "replayed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "properties": {
+                  "lease_state": {
+                    "const": "released"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mark_execution_unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "reason_code",
+        "observed_at_us"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "reason_code": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionErrorCode"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "OwnerSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "authority",
+        "expires_at_us",
+        "owner_state",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "const": "owner"
+        },
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "expires_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "owner_state": {
+          "enum": [
+            "reconciling_takeover",
+            "active"
+          ]
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "AdmissionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "identity",
+        "lease_ids",
+        "version",
+        "reservations"
+      ],
+      "properties": {
+        "kind": {
+          "const": "admission"
+        },
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "lease_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+          }
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "reservations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "lease_id",
+              "stage_id",
+              "reserved_slots",
+              "physical"
+            ],
+            "properties": {
+              "lease_id": {
+                "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+              },
+              "stage_id": {
+                "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+              },
+              "reserved_slots": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "physical": {
+                "$ref": "#/$defs/PhysicalReservation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ClaimSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "job_id",
+        "worker_id",
+        "claim_version",
+        "expires_at_us"
+      ],
+      "properties": {
+        "kind": {
+          "const": "claim"
+        },
+        "job_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "worker_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "claim_version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expires_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "LeaseSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "lease_id",
+        "lease_state",
+        "cleanup_state",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "const": "lease"
+        },
+        "lease_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "lease_state": {
+          "enum": [
+            "reserved",
+            "executing",
+            "stopping",
+            "released",
+            "quarantined"
+          ]
+        },
+        "cleanup_state": {
+          "$ref": "../shared/operation-states.schema.json#/$defs/CleanupState"
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "FactSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fact_id",
+        "request_digest"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fact"
+        },
+        "fact_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "request_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "ExecutionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "execution"
+      ],
+      "properties": {
+        "kind": {
+          "const": "execution"
+        },
+        "execution": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionStatusResponse"
+        }
+      }
+    },
+    "RuntimeSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "runtime"
+      ],
+      "properties": {
+        "kind": {
+          "const": "runtime"
+        },
+        "runtime": {
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentResponse"
+        }
+      }
+    },
+    "record_execution_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation",
+        "expected_version"
+      ],
+      "properties": {
+        "observation": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionStatusResponse"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      }
+    },
+    "redact_execution_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "expected_version",
+        "deletion_job_id",
+        "deletion_evidence_digest"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "expected_version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "deletion_job_id": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+        },
+        "deletion_evidence_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        }
+      },
+      "description": "Trusted deletion coordinator permit only; verify the authoritative deletion job/dependency scope before calling. Clear private command content only after execution cleanup and lease release. Preserve identities, request/command digests, fencing, stop facts and an immutable deletion tombstone. Replays use deletion_job_id and evidence digest; never authorize re-execution."
+    }
+  }
+}

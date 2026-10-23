@@ -1019,6 +1019,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pymysql"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/d4/c15b459e25a23767d2f4065ef40968920320f04e302889574310c21c96a3/pymysql-1.2.3.tar.gz", hash = "sha256:d5b288529782e536ae171866df3ca9dc4f6cbfb3cc2f18e6f837fbb90dbc262b", size = 50629, upload-time = "2026-09-17T12:22:49.146Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/4b/0a906d8184f011ff8dbd4722743783867589b33269d2c5fff238d636fdcb/pymysql-1.2.3-py3-none-any.whl", hash = "sha256:14f1c68e2ed859243ae5ca41ffbe677027fc46bc136a9f0be8a4e928e5e7415a", size = 46740, upload-time = "2026-09-17T12:22:47.826Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1263,6 +1272,7 @@ dev = [
     { name = "openai" },
     { name = "openapi-spec-validator" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pymysql" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1271,6 +1281,7 @@ dev = [
     { name = "ruff" },
     { name = "soundfile" },
     { name = "types-jsonschema" },
+    { name = "types-pymysql" },
     { name = "types-pyyaml" },
 ]
 
@@ -1291,6 +1302,7 @@ dev = [
     { name = "openai", specifier = ">=2,<3" },
     { name = "openapi-spec-validator", specifier = ">=0.7,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "pymysql", specifier = ">=1.1.2,<2" },
     { name = "pytest", specifier = ">=9.1.1,<10" },
     { name = "pytest-asyncio", specifier = ">=1.4,<2" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
@@ -1299,6 +1311,7 @@ dev = [
     { name = "ruff", specifier = ">=0.17.1,<1" },
     { name = "soundfile", specifier = ">=0.14,<1" },
     { name = "types-jsonschema", specifier = ">=4.23,<5" },
+    { name = "types-pymysql", specifier = ">=1.1,<2" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
 ]
 
@@ -1380,6 +1393,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/29/d2/1f742605f5a6d39f993134885b8de41c98af606871d3ebddaf3e776bd1eb/types_jsonschema-4.26.0.20261006.tar.gz", hash = "sha256:3eb7db61b6819d40addfdaac7173e749071a7d4a9a4394f0c844598ec84b2500", size = 16843, upload-time = "2026-10-06T08:16:07.318Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/a0/4f2e3c0dc3d5cad958006f2e0307065cc8fe4fbf0393ff0b69d55ee9bbe5/types_jsonschema-4.26.0.20261006-py3-none-any.whl", hash = "sha256:29301f4e65e3928540cdf5e23ad716e38bb0c0b416a48dada213edd3d70206ec", size = 16113, upload-time = "2026-10-06T08:16:06.355Z" },
+]
+
+[[package]]
+name = "types-pymysql"
+version = "1.2.0.20260923"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/cb/2c4017b0da85cbed15296b0569141f2c56790752aa4facc60ea199db24df/types_pymysql-1.2.0.20260923.tar.gz", hash = "sha256:2d02420956deeed7366c3b2b7dfaac3b33ad800d754327857f7b38f59751a59c", size = 22943, upload-time = "2026-09-23T06:52:06.076Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/f3/75928f071b26151423e7a681defd6eee6fa8181de70cb22ea2211c295d39/types_pymysql-1.2.0.20260923-py3-none-any.whl", hash = "sha256:2042fc2d0745eba181c3070221fdc9ac12baaa4908f79c1cb0f953c8c44efcc5", size = 23383, upload-time = "2026-09-23T06:52:04.912Z" },
 ]
 
 [[package]]

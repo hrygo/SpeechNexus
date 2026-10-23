@@ -134,6 +134,14 @@ of defaults, units, enum domains, or stable error codes.
   gateway takeover fencing barrier, and instance drain). It requires a
   per-component bearer credential; this credential is not the public shared
   service key and public routes must reject it.
+- `internal/coordination-transactions.schema.json`: ADR 0006 application
+  transaction ports for owner/fencing, complete-recipe admission, claim,
+  execution evidence, quarantine/release, runtime lifecycle and interval
+  accounting. Reuses existing internal/public domains; does not add HTTP routes.
+  Includes typed results and unknown-outcome recovery. Exact atomic steps,
+  lock order, replay identities and producer/consumer handoff are in the
+  [application transaction design](../docs/architecture/coordination-transactions.md).
+  The shared PG/InnoDB prototype is test-only; production use cases remain pending.
 - `internal/execution-stream.schema.json`: realtime gateway to execution
   gateway control envelopes, input/output credits, backpressure, watermarks,
   terminal evidence, and the fixed binary PCM frame. `stream.opened` echoes the
@@ -269,8 +277,14 @@ uses.
 OpenAPI and every component schema reachable from those paths, the declared
 standard Realtime event definitions and their reachable definitions, and the
 public `shared/` domains they reference with a Git baseline. It rejects removed
-standard paths, operations, fields, response statuses, event types, enum values,
-or newly required request/response fields. The optional `nexus` property and
+standard paths, operations, fields, response statuses, and event types, as well
+as narrowed request domains and weakened response guarantees. This includes
+new required request fields, removed required response fields, explicit
+`const: null` changes, and newly named properties that violate the previous
+`additionalProperties` domain. Changed `oneOf` constraints require explicit
+compatibility proof: widening one branch can make previously accepted values
+match multiple branches. Equivalent resolved references and annotation changes
+remain accepted. The optional `nexus` property and
 everything reachable only through it are excluded from that walk; Nexus-only
 paths, components, and events remain governed by their own positive / negative
 examples rather than being misreported as OpenAI breakage. Pull requests run
@@ -282,9 +296,12 @@ SPEECHNEXUS_TEST_DATABASE_URL=postgresql://speechnexus@127.0.0.1:55432/speechnex
   make integration-test
 ```
 
-Those tests create an isolated schema, apply the coordination DDL, exercise
-positive and negative PostgreSQL transactions, and drop the schema. CI runs
-them against a disposable PostgreSQL 16 service.
+The historical PG suite applies the preserved legacy fixture. The new shared
+transaction suite applies the active simplified DDL to PG and MySQL/InnoDB.
+Use `make coordination-test` with both `SPEECHNEXUS_TEST_DATABASE_URL` and
+`SPEECHNEXUS_TEST_MYSQL_URL` for the required cross-database gate; a missing DSN
+fails that target. See [integration setup and scope](../tests/integration/README.md).
+CI provisions both disposable database services.
 
 
 ## Architecture repair revision (2026-10-23)
@@ -311,3 +328,10 @@ persistent deletion ledger before exposing content. See
 [deletion semantics](../docs/architecture/data-deletion.md).
 These protocols have contract tests; business routes and cleanup services remain
 unimplemented.
+
+[ADR 0006](../docs/decisions/0006-cluster-coordination-and-storage-portability.md)
+preserves these protocol semantics while moving cross-table coordination rules
+into controlled application transactions. PostgreSQL remains the official
+product target; the MySQL/InnoDB prototype validates key coordination behavior only.
+The [refactoring plan](../docs/plans/2026-10-23-cluster-coordination-refactor.md)
+does not constitute an implemented adapter or a new database support claim.

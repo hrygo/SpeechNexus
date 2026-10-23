@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus 团队 A 执行目标"
-status: planned
+status: active
 version: "0.1.0"
 date: 2026-10-23
 ---

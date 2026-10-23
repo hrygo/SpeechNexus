@@ -8,6 +8,9 @@ from typing import Any
 
 import grimp
 import pytest
+from importlinter.adapters.timing import SystemClockTimer
+from importlinter.application.app_config import settings
+from importlinter.contracts.forbidden import ForbiddenContract
 from importlinter.contracts.independence import IndependenceContract
 from importlinter.contracts.layers import LayersContract
 
@@ -16,10 +19,13 @@ _CONFIG = tomllib.loads((_ROOT / "pyproject.toml").read_text())["tool"]["importl
 
 
 def _check(config: dict[str, Any], importer: str, imported: str) -> bool:
+    settings.configure(TIMER=SystemClockTimer())
     graph = grimp.ImportGraph()
     modules = {*_CONFIG["root_packages"], importer, imported}
     for contract in _CONFIG["contracts"]:
         modules.update(contract.get("modules", []))
+        modules.update(contract.get("source_modules", []))
+        modules.update(contract.get("forbidden_modules", []))
         for layer in contract.get("layers", []):
             modules.update(item.strip() for item in layer.split("|"))
     for module in list(modules):
@@ -28,8 +34,14 @@ def _check(config: dict[str, Any], importer: str, imported: str) -> bool:
     for module in modules:
         graph.add_module(module)
     graph.add_import(importer=importer, imported=imported, line_number=1, line_contents="synthetic")
-    cls = LayersContract if config["type"] == "layers" else IndependenceContract
-    contract = cls(config["name"], _CONFIG, config)
+    classes: dict[
+        str, type[LayersContract] | type[IndependenceContract] | type[ForbiddenContract]
+    ] = {
+        "layers": LayersContract,
+        "independence": IndependenceContract,
+        "forbidden": ForbiddenContract,
+    }
+    contract = classes[config["type"]](config["name"], _CONFIG, config)
     return contract.check(graph, verbose=False).kept
 
 
@@ -43,6 +55,12 @@ def test_each_architecture_guard_rejects_real_graph_violation(config: dict[str, 
         sibling = config["layers"][0].split("|")[1].strip()
         assert not _check(config, top, sibling)
         assert not _check(config, sibling, top)
+    elif config["type"] == "forbidden":
+        for source in config["source_modules"]:
+            for forbidden in config["forbidden_modules"]:
+                assert not _check(config, source, forbidden)
+                assert not _check(config, source + ".values", forbidden + ".models")
+        assert _check(config, "speechnexus_backend.speech.interfaces", "speechnexus_contracts")
     else:
         first, second = config["modules"]
         assert not _check(config, first, second)

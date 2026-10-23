@@ -1,5 +1,5 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
-	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-sdk-test \
+	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service \
 	format lint typecheck test integration-test coordination-test python-build build verify
 
@@ -45,6 +45,12 @@ browser-smoke:
 
 media-smoke:
 	uv run python scripts/dev-env/media-smoke.py
+
+contracts-generate:
+	uv run python scripts/dev-env/generate-contract-bindings.py
+
+contracts-drift:
+	uv run python scripts/dev-env/generate-contract-bindings.py --check
 
 contracts-check:
 	uv run python scripts/dev-env/validate-contracts.py

@@ -255,6 +255,16 @@ implemented.
 - Resolve cross-file references against the containing contract file; do not
   rely on the current working directory.
 
+## Generated consumer bindings
+
+The first file-workflow consumer package is documented in
+[`packages/contracts`](../packages/contracts/README.md). Generate it with
+`make contracts-generate` and verify byte-for-byte reproducibility with
+`make contracts-drift` after installing both locked toolchains. The
+[ownership matrix](../docs/architecture/contract-ownership.md) assigns the 18
+coordination ports and preserves typed unknown-outcome recovery. These artifacts
+do not imply implemented business routes or completed consumer integration.
+
 ## Validation
 
 Run:

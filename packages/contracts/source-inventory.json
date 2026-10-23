@@ -1,0 +1,114 @@
+{
+  "admin-openapi.yaml": {
+    "sha256": "a92bf0055459f35b09ca3da1ff9e131db18805dfd707fb1fc0e63fb8296b6e53",
+    "version": "0.1.0.dev0"
+  },
+  "capacity-manifest.schema.json": {
+    "sha256": "3f27dfa3d0b30542c8506abcb5124d13a81b41a54539297c5d0604858b247b40",
+    "version": null
+  },
+  "internal/coordination-transactions.schema.json": {
+    "sha256": "a6e7f26651770ce2c10e89dce63332c153eaee2acbdc43021c69e6a3fd1be8ad",
+    "version": null
+  },
+  "internal/execution-command.schema.json": {
+    "sha256": "ff66e92ed35ae2d5eef9ed5f9fa0f8b461205596e2ce28a27c74494d03971300",
+    "version": null
+  },
+  "internal/execution-control.openapi.yaml": {
+    "sha256": "05eb99168586a06e7a85dee01a8a52e5a4db03af815722f244e2238df772e9d1",
+    "version": "0.2.0.dev0"
+  },
+  "internal/execution-stream.schema.json": {
+    "sha256": "ae26a1834d3c119e672204c4ae7964170689bd0f0688c98de378b48be4a40bf4",
+    "version": null
+  },
+  "internal/runtime-control.openapi.yaml": {
+    "sha256": "826cca3bbf17c0e51a2e4b5b021bd8e79d0e72030a21b1c3e229e4b9cc209a47",
+    "version": "0.1.0.dev0"
+  },
+  "model-binding.schema.json": {
+    "sha256": "54327d5bd44557357598c3effe660fb6c5295792891485734b5e9fbac3e54a30",
+    "version": null
+  },
+  "model-instance.schema.json": {
+    "sha256": "861086177781049f562135e14aa198d4aed6626a2d349f400bd0cf9505926abf",
+    "version": null
+  },
+  "operations.openapi.yaml": {
+    "sha256": "c96e374bf06c6bb3ef8cd1479c6364c416ab6f548dd4da440a6d4843fae59c83",
+    "version": "0.1.0.dev0"
+  },
+  "qualification-report.schema.json": {
+    "sha256": "719035478ab7711f0ec9f4680c327f645b2ba4e47d9531b33951ab78eb010d21",
+    "version": null
+  },
+  "realtime-events.schema.json": {
+    "sha256": "760fcb579e89a529ef59be30fedbf338641e6d1f3aadca4bbd0dd7c5b004e1e0",
+    "version": null
+  },
+  "scenario-profile.schema.json": {
+    "sha256": "7d2fb6e705ac199f980576a8641048373990f200c38cbf4bc32549dfdce17412",
+    "version": null
+  },
+  "shared/capability-domains.schema.json": {
+    "sha256": "d95b38b67d908aa594fce744d2544414f23d787d2de5021edf2b81068a343c1c",
+    "version": null
+  },
+  "shared/deletion.schema.json": {
+    "sha256": "fb67340b3142bd911d962610ea4bd79fa7c310f47abb2b96b983a7753a8fab2d",
+    "version": null
+  },
+  "shared/errors.schema.json": {
+    "sha256": "a294000f74b904b43d6a62b9ca3a544b9cde9fb5f1e663dcb905fa93311ad16a",
+    "version": null
+  },
+  "shared/identifiers.schema.json": {
+    "sha256": "3c287614290c3ce04dfcfab173f3e5b1595b6ef6e83cba67c738c9275a0a6868",
+    "version": null
+  },
+  "shared/language.schema.json": {
+    "sha256": "d370ab35f4d9aa5541883ccd0dfd71679166277fdf094664a1eeb4df40c19553",
+    "version": null
+  },
+  "shared/lifecycle.schema.json": {
+    "sha256": "3384acfffd8e28f81e7ea16d4359d4138342c6ba06882a6d2b620beed5ad914c",
+    "version": null
+  },
+  "shared/operation-states.schema.json": {
+    "sha256": "5b443ad14385f7a3585e6d0a607b5999a131d34d92d712dce585f7f88fcbee64",
+    "version": null
+  },
+  "shared/public-audio.schema.json": {
+    "sha256": "bdce03113bee561264f7d1fa33a9cf906a209e60c5bb9068afec8d4c247e119a",
+    "version": null
+  },
+  "shared/receipts.schema.json": {
+    "sha256": "c15dd975d02a0387dc1da6bb251848e6fddd5533f0c34574e2b7d147bf02f4b6",
+    "version": null
+  },
+  "shared/references.schema.json": {
+    "sha256": "a4a083abfdf46adbc480e8dfcb8378c2abd86a0a6d30b5e122885d8782d15be0",
+    "version": null
+  },
+  "shared/runtime-states.schema.json": {
+    "sha256": "34102aa4b57455d02bafb5315af8bccb640bac06c8cf091f1db33d6970fb753f",
+    "version": null
+  },
+  "shared/speech-overrides.schema.json": {
+    "sha256": "800dc677da56545a9863f4d85e15143ea84747a7bc871271ae5ba204b630f028",
+    "version": null
+  },
+  "speech-openapi.yaml": {
+    "sha256": "c01bf2c89e2cadf7cb3c4a65c4b7db6dc3f4ceea9d908d910ef4439ef63258fd",
+    "version": "0.1.0.dev0"
+  },
+  "voice-resource.schema.json": {
+    "sha256": "540a0547a796be66b8f7597d4fe6e9f63184b30907237d1a1575a02b211f00c9",
+    "version": null
+  },
+  "workbench-openapi.yaml": {
+    "sha256": "38b8f6776392f541c0be085b5fedd49937f3c16486934d55970d154309390068",
+    "version": "0.1.0.dev0"
+  }
+}

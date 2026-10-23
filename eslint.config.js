@@ -4,7 +4,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-const browserFiles = ["web/**/*.{ts,tsx}"];
+const browserFiles = ["web/**/*.{ts,tsx}", "packages/contracts/src/*.{ts,mts}"];
 const appFiles = ["web/admin/src/**/*.{ts,tsx}", "web/workbench/src/**/*.{ts,tsx}"];
 
 export default tseslint.config(
@@ -16,6 +16,7 @@ export default tseslint.config(
       "**/.venv/**",
       "**/playwright-report/**",
       "**/test-results/**",
+      "packages/contracts/src/*.generated.ts",
     ],
   },
   js.configs.recommended,
@@ -57,7 +58,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/dev-env/*.mjs"],
+    files: ["scripts/dev-env/*.mjs", "packages/contracts/**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       globals: {

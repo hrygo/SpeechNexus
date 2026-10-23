@@ -1,0 +1,3342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FileContract",
+  "x-nexus-bindings-version": "0.1.0",
+  "x-nexus-entrypoints": [
+    "JobCreateRequest",
+    "Job",
+    "JobList",
+    "JobEvent",
+    "JobCancellation",
+    "AssetUploadRequest",
+    "Asset",
+    "Artifact",
+    "Operation",
+    "OperationCancellation",
+    "ErrorResponse"
+  ],
+  "$defs": {
+    "JobCreateRequest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AsrJobCreate"
+        },
+        {
+          "$ref": "#/$defs/TtsJobCreate"
+        },
+        {
+          "$ref": "#/$defs/VoiceDesignJobCreate"
+        },
+        {
+          "$ref": "#/$defs/VoiceCloneJobCreate"
+        },
+        {
+          "$ref": "#/$defs/VoicePreviewJobCreate"
+        },
+        {
+          "$ref": "#/$defs/VoiceValidationJobCreate"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AsrJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "asr"
+            },
+            "input": {
+              "$ref": "#/$defs/AsrJobInput"
+            },
+            "output": {
+              "$ref": "#/$defs/AsrJobOutput"
+            }
+          },
+          "required": ["kind", "model", "input"]
+        }
+      ]
+    },
+    "JobCreateBase": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/JobKind"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "overrides": {
+          "$ref": "#/$defs/JobOverrides"
+        },
+        "constraints": {
+          "$ref": "#/$defs/JobConstraints"
+        },
+        "draft_target": {
+          "$ref": "#/$defs/DraftTarget"
+        }
+      }
+    },
+    "JobKind": {
+      "type": "string",
+      "enum": ["asr", "tts", "voice_design", "voice_clone", "voice_preview", "voice_validation"]
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "JobOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/AsrOverrides"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsOverrides"
+        }
+      }
+    },
+    "AsrOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_AsrOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_AsrOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "TtsOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_TtsOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_TtsOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "JobConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_queue_wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "allow_degradation": {
+          "type": "boolean",
+          "default": false
+        },
+        "require_exact_parameters": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "DraftTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expected_revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "AsrJobInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audio_asset_id"],
+      "properties": {
+        "audio_asset_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "AsrJobOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transcript_format": {
+          "$ref": "#/$defs/TranscriptFormat",
+          "default": "json"
+        },
+        "save_artifacts": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        }
+      }
+    },
+    "TranscriptFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "TtsJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tts"
+            },
+            "input": {
+              "$ref": "#/$defs/TtsJobInput"
+            },
+            "voice": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "pronunciation": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "output": {
+              "$ref": "#/$defs/TtsJobOutput"
+            }
+          },
+          "required": ["kind", "model", "input", "voice"]
+        }
+      ]
+    },
+    "TtsJobInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text_asset_id"],
+          "properties": {
+            "text_asset_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          }
+        }
+      ]
+    },
+    "TtsJobOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "audio_format": {
+          "$ref": "#/$defs/AudioFormat",
+          "default": "mp3"
+        },
+        "save_artifacts": {
+          "type": "boolean",
+          "const": true,
+          "default": true
+        }
+      }
+    },
+    "AudioFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "VoiceDesignJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "voice_design"
+            },
+            "input": {
+              "$ref": "#/$defs/VoiceDesignJobInput"
+            }
+          },
+          "required": ["kind", "model", "input"]
+        }
+      ]
+    },
+    "VoiceDesignJobInput": {
+      "$ref": "#/$defs/VoiceDesignInput"
+    },
+    "VoiceDesignInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "preview_text"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "VoiceCloneJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "voice_clone"
+            },
+            "input": {
+              "$ref": "#/$defs/VoiceCloneJobInput"
+            }
+          },
+          "required": ["kind", "model", "input"]
+        }
+      ]
+    },
+    "VoiceCloneJobInput": {
+      "$ref": "#/$defs/VoiceCloneInput"
+    },
+    "VoiceCloneInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_audio_asset_id", "source_use_confirmed"],
+      "properties": {
+        "reference_audio_asset_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "reference_text": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        },
+        "preview_text": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_use_confirmed": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "VoicePreviewJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "voice_preview"
+            },
+            "input": {
+              "$ref": "#/$defs/VoicePreviewJobInput"
+            }
+          },
+          "required": ["kind", "input"]
+        }
+      ]
+    },
+    "VoicePreviewJobInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["voice_draft_id", "draft_revision", "text"],
+      "properties": {
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "VoiceValidationJobCreate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobCreateBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "voice_validation"
+            },
+            "input": {
+              "$ref": "#/$defs/VoiceValidationJobInput"
+            }
+          },
+          "required": ["kind", "input"]
+        }
+      ]
+    },
+    "VoiceValidationJobInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["voice_draft_id", "draft_revision", "validation_set_revision"],
+      "properties": {
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "validation_set_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "Job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "kind",
+        "status",
+        "cleanup_state",
+        "request_id",
+        "workspace_id",
+        "execution_revision",
+        "progress",
+        "artifacts",
+        "result",
+        "operations",
+        "effective_configuration",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.job"
+        },
+        "kind": {
+          "$ref": "#/$defs/JobKind"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": ["string", "null"],
+          "maxLength": 256
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "progress": {
+          "$ref": "#/$defs/JobProgress"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JobArtifact"
+          }
+        },
+        "result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperationReference"
+          }
+        },
+        "effective_configuration": {
+          "$ref": "#/$defs/EffectiveConfiguration"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["succeeded", "cancelled"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["result"],
+            "properties": {
+              "result": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "artifacts": {
+                "minItems": 1
+              },
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "asr"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "transcript"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "asr"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "tts"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "audio"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "tts"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_design"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_design"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_clone"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_clone"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_preview"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "preview"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_preview"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "voice_validation"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "validation_report"
+                    }
+                  },
+                  "required": ["kind"]
+                }
+              },
+              "result": {
+                "properties": {
+                  "kind": {
+                    "const": "voice_validation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "expired"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "not_required"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "JobStatus": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "retry_wait",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "CleanupState": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+    },
+    "External_shared_operation_states_schema_json_CleanupState": {
+      "type": "string",
+      "enum": ["not_required", "pending", "complete", "quarantined"]
+    },
+    "JobProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "completed"],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "enum": ["audio_ms", "text_codepoints", "items"]
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "JobArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "kind", "media_type", "bytes", "sha256"],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For an artifact referenced by a succeeded Job result, this must be present and equal the result receipt_id."
+        },
+        "expires_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ArtifactKind": {
+      "type": "string",
+      "enum": ["transcript", "audio", "preview", "validation_report", "export_manifest"]
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "JobResult": {
+      "description": "Structured successful outcome of a durable Job. `kind` must equal the\nowning Job kind. Artifact identifiers in the result must identify the\ncorresponding entries in `Job.artifacts` with the matching kind and\nresult receipt; the service validates that cross-array identity before\ncommitting `succeeded`.\n",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AsrJobResult"
+        },
+        {
+          "$ref": "#/$defs/TtsJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoiceDraftJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoicePreviewJobResult"
+        },
+        {
+          "$ref": "#/$defs/VoiceValidationJobResult"
+        }
+      ]
+    },
+    "AsrJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "transcript_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "asr"
+        },
+        "transcript_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "TtsJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "audio_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "tts"
+        },
+        "audio_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoiceDraftJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "voice_draft_id",
+        "draft_revision",
+        "preview_artifact_ids",
+        "receipt_id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["voice_design", "voice_clone"]
+        },
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "preview_artifact_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoicePreviewJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "voice_draft_id", "draft_revision", "preview_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "voice_preview"
+        },
+        "voice_draft_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "preview_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "VoiceValidationJobResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "validation", "validation_report_artifact_id", "receipt_id"],
+      "properties": {
+        "kind": {
+          "const": "voice_validation"
+        },
+        "validation": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_VoiceValidation"
+        },
+        "validation_report_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_VoiceValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "object",
+        "draft_id",
+        "draft_revision",
+        "validation_set_revision",
+        "model_binding",
+        "status",
+        "checks",
+        "publication_eligible",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "voice_validation"
+        },
+        "id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "object": {
+          "const": "nexus.voice_validation"
+        },
+        "draft_id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "draft_revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "validation_set_revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_BindingReference"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "passed", "failed"]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/External_voice_resource_schema_json_CheckResult"
+          }
+        },
+        "publication_eligible": {
+          "type": "boolean",
+          "description": "True only when every required check passed and the candidate has a verified reusable path to later TTS. Preview-only candidates are never publication eligible."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "enum": ["passed", "skipped"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "const": "failed"
+                    }
+                  }
+                },
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication_eligible": {
+                "const": true
+              }
+            },
+            "required": ["publication_eligible"]
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              },
+              "checks": {
+                "contains": {
+                  "type": "object",
+                  "required": ["required"],
+                  "properties": {
+                    "required": {
+                      "const": true
+                    }
+                  }
+                },
+                "minContains": 1,
+                "allOf": [
+                  {
+                    "contains": {
+                      "type": "object",
+                      "required": ["name", "required", "status"],
+                      "properties": {
+                        "name": {
+                          "const": "reusable_tts"
+                        },
+                        "required": {
+                          "const": true
+                        },
+                        "status": {
+                          "const": "passed"
+                        }
+                      }
+                    },
+                    "minContains": 1
+                  }
+                ],
+                "items": {
+                  "if": {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      }
+                    },
+                    "required": ["required"]
+                  },
+                  "then": {
+                    "properties": {
+                      "status": {
+                        "const": "passed"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_voice_resource_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_voice_resource_schema_json_Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_voice_resource_schema_json_BindingReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_voice_resource_schema_json_CheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "required", "status"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed", "skipped"]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "A skipped or failed required check makes the candidate publication-ineligible."
+        },
+        "detail": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
+    "OperationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "kind", "status"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/OperationKind"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        }
+      }
+    },
+    "OperationKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_OperationKind"
+    },
+    "External_shared_capability_domains_schema_json_OperationKind": {
+      "type": "string",
+      "enum": ["asr", "tts", "voice_preview", "voice_validation"]
+    },
+    "OperationStatus": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_OperationStatus"
+    },
+    "External_shared_operation_states_schema_json_OperationStatus": {
+      "type": "string",
+      "enum": ["accepted", "running", "succeeded", "failed", "cancelled"]
+    },
+    "EffectiveConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "policy_revision", "catalog_revision"],
+      "properties": {
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "tts": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "voice": {
+              "$ref": "#/$defs/ResourceReference"
+            }
+          }
+        },
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/AsrOverrides"
+            },
+            "tts": {
+              "$ref": "#/$defs/TtsOverrides"
+            }
+          }
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "catalog_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "degradation": {
+          "type": "string",
+          "enum": ["none", "resource_tightened", "quality_reduced"],
+          "default": "none"
+        }
+      }
+    },
+    "JobError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    },
+    "JobList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Job"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "JobEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/JobQueuedEvent"
+        },
+        {
+          "$ref": "#/$defs/JobStartedEvent"
+        },
+        {
+          "$ref": "#/$defs/JobProgressEvent"
+        },
+        {
+          "$ref": "#/$defs/JobRetryScheduledEvent"
+        },
+        {
+          "$ref": "#/$defs/JobCancellingEvent"
+        },
+        {
+          "$ref": "#/$defs/JobSucceededEvent"
+        },
+        {
+          "$ref": "#/$defs/JobFailedEvent"
+        },
+        {
+          "$ref": "#/$defs/JobCancelledEvent"
+        },
+        {
+          "$ref": "#/$defs/JobExpiredEvent"
+        },
+        {
+          "$ref": "#/$defs/JobCleanupUpdatedEvent"
+        },
+        {
+          "$ref": "#/$defs/ArtifactPublishedEvent"
+        }
+      ],
+      "examples": [
+        {
+          "id": "1",
+          "type": "job.queued",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        },
+        {
+          "id": "2",
+          "type": "job.started",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "execution_revision": "1"
+          }
+        },
+        {
+          "id": "3",
+          "type": "job.progress",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:02Z",
+          "data": {
+            "status": "running",
+            "progress": {
+              "unit": "text_codepoints",
+              "completed": 4,
+              "total": 10
+            }
+          }
+        },
+        {
+          "id": "4",
+          "type": "job.retry_scheduled",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:03Z",
+          "data": {
+            "status": "retry_wait",
+            "attempt": 1,
+            "max_attempts": 3,
+            "retry_at": "2026-10-23T00:00:08Z",
+            "error": {
+              "code": "engine_unavailable",
+              "message": "synthetic transient engine failure",
+              "retryable": true
+            }
+          }
+        },
+        {
+          "id": "5",
+          "type": "job.cancelling",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:04Z",
+          "data": {
+            "status": "cancelling"
+          }
+        },
+        {
+          "id": "6",
+          "type": "job.succeeded",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:05Z",
+          "data": {
+            "status": "succeeded",
+            "cleanup_state": "complete",
+            "artifacts": [
+              {
+                "artifact_id": "artifact_demo",
+                "kind": "audio",
+                "media_type": "audio/wav",
+                "bytes": 1024,
+                "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "receipt_id": "receipt_demo"
+              }
+            ],
+            "result": {
+              "kind": "tts",
+              "audio_artifact_id": "artifact_demo",
+              "receipt_id": "receipt_demo"
+            }
+          }
+        },
+        {
+          "id": "7",
+          "type": "job.failed",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:06Z",
+          "data": {
+            "status": "failed",
+            "cleanup_state": "quarantined",
+            "error": {
+              "code": "engine_failure",
+              "message": "synthetic terminal engine failure",
+              "retryable": false
+            }
+          }
+        },
+        {
+          "id": "8",
+          "type": "job.cancelled",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:07Z",
+          "data": {
+            "status": "cancelled",
+            "cleanup_state": "complete"
+          }
+        },
+        {
+          "id": "9",
+          "type": "job.expired",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:08Z",
+          "data": {
+            "status": "expired",
+            "cleanup_state": "not_required"
+          }
+        },
+        {
+          "id": "10",
+          "type": "job.cleanup_updated",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:09Z",
+          "data": {
+            "cleanup_state": "pending",
+            "operations": [
+              {
+                "operation_id": "op_demo",
+                "kind": "tts",
+                "status": "running",
+                "cleanup_state": "pending"
+              }
+            ]
+          }
+        },
+        {
+          "id": "11",
+          "type": "artifact.published",
+          "job_id": "job_demo",
+          "occurred_at": "2026-10-23T00:00:10Z",
+          "data": {
+            "artifact": {
+              "artifact_id": "artifact_demo",
+              "kind": "audio",
+              "media_type": "audio/wav",
+              "bytes": 1024,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      ]
+    },
+    "JobQueuedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.queued"
+            },
+            "data": {
+              "$ref": "#/$defs/JobQueuedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobEventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "job_id", "occurred_at", "data"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventSequence",
+          "description": "Persistent job_event_seq used as the SSE id."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "job.queued",
+            "job.started",
+            "job.progress",
+            "job.retry_scheduled",
+            "job.cancelling",
+            "job.succeeded",
+            "job.failed",
+            "job.cancelled",
+            "job.expired",
+            "job.cleanup_updated",
+            "artifact.published"
+          ]
+        },
+        "job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "description": "Event-type-specific payload; see the concrete JobEvent variant."
+        }
+      }
+    },
+    "EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_EventSequence"
+    },
+    "External_shared_identifiers_schema_json_EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision",
+      "description": "Monotonic decimal SSE event sequence used as Last-Event-ID."
+    },
+    "JobQueuedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "queued"
+        }
+      }
+    },
+    "JobStartedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.started"
+            },
+            "data": {
+              "$ref": "#/$defs/JobStartedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobStartedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "execution_revision"],
+      "properties": {
+        "status": {
+          "const": "running"
+        },
+        "execution_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "JobProgressEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.progress"
+            },
+            "data": {
+              "$ref": "#/$defs/JobProgressEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobProgressEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "progress"],
+      "properties": {
+        "status": {
+          "const": "running"
+        },
+        "progress": {
+          "$ref": "#/$defs/JobProgress"
+        }
+      }
+    },
+    "JobRetryScheduledEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.retry_scheduled"
+            },
+            "data": {
+              "$ref": "#/$defs/JobRetryScheduledEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobRetryScheduledEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "attempt", "retry_at"],
+      "properties": {
+        "status": {
+          "const": "retry_wait"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retry_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "JobCancellingEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.cancelling"
+            },
+            "data": {
+              "$ref": "#/$defs/JobCancellingEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobCancellingEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "cancelling"
+        }
+      }
+    },
+    "JobSucceededEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.succeeded"
+            },
+            "data": {
+              "$ref": "#/$defs/JobSucceededEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobSucceededEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifacts", "result", "cleanup_state"],
+      "properties": {
+        "status": {
+          "const": "succeeded"
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/JobArtifact"
+          }
+        },
+        "result": {
+          "$ref": "#/$defs/JobResult"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        }
+      }
+    },
+    "JobFailedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.failed"
+            },
+            "data": {
+              "$ref": "#/$defs/JobFailedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobFailedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error", "cleanup_state"],
+      "properties": {
+        "status": {
+          "const": "failed"
+        },
+        "error": {
+          "$ref": "#/$defs/JobError"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        }
+      }
+    },
+    "JobCancelledEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.cancelled"
+            },
+            "data": {
+              "$ref": "#/$defs/JobCancelledEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobCancelledEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "cleanup_state"],
+      "properties": {
+        "status": {
+          "const": "cancelled"
+        },
+        "cleanup_state": {
+          "enum": ["not_required", "complete"]
+        }
+      }
+    },
+    "JobExpiredEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.expired"
+            },
+            "data": {
+              "$ref": "#/$defs/JobExpiredEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobExpiredEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "cleanup_state"],
+      "properties": {
+        "status": {
+          "const": "expired"
+        },
+        "cleanup_state": {
+          "const": "not_required"
+        }
+      }
+    },
+    "JobCleanupUpdatedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "job.cleanup_updated"
+            },
+            "data": {
+              "$ref": "#/$defs/JobCleanupUpdatedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "JobCleanupUpdatedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cleanup_state", "operations"],
+      "properties": {
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperationReference"
+          }
+        }
+      }
+    },
+    "ArtifactPublishedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/JobEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "artifact.published"
+            },
+            "data": {
+              "$ref": "#/$defs/ArtifactPublishedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ArtifactPublishedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact"],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/JobArtifact"
+        }
+      }
+    },
+    "JobCancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "accepted",
+        "status",
+        "cleanup_state",
+        "cancellation_requested_at",
+        "operations"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "cancellation_requested_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperationReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AssetUploadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "purpose"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "format": "binary"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "purpose": {
+          "$ref": "#/$defs/AssetPurpose"
+        },
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 31536000
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "AssetPurpose": {
+      "type": "string",
+      "enum": ["asr_input", "voice_reference", "text_input"]
+    },
+    "Asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "workspace_id",
+        "purpose",
+        "status",
+        "media_type",
+        "bytes",
+        "sha256",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.asset"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "purpose": {
+          "$ref": "#/$defs/AssetPurpose"
+        },
+        "status": {
+          "$ref": "#/$defs/AssetStatus"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "duration_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "minimum": 8000,
+          "maximum": 192000
+        },
+        "channels": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 8
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ready"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "bytes": {
+                "minimum": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "purpose": {
+                    "enum": ["asr_input", "voice_reference"]
+                  }
+                },
+                "required": ["purpose"]
+              }
+            ]
+          },
+          "then": {
+            "required": ["duration_ms", "sample_rate_hz", "channels"],
+            "properties": {
+              "duration_ms": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sample_rate_hz": {
+                "type": "integer"
+              },
+              "channels": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": ["status"]
+              },
+              {
+                "properties": {
+                  "purpose": {
+                    "const": "text_input"
+                  }
+                },
+                "required": ["purpose"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "duration_ms": {
+                "type": "null"
+              },
+              "sample_rate_hz": {
+                "type": "null"
+              },
+              "channels": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AssetStatus": {
+      "type": "string",
+      "enum": ["staging", "ready", "rejected", "expired", "deleted"]
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "workspace_id",
+        "kind",
+        "status",
+        "media_type",
+        "bytes",
+        "sha256",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.artifact"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "status": {
+          "$ref": "#/$defs/ArtifactStatus"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_operation_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ArtifactStatus": {
+      "type": "string",
+      "enum": ["ready", "expired", "deleted"]
+    },
+    "Operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "kind",
+        "status",
+        "cleanup_state",
+        "execution_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.operation"
+        },
+        "kind": {
+          "$ref": "#/$defs/OperationKind"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "receipt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ExecutionReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "job_id": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              }
+            },
+            "required": ["job_id", "session_id"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["receipt"],
+            "properties": {
+              "receipt": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["succeeded", "cancelled"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionReceipt": {
+      "$ref": "#/$defs/External_shared_receipts_schema_json_ExecutionReceipt"
+    },
+    "External_shared_receipts_schema_json_ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "effective": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "missing": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_PublicExecutionFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_speed"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "response_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+            },
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+            }
+          ]
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_max_segment_ms"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "profile": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "voice": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "pronunciation": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_turn_detection"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_preview_interval_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_alignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_audio_delivery"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_planner"
+        },
+        "instructions_present": {
+          "type": "boolean"
+        },
+        "prompt_present": {
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        }
+      },
+      "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_shared_speech_overrides_schema_json_seed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_speech_overrides_schema_json_speed": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4.0
+    },
+    "External_shared_speech_overrides_schema_json_max_segment_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "External_shared_speech_overrides_schema_json_turn_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_finalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_speech_overrides_schema_json_rollback_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_alignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_diarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_text_commit_mode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_speech_overrides_schema_json_audio_delivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_ReceiptFactPath": {
+      "type": "string",
+      "enum": [
+        "requested.language",
+        "requested.seed",
+        "requested.speed",
+        "requested.sample_rate_hz",
+        "requested.response_format",
+        "requested.max_segment_ms",
+        "requested.model_binding",
+        "requested.profile",
+        "requested.voice",
+        "requested.pronunciation",
+        "requested.turn_detection",
+        "requested.finalization",
+        "requested.preview_interval_ms",
+        "requested.rollback_tokens",
+        "requested.final_deadline_ms",
+        "requested.auxiliary_deadline_ms",
+        "requested.alignment",
+        "requested.diarization",
+        "requested.vocabulary_set_revision",
+        "requested.text_commit_mode",
+        "requested.audio_delivery",
+        "requested.pronunciation_revision",
+        "requested.planner",
+        "requested.instructions_present",
+        "requested.prompt_present",
+        "requested.policy",
+        "requested.vocabulary",
+        "effective.language",
+        "effective.seed",
+        "effective.speed",
+        "effective.sample_rate_hz",
+        "effective.response_format",
+        "effective.max_segment_ms",
+        "effective.model_binding",
+        "effective.profile",
+        "effective.voice",
+        "effective.pronunciation",
+        "effective.turn_detection",
+        "effective.finalization",
+        "effective.preview_interval_ms",
+        "effective.rollback_tokens",
+        "effective.final_deadline_ms",
+        "effective.auxiliary_deadline_ms",
+        "effective.alignment",
+        "effective.diarization",
+        "effective.vocabulary_set_revision",
+        "effective.text_commit_mode",
+        "effective.audio_delivery",
+        "effective.pronunciation_revision",
+        "effective.planner",
+        "effective.instructions_present",
+        "effective.prompt_present",
+        "effective.policy",
+        "effective.vocabulary",
+        "observed.language",
+        "observed.seed",
+        "observed.speed",
+        "observed.sample_rate_hz",
+        "observed.response_format",
+        "observed.max_segment_ms",
+        "observed.model_binding",
+        "observed.profile",
+        "observed.voice",
+        "observed.pronunciation",
+        "observed.turn_detection",
+        "observed.finalization",
+        "observed.preview_interval_ms",
+        "observed.rollback_tokens",
+        "observed.final_deadline_ms",
+        "observed.auxiliary_deadline_ms",
+        "observed.alignment",
+        "observed.diarization",
+        "observed.vocabulary_set_revision",
+        "observed.text_commit_mode",
+        "observed.audio_delivery",
+        "observed.pronunciation_revision",
+        "observed.planner",
+        "observed.instructions_present",
+        "observed.prompt_present",
+        "observed.policy",
+        "observed.vocabulary",
+        "requested.planner.max_chars",
+        "requested.planner.max_wait_ms",
+        "requested.turn_detection.mode",
+        "requested.turn_detection.silence_duration_ms",
+        "effective.planner.max_chars",
+        "effective.planner.max_wait_ms",
+        "effective.turn_detection.mode",
+        "effective.turn_detection.silence_duration_ms",
+        "observed.planner.max_chars",
+        "observed.planner.max_wait_ms",
+        "observed.turn_detection.mode",
+        "observed.turn_detection.silence_duration_ms"
+      ]
+    },
+    "OperationCancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "accepted",
+        "status",
+        "cleanup_state",
+        "cancellation_requested_at"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "cancellation_requested_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ErrorResponse": {
+      "$ref": "#/$defs/External_shared_errors_schema_json_ErrorResponse"
+    },
+    "External_shared_errors_schema_json_ErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+        }
+      }
+    },
+    "External_shared_errors_schema_json_ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "type", "message", "param", "request_id", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$",
+          "description": "Stable machine-readable error code."
+        },
+        "type": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorType"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "nexus": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_OperationRecovery"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": ["operation_in_progress", "response_not_replayable"]
+              }
+            }
+          },
+          "then": {
+            "required": ["nexus"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "response_not_replayable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nexus": {
+                "required": ["receipt"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_errors_schema_json_ErrorType": {
+      "type": "string",
+      "enum": [
+        "invalid_request_error",
+        "authentication_error",
+        "permission_error",
+        "not_found_error",
+        "rate_limit_error",
+        "api_error",
+        "service_unavailable_error"
+      ]
+    },
+    "External_shared_errors_schema_json_OperationRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "receipt": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_ExecutionReceipt"
+        }
+      },
+      "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/JobCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/Job"
+    },
+    {
+      "$ref": "#/$defs/JobList"
+    },
+    {
+      "$ref": "#/$defs/JobEvent"
+    },
+    {
+      "$ref": "#/$defs/JobCancellation"
+    },
+    {
+      "$ref": "#/$defs/AssetUploadRequest"
+    },
+    {
+      "$ref": "#/$defs/Asset"
+    },
+    {
+      "$ref": "#/$defs/Artifact"
+    },
+    {
+      "$ref": "#/$defs/Operation"
+    },
+    {
+      "$ref": "#/$defs/OperationCancellation"
+    },
+    {
+      "$ref": "#/$defs/ErrorResponse"
+    }
+  ]
+}

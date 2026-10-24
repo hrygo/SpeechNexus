@@ -132,6 +132,14 @@ class IngressOwnership(Protocol):
 class BarrierLedger(Protocol):
     def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot: ...
 
+    def get_barrier(self, gateway_id: str, pool_id: str) -> BarrierSnapshot | None:
+        """Read the recorded barrier fact without locking it or accepting a new minimum.
+
+        A repeated command must return the original fact even after the owner that sealed it
+        was replaced, so a read cannot go through the sealing authority check.
+        """
+        ...
+
 
 class ExecutionRecoveryLedger(Protocol):
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent: ...

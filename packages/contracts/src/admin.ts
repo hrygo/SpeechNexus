@@ -4,7 +4,10 @@ export { ContractValidationError } from "./errors.mjs";
 import bundle from "./speechnexus_contracts/admin.schema.json" with { type: "json" };
 import type { components } from "./admin.generated";
 export type { components } from "./admin.generated";
-export type Contracts = Pick<components["schemas"], "WorkspaceCreateRequest" | "WorkspacePatch">;
+export type Contracts = Pick<
+  components["schemas"],
+  "WorkspaceCreateRequest" | "WorkspacePatch" | "Workspace" | "WorkspaceList" | "ErrorResponse"
+>;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {
   return parseValue(name, value) as Contracts[K];

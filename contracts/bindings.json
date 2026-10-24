@@ -44,7 +44,13 @@
   "profiles": {
     "admin": {
       "source": "admin-openapi.yaml",
-      "schemas": ["WorkspaceCreateRequest", "WorkspacePatch"]
+      "schemas": [
+        "WorkspaceCreateRequest",
+        "WorkspacePatch",
+        "Workspace",
+        "WorkspaceList",
+        "ErrorResponse"
+      ]
     },
     "workbench": {
       "source": "workbench-openapi.yaml",
@@ -139,6 +145,12 @@
     }
   },
   "http_surfaces": {
+    "admin": {
+      "source": "admin-openapi.yaml",
+      "validate": true,
+      "paths": ["/v1/nexus/workspaces", "/v1/nexus/workspaces/{workspace_id}"],
+      "operations": ["listWorkspaces", "getWorkspace"]
+    },
     "runtime": {
       "source": "internal/runtime-control.openapi.yaml",
       "validate": true,

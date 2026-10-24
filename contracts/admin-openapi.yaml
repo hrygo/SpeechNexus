@@ -50,8 +50,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
     post:
@@ -106,10 +110,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     patch:
       tags: [workspaces]
       operationId: updateWorkspace
@@ -989,6 +999,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
       description: Shared service credential required or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: The deployment Host or Origin policy refused the request.
       content:
         application/json:
           schema:

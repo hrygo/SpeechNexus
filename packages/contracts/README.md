@@ -148,7 +148,7 @@ profiles parse data without opening connections. Entry points are explicitly lis
 
 | Profile     | Runtime entrypoints                                                  |
 | ----------- | -------------------------------------------------------------------- |
-| `admin`     | Workspace create and metadata CAS patch                              |
+| `admin`     | Workspace create/CAS request, Workspace/List response, shared ErrorResponse |
 | `workbench` | Project create/CAS and Project/List; transcripts; status/errors; shared deletion; Meeting/create/seal and Minutes/create |
 | `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
 | `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
@@ -442,3 +442,34 @@ The running backend merges this complete projection with health schemas; it
 never publishes the unimplemented speech paths in its OpenAPI. Schema default
 annotations stay optional in TypeScript (`--default-non-nullable false`) and
 never cause runtime default insertion. Generated files remain drift-protected.
+
+
+## Workspace read HTTP contract
+
+The opt-in `admin-http` surface selects `listWorkspaces` and `getWorkspace`
+from `admin-openapi.yaml`. Python consumers import
+`speechnexus_contracts.admin_http`; TypeScript consumers import
+`@speechnexus/contracts/admin-http`. Both expose request and per-status response
+validation. The TypeScript validated client requires an explicit deployment URL
+and byte budget, validates replies, and never retries automatically.
+
+The binding manifest can select `operations` within reviewed `paths`. An explicit
+selection must contain unique, nonempty, existing operation IDs within those
+paths; invalid selections fail generation. The generated OpenAPI, runtime parser
+and validated client expose only those methods, even when the original path also
+contains POST or PATCH. Existing surfaces without a selector retain their full
+reviewed paths. The broader `admin` source types/client still describe the full
+planned API; import `admin-http` for the restricted read surface.
+
+Workspace JSON entrypoints preserve numeric `metadata_revision` and string
+`policy_revision`; they reuse the shared public error definition. Omitted list
+limits stay omitted during validation; the source contract declares default 50
+and range 1–100. No parser inserts deployment defaults or creates a default
+workspace. Both languages consume the same 39 transport examples in
+`tests/fixtures/contracts/admin-http.json`, plus DTO examples in
+`consumer-profiles.json`.
+
+These artifacts do not register backend routes. PostgreSQL read ports, actual
+GET handlers, cursor semantics, Host/Origin enforcement and composition remain
+separate A02/A04 implementation tasks. Schema checks and synthetic HTTP client
+tests do not qualify a running service or a GPU workload.

@@ -2934,6 +2934,15 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The deployment Host or Origin policy refused the request. */
+    Forbidden: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Resource not found. */
     NotFound: {
       headers: {
@@ -3019,7 +3028,9 @@ export interface operations {
           "application/json": components["schemas"]["WorkspaceList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -3078,8 +3089,11 @@ export interface operations {
           "application/json": components["schemas"]["Workspace"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   updateWorkspace: {

@@ -14,7 +14,176 @@ class WorkspacePatch(TypedDict):
     status: NotRequired[Literal["active", "disabled"]]
 
 
+type ExternalSharedIdentifiersSchemaJsonRevision = str
+type ExternalSharedErrorsSchemaJsonErrorType = Literal[
+    "invalid_request_error",
+    "authentication_error",
+    "permission_error",
+    "not_found_error",
+    "rate_limit_error",
+    "api_error",
+    "service_unavailable_error",
+]
+type ExternalSharedLanguageSchemaJsonLanguageTag = str
+type ExternalSharedSpeechOverridesSchemaJsonSeed = int | None
+type ExternalSharedSpeechOverridesSchemaJsonSpeed = float
+type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
+type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
+    "json", "text", "verbose_json", "srt", "vtt"
+]
+type ExternalSharedSpeechOverridesSchemaJsonMaxSegmentMs = int
+
+
+class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    revision: ExternalSharedIdentifiersSchemaJsonRevision
+
+
+type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
+type ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode = Literal[
+    "full_segment", "streaming_finalize"
+]
+type ExternalSharedSpeechOverridesSchemaJsonPreviewIntervalMs = int
+type ExternalSharedSpeechOverridesSchemaJsonRollbackTokens = int
+type ExternalSharedSpeechOverridesSchemaJsonFinalDeadlineMs = int
+type ExternalSharedSpeechOverridesSchemaJsonAuxiliaryDeadlineMs = int
+type ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode = Literal[
+    "off", "required", "best_effort"
+]
+type ExternalSharedSpeechOverridesSchemaJsonDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonVocabularySetRevision = (
+    ExternalSharedIdentifiersSchemaJsonRevision | None
+)
+type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
+type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
+type ExternalSharedSpeechOverridesSchemaJsonPronunciationRevision = (
+    ExternalSharedIdentifiersSchemaJsonRevision | None
+)
+
+
+class ExternalSharedSpeechOverridesSchemaJsonPlanner(TypedDict):
+    max_chars: NotRequired[int]
+    max_wait_ms: NotRequired[int]
+
+
+type ExternalSharedReceiptsSchemaJsonReceiptFactPath = Literal[
+    "requested.language",
+    "requested.seed",
+    "requested.speed",
+    "requested.sample_rate_hz",
+    "requested.response_format",
+    "requested.max_segment_ms",
+    "requested.model_binding",
+    "requested.profile",
+    "requested.voice",
+    "requested.pronunciation",
+    "requested.turn_detection",
+    "requested.finalization",
+    "requested.preview_interval_ms",
+    "requested.rollback_tokens",
+    "requested.final_deadline_ms",
+    "requested.auxiliary_deadline_ms",
+    "requested.alignment",
+    "requested.diarization",
+    "requested.vocabulary_set_revision",
+    "requested.text_commit_mode",
+    "requested.audio_delivery",
+    "requested.pronunciation_revision",
+    "requested.planner",
+    "requested.instructions_present",
+    "requested.prompt_present",
+    "requested.policy",
+    "requested.vocabulary",
+    "effective.language",
+    "effective.seed",
+    "effective.speed",
+    "effective.sample_rate_hz",
+    "effective.response_format",
+    "effective.max_segment_ms",
+    "effective.model_binding",
+    "effective.profile",
+    "effective.voice",
+    "effective.pronunciation",
+    "effective.turn_detection",
+    "effective.finalization",
+    "effective.preview_interval_ms",
+    "effective.rollback_tokens",
+    "effective.final_deadline_ms",
+    "effective.auxiliary_deadline_ms",
+    "effective.alignment",
+    "effective.diarization",
+    "effective.vocabulary_set_revision",
+    "effective.text_commit_mode",
+    "effective.audio_delivery",
+    "effective.pronunciation_revision",
+    "effective.planner",
+    "effective.instructions_present",
+    "effective.prompt_present",
+    "effective.policy",
+    "effective.vocabulary",
+    "observed.language",
+    "observed.seed",
+    "observed.speed",
+    "observed.sample_rate_hz",
+    "observed.response_format",
+    "observed.max_segment_ms",
+    "observed.model_binding",
+    "observed.profile",
+    "observed.voice",
+    "observed.pronunciation",
+    "observed.turn_detection",
+    "observed.finalization",
+    "observed.preview_interval_ms",
+    "observed.rollback_tokens",
+    "observed.final_deadline_ms",
+    "observed.auxiliary_deadline_ms",
+    "observed.alignment",
+    "observed.diarization",
+    "observed.vocabulary_set_revision",
+    "observed.text_commit_mode",
+    "observed.audio_delivery",
+    "observed.pronunciation_revision",
+    "observed.planner",
+    "observed.instructions_present",
+    "observed.prompt_present",
+    "observed.policy",
+    "observed.vocabulary",
+    "requested.planner.max_chars",
+    "requested.planner.max_wait_ms",
+    "requested.turn_detection.mode",
+    "requested.turn_detection.silence_duration_ms",
+    "effective.planner.max_chars",
+    "effective.planner.max_wait_ms",
+    "effective.turn_detection.mode",
+    "effective.turn_detection.silence_duration_ms",
+    "observed.planner.max_chars",
+    "observed.planner.max_wait_ms",
+    "observed.turn_detection.mode",
+    "observed.turn_detection.silence_duration_ms",
+]
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
+type Revision = ExternalSharedIdentifiersSchemaJsonRevision
+
+
+class ExternalSharedSpeechOverridesSchemaJsonTurnDetection(TypedDict):
+    mode: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonVadMode]
+    silence_duration_ms: NotRequired[int]
+
+
+type ExternalSharedSpeechOverridesSchemaJsonFinalization = (
+    ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonTextCommitMode = (
+    ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonAudioDelivery = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+)
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -22,4 +191,91 @@ class WorkspaceCreateRequest(TypedDict):
     policy_id: NotRequired[Identifier]
 
 
-type AdminContracts = WorkspaceCreateRequest | WorkspacePatch
+class Workspace(TypedDict):
+    id: Identifier
+    object: Literal["nexus.workspace"]
+    display_name: str
+    status: Literal["active", "disabled"]
+    metadata_revision: int
+    policy_revision: Revision
+    created_at: str
+
+
+class WorkspaceList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[Workspace]
+    has_more: bool
+    next_cursor: str | None
+
+
+class ExternalSharedReceiptsSchemaJsonPublicExecutionFacts(TypedDict):
+    language: NotRequired[ExternalSharedLanguageSchemaJsonLanguageTag]
+    seed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSeed]
+    speed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSpeed]
+    sample_rate_hz: NotRequired[int]
+    response_format: NotRequired[
+        ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
+        | ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat
+    ]
+    max_segment_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonMaxSegmentMs]
+    model_binding: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    profile: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    voice: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    pronunciation: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    turn_detection: NotRequired[ExternalSharedSpeechOverridesSchemaJsonTurnDetection]
+    finalization: NotRequired[ExternalSharedSpeechOverridesSchemaJsonFinalization]
+    preview_interval_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonPreviewIntervalMs]
+    rollback_tokens: NotRequired[ExternalSharedSpeechOverridesSchemaJsonRollbackTokens]
+    final_deadline_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonFinalDeadlineMs]
+    auxiliary_deadline_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAuxiliaryDeadlineMs]
+    alignment: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAlignment]
+    diarization: NotRequired[ExternalSharedSpeechOverridesSchemaJsonDiarization]
+    vocabulary_set_revision: NotRequired[
+        ExternalSharedSpeechOverridesSchemaJsonVocabularySetRevision
+    ]
+    text_commit_mode: NotRequired[ExternalSharedSpeechOverridesSchemaJsonTextCommitMode]
+    audio_delivery: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAudioDelivery]
+    pronunciation_revision: NotRequired[
+        ExternalSharedSpeechOverridesSchemaJsonPronunciationRevision
+    ]
+    planner: NotRequired[ExternalSharedSpeechOverridesSchemaJsonPlanner]
+    instructions_present: NotRequired[bool]
+    prompt_present: NotRequired[bool]
+    policy: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    vocabulary: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+
+
+class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
+    receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    request_id: NotRequired[str | None]
+    requested: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    effective: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    observed: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    missing: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+    unknown: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+
+
+class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
+    operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
+    code: str
+    type: ExternalSharedErrorsSchemaJsonErrorType
+    message: str
+    param: str | None
+    request_id: str
+    retryable: bool
+    retry_after_ms: NotRequired[int | None]
+    nexus: NotRequired[ExternalSharedErrorsSchemaJsonOperationRecovery]
+
+
+class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
+    error: ExternalSharedErrorsSchemaJsonErrorBody
+
+
+type ErrorResponse = ExternalSharedErrorsSchemaJsonErrorResponse
+type AdminContracts = (
+    WorkspaceCreateRequest | WorkspacePatch | Workspace | WorkspaceList | ErrorResponse
+)

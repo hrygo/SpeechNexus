@@ -1,7 +1,7 @@
 ---
 title: "受限节点控制器：接口、规则与当前实现"
 status: active
-version: "0.3.0"
+version: "0.4.0"
 date: 2026-10-24
 ---
 
@@ -36,7 +36,8 @@ scheduler ◀──observation/reconcile 快照───────────
 | --- | --- | --- |
 | `domain/intents.py` | 意图身份、留宿内存值、观察状态、停止证据与实例头派生 | 已实现并有单元测试 |
 | `domain/templates.py` | 批准模板注册表：镜像摘要固定、允许池、内存架构与峰值上限 | 已实现；模板清单与部署绑定待接入 |
-| `domain/ports.py` | `IntentStore`、`NodeRuntimePort`、reconcile 快照 | 已有 SQLite 与 Docker 实现，真实联调范围见探针记录 |
+| `domain/ports.py` | `IntentStore`、`StopCheckpointStore`、`NodeRuntimePort`、reconcile 快照 | 已有 SQLite 与 Docker 实现，真实联调范围见探针记录 |
+| `domain/stop_checkpoint.py` | 原 stop 固定目标、退出/释放检查点、严格私有记录投影 | 已实现；机器契约在节点包内 |
 | `application/runtime_control.py` | 认领意图、幂等重放、generation / fencing 门、drain 门、观察折叠与 reconcile | 已实现并有单元测试 |
 | `infrastructure/docker_api.py` | 本地 daemon 的最小 Engine API 客户端（固定操作集合，不接任意镜像/挂载/shell） | 已实现并有 double 测试 |
 | `infrastructure/docker_runtime.py` | 受控容器 adapter：镜像摘要核对、标签化实例身份、prepare/stop/inspect 与停止双证据 | 已实现；合成容器真实探针见下文 |
@@ -138,7 +139,8 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 - **本地持久意图**：`infrastructure/sqlite_intent_store.py` 把一个节点的意图事实保存在本地
   SQLite 文件里（WAL、`synchronous=FULL`、短事务、`version` 守卫、显式 schema 版本），控制器
   重启后仍能重放、识别并继续折叠观察。它**不是第二份协调权威**：权威意图、预算与结算仍在
-  Scheduler 的数据库里，控制器只通过协议报告事实；因此这里没有共享库耦合，也没有跨库迁移成本。
+  Scheduler 的数据库里，控制器只通过协议报告事实。本地 schema 2 的升级/回退见
+  [停止恢复](node-stop-recovery.md)，不增加共享数据库专有协调逻辑。
 - **本地共享编解码**：HTTP 响应与持久记录都由 `domain/payloads.py` 从同一份领域事实投影出来，
   避免出现第二套字段定义；合约校验会同时验证生产投影与冻结响应形状。
 
@@ -172,7 +174,7 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   运行实例列进名单，也不改写意图的版本、状态或留宿内存。
 - **外部快照边界**：`reconcile` 快照由持组件凭据的调用方给出，该路径折叠其中的观察但不调用
   `daemon.inspect`；因此快照里的 `stop_evidence` 是调用方断言，不是本控制器的核验结果（自身
-  核验只发生在节点内 `reconcile_instance`）。快照的 `fencing_token` 目前只有契约最小值校验，
+  核验在节点 runtime adapter 与 `recover_stop`）。快照的 `fencing_token` 目前只有契约最小值校验，
   尚未与节点已记录的最高 token 比较。是否收窄该入口、如何定义节点级 fencing 高位属待冻结的
   窄协议；现状与差异见[B02 HTTP 外壳探针](../audits/2026-10-24-b02-controller-http-shell-probe.md)。
 - **reconcile**：同一快照内同一 `(instance_id, instance_generation)` 出现两次即拒绝，
@@ -207,22 +209,24 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 进程启动后读取自己的 SQLite 回执，按 `intent_id` 升序、有界游标读取
 `pending/reconciling/quarantined`，每轮结束后等待配置间隔。到页尾下一轮回到起点；
 长期 loading、未知停止或失效模板不会让后续记录永久饥饿。游标只决定检查顺序，不是新租约、
-预算或执行权威；重启从起点继续，不重放 prepare/stop 动作。
+预算或执行权威；重启从起点继续。prepare 不重放动作；stop 恢复已经持久接受的原停止流程。
 
 每项在检查前重新读取，跳过其他节点、已终结的意图或撤销模板；复用 `reconcile_instance`
-同一份 inspect/观察折叠与版本守卫。单条运行时失败或陈旧写入保留原持久事实并继续后续项。
+同一份观察折叠与版本守卫：prepare 调用 inspect，stop 调用 `recover_stop`。
+单条运行时失败或陈旧写入保留原持久事实并继续后续项。
 完整批次读取失败留待下一轮，日志只记录固定分类和数量，不记录异常正文、路径或凭据。
 同一进程的生命周期变更串行；多节点由各自控制器维护，不引入新的全局协调权威。
 
-循环只检查，不创建/停止容器、不发业务执行，也不写 A 的权威数据库。Docker inspect 看到
-`absent` 不构成停止双证据；prepare 可能报告失败、stop 保持隔离，A 仍保留实际基线预算。
+循环不创建容器或外发业务执行，也不写 A 的权威数据库。stop 可以恢复原固定容器的
+stop/wait/delete；[本地停止检查点](node-stop-recovery.md)确保目标在动作前、退出在删除前落盘。
+Docker inspect 看到 `absent` 本身不构成停止双证据；没有已提交 exit 时仍隔离并保留预算。
 控制器 ready 也不构成资格凭据；A 只有核验固定 binding/拓扑/资格后才可 peak→steady。
 TLS＋PG/InnoDB 回归分别验证自动 ready 无资格不得缩减、自动 absent 无停止证明不得退还基线。
 
 关闭进程先发出停止标记，结束当前有界 inspect、停止本批后续项并等待观察线程退出，再关闭
 进程拥有的 SQLite 和 Docker 客户端。等待时间受当前 daemon/模板预热请求的配置期限约束，
-不能把任务取消误认为线程已停止。终结意图不会在本循环中重新检查；ready 实例持续监控、
-停止中途崩溃的证据恢复、多控制器接管与真实 ASR 故障资格仍需后续单元。
+不能把任务取消误认为线程已停止。终结意图不会在本循环中重新检查；停止中途恢复已有合成容器
+真实进程证据，ready 实例持续监控、多控制器接管与真实 ASR 故障资格仍需后续单元。
 
 ## 6. 当前未实现与交接
 

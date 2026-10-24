@@ -21,8 +21,9 @@ environment proxies or redirects. A declared custom network is supplied by
 deployment configuration; its name alone does not prove egress isolation.
 
 The process starts one local observation loop by default. It pages unresolved
-receipts in ID order, calls the node's own inspector, and persists observations
-without replaying prepare/stop. Reads remain read-only. Lifecycle actions and
+receipts in ID order and persists observations. Prepare uses the node's own
+inspector; an already accepted stop resumes its pinned container through durable
+target/exit/release checkpoints. Reads remain read-only. Lifecycle actions and
 warmup inspections are serialized within the controller; shutdown joins the
 active bounded inspection before closing its store and Docker client.
 `SPEECHNEXUS_CONTROLLER_LOCAL_OBSERVER_ENABLED` defaults to true,
@@ -30,6 +31,12 @@ active bounded inspection before closing its store and Docker client.
 `SPEECHNEXUS_CONTROLLER_OBSERVATION_BATCH_SIZE` to 50
 (1–500). Container absence without stop proof keeps authoritative capacity held;
 HTTP ready does not create the scheduler's qualification receipt.
+
+Production requires the same durable SQLite store for stop checkpoints. Schema 1
+upgrades atomically to 2 without rewriting existing receipts; older controllers
+reject schema 2. Restore a matching stopped-controller snapshot for code rollback,
+never reset the version or discard evidence. The private format and failure
+boundaries are specified in [Stop recovery](../docs/architecture/node-stop-recovery.md).
 
 Template files must declare `container_memory_limit_bytes`; old files fail
 startup rather than retaining an unlimited container. Docker Memory and

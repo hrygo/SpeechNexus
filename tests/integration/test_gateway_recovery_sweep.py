@@ -26,7 +26,7 @@ from tests.integration.test_production_jobs import database as database
 
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
-from speechnexus_gateway.domain.ports import DispatchOutcome
+from speechnexus_gateway.domain.ports import DispatchOutcome, SubmissionLedger
 from speechnexus_gateway.domain.recovery import (
     InstanceTerminationEvidence,
     whole_instance_stop_evidence,
@@ -103,7 +103,7 @@ def sweep_ledger(foundation: Foundation) -> Iterator[PostgresSubmissionLedger]:
 
 
 def uncertain_execution(
-    ledger: PostgresSubmissionLedger,
+    ledger: SubmissionLedger,
     *,
     submit_intent_id: str = "intent-a",
     lease_id: str = LEASE,

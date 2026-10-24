@@ -29,5 +29,10 @@ can now supply the existing recovery sweep with whole-instance stop facts over
 fixed, verified TLS. Missing or conflicting proof keeps execution unknown; gateway
 stop recording does not return scheduler budgets. The default gateway process does
 not yet wire this source or run a periodic recovery loop.
+Recovery passes now retain a process-local cursor over immutable execution IDs,
+so an unresolved first page does not starve later work. Reuse one recovery service
+across passes; an empty page wraps the next pass to the beginning. Reports classify
+each execution once, including when a concurrent generated-usage write changes
+its version while it remains unknown. No scheduling-only database write is made.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

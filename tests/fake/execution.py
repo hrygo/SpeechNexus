@@ -61,19 +61,33 @@ class InMemorySubmissionLedger:
         return None if intent is None else ExecutionSnapshot(intent)
 
     def list_quarantined(
-        self, *, gateway_id: str, host_node_id: str, limit: int
+        self,
+        *,
+        gateway_id: str,
+        host_node_id: str,
+        limit: int,
+        after_submit_intent_id: str | None = None,
     ) -> list[SubmissionIntent]:
         """The same bounded, gateway-scoped read the SQL adapter performs."""
-        if not 1 <= limit <= 500:
+        if type(limit) is not int or not 1 <= limit <= 500:
             raise ValueError("a recovery sweep reads between 1 and 500 executions")
+        if after_submit_intent_id is not None and (
+            not isinstance(after_submit_intent_id, str)
+            or not 1 <= len(after_submit_intent_id) <= 128
+        ):
+            raise ValueError("a recovery cursor requires a bounded original intent ID")
         candidates = [
             copy.deepcopy(intent)
             for intent in self._intents.values()
             if intent.execution_state is ExecutionState.UNKNOWN_QUARANTINED
             and (intent.identity.gateway_id, intent.identity.host_node_id)
             == (gateway_id, host_node_id)
+            and (
+                after_submit_intent_id is None
+                or intent.identity.submit_intent_id > after_submit_intent_id
+            )
         ]
-        candidates.sort(key=lambda intent: (intent.updated_at, intent.identity.submit_intent_id))
+        candidates.sort(key=lambda intent: intent.identity.submit_intent_id)
         return candidates[:limit]
 
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:

@@ -17,8 +17,8 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-以 main `75dc96a` 为本轮最终整合基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
-已交付检查点背书的节点停止查询与固定TLS网关来源，前一轮PR/合后主干均11项CI全绿。
+已交付基线为 main `08c77de`；[PR #127](https://github.com/hrygo/SpeechNexus/pull/127)
+已交付默认周期恢复与正常/异常/重复取消安全退出，PR/合后主干均 11 项 CI 成功，耗时 203/214 秒。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。
 
@@ -45,6 +45,12 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 真实引擎故障、ready 实例持续监控、完整执行/预算与物理多主机资格仍待。
 真实引擎适配由 B 主责，A 配合协议消费者与预算/发布边界，不能把 B 自有适配缺口一概标为
 等待 A 提供引擎协议。实施选择由团队处理，不要求用户判断这些技术细节。
+
+当前分支 `codex/b03-frozen-inputs` 继续接原持久命令与对象输入，见
+[实施边界](2026-10-24-b03-frozen-inputs.md)和[接口说明](../architecture/frozen-execution-inputs.md)。
+原命令只读核验、一次提交桥、固定版本 MinIO 与既有媒体/识别消费者已有合成集成证据；
+不改 A 预算、DDL、授权或公共 wire。完整有效参数、真实引擎 status/abort/停止、最终发布
+与 A/C 端到端消费仍待，不以本输入单元替代 B01/B03 整包或物理集群资格。
 
 ## 首个里程碑：B00 与 B01/B02 的最小准备
 

@@ -13,7 +13,10 @@ date: 2026-10-24
 
 ## 镜像事实
 
-- 本机镜像 `vllm/vllm-omni:latest` 内含 `vllm` 0.32.0 与 `vllm-omni` 0.32.0rc1。
+- 本机镜像 `vllm/vllm-omni:latest`（image ID
+  `sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52`）内含
+  `vllm` 0.32.0 与 `vllm-omni` 0.32.0rc1。回环识别使用固定镜像
+  `sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765`（Qwen3-ASR 0.6B）。
 - 源码包含 `vllm_omni/model_executor/models/qwen3_tts/`（talker、code2wav、12 Hz tokenizer）、
   `entrypoints/openai/tts_adapters/qwen3_tts.py` 与 `serving_speech.py`，支持
   `Base`、`CustomVoice`、`VoiceDesign` 三种任务。

@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 
 from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
+    IntentConflictError,
+    InvalidRuntimeRequestError,
     MemoryArchitecture,
     ObservedInstanceState,
     RuntimeActionKind,
@@ -22,6 +24,7 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeMemoryVector,
     RuntimeStopEvidence,
 )
+from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
     ReadinessKind,
@@ -148,6 +151,27 @@ class InMemoryIntentStore:
         ][:limit]
 
 
+class InMemoryStopCheckpoints:
+    """Adapter tests only; production always uses the durable node store."""
+
+    def __init__(self) -> None:
+        self.checkpoints: dict[str, StopCheckpoint] = {}
+
+    def get_stop_checkpoint(self, request: RuntimeInstanceIntentRequest) -> StopCheckpoint | None:
+        current = self.checkpoints.get(request.intent_id)
+        if current is not None and current.request != request:
+            raise IntentConflictError("the stop checkpoint belongs to another original request")
+        return current
+
+    def save_stop_checkpoint(self, checkpoint: StopCheckpoint) -> StopCheckpoint:
+        current = self.get_stop_checkpoint(checkpoint.request)
+        if current is None and checkpoint.stage != "targeted":
+            raise InvalidRuntimeRequestError("the original target must be committed first")
+        updated = current.advance(checkpoint) if current else checkpoint
+        self.checkpoints[checkpoint.request.intent_id] = updated
+        return updated
+
+
 class ScriptedNodeRuntime:
     """Deterministic node runtime: prepare, stop and inspect are fully scripted."""
 
@@ -210,6 +234,11 @@ class ScriptedNodeRuntime:
         key = (request.instance_id, request.instance_generation)
         self.inspections.append(key)
         return self._observations.get(key)
+
+    def recover_stop(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        return self.inspect(request, template)
 
     def observe_as(
         self,

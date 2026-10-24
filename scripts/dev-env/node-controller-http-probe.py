@@ -15,10 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
-import signal
-import subprocess
 import sys
 import tempfile
 import time
@@ -28,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from node_controller_process import ControllerProcess
+from node_controller_process import wait_for_health as _wait_for_health
 
 from speechnexus_node_controller.infrastructure.docker_api import DockerApi
 from speechnexus_node_controller.infrastructure.docker_runtime import (
@@ -214,75 +213,6 @@ def _fact_body(*, instance_generation: int, observed_instance_state: str) -> dic
     }
 
 
-class ControllerProcess:
-    """One real controller process, with the environment a deployment would set."""
-
-    def __init__(
-        self,
-        *,
-        command: list[str],
-        workdir: Path,
-        port: int,
-        socket_path: str,
-        log_path: Path,
-    ) -> None:
-        self._log = log_path.open("ab")
-        self._process = subprocess.Popen(
-            command,
-            cwd=str(workdir),
-            env={
-                **os.environ,
-                "SPEECHNEXUS_CONTROLLER_NODE_ID": _NODE_ID,
-                "SPEECHNEXUS_CONTROLLER_COMPONENT_TOKEN": _COMPONENT_TOKEN,
-                "SPEECHNEXUS_CONTROLLER_APPROVED_TEMPLATES_FILE": str(
-                    workdir / "approved-templates.json"
-                ),
-                "SPEECHNEXUS_CONTROLLER_INTENT_STORE_PATH": str(
-                    workdir / "runtime-intents.sqlite3"
-                ),
-                "SPEECHNEXUS_CONTROLLER_DOCKER_SOCKET_PATH": socket_path,
-                "SPEECHNEXUS_CONTROLLER_HOST": "127.0.0.1",
-                "SPEECHNEXUS_CONTROLLER_PORT": str(port),
-                "SPEECHNEXUS_CONTROLLER_LOG_LEVEL": "warning",
-                "SPEECHNEXUS_CONTROLLER_OBSERVATION_INTERVAL_SECONDS": "0.2",
-            },
-            stdout=self._log,
-            stderr=self._log,
-            start_new_session=True,
-        )
-
-    def stop(self) -> None:
-        if self._process.poll() is None:
-            self._process.send_signal(signal.SIGTERM)
-            try:
-                self._process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait(timeout=15)
-        self._log.close()
-
-    def kill(self) -> None:
-        """Terminate immediately, the way a crashed controller process would."""
-        if self._process.poll() is None:
-            self._process.kill()
-            self._process.wait(timeout=15)
-        self._log.close()
-
-
-def _wait_for_health(client: httpx.Client, *, timeout_seconds: float) -> int:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            response = client.get("/healthz")
-        except httpx.HTTPError:
-            time.sleep(0.2)
-            continue
-        if response.status_code == 200:
-            return response.status_code
-        time.sleep(0.2)
-    raise SystemExit(f"the controller did not become healthy within {timeout_seconds}s")
-
-
 def _host_config_readout(socket_path: str, container_id: str) -> dict[str, Any]:
     """Read the daemon's own view of the container, for the hardening record."""
     with httpx.Client(
@@ -355,6 +285,8 @@ def run_probe(
 
         controller = ControllerProcess(
             command=command,
+            node_id=_NODE_ID,
+            component_token=_COMPONENT_TOKEN,
             workdir=workdir,
             port=port,
             socket_path=socket_path,
@@ -399,6 +331,8 @@ def run_probe(
             report.pending_crash_container_live = pending_live is not None and pending_live.running
             controller = ControllerProcess(
                 command=command,
+                node_id=_NODE_ID,
+                component_token=_COMPONENT_TOKEN,
                 workdir=workdir,
                 port=port,
                 socket_path=socket_path,
@@ -445,6 +379,8 @@ def run_probe(
         report.crash_container_live = live is not None and live.running
         controller = ControllerProcess(
             command=command,
+            node_id=_NODE_ID,
+            component_token=_COMPONENT_TOKEN,
             workdir=workdir,
             port=port,
             socket_path=socket_path,
@@ -518,6 +454,8 @@ def run_probe(
         controller.stop()
         controller = ControllerProcess(
             command=command,
+            node_id=_NODE_ID,
+            component_token=_COMPONENT_TOKEN,
             workdir=workdir,
             port=port,
             socket_path=socket_path,

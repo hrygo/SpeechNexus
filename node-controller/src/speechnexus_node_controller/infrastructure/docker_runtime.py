@@ -16,7 +16,7 @@ import logging
 import socket
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import wraps
 from ipaddress import ip_address
@@ -34,9 +34,10 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeControllerUnavailableError,
     RuntimeInstanceIntentRequest,
     RuntimeMemoryVector,
-    RuntimeStopEvidence,
     UnapprovedRuntimeTemplateError,
 )
+from speechnexus_node_controller.domain.ports import StopCheckpointStore
+from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
     ReadinessKind,
@@ -112,10 +113,12 @@ class DockerNodeRuntime:
         *,
         api: DockerEngineApi,
         node_id: str,
+        stop_checkpoints: StopCheckpointStore,
         settings: DockerRuntimeSettings | None = None,
     ) -> None:
         self._api = api
         self._node_id = node_id
+        self._stop_checkpoints = stop_checkpoints
         self._settings = settings or DockerRuntimeSettings()
         self._warmup_attempts: dict[tuple[str, int], int] = {}
 
@@ -147,13 +150,45 @@ class DockerNodeRuntime:
     def stop(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
-        """Stop, wait for exit, remove, and only then report stop evidence."""
-        existing = self._find(request.instance_id, request.instance_generation)
-        if existing is None:
-            return self._absent_observation(request, template)
-        self._require_same_identity(existing, request, template)
+        """Pin before acting, commit exit before deletion, then commit release evidence."""
+        if request.action is not RuntimeActionKind.STOP or request.target_node_id != self._node_id:
+            raise IntentConflictError("the original stop does not belong to this node")
+        checkpoint = self._stop_checkpoints.get_stop_checkpoint(request)
+        if checkpoint is None:
+            existing = self._find(request.instance_id, request.instance_generation)
+            if existing is None:
+                return self._absent_observation(request, template)
+            self._require_stop_identity(existing, request, template)
+            checkpoint = self._stop_checkpoints.save_stop_checkpoint(
+                StopCheckpoint(request=request, container_id=existing.container_id)
+            )
+        return self._resume_stop(checkpoint, template)
 
-        if existing.running:
+    @_runtime_action("recover stop")
+    def recover_stop(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        """Resume the persisted original stop; never retarget another container."""
+        return self.stop(request, template)
+
+    def _resume_stop(
+        self, checkpoint: StopCheckpoint, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        request = checkpoint.request
+        matching = self._find(request.instance_id, request.instance_generation)
+        if matching is not None and matching.container_id != checkpoint.container_id:
+            return self._stop_conflict(request, template)
+        existing = self._api.inspect_container(checkpoint.container_id)
+        if existing is None:
+            if checkpoint.exited_at is None:
+                return self._absent_observation(request, template)
+            return self._released_observation(checkpoint, template)
+        self._require_stop_identity(existing, request, template)
+        if checkpoint.released_at is not None or (
+            checkpoint.exited_at is not None and existing.running
+        ):
+            return self._stop_conflict(request, template)
+        if checkpoint.exited_at is None and existing.running:
             try:
                 self._api.stop_container(
                     existing.container_id, timeout_seconds=self._settings.stop_timeout_seconds
@@ -166,32 +201,84 @@ class DockerNodeRuntime:
                     f"container stop failed with {error.status_code}"
                 ) from error
 
-        exit_code = self._wait_for_exit(existing.container_id)
-        if exit_code is None:
-            return self._inspect_or_absent(request, template, existing.container_id)
-
+        if checkpoint.exited_at is None:
+            exit_code = self._wait_for_exit(existing.container_id)
+            if exit_code is None:
+                return self._inspect_or_absent(request, template, existing.container_id)
+            exited = self._api.inspect_container(existing.container_id)
+            if exited is None:
+                return self._absent_observation(request, template)
+            self._require_stop_identity(exited, request, template)
+            if exited.running or exited.exit_code != exit_code:
+                return self._stop_conflict(request, template)
+            checkpoint = self._stop_checkpoints.save_stop_checkpoint(
+                replace(checkpoint, exit_code=exit_code, exited_at=datetime.now(UTC))
+            )
+            existing = exited
+        elif existing.exit_code != checkpoint.exit_code:
+            return self._stop_conflict(request, template)
         if not self._remove_and_confirm(existing.container_id):
             return self._inspect_or_absent(request, template, existing.container_id)
         self._warmup_attempts.pop((existing.container_id, request.instance_generation), None)
+        return self._released_observation(checkpoint, template, exited=existing)
 
-        return self._observation(
-            request,
-            template,
-            ContainerState(
-                container_id=existing.container_id,
-                status="exited",
-                running=False,
-                exit_code=exit_code,
-                labels=existing.labels,
-                network_addresses=(),
-                memory_peak_bytes=existing.memory_peak_bytes,
+    def _released_observation(
+        self,
+        checkpoint: StopCheckpoint,
+        template: ApprovedRuntimeTemplate,
+        *,
+        exited: ContainerState | None = None,
+    ) -> InstanceObservation:
+        if (
+            self._find(checkpoint.request.instance_id, checkpoint.request.instance_generation)
+            is not None
+        ):
+            return self._stop_conflict(checkpoint.request, template)
+        if checkpoint.released_at is None:
+            checkpoint = self._stop_checkpoints.save_stop_checkpoint(
+                replace(checkpoint, released_at=datetime.now(UTC))
+            )
+        return InstanceObservation(
+            instance_id=checkpoint.request.instance_id,
+            instance_generation=checkpoint.request.instance_generation,
+            approved_template_id=template.template_id,
+            config_digest=checkpoint.request.config_digest,
+            observed_instance_state=(
+                ObservedInstanceState.STOPPED if exited else ObservedInstanceState.ABSENT
             ),
-            stop_evidence=RuntimeStopEvidence(
-                verified_at=datetime.now(UTC),
-                exit_code=exit_code,
-                runtime_container_id=existing.container_id,
+            observed_peak_memory=(
+                self._observed_memory(checkpoint.request, exited) if exited else None
             ),
+            stop_evidence=checkpoint.evidence(),
         )
+
+    @staticmethod
+    def _stop_conflict(
+        request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation:
+        return InstanceObservation(
+            instance_id=request.instance_id,
+            instance_generation=request.instance_generation,
+            approved_template_id=template.template_id,
+            config_digest=request.config_digest,
+            observed_instance_state=ObservedInstanceState.QUARANTINED,
+            quarantine_reason="the pinned stop target no longer matches its recorded facts",
+        )
+
+    def _require_stop_identity(
+        self,
+        state: ContainerState,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+    ) -> None:
+        self._require_same_identity(state, request, template)
+        expected = self._labels(request)
+        if any(
+            state.labels.get(name) != value
+            for name, value in expected.items()
+            if name not in {INTENT_ID_LABEL, FENCING_TOKEN_LABEL}
+        ):
+            raise IntentConflictError("the pinned stop target belongs to another runtime identity")
 
     @_runtime_action("inspect")
     def inspect(
@@ -373,8 +460,6 @@ class DockerNodeRuntime:
         request: RuntimeInstanceIntentRequest,
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
-        *,
-        stop_evidence: RuntimeStopEvidence | None = None,
     ) -> InstanceObservation:
         if state.running and (
             state.memory_limit_bytes != template.container_memory_limit_bytes
@@ -397,7 +482,6 @@ class DockerNodeRuntime:
             config_digest=request.config_digest,
             observed_instance_state=self._observed_state(request, template, state),
             observed_peak_memory=self._observed_memory(request, state),
-            stop_evidence=stop_evidence,
         )
 
     @staticmethod

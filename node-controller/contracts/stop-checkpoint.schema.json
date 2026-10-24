@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Node-private stop checkpoint record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "request",
+    "container_id",
+    "exit_code",
+    "exited_at",
+    "released_at"
+  ],
+  "properties": {
+    "format_version": { "const": 1, "type": "integer" },
+    "request": {
+      "allOf": [
+        {
+          "$ref": "../../contracts/internal/runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentRequest"
+        },
+        { "properties": { "action": { "const": "stop" } } }
+      ]
+    },
+    "container_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "exit_code": { "type": ["integer", "null"] },
+    "exited_at": { "type": ["string", "null"], "format": "date-time" },
+    "released_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "exit_code": { "type": "null" },
+        "exited_at": { "type": "null" },
+        "released_at": { "type": "null" }
+      }
+    },
+    {
+      "properties": {
+        "exit_code": { "type": "integer" },
+        "exited_at": { "type": "string" },
+        "released_at": { "type": "null" }
+      }
+    },
+    {
+      "properties": {
+        "exit_code": { "type": "integer" },
+        "exited_at": { "type": "string" },
+        "released_at": { "type": "string" }
+      }
+    }
+  ]
+}

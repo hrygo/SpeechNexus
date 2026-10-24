@@ -25,6 +25,7 @@ from speechnexus_backend.speech.infrastructure.runtime_controller_http import (
 from speechnexus_node_controller.app import create_app
 from speechnexus_node_controller.application.readiness import ReadinessService
 from speechnexus_node_controller.application.runtime_control import NodeRuntimeControlService
+from speechnexus_node_controller.domain.ports import NodeRuntimePort
 from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry
 from speechnexus_node_controller.infrastructure.sqlite_intent_store import SqliteIntentStore
 from speechnexus_node_controller.settings import Settings
@@ -82,11 +83,11 @@ def controller_tls(tmp_path_factory: pytest.TempPathFactory) -> TLSFiles:
 
 
 @dataclass
-class LiveController:
+class LiveController[Runtime: NodeRuntimePort]:
     endpoint: RuntimeControllerEndpoint
     tls: TLSFiles = field(repr=False)
     store: SqliteIntentStore = field(repr=False)
-    runtime: ScriptedNodeRuntime = field(repr=False)
+    runtime: Runtime = field(repr=False)
     service: NodeRuntimeControlService = field(repr=False)
     methods: list[str] = field(repr=False)
     request_bodies: list[bytes] = field(repr=False)
@@ -106,17 +107,24 @@ class _InterruptedJsonResponse(Response):
 
 
 @contextmanager
-def controller_server(
+def controller_server[Runtime: NodeRuntimePort](
     directory: Path,
     tls: TLSFiles,
     *,
-    runtime: ScriptedNodeRuntime | None = None,
+    runtime: Runtime | None = None,
+    runtime_factory: Callable[[SqliteIntentStore], Runtime] | None = None,
     lose_first_post_reply: bool = False,
     local_observer_enabled: bool = False,
-) -> Iterator[LiveController]:
+) -> Iterator[LiveController[Runtime | ScriptedNodeRuntime]]:
     directory.mkdir(exist_ok=True)
-    daemon = runtime if runtime is not None else ScriptedNodeRuntime()
     store = SqliteIntentStore(directory / "intents.sqlite3")
+    daemon = (
+        runtime_factory(store)
+        if runtime_factory is not None
+        else runtime
+        if runtime is not None
+        else ScriptedNodeRuntime()
+    )
     binding = REQUEST.binding
     service = NodeRuntimeControlService(
         node_id=binding.target_node_id,

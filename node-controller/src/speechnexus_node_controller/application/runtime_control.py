@@ -30,17 +30,20 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeInstanceIntent,
     RuntimeInstanceIntentRequest,
     RuntimeIntentErrorCode,
+    RuntimeIntentNotFoundError,
     RuntimeIntentState,
     StaleFencingTokenError,
     StaleInstanceGenerationError,
     TargetNodeMismatchError,
     UnapprovedRuntimeTemplateError,
+    require_identifier,
 )
 from speechnexus_node_controller.domain.ports import (
     IntentStore,
     NodeReconcileSnapshot,
     NodeRuntimePort,
     ReportedInstanceFact,
+    StopCheckpointStore,
 )
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
@@ -86,12 +89,14 @@ class NodeRuntimeControlService:
         templates: ApprovedTemplateRegistry,
         store: IntentStore,
         runtime: NodeRuntimePort,
+        stop_checkpoints: StopCheckpointStore | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._node_id = node_id
         self._templates = templates
         self._store = store
         self._runtime = runtime
+        self._stop_checkpoints = stop_checkpoints
         self._now = now or (lambda: datetime.now(UTC))
         # One node's lifecycle actions and warmup inspections must not overlap.
         # HTTP reads remain independent; authoritative budgets stay with A.
@@ -139,6 +144,50 @@ class NodeRuntimeControlService:
     def get_intent(self, intent_id: str) -> RuntimeInstanceIntent | None:
         """Read one intent; reading never starts or stops anything."""
         return self._store.get(intent_id)
+
+    def get_verified_stop(
+        self, instance_id: str, instance_generation: int
+    ) -> RuntimeInstanceIntent:
+        """Read one original stop whose proof matches this node's released checkpoint."""
+        require_identifier(instance_id, "instance_id")
+        if type(instance_generation) is not int or not 1 <= instance_generation <= 2**53 - 1:
+            raise InvalidRuntimeRequestError("instance_generation must be a safe positive integer")
+        if self._stop_checkpoints is None:
+            raise RuntimeControllerUnavailableError("the local stop proof store is not configured")
+        verified: list[RuntimeInstanceIntent] = []
+        for intent in self._store.list_for_instance(instance_id):
+            if (
+                intent.request.target_node_id != self._node_id
+                or intent.instance_generation != instance_generation
+                or intent.action is not RuntimeActionKind.STOP
+                or intent.intent_state is not RuntimeIntentState.SUCCEEDED
+            ):
+                continue
+            try:
+                checkpoint = self._stop_checkpoints.get_stop_checkpoint(intent.request)
+            except IntentConflictError, InvalidRuntimeRequestError:
+                raise RuntimeControllerUnavailableError(
+                    "the local stop proof is inconsistent"
+                ) from None
+            if checkpoint is None:
+                continue  # A legacy success receipt cannot authenticate its own source.
+            if (
+                checkpoint.stage != "released"
+                or checkpoint.evidence() != intent.stop_evidence
+                or checkpoint.exited_at is None
+                or checkpoint.released_at is None
+                or not intent.created_at
+                <= checkpoint.exited_at
+                <= checkpoint.released_at
+                <= intent.updated_at
+            ):
+                raise RuntimeControllerUnavailableError("the local stop proof is inconsistent")
+            verified.append(intent)
+        if len(verified) > 1:
+            raise RuntimeControllerUnavailableError("the local stop proof has ambiguous sources")
+        if not verified:
+            raise RuntimeIntentNotFoundError("no checkpoint-backed stop proof is available")
+        return verified[0]
 
     def head(self, instance_id: str) -> InstanceHead:
         """Derived lifecycle head used by admission and reconcile."""

@@ -190,6 +190,15 @@ root/semantic limits and does not alter the default request surface.
   the intent unresolved, and an unknown intent identity is
   `404 runtime_intent_not_found`.
 
+  `GET getVerifiedInstanceStop` is a read-only instance-generation query. It
+  returns an original successful stop only when its immutable request and full
+  proof match the node's released local checkpoint. Missing or partial proof,
+  including legacy success without a checkpoint, is 404; conflicting or
+  ambiguous proof is 503. A fixed TLS gateway consumer validates the complete
+  binding, same-pool fencing and execution time before recording each execution's
+  stop. This query never advances recovery or returns scheduler capacity.
+  See [trusted stop consumption](../docs/architecture/trusted-node-stop.md).
+
   `POST reconcileNodeInstances` accepts diagnostic assertions only. Its supplied
   state, stop evidence, timestamp and compatibility fencing token never update
   persisted intents/checkpoints, qualify readiness, fence resource-pool intents

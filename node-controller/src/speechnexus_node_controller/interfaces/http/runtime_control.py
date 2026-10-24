@@ -9,7 +9,9 @@ handlers run it in a worker thread instead of blocking the event loop.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path
 from starlette.concurrency import run_in_threadpool
 
 from speechnexus_node_controller.application.runtime_control import (
@@ -111,6 +113,36 @@ def create_runtime_control_router(
             raise RuntimeIntentNotFoundError(
                 f"node {node_id} has no recorded runtime instance intent {intent_id}"
             )
+        return RuntimeInstanceIntentResponse.model_validate(intent_response_payload(intent))
+
+    @router.get(
+        "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/"
+        "{instance_generation}/verified-stop",
+        operation_id="getVerifiedInstanceStop",
+        summary="Query a checkpoint-backed stop fact for one instance generation",
+        response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude={"idempotent_replay"},
+        dependencies=[Depends(credential)],
+        responses={
+            200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
+            401: _error_response("The per-node component credential is missing or invalid."),
+            404: _error_response("No checkpoint-backed complete stop proof is available."),
+            409: _error_response("The target node does not match this controller."),
+            422: _error_response("The instance identity or generation is invalid."),
+            503: _error_response(
+                "The local proof store is unavailable, contradictory or ambiguous."
+            ),
+        },
+    )
+    async def get_verified_instance_stop(
+        node_id: str,
+        instance_id: str,
+        instance_generation: Annotated[int, Path(ge=1, le=2**53 - 1)],
+    ) -> RuntimeInstanceIntentResponse:
+        require_own_node(node_id)
+        intent = await run_in_threadpool(
+            service.get_verified_stop, instance_id, instance_generation
+        )
         return RuntimeInstanceIntentResponse.model_validate(intent_response_payload(intent))
 
     @router.post(

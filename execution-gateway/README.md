@@ -24,5 +24,10 @@ The authenticated submit, abort and instance-drain HTTP routes are served: witho
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
 instance generation without claiming a stop. Durable ASR/TTS dispatch, public VAD integration
 and physical cluster qualification remain pending.
+The [checkpoint-backed node source](../docs/architecture/trusted-node-stop.md)
+can now supply the existing recovery sweep with whole-instance stop facts over
+fixed, verified TLS. Missing or conflicting proof keeps execution unknown; gateway
+stop recording does not return scheduler budgets. The default gateway process does
+not yet wire this source or run a periodic recovery loop.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

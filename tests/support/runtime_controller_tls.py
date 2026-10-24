@@ -139,6 +139,7 @@ def controller_server[Runtime: NodeRuntimePort](
             )
         ),
         store=store,
+        stop_checkpoints=store,
         runtime=daemon,
     )
     settings = Settings(

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus internal runtime lifecycle control API
-  version: 0.1.0.dev0
+  version: 0.1.0.dev1
   description: |
     Internal RuntimeLifecycleControlPort protocol between the scheduler and the
     node-scoped deployment controller (`node-controller`). The controller only
@@ -111,6 +111,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeControlErrorResponse"
+  /internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop:
+    get:
+      operationId: getVerifiedInstanceStop
+      summary: Query a checkpoint-backed stop fact for one instance generation
+      description: |
+        Read only. The node returns the original succeeded stop intent only when
+        its complete exit/release evidence equals its own durable released stop
+        checkpoint, including the immutable original request and pinned container.
+        A legacy succeeded receipt without that checkpoint is not proof.
+        No intent/checkpoint is written and no daemon action is triggered.
+        Missing or incomplete proof is 404 runtime_intent_not_found, which never
+        means that an instance exited. Contradictory or ambiguous local proof is
+        503 runtime_controller_unavailable; no arbitrary latest receipt is chosen.
+
+        The gateway uses only a server-configured node TLS endpoint, credential
+        and immutable binding. It verifies node, gateway, pool, instance generation,
+        binding revision, approved template, manifest and configuration digest.
+        The original stop token must cover the execution token in that same pool;
+        tokens from other pools are never compared. A stop observed before the
+        execution, or in the consumer's future, cannot close that execution.
+        One source fact can cover multiple executions; the existing gateway
+        ledger derives a stable evidence identity per execution. Neither this
+        response nor a diagnostic snapshot itself changes scheduler budgets.
+      parameters:
+        - $ref: "#/components/parameters/NodeIdPath"
+        - $ref: "#/components/parameters/InstanceIdPath"
+        - $ref: "#/components/parameters/InstanceGenerationPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      responses:
+        "200":
+          description: The original stop receipt, backed by its released local checkpoint.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/RuntimeInstanceIntentResponse"
+                  - type: object
+                    required: [stop_evidence]
+                    not:
+                      required: [idempotent_replay]
+                    properties:
+                      action:
+                        const: stop
+                      intent_state:
+                        const: succeeded
+                      observed_instance_state:
+                        enum: [stopped, absent]
+                      stop_evidence:
+                        type: object
+                        required: [exit_code, runtime_container_id]
+                        properties:
+                          exit_code:
+                            type: integer
+                          runtime_container_id:
+                            type: string
+                            minLength: 1
+                            maxLength: 128
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No checkpoint-backed complete stop proof is available; retain capacity.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "409":
+          description: The target node does not match this controller.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "422":
+          description: The instance identity or generation is invalid.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
+        "503":
+          description: The local proof store is unavailable, contradictory or ambiguous.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeControlErrorResponse"
   /internal/v1/nodes/{node_id}/reconcile:
     post:
       operationId: reconcileNodeInstances
@@ -206,6 +304,20 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Identifier"
+    InstanceIdPath:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    InstanceGenerationPath:
+      name: instance_generation
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 9007199254740991
   schemas:
     Identifier:
       $ref: "../shared/identifiers.schema.json#/$defs/Identifier"

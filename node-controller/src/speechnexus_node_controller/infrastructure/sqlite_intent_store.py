@@ -176,6 +176,7 @@ class SqliteIntentStore:
                     f"{expected_version}"
                 )
 
+    @_checkpoint_errors
     def list_for_instance(self, instance_id: str) -> list[RuntimeInstanceIntent]:
         with self._lock:
             rows = self._connection.execute(

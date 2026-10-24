@@ -17,11 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/runtime-http.json").read_text())["examples"]
 
 
-def test_runtime_http_surface_is_generated_from_the_original_two_routes() -> None:
+def test_runtime_http_surface_includes_original_intents_and_checkpoint_backed_stop_query() -> None:
     manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
     source = generator().bundle_http_surface(manifest["http_surfaces"]["runtime"])
     assert contract() == source
-    assert len(source["paths"]) == 2
+    assert len(source["paths"]) == 3
     validate(source)
 
 

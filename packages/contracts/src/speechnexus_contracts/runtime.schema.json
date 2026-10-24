@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RuntimeContracts",
-  "x-nexus-bindings-version": "0.1.0.dev0",
+  "x-nexus-bindings-version": "0.1.0.dev1",
   "x-nexus-entrypoints": [
     "RuntimeInstanceIntentRequest",
     "RuntimeInstanceIntentResponse",

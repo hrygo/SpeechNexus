@@ -39,6 +39,14 @@ not fence resource-pool intents; the quarantine list is a diagnostic response,
 not a persisted state change. Upgrade every serving node before relying on this
 boundary, and query the original intent for authoritative observations.
 
+The read-only `getVerifiedInstanceStop` endpoint returns an original successful
+stop only when its full request and evidence match a local released checkpoint.
+Legacy success receipts without a checkpoint are not certified. Missing proof
+returns 404; contradictory or ambiguous proof returns 503, preserving unknown
+occupancy. This query neither touches the daemon nor advances recovery. The
+[gateway consumer](../docs/architecture/trusted-node-stop.md) verifies the complete
+immutable binding and execution scope over configured TLS.
+
 Production requires the same durable SQLite store for stop checkpoints. Schema 1
 upgrades atomically to 2 without rewriting existing receipts; older controllers
 reject schema 2. Restore a matching stopped-controller snapshot for code rollback,

@@ -13,20 +13,31 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Callable
+from contextlib import suppress
+from functools import wraps
 from pathlib import Path
 from typing import Final
 
 from speechnexus_node_controller.domain.intents import (
+    IntentConflictError,
     InvalidRuntimeRequestError,
+    RuntimeControllerUnavailableError,
     RuntimeInstanceIntent,
+    RuntimeInstanceIntentRequest,
     RuntimeIntentState,
 )
 from speechnexus_node_controller.domain.payloads import (
     intent_record_payload,
     parse_intent_record,
 )
+from speechnexus_node_controller.domain.stop_checkpoint import (
+    StopCheckpoint,
+    parse_stop_checkpoint,
+    stop_checkpoint_payload,
+)
 
-SCHEMA_VERSION: Final = "1"
+SCHEMA_VERSION: Final = "2"
 
 _SCHEMA: Final = (
     """
@@ -53,11 +64,30 @@ _SCHEMA: Final = (
     CREATE INDEX IF NOT EXISTS runtime_instance_intents_unresolved
         ON runtime_instance_intents (intent_state, intent_id)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS runtime_stop_checkpoints (
+        intent_id TEXT PRIMARY KEY REFERENCES runtime_instance_intents(intent_id),
+        record TEXT NOT NULL
+    )
+    """,
 )
 
 
 class IntentStoreError(Exception):
     """The durable intent record could not be read or written."""
+
+
+def _checkpoint_errors[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    @wraps(function)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return function(*args, **kwargs)
+        except sqlite3.Error, IntentStoreError:
+            raise RuntimeControllerUnavailableError(
+                "the local stop checkpoint is unavailable"
+            ) from None
+
+    return wrapped
 
 
 class SqliteIntentStore:
@@ -68,10 +98,11 @@ class SqliteIntentStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        self._connection.execute("PRAGMA journal_mode=WAL")
-        self._connection.execute("PRAGMA synchronous=FULL")
-        self._connection.execute("PRAGMA busy_timeout=5000")
         try:
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            self._connection.execute("PRAGMA synchronous=FULL")
+            self._connection.execute("PRAGMA busy_timeout=5000")
+            self._connection.execute("PRAGMA foreign_keys=ON")
             self._create_schema()
         except BaseException:
             self._connection.close()
@@ -170,13 +201,66 @@ class SqliteIntentStore:
             ).fetchall()
         return [_decode(str(record), str(intent_id)) for intent_id, record in rows]
 
+    @_checkpoint_errors
+    def get_stop_checkpoint(self, request: RuntimeInstanceIntentRequest) -> StopCheckpoint | None:
+        with self._lock:
+            checkpoint = self._read_stop_checkpoint(request.intent_id)
+        if checkpoint is not None and checkpoint.request != request:
+            raise IntentConflictError("the stop checkpoint belongs to another original request")
+        return checkpoint
+
+    @_checkpoint_errors
+    def save_stop_checkpoint(self, checkpoint: StopCheckpoint) -> StopCheckpoint:
+        with self._lock, self._transaction():
+            row = self._connection.execute(
+                "SELECT record FROM runtime_instance_intents WHERE intent_id = ?",
+                (checkpoint.request.intent_id,),
+            ).fetchone()
+            if row is None or _decode(str(row[0]), checkpoint.request.intent_id).request != (
+                checkpoint.request
+            ):
+                raise IntentConflictError("a checkpoint requires the persisted original stop")
+            current = self._read_stop_checkpoint(checkpoint.request.intent_id)
+            if current is None:
+                if checkpoint.stage != "targeted":
+                    raise InvalidRuntimeRequestError("the original target must be committed first")
+                self._connection.execute(
+                    "INSERT INTO runtime_stop_checkpoints (intent_id, record) VALUES (?, ?)",
+                    (checkpoint.request.intent_id, _encode_checkpoint(checkpoint)),
+                )
+                return checkpoint
+            updated = current.advance(checkpoint)
+            if updated != current:
+                self._connection.execute(
+                    "UPDATE runtime_stop_checkpoints SET record = ? WHERE intent_id = ?",
+                    (_encode_checkpoint(updated), checkpoint.request.intent_id),
+                )
+            return updated
+
+    def _read_stop_checkpoint(self, intent_id: str) -> StopCheckpoint | None:
+        row = self._connection.execute(
+            "SELECT record FROM runtime_stop_checkpoints WHERE intent_id = ?", (intent_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        checkpoint = _decode_checkpoint(str(row[0]))
+        if checkpoint.request.intent_id != intent_id:
+            raise IntentStoreError("the stop checkpoint identity is not usable")
+        return checkpoint
+
     def _create_schema(self) -> None:
         with self._lock, self._transaction():
-            for statement in _SCHEMA:
+            self._connection.execute(_SCHEMA[0])
+            version = self._connection.execute(
+                "SELECT value FROM runtime_intent_store_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if version is not None and version[0] not in {"1", SCHEMA_VERSION}:
+                raise IntentStoreError("the runtime intent store schema version is not usable")
+            for statement in _SCHEMA[1:]:
                 self._connection.execute(statement)
             self._connection.execute(
                 "INSERT INTO runtime_intent_store_meta (key, value) VALUES ('schema_version', ?) "
-                "ON CONFLICT (key) DO NOTHING",
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
                 (SCHEMA_VERSION,),
             )
         self.probe()
@@ -196,13 +280,42 @@ class _Transaction:
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
         if exc_type is None:
-            self._connection.execute("COMMIT")
+            try:
+                self._connection.execute("COMMIT")
+            except BaseException:
+                if self._connection.in_transaction:
+                    with suppress(sqlite3.Error):
+                        self._connection.execute("ROLLBACK")
+                raise
         else:
             self._connection.execute("ROLLBACK")
 
 
 def _encode(intent: RuntimeInstanceIntent) -> str:
     return json.dumps(intent_record_payload(intent), separators=(",", ":"), sort_keys=True)
+
+
+def _encode_checkpoint(checkpoint: StopCheckpoint) -> str:
+    return json.dumps(stop_checkpoint_payload(checkpoint), separators=(",", ":"), sort_keys=True)
+
+
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate stop checkpoint field")
+        result[key] = value
+    return result
+
+
+def _decode_checkpoint(record: str) -> StopCheckpoint:
+    try:
+        payload = json.loads(record, object_pairs_hook=_unique_fields)
+        if not isinstance(payload, dict):
+            raise ValueError("the checkpoint must be an object")
+        return parse_stop_checkpoint(payload)
+    except ValueError, InvalidRuntimeRequestError:
+        raise IntentStoreError("the stop checkpoint record is not usable") from None
 
 
 def _decode(record: str, intent_id: str) -> RuntimeInstanceIntent:

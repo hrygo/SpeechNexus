@@ -236,18 +236,18 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
         work = Path(workdir)
         samples = [] if prepared_audio else _samples(work)
         store = SqliteIntentStore(work / "intents.sqlite3")
-        runtime = DockerNodeRuntime(
-            api=api,
-            node_id=_NODE,
-            settings=DockerRuntimeSettings(stop_timeout_seconds=45, exit_wait_seconds=60),
-        )
 
         def service() -> NodeRuntimeControlService:
             return NodeRuntimeControlService(
                 node_id=_NODE,
                 templates=ApprovedTemplateRegistry((template,)),
                 store=store,
-                runtime=runtime,
+                runtime=DockerNodeRuntime(
+                    api=api,
+                    node_id=_NODE,
+                    stop_checkpoints=store,
+                    settings=DockerRuntimeSettings(stop_timeout_seconds=45, exit_wait_seconds=60),
+                ),
             )
 
         controller = service()

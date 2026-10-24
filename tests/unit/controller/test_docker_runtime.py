@@ -14,6 +14,7 @@ import pytest
 from tests.fake.controller import (
     IMAGE_DIGEST,
     SAMPLE_IMAGE_REFERENCE,
+    InMemoryStopCheckpoints,
     build_request,
     build_template,
 )
@@ -56,6 +57,7 @@ def _runtime(engine: FakeDockerEngine, **settings: Any) -> DockerNodeRuntime:
     return DockerNodeRuntime(
         api=engine,
         node_id=_NODE,
+        stop_checkpoints=InMemoryStopCheckpoints(),
         settings=DockerRuntimeSettings(**settings),
     )
 
@@ -297,7 +299,9 @@ def test_http_readiness_refuses_hostnames_from_container_inspection() -> None:
 
 def test_stop_cannot_target_another_nodes_container() -> None:
     engine = _engine()
-    foreign_runtime = DockerNodeRuntime(api=engine, node_id="node-other")
+    foreign_runtime = DockerNodeRuntime(
+        api=engine, node_id="node-other", stop_checkpoints=InMemoryStopCheckpoints()
+    )
     foreign_runtime.prepare(build_request(), build_template())
     foreign_id = engine.created[0].container_id
 

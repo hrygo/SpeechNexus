@@ -17,6 +17,7 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeInstanceIntentRequest,
     RuntimeStopEvidence,
 )
+from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import ApprovedRuntimeTemplate
 
 
@@ -57,6 +58,24 @@ class NodeRuntimePort(Protocol):
     def inspect(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation | None: ...
+
+    def recover_stop(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> InstanceObservation | None:
+        """Resume only an accepted original stop, with durable target/exit checkpoints."""
+        ...
+
+
+class StopCheckpointStore(Protocol):
+    """Private node evidence; commits finish before the next daemon action starts."""
+
+    def get_stop_checkpoint(
+        self, request: RuntimeInstanceIntentRequest
+    ) -> StopCheckpoint | None: ...
+
+    def save_stop_checkpoint(self, checkpoint: StopCheckpoint) -> StopCheckpoint:
+        """Pin first; advance exit then release monotonically; retain original timestamps."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

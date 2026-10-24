@@ -34,7 +34,11 @@
       "redact_execution_command",
       "append_interval",
       "quarantine_lease",
-      "release_lease"
+      "release_lease",
+      "admit_recipe",
+      "seal_barrier",
+      "create_submit",
+      "record_stop"
     ]
   },
   "profiles": {

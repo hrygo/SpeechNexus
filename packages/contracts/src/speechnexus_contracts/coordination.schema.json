@@ -17,7 +17,11 @@
     "redact_execution_command",
     "append_interval",
     "quarantine_lease",
-    "release_lease"
+    "release_lease",
+    "admit_recipe",
+    "seal_barrier",
+    "create_submit",
+    "record_stop"
   ],
   "$defs": {
     "create_job": {
@@ -2298,6 +2302,1550 @@
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         }
       }
+    },
+    "admit_recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "workspace_id",
+        "binding_revision_id",
+        "manifest_id",
+        "recipe_digest",
+        "policy_revision_id",
+        "expected_quota_version",
+        "service_class",
+        "authorities",
+        "stages",
+        "deadline_at_us",
+        "job"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/AttemptIdentity"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "recipe_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "expected_quota_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "service_class": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+        },
+        "authorities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/OwnerAuthority"
+          }
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/StageAllocation"
+          }
+        },
+        "deadline_at_us": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "job": {
+          "$ref": "#/$defs/JobIdentity"
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_ServiceClass": {
+      "type": "string",
+      "enum": ["realtime", "interactive", "batch"]
+    },
+    "StageAllocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "lease_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "expected_instance_version",
+        "reserved_slots"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expected_instance_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "reserved_slots": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "seal_barrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "barrier", "evidence_digest"],
+      "properties": {
+        "authority": {
+          "$ref": "#/$defs/OwnerAuthority"
+        },
+        "barrier": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_GatewayFencingBarrierResponse"
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_GatewayFencingBarrierResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateway_id",
+        "pool_id",
+        "enforced_min_fencing_token",
+        "barrier_sealed",
+        "submitting_intent_ids",
+        "executing_intent_ids",
+        "quarantined_intent_ids",
+        "enforced_at"
+      ],
+      "properties": {
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_PoolId"
+        },
+        "enforced_min_fencing_token": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "barrier_sealed": {
+          "const": true
+        },
+        "submitting_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+          }
+        },
+        "executing_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+          }
+        },
+        "quarantined_intent_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+          }
+        },
+        "enforced_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of this successful enforcement confirmation. Replay may refresh inventory and this time while preserving the same durable minimum and proof."
+        }
+      }
+    },
+    "create_submit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution_request", "output_stream_id"],
+      "properties": {
+        "execution_request": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_SubmitExecutionRequest"
+        },
+        "output_stream_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_request": {
+                "properties": {
+                  "sample_rate_hz": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "output_stream_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "output_stream_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_SubmitExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The execution gateway derives the private staging namespace from\n`workspace_id` and `submit_intent_id`. command contains the complete frozen\ninput and effective parameters. command_digest is SHA-256 over RFC 8785\ncanonical command JSON; mismatch is invalid_execution_request. Same intent\nwith a different canonical command is submit_intent_conflict. Callers cannot supply an output object\nkey, path prefix, bucket, or external URL. Input storage references must\nidentify immutable owned assets and match the command workspace.\n",
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "fencing_token",
+        "command_digest",
+        "command",
+        "deadline_at",
+        "max_output_audio_ms",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_PoolId"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "voice_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+        },
+        "command": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ExecutionCommand"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "max_output_audio_ms": {
+          "type": ["integer", "null"],
+          "minimum": 100,
+          "description": "Hard output-audio ceiling for stages that synthesize audio. Use\nnull for ASR, alignment, and other stages that cannot emit audio.\nThe referenced manifest stage must declare `emits_audio_pcm=true`\nfor a non-null value. The gateway stores\n`hard_output_ceiling_samples` as\n`floor(max_output_audio_ms * sample_rate_hz / 1000)`. A manifest\nstage that emits audio PCM rejects a null value.\n"
+        },
+        "sample_rate_hz": {
+          "type": ["integer", "null"],
+          "enum": [16000, 24000, 48000, null],
+          "description": "PCM sample rate used for output metering. Required and non-null\nexactly when `max_output_audio_ms` is non-null; null for text-only\nstages.\n"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "max_output_audio_ms": {
+                "type": "integer"
+              }
+            },
+            "required": ["max_output_audio_ms"]
+          },
+          "then": {
+            "properties": {
+              "sample_rate_hz": {
+                "enum": [16000, 24000, 48000]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "max_output_audio_ms": {
+                "type": "null"
+              }
+            },
+            "required": ["max_output_audio_ms"]
+          },
+          "then": {
+            "properties": {
+              "sample_rate_hz": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_ExecutionCommand": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AsrCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceDesignCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceCloneCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VoiceValidationCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AlignmentCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_DiarizationCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_VadCommand"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_CodecCommand"
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AsrCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "asr"
+        },
+        "task_kind": {
+          "enum": ["asr_realtime", "asr_full_segment_review", "asr_file"]
+        },
+        "stage_role": {
+          "enum": ["asr_preview", "asr_review", "asr_batch"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioSource"
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AsrEffectiveParameters"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_ResolvedResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice",
+        "voice_material",
+        "vocabulary",
+        "pronunciation",
+        "voice_kind",
+        "vocabulary_source",
+        "pronunciation_source"
+      ],
+      "properties": {
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_material": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vocabulary": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_command_schema_json_VocabularyEntry"
+          }
+        },
+        "pronunciation": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_internal_execution_command_schema_json_PronunciationEntry"
+          }
+        },
+        "voice_kind": {
+          "enum": ["builtin", "custom", null]
+        },
+        "vocabulary_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "voice": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_kind": {
+                "type": "null"
+              },
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_kind": {
+                "enum": ["builtin", "custom"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "voice_kind": {
+                "const": "custom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_material": {
+                "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "voice_material": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VocabularyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "weight"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_PronunciationEntry": {
+      "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationEntry"
+    },
+    "External_voice_resource_schema_json_PronunciationEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grapheme", "phonemes"],
+      "properties": {
+        "grapheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "phonemes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "language": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_LanguageTag"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_internal_execution_command_schema_json_AudioSource": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_StreamInput"
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AudioInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage", "media_type", "sample_rate_hz", "channels"],
+      "properties": {
+        "storage": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+        },
+        "media_type": {
+          "enum": ["audio/wav", "audio/flac", "audio/mpeg", "audio/ogg", "audio/pcm"]
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_StreamInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream_id", "stream_epoch"],
+      "properties": {
+        "stream_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "stream_epoch": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_AsrEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "turn_detection",
+        "finalization",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "rollback_tokens",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "alignment",
+        "diarization",
+        "vocabulary_set_revision",
+        "prompt",
+        "temperature",
+        "response_format",
+        "timestamp_granularities"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "turn_detection": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_shared_speech_overrides_schema_json_turn_detection"
+            },
+            {
+              "required": ["mode", "silence_duration_ms"]
+            }
+          ]
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_preview_interval_ms"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_max_segment_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_alignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+        },
+        "prompt": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "response_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+        },
+        "timestamp_granularities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["word", "segment"]
+          }
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_turn_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_speech_overrides_schema_json_finalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_speech_overrides_schema_json_max_segment_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "External_shared_speech_overrides_schema_json_rollback_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_alignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "External_shared_speech_overrides_schema_json_diarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "External_internal_execution_command_schema_json_TtsCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "text_stream",
+        "parameters"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "tts"
+        },
+        "task_kind": {
+          "enum": ["tts_realtime", "tts_file"]
+        },
+        "stage_role": {
+          "enum": ["tts_talker", "tts_connector"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text_stream": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_command_schema_json_StreamInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsEffectiveParameters"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "text_stream": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "text": {
+              "type": "null"
+            },
+            "text_stream": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_TtsEffectiveParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text_commit_mode",
+        "audio_delivery",
+        "language",
+        "pronunciation_revision",
+        "instructions",
+        "speed",
+        "seed",
+        "planner",
+        "response_format"
+      ],
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_audio_delivery"
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 4096
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_speed"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        },
+        "planner": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_shared_speech_overrides_schema_json_planner"
+            },
+            {
+              "required": ["max_chars", "max_wait_ms"]
+            }
+          ]
+        },
+        "response_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_text_commit_mode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_speech_overrides_schema_json_audio_delivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_speed": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4.0
+    },
+    "External_shared_speech_overrides_schema_json_seed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_speech_overrides_schema_json_planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_internal_execution_command_schema_json_VoiceDesignCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "description",
+        "preview_text",
+        "language",
+        "seed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicedesign"
+        },
+        "task_kind": {
+          "enum": ["voice_design"]
+        },
+        "stage_role": {
+          "enum": ["voice_design"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VoiceCloneCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "reference_audio",
+        "reference_text",
+        "preview_text",
+        "language",
+        "source_use_confirmed"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voiceclone"
+        },
+        "task_kind": {
+          "enum": ["voice_clone"]
+        },
+        "stage_role": {
+          "enum": ["voice_clone_base"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "reference_audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "reference_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "source_use_confirmed": {
+          "const": true
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VoiceValidationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "text",
+        "parameters",
+        "validation_checks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "voicevalidation"
+        },
+        "task_kind": {
+          "enum": ["voice_validation"]
+        },
+        "stage_role": {
+          "enum": ["tts_talker", "tts_connector"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_TtsEffectiveParameters"
+        },
+        "validation_checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["reusable_tts", "reference_integrity", "language_support"]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "resources": {
+              "properties": {
+                "voice": {
+                  "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_command_schema_json_AlignmentCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "transcript",
+        "language"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "alignment"
+        },
+        "task_kind": {
+          "enum": ["forced_alignment", "asr_file", "asr_full_segment_review"]
+        },
+        "stage_role": {
+          "enum": ["alignment"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "transcript": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_DiarizationCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "min_speakers",
+        "max_speakers"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "diarization"
+        },
+        "task_kind": {
+          "enum": ["speaker_diarization", "asr_file", "asr_full_segment_review"]
+        },
+        "stage_role": {
+          "enum": ["diarization"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioInput"
+        },
+        "min_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 128
+        }
+      }
+    },
+    "External_internal_execution_command_schema_json_VadCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "audio",
+        "threshold",
+        "silence_duration_ms"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "vad"
+        },
+        "task_kind": {
+          "enum": ["vad", "asr_realtime", "asr_file"]
+        },
+        "stage_role": {
+          "enum": ["vad"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_AudioSource"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "silence_duration_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_silence_duration_ms"
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_silence_duration_ms": {
+      "type": "integer",
+      "minimum": 200,
+      "maximum": 3000
+    },
+    "External_internal_execution_command_schema_json_CodecCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "task_kind",
+        "stage_role",
+        "resources",
+        "codec_tokens",
+        "codec_format",
+        "codebook_count",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "codec"
+        },
+        "task_kind": {
+          "enum": ["tts_realtime", "tts_file", "voice_design", "voice_clone", "voice_validation"]
+        },
+        "stage_role": {
+          "enum": ["tts_code2wav"]
+        },
+        "resources": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ResolvedResources"
+        },
+        "codec_tokens": {
+          "$ref": "#/$defs/External_internal_execution_command_schema_json_ArtifactStorageReference"
+        },
+        "codec_format": {
+          "const": "nexus.codec_tokens.v1"
+        },
+        "codebook_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "sample_rate_hz": {
+          "enum": [16000, 24000, 48000]
+        }
+      }
+    },
+    "record_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "terminal_state", "error_code"],
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/VerifiedStopEvidence"
+        },
+        "terminal_state": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionState"
+            },
+            {
+              "enum": ["succeeded", "failed", "aborted"]
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "terminal_state": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "properties": {
+                  "evidence_kind": {
+                    "const": "engine_terminal_response"
+                  }
+                }
+              },
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "terminal_state": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "type": "string"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "VerifiedStopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "submit_intent_id",
+        "evidence_kind",
+        "evidence_digest",
+        "observed_at_us",
+        "execution_stopped",
+        "resources_released",
+        "reason"
+      ],
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "evidence_kind": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_StopEvidenceKind"
+            },
+            {
+              "not": {
+                "enum": ["none", "unconfirmed_timeout"]
+              }
+            }
+          ]
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "execution_stopped": {
+          "const": true
+        },
+        "resources_released": {
+          "const": true
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_admin_openapi_yaml_reason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidence_kind": {
+                "const": "operator_verified_instance_terminated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "description": "Verified termination of this submitted execution and release of its incremental resources. This does not imply that the shared engine process exited; instance baseline release requires the separate RuntimeStopEvidence contract."
+    },
+    "External_admin_openapi_yaml_reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
     }
   },
   "anyOf": [
@@ -2345,6 +3893,18 @@
     },
     {
       "$ref": "#/$defs/release_lease"
+    },
+    {
+      "$ref": "#/$defs/admit_recipe"
+    },
+    {
+      "$ref": "#/$defs/seal_barrier"
+    },
+    {
+      "$ref": "#/$defs/create_submit"
+    },
+    {
+      "$ref": "#/$defs/record_stop"
     }
   ]
 }

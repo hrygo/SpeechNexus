@@ -1689,6 +1689,7 @@ version = "0.1.0.dev0"
 source = { editable = "execution-gateway" }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "pydantic" },
@@ -1700,6 +1701,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.159.1,<0.160" },
+    { name = "httpx", specifier = ">=0.28.1,<0.29" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6,<4" },
     { name = "psycopg-pool", specifier = ">=3.3,<4" },
     { name = "pydantic", specifier = ">=2.14.1,<3" },

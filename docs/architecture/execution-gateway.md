@@ -564,3 +564,17 @@ PG 另验证真实 pool 锁等待后的取时与提交确认丢失后的只读�
 以及停止/正文清理后仍可查询原用量事实。两个不同 pool/stage 的写者均实际等待同一输出流行锁，
 释放后重核对相邻或重叠；同 ID 并发只提交一次。PG 另有真实提交后丢确认的只读恢复。
 只有合成 PCM 坐标，没有实际语音、网络交付/播放或计费结算资格。
+
+## 节点停止事实来源
+
+`NodeStopEvidenceSource` 实现既有 `InstanceTerminationEvidencePort`，经固定节点 TLS
+读取新的 `getVerifiedInstanceStop`，验证不可变绑定、原实例代次、同池任期和时间。
+节点必须同时核对本地 released 检查点，不能把旧成功回执、外部快照或容器消失当成可信事实。
+查询不操作 daemon，网络等待不占数据库事务；同步扫描须由工作线程执行。
+缺失、冲突和传输失败继续 unknown，完整事实沿用每执行证据 ID 与 `record_stop`。
+完整协议、升级/回退与边界见[节点停止事实到网关的可信消费](trusted-node-stop.md)。
+
+原生 TLS/SQLite、网关 PG 与 A 的 PG/InnoDB 消费者联调覆盖共享实例双执行、
+半证据保留占用、节点重启补齐与幂等释放。InnoDB 网关侧使用相同 SQL/领域规则的测试装配，
+不是已经交付生产 MySQL 驱动。默认网关周期驱动与真实 ASR/TTS dispatch/故障仍待，
+不能据合成联调宣称生产调度、GPU 或物理集群资格完成。

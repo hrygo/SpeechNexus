@@ -85,6 +85,64 @@
           "json": true
         }
       }
+    },
+    "getVerifiedInstanceStop": {
+      "path": "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop",
+      "method": "get",
+      "request": "HttpRequest_getVerifiedInstanceStop",
+      "parameters": {
+        "path": {
+          "node_id": "string",
+          "instance_id": "string",
+          "instance_generation": "integer"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_404",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_409",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_422",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getVerifiedInstanceStop_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -97,7 +155,14 @@
     "HttpRequest_getRuntimeInstanceIntent",
     "HttpResponse_getRuntimeInstanceIntent_200",
     "HttpResponse_getRuntimeInstanceIntent_401",
-    "HttpResponse_getRuntimeInstanceIntent_404"
+    "HttpResponse_getRuntimeInstanceIntent_404",
+    "HttpRequest_getVerifiedInstanceStop",
+    "HttpResponse_getVerifiedInstanceStop_200",
+    "HttpResponse_getVerifiedInstanceStop_401",
+    "HttpResponse_getVerifiedInstanceStop_404",
+    "HttpResponse_getVerifiedInstanceStop_409",
+    "HttpResponse_getVerifiedInstanceStop_422",
+    "HttpResponse_getVerifiedInstanceStop_503"
   ],
   "$defs": {
     "Identifier": {
@@ -884,6 +949,201 @@
       "required": ["body"]
     },
     "HttpResponse_getRuntimeInstanceIntent_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getVerifiedInstanceStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "node_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "instance_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "instance_generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["node_id", "instance_id", "instance_generation"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RuntimeInstanceIntentResponse"
+            },
+            {
+              "type": "object",
+              "required": ["stop_evidence"],
+              "not": {
+                "required": ["idempotent_replay"]
+              },
+              "properties": {
+                "action": {
+                  "const": "stop"
+                },
+                "intent_state": {
+                  "const": "succeeded"
+                },
+                "observed_instance_state": {
+                  "enum": ["stopped", "absent"]
+                },
+                "stop_evidence": {
+                  "type": "object",
+                  "required": ["exit_code", "runtime_container_id"],
+                  "properties": {
+                    "exit_code": {
+                      "type": "integer"
+                    },
+                    "runtime_container_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVerifiedInstanceStop_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

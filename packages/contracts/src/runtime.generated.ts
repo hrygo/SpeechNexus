@@ -50,6 +50,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Query a checkpoint-backed stop fact for one instance generation
+     * @description Read only. The node returns the original succeeded stop intent only when
+     *     its complete exit/release evidence equals its own durable released stop
+     *     checkpoint, including the immutable original request and pinned container.
+     *     A legacy succeeded receipt without that checkpoint is not proof.
+     *     No intent/checkpoint is written and no daemon action is triggered.
+     *     Missing or incomplete proof is 404 runtime_intent_not_found, which never
+     *     means that an instance exited. Contradictory or ambiguous local proof is
+     *     503 runtime_controller_unavailable; no arbitrary latest receipt is chosen.
+     *
+     *     The gateway uses only a server-configured node TLS endpoint, credential
+     *     and immutable binding. It verifies node, gateway, pool, instance generation,
+     *     binding revision, approved template, manifest and configuration digest.
+     *     The original stop token must cover the execution token in that same pool;
+     *     tokens from other pools are never compared. A stop observed before the
+     *     execution, or in the consumer's future, cannot close that execution.
+     *     One source fact can cover multiple executions; the existing gateway
+     *     ledger derives a stable evidence identity per execution. Neither this
+     *     response nor a diagnostic snapshot itself changes scheduler budgets.
+     */
+    get: operations["getVerifiedInstanceStop"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/nodes/{node_id}/reconcile": {
     parameters: {
       query?: never;
@@ -258,6 +295,8 @@ export interface components {
     XRequestIdHeader: string;
     NodeIdPath: components["schemas"]["Identifier"];
     IntentIdPath: components["schemas"]["Identifier"];
+    InstanceIdPath: components["schemas"]["Identifier"];
+    InstanceGenerationPath: number;
   };
   requestBodies: never;
   headers: {
@@ -365,6 +404,85 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       /** @description Runtime instance intent not found on this node controller. */
       404: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+    };
+  };
+  getVerifiedInstanceStop: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        node_id: components["parameters"]["NodeIdPath"];
+        instance_id: components["parameters"]["InstanceIdPath"];
+        instance_generation: components["parameters"]["InstanceGenerationPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The original stop receipt, backed by its released local checkpoint. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeInstanceIntentResponse"] & {
+            /** @constant */
+            action?: "stop";
+            /** @constant */
+            intent_state?: "succeeded";
+            /** @enum {unknown} */
+            observed_instance_state?: "stopped" | "absent";
+            stop_evidence: {
+              exit_code: number;
+              runtime_container_id: string;
+            };
+          };
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No checkpoint-backed complete stop proof is available; retain capacity. */
+      404: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description The target node does not match this controller. */
+      409: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description The instance identity or generation is invalid. */
+      422: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description The local proof store is unavailable, contradictory or ambiguous. */
+      503: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;

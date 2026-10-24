@@ -169,7 +169,8 @@
       "validate": true,
       "paths": [
         "/internal/v1/nodes/{node_id}/instance-intents",
-        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}"
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}",
+        "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop"
       ]
     },
     "assets": {

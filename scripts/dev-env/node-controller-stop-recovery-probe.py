@@ -12,11 +12,14 @@ import json
 import shutil
 import socket
 import sqlite3
+import ssl
+import subprocess
 import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +29,18 @@ from engine_probe_support import protected_start
 from node_controller_fault_process import PHASES
 from node_controller_process import ControllerProcess, wait_for_health
 
+from speechnexus_gateway.domain.recovery import whole_instance_stop_evidence
+from speechnexus_gateway.domain.submission import (
+    CleanupState,
+    ExecutionState,
+    SubmissionIdentity,
+    SubmissionIntent,
+)
+from speechnexus_gateway.infrastructure.node_stop_evidence import (
+    NodeStopBinding,
+    NodeStopEndpoint,
+    NodeStopEvidenceSource,
+)
 from speechnexus_node_controller.infrastructure.docker_api import DockerApi
 from speechnexus_node_controller.infrastructure.docker_runtime import (
     INSTANCE_ID_LABEL,
@@ -104,6 +119,147 @@ def checkpoint_stage(path: Path) -> str | None:
     )
 
 
+def verify_gateway_source(
+    work: Path, common: dict[str, Any], instance: str, recorded_at: datetime
+) -> dict[str, Any]:
+    """Read the same real daemon proof through TLS and the native gateway consumer.
+
+    The two execution records are synthetic domain inputs, not persisted dispatches.
+    Database/budget behavior is exercised separately by the dual-database integration.
+    """
+    certificate, key = work / "certificate.pem", work / "key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-noenc",
+            "-days",
+            "1",
+            "-keyout",
+            str(key),
+            "-out",
+            str(certificate),
+            "-subj",
+            "/CN=cpu-stop-probe",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        timeout=10,
+    )
+    key.chmod(0o600)
+    controller = ControllerProcess(
+        command=[
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "speechnexus_node_controller.app:create_app",
+            "--factory",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(common["port"]),
+            "--ssl-certfile",
+            str(certificate),
+            "--ssl-keyfile",
+            str(key),
+            "--no-proxy-headers",
+            "--no-server-header",
+            "--no-access-log",
+            "--log-level",
+            "warning",
+        ],
+        log_path=work / "gateway-tls.log",
+        **common,
+    )
+    try:
+        context = ssl.create_default_context(cafile=str(certificate))
+        with httpx.Client(
+            base_url=f"https://127.0.0.1:{common['port']}",
+            verify=context,
+            trust_env=False,
+            timeout=3,
+        ) as client:
+            wait_for_health(client, timeout_seconds=15)
+        source = NodeStopEvidenceSource(
+            NodeStopEndpoint(_NODE, "127.0.0.1", common["port"], _TOKEN),
+            bindings=(
+                NodeStopBinding(
+                    _NODE,
+                    "gateway-probe",
+                    "auxiliary",
+                    "binding-probe",
+                    _TEMPLATE,
+                    "manifest-probe",
+                    _DIGEST,
+                ),
+            ),
+            ssl_context=context,
+        )
+        original = SubmissionIntent(
+            identity=SubmissionIdentity(
+                submit_intent_id="execution-probe-one",
+                lease_id="lease-probe-one",
+                operation_id="operation-probe",
+                attempt_id="attempt-probe",
+                stage_id="stage-probe-one",
+                workspace_id="workspace-probe",
+                pool_id="auxiliary",
+                host_node_id=_NODE,
+                gateway_id="gateway-probe",
+                instance_id=instance,
+                instance_generation=1,
+                binding_revision_id="binding-probe",
+                policy_revision_id="policy-probe",
+                voice_revision_id=None,
+                fencing_token=1,
+                command_digest=_DIGEST,
+                deadline_at=recorded_at + timedelta(minutes=5),
+            ),
+            recorded_at=recorded_at,
+            updated_at=recorded_at,
+            request_digest=_DIGEST,
+            execution_state=ExecutionState.UNKNOWN_QUARANTINED,
+            cleanup_state=CleanupState.QUARANTINED,
+        )
+        first = source.termination_evidence(original)
+        require(first is not None and first.is_complete, "gateway_stop_fact_missing")
+        require(source.termination_evidence(original) == first, "gateway_stop_fact_unstable")
+        second = replace(
+            original,
+            identity=replace(
+                original.identity,
+                submit_intent_id="execution-probe-two",
+                lease_id="lease-probe-two",
+                stage_id="stage-probe-two",
+            ),
+        )
+        one = whole_instance_stop_evidence(original, first)
+        two = whole_instance_stop_evidence(second, source.termination_evidence(second))
+        require(one is not None and two is not None, "gateway_execution_proof_missing")
+        assert one is not None and two is not None
+        require(
+            one.evidence_id != two.evidence_id and one.evidence_digest == two.evidence_digest,
+            "gateway_shared_proof_identity_invalid",
+        )
+        return {
+            "tls_ip_identity_verified": True,
+            "synthetic_executions": 2,
+            "stable_source_fact": True,
+            "distinct_execution_proof_ids": True,
+            "evidence_digest": one.evidence_digest,
+            "source_methods": ["GET"],
+            "database_budget_exercised": False,
+        }
+    finally:
+        controller.stop()
+
+
 def run_case(
     report: dict[str, Any],
     *,
@@ -112,6 +268,7 @@ def run_case(
     image_id: str,
     port: int,
     timeout_seconds: float,
+    gateway_stop_evidence: bool = False,
 ) -> None:
     phase = report["phase"]
     instance = "instance-stop-probe-" + phase.replace("_", "-")
@@ -155,6 +312,7 @@ def run_case(
         headers = {"Authorization": "Bearer " + _TOKEN}
         prefix = f"/internal/v1/nodes/{_NODE}/instance-intents"
         stop_request = body(instance, stop=True)
+        recorded_at = datetime.now(UTC)
         try:
             controller = ControllerProcess(
                 command=[
@@ -188,6 +346,12 @@ def run_case(
                         require(marker.exists(), "fault_barrier_not_reached")
                         pending = client.get(prefix + "/intent-stop").json()
                         require(pending["stop_evidence"] is None, "premature_stop_proof")
+                        if gateway_stop_evidence:
+                            query = client.get(
+                                f"/internal/v1/nodes/{_NODE}/instances/{instance}"
+                                "/generations/1/verified-stop"
+                            )
+                            require(query.status_code == 404, "premature_verified_stop")
                         report["pending_intent_state"] = pending["intent_state"]
                         report["checkpoint_stage_before_crash"] = checkpoint_stage(
                             work / "runtime-intents.sqlite3"
@@ -253,6 +417,12 @@ def run_case(
                 require(
                     report["stable_proof_after_replay_restart"], "stop_proof_changed_on_restart"
                 )
+                if gateway_stop_evidence:
+                    controller.stop()
+                    controller = None
+                    report["gateway_source"] = verify_gateway_source(
+                        work, common, instance, recorded_at
+                    )
                 report["passed"] = True
         finally:
             if controller is not None:
@@ -268,6 +438,7 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=float, default=15)
     parser.add_argument("--image", default="python:3.14.9-slim-bookworm")
     parser.add_argument("--phase", choices=PHASES, action="append")
+    parser.add_argument("--gateway-stop-evidence", action="store_true")
     args = parser.parse_args()
     start = protected_start()
     with socket.socket() as check:
@@ -289,6 +460,7 @@ def main() -> int:
                     image_id=image.image_id,
                     port=args.port,
                     timeout_seconds=args.timeout_seconds,
+                    gateway_stop_evidence=args.gateway_stop_evidence,
                 )
         report["passed"] = True
     except Exception as error:

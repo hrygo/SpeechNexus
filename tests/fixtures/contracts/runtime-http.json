@@ -1259,6 +1259,537 @@
       },
       "valid": false,
       "status": 503
+    },
+    {
+      "id": "verified-stop-query",
+      "kind": "request",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1
+        },
+        "headers": {
+          "X-Request-ID": "runtime-proof-test"
+        }
+      }
+    },
+    {
+      "id": "verified-stop-traversal-instance",
+      "kind": "request",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "instance_id": "../escape",
+          "instance_generation": 1
+        },
+        "headers": {
+          "X-Request-ID": "runtime-proof-test"
+        }
+      }
+    },
+    {
+      "id": "verified-stop-boolean-generation",
+      "kind": "request",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "instance_id": "instance-test",
+          "instance_generation": true
+        },
+        "headers": {
+          "X-Request-ID": "runtime-proof-test"
+        }
+      }
+    },
+    {
+      "id": "verified-stop-uri-encoded-generation",
+      "kind": "request",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "instance_id": "instance-test",
+          "instance_generation": "1"
+        },
+        "headers": {
+          "X-Request-ID": "runtime-proof-test"
+        }
+      }
+    },
+    {
+      "id": "verified-stop-zero-generation",
+      "kind": "request",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "instance_id": "instance-test",
+          "instance_generation": 0
+        },
+        "headers": {
+          "X-Request-ID": "runtime-proof-test"
+        }
+      }
+    },
+    {
+      "id": "verified-stop-complete",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": "pinned-container"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-prepare",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": "pinned-container"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-pending",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "reconciling",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": "pinned-container"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-missing-proof",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": null
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-missing-container",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": null
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-missing-exit",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": null,
+            "runtime_container_id": "pinned-container"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-partial-release",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": false,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": "pinned-container"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-replay-flag",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": false,
+      "value": {
+        "body": {
+          "intent_id": "runtime-stop-proof",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "stop",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "absent",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "stop_evidence": {
+            "process_or_container_exited": true,
+            "resources_released_confirmed": true,
+            "verified_at": "2026-10-24T00:00:01Z",
+            "exit_code": 143,
+            "runtime_container_id": "pinned-container"
+          },
+          "idempotent_replay": false
+        }
+      },
+      "status": 200
+    },
+    {
+      "id": "verified-stop-component_credential_invalid",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "component_credential_invalid",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "status": 401
+    },
+    {
+      "id": "verified-stop-original-query-not-found",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_intent_not_found",
+            "message": "Synthetic missing intent",
+            "retryable": false
+          }
+        }
+      },
+      "status": 404
+    },
+    {
+      "id": "verified-stop-target_node_mismatch",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "target_node_mismatch",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "status": 409
+    },
+    {
+      "id": "verified-stop-invalid_runtime_request",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_runtime_request",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "status": 422
+    },
+    {
+      "id": "verified-stop-runtime_controller_unavailable",
+      "kind": "response",
+      "operation": "getVerifiedInstanceStop",
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_controller_unavailable",
+            "message": "Synthetic controller error",
+            "retryable": true
+          }
+        }
+      },
+      "status": 503
     }
   ]
 }

@@ -58,6 +58,7 @@ def _build_dependencies(
         node_id=settings.node_id,
         templates=templates,
         store=store,
+        stop_checkpoints=store,
         runtime=DockerNodeRuntime(
             api=api,
             node_id=settings.node_id,

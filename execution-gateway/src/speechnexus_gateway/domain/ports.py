@@ -20,7 +20,11 @@ from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
-from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import (
+    ExecutionSnapshot,
+    InstanceTerminationEvidence,
+    MarkExecutionUnknown,
+)
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
     EngineObservedState,
@@ -116,6 +120,31 @@ class EngineAbortPort(Protocol):
     def abort(
         self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
     ) -> AbortOutcome: ...
+
+
+class InstanceTerminationEvidencePort(Protocol):
+    """Reports whole-instance termination facts for one uncertain execution.
+
+    An implementation answers with the producer's own observation or ``None``. A transport
+    failure, timeout, disconnect or missing record is never a terminated instance: the
+    caller keeps the execution quarantined and holding capacity in that case.
+    """
+
+    def termination_evidence(
+        self, intent: SubmissionIntent
+    ) -> InstanceTerminationEvidence | None: ...
+
+
+class ExecutionRecoverySource(Protocol):
+    """Bounded enumeration of the uncertain executions this gateway is still holding."""
+
+    def list_quarantined(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[SubmissionIntent]: ...
+
+
+class ExecutionSweepLedger(SubmissionLedger, ExecutionRecoverySource, Protocol):
+    """The intent store a recovery sweep enumerates and then closes through."""
 
 
 class IngressOwnership(Protocol):

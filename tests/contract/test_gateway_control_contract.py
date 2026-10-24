@@ -24,6 +24,8 @@ from tests.unit.gateway.test_barrier_http import BODY, HEADERS, PATH, app_for
 DOCUMENT = _resolved_yaml(_CONTRACTS / "internal" / "execution-control.openapi.yaml")
 PATH_TEMPLATE = "/internal/v1/gateways/{gateway_id}/fencing-barrier"
 QUERY_PATH = "/internal/v1/executions/{submit_intent_id}"
+SUBMIT_PATH = "/internal/v1/executions/submit"
+ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
 
 
 def frozen_schema(node: Any) -> Any:
@@ -47,7 +49,15 @@ def frozen_schema(node: Any) -> Any:
     return expand(node, root)
 
 
-@pytest.mark.parametrize("path,method", [(PATH_TEMPLATE, "post"), (QUERY_PATH, "get")])
+@pytest.mark.parametrize(
+    "path,method",
+    [
+        (PATH_TEMPLATE, "post"),
+        (QUERY_PATH, "get"),
+        (SUBMIT_PATH, "post"),
+        (ABORT_PATH, "post"),
+    ],
+)
 def test_served_control_declares_the_frozen_security_statuses_and_full_constraints(
     tmp_path: Path, path: str, method: str
 ) -> None:
@@ -95,7 +105,9 @@ def test_served_control_declares_the_frozen_security_statuses_and_full_constrain
     assert {path for path in actual["paths"] if path.startswith("/internal/")} == {
         PATH_TEMPLATE,
         QUERY_PATH,
-    }  # No placeholder submit, abort or drain routes.
+        SUBMIT_PATH,
+        ABORT_PATH,
+    }  # No placeholder drain route.
 
 
 async def test_success_and_error_payloads_validate_for_the_source_and_generated_consumer(

@@ -44,6 +44,21 @@ GatewayBarrierResponse = Annotated[
     BeforeValidator(lambda value: parse("GatewayFencingBarrierResponse", value)),
     WithJsonSchema(wire_schema("GatewayFencingBarrierResponse")),
 ]
+SubmitExecutionPayload = Annotated[
+    models.SubmitExecutionRequest,
+    BeforeValidator(lambda value: parse("SubmitExecutionRequest", value)),
+    WithJsonSchema(wire_schema("SubmitExecutionRequest")),
+]
+SubmitExecutionResponse = Annotated[
+    models.SubmitExecutionResponse,
+    BeforeValidator(lambda value: parse("SubmitExecutionResponse", value)),
+    WithJsonSchema(wire_schema("SubmitExecutionResponse")),
+]
+AbortExecutionPayload = Annotated[
+    models.AbortExecutionRequest,
+    BeforeValidator(lambda value: parse("AbortExecutionRequest", value)),
+    WithJsonSchema(wire_schema("AbortExecutionRequest")),
+]
 ExecutionStatus = Annotated[
     models.ExecutionStatusResponse,
     BeforeValidator(lambda value: parse("ExecutionStatusResponse", value)),

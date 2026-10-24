@@ -15,6 +15,7 @@ canonical document travel with the intent.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ from typing import Final
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
 
 _DIGEST_PATTERN: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
+_IDENTIFIER_PATTERN: Final = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
+_IDENTIFIER_MAX_LENGTH: Final = 128
 _SAMPLE_RATES: Final = frozenset({16000, 24000, 48000})
 _MIN_OUTPUT_AUDIO_MS: Final = 100
 _MAX_INT64: Final = 2**63 - 1
@@ -354,6 +357,21 @@ def max_output_audio_ms_for(*, ceiling_samples: int, sample_rate_hz: int) -> int
     if scaled % sample_rate_hz:
         raise ValueError("hard_output_ceiling_samples is not a whole-millisecond ceiling")
     return scaled // sample_rate_hz
+
+
+def derived_output_stream_id(operation_id: str, attempt_id: str) -> str:
+    """Name the one logical output stream of an attempt that emits PCM.
+
+    The frozen request carries the output ceiling and sample rate but no stream name, and
+    every stage submission of an attempt contributes to the same logical stream. The name
+    is therefore derived from the attempt, remains a valid identifier, and never grows past
+    the contract bound: longer identities keep a prefix plus a digest of the full pair.
+    """
+    candidate = f"{operation_id}.{attempt_id}"
+    if len(candidate) <= _IDENTIFIER_MAX_LENGTH:
+        return candidate
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:32]
+    return f"{operation_id[:80]}.{digest}"
 
 
 def contract_instant_text(value: datetime) -> str:

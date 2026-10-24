@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
 from speechnexus_gateway import __version__
+from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
@@ -16,6 +17,7 @@ from speechnexus_gateway.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
@@ -24,6 +26,9 @@ from speechnexus_gateway.interfaces.http.barrier_control import create_barrier_r
 from speechnexus_gateway.interfaces.http.control_errors import install_control_error_handlers
 from speechnexus_gateway.interfaces.http.control_security import ComponentCredential
 from speechnexus_gateway.interfaces.http.execution_query import create_execution_query_router
+from speechnexus_gateway.interfaces.http.execution_submit import (
+    create_execution_submit_router,
+)
 from speechnexus_gateway.interfaces.http.health import create_health_router
 from speechnexus_gateway.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_gateway.settings import Settings
@@ -92,12 +97,18 @@ def create_app(
     readiness: ReadinessService | None = None,
     barrier_control: GatewayBarrierService | None = None,
     execution_query: ExecutionQueryService | None = None,
+    submit_execution: SubmitExecutionService | None = None,
+    abort_execution: ExecutionAbortService | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
     if barrier_control is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
     if (barrier_control is None) != (execution_query is None):
         raise ValueError("inject both barrier and query services, or let the lifespan build both")
+    if (submit_execution is None) != (abort_execution is None):
+        raise ValueError("inject both engine submit and abort services, or neither")
+    if submit_execution is not None and not resolved_settings.execution_control_enabled:
+        raise ValueError("injected execution control still requires explicit control configuration")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -124,12 +135,15 @@ def create_app(
         version=__version__,
         description=(
             "Operational endpoints, opt-in authenticated ingress barriers and recorded status. "
-            "Engine submission and abort routes are not implemented."
+            "Engine submission and abort need a configured engine adapter: without one they "
+            "answer with a retryable unavailability error and record nothing."
         ),
         lifespan=lifespan,
     )
     app.state.barrier_control = barrier_control
     app.state.execution_query = execution_query
+    app.state.submit_execution = submit_execution
+    app.state.abort_execution = abort_execution
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(
@@ -144,5 +158,6 @@ def create_app(
         install_control_error_handlers(app)
         app.include_router(create_barrier_router(credential=credential))
         app.include_router(create_execution_query_router(credential=credential))
+        app.include_router(create_execution_submit_router(credential=credential))
     app.state.settings = resolved_settings
     return app

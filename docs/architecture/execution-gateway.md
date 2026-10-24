@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.8.1"
+version: "1.9.0"
 date: 2026-10-24
 ---
 
@@ -14,8 +14,8 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
 `mark_execution_unknown`、`record_execution_observation`、受信命令正文清理
 与自身 submit/interval 分支的 `query_outcome`、`append_interval` 已实现；
-认证 HTTP 屏障与只读执行查询已接入生产组合根。真实计量采集器、HTTP 提交与真实引擎装配仍待后续单元。
-本页区分已实现、已验证与未交付。
+认证 HTTP 屏障、只读执行查询与提交/中止路由已接入生产组合根，但提交与中止要真正外发引擎，
+仍需在组合根注入引擎 adapter。真实计量采集器与 `drain` 仍待后续单元。本页区分已实现、已验证与未交付。
 
 语音处理侧另有 [CPU VAD](cpu-vad.md)、[有界文件媒体](file-asr-audio.md)和
 [原生文件识别](file-asr-recognition.md)：已实现 VAD 门禁、源样本时钟与真实 vLLM 调用，
@@ -194,9 +194,23 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 ## 7. 认证 HTTP 控制与运行装配
 
 已实现 `POST /internal/v1/gateways/{gateway_id}/fencing-barrier`，operation ID 为
-`enforceGatewayFencingBarrier`，以及只读
-`GET /internal/v1/executions/{submit_intent_id}`（`getExecution`）。
-提交、abort 和 drain 没有占位路由。
+`enforceGatewayFencingBarrier`；只读 `GET /internal/v1/executions/{submit_intent_id}`
+（`getExecution`）；`POST /internal/v1/executions/submit`（`submitExecution`）与
+`POST /internal/v1/executions/{submit_intent_id}/abort`（`abortExecution`）。
+drain 没有占位路由。
+
+提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
+之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
+`submit_intent_conflict`，摘要与正文不符为 `invalid_execution_request`。冻结请求只带输出上限与
+采样率、不带输出流名，因此采样率非空时由网关按该 attempt 的身份派生唯一逻辑流名
+（`{operation_id}.{attempt_id}`，超出契约长度时保留前缀并附摘要），使同一 attempt 的各阶段共用一条流。
+中止路由发起有界中止，只在 adapter 亲自核对到“已停止且资源已释放”时才记 `aborted`/`complete`；
+传输超时、断连、找不到或无从核对一律记 `unknown_quarantined`/`cancellation_unconfirmed` 并继续占用。
+已终态的 intent 直接返回记录快照，不再询问引擎；属于其他 gateway/node 的执行为 404
+`control_execution_not_found`，尝试与记录不符为 422，token 不符为 409。
+未注入引擎 adapter 时，两条路由都返回 503 `control_store_unavailable`（`retry_transaction`）
+且不写任何行，避免把“本网关没有 adapter”读成已提交或已停止。
+
 组件凭据独立于公开服务密钥和 controller 凭据；健康端点不把“控制面可用”解释为引擎或模型就绪。
 传输 TLS、凭据分发与出站网络隔离仍由部署实现，本次 HTTP 测试不能证明这些资格。
 
@@ -214,7 +228,8 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 
 构造 app 不打开数据库池或取得进程锁。lifespan 启动后才装配一个 `GatewayIngress`、
 `PostgresSubmissionLedger`、屏障服务与查询服务；同身份旧进程仍持锁时启动失败。
-两服务复用同一个 ingress 与 ledger，测试注入也必须成对提供。关闭时先停止提供控制服务，
+屏障/查询与提交/中止服务复用同一个 ingress 与 ledger，两组注入都必须各自成对提供，
+且注入控制服务要求显式控制配置。关闭时先停止提供控制服务，
 等待仍在使用进程 lease 的段退出，再释放锁与数据库池。启用后 `/readyz` 增加 `gateway_ingress`
 检查；未启动或已关闭的控制服务不能给出屏障确认。
 
@@ -388,13 +403,16 @@ wire 输入保持原样。输入中的布尔、数字字符串、额外权威字
   命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
   unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
   观察端口已有完整具名结果边界，其余 B 事务的统一结果入口仍待收敛。
-  `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，完整事务响应封装、HTTP 提交/中止路由、
-  实际引擎 consumer 仍未交付。Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
+  `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
+  但完整事务响应封装、`drain` 路由与真实引擎 dispatch/abort adapter 仍未交付；
+  在没有 adapter 的组合根里两条引擎路由只返回可重试的不可用，不产生任何执行事实。
+  Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
   测试 adapter 验证迁移意图，不形成产品 MySQL 支持。数据库连接配置、时钟与异常分类仍在 adapter 内。
 - 这里的证据是最小合成事实，仅证明受控事务与存储规则。真实引擎/控制器如何提供可信双证据、
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
-- 提交端完整 deadline/运行资格校验仍需后续接入，当前没有公开执行入口，不可据本事务称为生产执行链路就绪。
+- 提交入口已服务并通过真实 PG 集成测试，但完整 deadline/运行资格校验与实际引擎外发仍需接入；
+  没有引擎 adapter 时入口只会拒绝，因此不能据此称为生产执行链路就绪。
 
 ## 13. 验证
 
@@ -402,6 +420,7 @@ wire 输入保持原样。输入中的布尔、数字字符串、额外权威字
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
 SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
+    tests/integration/test_gateway_submit_http.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
     tests/integration/test_gateway_command_redaction.py \

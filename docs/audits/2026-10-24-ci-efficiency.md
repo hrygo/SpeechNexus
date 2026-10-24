@@ -176,6 +176,48 @@ runner固定完整pytest入口，拒绝`PYTEST_ADDOPTS`及-k/-m缩窄、ignore�
 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)本轮交付块及其Actions链接。
 比较时同时报告关键路径与并行增加的服务/runner成本，不用本地时间推导远端倍数。
 
+## 第五轮：四片并行后的持续观测与 5 分钟预算
+
+四片并行（第四轮）生效起（含该 PR 自身的验证运行与合并后的 `main` push），连续 10 次运行
+全部 success，整轮都落在 175–214 秒（约 2 分 55 秒–3 分 34 秒），没有再出现优化前 4–8 分钟的整轮。列表按 run 号，
+耗时同样取自逐作业 `started_at`/`completed_at` 之外的 run 起止，包含汇总作业的调度间隔：
+
+| run | 提交 | 事件/分支 | 整轮 |
+| --- | --- | --- | ---: |
+| [203](https://github.com/hrygo/SpeechNexus/actions/runs/40076497465) | `14541411` | PR `codex/ci-shard-4` | 175 秒 |
+| [204](https://github.com/hrygo/SpeechNexus/actions/runs/40076807703) | `5ce396ae` | push `main` | 191 秒 |
+| [205](https://github.com/hrygo/SpeechNexus/actions/runs/40076893032) | `199a7a48` | PR `feat/a00-workspace-read-contracts` | 210 秒 |
+| [206](https://github.com/hrygo/SpeechNexus/actions/runs/40077135439) | `2a46c6e2` | push `main` | 198 秒 |
+| [208](https://github.com/hrygo/SpeechNexus/actions/runs/40077836265) | `5a60da7e` | PR `feat/a04-workspace-read-api` | 202 秒 |
+| [209](https://github.com/hrygo/SpeechNexus/actions/runs/40078130260) | `4b08c396` | push `main` | 196 秒 |
+| [210](https://github.com/hrygo/SpeechNexus/actions/runs/40080023597) | `d67b13bd` | PR `task/b-b03-tts-adapter` | 211 秒 |
+| [211](https://github.com/hrygo/SpeechNexus/actions/runs/40080382232) | `d683d31d` | PR `task/b-b03-tts-adapter` | 197 秒 |
+| [212](https://github.com/hrygo/SpeechNexus/actions/runs/40080701926) | `32c2bf1f` | push `main` | 198 秒 |
+| [213](https://github.com/hrygo/SpeechNexus/actions/runs/40082831951) | `99d47cdd` | PR `task/b-b02-controller-reconcile` | 214 秒 |
+
+关键路径拆解（[run 40080701926](https://github.com/hrygo/SpeechNexus/actions/runs/40080701926)，
+整轮 198 秒）：
+
+| 阶段 | 耗时 |
+| --- | ---: |
+| 最慢分片作业（含作业内固定开销） | 182 秒 |
+| ├─ `Initialize containers`（PG 16.15 alpine + MySQL 8.4.8） | 32–37 秒 |
+| ├─ 对象存储镜像构建、启动与健康等待 | 10–16 秒 |
+| └─ pytest 完整分片 | 104–127 秒 |
+| Python 静态检查与单元测试（并行，非关键路径） | 144 秒 |
+| Web 质量/测试/构建（并行） | 32 秒 |
+| 双库完整性汇总 + `Python quality and tests` | 5–9 秒 + 3 秒 |
+
+距 5 分钟预算最坏情况（214 秒）仍余约 1.4 分钟。预算归属与观测方式：
+
+- 关键路径 = 最慢分片作业 + 双库完整性汇总 + `Python quality and tests`。聚合脚本已经打印
+  `Longest shard execution …s` 到步摘要，分片变慢先在运行摘要里可见，不需要新增监控步骤。
+- 下一档优化的触发条件（任一）：单分片 pytest 步骤超过 4 分钟、整轮超过 4 分半、或分片因运行器
+  排队整体延后。届时优先把对象存储启动并入 `services:` 省去 10–16 秒固定开销，其次把稳定哈希
+  分区从 4 片提到 6 片；代价是每次运行多 2 个运行器。
+- 仍然不通过减少测试集合、放宽双库/完整性核验、跳过检查或路径过滤来提速；上面两档都保留全部
+  保护范围与分片证据。
+
 ## 第四轮：四片并行把整轮压到三分半
 
 双库分片（PR #90）之后，[PR #92 首轮 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40075633811)

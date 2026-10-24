@@ -9,6 +9,7 @@
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
     "./runtime": "./src/runtime.ts",
+    "./runtime-http": "./src/runtime-http.ts",
     "./workbench-http": "./src/workbench-http.ts",
     "./realtime": "./src/realtime.ts",
     "./realtime-events": "./src/realtime_events.ts"

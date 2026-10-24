@@ -110,6 +110,7 @@ coordination-test:
 		tests/integration/test_runtime_intent_storage.py \
 		tests/integration/test_admission_command_storage.py \
 		tests/integration/test_production_runtime_intents.py \
+		tests/integration/test_runtime_controller_client.py \
 		tests/integration/test_runtime_observations.py \
 		tests/integration/test_runtime_creation_final_clock.py \
 		tests/integration/test_coordination_foundation.py -q

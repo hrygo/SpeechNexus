@@ -45,6 +45,28 @@ class RuntimeStopEvidence(TypedDict):
     verified_at: str
 
 
+class Error(TypedDict):
+    code: Literal[
+        "target_node_mismatch",
+        "unapproved_runtime_template",
+        "stale_fencing_token",
+        "stale_instance_generation",
+        "gateway_drain_incomplete",
+        "intent_conflict",
+        "runtime_controller_unavailable",
+        "runtime_intent_not_found",
+        "invalid_runtime_request",
+        "component_credential_invalid",
+    ]
+    message: str
+    retryable: bool
+    observed_fencing_token: NotRequired[int | None]
+
+
+class RuntimeControlErrorResponse(TypedDict):
+    error: Error
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type PoolId = ExternalSharedIdentifiersSchemaJsonPoolId
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
@@ -116,5 +138,8 @@ class RuntimeInstanceIntentRequest(TypedDict):
 
 
 type RuntimeContracts = (
-    RuntimeInstanceIntentRequest | RuntimeInstanceIntentResponse | NodeReconcileRequest
+    RuntimeInstanceIntentRequest
+    | RuntimeInstanceIntentResponse
+    | NodeReconcileRequest
+    | RuntimeControlErrorResponse
 )

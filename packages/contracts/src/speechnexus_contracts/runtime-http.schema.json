@@ -1,0 +1,907 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-nexus-http-operations": {
+    "submitRuntimeInstanceIntent": {
+      "path": "/internal/v1/nodes/{node_id}/instance-intents",
+      "method": "post",
+      "request": "HttpRequest_submitRuntimeInstanceIntent",
+      "parameters": {
+        "path": {
+          "node_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_submitRuntimeInstanceIntent_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_submitRuntimeInstanceIntent_401",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_submitRuntimeInstanceIntent_409",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_submitRuntimeInstanceIntent_422",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_submitRuntimeInstanceIntent_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
+    },
+    "getRuntimeInstanceIntent": {
+      "path": "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}",
+      "method": "get",
+      "request": "HttpRequest_getRuntimeInstanceIntent",
+      "parameters": {
+        "path": {
+          "node_id": "string",
+          "intent_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getRuntimeInstanceIntent_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getRuntimeInstanceIntent_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getRuntimeInstanceIntent_404",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
+    }
+  },
+  "x-nexus-entrypoints": [
+    "HttpRequest_submitRuntimeInstanceIntent",
+    "HttpResponse_submitRuntimeInstanceIntent_200",
+    "HttpResponse_submitRuntimeInstanceIntent_401",
+    "HttpResponse_submitRuntimeInstanceIntent_409",
+    "HttpResponse_submitRuntimeInstanceIntent_422",
+    "HttpResponse_submitRuntimeInstanceIntent_503",
+    "HttpRequest_getRuntimeInstanceIntent",
+    "HttpResponse_getRuntimeInstanceIntent_200",
+    "HttpResponse_getRuntimeInstanceIntent_401",
+    "HttpResponse_getRuntimeInstanceIntent_404"
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "RuntimeInstanceIntentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "target_node_id",
+        "pool_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "approved_template_id",
+        "binding_revision_id",
+        "manifest_id",
+        "config_digest",
+        "action",
+        "fencing_token",
+        "reserved_memory",
+        "deadline_at"
+      ],
+      "properties": {
+        "intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "target_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approved_template_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "action": {
+          "$ref": "#/$defs/RuntimeActionKind"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reserved_memory": {
+          "$ref": "#/$defs/RuntimeMemoryReservation"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "RuntimeActionKind": {
+      "type": "string",
+      "enum": ["prepare", "stop"]
+    },
+    "RuntimeMemoryReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Peak reservation must be greater than or equal to steady reservation in\nevery memory counter used by the selected architecture. Producer\nvalidation rejects a smaller peak because cold-load headroom cannot be\nreleased before steady state is reached.\n",
+      "required": ["architecture", "peak", "steady"],
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/RuntimeMemoryArchitecture"
+        },
+        "peak": {
+          "$ref": "#/$defs/RuntimeMemoryVector"
+        },
+        "steady": {
+          "$ref": "#/$defs/RuntimeMemoryVector"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "architecture": {
+                "const": "unified_memory"
+              }
+            },
+            "required": ["architecture"]
+          },
+          "then": {
+            "properties": {
+              "peak": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              },
+              "steady": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "architecture": {
+                "const": "discrete_device_memory"
+              }
+            },
+            "required": ["architecture"]
+          },
+          "then": {
+            "properties": {
+              "peak": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              },
+              "steady": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuntimeMemoryArchitecture": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_MemoryArchitecture"
+    },
+    "External_shared_capability_domains_schema_json_MemoryArchitecture": {
+      "type": "string",
+      "enum": ["unified_memory", "discrete_device_memory"],
+      "description": "Unified memory shares one physical host/device pool; discrete memory accounts host RAM and device VRAM separately."
+    },
+    "RuntimeMemoryVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unified_memory_bytes", "device_memory_bytes", "host_memory_bytes"],
+      "properties": {
+        "unified_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "device_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RuntimeInstanceIntentResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "target_node_id",
+        "pool_id",
+        "gateway_id",
+        "approved_template_id",
+        "binding_revision_id",
+        "manifest_id",
+        "config_digest",
+        "instance_id",
+        "instance_generation",
+        "action",
+        "fencing_token",
+        "intent_state",
+        "observed_instance_state",
+        "reserved_memory",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "target_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "approved_template_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "$ref": "#/$defs/RuntimeActionKind"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "intent_state": {
+          "$ref": "#/$defs/RuntimeIntentState"
+        },
+        "observed_instance_state": {
+          "$ref": "#/$defs/ObservedInstanceState"
+        },
+        "reserved_memory": {
+          "$ref": "#/$defs/RuntimeMemoryReservation"
+        },
+        "idempotent_replay": {
+          "type": "boolean",
+          "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
+        },
+        "stop_evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeStopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_peak_memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeMemoryVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{2,63}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time the intent identity was first recorded; immutable across replay."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "prepare"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "properties": {
+              "observed_instance_state": {
+                "const": "ready"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "required": ["stop_evidence"],
+            "properties": {
+              "observed_instance_state": {
+                "enum": ["stopped", "absent"]
+              },
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "required": ["stop_evidence"]
+          },
+          "then": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "required": ["error_code"],
+            "properties": {
+              "error_code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{2,63}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "unified_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "discrete_device_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuntimeIntentState": {
+      "type": "string",
+      "enum": ["pending", "reconciling", "succeeded", "failed", "quarantined"]
+    },
+    "ObservedInstanceState": {
+      "$ref": "#/$defs/External_shared_runtime_states_schema_json_ObservedInstanceState"
+    },
+    "External_shared_runtime_states_schema_json_ObservedInstanceState": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "preparing",
+        "loading",
+        "warming_up",
+        "ready",
+        "draining",
+        "stopping",
+        "stopped",
+        "failed",
+        "quarantined"
+      ],
+      "description": "Controller observation. `absent` means no matching instance generation was observed."
+    },
+    "RuntimeStopEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+      "properties": {
+        "process_or_container_exited": {
+          "const": true
+        },
+        "resources_released_confirmed": {
+          "const": true
+        },
+        "exit_code": {
+          "type": ["integer", "null"]
+        },
+        "runtime_container_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "RuntimeControlErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "target_node_mismatch",
+                "unapproved_runtime_template",
+                "stale_fencing_token",
+                "stale_instance_generation",
+                "gateway_drain_incomplete",
+                "intent_conflict",
+                "runtime_controller_unavailable",
+                "runtime_intent_not_found",
+                "invalid_runtime_request",
+                "component_credential_invalid"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "observed_fencing_token": {
+              "type": ["integer", "null"],
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "HttpRequest_submitRuntimeInstanceIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "node_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["node_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeInstanceIntentRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_submitRuntimeInstanceIntent_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeInstanceIntentResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_submitRuntimeInstanceIntent_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_submitRuntimeInstanceIntent_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_submitRuntimeInstanceIntent_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_submitRuntimeInstanceIntent_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getRuntimeInstanceIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "node_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "intent_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["node_id", "intent_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getRuntimeInstanceIntent_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeInstanceIntentResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRuntimeInstanceIntent_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRuntimeInstanceIntent_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RuntimeControlErrorResponse"
+        }
+      },
+      "required": ["body"]
+    }
+  }
+}

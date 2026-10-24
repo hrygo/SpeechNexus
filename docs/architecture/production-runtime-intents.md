@@ -5,6 +5,8 @@
 `create_runtime_intent` / `observe_runtime` / `query_outcome(runtime_intent)` 事务端口。
 `0006_runtime_observation` 保存私有 readiness 证据；0001–0005 迁移保持不变。
 **批准计划/资格提供者、调度循环和控制器客户端尚未接入运行进程。**
+独立[固定节点HTTPS客户端](runtime-controller-client.md)已提供原意图提交/查询与同源HTTP校验；
+GET/精确重放只读取B的持久观察，实际推进仍需节点内观察生产者。
 端口验证不代表完整配方准入、
 物理停止、GPU 或多主机资格；实施顺序见 [runtime 单元计划](../plans/2026-10-24-a01-runtime-intent-unit.md)。
 兼容边界和消费者顺序由 [ADR 0008](../decisions/0008-runtime-intents-before-controller-observation.md)登记。

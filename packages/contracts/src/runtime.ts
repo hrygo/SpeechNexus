@@ -6,7 +6,10 @@ import type { components } from "./runtime.generated";
 export type { components } from "./runtime.generated";
 export type Contracts = Pick<
   components["schemas"],
-  "RuntimeInstanceIntentRequest" | "RuntimeInstanceIntentResponse" | "NodeReconcileRequest"
+  | "RuntimeInstanceIntentRequest"
+  | "RuntimeInstanceIntentResponse"
+  | "NodeReconcileRequest"
+  | "RuntimeControlErrorResponse"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

@@ -1,0 +1,1264 @@
+{
+  "examples": [
+    {
+      "id": "submit-unchanged",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "query-unchanged",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "intent_id": "runtime-new"
+        },
+        "headers": {
+          "x-request-id": "synthetic-request"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "missing-node",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {},
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "traversal-node",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "../other"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-path",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test",
+          "other": "secret"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "undocumented-query",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        },
+        "query": {
+          "limit": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "empty-correlation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": ""
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "long-correlation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "duplicate-correlation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request",
+          "x-request-id": "other"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-body-field",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z",
+          "private_field": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "string-generation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": "1",
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "boolean-generation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": true,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "invalid-action",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "restart",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "invalid-memory",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "request",
+      "value": {
+        "path": {
+          "node_id": "host-test"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 1,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "deadline_at": "2250-01-01T00:00:00.123456789Z"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-warming",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-ready",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "ready",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-wrong-success",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "loading",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-extra-field",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "private_field": true
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-boolean-response-generation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": true,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "submitRuntimeInstanceIntent-undeclared-redirect",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 302
+    },
+    {
+      "id": "getRuntimeInstanceIntent-warming",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getRuntimeInstanceIntent-ready",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "ready",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getRuntimeInstanceIntent-wrong-success",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "succeeded",
+          "observed_instance_state": "loading",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getRuntimeInstanceIntent-extra-field",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z",
+          "private_field": true
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getRuntimeInstanceIntent-boolean-response-generation",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": true,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getRuntimeInstanceIntent-undeclared-redirect",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "intent_id": "runtime-new",
+          "target_node_id": "host-test",
+          "pool_id": "tts-realtime",
+          "gateway_id": "gateway-test",
+          "approved_template_id": "template-test",
+          "binding_revision_id": "binding-test",
+          "manifest_id": "manifest-test",
+          "config_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_id": "instance-new",
+          "instance_generation": 1,
+          "action": "prepare",
+          "fencing_token": 7,
+          "reserved_memory": {
+            "architecture": "unified_memory",
+            "peak": {
+              "unified_memory_bytes": 20,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            },
+            "steady": {
+              "unified_memory_bytes": 10,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 0
+            }
+          },
+          "intent_state": "pending",
+          "observed_instance_state": "warming_up",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:01Z"
+        }
+      },
+      "valid": false,
+      "status": 302
+    },
+    {
+      "id": "component_credential_invalid",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "component_credential_invalid",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "target_node_mismatch",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "target_node_mismatch",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "stale_fencing_token",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "stale_fencing_token",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "stale_instance_generation",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "stale_instance_generation",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "gateway_drain_incomplete",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "gateway_drain_incomplete",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "intent_conflict",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "intent_conflict",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "unapproved_runtime_template",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "unapproved_runtime_template",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "invalid_runtime_request",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_runtime_request",
+            "message": "Synthetic controller error",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "runtime_controller_unavailable",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_controller_unavailable",
+            "message": "Synthetic controller error",
+            "retryable": true
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "original-query-not-found",
+      "operation": "getRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_intent_not_found",
+            "message": "Synthetic missing intent",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "missing-retryable",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_controller_unavailable",
+            "message": "Synthetic"
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "invalid-code",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "new_error",
+            "message": "Synthetic",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "string-retryable",
+      "operation": "submitRuntimeInstanceIntent",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "runtime_controller_unavailable",
+            "message": "Synthetic",
+            "retryable": "true"
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    }
+  ]
+}

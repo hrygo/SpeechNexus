@@ -1,0 +1,792 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SpeechNexus internal runtime lifecycle control API",
+    "version": "0.1.0.dev0",
+    "description": "Internal RuntimeLifecycleControlPort protocol between the scheduler and the\nnode-scoped deployment controller (`node-controller`). The controller only\naccepts approved runtime templates, immutable instance generations, and\nfenced prepare/stop intents for its own `node_id`. It never accepts arbitrary\ncontainer images, host volume mounts, or shell commands.\n"
+  },
+  "security": [
+    {
+      "ComponentBearer": []
+    }
+  ],
+  "paths": {
+    "/internal/v1/nodes/{node_id}/instance-intents": {
+      "post": {
+        "operationId": "submitRuntimeInstanceIntent",
+        "summary": "Submit an approved instance prepare or stop intent to a target host node",
+        "description": "`(node_id, intent_id)` is the node-controller-scoped idempotency key\nfor an immutable prepare or stop intent; the same `intent_id` may be\nused independently on another node. Replaying the exact same canonical\nrequest returns the originally recorded intent with\n`idempotent_replay: true`. Reusing the key with any changed target,\npool, gateway, instance generation, approved template, binding\nrevision, manifest, config digest, action, fencing token, reserved\nmemory vector, or deadline returns `409 intent_conflict`. A terminal\n`succeeded` or `failed` intent is never revived; a retry uses a new\n`intent_id`.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NodeIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeInstanceIntentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime instance intent accepted or replayed idempotently.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeInstanceIntentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Stable conflict codes: `target_node_mismatch`, `stale_fencing_token`,\n`stale_instance_generation`, `gateway_drain_incomplete`, or\n`intent_conflict` when an existing `(node_id, intent_id)` has a\ndifferent canonical request.\n",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeControlErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Runtime intent request failed schema or approved-template validation.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeControlErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The node runtime did not let the controller complete or verify the\naction, so a prepare or stop intent stays unresolved and the\ncontroller never reports a stopped instance from an unanswered\ndaemon. Stable code: `runtime_controller_unavailable`.\n",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeControlErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}": {
+      "get": {
+        "operationId": "getRuntimeInstanceIntent",
+        "summary": "Query observed container/process lifecycle state and verified stop evidence",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NodeIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/IntentIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current runtime instance intent status and stop/readiness evidence.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeInstanceIntentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Runtime instance intent not found on this node controller.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeControlErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "NodeIdPath": {
+        "name": "node_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "XRequestIdHeader": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "IntentIdPath": {
+        "name": "intent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      }
+    },
+    "schemas": {
+      "Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_shared_identifiers_schema_json_Identifier": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+        "minLength": 3,
+        "maxLength": 128,
+        "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+      },
+      "RuntimeInstanceIntentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "intent_id",
+          "target_node_id",
+          "pool_id",
+          "gateway_id",
+          "instance_id",
+          "instance_generation",
+          "approved_template_id",
+          "binding_revision_id",
+          "manifest_id",
+          "config_digest",
+          "action",
+          "fencing_token",
+          "reserved_memory",
+          "deadline_at"
+        ],
+        "properties": {
+          "intent_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "target_node_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "pool_id": {
+            "$ref": "#/components/schemas/PoolId"
+          },
+          "gateway_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "instance_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "instance_generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "approved_template_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "binding_revision_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "manifest_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "config_digest": {
+            "$ref": "#/components/schemas/Sha256Digest"
+          },
+          "action": {
+            "$ref": "#/components/schemas/RuntimeActionKind"
+          },
+          "fencing_token": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reserved_memory": {
+            "$ref": "#/components/schemas/RuntimeMemoryReservation"
+          },
+          "deadline_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PoolId": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_PoolId"
+      },
+      "External_shared_identifiers_schema_json_PoolId": {
+        "type": "string",
+        "enum": [
+          "asr-realtime",
+          "tts-realtime",
+          "asr-batch",
+          "tts-batch",
+          "voice-creation",
+          "auxiliary"
+        ],
+        "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+      },
+      "Sha256Digest": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "RuntimeActionKind": {
+        "type": "string",
+        "enum": ["prepare", "stop"]
+      },
+      "RuntimeMemoryReservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Peak reservation must be greater than or equal to steady reservation in\nevery memory counter used by the selected architecture. Producer\nvalidation rejects a smaller peak because cold-load headroom cannot be\nreleased before steady state is reached.\n",
+        "required": ["architecture", "peak", "steady"],
+        "properties": {
+          "architecture": {
+            "$ref": "#/components/schemas/RuntimeMemoryArchitecture"
+          },
+          "peak": {
+            "$ref": "#/components/schemas/RuntimeMemoryVector"
+          },
+          "steady": {
+            "$ref": "#/components/schemas/RuntimeMemoryVector"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "architecture": {
+                  "const": "unified_memory"
+                }
+              },
+              "required": ["architecture"]
+            },
+            "then": {
+              "properties": {
+                "peak": {
+                  "properties": {
+                    "device_memory_bytes": {
+                      "const": 0
+                    },
+                    "host_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                },
+                "steady": {
+                  "properties": {
+                    "device_memory_bytes": {
+                      "const": 0
+                    },
+                    "host_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "architecture": {
+                  "const": "discrete_device_memory"
+                }
+              },
+              "required": ["architecture"]
+            },
+            "then": {
+              "properties": {
+                "peak": {
+                  "properties": {
+                    "unified_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                },
+                "steady": {
+                  "properties": {
+                    "unified_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RuntimeMemoryArchitecture": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_MemoryArchitecture"
+      },
+      "External_shared_capability_domains_schema_json_MemoryArchitecture": {
+        "type": "string",
+        "enum": ["unified_memory", "discrete_device_memory"],
+        "description": "Unified memory shares one physical host/device pool; discrete memory accounts host RAM and device VRAM separately."
+      },
+      "RuntimeMemoryVector": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unified_memory_bytes", "device_memory_bytes", "host_memory_bytes"],
+        "properties": {
+          "unified_memory_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "device_memory_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "host_memory_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeInstanceIntentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "intent_id",
+          "target_node_id",
+          "pool_id",
+          "gateway_id",
+          "approved_template_id",
+          "binding_revision_id",
+          "manifest_id",
+          "config_digest",
+          "instance_id",
+          "instance_generation",
+          "action",
+          "fencing_token",
+          "intent_state",
+          "observed_instance_state",
+          "reserved_memory",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "intent_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "target_node_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "pool_id": {
+            "$ref": "#/components/schemas/PoolId"
+          },
+          "gateway_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "approved_template_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "binding_revision_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "manifest_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "config_digest": {
+            "$ref": "#/components/schemas/Sha256Digest"
+          },
+          "instance_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "instance_generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "action": {
+            "$ref": "#/components/schemas/RuntimeActionKind"
+          },
+          "fencing_token": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "intent_state": {
+            "$ref": "#/components/schemas/RuntimeIntentState"
+          },
+          "observed_instance_state": {
+            "$ref": "#/components/schemas/ObservedInstanceState"
+          },
+          "reserved_memory": {
+            "$ref": "#/components/schemas/RuntimeMemoryReservation"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
+          },
+          "stop_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeStopEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_peak_memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeMemoryVector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{2,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time the intent identity was first recorded; immutable across replay."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "const": "prepare"
+                },
+                "intent_state": {
+                  "const": "succeeded"
+                }
+              },
+              "required": ["action", "intent_state"]
+            },
+            "then": {
+              "properties": {
+                "observed_instance_state": {
+                  "const": "ready"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "const": "stop"
+                },
+                "intent_state": {
+                  "const": "succeeded"
+                }
+              },
+              "required": ["action", "intent_state"]
+            },
+            "then": {
+              "required": ["stop_evidence"],
+              "properties": {
+                "observed_instance_state": {
+                  "enum": ["stopped", "absent"]
+                },
+                "stop_evidence": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "stop_evidence": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["stop_evidence"]
+            },
+            "then": {
+              "properties": {
+                "action": {
+                  "const": "stop"
+                },
+                "intent_state": {
+                  "const": "succeeded"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "intent_state": {
+                  "const": "failed"
+                }
+              },
+              "required": ["intent_state"]
+            },
+            "then": {
+              "required": ["error_code"],
+              "properties": {
+                "error_code": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{2,63}$"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "intent_state": {
+                  "const": "succeeded"
+                }
+              },
+              "required": ["intent_state"]
+            },
+            "then": {
+              "properties": {
+                "error_code": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "reserved_memory": {
+                  "properties": {
+                    "architecture": {
+                      "const": "unified_memory"
+                    }
+                  },
+                  "required": ["architecture"]
+                }
+              },
+              "required": ["reserved_memory"]
+            },
+            "then": {
+              "properties": {
+                "observed_peak_memory": {
+                  "properties": {
+                    "device_memory_bytes": {
+                      "const": 0
+                    },
+                    "host_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "reserved_memory": {
+                  "properties": {
+                    "architecture": {
+                      "const": "discrete_device_memory"
+                    }
+                  },
+                  "required": ["architecture"]
+                }
+              },
+              "required": ["reserved_memory"]
+            },
+            "then": {
+              "properties": {
+                "observed_peak_memory": {
+                  "properties": {
+                    "unified_memory_bytes": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RuntimeIntentState": {
+        "type": "string",
+        "enum": ["pending", "reconciling", "succeeded", "failed", "quarantined"]
+      },
+      "ObservedInstanceState": {
+        "$ref": "#/components/schemas/External_shared_runtime_states_schema_json_ObservedInstanceState"
+      },
+      "External_shared_runtime_states_schema_json_ObservedInstanceState": {
+        "type": "string",
+        "enum": [
+          "absent",
+          "preparing",
+          "loading",
+          "warming_up",
+          "ready",
+          "draining",
+          "stopping",
+          "stopped",
+          "failed",
+          "quarantined"
+        ],
+        "description": "Controller observation. `absent` means no matching instance generation was observed."
+      },
+      "RuntimeStopEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["process_or_container_exited", "resources_released_confirmed", "verified_at"],
+        "properties": {
+          "process_or_container_exited": {
+            "const": true
+          },
+          "resources_released_confirmed": {
+            "const": true
+          },
+          "exit_code": {
+            "type": ["integer", "null"]
+          },
+          "runtime_container_id": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RuntimeControlErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "retryable"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "target_node_mismatch",
+                  "unapproved_runtime_template",
+                  "stale_fencing_token",
+                  "stale_instance_generation",
+                  "gateway_drain_incomplete",
+                  "intent_conflict",
+                  "runtime_controller_unavailable",
+                  "runtime_intent_not_found",
+                  "invalid_runtime_request",
+                  "component_credential_invalid"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "observed_fencing_token": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "XRequestId": {
+        "description": "Correlation request ID propagated across control plane hops.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, invalid, or revoked controller component credential.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeControlErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ComponentBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque-component-token",
+        "description": "Per-node controller credential issued by the deployment. It is separate\nfrom scheduler, gateway, public, and admin credentials. Transport TLS is\na deployment requirement and is not relaxed by this HTTP credential.\n"
+      }
+    }
+  }
+}

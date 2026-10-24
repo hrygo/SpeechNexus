@@ -67,6 +67,8 @@ SpeechNexus 希望服务于三类需求：
 
 [CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、ASR 外发及真实录音质量仍待集成和验收。
 
+[文件媒体输入](docs/architecture/file-asr-audio.md)已提供五种格式的有界解码/重采样、源样本时钟与文件 VAD 组合接口。[本机探针](docs/audits/2026-10-24-b03-bounded-audio-probe.md)通过合成媒体及两段授权真实录音；它只证明输入处理完成，音频 Asset 检查接入、识别质量、ASR/TTS 服务及资源硬隔离仍待验收。
+
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。

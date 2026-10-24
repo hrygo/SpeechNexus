@@ -14,6 +14,9 @@ Compose does not yet provision this control configuration.
 The submit application/ledger and atomic stop facts are implemented. The
 [CPU VAD native API](../docs/architecture/cpu-vad.md) now provides bounded
 segmentation and an isolated-state ONNX CPU adapter, checked with synthetic audio.
+The [file audio preparation API](../docs/architecture/file-asr-audio.md) adds bounded
+codec/resampling and source-clock mapping into VAD; local checks include two
+authorized recording excerpts without ASR dispatch or quality acceptance.
 HTTP submit/abort/drain, real ASR/TTS dispatch, public VAD integration and physical
 cluster qualification remain pending.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.

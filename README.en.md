@@ -67,6 +67,8 @@ The [restricted node controller (Chinese)](docs/architecture/node-controller.md)
 
 [CPU VAD (Chinese)](docs/architecture/cpu-vad.md) implements isolated session state, prefix buffering and versioned bounded segmentation. The pinned ONNX CPU model's [synthetic probe (Chinese)](docs/audits/2026-10-24-b06-cpu-vad-probe.md) detects speech while silence/tone produce no ASR candidate segments. Public realtime ingress, ASR dispatch and real-recording quality still require integration and acceptance.
 
+[File audio preparation (Chinese)](docs/architecture/file-asr-audio.md) provides bounded decoding/resampling for five formats, source sample clocks and file VAD composition. A [local probe (Chinese)](docs/audits/2026-10-24-b03-bounded-audio-probe.md) passed synthetic media and two authorized real-recording excerpts. This proves input processing only; Asset audio inspection integration, recognition quality, ASR/TTS services and hard resource isolation remain pending.
+
 [Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
 
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.

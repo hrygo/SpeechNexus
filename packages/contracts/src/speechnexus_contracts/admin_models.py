@@ -163,6 +163,122 @@ type ExternalSharedReceiptsSchemaJsonReceiptFactPath = Literal[
     "observed.turn_detection.mode",
     "observed.turn_detection.silence_duration_ms",
 ]
+type ExternalSharedCapabilityDomainsSchemaJsonProfileReleaseTier = Literal[
+    "experimental", "production"
+]
+type ExternalSharedCapabilityDomainsSchemaJsonServiceClass = Literal[
+    "realtime", "interactive", "batch"
+]
+
+
+class TurnDetection(TypedDict):
+    mode: ExternalSharedCapabilityDomainsSchemaJsonVadMode
+    silence_duration_ms: int
+
+
+type ExternalScenarioProfileSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
+type ExternalScenarioProfileSchemaJsonResourceReference = (
+    ExternalSharedReferencesSchemaJsonResourceReference
+)
+
+
+class Planner(TypedDict):
+    max_chars: int
+    max_wait_ms: int
+
+
+class ExternalScenarioProfileSchemaJsonTtsParameters(TypedDict):
+    language: ExternalScenarioProfileSchemaJsonLanguageTag
+    text_commit_mode: ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+    audio_delivery: ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+    speed: float
+    instructions: NotRequired[str | None]
+    pronunciation_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
+    seed: NotRequired[int | None]
+    planner: Planner
+
+
+class ExternalScenarioProfileSchemaJsonOutputParameters(TypedDict):
+    transcript_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat]
+    audio_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonAudioFormat]
+    save_artifacts: NotRequired[bool]
+
+
+class Constraint(TypedDict):
+    minimum: float
+    maximum: NotRequired[float]
+    enum: NotRequired[list[str | float | bool]]
+
+
+class Constraint1(TypedDict):
+    minimum: NotRequired[float]
+    maximum: float
+    enum: NotRequired[list[str | float | bool]]
+
+
+class Constraint2(TypedDict):
+    minimum: NotRequired[float]
+    maximum: NotRequired[float]
+    enum: list[str | float | bool]
+
+
+class ExternalScenarioProfileSchemaJsonCapabilityRequirement(TypedDict):
+    capability: str
+    required: bool
+    constraint: NotRequired[Constraint | Constraint1 | Constraint2]
+
+
+type ExternalScenarioProfileSchemaJsonParameterPath = Literal[
+    "asr.language",
+    "asr.preview_interval_ms",
+    "asr.max_segment_ms",
+    "asr.finalization",
+    "asr.final_deadline_ms",
+    "asr.auxiliary_deadline_ms",
+    "asr.rollback_tokens",
+    "asr.turn_detection.mode",
+    "asr.turn_detection.silence_duration_ms",
+    "asr.vocabulary_set_revision",
+    "asr.alignment",
+    "asr.diarization",
+    "tts.language",
+    "tts.text_commit_mode",
+    "tts.audio_delivery",
+    "tts.speed",
+    "tts.instructions",
+    "tts.pronunciation_revision",
+    "tts.seed",
+    "tts.planner.max_chars",
+    "tts.planner.max_wait_ms",
+    "output.transcript_format",
+    "output.audio_format",
+    "output.save_artifacts",
+]
+
+
+class ExternalScenarioProfileSchemaJsonOverrideRange1(TypedDict):
+    minimum: float
+    maximum: NotRequired[float]
+    enum: NotRequired[list[str | float | bool | None]]
+
+
+class ExternalScenarioProfileSchemaJsonOverrideRange2(TypedDict):
+    minimum: NotRequired[float]
+    maximum: float
+    enum: NotRequired[list[str | float | bool | None]]
+
+
+class ExternalScenarioProfileSchemaJsonOverrideRange3(TypedDict):
+    minimum: NotRequired[float]
+    maximum: NotRequired[float]
+    enum: list[str | float | bool | None]
+
+
+type ExternalScenarioProfileSchemaJsonOverrideRange = (
+    ExternalScenarioProfileSchemaJsonOverrideRange1
+    | ExternalScenarioProfileSchemaJsonOverrideRange2
+    | ExternalScenarioProfileSchemaJsonOverrideRange3
+)
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -184,6 +300,26 @@ type ExternalSharedSpeechOverridesSchemaJsonTextCommitMode = (
 type ExternalSharedSpeechOverridesSchemaJsonAudioDelivery = (
     ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
 )
+type ExternalScenarioProfileSchemaJsonProfileReleaseTier = (
+    ExternalSharedCapabilityDomainsSchemaJsonProfileReleaseTier
+)
+type ExternalScenarioProfileSchemaJsonExecutionClass = (
+    ExternalSharedCapabilityDomainsSchemaJsonServiceClass
+)
+
+
+class ExternalScenarioProfileSchemaJsonAsrParameters(TypedDict):
+    language: ExternalScenarioProfileSchemaJsonLanguageTag
+    preview_interval_ms: int
+    max_segment_ms: int
+    finalization: ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+    final_deadline_ms: int
+    auxiliary_deadline_ms: int
+    rollback_tokens: int
+    turn_detection: TurnDetection
+    vocabulary_set_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
+    alignment: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+    diarization: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -245,6 +381,12 @@ class ExternalSharedReceiptsSchemaJsonPublicExecutionFacts(TypedDict):
     vocabulary: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
 
 
+class ExternalScenarioProfileSchemaJsonProfileParameters(TypedDict):
+    asr: NotRequired[ExternalScenarioProfileSchemaJsonAsrParameters]
+    tts: NotRequired[ExternalScenarioProfileSchemaJsonTtsParameters]
+    output: NotRequired[ExternalScenarioProfileSchemaJsonOutputParameters]
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -255,9 +397,43 @@ class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     unknown: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
 
 
+class ExternalScenarioProfileSchemaJsonProfileDefinition(TypedDict):
+    display_name: str
+    description: NotRequired[str]
+    kind: Literal["asr", "tts", "duplex"]
+    release_tier: ExternalScenarioProfileSchemaJsonProfileReleaseTier
+    execution_classes: list[ExternalScenarioProfileSchemaJsonExecutionClass]
+    parameters: ExternalScenarioProfileSchemaJsonProfileParameters
+    required_capabilities: list[ExternalScenarioProfileSchemaJsonCapabilityRequirement]
+    override_allowlist: list[ExternalScenarioProfileSchemaJsonParameterPath]
+    override_ranges: dict[
+        ExternalScenarioProfileSchemaJsonParameterPath,
+        ExternalScenarioProfileSchemaJsonOverrideRange,
+    ]
+    slo_ref: str
+
+
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
     operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+class ProfileRevisionCreateRequest(TypedDict):
+    display_name: str
+    description: NotRequired[str]
+    kind: Literal["asr", "tts", "duplex"]
+    release_tier: ExternalScenarioProfileSchemaJsonProfileReleaseTier
+    execution_classes: list[ExternalScenarioProfileSchemaJsonExecutionClass]
+    parameters: ExternalScenarioProfileSchemaJsonProfileParameters
+    required_capabilities: list[ExternalScenarioProfileSchemaJsonCapabilityRequirement]
+    override_allowlist: list[ExternalScenarioProfileSchemaJsonParameterPath]
+    override_ranges: dict[
+        ExternalScenarioProfileSchemaJsonParameterPath,
+        ExternalScenarioProfileSchemaJsonOverrideRange,
+    ]
+    slo_ref: str
+    profile_id: Identifier
+    expected_latest_revision: Revision | None
 
 
 class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
@@ -277,5 +453,10 @@ class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
 
 type ErrorResponse = ExternalSharedErrorsSchemaJsonErrorResponse
 type AdminContracts = (
-    WorkspaceCreateRequest | WorkspacePatch | Workspace | WorkspaceList | ErrorResponse
+    WorkspaceCreateRequest
+    | WorkspacePatch
+    | Workspace
+    | WorkspaceList
+    | ErrorResponse
+    | ProfileRevisionCreateRequest
 )

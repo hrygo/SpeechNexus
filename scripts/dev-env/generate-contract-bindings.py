@@ -504,13 +504,23 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
     )
     for entry in names:
         model = entry if entry[0].isupper() else "".join(word.title() for word in entry.split("_"))
+        if len(names) == 1:
+            # A single entrypoint needs one typed implementation, not an invalid
+            # solitary overload. Keep the same runtime source validation.
+            parser += (
+                "from typing import cast\n\n"
+                f"def parse(name: Literal[{entry!r}], value: Any) -> models.{model}:\n"
+                f"    return cast(models.{model}, validate_profile({name!r}, name, value))\n"
+            )
+            break
         parser += (
             f"@overload\ndef parse(name: Literal[{entry!r}], value: Any) -> models.{model}: ...\n\n"
         )
-    parser += (
-        f"def parse(name: str, value: Any) -> Any:\n"
-        f"    return validate_profile({name!r}, name, value)\n"
-    )
+    if len(names) > 1:
+        parser += (
+            f"def parse(name: str, value: Any) -> Any:\n"
+            f"    return validate_profile({name!r}, name, value)\n"
+        )
     (python / f"{name}.py").write_text(parser)
     types_name = config.get("typescript_source", name)
     types = destination / f"src/{types_name}.generated.ts"

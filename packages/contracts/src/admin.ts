@@ -6,7 +6,12 @@ import type { components } from "./admin.generated";
 export type { components } from "./admin.generated";
 export type Contracts = Pick<
   components["schemas"],
-  "WorkspaceCreateRequest" | "WorkspacePatch" | "Workspace" | "WorkspaceList" | "ErrorResponse"
+  | "WorkspaceCreateRequest"
+  | "WorkspacePatch"
+  | "Workspace"
+  | "WorkspaceList"
+  | "ErrorResponse"
+  | "ProfileRevisionCreateRequest"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

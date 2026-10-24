@@ -8,14 +8,48 @@ import * as execution from "../src/execution.ts";
 import * as runtime from "../src/runtime.ts";
 import * as realtime from "../src/realtime.ts";
 import * as realtime_events from "../src/realtime_events.ts";
+import * as scenario_profiles from "../src/scenario_profiles.ts";
 import { exampleValue } from "./contract-examples.mjs";
 
-const profiles = { admin, workbench, execution, runtime, realtime, realtime_events };
+const profiles = {
+  admin,
+  workbench,
+  execution,
+  runtime,
+  realtime,
+  realtime_events,
+  scenario_profiles,
+};
 const fixtures = JSON.parse(
   readFileSync(
     new URL("../../../tests/fixtures/contracts/consumer-profiles.json", import.meta.url),
   ),
 );
+test("profile draft consumer preserves original intent and idempotency header", async () => {
+  const example = (schema) =>
+    structuredClone(fixtures.examples.find((e) => e.schema === schema && e.valid).value);
+  const request = admin.parse(
+    "ProfileRevisionCreateRequest",
+    example("ProfileRevisionCreateRequest"),
+  );
+  const reply = example("ScenarioProfileRevision");
+  let calls = 0;
+  const client = admin.createClient("http://deployment.invalid", async (wire) => {
+    calls++;
+    assert.equal(wire.headers.get("Idempotency-Key"), "original-profile-key");
+    assert.deepEqual(await wire.json(), request);
+    return Response.json(reply, { status: 201 });
+  });
+  const response = await client.POST("/v1/nexus/admin/profiles", {
+    params: { header: { "Idempotency-Key": "original-profile-key" } },
+    body: request,
+  });
+  assert.equal(calls, 1);
+  const draft = scenario_profiles.parse("ScenarioProfileRevision", response.data);
+  assert.equal(draft.publication.status, "draft");
+  assert.equal(draft.profile_id, request.profile_id);
+});
+
 for (const example of fixtures.examples) {
   test(example.id, () => {
     const value = exampleValue(example);

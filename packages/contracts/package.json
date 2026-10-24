@@ -13,7 +13,8 @@
     "./runtime-http": "./src/runtime-http.ts",
     "./workbench-http": "./src/workbench-http.ts",
     "./realtime": "./src/realtime.ts",
-    "./realtime-events": "./src/realtime_events.ts"
+    "./realtime-events": "./src/realtime_events.ts",
+    "./scenario-profiles": "./src/scenario_profiles.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

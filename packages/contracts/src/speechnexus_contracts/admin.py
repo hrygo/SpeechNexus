@@ -26,5 +26,11 @@ def parse(name: Literal["WorkspaceList"], value: Any) -> models.WorkspaceList: .
 def parse(name: Literal["ErrorResponse"], value: Any) -> models.ErrorResponse: ...
 
 
+@overload
+def parse(
+    name: Literal["ProfileRevisionCreateRequest"], value: Any
+) -> models.ProfileRevisionCreateRequest: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

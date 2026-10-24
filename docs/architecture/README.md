@@ -13,6 +13,7 @@
 - [应用事务方案与契约](coordination-transactions.md)：程序职责、锁序、预算、恢复身份、旧规则映射和后续编码交接。
 - [受限节点控制器](node-controller.md)：批准模板的 prepare / stop 规则、generation / fencing 与停止证据，以及当前实现与待交付边界。
 - [执行网关提交事务](execution-gateway.md)：`create_submit` 的持久意图、锁序、完整请求摘要、版本守卫、错误分类与当前未交付的停止/计量端口；
+- [CPU VAD](cpu-vad.md)：有界切段、会话推理状态、无语音门禁、固定模型与原生消费接口；公开实时链路仍待集成。
 - [生产协调存储基线](production-coordination-storage.md)：包内 `0002_coordination`、15 表、A/B 最小权限、升级回滚与迁移互斥证据；事务实现另行验收。
 - [资产发布与保留期存储](production-assets.md)：实际文本检查、PG/版本化 MinIO 发布、原身份恢复和删除账本；公开路由与常驻维护进程后续接入。
 - [生产 owner 任期事务](production-owners.md)：获取/续约/激活、完整当前权威查询、锁后数据库取时和未知提交恢复。

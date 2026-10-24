@@ -1,0 +1,3 @@
+# Isolated model runtime. Compile to requirements.txt using uv pip compile --generate-hashes.
+numpy==2.4.6
+onnxruntime==1.31.0

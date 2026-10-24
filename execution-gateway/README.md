@@ -11,7 +11,10 @@ Use the migration-provisioned gateway database role. Candidates for the same ide
 must share the same host-mounted lock directory; it must not carry business content.
 Compose does not yet provision this control configuration.
 
-The submit application/ledger and atomic stop facts are implemented, but HTTP
-submit/abort/drain, real engine adapters and physical cluster qualification remain pending.
+The submit application/ledger and atomic stop facts are implemented. The
+[CPU VAD native API](../docs/architecture/cpu-vad.md) now provides bounded
+segmentation and an isolated-state ONNX CPU adapter, checked with synthetic audio.
+HTTP submit/abort/drain, real ASR/TTS dispatch, public VAD integration and physical
+cluster qualification remain pending.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

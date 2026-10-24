@@ -15,3 +15,4 @@
 - [2026-10-24 B02 受限控制器容器生命周期探针](2026-10-24-b02-controller-container-lifecycle-probe.md)：合成容器上的 prepare / ready / stop 与停止双证据、`Init` 缺口、清理结果与未验证边界。
 - [2026-10-24 B02 控制器 HTTP 外壳与持久意图探针](2026-10-24-b02-controller-http-shell-probe.md)：真实控制器进程的组件凭据、prepare → ready → stop、daemon 侧加固事实、停机双证据与重启后持久意图。
 - [2026-10-24 B02 有界控制器与真实 ASR 探针](2026-10-24-b02-real-asr-controller-probe.md)：固定内存上限与 HTTP 就绪、0.6B/1.7B 合成语音/静音/长非语音实测、CUDA 失败与缓存诊断、停止清理及历史 Issue 状态更正。
+- [2026-10-24 B03 有界媒体与真实录音输入探针](2026-10-24-b03-bounded-audio-probe.md)：五种格式、源时钟/尾部、文件 VAD、合成与两段授权录音实测及未验证边界。

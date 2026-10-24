@@ -25,10 +25,15 @@ import wave
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 import httpx
+from engine_probe_support import (
+    docker_json,
+    memory_available,
+    protected_start,
+    require_internal_network,
+)
 
 from speechnexus_node_controller.application.runtime_control import NodeRuntimeControlService
 from speechnexus_node_controller.domain.intents import (
@@ -40,7 +45,6 @@ from speechnexus_node_controller.domain.intents import (
     RuntimeMemoryVector,
 )
 from speechnexus_node_controller.domain.templates import (
-    ApprovedRuntimeTemplate,
     ApprovedTemplateRegistry,
     ReadinessKind,
 )
@@ -58,37 +62,7 @@ from speechnexus_node_controller.infrastructure.sqlite_intent_store import Sqlit
 from speechnexus_node_controller.infrastructure.template_config import load_approved_templates
 
 _NODE = "node-asr-probe"
-_PROTECTED = "cube-ccba-qwen36-35b-nvfp4"
 _SPEECH = "The speech system is ready. Please check the sound and save the result."
-
-
-def _docker_json(*arguments: str) -> Any:
-    result = subprocess.run(
-        ["docker", *arguments], check=True, capture_output=True, text=True, timeout=30
-    )
-    return json.loads(result.stdout)
-
-
-def _protected_start() -> str:
-    state = _docker_json("inspect", _PROTECTED)[0]["State"]
-    if not state["Running"]:
-        raise RuntimeError("the protected LLM must already be running")
-    return str(state["StartedAt"])
-
-
-def _require_internal_network(template: ApprovedRuntimeTemplate) -> None:
-    if template.network_name is None:
-        raise ValueError("the probe requires an explicitly approved internal network")
-    network = _docker_json("network", "inspect", template.network_name)[0]
-    if not network.get("Internal") or network.get("Driver") != "bridge":
-        raise ValueError("the probe requires a Docker --internal bridge network")
-
-
-def _memory_available() -> int:
-    for line in Path("/proc/meminfo").read_text().splitlines():
-        if line.startswith("MemAvailable:"):
-            return int(line.split()[1]) * 1024
-    raise RuntimeError("the host did not report MemAvailable")
 
 
 def _samples(directory: Path) -> list[tuple[str, Path, str | None]]:
@@ -212,9 +186,9 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
             raise ValueError(
                 "file ASR probes require explicitly disabled request/output/access logs"
             )
-    _require_internal_network(template)
-    protected_start = _protected_start()
-    available_before = _memory_available()
+    require_internal_network(template)
+    protected_started_at = protected_start()
+    available_before = memory_available()
     if available_before < template.max_peak_memory_bytes + 8 * 1024**3:
         raise RuntimeError("insufficient headroom for the approved peak plus 8 GiB")
     suffix = uuid4().hex[:12]
@@ -252,7 +226,7 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
         "internal_network": True,
         "synthetic_only": arguments.corpus_root is None,
         "scheduler_budget_used": False,
-        "protected_llm_started_at": protected_start,
+        "protected_llm_started_at": protected_started_at,
         "available_before_bytes": available_before,
     }
     with (
@@ -307,12 +281,12 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
             state = api.find_container(labels)
             if state is None:
                 raise RuntimeError("the approved container disappeared")
-            raw = _docker_json("inspect", state.container_id)[0]
+            raw = docker_json("inspect", state.container_id)[0]
             report["image_id"] = raw["Image"]
             report["container_memory_limit_bytes"] = raw["HostConfig"]["Memory"]
             report["container_memory_swap_bytes"] = raw["HostConfig"]["MemorySwap"]
             report["host_ports_published"] = bool(raw["HostConfig"].get("PortBindings"))
-            report["available_ready_bytes"] = _memory_available()
+            report["available_ready_bytes"] = memory_available()
             report["daemon_observed_memory_bytes"] = state.memory_peak_bytes
             # Reconstruct the controller and its local receipt store while the engine lives.
             store.close()
@@ -378,8 +352,8 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
                 api.remove_container(container_id)
             report["leftovers"] = list(api.list_container_ids(labels))
             store.close()
-            report["available_after_bytes"] = _memory_available()
-            report["protected_llm_unchanged"] = _protected_start() == protected_start
+            report["available_after_bytes"] = memory_available()
+            report["protected_llm_unchanged"] = protected_start() == protected_started_at
             (evidence_directory / "report.json").write_text(
                 json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
             )

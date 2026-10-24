@@ -386,3 +386,15 @@ into controlled application transactions. PostgreSQL remains the official
 product target; the MySQL/InnoDB prototype validates key coordination behavior only.
 The [refactoring plan](../docs/plans/2026-10-23-cluster-coordination-refactor.md)
 does not constitute an implemented adapter or a new database support claim.
+
+
+### Versioned HTTP structural change checks
+
+`CONTRACT_BASE_REF=<frozen commit/ref> make contracts-http-changes` checks known
+request/response structure changes across admin, workbench, runtime-control and
+execution-control OpenAPI sources, including their repository references and
+`nexus` fields. It reports both source versions and findings; a version bump does
+not waive a finding. The existing `contracts-compat` OpenAI standard scope remains
+unchanged. See [coverage and limits](../docs/architecture/http-contract-change-checks.md).
+A zero result is not a proof of complete protocol compatibility or a replacement
+for the producer's version/change list, examples, consumer review and migration.

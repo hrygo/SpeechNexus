@@ -469,7 +469,9 @@ workspace. Both languages consume the same 39 transport examples in
 `tests/fixtures/contracts/admin-http.json`, plus DTO examples in
 `consumer-profiles.json`.
 
-These artifacts do not register backend routes. PostgreSQL read ports, actual
-GET handlers, cursor semantics, Host/Origin enforcement and composition remain
-separate A02/A04 implementation tasks. Schema checks and synthetic HTTP client
-tests do not qualify a running service or a GPU workload.
+The consumer package itself does not register backend routes. The speech
+backend now connects the two GETs to a bounded read-only PG port and the existing
+asset runtime pool, and projects these selected methods in runtime OpenAPI.
+Workspace writes remain separate A04 tasks. Schema checks and synthetic client
+tests alone do not qualify the running service; actual non-owner PG/MinIO HTTP
+coverage is documented in `docs/architecture/production-assets.md`.

@@ -31,7 +31,12 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     assert set(manifest["http_surfaces"]["assets"]["paths"]) == PATHS
     source = yaml.safe_load((ROOT / "contracts/speech-openapi.yaml").read_text())
     actual = create_app(settings=_settings()).openapi()
-    assert set(actual["paths"]) == PATHS | {"/healthz", "/readyz"}
+    assert set(actual["paths"]) == PATHS | {
+        "/healthz",
+        "/readyz",
+        "/v1/nexus/workspaces",
+        "/v1/nexus/workspaces/{workspace_id}",
+    }
     for path in PATHS:
         assert actual["paths"][path] == document["paths"][path]
         for method, operation in document["paths"][path].items():

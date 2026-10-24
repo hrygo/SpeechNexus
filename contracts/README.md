@@ -297,7 +297,8 @@ OpenAPI and the validated TypeScript client when source paths also declare
 planned writes. Python/TypeScript runtime entrypoints include Workspace,
 WorkspaceList and the canonical shared ErrorResponse. Standard 400/403/503
 responses are declared on the source GET operations. These are contract
-artifacts; backend route and PostgreSQL integration remain pending.
+artifacts; the backend separately connects the same two GET operations to
+read-only PostgreSQL and its configured runtime. Planned writes remain unregistered.
 
 ## Validation
 

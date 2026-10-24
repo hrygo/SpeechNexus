@@ -150,6 +150,7 @@ def _template(image_reference: str, image_id: str) -> ApprovedRuntimeTemplate:
         memory_architecture=MemoryArchitecture.UNIFIED_MEMORY,
         allowed_pool_ids=frozenset({"auxiliary"}),
         max_peak_memory_bytes=2 * 1024**3,
+        container_memory_limit_bytes=256 * 1024**2,
         readiness=ReadinessRule(kind=ReadinessKind.TCP_PORT_ACCEPTING, port=_READINESS_PORT),
         command=("python", "-m", "http.server", str(_READINESS_PORT)),
     )

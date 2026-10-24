@@ -16,7 +16,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
+from ipaddress import ip_address
 from typing import Any, Final, ParamSpec, TypeVar
+
+import httpx
 
 from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
@@ -214,6 +217,7 @@ class DockerNodeRuntime:
         return self._api.find_container(
             {
                 MANAGED_BY_LABEL: MANAGED_BY_VALUE,
+                NODE_ID_LABEL: self._node_id,
                 INSTANCE_ID_LABEL: instance_id,
                 GENERATION_LABEL: str(instance_generation),
             }
@@ -261,6 +265,9 @@ class DockerNodeRuntime:
             "SecurityOpt": ["no-new-privileges"],
             "CapDrop": ["ALL"],
             "RestartPolicy": {"Name": "no"},
+            "Memory": template.container_memory_limit_bytes,
+            # Docker interprets equal Memory/MemorySwap as no additional swap.
+            "MemorySwap": template.container_memory_limit_bytes,
         }
         if template.gpu_device_count:
             host_config["DeviceRequests"] = [
@@ -270,6 +277,8 @@ class DockerNodeRuntime:
                     "Capabilities": [["gpu"]],
                 }
             ]
+        if template.network_name is not None:
+            host_config["NetworkMode"] = template.network_name
         return host_config
 
     def _container_name(self, request: RuntimeInstanceIntentRequest) -> str:
@@ -314,6 +323,10 @@ class DockerNodeRuntime:
         if port is None:
             return False
         for address in state.network_addresses:
+            if template.readiness.kind is ReadinessKind.HTTP_STATUS_OK:
+                if self._http_ready(address, port, template.readiness.path):
+                    return True
+                continue
             try:
                 with socket.create_connection(
                     (address, port), timeout=self._settings.readiness_timeout_seconds
@@ -323,6 +336,28 @@ class DockerNodeRuntime:
                 continue
         return False
 
+    def _http_ready(self, address: str, port: int, path: str | None) -> bool:
+        """Read headers from the inspected container IP; never proxy or redirect."""
+        if path is None:
+            return False
+        try:
+            literal = ip_address(address)
+        except ValueError:
+            return False
+        host = f"[{literal}]" if literal.version == 6 else str(literal)
+        try:
+            with (
+                httpx.Client(
+                    trust_env=False,
+                    follow_redirects=False,
+                    timeout=self._settings.readiness_timeout_seconds,
+                ) as client,
+                client.stream("GET", f"http://{host}:{port}{path}") as response,
+            ):
+                return response.status_code == 200
+        except httpx.HTTPError:
+            return False
+
     def _observation(
         self,
         request: RuntimeInstanceIntentRequest,
@@ -331,6 +366,20 @@ class DockerNodeRuntime:
         *,
         stop_evidence: RuntimeStopEvidence | None = None,
     ) -> InstanceObservation:
+        if state.running and (
+            state.memory_limit_bytes != template.container_memory_limit_bytes
+            or state.memory_swap_limit_bytes != template.container_memory_limit_bytes
+            or (template.network_name is not None and state.network_mode != template.network_name)
+        ):
+            return InstanceObservation(
+                instance_id=request.instance_id,
+                instance_generation=request.instance_generation,
+                approved_template_id=template.template_id,
+                config_digest=request.config_digest,
+                observed_instance_state=ObservedInstanceState.QUARANTINED,
+                observed_peak_memory=self._observed_memory(request, state),
+                quarantine_reason="container resource/network configuration is not approved",
+            )
         return InstanceObservation(
             instance_id=request.instance_id,
             instance_generation=request.instance_generation,

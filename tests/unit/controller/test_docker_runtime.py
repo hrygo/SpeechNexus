@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import socket
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from typing import Any
 
 import pytest
@@ -87,6 +90,7 @@ def test_prepare_refuses_a_generation_that_already_carries_another_digest() -> N
         command=None,
         labels={
             MANAGED_BY_LABEL: "speechnexus-node-controller",
+            NODE_ID_LABEL: _NODE,
             INSTANCE_ID_LABEL: request.instance_id,
             GENERATION_LABEL: str(request.instance_generation),
             TEMPLATE_ID_LABEL: request.approved_template_id,
@@ -110,6 +114,7 @@ def test_prepare_carries_identity_labels_and_hardening() -> None:
             command=("serve", "--port", "9000"),
             gpu_device_count=1,
             read_only_binds=(ReadOnlyBind(source="/models/asr", target="/models/asr"),),
+            network_name="synthetic-internal-network",
         ),
     )
     container = engine.created[0]
@@ -125,6 +130,10 @@ def test_prepare_carries_identity_labels_and_hardening() -> None:
     assert container.host_config["CapDrop"] == ["ALL"]
     assert container.host_config["SecurityOpt"] == ["no-new-privileges"]
     assert container.host_config["RestartPolicy"] == {"Name": "no"}
+    assert container.host_config["Memory"] == 1024**3
+    assert container.host_config["MemorySwap"] == 1024**3
+    assert "PortBindings" not in container.host_config
+    assert container.host_config["NetworkMode"] == "synthetic-internal-network"
     assert container.host_config["Binds"] == ["/models/asr:/models/asr:ro"]
     assert container.host_config["DeviceRequests"] == [
         {"Driver": "nvidia", "Count": 1, "Capabilities": [["gpu"]]}
@@ -136,6 +145,41 @@ def test_container_name_is_derived_from_the_instance_identity() -> None:
     runtime = _runtime(engine)
     runtime.prepare(build_request(instance_id="instance:asr-1"), build_template())
     assert engine.created[0].name == "speechnexus-instance-instance-asr-1-g1"
+
+
+@pytest.mark.parametrize("field", ["Memory", "MemorySwap"])
+def test_legacy_or_drifted_unbounded_container_is_quarantined_but_can_be_stopped(
+    field: str,
+) -> None:
+    engine = _engine()
+    template = build_template()
+    runtime = _runtime(engine)
+    runtime.prepare(build_request(), template)
+    engine.created[0].host_config[field] = 0
+
+    observation = runtime.inspect(build_request(), template)
+    assert observation is not None
+    assert observation.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert observation.stop_evidence is None
+    replay = runtime.prepare(build_request(), template)
+    assert replay.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert len(engine.created) == 1
+
+    stopped = runtime.stop(build_request(action=RuntimeActionKind.STOP), template)
+    assert stopped.stop_evidence is not None
+    assert engine.containers == {}
+
+
+def test_restarted_controller_cannot_claim_an_unapproved_container_network_is_ready() -> None:
+    engine = _engine()
+    template = build_template(network_name="approved-network")
+    runtime = _runtime(engine)
+    runtime.prepare(build_request(), template)
+    engine.created[0].host_config["NetworkMode"] = "bridge"
+    observed = _runtime(engine).inspect(build_request(), template)
+    assert observed is not None
+    assert observed.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert observed.stop_evidence is None
 
 
 def test_tcp_readiness_reports_loading_until_the_port_accepts() -> None:
@@ -161,6 +205,106 @@ def test_tcp_readiness_reports_loading_until_the_port_accepts() -> None:
     )
     observation = runtime.prepare(build_request(), closed_port_template)
     assert observation.observed_instance_state is ObservedInstanceState.LOADING
+
+
+@pytest.fixture
+def health_server() -> Iterator[tuple[ThreadingHTTPServer, list[str], list[int]]]:
+    """The TCP listener remains up while the engine changes health status."""
+    paths: list[str] = []
+    statuses = [503]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            paths.append(self.path)
+            self.send_response(statuses[0])
+            self.send_header("Content-Length", "0")
+            self.send_header("Location", "/must-not-follow")
+            self.end_headers()
+
+        def log_message(self, _format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield server, paths, statuses
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("initial_status", [204, 301, 401, 404, 503])
+def test_http_readiness_keeps_loading_until_exactly_200(
+    health_server: tuple[ThreadingHTTPServer, list[str], list[int]],
+    initial_status: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server, paths, statuses = health_server
+    statuses[0] = initial_status
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    template = build_template(
+        readiness=ReadinessRule(
+            ReadinessKind.HTTP_STATUS_OK, port=server.server_port, path="/health"
+        )
+    )
+    engine = _engine(addresses=("127.0.0.1",))
+    runtime = _runtime(engine)
+    observation = runtime.prepare(build_request(), template)
+    assert observation.observed_instance_state is ObservedInstanceState.LOADING
+    assert paths == ["/health"]
+
+    statuses[0] = 200
+    ready_observation = runtime.inspect(build_request(), template)
+    assert ready_observation is not None
+    assert ready_observation.observed_instance_state is ObservedInstanceState.READY
+    assert paths == ["/health", "/health"]
+
+
+def test_http_readiness_with_no_answer_retains_loading() -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        template = build_template(
+            readiness=ReadinessRule(
+                ReadinessKind.HTTP_STATUS_OK,
+                port=listener.getsockname()[1],
+                path="/health",
+            )
+        )
+        observation = _runtime(
+            _engine(addresses=("127.0.0.1",)), readiness_timeout_seconds=0.01
+        ).prepare(build_request(), template)
+    assert observation.observed_instance_state is ObservedInstanceState.LOADING
+    assert observation.stop_evidence is None
+
+
+def test_http_readiness_refuses_hostnames_from_container_inspection() -> None:
+    template = build_template(
+        readiness=ReadinessRule(ReadinessKind.HTTP_STATUS_OK, port=8000, path="/health")
+    )
+    observation = _runtime(_engine(addresses=("untrusted.invalid",))).prepare(
+        build_request(), template
+    )
+    assert observation.observed_instance_state is ObservedInstanceState.LOADING
+
+
+def test_stop_cannot_target_another_nodes_container() -> None:
+    engine = _engine()
+    foreign_runtime = DockerNodeRuntime(api=engine, node_id="node-other")
+    foreign_runtime.prepare(build_request(), build_template())
+    foreign_id = engine.created[0].container_id
+
+    observation = _runtime(engine).stop(
+        build_request(action=RuntimeActionKind.STOP), build_template()
+    )
+    assert observation.observed_instance_state is ObservedInstanceState.ABSENT
+    assert observation.stop_evidence is None
+    assert engine.containers[foreign_id].running
+    assert engine.removed == []
 
 
 def test_prepare_reports_the_observed_peak_memory() -> None:
@@ -241,6 +385,7 @@ def test_inspect_quarantines_a_container_that_carries_another_digest() -> None:
         command=None,
         labels={
             MANAGED_BY_LABEL: "speechnexus-node-controller",
+            NODE_ID_LABEL: _NODE,
             INSTANCE_ID_LABEL: request.instance_id,
             GENERATION_LABEL: str(request.instance_generation),
             TEMPLATE_ID_LABEL: request.approved_template_id,

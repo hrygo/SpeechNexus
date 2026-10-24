@@ -1,7 +1,7 @@
 ---
 title: "受限节点控制器：接口、规则与当前实现"
 status: active
-version: "0.1.0"
+version: "0.2.0"
 date: 2026-10-24
 ---
 
@@ -36,7 +36,7 @@ scheduler ◀──observation/reconcile 快照───────────
 | --- | --- | --- |
 | `domain/intents.py` | 意图身份、留宿内存值、观察状态、停止证据与实例头派生 | 已实现并有单元测试 |
 | `domain/templates.py` | 批准模板注册表：镜像摘要固定、允许池、内存架构与峰值上限 | 已实现；模板清单与部署绑定待接入 |
-| `domain/ports.py` | `IntentStore`、`NodeRuntimePort`、reconcile 快照 | 协议草图；持久化与容器 adapter 待交付 |
+| `domain/ports.py` | `IntentStore`、`NodeRuntimePort`、reconcile 快照 | 已有 SQLite 与 Docker 实现，真实联调范围见探针记录 |
 | `application/runtime_control.py` | 认领意图、幂等重放、generation / fencing 门、drain 门、观察折叠与 reconcile | 已实现并有单元测试 |
 | `infrastructure/docker_api.py` | 本地 daemon 的最小 Engine API 客户端（固定操作集合，不接任意镜像/挂载/shell） | 已实现并有 double 测试 |
 | `infrastructure/docker_runtime.py` | 受控容器 adapter：镜像摘要核对、标签化实例身份、prepare/stop/inspect 与停止双证据 | 已实现；合成容器真实探针见下文 |
@@ -64,24 +64,46 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   按 `(instance_id, instance_generation)` 找到自己的实例，也能识别身份不一致的容器。
 - **容器加固**：`Privileged=false`、`CapDrop=["ALL"]`、`no-new-privileges`、`RestartPolicy=no`、
   `Init=true`、不发布宿主端口，绑定只来自模板的只读制品目录；GPU 请求按模板的
-  `gpu_device_count` 生成 `DeviceRequests`。
+  `gpu_device_count` 生成 `DeviceRequests`。模板必须显式声明
+  `container_memory_limit_bytes`（整数，至少 6 MiB，不大于模板峰值上界），同时设置 Docker
+  `Memory` 与相同的 `MemorySwap`，禁止额外交换额度。请求的 unified peak 或 discrete host
+  peak 必须覆盖这个固定上限；device peak 不用于覆盖宿主内存。
 - **prepare 幂等**：同一 `(instance_id, generation)` 已有容器且标签摘要一致时复用，不再创建
   第二个；标签摘要不同则报 `intent_conflict`。
-- **readiness**：模板声明 `process_running` 或 `tcp_port_accepting:port`。容器运行但未通过
-  readiness 时报告 `loading`（保持 peak），通过后才报告 `ready`（切 steady）。
+- **readiness**：模板声明 `process_running`、`tcp_port_accepting:port`，或
+  `http_status_ok:port/path`。HTTP 只访问 daemon 返回的容器 IP 与模板固定绝对路径，只认
+  200，不使用环境代理、不跟随重定向、不读取响应正文；拒绝 URL、查询串、fragment、编码路径
+  和相对路径。503、其他状态、断连与超时继续 `loading`（保持 peak）。HTTP 健康不是业务
+  warmup 或模型资格，A 仍须核验独立受信资格后才能实际缩减预算。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
   `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
 - **退出码语义**：退出码 0 与 143（SIGTERM）都是正常终止；容器是否成功服务由网关的执行事实
   判断，控制器不把退出码当作执行结果。
 - **配置来源**：批准模板来自部署配置文件（`template_config.py`，未知字段拒绝），不是请求。
-  当前 adapter 不设 `Memory` 上界，容器内存只作为观察峰值报告；保留由 Scheduler 记账。
+  `network_name` 可引用批准的自定义 Docker 网络，不能选择 `host`、`container:*` 等网络
+  模式；省略时保留 daemon 默认网络行为。网络名本身不证明出站受限，真实内容路径须另外验证
+  网络隔离与部署边界；ASR 探针要求实测 `Internal=true` 的 bridge 网络。
+- **重新发现**：容器查找包含 node、instance 与 generation 标签；只在当前运行容器的实际
+  Memory/MemorySwap 和显式网络配置均匹配模板时报告就绪。旧无限额或漂移容器进入
+  quarantine，仍允许按原身份停止、删除并取证，不把重启当作资源保证已生效。
+- **上限含义**：cgroup 控制其实际记账的宿主内存；不能据此承诺独立 GPU 显存或 GB10 全部 CUDA
+  分配都被隔离，不能据此降低 Scheduler 预留。统一内存、CUDA 空闲、系统可用、加载峰值与
+  steady 资格须分别取证，观察值不用于直接扣账。
 - **daemon 故障**：daemon 无应答或返回错误状态时，adapter 报
   `runtime_controller_unavailable`（可重试），调用方不会拿到假的准备成功或停止成功；模板与实例
   身份等**领域拒绝**仍原样抛出，不被这条翻译吞掉。
 
 合成容器上的真实 prepare → ready → stop 证据（含为何需要 `Init=true`）见
 [B02 容器生命周期探针](../audits/2026-10-24-b02-controller-container-lifecycle-probe.md)。
+两个真实 ASR 引擎的有界加载、HTTP 健康、合成语音、回执重建与停止证据见
+[B02 真实 ASR 探针](../audits/2026-10-24-b02-real-asr-controller-probe.md)；其静音幻觉与长
+非语音慢响应仍未解决，不能宣称实时资格。
+
+**模板配置升级**：旧模板文件缺少 `container_memory_limit_bytes` 时启动即拒绝，不能静默继续
+无限额运行。部署方应冻结新模板/配置摘要，给现有模板补齐经过核对的上限；已有 generation
+不能靠更改模板宣称上限已生效，须先安全停止后新建。默认的旧 process/TCP readiness 语义
+不变；`runtime-control` wire、请求字段、数据库与本地回执格式均不变。
 
 ## 3. HTTP 外壳、组件凭据与本地持久意图
 
@@ -162,11 +184,11 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   第 5 节固定了它需要的接口。
 - 批准模板清单（`approved_template_id` → 固定镜像摘要、峰值上限）需要 B00 制品摘要与
   部署绑定共同落地，当前只有校验规则、注册表与配置文件加载。
-- warmup 门尚未实现：模板不能声明 `requires_warmup_before_ready`，readiness 只由模板的
-  `process_running` / `tcp_port_accepting` 判定；加载期的 peak 留宿仍按“未 ready”处理。
-- 真实引擎容器（Qwen3-ASR / TTS）的 ready 与停止、GPU `DeviceRequests` 路径、容器内存上界与
-  统一内存语义、控制器重启后的重新发现与 reconcile 只有合成容器证据，没有任何真实引擎资格
-  结论。
+- warmup 门尚未实现：模板不能声明 `requires_warmup_before_ready`；process、TCP 或 HTTP
+  readiness 只证明其各自条件。加载期的 peak 留宿仍按“未 ready”处理，健康不能冒充资格。
+- 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
+  语音、回执重建与停止证据。TTS、请求级 abort、真实 warmup/资格、GPU/统一内存完整隔离、
+  进程故障后的发现/reconcile 与 A 控制循环仍未验证；单句合成语音不能替代模型质量/容量资格。
 - 真实多实例竞争、跨节点 `intent_id` 复用、控制器不可用时的接管与恢复没有真实证据；进程被
   杀死后的恢复只验证到“本机重启后意图事实仍在”，不等于故障接管已具备。这些属于
   [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29) 的 G1/G2 检查项。

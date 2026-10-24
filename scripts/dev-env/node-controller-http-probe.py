@@ -147,6 +147,7 @@ def _write_templates(path: Path, image_reference: str, image_id: str) -> None:
                         "memory_architecture": "unified_memory",
                         "allowed_pool_ids": ["auxiliary"],
                         "max_peak_memory_bytes": 2 * 1024**3,
+                        "container_memory_limit_bytes": 256 * 1024**2,
                         "readiness": {"kind": "tcp_port_accepting", "port": _READINESS_PORT},
                         "command": ["python", "-m", "http.server", str(_READINESS_PORT)],
                     }

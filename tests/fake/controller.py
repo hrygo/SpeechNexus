@@ -80,12 +80,14 @@ def build_template(
     architecture: MemoryArchitecture = MemoryArchitecture.UNIFIED_MEMORY,
     pools: frozenset[str] = frozenset({"asr-batch", "asr-realtime"}),
     max_peak_memory_bytes: int = 16 * GIB,
+    container_memory_limit_bytes: int = GIB,
     image_reference: str = SAMPLE_IMAGE_REFERENCE,
     image_digest: str = IMAGE_DIGEST,
     readiness: ReadinessRule | None = None,
     command: tuple[str, ...] | None = None,
     gpu_device_count: int = 0,
     read_only_binds: tuple[ReadOnlyBind, ...] = (),
+    network_name: str | None = None,
 ) -> ApprovedRuntimeTemplate:
     resolved_readiness = (
         readiness if readiness is not None else ReadinessRule(kind=ReadinessKind.PROCESS_RUNNING)
@@ -97,10 +99,12 @@ def build_template(
         memory_architecture=architecture,
         allowed_pool_ids=pools,
         max_peak_memory_bytes=max_peak_memory_bytes,
+        container_memory_limit_bytes=container_memory_limit_bytes,
         readiness=resolved_readiness,
         command=command,
         gpu_device_count=gpu_device_count,
         read_only_binds=read_only_binds,
+        network_name=network_name,
     )
 
 

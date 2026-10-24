@@ -17,6 +17,7 @@ import uvicorn
 from pydantic import SecretStr
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import Receive, Scope, Send
 
 from speechnexus_backend.speech.infrastructure.runtime_controller_http import (
     RuntimeControllerEndpoint,
@@ -88,11 +89,29 @@ class LiveController:
     runtime: ScriptedNodeRuntime = field(repr=False)
     service: NodeRuntimeControlService = field(repr=False)
     methods: list[str] = field(repr=False)
+    request_bodies: list[bytes] = field(repr=False)
+
+
+class _InterruptedJsonResponse(Response):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", b"100")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"{", "more_body": True})
+        raise ConnectionAbortedError("Synthetic reply loss after the native controller accepted")
 
 
 @contextmanager
 def controller_server(
-    directory: Path, tls: TLSFiles, *, runtime: ScriptedNodeRuntime | None = None
+    directory: Path,
+    tls: TLSFiles,
+    *,
+    runtime: ScriptedNodeRuntime | None = None,
+    lose_first_post_reply: bool = False,
 ) -> Iterator[LiveController]:
     directory.mkdir(exist_ok=True)
     daemon = runtime if runtime is not None else ScriptedNodeRuntime()
@@ -126,13 +145,21 @@ def controller_server(
         readiness=ReadinessService([StaticProbe("synthetic_daemon")], timeout_seconds=1),
     )
     methods: list[str] = []
+    request_bodies: list[bytes] = []
 
     @app.middleware("http")
     async def record_call(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        nonlocal lose_first_post_reply
         methods.append(request.method)
-        return await call_next(request)
+        if request.method == "POST":
+            request_bodies.append(await request.body())
+        response = await call_next(request)
+        if request.method == "POST" and lose_first_post_reply:
+            lose_first_post_reply = False
+            return _InterruptedJsonResponse()
+        return response
 
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -163,6 +190,7 @@ def controller_server(
                     daemon,
                     service,
                     methods,
+                    request_bodies,
                 )
             finally:
                 server.should_exit = True

@@ -6,8 +6,9 @@ PostgreSQL 是唯一产品数据库；InnoDB 只验证相同基础约束与权�
 
 ## 迁移链与交接
 
-当前包内 Alembic head 为 `0007_admission_commands`，新增
-[A私有operation/准入命令表](production-admission-storage.md)。下列为最初
+当前包内 Alembic head 为 `0008_runtime_delivery`，在已有
+[A私有operation/准入命令表](production-admission-storage.md)之上新增
+[私有 runtime 投递账本](production-runtime-delivery.md)，保留冻结的0001–0007迁移。下列为最初
 `0002_coordination` 存储单元的范围，它依赖 `0001_jobs`。新 schema 依次建表；
 已有 `0001_jobs` schema 只增加剩余 13 表和 4 个查询索引，不改写 Job/outbox 行、
 初始事件身份、约束或既有授权。版本表、整份新 DDL 与 schema 级迁移互斥同事务提交。
@@ -99,4 +100,5 @@ ADR 0007 复核：本轮只迁入存储和权限基础，其他旧业务不变�
 
 后续 [0005 runtime 意图存储扩展](production-runtime-intents.md)为 outbox 增加严格
 Job/runtime 目标，0006保存私有readiness证据；旧请求、Job 事件及原授权保留。
-create/observe 独立生产事务已交付，实际批准计划/readiness provider与持久派发仍待接入。
+create/observe 独立生产事务及原意图持久投递 worker 已交付；实际批准计划/readiness
+provider、节点内观察生产者与完整调度循环仍待接入。

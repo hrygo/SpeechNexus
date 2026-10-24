@@ -88,3 +88,9 @@ PG/InnoDB 上验证 A create→HTTP→A observe、原应用重启/精确重放�
 测试显式调用 B 节点内 reconcile 产生合成观察，再用只读 GET 消费；这不证明节点观察循环
 已经运行。daemon、批准计划与 readiness 均为合成事实，内存按合法 MiB 单位换算以满足 B
 真实的6 MiB模板约束；不加载模型、不启动容器，不证明 GPU、预热质量、内容网络或多主机资格。
+
+## 持久投递消费者
+
+[原意图持久投递](production-runtime-delivery.md)提供独立每节点 worker：创建 intent 同事务
+写入 unsent，外发前提交 unknown 标记，响应未知后只 GET 原身份；ACK 不调用 observe
+或改变预算。该进程不替代节点内观察生产者、批准/真实资格 provider 或完整调度循环。

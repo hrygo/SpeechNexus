@@ -2,7 +2,7 @@
 
 本文件配合 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)。机器矩阵为
 [`coordination-ownership.json`](../../contracts/coordination-ownership.json)，
-测试核对 18 端口、17 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
+测试核对 18 端口、18 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
 矩阵描述目标归属，不证明端口已实现。生产事务进度继续在 A01/B00–B06 跟踪。
 
 ## 契约生产者与消费者
@@ -31,7 +31,7 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 | create_job                                            | A              | coordination_jobs、coordination_outbox 同一事务                          |
 | claim_job                                             | A              | coordination_jobs                                                        |
 | quarantine_lease / release_lease                      | A              | lease、attempt、quota、host/instance 投影                                |
-| create_runtime_intent / observe_runtime               | A              | runtime head/intent、instance、host；创建 intent 同事务 outbox           |
+| create_runtime_intent / observe_runtime               | A              | runtime head/intent、instance、host；创建 intent 同事务 outbox/私有投递账本           |
 | seal_barrier                                          | B              | gateway_fencing_barriers                                                 |
 | create_submit                                         | B              | submit_intents、output_stream_heads                                      |
 | mark_execution_unknown / record_execution_observation | B              | submit_intents                                                           |
@@ -46,6 +46,10 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 业务所有权转移。该表是协调表范围，不是全产品表清单。
 `0007_admission_commands` 新增的 operation/准入请求表仅 A 可读写，B 不获跨 owner 锁授权；
 详见[准入命令存储](production-admission-storage.md)，独立admit_recipe事务见[准入实现](production-admission.md)，完整业务配额/消费者与真实资格仍待。
+
+`0008_runtime_delivery` 新增 A 私有投递账本，创建 runtime intent 时同事务插入；
+专用投递角色只能认领、标记未知和确认传输，不能改写原请求、物理状态或预算。
+B 无该表权限，私有投递端口不扩充共享18端口；见[持久投递](production-runtime-delivery.md)。
 
 ## 未知结果恢复映射
 

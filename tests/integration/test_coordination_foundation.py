@@ -40,6 +40,7 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
+from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 from speechnexus_backend.speech.infrastructure.runtime_intent_schema import RUNTIME_INTENT_DDL
 from speechnexus_backend.speech.infrastructure.runtime_observation_schema import (
     RUNTIME_OBSERVATION_DDL,
@@ -153,7 +154,12 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
         for ddl in COORDINATION_DDL:
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             db.query(re.sub(r"\bTEXT\b", "LONGTEXT", ddl))
-        for ddl in (*RUNTIME_INTENT_DDL, *RUNTIME_OBSERVATION_DDL, *ADMISSION_COMMAND_DDL):
+        for ddl in (
+            *RUNTIME_INTENT_DDL,
+            *RUNTIME_OBSERVATION_DDL,
+            *ADMISSION_COMMAND_DDL,
+            *RUNTIME_DELIVERY_DDL,
+        ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
                 "ALTER COLUMN job_id DROP NOT NULL",
@@ -441,7 +447,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0007_admission_commands"
+    assert sandbox.version() == "0008_runtime_delivery"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -508,7 +514,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0007_admission_commands"
+        assert sandbox.version() == "0008_runtime_delivery"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

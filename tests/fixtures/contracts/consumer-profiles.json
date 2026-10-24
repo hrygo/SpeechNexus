@@ -4048,6 +4048,1611 @@
         "error": null
       },
       "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSessionCreateRequest-valid",
+      "profile": "realtime",
+      "schema": "RealtimeSessionCreateRequest",
+      "value": {
+        "profile": {
+          "id": "profile-realtime-demo",
+          "revision": "1"
+        },
+        "modalities": ["asr"],
+        "models": {
+          "asr": {
+            "id": "asr-binding-demo",
+            "revision": "1"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime-RealtimeSessionCreateRequest-reject-private-field",
+      "profile": "realtime",
+      "schema": "RealtimeSessionCreateRequest",
+      "value": {
+        "profile": {
+          "id": "profile-realtime-demo",
+          "revision": "1"
+        },
+        "modalities": ["asr"],
+        "models": {
+          "asr": {
+            "id": "asr-binding-demo",
+            "revision": "1"
+          }
+        },
+        "internal_endpoint": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSession-valid",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "created",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": "/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": null,
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime-RealtimeSession-reject-private-field",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "created",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": "/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": null,
+        "error": null,
+        "internal_endpoint": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-PcmDescriptor-valid",
+      "profile": "realtime",
+      "schema": "PcmDescriptor",
+      "value": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 24000,
+        "channels": 1
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime-PcmDescriptor-reject-private-field",
+      "profile": "realtime",
+      "schema": "PcmDescriptor",
+      "value": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "internal_endpoint": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSessionCreateRequest-reject-wrong-modality-model",
+      "profile": "realtime",
+      "schema": "RealtimeSessionCreateRequest",
+      "value": {
+        "profile": {
+          "id": "profile-realtime-demo",
+          "revision": "1"
+        },
+        "modalities": ["asr"],
+        "models": {
+          "tts": {
+            "id": "tts-binding-demo",
+            "revision": "1"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSessionCreateRequest-reject-numeric-revision",
+      "profile": "realtime",
+      "schema": "RealtimeSessionCreateRequest",
+      "value": {
+        "profile": {
+          "id": "profile-realtime-demo",
+          "revision": 1
+        },
+        "modalities": ["asr"],
+        "models": {
+          "asr": {
+            "id": "asr-binding-demo",
+            "revision": "1"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSessionCreateRequest-reject-string-expiry",
+      "profile": "realtime",
+      "schema": "RealtimeSessionCreateRequest",
+      "value": {
+        "profile": {
+          "id": "profile-realtime-demo",
+          "revision": "1"
+        },
+        "modalities": ["asr"],
+        "models": {
+          "asr": {
+            "id": "asr-binding-demo",
+            "revision": "1"
+          }
+        },
+        "expires_in_s": "30"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSession-active",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "active",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": "/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "pending",
+        "terminal_operations": [],
+        "closed_at": null,
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime-RealtimeSession-closed",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "closed",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": null,
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime-RealtimeSession-reject-active-no-cleanup",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "active",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": "/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": null,
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSession-reject-terminal-url",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "closed",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": "/v1/realtime?session_id=session-demo",
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-RealtimeSession-reject-failure-without-error",
+      "profile": "realtime",
+      "schema": "RealtimeSession",
+      "value": {
+        "id": "session-demo",
+        "object": "nexus.realtime_session",
+        "status": "failed",
+        "expires_at": "2026-10-24T00:00:30Z",
+        "connection_url": null,
+        "effective_configuration": {
+          "models": {
+            "asr": {
+              "id": "asr-binding-demo",
+              "revision": "1"
+            }
+          },
+          "policy_revision": "1",
+          "catalog_revision": "1"
+        },
+        "limits": {
+          "max_input_chunk_ms": 100,
+          "max_message_bytes": 65536,
+          "input_credit_samples": 24000,
+          "output_credit_samples": 0,
+          "max_segment_ms": 20000,
+          "max_session_duration_ms": 3600000
+        },
+        "cleanup_state": "not_required",
+        "terminal_operations": [],
+        "closed_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-PcmDescriptor-reject-wrong-rate",
+      "profile": "realtime",
+      "schema": "PcmDescriptor",
+      "value": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 16000,
+        "channels": 1
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime-PcmDescriptor-reject-wrong-channel-count",
+      "profile": "realtime",
+      "schema": "PcmDescriptor",
+      "value": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 24000,
+        "channels": 2
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-0",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-0",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-0",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-0",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-1",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.append",
+        "event_id": "event-append-demo",
+        "audio": "<synthetic-pcm16>"
+      },
+      "valid": true,
+      "synthetic_pcm_bytes": 4800
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-1",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.append",
+        "event_id": "event-append-demo",
+        "audio": "<synthetic-pcm16>",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false,
+      "synthetic_pcm_bytes": 4800
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-1",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.append",
+        "event_id": "event-append-demo",
+        "audio": "<synthetic-pcm16>"
+      },
+      "valid": true,
+      "synthetic_pcm_bytes": 4800
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-1",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.append",
+        "event_id": "event-append-demo",
+        "audio": "<synthetic-pcm16>",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false,
+      "synthetic_pcm_bytes": 4800
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-2",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.commit",
+        "event_id": "event-commit-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-2",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.commit",
+        "event_id": "event-commit-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-2",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.commit",
+        "event_id": "event-commit-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-2",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.commit",
+        "event_id": "event-commit-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-3",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.clear",
+        "event_id": "event-clear-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-3",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.clear",
+        "event_id": "event-clear-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-3",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.clear",
+        "event_id": "event-clear-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-3",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.clear",
+        "event_id": "event-clear-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-4",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.created",
+        "event_id": "event-created-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-4",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.created",
+        "event_id": "event-created-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-4",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.created",
+        "event_id": "event-created-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-4",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.created",
+        "event_id": "event-created-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-5",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.updated",
+        "event_id": "event-updated-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-5",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.updated",
+        "event_id": "event-updated-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-5",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.updated",
+        "event_id": "event-updated-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-5",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.updated",
+        "event_id": "event-updated-demo",
+        "session": {
+          "id": "session-demo",
+          "object": "realtime.transcription_session",
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm",
+                "rate": 24000
+              },
+              "transcription": {
+                "model": "asr-quality"
+              },
+              "turn_detection": null
+            }
+          },
+          "expires_at": 1792800030,
+          "nexus": {
+            "limits": {
+              "max_input_chunk_ms": 100,
+              "max_message_bytes": 65536,
+              "input_credit_samples": 24000,
+              "output_credit_samples": 0,
+              "max_segment_ms": 20000,
+              "max_session_duration_ms": 3600000
+            }
+          }
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-6",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-6",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-6",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-6",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-7",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.cleared",
+        "event_id": "event-cleared-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-7",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.cleared",
+        "event_id": "event-cleared-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-7",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.cleared",
+        "event_id": "event-cleared-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-7",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.cleared",
+        "event_id": "event-cleared-demo",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-8",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_started",
+        "event_id": "event-started-demo",
+        "item_id": "item-demo",
+        "audio_start_ms": 0
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-8",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_started",
+        "event_id": "event-started-demo",
+        "item_id": "item-demo",
+        "audio_start_ms": 0,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-8",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_started",
+        "event_id": "event-started-demo",
+        "item_id": "item-demo",
+        "audio_start_ms": 0
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-8",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_started",
+        "event_id": "event-started-demo",
+        "item_id": "item-demo",
+        "audio_start_ms": 0,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-9",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_stopped",
+        "event_id": "event-stopped-demo",
+        "item_id": "item-demo",
+        "audio_end_ms": 100
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-9",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_stopped",
+        "event_id": "event-stopped-demo",
+        "item_id": "item-demo",
+        "audio_end_ms": 100,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-9",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_stopped",
+        "event_id": "event-stopped-demo",
+        "item_id": "item-demo",
+        "audio_end_ms": 100
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-9",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.speech_stopped",
+        "event_id": "event-stopped-demo",
+        "item_id": "item-demo",
+        "audio_end_ms": 100,
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-10",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "delta": "Synthetic "
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-10",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "delta": "Synthetic ",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-10",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "delta": "Synthetic "
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-10",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "delta": "Synthetic ",
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-11",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "event-completed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "transcript": "Synthetic transcript.",
+        "usage": {
+          "type": "duration",
+          "seconds": 0.1
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-11",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "event-completed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "transcript": "Synthetic transcript.",
+        "usage": {
+          "type": "duration",
+          "seconds": 0.1
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-11",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "event-completed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "transcript": "Synthetic transcript.",
+        "usage": {
+          "type": "duration",
+          "seconds": 0.1
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-11",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "event-completed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "transcript": "Synthetic transcript.",
+        "usage": {
+          "type": "duration",
+          "seconds": 0.1
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-12",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.failed",
+        "event_id": "event-failed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_audio",
+          "message": "Synthetic decode failure.",
+          "param": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-12",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.failed",
+        "event_id": "event-failed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_audio",
+          "message": "Synthetic decode failure.",
+          "param": null
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-12",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.failed",
+        "event_id": "event-failed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_audio",
+          "message": "Synthetic decode failure.",
+          "param": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-12",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.failed",
+        "event_id": "event-failed-demo",
+        "item_id": "item-demo",
+        "content_index": 0,
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_audio",
+          "message": "Synthetic decode failure.",
+          "param": null
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-standard-13",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "error",
+        "event_id": "event-error-demo",
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_event",
+          "message": "Synthetic unsupported event.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-standard-extra-13",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "error",
+        "event_id": "event-error-demo",
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_event",
+          "message": "Synthetic unsupported event.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-standard-13",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "error",
+        "event_id": "event-error-demo",
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_event",
+          "message": "Synthetic unsupported event.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-standard-extra-13",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "error",
+        "event_id": "event-error-demo",
+        "error": {
+          "type": "invalid_request_error",
+          "code": "invalid_event",
+          "message": "Synthetic unsupported event.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        },
+        "private_field": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-nexus-control-contract",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "nexus.session.close",
+        "event_id": "event-close-demo",
+        "session_id": "session-demo",
+        "mode": "drain"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-nexus-in-standard-selection",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "nexus.session.close",
+        "event_id": "event-close-demo",
+        "session_id": "session-demo",
+        "mode": "drain"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-unlisted-openai-event",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "response.create"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-nexus-server-envelope-on-standard",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null,
+        "seq": 1,
+        "session_id": "session-demo",
+        "stream_epoch": 1,
+        "sent_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-raw-binary",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": [0, 1, 2, 3],
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-missing-standard-event-id",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "item_id": "item-demo",
+        "previous_item_id": null
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-numeric-content-index",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": "0",
+        "delta": "Synthetic "
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-RealtimeEvent-reject-undeclared-include",
+      "profile": "realtime_events",
+      "schema": "RealtimeEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          },
+          "include": ["item.input_audio_transcription.logprobs"]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-unlisted-openai-event",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "response.create"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-nexus-server-envelope-on-standard",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "event_id": "event-committed-demo",
+        "item_id": "item-demo",
+        "previous_item_id": null,
+        "seq": 1,
+        "session_id": "session-demo",
+        "stream_epoch": 1,
+        "sent_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-raw-binary",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": [0, 1, 2, 3],
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-missing-standard-event-id",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "input_audio_buffer.committed",
+        "item_id": "item-demo",
+        "previous_item_id": null
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-numeric-content-index",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "conversation.item.input_audio_transcription.delta",
+        "event_id": "event-delta-demo",
+        "item_id": "item-demo",
+        "content_index": "0",
+        "delta": "Synthetic "
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-TranscriptionEvent-reject-undeclared-include",
+      "profile": "realtime_events",
+      "schema": "TranscriptionEvent",
+      "value": {
+        "type": "session.update",
+        "session": {
+          "type": "transcription",
+          "audio": {
+            "input": {
+              "format": {
+                "type": "audio/pcm"
+              },
+              "transcription": {
+                "model": "asr-quality"
+              }
+            }
+          },
+          "include": ["item.input_audio_transcription.logprobs"]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-OpenAIPcmFormat-valid",
+      "profile": "realtime_events",
+      "schema": "OpenAIPcmFormat",
+      "value": {
+        "type": "audio/pcm",
+        "rate": 24000
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-OpenAIPcmFormat-omitted-rate-no-default-injection",
+      "profile": "realtime_events",
+      "schema": "OpenAIPcmFormat",
+      "value": {
+        "type": "audio/pcm"
+      },
+      "valid": true
+    },
+    {
+      "id": "realtime_events-OpenAIPcmFormat-reject-wrong-rate",
+      "profile": "realtime_events",
+      "schema": "OpenAIPcmFormat",
+      "value": {
+        "type": "audio/pcm",
+        "rate": 16000
+      },
+      "valid": false
+    },
+    {
+      "id": "realtime_events-OpenAIPcmFormat-reject-extra-field",
+      "profile": "realtime_events",
+      "schema": "OpenAIPcmFormat",
+      "value": {
+        "type": "audio/pcm",
+        "channels": 2
+      },
+      "valid": false
     }
   ]
 }

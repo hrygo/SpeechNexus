@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import * as admin from "../src/admin.ts";
 import * as workbench from "../src/workbench.ts";
 import * as execution from "../src/execution.ts";
 import * as runtime from "../src/runtime.ts";
+import * as realtime from "../src/realtime.ts";
+import * as realtime_events from "../src/realtime_events.ts";
+import { exampleValue } from "./contract-examples.mjs";
 
-const profiles = { admin, workbench, execution, runtime };
+const profiles = { admin, workbench, execution, runtime, realtime, realtime_events };
 const fixtures = JSON.parse(
   readFileSync(
     new URL("../../../tests/fixtures/contracts/consumer-profiles.json", import.meta.url),
@@ -14,11 +18,12 @@ const fixtures = JSON.parse(
 );
 for (const example of fixtures.examples) {
   test(example.id, () => {
-    const value = structuredClone(example.value);
-    const before = structuredClone(value);
+    const value = exampleValue(example);
+    const digest = () => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+    const before = digest();
     const { parse } = profiles[example.profile];
     if (example.valid) {
-      assert.equal(parse(example.schema, value), value);
+      assert.equal(parse(example.schema, value) === value, true);
     } else {
       assert.throws(() => parse(example.schema, value), {
         name: "ContractValidationError",
@@ -29,7 +34,7 @@ for (const example of fixtures.examples) {
         profiles[example.profile].ContractValidationError,
       );
     }
-    assert.deepEqual(value, before);
+    assert.equal(digest(), before);
   });
 }
 test("profiles reject undeclared entrypoints and internal names in workbench", () => {

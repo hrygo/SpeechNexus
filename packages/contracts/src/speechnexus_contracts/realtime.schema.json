@@ -1,0 +1,870 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RealtimeContracts",
+  "x-nexus-bindings-version": "0.1.0.dev0",
+  "x-nexus-entrypoints": ["RealtimeSessionCreateRequest", "RealtimeSession", "PcmDescriptor"],
+  "$defs": {
+    "RealtimeSessionCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "modalities", "models"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "modalities": {
+                "contains": {
+                  "const": "asr"
+                }
+              }
+            },
+            "required": ["modalities"]
+          },
+          "then": {
+            "properties": {
+              "models": {
+                "required": ["asr"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "modalities": {
+                "contains": {
+                  "const": "tts"
+                }
+              }
+            },
+            "required": ["modalities"]
+          },
+          "then": {
+            "properties": {
+              "models": {
+                "required": ["tts"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "modalities": {
+                "not": {
+                  "contains": {
+                    "const": "asr"
+                  }
+                }
+              }
+            },
+            "required": ["modalities"]
+          },
+          "then": {
+            "properties": {
+              "models": {
+                "not": {
+                  "required": ["asr"]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "modalities": {
+                "not": {
+                  "contains": {
+                    "const": "tts"
+                  }
+                }
+              }
+            },
+            "required": ["modalities"]
+          },
+          "then": {
+            "properties": {
+              "models": {
+                "not": {
+                  "required": ["tts"]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "workspace_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "client_reference": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "profile": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "modalities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["asr", "tts"]
+          }
+        },
+        "models": {
+          "$ref": "#/$defs/RealtimeModelSelection"
+        },
+        "voice": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "audio": {
+          "$ref": "#/$defs/RealtimeAudioSelection"
+        },
+        "overrides": {
+          "$ref": "#/$defs/RealtimeOverrides"
+        },
+        "constraints": {
+          "$ref": "#/$defs/RealtimeConstraints"
+        },
+        "expires_in_s": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "default": 30
+        }
+      }
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "RealtimeModelSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "tts": {
+          "$ref": "#/$defs/ResourceReference"
+        }
+      }
+    },
+    "RealtimeAudioSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/PcmDescriptor"
+        },
+        "output": {
+          "$ref": "#/$defs/PcmDescriptor"
+        }
+      }
+    },
+    "PcmDescriptor": {
+      "$ref": "#/$defs/External_shared_public_audio_schema_json_PcmDescriptor"
+    },
+    "External_shared_public_audio_schema_json_PcmDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "sample_rate_hz", "channels"],
+      "properties": {
+        "encoding": {
+          "const": "pcm_s16le"
+        },
+        "sample_rate_hz": {
+          "const": 24000
+        },
+        "channels": {
+          "const": 1
+        }
+      }
+    },
+    "RealtimeOverrides": {
+      "$ref": "#/$defs/JobOverrides"
+    },
+    "JobOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/AsrOverrides"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsOverrides"
+        }
+      }
+    },
+    "AsrOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_AsrOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_AsrOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "TtsOverrides": {
+      "$ref": "#/$defs/External_shared_speech_overrides_schema_json_TtsOverrides"
+    },
+    "External_shared_speech_overrides_schema_json_TtsOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "RealtimeConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_admission_wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "allow_degradation": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "RealtimeSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "status",
+        "expires_at",
+        "connection_url",
+        "effective_configuration",
+        "limits",
+        "cleanup_state",
+        "terminal_operations",
+        "closed_at",
+        "error"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.realtime_session"
+        },
+        "status": {
+          "$ref": "#/$defs/RealtimeSessionStatus"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "connection_url": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Relative or absolute WebSocket URL containing session_id while the\nsession can still be connected. The URL is not a credential.\nTerminal sessions return null.\n"
+        },
+        "effective_configuration": {
+          "$ref": "#/$defs/EffectiveConfiguration"
+        },
+        "limits": {
+          "$ref": "#/$defs/RealtimeSessionLimits"
+        },
+        "input_ack_sample": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "terminal_operations": {
+          "type": "array",
+          "description": "Terminal Operations owned by this session. Producer validation\nrequires unique operation_id values and resolves each referenced\nOperation to one whose session_id equals this session id and whose\nkind, status, cleanup_state, and succeeded receipt id agree.\n",
+          "items": {
+            "$ref": "#/$defs/RealtimeTerminalOperation"
+          }
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "closed_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/JobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error", "closed_at"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "closed_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["closed", "failed", "expired"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["closed_at"],
+            "properties": {
+              "connection_url": {
+                "type": "null"
+              },
+              "closed_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "expired"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "const": "not_required"
+              },
+              "terminal_operations": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["created", "admitting"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "connection_url": {
+                "type": "string"
+              },
+              "cleanup_state": {
+                "const": "not_required"
+              },
+              "terminal_operations": {
+                "maxItems": 0
+              },
+              "closed_at": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["active", "draining"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "connection_url": {
+                "type": "string"
+              },
+              "cleanup_state": {
+                "const": "pending"
+              },
+              "closed_at": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RealtimeSessionStatus": {
+      "type": "string",
+      "enum": ["created", "admitting", "active", "draining", "closed", "failed", "expired"]
+    },
+    "EffectiveConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "policy_revision", "catalog_revision"],
+      "properties": {
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "tts": {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            "voice": {
+              "$ref": "#/$defs/ResourceReference"
+            }
+          }
+        },
+        "voice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/AsrOverrides"
+            },
+            "tts": {
+              "$ref": "#/$defs/TtsOverrides"
+            }
+          }
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "catalog_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "degradation": {
+          "type": "string",
+          "enum": ["none", "resource_tightened", "quality_reduced"],
+          "default": "none"
+        }
+      }
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "RealtimeSessionLimits": {
+      "$ref": "#/$defs/External_shared_public_audio_schema_json_RealtimeLimits"
+    },
+    "External_shared_public_audio_schema_json_RealtimeLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_input_chunk_ms",
+        "max_message_bytes",
+        "input_credit_samples",
+        "output_credit_samples",
+        "max_segment_ms",
+        "max_session_duration_ms"
+      ],
+      "properties": {
+        "max_input_chunk_ms": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 250
+        },
+        "max_message_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65536
+        },
+        "input_credit_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_credit_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "max_session_duration_ms": {
+          "type": "integer",
+          "minimum": 60000
+        }
+      }
+    },
+    "RealtimeTerminalOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "kind", "status", "cleanup_state"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/OperationKind"
+        },
+        "status": {
+          "$ref": "#/$defs/External_shared_operation_states_schema_json_TerminalOperationStatus"
+        },
+        "cleanup_state": {
+          "$ref": "#/$defs/CleanupState"
+        },
+        "receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["receipt_id"],
+            "properties": {
+              "receipt_id": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "cancelled"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "cleanup_state": {
+                "enum": ["not_required", "complete"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OperationKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_OperationKind"
+    },
+    "External_shared_capability_domains_schema_json_OperationKind": {
+      "type": "string",
+      "enum": ["asr", "tts", "voice_preview", "voice_validation"]
+    },
+    "External_shared_operation_states_schema_json_TerminalOperationStatus": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "cancelled"],
+      "description": "Terminal subset of OperationStatus. A failed operation may still have cleanup_state=pending or quarantined."
+    },
+    "CleanupState": {
+      "$ref": "#/$defs/External_shared_operation_states_schema_json_CleanupState"
+    },
+    "External_shared_operation_states_schema_json_CleanupState": {
+      "type": "string",
+      "enum": ["not_required", "pending", "complete", "quarantined"]
+    },
+    "JobError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/RealtimeSessionCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/RealtimeSession"
+    },
+    {
+      "$ref": "#/$defs/PcmDescriptor"
+    }
+  ]
+}

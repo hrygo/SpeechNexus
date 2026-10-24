@@ -1,0 +1,829 @@
+{
+  "source": "docs/architecture/speech-api.md sections 2.2-2.4",
+  "scope": "All event shapes validate; semantic expectations require the actual C4 reducer/A05 producer. No operation completion, budget release, real ASR or network qualification is implied.",
+  "examples": [
+    {
+      "id": "manual-commit-completion",
+      "semantic_valid": true,
+      "rule": "commit_closes_input_segment",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "session.update",
+            "session": {
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm"
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.updated",
+            "event_id": "event-updated-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.delta",
+            "event_id": "event-delta-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "delta": "Synthetic "
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-completed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "Synthetic transcript.",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "no-speech-empty-final",
+      "semantic_valid": true,
+      "rule": "empty_final_is_allowed_after_audio",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-completed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "known-commit-replay",
+      "semantic_valid": true,
+      "rule": "same_command_id_same_content_replays_original",
+      "expected_logical_items": 1,
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "clear-keeps-accepted-item",
+      "semantic_valid": true,
+      "rule": "clear_only_discards_uncommitted_input",
+      "expected_logical_items": 1,
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.clear",
+            "event_id": "event-clear-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.cleared",
+            "event_id": "event-cleared-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-completed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "Synthetic transcript.",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "empty-unseen-commit",
+      "semantic_valid": false,
+      "rule": "empty_audio_buffer",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        }
+      ]
+    },
+    {
+      "id": "same-command-id-different-content",
+      "semantic_valid": false,
+      "rule": "idempotency_conflict",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.clear",
+            "event_id": "event-commit-demo"
+          }
+        }
+      ]
+    },
+    {
+      "id": "completed-then-failed",
+      "semantic_valid": false,
+      "rule": "published_text_terminal_is_immutable",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-completed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "Synthetic transcript.",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.failed",
+            "event_id": "event-failed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "error": {
+              "type": "invalid_request_error",
+              "code": "invalid_audio",
+              "message": "Synthetic decode failure.",
+              "param": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "changed-published-transcript",
+      "semantic_valid": false,
+      "rule": "published_text_terminal_is_immutable",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.commit",
+            "event_id": "event-commit-demo"
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "input_audio_buffer.committed",
+            "event_id": "event-committed-demo",
+            "item_id": "item-demo",
+            "previous_item_id": null
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-completed-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "Synthetic transcript.",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        },
+        {
+          "direction": "server",
+          "value": {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "event_id": "event-late-demo",
+            "item_id": "item-demo",
+            "content_index": 0,
+            "transcript": "Changed synthetic text.",
+            "usage": {
+              "type": "duration",
+              "seconds": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "odd-pcm-alignment",
+      "semantic_valid": false,
+      "rule": "pcm_s16le_requires_even_decoded_bytes",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "event_id": "event-append-demo",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 3
+        }
+      ]
+    },
+    {
+      "id": "unsafe-unidentified-reconnect-append",
+      "semantic_valid": false,
+      "rule": "append_without_event_id_cannot_be_safely_replayed",
+      "steps": [
+        {
+          "direction": "server",
+          "value": {
+            "type": "session.created",
+            "event_id": "event-created-demo",
+            "session": {
+              "id": "session-demo",
+              "object": "realtime.transcription_session",
+              "type": "transcription",
+              "audio": {
+                "input": {
+                  "format": {
+                    "type": "audio/pcm",
+                    "rate": 24000
+                  },
+                  "transcription": {
+                    "model": "asr-quality"
+                  },
+                  "turn_detection": null
+                }
+              },
+              "expires_at": 1792800030,
+              "nexus": {
+                "limits": {
+                  "max_input_chunk_ms": 100,
+                  "max_message_bytes": 65536,
+                  "input_credit_samples": 24000,
+                  "output_credit_samples": 0,
+                  "max_segment_ms": 20000,
+                  "max_session_duration_ms": 3600000
+                }
+              }
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        },
+        {
+          "transport": "connection_lost"
+        },
+        {
+          "direction": "client",
+          "value": {
+            "type": "input_audio_buffer.append",
+            "audio": "<synthetic-pcm16>"
+          },
+          "synthetic_pcm_bytes": 4800
+        }
+      ]
+    }
+  ]
+}

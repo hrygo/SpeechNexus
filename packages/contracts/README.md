@@ -141,9 +141,10 @@ new entry. Do not expand the OpenAI compatibility promise through this package.
 
 ## Explicit consumer profiles
 
-Four opt-in profiles extend the default file workflow. Each includes Python
-TypedDicts, a typed parser, an offline schema bundle, and TypeScript OpenAPI
-types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
+Six opt-in JSON profiles extend the default file workflow. Each includes Python
+TypedDicts, a typed parser, an offline schema bundle and generated TypeScript
+types. HTTP profiles additionally expose basic clients; the two public realtime
+profiles parse data without opening connections. Entry points are explicitly listed in `bindings.json`:
 
 | Profile     | Runtime entrypoints                                                  |
 | ----------- | -------------------------------------------------------------------- |
@@ -151,6 +152,8 @@ types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
 | `workbench` | Project create/CAS and Project/List; transcripts; status/errors; shared deletion; Meeting/create/seal and Minutes/create |
 | `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
 | `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
+| `realtime` | Public session create/response and shared PCM descriptor; reuses speech TS types |
+| `realtime_events` | Original public event union, fourteen-member standard transcription selection, OpenAI PCM format |
 
 ```python
 from speechnexus_contracts.execution import parse
@@ -204,7 +207,8 @@ const view = result.data
 
 These calls validate JSON bodies only. The opt-in HTTP profile below checks
 transport parameters/status and validates client requests/responses.
-Meeting/Minutes also have JSON and HTTP entrypoints; public realtime remains a separate A00 unit.
+Meeting/Minutes also have JSON and HTTP entrypoints; public realtime has the
+separate parser profiles described below.
 Schema validation does not establish a
 cross-record transcript/revision match, deletion ownership of the selected
 route, a fresh plan, actual cleanup, or permission to release budgets. C owns
@@ -311,6 +315,70 @@ source-contract change reviewed by A/C; internal task rows are rejected as DTOs.
 C supplies its owner migration fragments, grants and root/HTTP integration
 points; these generated packages neither reserve a migration revision nor
 mount C's routes in the speech API.
+
+### Public realtime parsers and standard transcription inputs
+
+`speechnexus_contracts.realtime` / `@speechnexus/contracts/realtime` expose
+`RealtimeSessionCreateRequest`, `RealtimeSession`, and `PcmDescriptor` from the
+original speech schemas. TypeScript reuses `speech.generated.ts`; these are not
+another set of types or defaults. Public PCM remains mono PCM16 little-endian
+at 24 kHz. The B78 CPU VAD's internal 16 kHz input needs an explicit streaming
+resampler in B's media path, not a change to the public descriptor.
+
+`speechnexus_contracts.realtime_events` /
+`@speechnexus/contracts/realtime-events` expose `RealtimeEvent`,
+`TranscriptionEvent`, and `OpenAIPcmFormat`. The original OpenAPI puts WS events
+in a `101` response extension that the HTTP type generator ignores. The event
+profile therefore generates types directly from the closed original JSON
+Schema using temporary compiler input; it does not create a second wire source.
+`RealtimeEvent` keeps the complete declared union. `TranscriptionEvent` selects
+the fourteen declared standard ASR definitions while retaining the root's
+closed-field rules; nexus controls and unlisted OpenAI events are rejected by
+that selection. Neither selection is a negotiated mode or a state machine.
+
+```python
+from speechnexus_contracts.realtime import parse as parse_session
+from speechnexus_contracts.realtime_events import parse as parse_event
+
+request = parse_session("RealtimeSessionCreateRequest", untrusted_json)
+event = parse_event("TranscriptionEvent", decoded_frame)
+```
+
+```ts
+import { parse as parseSession } from "@speechnexus/contracts/realtime";
+import { parse as parseEvent } from "@speechnexus/contracts/realtime-events";
+
+const request = parseSession("RealtimeSessionCreateRequest", untrustedJson);
+const event = parseEvent("TranscriptionEvent", decodedFrame);
+```
+
+An omitted session expiry, PCM rate or model/default stays omitted. Internal
+`runtime-control` commands remain in the distinct `runtime` namespace. These
+public profiles expose no `createClient`, open no socket and approve no URL;
+consumers wire parsed session DTOs through the existing explicitly configured
+speech client and verify the configured WS origin before connecting. No public
+REST/WS server, real ASR, TTS, duplex, credit/gap/epoch or cleanup authority is
+enabled by importing a parser.
+
+`consumer-profiles.json` adds shared syntax cases for every standard event,
+session/PCM state and rejected private/unknown fields. Synthetic audio is stored
+only as a bounded byte-count recipe and constructed inside tests, never as
+encoded fixture audio. Whole-document imports drop source example annotations
+while preserving their validation rules; root and narrowed event unions keep
+`unevaluatedProperties: false`.
+
+`transcription-sequences.json` supplies ten positive/negative semantic inputs
+for C4/A05: manual commit, no speech, same-key replay, clear after acceptance,
+empty commit, conflicting event id, changed/contradictory published final,
+odd PCM alignment and unsafe append replay after disconnect. All their event
+shapes deliberately pass schema validation. A00 tests validate only frame/recipe
+consistency, not the `semantic_valid` expectations: C4/A05 must run them through
+the actual reducer/producer before claiming sequence or engine qualification.
+The consumer must also enforce negotiated JSON byte bounds, decoded PCM
+alignment, stable-prefix evidence, idempotency and immutable published text.
+Completed/failed fixes acoustic text only; it does not prove overall Operation
+completion, auxiliary results, physical stop or budget release. Full nexus
+credit/gap/epoch and terminal semantics remain later integration units.
 
 Execution control `0.4.0.dev0` includes barrier and error parser entrypoints. Control
 failures carry a constrained recovery hint: a lost commit acknowledgment is

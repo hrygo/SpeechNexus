@@ -61,6 +61,7 @@ def _build_dependencies(
         runtime=DockerNodeRuntime(
             api=api,
             node_id=settings.node_id,
+            stop_checkpoints=store,
             settings=DockerRuntimeSettings(
                 stop_timeout_seconds=settings.stop_timeout_seconds,
                 exit_wait_seconds=settings.exit_wait_seconds,

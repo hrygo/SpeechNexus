@@ -276,6 +276,7 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
             runtime = DockerNodeRuntime(
                 api=api,
                 node_id=_NODE,
+                stop_checkpoints=store,
                 settings=DockerRuntimeSettings(stop_timeout_seconds=45, exit_wait_seconds=60),
             )
             controller = NodeRuntimeControlService(

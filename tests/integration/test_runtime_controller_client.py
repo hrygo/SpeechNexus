@@ -7,7 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from tests.fake.controller import ScriptedNodeRuntime
+from tests.fake.controller import IMAGE_DIGEST, SAMPLE_IMAGE_REFERENCE, ScriptedNodeRuntime
+from tests.fake.docker_api import FakeDockerEngine
 from tests.fake.runtime_controller import TLS_COMMAND as COMMAND
 from tests.fake.runtime_controller import TLS_HOST as HOST
 from tests.fake.runtime_controller import TLS_PLAN as PLAN
@@ -36,6 +37,8 @@ from speechnexus_node_controller.domain.intents import (
 )
 from speechnexus_node_controller.domain.payloads import request_payload
 from speechnexus_node_controller.domain.templates import ApprovedRuntimeTemplate
+from speechnexus_node_controller.infrastructure.docker_runtime import DockerNodeRuntime
+from speechnexus_node_controller.infrastructure.sqlite_intent_store import SqliteIntentStore
 
 pytestmark = pytest.mark.integration
 
@@ -211,6 +214,81 @@ async def test_local_observer_absence_without_stop_proof_keeps_the_authoritative
             )[0]
             assert row["base_budget_kind"] == "peak"
         assert node.runtime.stopped == []
+
+
+async def test_persisted_stop_recovery_over_tls_releases_only_after_both_facts(
+    tls_runtime: RuntimeDatabase, controller_tls: TLSFiles, tmp_path: Path
+) -> None:
+    runtime = tls_runtime
+    created = runtime.port.create_runtime_intent(COMMAND)
+    assert created.outcome == "committed" and created.fact is not None
+    original = created.fact.request
+    engine = FakeDockerEngine(
+        images={SAMPLE_IMAGE_REFERENCE: IMAGE_DIGEST}, fail_remove_and_keep=True, exit_code=143
+    )
+
+    def native(store: SqliteIntentStore) -> DockerNodeRuntime:
+        return DockerNodeRuntime(
+            api=engine, node_id=REQUEST.binding.target_node_id, stop_checkpoints=store
+        )
+
+    def charge() -> tuple[int, ...]:
+        row = runtime.foundation.database.query(
+            "SELECT * FROM host_nodes WHERE host_node_id = %s", (HOST.node_id,)
+        )[0]
+        return tuple(row["held_" + name] + row["quarantined_" + name] for name in DIMENSIONS)
+
+    directory = tmp_path / "recovering-native-node"
+    with controller_server(directory, controller_tls, runtime_factory=native) as node:
+        async with HttpRuntimeController(
+            node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
+        ) as client:
+            assert observe(runtime, await client.submit(original), qualified=True).outcome == (
+                "committed"
+            )
+            baseline_charge = charge()
+            stop = replace(original, intent_id="runtime-stop-recovery", action="stop")
+            head = runtime.foundation.database.query("SELECT version FROM runtime_instance_heads")[
+                0
+            ]
+            accepted = runtime.port.create_runtime_intent(
+                CreateRuntimeIntent(stop, head["version"], None, COMMAND.owner_id)
+            )
+            assert accepted.outcome == "committed"
+            incomplete = await client.submit(stop)
+            assert incomplete.observation.stop_evidence is None
+            assert incomplete.observation.intent_state == "quarantined"
+            assert observe(runtime, incomplete).outcome == "committed"
+            assert charge() == baseline_charge  # Exit alone cannot return capacity.
+            recorded = node.store.get(stop.intent_id)
+            assert recorded is not None
+            checkpoint = node.store.get_stop_checkpoint(recorded.request)
+            assert checkpoint is not None and checkpoint.stage == "exited"
+            assert len(engine.containers) == 1 and not engine.created[0].running
+    # Restart the native app/SQLite, retaining the stopped daemon target and A's database.
+    engine.fail_remove_and_keep = False
+    with controller_server(
+        directory, controller_tls, runtime_factory=native, local_observer_enabled=True
+    ) as node:
+        async with HttpRuntimeController(
+            node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
+        ) as client:
+            async with asyncio.timeout(3):
+                while True:
+                    recovered = await client.query(stop)
+                    if recovered.observation.intent_state == "succeeded":
+                        break
+                    await asyncio.sleep(0.01)
+            assert recovered.observation.stop_evidence is not None
+            assert recovered.observation.stop_evidence.process_or_container_exited
+            assert recovered.observation.stop_evidence.resources_released_confirmed
+            assert observe(runtime, recovered).outcome == "committed"
+            assert held(runtime) == HOST.held.values
+            assert charge() == HOST.held.add(HOST.quarantined).values
+            reread = await client.query(stop)
+            assert reread.observation.stop_evidence == recovered.observation.stop_evidence
+        assert set(node.methods) == {"GET"} and not engine.containers
+        assert len(engine.created) == len(engine.stopped) == 1
 
 
 class SlowPrepare(ScriptedNodeRuntime):

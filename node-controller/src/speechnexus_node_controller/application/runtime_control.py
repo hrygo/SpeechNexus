@@ -198,7 +198,11 @@ class NodeRuntimeControlService:
         template = self._resolve_template(intent.request.approved_template_id)
         if template is None:
             return None
-        observation = self._runtime.inspect(intent.request, template)
+        observation = (
+            self._runtime.recover_stop(intent.request, template)
+            if intent.action is RuntimeActionKind.STOP
+            else self._runtime.inspect(intent.request, template)
+        )
         if observation is None:
             return None
         version = intent.version

@@ -284,7 +284,8 @@ def test_transport_explicitly_disables_redirects_and_retries(
 
     monkeypatch.setattr(urllib3.PoolManager, "urlopen", urlopen)
     http = objects._FixedObjectHTTP("http://127.0.0.1:59000", None)
-    assert http.urlopen("GET", "http://127.0.0.1:59000/x").status == 307
+    with pytest.raises(ExecutionInputError, match="execution_input_unavailable"):
+        http.urlopen("GET", "http://127.0.0.1:59000/x")
     assert captured["redirect"] is False and captured["pool_timeout"] == 3
     assert http.connection_pool_kw["retries"].total == 0
 

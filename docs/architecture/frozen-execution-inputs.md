@@ -45,6 +45,11 @@ A 的预算仅由原准入/释放事务裁决。
 DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须启用证书/主机名校验，
 最低 TLS 1.2。地址校验本身不证明部署网络已实施出站隔离。
 
+固定传输层对 HEAD/GET 都禁用预读和自动解压，只有 HTTP 200 进入后续处理。
+其他状态在 SDK 解析前关闭并释放响应，不读取错误正文；这也封闭 MinIO SDK 错误分支
+自行完整缓冲正文的路径。正常 HEAD 只保留响应头并立即释放连接，正常 GET 保持未读，
+由下述有界对象消费者接管。关闭或释放失败也不能把响应交给 SDK。
+
 引用沿用机器契约的六个字段：资产或制品 ID、workspace、bucket、key、SHA-256、长度。
 `FileExecutionInputs.open_asr` 要求文件 ASR 的原命令，检查引用 workspace 与执行身份相同。
 对象路径采用 A 既有 `private/assets/...` 形态，不发明 workspace 路径前缀，不读取 A 业务表
@@ -68,6 +73,8 @@ DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须�
 ## 验证范围
 
 单元入口：`tests/unit/gateway/test_original_command.py`、`test_execution_objects.py`。
+`test_execution_object_sdk.py` 使用真实 SDK 的 get/stat 与受控底层 HTTP 响应，
+以正文读取即失败的 guard 验证巨型、分块、压缩和其他错误状态零正文读取及清理。
 实际隔离服务入口：`tests/integration/test_gateway_frozen_inputs.py`，使用集成门禁规定的
 PG/InnoDB/MinIO 环境变量，缺服务不算通过，配置见[集成测试说明](../../tests/integration/README.md)。
 

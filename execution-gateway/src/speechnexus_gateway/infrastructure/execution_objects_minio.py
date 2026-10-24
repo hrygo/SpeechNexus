@@ -54,7 +54,26 @@ class _FixedObjectHTTP(urllib3.PoolManager):
             raise ExecutionInputError("execution_input_origin_rejected")
         kwargs["pool_timeout"] = 3
         kwargs["redirect"] = False
-        return super().urlopen(method, url, *args, **kwargs)
+        # The SDK preloads HEAD by default and unconditionally reads error bodies,
+        # even for get_object(preload_content=False). Intercept before either path.
+        kwargs["preload_content"] = False
+        kwargs["decode_content"] = False
+        response = super().urlopen(method, url, *args, **kwargs)
+        rejected = response.status != 200
+        if rejected or method == "HEAD":
+            # HEAD consumers use headers only; they must not retain a connection
+            # after preloading is disabled. Never drain/decode an error response.
+            try:
+                response.close()
+            except Exception:
+                rejected = True
+            try:
+                response.release_conn()
+            except Exception:
+                rejected = True
+            if rejected:
+                raise ExecutionInputError("execution_input_unavailable") from None
+        return response
 
 
 def _endpoint(endpoint: str, context: ssl.SSLContext | None) -> str:

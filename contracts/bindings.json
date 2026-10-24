@@ -91,6 +91,44 @@
         "RuntimeInstanceIntentResponse",
         "NodeReconcileRequest"
       ]
+    },
+    "realtime": {
+      "source": "speech-openapi.yaml",
+      "schemas": ["RealtimeSessionCreateRequest", "RealtimeSession", "PcmDescriptor"],
+      "typescript_source": "speech",
+      "client": false
+    },
+    "realtime_events": {
+      "source": "realtime-events.schema.json",
+      "version": "0.1.0",
+      "format": "json-schema",
+      "client": false,
+      "definitions_prefix": "/$defs/",
+      "schemas": ["RealtimeEvent", "TranscriptionEvent", "OpenAIPcmFormat"],
+      "schema_refs": {
+        "RealtimeEvent": "#"
+      },
+      "schema_unions": {
+        "TranscriptionEvent": {
+          "base": "#",
+          "members": [
+            "#/$defs/SessionUpdate",
+            "#/$defs/InputAudioBufferAppend",
+            "#/$defs/InputAudioBufferCommit",
+            "#/$defs/InputAudioBufferClear",
+            "#/$defs/SessionCreated",
+            "#/$defs/SessionUpdated",
+            "#/$defs/InputAudioBufferCommitted",
+            "#/$defs/InputAudioBufferCleared",
+            "#/$defs/InputAudioBufferSpeechStarted",
+            "#/$defs/InputAudioBufferSpeechStopped",
+            "#/$defs/TranscriptionDelta",
+            "#/$defs/TranscriptionCompleted",
+            "#/$defs/TranscriptionFailed",
+            "#/$defs/ErrorEvent"
+          ]
+        }
+      }
     }
   },
   "http_surfaces": {

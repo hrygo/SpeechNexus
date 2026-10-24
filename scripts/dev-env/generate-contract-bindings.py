@@ -80,7 +80,7 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
             for token in fragment[1:].split("/"):
                 node = node[unquote(token).replace("~1", "/").replace("~0", "~")]
         name = (
-            fragment.rsplit("/", 1)[-1]
+            (fragment.rsplit("/", 1)[-1] or "Root")
             if path == primary
             else (
                 "External_"
@@ -89,14 +89,20 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
                 .replace(".", "_")
                 .replace("-", "_")
                 + "_"
-                + fragment.rsplit("/", 1)[-1]
+                + (fragment.rsplit("/", 1)[-1] or "Root")
             )
         )
         if name in definitions:
             raise ValueError(f"Duplicate generated definition: {name}")
         identities[identity] = name
         definitions[name] = {}  # Reserve before walking recursive references.
-        definitions[name] = rewrite(copy.deepcopy(node), path)
+        selected = copy.deepcopy(node)
+        if not fragment:
+            # Root references still resolve against the original cached document.
+            # Rebased global definitions replace its now-unused declaration block.
+            selected.pop("$defs", None)
+            selected.pop("examples", None)
+        definitions[name] = rewrite(selected, path)
         return name
 
     def rewrite(node: Any, path: Path) -> Any:
@@ -118,16 +124,41 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
         return node
 
     references = manifest.get("schema_refs", {})
-    if references.keys() - set(manifest["schemas"]):
+    unions = manifest.get("schema_unions", {})
+    if (references.keys() | unions.keys()) - set(manifest["schemas"]):
         raise ValueError("An entrypoint reference must name a declared schema")
+    if references.keys() & unions.keys():
+        raise ValueError("An entrypoint cannot have two definitions")
+
+    def resolve_entrypoint(reference: str) -> str:
+        target, separator, fragment = reference.partition("#")
+        if not separator or ":" in target or (fragment and not fragment.startswith("/")):
+            raise ValueError("An entrypoint reference must be a local JSON pointer")
+        return include(primary.parent / target if target else primary, fragment)
+
     for name in manifest["schemas"]:
+        if name in unions:
+            group = unions[name]
+            base = definitions[resolve_entrypoint(group["base"])]
+            members = [resolve_entrypoint(ref) for ref in group["members"]]
+            allowed = {item["$ref"] for item in base["oneOf"]}
+            if (
+                not members
+                or len(set(members)) != len(members)
+                or any(f"#/$defs/{member}" not in allowed for member in members)
+            ):
+                raise ValueError("An event subset must select unique members of its source union")
+            if name in definitions:
+                raise ValueError(f"Duplicate generated entrypoint: {name}")
+            definitions[name] = {
+                **copy.deepcopy(base),
+                "oneOf": [{"$ref": f"#/$defs/{member}"} for member in members],
+            }
+            continue
         if name not in references:
             include(primary, manifest.get("definitions_prefix", "/components/schemas/") + name)
             continue
-        target, separator, fragment = references[name].partition("#")
-        if not separator or ":" in target or not fragment.startswith("/"):
-            raise ValueError("An entrypoint reference must be a local JSON pointer")
-        resolved = include(primary.parent / target if target else primary, fragment)
+        resolved = resolve_entrypoint(references[name])
         if name != resolved:
             if name in definitions:
                 raise ValueError(f"Duplicate generated entrypoint: {name}")
@@ -410,9 +441,10 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
     manifest = {
         **config,
         "schemas": names,
-        "version": document.get("info", {}).get("version")
+        "version": config.get("version")
+        or document.get("info", {}).get("version")
         or document.get("x-speechnexus-schema-version", "1.0.0"),
-        "definitions_prefix": "/components/schemas/",
+        "definitions_prefix": config.get("definitions_prefix", "/components/schemas/"),
         "title": name.title().replace("_", "") + "Contracts",
     }
     bundle = bundle_contracts(manifest)
@@ -436,30 +468,62 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
         f"    return validate_profile({name!r}, name, value)\n"
     )
     (python / f"{name}.py").write_text(parser)
-    types = destination / f"src/{name}.generated.ts"
+    types_name = config.get("typescript_source", name)
+    types = destination / f"src/{types_name}.generated.ts"
     source = CONTRACTS / config["source"]
-    subprocess.run(
-        [
-            "pnpm",
-            "exec",
-            "openapi-typescript",
-            str(source),
-            "--output",
-            str(types),
-            "--default-non-nullable",
-            "false",
-        ],
-        cwd=ROOT,
-        check=True,
-    )
+    if config.get("format") == "json-schema":
+
+        def rebase_type_refs(node: Any) -> Any:
+            if isinstance(node, dict):
+                result = {key: rebase_type_refs(value) for key, value in node.items()}
+                if "$ref" in result:
+                    prefix = "#/$defs/"
+                    if not result["$ref"].startswith(prefix):
+                        raise ValueError("Static boundary types require a closed schema bundle")
+                    result["$ref"] = "#/components/schemas/" + result["$ref"][len(prefix) :]
+                return result
+            if isinstance(node, list):
+                return [rebase_type_refs(value) for value in node]
+            return node
+
+        # Generated compiler input only; original JSON Schema remains authoritative.
+        source = destination / f"{name}.types.openapi.json"
+        source.write_text(
+            json.dumps(
+                {
+                    "openapi": "3.1.0",
+                    "info": {"title": manifest["title"], "version": manifest["version"]},
+                    "paths": {},
+                    "components": {"schemas": rebase_type_refs(bundle["$defs"])},
+                }
+            )
+        )
+    if "typescript_source" in config:
+        if types_name != "speech" or config["source"] != "speech-openapi.yaml":
+            raise ValueError("Shared TypeScript types must use the canonical speech source")
+    else:
+        subprocess.run(
+            [
+                "pnpm",
+                "exec",
+                "openapi-typescript",
+                str(source),
+                "--output",
+                str(types),
+                "--default-non-nullable",
+                "false",
+            ],
+            cwd=ROOT,
+            check=True,
+        )
     script = (
         "// Generated from contracts/bindings.json; do not edit.\n"
         'import { createProfileParser } from "./profile-runtime.mjs";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
         f'import bundle from "./speechnexus_contracts/{name}.schema.json" '
         'with { type: "json" };\n'
-        f'import type {{ components }} from "./{name}.generated";\n'
-        f'export type {{ components }} from "./{name}.generated";\n'
+        f'import type {{ components }} from "./{types_name}.generated";\n'
+        f'export type {{ components }} from "./{types_name}.generated";\n'
         'export type Contracts = Pick<components["schemas"], '
         + " | ".join(json.dumps(entry) for entry in names)
         + ">;\n"
@@ -468,21 +532,24 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
         "name: K, value: unknown): Contracts[K] {\n"
         "  return parseValue(name, value) as Contracts[K];\n}\n"
     )
-    script += (
-        'import openapiFetch from "openapi-fetch";\n'
-        f'import type {{ paths }} from "./{name}.generated";\n'
-        f'export type {{ paths }} from "./{name}.generated";\n'
-        "export function createClient(baseUrl: string, fetch?: typeof globalThis.fetch) {\n"
-        "  return openapiFetch<paths>({ baseUrl, ...(fetch ? { fetch } : {}) });\n}\n"
-    )
+    if config.get("client", True):
+        script += (
+            'import openapiFetch from "openapi-fetch";\n'
+            f'import type {{ paths }} from "./{types_name}.generated";\n'
+            f'export type {{ paths }} from "./{types_name}.generated";\n'
+            "export function createClient(baseUrl: string, fetch?: typeof globalThis.fetch) {\n"
+            "  return openapiFetch<paths>({ baseUrl, ...(fetch ? { fetch } : {}) });\n}\n"
+        )
     (destination / f"src/{name}.ts").write_text(script)
-    return [
+    outputs = [
         schema.relative_to(destination),
         (python / f"{name}_models.py").relative_to(destination),
         (python / f"{name}.py").relative_to(destination),
-        types.relative_to(destination),
         Path(f"src/{name}.ts"),
     ]
+    if "typescript_source" not in config:
+        outputs.append(types.relative_to(destination))
+    return outputs
 
 
 def generate_python_models(schema: Path, output: Path, *, static_projection: bool = False) -> None:

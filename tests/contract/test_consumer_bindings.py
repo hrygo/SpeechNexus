@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import copy
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -14,7 +14,8 @@ from referencing import Registry
 from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.validation import validate_profile
 
-from tests.support.contracts import document, retrieve
+from tests.support.contract_examples import example_value
+from tests.support.contracts import retrieve
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = json.loads((ROOT / "contracts/bindings.json").read_text())
@@ -28,24 +29,41 @@ def test_consumer_profile_agrees_with_original(example: dict[str, Any]) -> None:
     profile, name = example["profile"], example["schema"]
     config = MANIFEST["profiles"][profile]
     path = ROOT / "contracts" / config["source"]
-    reference = config.get("schema_refs", {}).get(name, f"#/components/schemas/{name}")
-    target, _, fragment = reference.partition("#")
-    source = document(path.parent / target if target else path)
-    source.pop("oneOf", None)
-    source["$ref"] = "#" + fragment
+
+    def reference_schema(reference: str) -> dict[str, str]:
+        target, _, fragment = reference.partition("#")
+        source_path = (path.parent / target if target else path).resolve()
+        return {"$ref": source_path.as_uri() + "#" + fragment}
+
+    source: dict[str, Any]
+    if name in config.get("schema_unions", {}):
+        group = config["schema_unions"][name]
+        source = {
+            "allOf": [
+                reference_schema(group["base"]),
+                {"oneOf": [reference_schema(ref) for ref in group["members"]]},
+            ]
+        }
+    else:
+        reference = config.get("schema_refs", {}).get(
+            name, "#" + config.get("definitions_prefix", "/components/schemas/") + name
+        )
+        source = reference_schema(reference)
     original = Draft202012Validator(
         source, registry=cast(Any, Registry)(retrieve=retrieve), format_checker=FormatChecker()
     )
-    value = copy.deepcopy(example["value"])
-    before = copy.deepcopy(value)
-    assert original.is_valid(value) is example["valid"]
+    value = example_value(example)
+    before = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).digest()
+    accepted = original.is_valid(value)
+    assert accepted is example["valid"]
     parser = importlib.import_module(f"speechnexus_contracts.{profile}").parse
     if example["valid"]:
-        assert parser(name, value) is value
+        same_identity = parser(name, value) is value
+        assert same_identity
     else:
         with pytest.raises(ContractValidationError, match=f"^Invalid {name}$"):
             parser(name, value)
-    assert value == before
+    assert hashlib.sha256(json.dumps(value, sort_keys=True).encode()).digest() == before
 
 
 def test_profile_coverage_and_namespace_boundaries() -> None:

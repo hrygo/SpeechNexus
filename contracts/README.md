@@ -284,9 +284,12 @@ status/errors and the four shared deletion entrypoints. `schema_refs` in the
 binding manifest selects external definitions without copying their wire
 contracts. An opt-in `workbench-http` profile adds derived path/query/header,
 per-status response/error validation and a bounded client for fifteen selected
-paths, including Meeting/create/seal and Minutes/create projections. Public
-realtime runtime entrypoints remain a separate delivery unit; see the package's explicit profile list and shared
-positive/negative examples. Packaged HTTP contracts do not register C's routes.
+paths, including Meeting/create/seal and Minutes/create projections. Separate
+public realtime profiles expose session/PCM DTOs and the original public event
+union plus a fourteen-member transcription selection. They reuse canonical
+sources without enabling routes or a socket. Shared trace inputs distinguish
+shape validation from C4/A05 state-machine/real-engine acceptance; see the package
+profile list and examples. Packaged HTTP contracts do not register C's routes.
 
 ## Validation
 

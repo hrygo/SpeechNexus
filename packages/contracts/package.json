@@ -9,7 +9,9 @@
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
     "./runtime": "./src/runtime.ts",
-    "./workbench-http": "./src/workbench-http.ts"
+    "./workbench-http": "./src/workbench-http.ts",
+    "./realtime": "./src/realtime.ts",
+    "./realtime-events": "./src/realtime_events.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

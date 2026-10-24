@@ -41,6 +41,21 @@ const meeting = parseWorkbench("MeetingCreateRequest", wire);
 const sealRevision: string | null = parseWorkbench("Meeting", wire).sealed_revision;
 const minutesRevision: string = parseWorkbench("MinutesJob", wire).source_revision;
 void [sealRevision, minutesRevision];
+
+import { parse as parseRealtime } from "../src/realtime";
+import { parse as parseRealtimeEvent } from "../src/realtime_events";
+const pcmRate: 24000 = parseRealtime("PcmDescriptor", wire).sample_rate_hz;
+const publicEvent = parseRealtimeEvent("TranscriptionEvent", wire);
+if (publicEvent.type === "conversation.item.input_audio_transcription.completed") {
+  const transcript: string = publicEvent.transcript;
+  const contentIndex: number = publicEvent.content_index;
+  void [transcript, contentIndex];
+}
+// @ts-expect-error A standard transcription event selection cannot become TTS.
+const ttsEventType: typeof publicEvent.type = "nexus.tts.start";
+// @ts-expect-error Internal node commands are absent from public realtime.
+parseRealtime("RuntimeInstanceIntentRequest", wire);
+void [pcmRate, ttsEventType];
 void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {
   params: { path: { project_id: "project-demo" } },
   body: meeting,

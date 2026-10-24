@@ -76,3 +76,20 @@ The optional repeat flag runs the exact same excerpts again, marking `repeat_of`
 it does not add independent samples. Remove only the empty network owned by this run
 after both model probes exit. Controller stop evidence remains distinct from request
 completion and Scheduler budget release.
+
+The warmup readiness gate (`http_warmup_ok`) can be exercised against the same
+image with a fixed 20-second synthetic window:
+
+```bash
+uv run python scripts/dev-env/asr-warmup-probe.py \
+  --templates-file "$SPEECHNEXUS_APPROVED_ASR_TEMPLATES" \
+  --template-id "$SPEECHNEXUS_ASR_TEMPLATE_ID" \
+  --served-model-name "$SPEECHNEXUS_ASR_MODEL_ALIAS" \
+  --evidence-directory .runtime/probes/b02-warmup \
+  --window-seconds 20 --attempts 2
+```
+
+It creates and removes its own `--internal` network, records the
+`warming_up → ready` sequence and each attempt's duration, and never stores the
+audio or a transcript in the repository. Use `--attempts 2` to expose the first
+long-window cost next to the immediate repeat.

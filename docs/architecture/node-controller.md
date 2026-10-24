@@ -195,8 +195,11 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 - 批准模板清单（`approved_template_id` → 固定镜像摘要、峰值上限）需要 B00 制品摘要与
   部署绑定共同落地，当前只有校验规则、注册表与配置文件加载。
 - warmup 门已实现到 adapter 与批准模板：`http_warmup_ok` 声明固定请求、请求体摘要与成功次数，
-  未完成时报告 `warming_up` 并保持 peak。真实 ASR 的最大窗口预热请求体、首轮/复测耗时与资格
-  证据尚未取得；当前只有确定性本地 TCP 服务器测试，不能当作模型预热已完成。
+  未完成时报告 `warming_up` 并保持 peak。真实 0.6B/1.7B 容器已取得
+  `loading → warming_up → ready` 序列与首轮/立即重复耗时（0.6B 约 30–32 秒 → 0.4 秒，
+  1.7B 约 50 秒 → 2.2 秒），见
+  [B02 预热门探针](../audits/2026-10-24-b02-warmup-gate-probe.md)。这些是一次性单并发证据，
+  不是稳态 P95、并发资格或 A 控制循环下的预算缩减；peak→steady 仍未取得。
 - 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
   语音、回执重建与停止证据。TTS、请求级 abort、真实 warmup/资格、GPU/统一内存完整隔离、
   进程故障后的发现/reconcile 与 A 控制循环仍未验证；单句合成语音不能替代模型质量/容量资格。

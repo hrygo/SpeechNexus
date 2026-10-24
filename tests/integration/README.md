@@ -138,3 +138,5 @@ make integration-test
 ```
 
 The helper provisions an isolated synthetic service only; tests enable versioning on their own buckets. The product never creates a bucket or changes its policy. See [production assets](../../docs/architecture/production-assets.md) for recovery limits, explicit TTL configuration, minimum-role boundaries and the subsequent HTTP/maintenance integration.
+
+`test_admission_command_storage.py` covers the `0007_admission_commands` storage foundation in both databases: separate private business/admission records, long bodies, complete tombstones, minimum roles, actual operation-key/row-lock contention and atomic rollback with Job/outbox. PostgreSQL also verifies migration failure rollback and unchanged legacy rows/ACLs. This is storage evidence; complete `admit_recipe`, retry/deletion authorization and actual scheduler consumers remain pending. See [admission storage](../../docs/architecture/production-admission-storage.md).

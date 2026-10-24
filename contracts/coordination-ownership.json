@@ -23,6 +23,8 @@
     "admit_recipe": {
       "owner": "A",
       "writes": [
+        "admission_operations",
+        "admission_requests",
         "workspace_quotas",
         "host_nodes",
         "engine_instances",
@@ -147,6 +149,8 @@
     "workspace_quotas": "A",
     "host_nodes": "A",
     "engine_instances": "A",
+    "admission_operations": "A",
+    "admission_requests": "A",
     "admission_attempts": "A",
     "admission_leases": "A",
     "coordination_jobs": "A",

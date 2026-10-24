@@ -2,7 +2,7 @@
 
 本文件配合 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)。机器矩阵为
 [`coordination-ownership.json`](../../contracts/coordination-ownership.json)，
-测试核对 18 端口、15 张当前草案表和 `query_outcome` 快照映射。
+测试核对 18 端口、17 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
 矩阵描述目标归属，不证明端口已实现。生产事务进度继续在 A01/B00–B06 跟踪。
 
 ## 契约生产者与消费者
@@ -27,7 +27,7 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 | 端口                                                  | 主责           | 权威写入范围                                                             |
 | ----------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |
 | acquire_owner / renew_owner / activate_owner          | A              | resource_pools                                                           |
-| admit_recipe                                          | A              | quota、host/instance 投影、attempt、完整阶段 leases、Job/outbox 同一事务 |
+| admit_recipe                                          | A              | operation/私有原请求、quota、host/instance 投影、attempt、完整阶段 leases、Job/outbox 同一事务 |
 | create_job                                            | A              | coordination_jobs、coordination_outbox 同一事务                          |
 | claim_job                                             | A              | coordination_jobs                                                        |
 | quarantine_lease / release_lease                      | A              | lease、attempt、quota、host/instance 投影                                |
@@ -43,7 +43,9 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 机器矩阵逐个列出 producer/consumer 和表。表名不授予任意列修改权；实际最低权限以
 [`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 和版本化迁移为准。
 配置列由控制面维护，运行角色不能提高配额或预算；跨 owner 的锁定版本列不代表
-业务所有权转移。该表是草案协调表范围，不是全产品表清单。
+业务所有权转移。该表是协调表范围，不是全产品表清单。
+`0007_admission_commands` 新增的 operation/准入请求表仅 A 可读写，B 不获跨 owner 锁授权；
+详见[准入命令存储](production-admission-storage.md)，完整 admit_recipe 仍待交付。
 
 ## 未知结果恢复映射
 

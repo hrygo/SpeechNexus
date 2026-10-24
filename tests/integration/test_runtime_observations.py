@@ -643,7 +643,7 @@ def test_0006_failed_upgrade_preserves_rows_and_acl_then_upgrades_idempotently(
         sandbox.admin.execute("ALTER TABLE runtime_instance_intents DROP COLUMN readiness_document")
         sandbox.upgrade()
         sandbox.upgrade()
-        assert sandbox.version() == "0006_runtime_observation"
+        assert sandbox.version() == "0007_admission_commands"
         rows = sandbox.admin.execute("SELECT * FROM runtime_instance_intents").fetchall()
         for row in rows:
             assert row.pop("readiness_document") is None

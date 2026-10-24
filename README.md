@@ -63,6 +63,8 @@ SpeechNexus 希望服务于三类需求：
 
 [租约隔离与释放事务](docs/architecture/production-leases.md)提供独立 `quarantine_lease`、`release_lease` 和只读租约查询：未知占用移入隔离并保持总量，核对网关持久停止/释放或未外发事实后才归还当前 lease 增量，最后阶段才归还 attempt 配额。实例基线仍由 runtime 停止流程处理；完整配方准入和实际调度消费者仍待接入。
 
+[`0007` 准入命令存储](docs/architecture/production-admission-storage.md)新增 A 私有的 operation 原命令与每个 attempt 的完整准入请求记录，区分业务与准入摘要，保留删除 tombstone 形状；旧记录不伪造正文。该存储基础尚未接入完整准入、命令清理或公开 Operation/receipt。
+
 [执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实计量采集/消费、删除许可签发、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 
 [受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 实现，批准模板固定容器内存上限和 HTTP 健康判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；静音幻觉、长非语音慢响应、TTS、A 预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。

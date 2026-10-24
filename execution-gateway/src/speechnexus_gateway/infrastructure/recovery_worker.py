@@ -51,8 +51,11 @@ class RecoveryWorker:
             raise RuntimeError("a closed recovery worker cannot start")
         self._thread.start()
 
-    def close(self) -> None:
+    def request_stop(self) -> None:
         self._stop.set()
+
+    def close(self) -> None:
+        self.request_stop()
         if self._thread.ident is not None:
             # No timeout: returning while a writer is live would violate ownership.
             self._thread.join()

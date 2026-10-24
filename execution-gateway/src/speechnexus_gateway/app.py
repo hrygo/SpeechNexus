@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -128,6 +129,36 @@ def _build_control(
         raise
 
 
+def _close_control(
+    worker: RecoveryWorker | None, pool: GatewayPool, ownership: ProcessIngressOwnership
+) -> None:
+    # One synchronous cleanup job retains ordering even if its async waiter is cancelled.
+    # A failed join must retain resources/ownership, never leave a writer using closed state.
+    if worker is not None:
+        worker.close()
+    try:
+        pool.close()
+    finally:
+        ownership.close()
+
+
+async def _finish_control(
+    worker: RecoveryWorker | None, pool: GatewayPool, ownership: ProcessIngressOwnership
+) -> None:
+    if worker is not None:
+        worker.request_stop()
+    cleanup = asyncio.create_task(run_in_threadpool(_close_control, worker, pool, ownership))
+    cancelled = False
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            cancelled = True
+    cleanup.result()
+    if cancelled:
+        raise asyncio.CancelledError
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -170,17 +201,12 @@ def create_app(
             yield
         finally:
             try:
-                if worker is not None:
-                    await run_in_threadpool(worker.close)
+                await _finish_control(worker, pool, ownership)
             finally:
                 app.state.barrier_control = None
                 app.state.execution_query = None
                 app.state.instance_drain = None
                 app.state.recovery_worker = None
-                try:
-                    await run_in_threadpool(pool.close)
-                finally:
-                    await run_in_threadpool(ownership.close)
 
     app = FastAPI(
         title="SpeechNexus execution gateway API",

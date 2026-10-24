@@ -31,6 +31,8 @@ date: 2026-10-24
 
 进程测试首次失败是退出码断言：Uvicorn完成lifespan后恢复并重抛SIGTERM，返回-15；
 最终断言同时要求-15和`Application shutdown complete.`，不能只接受退出码冒充安全停机。
+终审新增取消停机反例先RED：旧实现的finally在writer仍阻塞时提前关pool/ownership。
+修复为单个同步清理任务，shield等待；重复取消也待join/资源关闭后才传播。反例GREEN。
 最初命令漏设兼容基线、一次集成文件名写错，均未计通过，随后以正确入口执行。
 
 ## 本地验证
@@ -39,8 +41,8 @@ date: 2026-10-24
 
 | 检查 | 结果与范围 |
 | --- | --- |
-| `uv run pytest -m 'not integration' --cov --cov-report=term` | 3316 passed，81.11%；9项既有警告未隐藏 |
-| 三组恢复/配置/周期单元 | 51 passed |
+| `uv run pytest -m 'not integration' --cov --cov-report=term` | 3317 passed，81.13%；9项既有警告未隐藏 |
+| 三组恢复/配置/周期单元 | 52 passed |
 | 下列8个相关集成模块，PG/InnoDB | 122 passed，0 skipped；含2个实际网关进程和2个原生双库周期消费者 |
 | `uv run ruff format --check .` / `uv run ruff check .` / `uv run mypy` / `uv run lint-imports` | 通过；476源文件类型检查，7项依赖边界 |
 | `make contracts-check contracts-drift` | 29份机器源校验及同源生成漂移检查 |

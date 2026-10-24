@@ -373,7 +373,9 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 异常保留unknown，固定安全日志后等待下一轮，不能把失败报为成功恢复。
 
 停机顺序是设置停止标志、join恢复线程、关数据库pool、释放进程ownership；
-不能join超时后丢下写线程继续释放锁。configured driver未存活时现有`gateway_ingress`
+不能join超时后丢下写线程继续释放锁。join/pool/ownership关闭由同一个同步清理任务执行，
+异步lifespan即使被连续取消，也必须等清理结束后才传播取消信号；不能在取消的finally中
+跳过join直接关资源。configured driver未存活时现有`gateway_ingress`
 readiness失败，不新增运营DTO。循环存活不证明来源可用、实例ready或模型资格，
 来源离线或无停止证据时执行仍保持unknown/占用。默认Compose仍未启用这些控制设置。
 真实默认网关进程SIGKILL/重启、TLS/SQLite节点、半证据/坏凭据及A释放联调见

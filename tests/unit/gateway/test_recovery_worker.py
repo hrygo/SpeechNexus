@@ -8,6 +8,7 @@ from time import monotonic
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 
 from speechnexus_gateway.app import _ControlReadinessProbe, create_app
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
@@ -161,9 +162,9 @@ def test_pass_budget_finishes_active_call_but_does_not_start_another(
         worker.close()
 
 
-async def test_lifespan_keeps_pool_and_ownership_until_worker_join(
+def app_with_waiting_worker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+) -> tuple[FastAPI, RecoveryWorker, WaitingSource, list[str], Event]:
     ledger = SpyLedger()
     quarantined(ledger)
     source = WaitingSource()
@@ -175,18 +176,31 @@ async def test_lifespan_keeps_pool_and_ownership_until_worker_join(
         service_for(ledger, source), interval_seconds=3600, batch_size=1, pass_budget_seconds=10
     )
     closed: list[str] = []
+    resources_closed = Event()
+
+    def close_ownership() -> None:
+        closed.append("ownership")
+        resources_closed.set()
+
     monkeypatch.setattr(
         "speechnexus_gateway.app._build_control",
         lambda _: (
             barrier,
             queries,
             drain,
-            SimpleNamespace(close=lambda: closed.append("ownership")),
+            SimpleNamespace(close=close_ownership),
             SimpleNamespace(close=lambda: closed.append("pool")),
             worker,
         ),
     )
     app = create_app(settings=configured(tmp_path, tmp_path / "unused.json"))
+    return app, worker, source, closed, resources_closed
+
+
+async def test_lifespan_keeps_pool_and_ownership_until_worker_join(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, worker, source, closed, _ = app_with_waiting_worker(tmp_path, monkeypatch)
     lifespan = app.router.lifespan_context(app)
     await lifespan.__aenter__()
     try:
@@ -204,6 +218,32 @@ async def test_lifespan_keeps_pool_and_ownership_until_worker_join(
     assert app.state.recovery_worker is app.state.execution_query is None
     with pytest.raises(RuntimeError, match="control is not running"):
         await _ControlReadinessProbe(app).check()
+
+
+async def test_cancelled_lifespan_cannot_close_resources_before_worker_join(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, worker, source, closed, resources_closed = app_with_waiting_worker(tmp_path, monkeypatch)
+    lifespan = app.router.lifespan_context(app)
+    await lifespan.__aenter__()
+    try:
+        assert await asyncio.to_thread(source.entered.wait, 2)
+        shutdown = asyncio.create_task(lifespan.__aexit__(None, None, None))
+        assert await asyncio.to_thread(worker._stop.wait, 2)
+        shutdown.cancel()
+        await asyncio.sleep(0)
+        assert not shutdown.done() and not closed
+        shutdown.cancel()  # Repeated cancellation must not abandon cleanup either.
+        await asyncio.sleep(0)
+        assert not shutdown.done() and not closed
+        source.release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(shutdown, 2)
+        assert await asyncio.to_thread(resources_closed.wait, 2)
+        assert closed == ["pool", "ownership"]
+    finally:
+        source.release.set()
+        worker.close()
 
 
 @pytest.mark.parametrize("running", [None, False])

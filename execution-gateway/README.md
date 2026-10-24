@@ -43,7 +43,9 @@ across passes; an empty page wraps the next pass to the beginning. Reports class
 each execution once, including when a concurrent generated-usage write changes
 its version while it remains unknown. No scheduling-only database write is made.
 Shutdown stops starting rows, joins the active bounded call, then closes the database pool
-and releases process ownership. A pass budget stops starting rows, not an already active call.
+and releases process ownership. The same cleanup job preserves that order under repeated
+lifespan cancellation; cancellation propagates after cleanup. A pass budget stops starting
+rows, not an already active call.
 An alive configured driver participates in readiness; it does not prove node/model readiness.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

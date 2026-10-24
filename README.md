@@ -73,7 +73,7 @@ SpeechNexus 希望服务于三类需求：
 
 [受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 与有界本地观察循环，批准模板固定容器内存上限和 HTTP/预热判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；合成容器在 loading 期间杀死控制器后重启，已验证由后台检查自动推进 ready。停止前、退出后、删除前后和回执保存前的崩溃，也已有[本地检查点恢复](docs/architecture/node-stop-recovery.md)及合成容器进程证据。外部 reconcile 快照仅用于诊断，不能制造就绪或停止事实、改变任期或释放占用。静音幻觉、长非语音慢响应、真实引擎故障恢复、A 完整预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。CustomVoice TTS 的独立适配器及实测见[文件 TTS](docs/architecture/file-tts.md)。
 
-[可信节点停止来源](docs/architecture/trusted-node-stop.md)通过只读查询核对原 stop 与本地 released 检查点，再由固定 TLS 网关消费者关闭原执行；半证据或旧回执无检查点时继续占用。TLS/SQLite/双库联调覆盖节点重启和 A 幂等释放；默认网关周期驱动、真实引擎故障及物理多主机资格仍待。
+[可信节点停止来源](docs/architecture/trusted-node-stop.md)通过只读查询核对原 stop 与本地 released 检查点，再由固定 TLS 网关消费者关闭原执行；半证据或旧回执无检查点时继续占用。恢复扫描按不可变 ID 连续分页和绕回，避免长期未知前缀阻塞后续记录；并发用量写入不重复计数。TLS/SQLite/双库联调覆盖节点重启和 A 幂等释放；默认网关周期驱动、真实引擎故障及物理多主机资格仍待。
 
 [CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、调度链路中的 ASR 外发及真实录音质量仍待集成和验收。
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from threading import Event
 from typing import Any
 
 import pytest
@@ -14,6 +16,11 @@ from speechnexus_gateway.application.recover_executions import (
 )
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
+from speechnexus_gateway.domain.output_intervals import (
+    AppendInterval,
+    MeterKind,
+    OutputIntervalRecord,
+)
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import (
     InstanceTerminationEvidence,
@@ -133,7 +140,10 @@ def termination_evidence(**overrides: object) -> InstanceTerminationEvidence:
 
 
 def quarantined(
-    ledger: SpyLedger, *, identity: SubmissionIdentity | None = None
+    ledger: SpyLedger,
+    *,
+    identity: SubmissionIdentity | None = None,
+    output_stream_id: str | None = None,
 ) -> tuple[SubmitExecutionService, ScriptedEngine, SubmissionIdentity]:
     """Submit once with a lost response, so the execution is durable but uncertain."""
     engine = ScriptedEngine(now=lambda: NOW)
@@ -146,7 +156,9 @@ def quarantined(
         now=lambda: NOW,
     )
     resolved = identity or identity_for()
-    intent = submissions.submit(request_for(resolved)).intent
+    intent = submissions.submit(
+        SubmitRequest(identity=resolved, command=COMMAND, output_stream_id=output_stream_id)
+    ).intent
     assert intent.execution_state is ExecutionState.UNKNOWN_QUARANTINED
     return submissions, engine, resolved
 
@@ -365,3 +377,152 @@ def test_a_sweep_limit_outside_the_frozen_bound_is_rejected() -> None:
     for limit in (0, MAX_SWEEP_LIMIT + 1):
         with pytest.raises(InvalidExecutionRequestError, match="between 1 and"):
             service.sweep(limit=limit)
+
+
+def test_a_full_unresolved_prefix_does_not_starve_a_later_terminable_execution() -> None:
+    ledger = SpyLedger()
+    for index in range(MAX_SWEEP_LIMIT + 1):
+        submissions, _, _ = quarantined(
+            ledger,
+            identity=identity_for(
+                submit_intent_id=f"intent-{index:04}", lease_id=f"lease-{index:04}"
+            ),
+        )
+    before = [ledger.get(f"intent-{index:04}") for index in range(MAX_SWEEP_LIMIT)]
+    terminations = ScriptedTerminations()
+    terminations.script(f"intent-{MAX_SWEEP_LIMIT:04}", termination_evidence())
+    service = sweep_for(ledger, submissions, terminations)
+
+    assert service.sweep(limit=MAX_SWEEP_LIMIT).still_unknown == MAX_SWEEP_LIMIT
+    second = service.sweep(limit=MAX_SWEEP_LIMIT)
+
+    assert (second.examined, second.closed, second.still_unknown) == (1, 1, 0)
+    assert [ledger.get(f"intent-{index:04}") for index in range(MAX_SWEEP_LIMIT)] == before
+
+
+@pytest.mark.parametrize("can_close", [False, True])
+def test_generated_usage_between_enumeration_and_query_counts_the_execution_once(
+    can_close: bool,
+) -> None:
+    class MeteringLedger(SpyLedger):
+        def list_quarantined(self, **kwargs: Any) -> Any:
+            candidates = super().list_quarantined(**kwargs)
+            if candidates:
+                self.append_interval(
+                    OutputIntervalRecord(
+                        AppendInterval(
+                            "interval-generated",
+                            "intent-1",
+                            "tts-main",
+                            24000,
+                            MeterKind.GENERATED,
+                            0,
+                            100,
+                        ),
+                        candidates[0].identity,
+                    )
+                )
+            return candidates
+
+    ledger = MeteringLedger()
+    submissions, engine, identity = quarantined(
+        ledger,
+        identity=identity_for(max_output_audio_ms=2000, sample_rate_hz=24000),
+        output_stream_id="tts-main",
+    )
+    terminations = ScriptedTerminations()
+    if can_close:
+        terminations.script(identity.submit_intent_id, termination_evidence())
+
+    report = sweep_for(ledger, submissions, terminations).sweep()
+
+    assert (report.examined, report.observed, report.closed, report.still_unknown) == (
+        1,
+        0,
+        int(can_close),
+        int(not can_close),
+    )
+    current = ledger.get(identity.submit_intent_id)
+    assert current is not None and current.generated_pcm_samples == 100
+    assert current.execution_state is (
+        ExecutionState.ABORTED if can_close else ExecutionState.UNKNOWN_QUARANTINED
+    )
+    assert engine.dispatch_count == 1
+
+
+def test_empty_page_wraps_and_restart_does_not_depend_on_persisted_cursor_state() -> None:
+    ledger = SpyLedger()
+    for suffix in ("b", "d"):
+        submissions, _, _ = quarantined(
+            ledger, identity=identity_for(submit_intent_id="intent-" + suffix)
+        )
+    original = [ledger.get("intent-" + suffix) for suffix in ("b", "d")]
+    terminations = ScriptedTerminations()
+    scanner = sweep_for(ledger, submissions, terminations)
+    assert scanner.sweep(limit=1).still_unknown == 1
+    assert scanner.sweep(limit=1).still_unknown == 1
+    assert scanner.sweep(limit=1).examined == 0
+
+    quarantined(ledger, identity=identity_for(submit_intent_id="intent-a"))
+    terminations.script("intent-a", termination_evidence())
+    assert scanner.sweep(limit=1).closed == 1
+    restarted = sweep_for(ledger, submissions, terminations)
+    assert restarted.sweep(limit=1).still_unknown == 1
+
+    assert terminations.calls == ["intent-b", "intent-d", "intent-a", "intent-b"]
+    assert [ledger.get("intent-" + suffix) for suffix in ("b", "d")] == original
+
+
+def test_failing_evidence_source_does_not_permanently_pin_later_ids() -> None:
+    ledger = SpyLedger()
+    for suffix in ("a", "b"):
+        submissions, _, _ = quarantined(
+            ledger, identity=identity_for(submit_intent_id="intent-" + suffix)
+        )
+    original = ledger.get("intent-a")
+
+    class FailingTerminations(ScriptedTerminations):
+        def termination_evidence(
+            self, intent: SubmissionIntent
+        ) -> InstanceTerminationEvidence | None:
+            if intent.identity.submit_intent_id == "intent-a":
+                raise RuntimeError("synthetic source failure")
+            return super().termination_evidence(intent)
+
+    terminations = FailingTerminations()
+    terminations.script("intent-b", termination_evidence())
+    scanner = sweep_for(ledger, submissions, terminations)
+    with pytest.raises(RuntimeError, match="synthetic source failure"):
+        scanner.sweep(limit=1)
+    assert scanner.sweep(limit=1).closed == 1
+    assert ledger.get("intent-a") == original
+
+
+def test_overlapping_pass_is_rejected_without_queuing_or_moving_the_cursor() -> None:
+    ledger = SpyLedger()
+    submissions, _, _ = quarantined(ledger)
+    entered, released = Event(), Event()
+
+    class WaitingTerminations(ScriptedTerminations):
+        def termination_evidence(
+            self, intent: SubmissionIntent
+        ) -> InstanceTerminationEvidence | None:
+            entered.set()
+            assert released.wait(5), "the bounded pass was not released"
+            return super().termination_evidence(intent)
+
+    terminations = WaitingTerminations()
+    scanner = sweep_for(ledger, submissions, terminations)
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        active = workers.submit(scanner.sweep, limit=1)
+        try:
+            assert entered.wait(5), "the first pass did not reach its source"
+            with pytest.raises(RuntimeError, match="already running"):
+                scanner.sweep(limit=1)
+        finally:
+            released.set()
+        assert active.result(timeout=5).still_unknown == 1
+
+    assert terminations.calls == ["intent-1"]
+    assert scanner.sweep(limit=1).examined == 0
+    assert scanner.sweep(limit=1).still_unknown == 1

@@ -136,10 +136,15 @@ class InstanceTerminationEvidencePort(Protocol):
 
 
 class ExecutionRecoverySource(Protocol):
-    """Bounded enumeration of the uncertain executions this gateway is still holding."""
+    """Read uncertain executions by immutable ID, strictly after a local cursor."""
 
     def list_quarantined(
-        self, *, gateway_id: str, host_node_id: str, limit: int
+        self,
+        *,
+        gateway_id: str,
+        host_node_id: str,
+        limit: int,
+        after_submit_intent_id: str | None = None,
     ) -> list[SubmissionIntent]: ...
 
 

@@ -97,11 +97,20 @@ class MySQLSubmissionLedger:
         return None if intent is None else ExecutionSnapshot(intent)
 
     def list_quarantined(
-        self, *, gateway_id: str, host_node_id: str, limit: int
+        self,
+        *,
+        gateway_id: str,
+        host_node_id: str,
+        limit: int,
+        after_submit_intent_id: str | None = None,
     ) -> list[SubmissionIntent]:
         return self._run(
             lambda cursor: list_quarantined_intents(
-                cursor, gateway_id=gateway_id, host_node_id=host_node_id, limit=limit
+                cursor,
+                gateway_id=gateway_id,
+                host_node_id=host_node_id,
+                limit=limit,
+                after_submit_intent_id=after_submit_intent_id,
             ),
             read_only=True,
         )

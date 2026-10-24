@@ -105,3 +105,54 @@ commit reply, native pool/metadata-lock pressure, fixed historical reads,
 corruption, revision exhaustion, and privilege refusal. PG alone verifies product
 Alembic upgrade/rollback/refused downgrade. This is database evidence; InnoDB is a
 portability oracle, not a product database or physical speech qualification.
+
+## HTTP contract preflight
+
+Admin source version `0.1.0.dev1` freezes the create/fixed-read boundary for the
+next HTTP implementation. It does not register routes, open a writer pool, apply
+permissions or expose a working service. The independent generated HTTP surface
+selects only `createProfileRevision` and `getProfileRevisionForAdministration`.
+The existing workspace HTTP surface still selects only workspace reads. TypeScript
+reuses the full `admin.generated` types instead of maintaining another DTO copy.
+
+| Request/result | Status and contract behavior |
+| --- | --- |
+| New or original-key replayed create | 201, complete source revision with publication status fixed to draft |
+| Invalid envelope/schema/header or fixed-read path/query | 400; no revision allocation from invalid input |
+| Source shared-service credential refusal | Existing 401 envelope |
+| Create original-key conflict / allocation CAS rejection | 409, idempotency_conflict / configuration_changed, retryable=false |
+| Structurally valid definition violating cross-field producer rules | 422 |
+| Create original result unreadable or commit uncertain | 503, profile_result_unknown, retryable=false |
+| Fixed revision authoritatively absent | Existing GET 404; POST has no 404 recovery result |
+| Fixed revision metadata unreadable | 503, profile_unavailable, retryable=true for this same fixed GET |
+
+An unknown create disables automatic retry. A caller retaining the original
+Idempotency-Key can explicitly replay the exact original POST/body/key using the
+already frozen idempotency semantics. Original-key lookup precedes allocation;
+CAS rejection remains that key's result after the family advances. A new key or
+changed intent cannot serve as recovery of the original command.
+
+Without an original key, automatic recovery is not promised. Reading a candidate
+revision cannot establish the original command identity. There is no new
+Operation, query-by-key endpoint, recovery URI, implicit profile selection or
+qualification projection. Create 503 and 409 errors prohibit non-null retry delay;
+the profile-specific 409/503 bodies prohibit the generic Operation `nexus` field.
+GET unavailability is separate from confirmed absence and from a create outcome.
+
+Python consumers use `speechnexus_contracts.profile_http.contract`,
+`validate_request` and `validate_response`. TypeScript consumers use
+`@speechnexus/contracts/profile-http`, including `createValidatedClient` with an
+explicit byte limit. Both parsers derive their constraints from the same source
+operations. The client performs one transport request per explicit call; it does
+not retry or construct an Operation query. Existing draft DTO parsing remains in
+`admin` / `scenario_profiles`; no profile defaults are added.
+
+`tests/fixtures/contracts/profile-http.json` supplies shared positive/negative
+envelopes, including the full decimal revision, input/header/path failures,
+draft-only create, valid historical read shapes, stable conflicts, unknown versus
+unavailable errors, and refusal of fabricated Operation recovery. Python compares
+these against original OpenAPI independently of the generated bundle. Python/TS
+transport-consumer fixtures cover keyless uncertainty and explicit original-key
+replay. They validate consumers and schemas; they do not implement HTTP persistence
+or prove qualification. Actual bounded POST/fixed GET routing and PG/ingress tests
+remain a separate integration PR based on this contract.

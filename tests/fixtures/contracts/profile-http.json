@@ -1,0 +1,1223 @@
+{
+  "version": "0.1.0.dev1",
+  "examples": [
+    {
+      "id": "create-original",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "original-profile-key",
+          "X-Request-ID": "profile-synthetic-request"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "create-keyless",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "create-body-missing",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "original-profile-key",
+          "X-Request-ID": "profile-synthetic-request"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-bad-key",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "short"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-ambiguous-key",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "original-key",
+          "idempotency-key": "another-key"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-publisher-input",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null,
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-invalid-revision",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-null-params",
+      "operation": "createProfileRevision",
+      "kind": "request",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": null,
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "profile_id": "caption-draft",
+          "expected_latest_revision": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-fixed",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "get-full-decimal",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "9999999999999999999"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "get-missing-revision",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-default-query",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "query": {
+          "current": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-invalid-id",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "../private",
+          "revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-numeric-revision",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-zero-revision",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-leading-zero",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "01"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "create-draft",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        },
+        "headers": {
+          "X-Request-ID": "profile-synthetic-request"
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "create-cannot-publish",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "schema_version": "1.0.0",
+          "profile_id": "caption-live",
+          "revision": "1",
+          "display_name": "Live captions",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "validation": {
+            "profile_id": "caption-live",
+            "revision": "1",
+            "validation_report_id": "profileval-caption-live-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 201
+    },
+    {
+      "id": "get-draft",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "get-existing-published",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "schema_version": "1.0.0",
+          "profile_id": "caption-live",
+          "revision": "1",
+          "display_name": "Live captions",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "validation": {
+            "profile_id": "caption-live",
+            "revision": "1",
+            "validation_report_id": "profileval-caption-live-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "create-unknown",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "create-unknown-retry",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "create-unknown-delay",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false,
+            "retry_after_ms": 100
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "create-wrong-error-kind",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "read-unavailable",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": true
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "read-not-unknown-create",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "read-no-body",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {},
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "create-no-404",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "not_found",
+            "type": "not_found_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 404
+    },
+    {
+      "id": "get-confirmed-missing",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "not_found",
+            "type": "not_found_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "create-configuration_changed",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "create-configuration_changed-cannot-retry",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "create-idempotency_conflict",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "idempotency_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "create-idempotency_conflict-cannot-retry",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "idempotency_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "create-unrecognized-conflict",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "resource_busy",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "createProfileRevision-400",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createProfileRevision-401",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "authentication_required",
+            "type": "authentication_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createProfileRevision-422",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_profile_definition",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "getProfileRevisionForAdministration-400",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "getProfileRevisionForAdministration-401",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "authentication_required",
+            "type": "authentication_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "create-no-operation-recovery",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic profile response.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false,
+            "nexus": {
+              "operation_id": "op-demo"
+            }
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "create-cannot-claim-validation",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 201,
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "profileval-caption-live-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false
+    }
+  ]
+}

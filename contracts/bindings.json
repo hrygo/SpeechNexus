@@ -200,6 +200,16 @@
         "/v1/workbench/meetings/{meeting_id}/minutes",
         "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}"
       ]
+    },
+    "profile": {
+      "source": "admin-openapi.yaml",
+      "validate": true,
+      "typescript_source": "admin",
+      "paths": [
+        "/v1/nexus/admin/profiles",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
+      ],
+      "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
     }
   }
 }

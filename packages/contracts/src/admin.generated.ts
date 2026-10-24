@@ -68,6 +68,21 @@ export interface paths {
      *     is published. Replaying the same Idempotency-Key and canonical intent
      *     returns the original revision; the same key with a different intent
      *     returns 409 `idempotency_conflict`.
+     *
+     *     A recorded `configuration_changed` result remains the result of that
+     *     key even if the allocation head later changes. Original-key lookup
+     *     precedes revision allocation. Malformed JSON, unknown fields, invalid
+     *     path/header values and schema-invalid input return 400. A structurally
+     *     valid definition that violates cross-field profile rules returns 422.
+     *
+     *     An unreadable original result or uncertain commit returns 503
+     *     `profile_result_unknown`, with `retryable: false`. It does not establish
+     *     that no revision was created. There is no automatic retry, new key,
+     *     Operation or HTTP query-by-key recovery resource. A caller retaining
+     *     the original Idempotency-Key may explicitly replay this same POST with
+     *     the exact original intent and key to resolve its original result.
+     *     Without an original key, automatic recovery is not promised; a GET of
+     *     a candidate revision does not prove ownership of the original command.
      */
     post: operations["createProfileRevision"];
     delete?: never;
@@ -83,7 +98,16 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get a draft or historical profile revision */
+    /**
+     * Get a draft or historical profile revision
+     * @description Read only the explicitly named immutable revision; never allocate,
+     *     publish or activate one. Invalid path/header/query values return 400.
+     *     Return 404 only when an authoritative read confirms that this revision
+     *     is absent. Unreadable metadata returns 503 `profile_unavailable`, with
+     *     `retryable: true` for this same fixed GET; it cannot be reported as 404
+     *     or used to infer that an earlier create did not commit. No Operation
+     *     recovery or default/current revision selection is implied.
+     */
     get: operations["getProfileRevisionForAdministration"];
     put?: never;
     post?: never;
@@ -491,6 +515,50 @@ export interface components {
       profile_id: components["schemas"]["Identifier"];
       expected_latest_revision: components["schemas"]["Revision"] | null;
     } & components["schemas"]["ProfileDefinition"];
+    ProfileDraftRevision: components["schemas"]["scenario-profile.schema"] & {
+      validation?: never;
+      publication?: {
+        /** @constant */
+        status?: "draft";
+      };
+    };
+    ProfileDraftConflictError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @enum {unknown} */
+        code?: "configuration_changed" | "idempotency_conflict";
+        /** @constant */
+        type?: "invalid_request_error";
+        /** @constant */
+        retryable?: false;
+        retry_after_ms?: null;
+        nexus?: never;
+      };
+    };
+    ProfileCreationUnknownError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @constant */
+        code?: "profile_result_unknown";
+        /** @constant */
+        type?: "service_unavailable_error";
+        /** @constant */
+        retryable?: false;
+        retry_after_ms?: null;
+        param?: null;
+        nexus?: never;
+      };
+    };
+    ProfileReadUnavailableError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @constant */
+        code?: "profile_unavailable";
+        /** @constant */
+        type?: "service_unavailable_error";
+        /** @constant */
+        retryable?: true;
+        param?: null;
+        nexus?: never;
+      };
+    };
     ProfileFamilySummary: {
       profile_id: components["schemas"]["Identifier"];
       latest_revision: components["schemas"]["Revision"];
@@ -2979,6 +3047,36 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The original key conflicts or its allocation CAS was rejected; no new revision. */
+    ProfileDraftConflict: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ProfileDraftConflictError"];
+      };
+    };
+    /** @description Original creation result unreadable or commit uncertain; retain original intent/key. */
+    ProfileCreationUnknown: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ProfileCreationUnknownError"];
+      };
+    };
+    /** @description Fixed revision could not be read; this does not confirm absence. */
+    ProfileReadUnavailable: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ProfileReadUnavailableError"];
+      };
+    };
   };
   parameters: {
     XRequestId: string;
@@ -3176,20 +3274,21 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Draft profile revision created. */
+      /** @description Draft profile revision created, without validation or qualification evidence. */
       201: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["scenario-profile.schema"];
+          "application/json": components["schemas"]["ProfileDraftRevision"];
         };
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
-      409: components["responses"]["Conflict"];
+      409: components["responses"]["ProfileDraftConflict"];
       422: components["responses"]["UnprocessableEntity"];
+      503: components["responses"]["ProfileCreationUnknown"];
     };
   };
   getProfileRevisionForAdministration: {
@@ -3216,8 +3315,10 @@ export interface operations {
           "application/json": components["schemas"]["scenario-profile.schema"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      503: components["responses"]["ProfileReadUnavailable"];
     };
   };
   publishProfileRevision: {

@@ -70,6 +70,12 @@ jobs:
           CONTRACT_BASE_REF: origin/${{ github.base_ref }}
         run: make contracts-http-changes
 
+      - name: Check known structural changes to the full speech HTTP source
+        if: github.event_name == 'pull_request'
+        env:
+          CONTRACT_BASE_REF: origin/${{ github.base_ref }}
+        run: make contracts-speech-changes
+
       - name: Check known structural changes to coordination request entrypoints
         if: github.event_name == 'pull_request'
         env:

@@ -1,4 +1,4 @@
-"""Check known structural changes in the four frozen nonstandard HTTP sources.
+"""Check known HTTP structural changes; speech is an explicit additional surface.
 
 This is not a proof of complete protocol compatibility. It adds no compatibility
 promise for versioned internal APIs, event ordering, authorization or side effects.
@@ -14,7 +14,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -26,6 +26,7 @@ SOURCES = (
     "contracts/internal/runtime-control.openapi.yaml",
     "contracts/internal/execution-control.openapi.yaml",
 )
+SPEECH_SOURCE = "contracts/speech-openapi.yaml"
 UNVERIFIED = (
     "Complete JSON Schema semantic inclusion and standalone JSON contracts",
     "HTTP serialization settings, added statuses/media and security scheme evolution",
@@ -57,7 +58,11 @@ def _version(document: Any) -> str:
     return str(document["info"]["version"])
 
 
-def inspect_sources(base: str) -> dict[str, Any]:
+def inspect_sources(
+    base: str, *, surface: Literal["nonstandard", "speech"] = "nonstandard"
+) -> dict[str, Any]:
+    if surface not in {"nonstandard", "speech"}:
+        raise ValueError("Unknown HTTP comparison surface")
     # Resolve once: every external reference on the baseline side uses the same
     # immutable commit, even if a moving branch changes during the comparison.
     resolved = subprocess.check_output(
@@ -74,7 +79,8 @@ def inspect_sources(base: str) -> dict[str, Any]:
     compare = _kernel()._compare_openapi
     rows: list[dict[str, Any]] = []
     findings: list[str] = []
-    for path in SOURCES:
+    selected = (SPEECH_SOURCE,) if surface == "speech" else SOURCES
+    for path in selected:
         row: dict[str, Any] = {"path": path, "base_version": None, "current_version": None}
         rows.append(row)
         if path not in baseline_paths:
@@ -100,7 +106,9 @@ def inspect_sources(base: str) -> dict[str, Any]:
             findings.append(f"{path}: source or reference comparison failed; not proven")
     return {
         "baseline": resolved,
-        "scope": "known-nonstandard-http-structure",
+        "scope": "known-speech-http-structure"
+        if surface == "speech"
+        else "known-nonstandard-http-structure",
         "sources": rows,
         "findings": findings,
         "unverified": list(UNVERIFIED),
@@ -111,15 +119,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True, help="Git commit/ref of the frozen baseline")
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--surface", choices=("nonstandard", "speech"), default="nonstandard")
     args = parser.parse_args()
     try:
-        report = inspect_sources(args.base)
+        report = inspect_sources(args.base, surface=args.surface)
     except OSError, subprocess.CalledProcessError, RuntimeError:
         print("HTTP structural comparison failed: baseline or kernel unavailable", file=sys.stderr)
         return 2
     if args.format == "json":
         print(json.dumps(report, sort_keys=True))
     else:
+        if args.surface == "speech":
+            print("HTTP comparison surface: speech (all paths, full fields)")
         print("HTTP structural baseline: " + report["baseline"])
         for row in report["sources"]:
             print(f"{row['path']}: {row['base_version']} -> {row['current_version']}")

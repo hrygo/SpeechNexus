@@ -24,9 +24,9 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 [团队 B 目标的当前对齐](2026-10-23-team-b-goal.md#当前对齐2026-10-24)及 #27–#34 顶部状态；
 本轮继续 B02 节点内未决观察循环与进程重启自动推进。A/C 的派工仍按各自 Issue 状态核对。
 
-团队 A 当前集成基线为 main `97e9a30`：#113 草稿 HTTP、#115 四份 HTTP 源与 #117 的18个
-协调请求入口有限结构检查已交付，合前/合后检查证据见 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)
-与总控。当前单元为单一 TransactionResult 入口的显式响应保证检查；原请求模式保持，
+团队 A 当前集成基线为 main `85babde`：#113 草稿 HTTP、#115 四份 HTTP 源、#117 的18个
+协调请求与 #118 结果入口有限结构检查已交付，合前/合后证据见 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)
+与总控。当前单元为显式完整 speech HTTP 源结构检查；原四源和OpenAI标准策略保持，
 根 envelope、其他 JSON 与真实联合资格仍待。A00–A07 和跨团队 Gate 保持开放，B 的未解决预算审查
 仍由 B 处理。本段只更新 A 的派工，保留 B 的独立交接与后续计划。
 

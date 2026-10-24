@@ -407,3 +407,10 @@ not waive a finding. The existing `contracts-compat` OpenAI standard scope remai
 unchanged. See [coverage and limits](../docs/architecture/http-contract-change-checks.md).
 A zero result is not a proof of complete protocol compatibility or a replacement
 for the producer's version/change list, examples, consumer review and migration.
+
+`CONTRACT_BASE_REF=<frozen commit/ref> make contracts-speech-changes` explicitly
+selects the complete speech HTTP source, including its Nexus paths and fields.
+The equivalent CLI uses `--surface speech`. The default four-source output and
+formal OpenAI standard policy are preserved. Full-source structural checks do
+not establish broader OpenAI compatibility, complete schema inclusion or actual
+route/engine qualification.

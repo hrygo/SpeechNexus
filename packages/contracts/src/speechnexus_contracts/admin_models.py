@@ -279,6 +279,85 @@ type ExternalScenarioProfileSchemaJsonOverrideRange = (
     | ExternalScenarioProfileSchemaJsonOverrideRange2
     | ExternalScenarioProfileSchemaJsonOverrideRange3
 )
+type ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind = Literal[
+    "asr_realtime",
+    "asr_full_segment_review",
+    "asr_file",
+    "tts_realtime",
+    "tts_file",
+    "voice_design",
+    "voice_clone",
+    "voice_validation",
+    "forced_alignment",
+    "speaker_diarization",
+    "vad",
+]
+type ExternalSharedCapabilityDomainsSchemaJsonEngineKind = Literal[
+    "vllm", "vllm_omni", "nemo", "qwen_forced_aligner", "onnx_runtime", "cpu_native"
+]
+type ExternalSharedIdentifiersSchemaJsonSha256Digest = str
+type ExternalModelBindingSchemaJsonIdentifier = ExternalSharedIdentifiersSchemaJsonIdentifier
+type ExternalModelBindingSchemaJsonRevision = ExternalSharedIdentifiersSchemaJsonRevision
+type ExternalSharedCapabilityDomainsSchemaJsonStageRole = Literal[
+    "vad",
+    "asr_preview",
+    "asr_review",
+    "asr_batch",
+    "tts_talker",
+    "tts_code2wav",
+    "tts_connector",
+    "voice_design",
+    "voice_clone_base",
+    "alignment",
+    "diarization",
+]
+type Language = str
+
+
+class ExternalModelBindingSchemaJsonAsrParameterDomain(TypedDict):
+    languages: list[Language]
+    max_segment_ms: int
+    finalization_modes: list[ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode]
+    supports_prompt: bool
+    supports_word_timestamps: NotRequired[bool]
+    alignment_modes: list[ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode]
+    diarization_modes: list[ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode]
+    max_speakers: NotRequired[int | None]
+    supports_rollback_tokens: NotRequired[bool]
+
+
+type SampleRatesHzItem = int
+
+
+class SpeedRange(TypedDict):
+    minimum: float
+    maximum: float
+
+
+class ExternalModelBindingSchemaJsonTtsParameterDomain(TypedDict):
+    languages: list[Language]
+    audio_formats: list[ExternalSharedCapabilityDomainsSchemaJsonAudioFormat]
+    sample_rates_hz: list[SampleRatesHzItem]
+    text_commit_modes: list[ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode]
+    audio_delivery_modes: list[ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode]
+    supports_instructions: bool
+    supports_speed: NotRequired[bool]
+    speed_range: NotRequired[SpeedRange]
+    max_input_codepoints: int
+    supports_seed: NotRequired[bool]
+
+
+class ExternalModelBindingSchemaJsonVoiceParameterDomain(TypedDict):
+    design_supported: bool
+    clone_supported: bool
+    preview_only_possible: NotRequired[bool]
+    reusable_voice_supported: bool
+    validation_set_revisions: NotRequired[list[ExternalModelBindingSchemaJsonRevision]]
+
+
+type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
+    "experimental", "best_effort", "production"
+]
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -320,6 +399,35 @@ class ExternalScenarioProfileSchemaJsonAsrParameters(TypedDict):
     vocabulary_set_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
     alignment: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
     diarization: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+
+
+type ExternalModelBindingSchemaJsonSpeechTaskKind = (
+    ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind
+)
+type ExternalModelBindingSchemaJsonEngineKind = ExternalSharedCapabilityDomainsSchemaJsonEngineKind
+type ExternalModelBindingSchemaJsonSha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
+
+
+class ExternalModelBindingSchemaJsonArtifactReference(TypedDict):
+    role: Literal["weights", "tokenizer", "codec", "config", "vocab", "connector"]
+    artifact_id: ExternalModelBindingSchemaJsonIdentifier
+    digest: ExternalModelBindingSchemaJsonSha256Digest
+    media_type: str
+    size_bytes: NotRequired[int]
+
+
+type ExternalModelBindingSchemaJsonStageRole = ExternalSharedCapabilityDomainsSchemaJsonStageRole
+
+
+class ExternalModelBindingSchemaJsonParameterDomains(TypedDict):
+    asr: NotRequired[ExternalModelBindingSchemaJsonAsrParameterDomain]
+    tts: NotRequired[ExternalModelBindingSchemaJsonTtsParameterDomain]
+    voice: NotRequired[ExternalModelBindingSchemaJsonVoiceParameterDomain]
+
+
+type ExternalModelBindingSchemaJsonReleaseTier = (
+    ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
+)
 
 
 class WorkspaceCreateRequest(TypedDict):
@@ -387,6 +495,19 @@ class ExternalScenarioProfileSchemaJsonProfileParameters(TypedDict):
     output: NotRequired[ExternalScenarioProfileSchemaJsonOutputParameters]
 
 
+class ExternalModelBindingSchemaJsonEngineDescriptor(TypedDict):
+    kind: ExternalModelBindingSchemaJsonEngineKind
+    image_digest: ExternalModelBindingSchemaJsonSha256Digest
+    runtime_version: str
+
+
+class ExternalModelBindingSchemaJsonExecutionRecipe(TypedDict):
+    recipe_revision: ExternalModelBindingSchemaJsonRevision
+    capacity_manifest_id: ExternalModelBindingSchemaJsonIdentifier
+    stage_roles: list[ExternalModelBindingSchemaJsonStageRole]
+    requires_complete_reservation: NotRequired[bool]
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -411,6 +532,18 @@ class ExternalScenarioProfileSchemaJsonProfileDefinition(TypedDict):
         ExternalScenarioProfileSchemaJsonOverrideRange,
     ]
     slo_ref: str
+
+
+class ModelBindingCreateRequest(TypedDict):
+    binding_id: Identifier
+    supersedes_revision: NotRequired[Revision]
+    logical_model: str
+    tasks: list[ExternalModelBindingSchemaJsonSpeechTaskKind]
+    engine: ExternalModelBindingSchemaJsonEngineDescriptor
+    artifact_set: list[ExternalModelBindingSchemaJsonArtifactReference]
+    execution_recipe: ExternalModelBindingSchemaJsonExecutionRecipe
+    parameter_domains: ExternalModelBindingSchemaJsonParameterDomains
+    release_tier: ExternalModelBindingSchemaJsonReleaseTier
 
 
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
@@ -459,4 +592,5 @@ type AdminContracts = (
     | WorkspaceList
     | ErrorResponse
     | ProfileRevisionCreateRequest
+    | ModelBindingCreateRequest
 )

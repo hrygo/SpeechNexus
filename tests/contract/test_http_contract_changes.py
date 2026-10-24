@@ -505,3 +505,92 @@ def test_false_reference_simplification_keeps_the_closed_reference_policy(
     ] = [{"$ref": "https://deployment.invalid/unavailable.json"}]
     _write(path, value)
     assert module.inspect_sources(base)["findings"]
+
+
+@pytest.mark.parametrize("as_reference", [False, True])
+def test_response_intersection_retains_complete_original_guarantee(as_reference: bool) -> None:
+    original = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["state"],
+        "properties": {"state": {"enum": ["draft", "published"]}},
+        "allOf": [{"properties": {"state": {"type": "string"}}}],
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = copy.deepcopy(baseline)
+    response = current["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]
+    if as_reference:
+        current["components"] = {"schemas": {"Original": original}}
+    response["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/Original"} if as_reference else original,
+            {"properties": {"state": {"const": "draft"}}},
+        ]
+    }
+    assert (
+        kernel()._compare_openapi(
+            baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("direction", ["request", "response"])
+@pytest.mark.parametrize("composition", ["allOf", "anyOf", "oneOf"])
+def test_intersection_proof_does_not_allow_lost_guarantee_or_request_narrowing(
+    direction: str, composition: str
+) -> None:
+    original = {
+        "type": "object",
+        "required": ["state"],
+        "properties": {"state": {"type": "string"}},
+    }
+    changed = copy.deepcopy(original)
+    if direction == "response":
+        changed.pop("required")
+    elif composition != "allOf":
+        changed = {"type": "integer"}
+    current = {composition: [changed, {"type": "object", "required": ["extra"]}]}
+    module = kernel()
+    side = module._SchemaSide({}, "contracts/admin-openapi.yaml", None, standard_only=False)
+    issues: list[str] = []
+    module._compare_schema(
+        original,
+        current,
+        "synthetic",
+        issues,
+        direction=direction,
+        base_side=side,
+        current_side=side,
+    )
+    assert issues
+
+
+@pytest.mark.parametrize("reference", ["$dynamicRef", "$recursiveRef"])
+def test_response_intersection_does_not_prove_dynamic_reference_inclusion(reference: str) -> None:
+    module = kernel()
+    original = {"type": "object", reference: "#dynamic"}
+    current = {"allOf": [original, {"type": "object"}]}
+    side = module._SchemaSide({}, "contracts/admin-openapi.yaml", None, standard_only=False)
+    issues: list[str] = []
+    module._compare_schema(
+        original,
+        current,
+        "synthetic",
+        issues,
+        direction="response",
+        base_side=side,
+        current_side=side,
+    )
+    assert issues
+
+
+def test_response_intersection_keeps_original_openai_comparison_policy() -> None:
+    original = {
+        "type": "object",
+        "required": ["state"],
+        "properties": {"state": {"type": "string"}},
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response={"allOf": [original, {"type": "object"}]})
+    assert kernel()._compare_openapi(baseline, current, "contracts/speech-openapi.yaml")

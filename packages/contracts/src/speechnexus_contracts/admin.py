@@ -32,5 +32,11 @@ def parse(
 ) -> models.ProfileRevisionCreateRequest: ...
 
 
+@overload
+def parse(
+    name: Literal["ModelBindingCreateRequest"], value: Any
+) -> models.ModelBindingCreateRequest: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

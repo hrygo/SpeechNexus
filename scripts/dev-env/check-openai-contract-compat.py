@@ -278,6 +278,21 @@ def _compatibility_shape(schema: object, *, standard_only: bool = True) -> objec
     return result
 
 
+def _closed_schema_tree(value: object) -> bool:
+    """Exact-tree implication needs no unresolved or dynamic reference semantics."""
+    if isinstance(value, Mapping):
+        return not {
+            "$ref",
+            "$dynamicRef",
+            "$recursiveRef",
+            "$dynamicAnchor",
+            "$recursiveAnchor",
+        }.intersection(value) and all(_closed_schema_tree(child) for child in value.values())
+    if isinstance(value, list):
+        return all(_closed_schema_tree(child) for child in value)
+    return True
+
+
 def _compare_schema(
     base: object,
     current: object,
@@ -308,6 +323,14 @@ def _compare_schema(
         if type(base) is not type(current):
             _issue(issues, pointer, "schema node kind changed")
         return
+
+    # A response intersection that explicitly retains the complete resolved
+    # baseline can only strengthen its guarantees. This narrow proof does not
+    # flatten arbitrary composition, widen requests, or affect OpenAI defaults.
+    if direction == "response" and not standard_only and _closed_schema_tree(base_schema):
+        variants = _sequence(current_schema.get("allOf"))
+        if variants is not None and any(variant == base_schema for variant in variants):
+            return
 
     base_ref = base_schema.get("$ref")
     current_ref = current_schema.get("$ref")

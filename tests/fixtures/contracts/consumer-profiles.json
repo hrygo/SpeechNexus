@@ -6091,6 +6091,564 @@
         "safe_to_stop_instance": false,
         "updated_at": "2026-10-24T00:00:00Z"
       }
+    },
+    {
+      "id": "binding-request",
+      "profile": "admin",
+      "schema": "ModelBindingCreateRequest",
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-request-no-client-cas",
+      "profile": "admin",
+      "schema": "ModelBindingCreateRequest",
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "expected_latest_revision": null
+      },
+      "valid": false
+    },
+    {
+      "id": "binding-revision-source-0",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-quality",
+        "revision": "7",
+        "revision_id": "mbrev-asr-quality-7",
+        "logical_model": "asr-quality",
+        "description": "File and full-segment review ASR binding.",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "published",
+          "published_at": "2026-10-22T09:00:00Z",
+          "retired_at": null,
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "qualification_report_id": "qrep-asr-quality-7",
+          "disabled_reason": null
+        },
+        "supersedes_revision": "6",
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-revision-source-1",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "tts-interactive",
+        "revision": "5",
+        "revision_id": "mbrev-tts-interactive-5",
+        "logical_model": "tts-interactive",
+        "tasks": ["tts_realtime", "tts_file"],
+        "engine": {
+          "kind": "vllm_omni",
+          "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "runtime_version": "vllm-omni-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-tts-customvoice",
+            "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "2",
+          "capacity_manifest_id": "cap-tts-interactive-5",
+          "stage_roles": ["tts_talker", "tts_code2wav", "tts_connector"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "tts": {
+            "languages": ["zh", "en"],
+            "audio_formats": ["mp3", "wav", "pcm"],
+            "sample_rates_hz": [24000],
+            "text_commit_modes": ["explicit", "sentence"],
+            "audio_delivery_modes": ["complete", "chunked"],
+            "supports_instructions": true,
+            "supports_speed": true,
+            "speed_range": {
+              "minimum": 0.75,
+              "maximum": 1.25
+            },
+            "max_input_codepoints": 2000,
+            "supports_seed": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "published",
+          "published_at": "2026-10-22T09:00:00Z",
+          "retired_at": null,
+          "capacity_manifest_id": "cap-tts-interactive-5",
+          "qualification_report_id": "qrep-tts-interactive-5",
+          "disabled_reason": null
+        },
+        "supersedes_revision": "4",
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-revision-source-2",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "voice-design",
+        "revision": "3",
+        "revision_id": "mbrev-voice-design-3",
+        "logical_model": "voice-design",
+        "tasks": ["voice_design", "voice_validation"],
+        "engine": {
+          "kind": "vllm_omni",
+          "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "runtime_version": "vllm-omni-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-tts-voicedesign",
+            "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "1",
+          "capacity_manifest_id": "cap-voice-design-3",
+          "stage_roles": ["voice_design", "voice_clone_base"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "voice": {
+            "design_supported": true,
+            "clone_supported": true,
+            "preview_only_possible": true,
+            "reusable_voice_supported": true,
+            "validation_set_revisions": ["1", "2"]
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "capacity_manifest_id": null,
+          "qualification_report_id": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": null,
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-revision-source-3",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-realtime",
+        "revision": "4",
+        "revision_id": "mbrev-asr-realtime-4",
+        "logical_model": "asr-realtime",
+        "description": "Realtime ASR binding with VAD preview and full-segment review.",
+        "tasks": ["vad", "asr_realtime", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-realtime",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "4",
+          "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+          "stage_roles": ["vad", "asr_preview", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": false,
+            "alignment_modes": ["off", "best_effort"],
+            "diarization_modes": ["off", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": true
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "published",
+          "published_at": "2026-10-22T09:00:00Z",
+          "retired_at": null,
+          "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+          "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+          "disabled_reason": null
+        },
+        "supersedes_revision": "3",
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-draft",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-quality",
+        "revision": "1",
+        "revision_id": "synthetic-binding-revision-1",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "capacity_manifest_id": null,
+          "qualification_report_id": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": null,
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-revision-no-defaults",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-quality",
+        "revision": "1",
+        "revision_id": "synthetic-binding-revision-1",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "capacity_manifest_id": null,
+          "qualification_report_id": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": null,
+        "created_at": "2026-10-22T09:00:00Z",
+        "parameter_defaults": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "binding-revision-no-numeric-revision",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-quality",
+        "revision": 1,
+        "revision_id": "synthetic-binding-revision-1",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "capacity_manifest_id": null,
+          "qualification_report_id": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": null,
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "binding-draft-no-evidence",
+      "profile": "model_bindings",
+      "schema": "ModelBindingRevision",
+      "value": {
+        "schema_version": "1.0.0",
+        "binding_id": "asr-quality",
+        "revision": "1",
+        "revision_id": "synthetic-binding-revision-1",
+        "logical_model": "asr-quality",
+        "tasks": ["asr_file", "asr_full_segment_review"],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": ["asr_batch", "asr_review"],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": ["zh", "en", "auto"],
+            "max_segment_ms": 30000,
+            "finalization_modes": ["full_segment"],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": ["off", "required", "best_effort"],
+            "diarization_modes": ["off", "required", "best_effort"],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "capacity_manifest_id": "fake-evidence",
+          "qualification_report_id": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": null,
+        "created_at": "2026-10-22T09:00:00Z"
+      },
+      "valid": false
     }
   ]
 }

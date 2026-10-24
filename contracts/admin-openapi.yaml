@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev2
+  version: 0.1.0.dev3
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -463,12 +463,37 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
     post:
-      tags: [model-bindings]
+      tags:
+        - model-bindings
       operationId: createModelBindingDraft
       summary: Create an immutable draft binding revision
       description: |
-        Creates a new revision in `draft` state. Publishing requires separate
-        capacity and qualification evidence.
+        Creates a new immutable revision in draft state. The registry allocates
+        the family revision and a globally unique revision_id; the caller cannot
+        supply either identity. Independent successful commands append distinct
+        revisions, preserving earlier history. supersedes_revision records a
+        supersession relationship; it is not an expected-head CAS guard.
+        Publishing requires separate capacity and qualification evidence.
+
+        Replaying the same Idempotency-Key and canonical complete intent returns
+        the original revision before any allocation. The same key with a different
+        intent returns 409 idempotency_conflict without allocating a new revision.
+        Malformed JSON, unknown fields and invalid header/schema values return 400;
+        structurally valid but inconsistent binding composition returns 422.
+
+        An unreadable original result or uncertain commit returns 503
+        binding_result_unknown with retryable: false. It does not establish that
+        no revision was created. There is no automatic retry, new key, Operation
+        or query-by-key recovery resource. A caller retaining the original key
+        may explicitly replay this same POST with the exact original intent and
+        key to resolve that result. Without an original key automatic recovery
+        is not promised; a candidate revision GET does not prove original-command
+        ownership. Receive refusals do not settle an earlier original-key outcome.
+
+        The bounded public ingress may refuse Host/Origin (403), unsupported
+        method (405 with Allow), receive timeout (408), request size (413),
+        non-JSON media (415), or local receive capacity (429). Limits are deployment
+        configuration, not implicit binding parameters or qualification evidence.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -487,18 +512,33 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./model-binding.schema.json"
+                $ref: "#/components/schemas/ModelBindingDraftRevision"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/BindingDraftConflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/BindingCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/BindingReceiveTimeout"
+        "413":
+          $ref: "#/components/responses/BindingRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/BindingMediaUnsupported"
+        "429":
+          $ref: "#/components/responses/BindingReceiveFull"
+        "503":
+          $ref: "#/components/responses/BindingCreationUnknown"
   /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}:
     get:
-      tags: [model-bindings]
+      tags:
+        - model-bindings
       operationId: getModelBindingRevision
       summary: Get one immutable binding revision
       parameters:
@@ -514,11 +554,28 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./model-binding.schema.json"
+                $ref: ./model-binding.schema.json
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/BindingReadMethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/BindingReadUnavailable"
+      description: |
+        Reads only the explicitly named immutable revision; never allocates,
+        publishes, activates or selects a current/default revision. Invalid
+        path/header/query values or read body/framing return 400. Return 404
+        only when an authoritative read confirms this revision is absent.
+        Unreadable metadata returns 503 binding_unavailable with retryable: true
+        for this same fixed GET. It is not absence or evidence that a prior
+        create did not commit. Host/Origin refusal uses 403; unsupported methods
+        use 405 with Allow. No Operation or keyless recovery is implied.
   /v1/nexus/admin/model-bindings/{binding_id}/publications:
     post:
       tags: [model-bindings]
@@ -1162,6 +1219,81 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ProfileReadUnavailableError"
+    BindingCreateMethodNotAllowed:
+      description: The selected draft creation path accepts POST only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: POST
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingReceiveTimeout:
+      description: The bounded JSON receive deadline expired; no new outcome is inferred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingRequestTooLarge:
+      description: Actual or declared request bytes exceed the configured ingress bound.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingMediaUnsupported:
+      description: Draft creation requires application/json encoded as UTF-8.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingReceiveFull:
+      description: Local bounded receive capacity is full; earlier original-key state is unknown.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingDraftConflict:
+      description: The original key belongs to a different complete intent; no new revision.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BindingDraftConflictError"
+    BindingCreationUnknown:
+      description: Original creation result unreadable or commit uncertain; retain original intent/key.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BindingCreationUnknownError"
+    BindingReadMethodNotAllowed:
+      description: The selected fixed revision path accepts GET only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BindingReadUnavailable:
+      description: Fixed revision could not be read; this does not confirm absence.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BindingReadUnavailableError"
   schemas:
     Identifier:
       $ref: "shared/identifiers.schema.json#/$defs/Identifier"
@@ -1873,3 +2005,66 @@ components:
           type: boolean
         next_cursor:
           type: [string, "null"]
+    ModelBindingDraftRevision:
+      allOf:
+        - $ref: ./model-binding.schema.json
+        - type: object
+          properties:
+            publication:
+              type: object
+              properties:
+                status:
+                  const: draft
+    BindingDraftConflictError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  const: idempotency_conflict
+                type:
+                  const: invalid_request_error
+                retryable:
+                  const: false
+                retry_after_ms:
+                  type: "null"
+                nexus: false
+    BindingCreationUnknownError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  const: binding_result_unknown
+                type:
+                  const: service_unavailable_error
+                retryable:
+                  const: false
+                retry_after_ms:
+                  type: "null"
+                param:
+                  type: "null"
+                nexus: false
+    BindingReadUnavailableError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  const: binding_unavailable
+                type:
+                  const: service_unavailable_error
+                retryable:
+                  const: true
+                param:
+                  type: "null"
+                nexus: false

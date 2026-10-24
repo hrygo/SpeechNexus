@@ -1,14 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev2",
+  "x-nexus-bindings-version": "0.1.0.dev3",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
     "Workspace",
     "WorkspaceList",
     "ErrorResponse",
-    "ProfileRevisionCreateRequest"
+    "ProfileRevisionCreateRequest",
+    "ModelBindingCreateRequest"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -1015,6 +1016,389 @@
           "required": ["enum"]
         }
       ]
+    },
+    "ModelBindingCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding_id",
+        "logical_model",
+        "tasks",
+        "engine",
+        "artifact_set",
+        "execution_recipe",
+        "parameter_domains",
+        "release_tier"
+      ],
+      "properties": {
+        "binding_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "supersedes_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "logical_model": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_binding_schema_json_SpeechTaskKind"
+          }
+        },
+        "engine": {
+          "$ref": "#/$defs/External_model_binding_schema_json_EngineDescriptor"
+        },
+        "artifact_set": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/External_model_binding_schema_json_ArtifactReference"
+          }
+        },
+        "execution_recipe": {
+          "$ref": "#/$defs/External_model_binding_schema_json_ExecutionRecipe"
+        },
+        "parameter_domains": {
+          "$ref": "#/$defs/External_model_binding_schema_json_ParameterDomains"
+        },
+        "release_tier": {
+          "$ref": "#/$defs/External_model_binding_schema_json_ReleaseTier"
+        }
+      }
+    },
+    "External_model_binding_schema_json_SpeechTaskKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_SpeechTaskKind"
+    },
+    "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+      "type": "string",
+      "enum": [
+        "asr_realtime",
+        "asr_full_segment_review",
+        "asr_file",
+        "tts_realtime",
+        "tts_file",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+        "forced_alignment",
+        "speaker_diarization",
+        "vad"
+      ]
+    },
+    "External_model_binding_schema_json_EngineDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "image_digest", "runtime_version"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/External_model_binding_schema_json_EngineKind"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Sha256Digest"
+        },
+        "runtime_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "External_model_binding_schema_json_EngineKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_EngineKind"
+    },
+    "External_shared_capability_domains_schema_json_EngineKind": {
+      "type": "string",
+      "enum": ["vllm", "vllm_omni", "nemo", "qwen_forced_aligner", "onnx_runtime", "cpu_native"]
+    },
+    "External_model_binding_schema_json_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "External_model_binding_schema_json_ArtifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "artifact_id", "digest", "media_type"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["weights", "tokenizer", "codec", "config", "vocab", "connector"]
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Sha256Digest"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "External_model_binding_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_model_binding_schema_json_ExecutionRecipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipe_revision", "capacity_manifest_id", "stage_roles"],
+      "properties": {
+        "recipe_revision": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Revision"
+        },
+        "capacity_manifest_id": {
+          "$ref": "#/$defs/External_model_binding_schema_json_Identifier"
+        },
+        "stage_roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_binding_schema_json_StageRole"
+          }
+        },
+        "requires_complete_reservation": {
+          "type": "boolean",
+          "default": true,
+          "description": "True when every stage, including required review or auxiliary work, must be admitted before execution starts."
+        }
+      }
+    },
+    "External_model_binding_schema_json_Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_model_binding_schema_json_StageRole": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_StageRole"
+    },
+    "External_shared_capability_domains_schema_json_StageRole": {
+      "type": "string",
+      "enum": [
+        "vad",
+        "asr_preview",
+        "asr_review",
+        "asr_batch",
+        "tts_talker",
+        "tts_code2wav",
+        "tts_connector",
+        "voice_design",
+        "voice_clone_base",
+        "alignment",
+        "diarization"
+      ]
+    },
+    "External_model_binding_schema_json_ParameterDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/External_model_binding_schema_json_AsrParameterDomain"
+        },
+        "tts": {
+          "$ref": "#/$defs/External_model_binding_schema_json_TtsParameterDomain"
+        },
+        "voice": {
+          "$ref": "#/$defs/External_model_binding_schema_json_VoiceParameterDomain"
+        }
+      },
+      "minProperties": 1
+    },
+    "External_model_binding_schema_json_AsrParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "max_segment_ms",
+        "finalization_modes",
+        "supports_prompt",
+        "alignment_modes",
+        "diarization_modes"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "finalization_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+          }
+        },
+        "supports_prompt": {
+          "type": "boolean"
+        },
+        "supports_word_timestamps": {
+          "type": "boolean"
+        },
+        "alignment_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          }
+        },
+        "diarization_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          }
+        },
+        "max_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 64
+        },
+        "supports_rollback_tokens": {
+          "type": "boolean"
+        }
+      }
+    },
+    "External_model_binding_schema_json_TtsParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "audio_formats",
+        "sample_rates_hz",
+        "text_commit_modes",
+        "audio_delivery_modes",
+        "supports_instructions",
+        "max_input_codepoints"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+          }
+        },
+        "sample_rates_hz": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 96000
+          }
+        },
+        "text_commit_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+          }
+        },
+        "audio_delivery_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+          }
+        },
+        "supports_instructions": {
+          "type": "boolean"
+        },
+        "supports_speed": {
+          "type": "boolean"
+        },
+        "speed_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            }
+          }
+        },
+        "max_input_codepoints": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "supports_seed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "External_model_binding_schema_json_VoiceParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design_supported", "clone_supported", "reusable_voice_supported"],
+      "properties": {
+        "design_supported": {
+          "type": "boolean"
+        },
+        "clone_supported": {
+          "type": "boolean"
+        },
+        "preview_only_possible": {
+          "type": "boolean"
+        },
+        "reusable_voice_supported": {
+          "type": "boolean"
+        },
+        "validation_set_revisions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_model_binding_schema_json_Revision"
+          }
+        }
+      }
+    },
+    "External_model_binding_schema_json_ReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "best_effort", "production"]
     }
   },
   "anyOf": [
@@ -1035,6 +1419,9 @@
     },
     {
       "$ref": "#/$defs/ProfileRevisionCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/ModelBindingCreateRequest"
     }
   ]
 }

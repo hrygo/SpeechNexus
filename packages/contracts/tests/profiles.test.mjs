@@ -8,6 +8,7 @@ import * as execution from "../src/execution.ts";
 import * as runtime from "../src/runtime.ts";
 import * as realtime from "../src/realtime.ts";
 import * as realtime_events from "../src/realtime_events.ts";
+import * as model_bindings from "../src/model_bindings.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
 import { exampleValue } from "./contract-examples.mjs";
 
@@ -19,6 +20,7 @@ const profiles = {
   realtime,
   realtime_events,
   scenario_profiles,
+  model_bindings,
 };
 const fixtures = JSON.parse(
   readFileSync(

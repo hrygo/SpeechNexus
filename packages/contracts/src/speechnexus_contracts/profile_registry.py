@@ -11,6 +11,7 @@ PROFILES = frozenset(
         "scenario_profiles",
         "model_bindings",
         "gateway_recovery",
+        "binding_defaults",
     )
 )
 HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile", "binding"))

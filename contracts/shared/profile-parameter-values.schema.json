@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/shared/profile-parameter-values.schema.json",
+  "title": "SpeechNexusProfileParameterValues",
+  "description": "Canonical field domains for complete profiles and sparse binding-default snapshots. Requiredness is declared by each consuming object; default annotations do not populate values.",
+  "$defs": {
+    "AsrLanguage": {
+      "$ref": "language.schema.json#/$defs/LanguageTag"
+    },
+    "AsrPreviewIntervalMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "AsrMaxSegmentMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000,
+      "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+    },
+    "AsrFinalization": {
+      "$ref": "capability-domains.schema.json#/$defs/FinalizationMode"
+    },
+    "AsrFinalDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "AsrAuxiliaryDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000,
+      "default": 5000
+    },
+    "AsrRollbackTokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32,
+      "default": 5
+    },
+    "AsrTurnDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "silence_duration_ms"
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "capability-domains.schema.json#/$defs/VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "AsrVocabularySetRevision": {
+      "$ref": "#/$defs/NullableResourceReference"
+    },
+    "AsrAlignment": {
+      "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
+    },
+    "AsrDiarization": {
+      "$ref": "capability-domains.schema.json#/$defs/AuxiliaryMode"
+    },
+    "AsrParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/AsrLanguage"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/AsrPreviewIntervalMs"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/AsrMaxSegmentMs"
+        },
+        "finalization": {
+          "$ref": "#/$defs/AsrFinalization"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/AsrFinalDeadlineMs"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/AsrAuxiliaryDeadlineMs"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/AsrRollbackTokens"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/AsrTurnDetection"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/AsrVocabularySetRevision"
+        },
+        "alignment": {
+          "$ref": "#/$defs/AsrAlignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/AsrDiarization"
+        }
+      }
+    },
+    "TtsLanguage": {
+      "$ref": "language.schema.json#/$defs/LanguageTag"
+    },
+    "TtsTextCommitMode": {
+      "$ref": "capability-domains.schema.json#/$defs/TextCommitMode"
+    },
+    "TtsAudioDelivery": {
+      "$ref": "capability-domains.schema.json#/$defs/AudioDeliveryMode"
+    },
+    "TtsSpeed": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2.0,
+      "default": 1.0
+    },
+    "TtsInstructions": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "TtsPronunciationRevision": {
+      "$ref": "#/$defs/NullableResourceReference"
+    },
+    "TtsSeed": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "TtsPlanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_chars",
+        "max_wait_ms"
+      ],
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "TtsParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/TtsLanguage"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/TtsTextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/TtsAudioDelivery"
+        },
+        "speed": {
+          "$ref": "#/$defs/TtsSpeed"
+        },
+        "instructions": {
+          "$ref": "#/$defs/TtsInstructions"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/TtsPronunciationRevision"
+        },
+        "seed": {
+          "$ref": "#/$defs/TtsSeed"
+        },
+        "planner": {
+          "$ref": "#/$defs/TtsPlanner"
+        }
+      }
+    },
+    "OutputTranscriptFormat": {
+      "$ref": "capability-domains.schema.json#/$defs/TranscriptFormat"
+    },
+    "OutputAudioFormat": {
+      "$ref": "capability-domains.schema.json#/$defs/AudioFormat"
+    },
+    "OutputSaveArtifacts": {
+      "type": "boolean"
+    },
+    "OutputParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transcript_format": {
+          "$ref": "#/$defs/OutputTranscriptFormat"
+        },
+        "audio_format": {
+          "$ref": "#/$defs/OutputAudioFormat"
+        },
+        "save_artifacts": {
+          "$ref": "#/$defs/OutputSaveArtifacts"
+        }
+      }
+    },
+    "NullableResourceReference": {
+      "oneOf": [
+        {
+          "$ref": "references.schema.json#/$defs/ResourceReference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

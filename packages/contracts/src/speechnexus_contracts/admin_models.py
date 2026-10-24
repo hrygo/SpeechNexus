@@ -169,39 +169,54 @@ type ExternalSharedCapabilityDomainsSchemaJsonProfileReleaseTier = Literal[
 type ExternalSharedCapabilityDomainsSchemaJsonServiceClass = Literal[
     "realtime", "interactive", "batch"
 ]
+type ExternalScenarioProfileSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
+type ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization = (
+    ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens = int
 
 
-class TurnDetection(TypedDict):
+class ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection(TypedDict):
     mode: ExternalSharedCapabilityDomainsSchemaJsonVadMode
     silence_duration_ms: int
 
 
-type ExternalScenarioProfileSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
 type ExternalScenarioProfileSchemaJsonResourceReference = (
     ExternalSharedReferencesSchemaJsonResourceReference
 )
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode = (
+    ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed = float
+type ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions = str | None
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSeed = int | None
 
 
-class Planner(TypedDict):
+class ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner(TypedDict):
     max_chars: int
     max_wait_ms: int
 
 
-class ExternalScenarioProfileSchemaJsonTtsParameters(TypedDict):
-    language: ExternalScenarioProfileSchemaJsonLanguageTag
-    text_commit_mode: ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
-    audio_delivery: ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
-    speed: float
-    instructions: NotRequired[str | None]
-    pronunciation_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
-    seed: NotRequired[int | None]
-    planner: Planner
-
-
-class ExternalScenarioProfileSchemaJsonOutputParameters(TypedDict):
-    transcript_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat]
-    audio_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonAudioFormat]
-    save_artifacts: NotRequired[bool]
+type ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat = (
+    ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat
+)
+type ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
+)
+type ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts = bool
 
 
 class Constraint(TypedDict):
@@ -389,16 +404,35 @@ type ExternalScenarioProfileSchemaJsonExecutionClass = (
 
 class ExternalScenarioProfileSchemaJsonAsrParameters(TypedDict):
     language: ExternalScenarioProfileSchemaJsonLanguageTag
-    preview_interval_ms: int
-    max_segment_ms: int
-    finalization: ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
-    final_deadline_ms: int
-    auxiliary_deadline_ms: int
-    rollback_tokens: int
-    turn_detection: TurnDetection
+    preview_interval_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs
+    max_segment_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs
+    finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
+    final_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs
+    auxiliary_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs
+    rollback_tokens: ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens
+    turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
     vocabulary_set_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
-    alignment: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
-    diarization: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+    alignment: ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment
+    diarization: ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization
+
+
+class ExternalScenarioProfileSchemaJsonTtsParameters(TypedDict):
+    language: ExternalScenarioProfileSchemaJsonLanguageTag
+    text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
+    audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
+    speed: ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed
+    instructions: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions]
+    pronunciation_revision: NotRequired[ExternalScenarioProfileSchemaJsonResourceReference | None]
+    seed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSeed]
+    planner: ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner
+
+
+class ExternalScenarioProfileSchemaJsonOutputParameters(TypedDict):
+    transcript_format: NotRequired[
+        ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat
+    ]
+    audio_format: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat]
+    save_artifacts: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts]
 
 
 type ExternalModelBindingSchemaJsonSpeechTaskKind = (

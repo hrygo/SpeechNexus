@@ -501,9 +501,6 @@
     "ExecutionClass": {
       "$ref": "shared/capability-domains.schema.json#/$defs/ServiceClass"
     },
-    "LanguageTag": {
-      "$ref": "shared/language.schema.json#/$defs/LanguageTag"
-    },
     "ParameterPath": {
       "type": "string",
       "enum": [
@@ -532,9 +529,6 @@
         "output.audio_format",
         "output.save_artifacts"
       ]
-    },
-    "ResourceReference": {
-      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
     },
     "OverrideRange": {
       "type": "object",
@@ -598,53 +592,25 @@
           "$ref": "#/$defs/LanguageTag"
         },
         "preview_interval_ms": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 5000
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrPreviewIntervalMs"
         },
         "max_segment_ms": {
-          "type": "integer",
-          "minimum": 1000,
-          "maximum": 30000,
-          "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrMaxSegmentMs"
         },
         "finalization": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/FinalizationMode"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrFinalization"
         },
         "final_deadline_ms": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrFinalDeadlineMs"
         },
         "auxiliary_deadline_ms": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000,
-          "default": 5000
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrAuxiliaryDeadlineMs"
         },
         "rollback_tokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 32,
-          "default": 5
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrRollbackTokens"
         },
         "turn_detection": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "mode",
-            "silence_duration_ms"
-          ],
-          "properties": {
-            "mode": {
-              "$ref": "shared/capability-domains.schema.json#/$defs/VadMode"
-            },
-            "silence_duration_ms": {
-              "type": "integer",
-              "minimum": 200,
-              "maximum": 3000
-            }
-          }
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrTurnDetection"
         },
         "vocabulary_set_revision": {
           "oneOf": [
@@ -657,10 +623,10 @@
           ]
         },
         "alignment": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrAlignment"
         },
         "diarization": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/AsrDiarization"
         }
       }
     },
@@ -679,23 +645,16 @@
           "$ref": "#/$defs/LanguageTag"
         },
         "text_commit_mode": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/TextCommitMode"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsTextCommitMode"
         },
         "audio_delivery": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/AudioDeliveryMode"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsAudioDelivery"
         },
         "speed": {
-          "type": "number",
-          "minimum": 0.5,
-          "maximum": 2.0,
-          "default": 1.0
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsSpeed"
         },
         "instructions": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 2000
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsInstructions"
         },
         "pronunciation_revision": {
           "oneOf": [
@@ -708,32 +667,10 @@
           ]
         },
         "seed": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0,
-          "maximum": 2147483647
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsSeed"
         },
         "planner": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "max_chars",
-            "max_wait_ms"
-          ],
-          "properties": {
-            "max_chars": {
-              "type": "integer",
-              "minimum": 40,
-              "maximum": 400
-            },
-            "max_wait_ms": {
-              "type": "integer",
-              "minimum": 100,
-              "maximum": 3000
-            }
-          }
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/TtsPlanner"
         }
       }
     },
@@ -742,13 +679,13 @@
       "additionalProperties": false,
       "properties": {
         "transcript_format": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/TranscriptFormat"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/OutputTranscriptFormat"
         },
         "audio_format": {
-          "$ref": "shared/capability-domains.schema.json#/$defs/AudioFormat"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/OutputAudioFormat"
         },
         "save_artifacts": {
-          "type": "boolean"
+          "$ref": "shared/profile-parameter-values.schema.json#/$defs/OutputSaveArtifacts"
         }
       }
     },
@@ -871,6 +808,12 @@
           "maxLength": 2000
         }
       }
+    },
+    "LanguageTag": {
+      "$ref": "shared/language.schema.json#/$defs/LanguageTag"
+    },
+    "ResourceReference": {
+      "$ref": "shared/references.schema.json#/$defs/ResourceReference"
     }
   },
   "examples": [

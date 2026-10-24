@@ -441,3 +441,14 @@ The equivalent CLI uses `--surface speech`. The default four-source output and
 formal OpenAI standard policy are preserved. Full-source structural checks do
 not establish broader OpenAI compatibility, complete schema inclusion or actual
 route/engine qualification.
+
+## Binding parameter default declaration
+
+`binding-parameter-defaults.schema.json` defines the standalone, fixed-parent
+`BindingParameterDefaultsSnapshot`. The `binding_defaults` Python/TS profile
+validates explicit sparse canonical parameter fields without inserting values.
+`shared/profile-parameter-values.schema.json` is their common field source with
+complete profiles, which keep their original requiredness and domains. The
+[format and lifecycle requirements](../docs/architecture/binding-parameter-defaults.md)
+separate parsing from registry storage, published configuration and qualification.
+No default-snapshot HTTP operation or ModelBinding wire-field change is introduced.

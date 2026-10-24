@@ -7127,6 +7127,433 @@
         "request_timeout_seconds": 3,
         "pass_budget_seconds": 10
       }
+    },
+    {
+      "id": "binding-defaults-sparse-asr",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "max_segment_ms": 15000
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-explicit-empty",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-sparse-tts",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "tts": {
+            "speed": 1.0
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-null-is-explicit",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "tts": {
+            "instructions": null,
+            "seed": null,
+            "pronunciation_revision": null
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-output",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "output": {
+            "audio_format": "mp3",
+            "save_artifacts": false
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-nested-complete",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "turn_detection": {
+              "mode": "manual",
+              "silence_duration_ms": 700
+            }
+          },
+          "tts": {
+            "planner": {
+              "max_chars": 120,
+              "max_wait_ms": 800
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-fixed-references",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "vocabulary_set_revision": {
+              "id": "vocab-synthetic",
+              "revision": "2"
+            }
+          },
+          "tts": {
+            "pronunciation_revision": {
+              "id": "pronunciation-synthetic",
+              "revision": "3"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-full-revision",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": true,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "9999999999999999999",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-unknown-root",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "max_segment_ms": 15000
+          }
+        },
+        "published": true
+      }
+    },
+    {
+      "id": "binding-defaults-unknown-parameter",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "unknown": 1
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-null-map",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": null
+      }
+    },
+    {
+      "id": "binding-defaults-unknown-asr",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "engine_url": "https://invalid.example"
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-asr-range",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "preview_interval_ms": 5001
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-boolean-number",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "tts": {
+            "speed": true
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-speed-out-of-domain",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "tts": {
+            "speed": 0.25
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-nested-incomplete",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "tts": {
+            "planner": {
+              "max_chars": 120
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-shorthand-reference",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "asr": {
+            "vocabulary_set_revision": "2"
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-format-enum",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {
+          "output": {
+            "audio_format": "h264"
+          }
+        }
+      }
+    },
+    {
+      "id": "binding-defaults-wrong-version",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "2.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-mutable-revision",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "latest",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-numeric-revision",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": 1,
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-invalid-id",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "../runtime",
+        "created_at": "2026-10-24T00:00:00Z",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "binding-defaults-invalid-time",
+      "profile": "binding_defaults",
+      "schema": "BindingParameterDefaultsSnapshot",
+      "valid": false,
+      "value": {
+        "snapshot_id": "binding-defaults-synthetic-1",
+        "binding_id": "asr-quality",
+        "binding_revision": "1",
+        "binding_revision_id": "binding-revision-synthetic-1",
+        "created_at": "today",
+        "schema_version": "1.0.0",
+        "parameters": {}
+      }
     }
   ]
 }

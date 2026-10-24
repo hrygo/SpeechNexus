@@ -96,28 +96,35 @@ export interface components {
     };
     AsrParameters: {
       language: components["schemas"]["LanguageTag"];
-      preview_interval_ms: number;
-      /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
-      max_segment_ms: number;
-      finalization: components["schemas"]["External_shared_capability_domains_schema_json_FinalizationMode"];
-      final_deadline_ms: number;
-      /** @default 5000 */
-      auxiliary_deadline_ms: number;
-      /** @default 5 */
-      rollback_tokens: number;
-      turn_detection: {
-        mode: components["schemas"]["External_shared_capability_domains_schema_json_VadMode"];
-        silence_duration_ms: number;
-      };
+      preview_interval_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"];
+      max_segment_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"];
+      finalization: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrFinalization"];
+      final_deadline_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"];
+      auxiliary_deadline_ms: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"];
+      rollback_tokens: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"];
+      turn_detection: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrTurnDetection"];
       vocabulary_set_revision?: components["schemas"]["ResourceReference"] | null;
-      alignment: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
-      diarization: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
+      alignment: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrAlignment"];
+      diarization: components["schemas"]["External_shared_profile_parameter_values_schema_json_AsrDiarization"];
     };
     LanguageTag: components["schemas"]["External_shared_language_schema_json_LanguageTag"];
     External_shared_language_schema_json_LanguageTag: string;
+    External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs: number;
+    /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
+    External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs: number;
+    External_shared_profile_parameter_values_schema_json_AsrFinalization: components["schemas"]["External_shared_capability_domains_schema_json_FinalizationMode"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_FinalizationMode:
       "full_segment" | "streaming_finalize";
+    External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs: number;
+    /** @default 5000 */
+    External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs: number;
+    /** @default 5 */
+    External_shared_profile_parameter_values_schema_json_AsrRollbackTokens: number;
+    External_shared_profile_parameter_values_schema_json_AsrTurnDetection: {
+      mode: components["schemas"]["External_shared_capability_domains_schema_json_VadMode"];
+      silence_duration_ms: number;
+    };
     /** @enum {string} */
     External_shared_capability_domains_schema_json_VadMode: "server_vad" | "manual";
     ResourceReference: components["schemas"]["External_shared_references_schema_json_ResourceReference"];
@@ -125,37 +132,48 @@ export interface components {
       id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
       revision: components["schemas"]["External_shared_identifiers_schema_json_Revision"];
     };
+    External_shared_profile_parameter_values_schema_json_AsrAlignment: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_AuxiliaryMode:
       "off" | "required" | "best_effort";
+    External_shared_profile_parameter_values_schema_json_AsrDiarization: components["schemas"]["External_shared_capability_domains_schema_json_AuxiliaryMode"];
     TtsParameters: {
       language: components["schemas"]["LanguageTag"];
-      text_commit_mode: components["schemas"]["External_shared_capability_domains_schema_json_TextCommitMode"];
-      audio_delivery: components["schemas"]["External_shared_capability_domains_schema_json_AudioDeliveryMode"];
-      /** @default 1 */
-      speed: number;
-      instructions?: string | null;
+      text_commit_mode: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"];
+      audio_delivery: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"];
+      speed: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsSpeed"];
+      instructions?: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsInstructions"];
       pronunciation_revision?: components["schemas"]["ResourceReference"] | null;
-      seed?: number | null;
-      planner: {
-        max_chars: number;
-        max_wait_ms: number;
-      };
+      seed?: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsSeed"];
+      planner: components["schemas"]["External_shared_profile_parameter_values_schema_json_TtsPlanner"];
     };
+    External_shared_profile_parameter_values_schema_json_TtsTextCommitMode: components["schemas"]["External_shared_capability_domains_schema_json_TextCommitMode"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_TextCommitMode: "explicit" | "sentence";
+    External_shared_profile_parameter_values_schema_json_TtsAudioDelivery: components["schemas"]["External_shared_capability_domains_schema_json_AudioDeliveryMode"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_AudioDeliveryMode: "complete" | "chunked";
-    OutputParameters: {
-      transcript_format?: components["schemas"]["External_shared_capability_domains_schema_json_TranscriptFormat"];
-      audio_format?: components["schemas"]["External_shared_capability_domains_schema_json_AudioFormat"];
-      save_artifacts?: boolean;
+    /** @default 1 */
+    External_shared_profile_parameter_values_schema_json_TtsSpeed: number;
+    External_shared_profile_parameter_values_schema_json_TtsInstructions: string | null;
+    External_shared_profile_parameter_values_schema_json_TtsSeed: number | null;
+    External_shared_profile_parameter_values_schema_json_TtsPlanner: {
+      max_chars: number;
+      max_wait_ms: number;
     };
+    OutputParameters: {
+      transcript_format?: components["schemas"]["External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat"];
+      audio_format?: components["schemas"]["External_shared_profile_parameter_values_schema_json_OutputAudioFormat"];
+      save_artifacts?: components["schemas"]["External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts"];
+    };
+    External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat: components["schemas"]["External_shared_capability_domains_schema_json_TranscriptFormat"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_TranscriptFormat:
       "json" | "text" | "verbose_json" | "srt" | "vtt";
+    External_shared_profile_parameter_values_schema_json_OutputAudioFormat: components["schemas"]["External_shared_capability_domains_schema_json_AudioFormat"];
     /** @enum {string} */
     External_shared_capability_domains_schema_json_AudioFormat: "mp3" | "wav" | "pcm";
+    External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts: boolean;
     CapabilityRequirement: {
       capability: string;
       required: boolean;

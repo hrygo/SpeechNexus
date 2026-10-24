@@ -3,6 +3,10 @@
     "sha256": "8b3a30326cc55777a472b389412cdcf54e15dc986c42c300989339571b1775cf",
     "version": "0.1.0.dev3"
   },
+  "binding-parameter-defaults.schema.json": {
+    "sha256": "6479a60733585e1f06451efca30496dc94ca91169ff3e21a2a51856631530768",
+    "version": null
+  },
   "capacity-manifest.schema.json": {
     "sha256": "3f27dfa3d0b30542c8506abcb5124d13a81b41a54539297c5d0604858b247b40",
     "version": null
@@ -52,7 +56,7 @@
     "version": null
   },
   "scenario-profile.schema.json": {
-    "sha256": "7d2fb6e705ac199f980576a8641048373990f200c38cbf4bc32549dfdce17412",
+    "sha256": "2ab3cfc8995247e3db06ca9d5a90eac093e4eb0b5cc7a615db010c9594a4d103",
     "version": null
   },
   "shared/capability-domains.schema.json": {
@@ -81,6 +85,10 @@
   },
   "shared/operation-states.schema.json": {
     "sha256": "5b443ad14385f7a3585e6d0a607b5999a131d34d92d712dce585f7f88fcbee64",
+    "version": null
+  },
+  "shared/profile-parameter-values.schema.json": {
+    "sha256": "7129b8d13a3119e5400798b9ce6c310dce4b3749c5840bcbaa0c5edab9030e67",
     "version": null
   },
   "shared/public-audio.schema.json": {

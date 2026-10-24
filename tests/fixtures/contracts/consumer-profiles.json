@@ -5653,6 +5653,31 @@
         "channels": 2
       },
       "valid": false
+    },
+    {
+      "id": "runtime-error-runtime_controller_unavailable",
+      "profile": "runtime",
+      "schema": "RuntimeControlErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "runtime_controller_unavailable",
+          "message": "Synthetic controller error",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "id": "runtime-error-missing-retryable",
+      "profile": "runtime",
+      "schema": "RuntimeControlErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "runtime_controller_unavailable",
+          "message": "Synthetic"
+        }
+      }
     }
   ]
 }

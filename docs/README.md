@@ -55,6 +55,7 @@
 [租约隔离与释放事务](architecture/production-leases.md)消费网关持久未知/停止/未外发事实；隔离保留占用，释放只扣当前 lease 增量，最后 stage 才结算 attempt 配额。
 [完整准入的私有命令存储](architecture/production-admission-storage.md)通过0007新增operation/原请求权威与私有正文约束，独立准入已消费该存储，实际业务/调度消费者仍待接入。
 [完整配方准入独立事务](architecture/production-admission.md)提供全部阶段原子预留与原身份恢复，其他业务配额账本与真实provider仍待装配。
+[固定节点HTTPS客户端](architecture/runtime-controller-client.md)复用runtime源契约，提供有界原意图提交/查询；持久派发、节点内观察生产者、TLS部署与真实资格仍待接入。
 这些包内实现与根目录设计/测试草案分离，其余生产事务与真实集群资格继续按所有权取证。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

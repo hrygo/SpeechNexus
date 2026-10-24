@@ -61,6 +61,8 @@ SpeechNexus 希望服务于三类需求：
 
 [运行时意图事务](docs/architecture/production-runtime-intents.md)已提供独立 create/query/observe 端口：同事务预留完整 peak，核验受信 warmup/资格后转 steady，确认停止且清理完成后才归还基线；PG/InnoDB 合成事实验证不代表真实 GPU 资格。批准计划/资格提供者、持久派发与实际控制循环仍待接入，没有新增公开路由。
 
+[固定节点 HTTPS 客户端](docs/architecture/runtime-controller-client.md)提供有界、证书校验的原 runtime 意图提交/查询，复用同源生成的 HTTP 校验；超时只查原身份，HTTP ready 不生成资格。B 的 GET/精确重放只读持久快照，实际推进仍需节点内观察生产者；运行进程、TLS 部署与持久控制循环尚未装配。
+
 [租约隔离与释放事务](docs/architecture/production-leases.md)提供独立 `quarantine_lease`、`release_lease` 和只读租约查询：未知占用移入隔离并保持总量，核对网关持久停止/释放或未外发事实后才归还当前 lease 增量，最后阶段才归还 attempt 配额。实例基线仍由 runtime 停止流程处理；独立准入共用同一预算权威，实际调度消费者仍待接入。
 
 [`0007` 准入命令存储](docs/architecture/production-admission-storage.md)新增 A 私有的 operation 原命令与每个 attempt 的完整准入请求记录，区分业务与准入摘要，保留删除 tombstone 形状；旧记录不伪造正文。存储已由后续独立准入事务消费；命令清理和公开 Operation/receipt 仍待接入。

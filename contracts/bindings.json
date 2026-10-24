@@ -95,7 +95,8 @@
       "schemas": [
         "RuntimeInstanceIntentRequest",
         "RuntimeInstanceIntentResponse",
-        "NodeReconcileRequest"
+        "NodeReconcileRequest",
+        "RuntimeControlErrorResponse"
       ]
     },
     "realtime": {
@@ -138,6 +139,14 @@
     }
   },
   "http_surfaces": {
+    "runtime": {
+      "source": "internal/runtime-control.openapi.yaml",
+      "validate": true,
+      "paths": [
+        "/internal/v1/nodes/{node_id}/instance-intents",
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}"
+      ]
+    },
     "assets": {
       "source": "speech-openapi.yaml",
       "paths": [

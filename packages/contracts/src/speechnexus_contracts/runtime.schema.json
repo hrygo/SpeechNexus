@@ -5,7 +5,8 @@
   "x-nexus-entrypoints": [
     "RuntimeInstanceIntentRequest",
     "RuntimeInstanceIntentResponse",
-    "NodeReconcileRequest"
+    "NodeReconcileRequest",
+    "RuntimeControlErrorResponse"
   ],
   "$defs": {
     "RuntimeInstanceIntentRequest": {
@@ -647,6 +648,46 @@
           }
         }
       ]
+    },
+    "RuntimeControlErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "target_node_mismatch",
+                "unapproved_runtime_template",
+                "stale_fencing_token",
+                "stale_instance_generation",
+                "gateway_drain_incomplete",
+                "intent_conflict",
+                "runtime_controller_unavailable",
+                "runtime_intent_not_found",
+                "invalid_runtime_request",
+                "component_credential_invalid"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "observed_fencing_token": {
+              "type": ["integer", "null"],
+              "minimum": 1
+            }
+          }
+        }
+      }
     }
   },
   "anyOf": [
@@ -658,6 +699,9 @@
     },
     {
       "$ref": "#/$defs/NodeReconcileRequest"
+    },
+    {
+      "$ref": "#/$defs/RuntimeControlErrorResponse"
     }
   ]
 }

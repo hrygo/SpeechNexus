@@ -259,7 +259,8 @@ request IDs and GET bodies are rejected before database access.
 The composition root shares the configured asset runtime and database pool.
 Missing configuration or unavailable storage returns 503. Existing
 `asset_allowed_hosts`/`asset_allowed_origins` apply through the same extracted
-policy as asset routes; no new identity system or client-selected endpoint is
+policy as asset routes. Host authorities reject userinfo, path/query/fragment
+separators even when the parsed component is empty; no new identity system or client-selected endpoint is
 introduced. Fixed public errors never include SQL, credentials or private paths.
 The runtime OpenAPI includes only the two implemented GETs with namespaced admin
 components; planned workspace POST/PATCH and policy-management routes remain

@@ -17,6 +17,7 @@ def rejected_authority(
         if (
             len(host_values) == 1
             and len(host_values[0]) <= 300
+            and not any(char in host_values[0] for char in "/?#@")
             and not any(ord(char) <= 32 or ord(char) >= 127 for char in host_values[0])
         ):
             authority = urlsplit("//" + host_values[0])

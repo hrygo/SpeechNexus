@@ -157,7 +157,6 @@ refusal; the worker does not require S3 or call remote STOP on exit. Daemon and
 plans are synthetic; no GPU, deployment TLS, node observation loop or full
 scheduler qualification is implied. See [runtime delivery](../../docs/architecture/production-runtime-delivery.md).
 
-
 `test_admission_recovery_pressure.py` commits a real admission and loses the
 commit reply, then prevents the recovery query from reading its original facts:
 a genuinely exhausted one-slot PG pool or a native InnoDB metadata-lock timeout.
@@ -167,7 +166,6 @@ same original identity. Commit-reply loss is injected after the actual commit;
 read pressure is native. InnoDB uses the existing test-only DBAPI oracle around
 the unchanged production SQL, not a product MySQL adapter or engine qualification.
 
-
 `test_owner_activation_quarantine.py` runs real PG/InnoDB owner and lease ports
 with minimum roles. A persisted gateway unknown marker alone cannot activate an
 owner: the A quarantine transaction must first commit its lease marker, resource,
@@ -176,3 +174,11 @@ host/pool lock waits while activation races quarantine commit or a forced rollba
 after the host write; verify old-owner fencing; and preserve total occupancy and
 gateway history. Gateway observations are synthetic persisted fixtures, not
 physical stop, GPU or deployment-fencing qualification.
+
+`test_profile_drafts.py` covers the A02 process-local draft configuration port on
+real PG and the same SQL with a test-only InnoDB DBAPI oracle. Restricted fixture
+roles verify original-key replay/conflict, serialized family CAS, immutable reads,
+post-write rollback, commit-reply loss and native read pressure. PG verifies
+append-only migration 0009 and preservation on failed upgrade/refused downgrade.
+This does not qualify profile publication, HTTP routes, default selection or
+speech engines. See [profile drafts](../../docs/architecture/profile-drafts.md).

@@ -5785,6 +5785,238 @@
           "dsn": "private"
         }
       }
+    },
+    {
+      "id": "profile-draft-ProfileRevisionCreateRequest-valid",
+      "profile": "admin",
+      "schema": "ProfileRevisionCreateRequest",
+      "valid": true,
+      "value": {
+        "display_name": "Caption draft",
+        "kind": "asr",
+        "release_tier": "experimental",
+        "execution_classes": ["realtime"],
+        "parameters": {
+          "asr": {
+            "language": "zh",
+            "preview_interval_ms": 500,
+            "max_segment_ms": 8000,
+            "finalization": "full_segment",
+            "final_deadline_ms": 2000,
+            "auxiliary_deadline_ms": 5000,
+            "rollback_tokens": 5,
+            "turn_detection": {
+              "mode": "server_vad",
+              "silence_duration_ms": 400
+            },
+            "vocabulary_set_revision": null,
+            "alignment": "off",
+            "diarization": "off"
+          },
+          "output": {
+            "transcript_format": "json",
+            "save_artifacts": false
+          }
+        },
+        "required_capabilities": [
+          {
+            "capability": "asr.streaming_preview",
+            "required": true
+          },
+          {
+            "capability": "asr.full_segment_review",
+            "required": true
+          }
+        ],
+        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_ranges": {
+          "asr.preview_interval_ms": {
+            "minimum": 300,
+            "maximum": 1000
+          }
+        },
+        "slo_ref": "slo/realtime-caption-v1",
+        "profile_id": "caption-draft",
+        "expected_latest_revision": null
+      }
+    },
+    {
+      "id": "profile-draft-ProfileRevisionCreateRequest-invalid",
+      "profile": "admin",
+      "schema": "ProfileRevisionCreateRequest",
+      "valid": false,
+      "value": {
+        "display_name": "Caption draft",
+        "kind": "asr",
+        "release_tier": "experimental",
+        "execution_classes": ["realtime"],
+        "parameters": {
+          "asr": {
+            "language": "zh",
+            "preview_interval_ms": 500,
+            "max_segment_ms": 8000,
+            "finalization": "full_segment",
+            "final_deadline_ms": 2000,
+            "auxiliary_deadline_ms": 5000,
+            "rollback_tokens": 5,
+            "turn_detection": {
+              "mode": "server_vad",
+              "silence_duration_ms": 400
+            },
+            "vocabulary_set_revision": null,
+            "alignment": "off",
+            "diarization": "off"
+          },
+          "output": {
+            "transcript_format": "json",
+            "save_artifacts": false
+          }
+        },
+        "required_capabilities": [
+          {
+            "capability": "asr.streaming_preview",
+            "required": true
+          },
+          {
+            "capability": "asr.full_segment_review",
+            "required": true
+          }
+        ],
+        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_ranges": {
+          "asr.preview_interval_ms": {
+            "minimum": 300,
+            "maximum": 1000
+          }
+        },
+        "slo_ref": "slo/realtime-caption-v1",
+        "profile_id": "caption-draft",
+        "expected_latest_revision": 0
+      }
+    },
+    {
+      "id": "profile-draft-ScenarioProfileRevision-valid",
+      "profile": "scenario_profiles",
+      "schema": "ScenarioProfileRevision",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "profile_id": "caption-draft",
+        "revision": "2",
+        "display_name": "Caption draft",
+        "kind": "asr",
+        "release_tier": "experimental",
+        "execution_classes": ["realtime"],
+        "parameters": {
+          "asr": {
+            "language": "zh",
+            "preview_interval_ms": 500,
+            "max_segment_ms": 8000,
+            "finalization": "full_segment",
+            "final_deadline_ms": 2000,
+            "auxiliary_deadline_ms": 5000,
+            "rollback_tokens": 5,
+            "turn_detection": {
+              "mode": "server_vad",
+              "silence_duration_ms": 400
+            },
+            "vocabulary_set_revision": null,
+            "alignment": "off",
+            "diarization": "off"
+          },
+          "output": {
+            "transcript_format": "json",
+            "save_artifacts": false
+          }
+        },
+        "required_capabilities": [
+          {
+            "capability": "asr.streaming_preview",
+            "required": true
+          },
+          {
+            "capability": "asr.full_segment_review",
+            "required": true
+          }
+        ],
+        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_ranges": {
+          "asr.preview_interval_ms": {
+            "minimum": 300,
+            "maximum": 1000
+          }
+        },
+        "slo_ref": "slo/realtime-caption-v1",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": "1"
+      }
+    },
+    {
+      "id": "profile-draft-ScenarioProfileRevision-invalid",
+      "profile": "scenario_profiles",
+      "schema": "ScenarioProfileRevision",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "profile_id": "caption-draft",
+        "revision": "0",
+        "display_name": "Caption draft",
+        "kind": "asr",
+        "release_tier": "experimental",
+        "execution_classes": ["realtime"],
+        "parameters": {
+          "asr": {
+            "language": "zh",
+            "preview_interval_ms": 500,
+            "max_segment_ms": 8000,
+            "finalization": "full_segment",
+            "final_deadline_ms": 2000,
+            "auxiliary_deadline_ms": 5000,
+            "rollback_tokens": 5,
+            "turn_detection": {
+              "mode": "server_vad",
+              "silence_duration_ms": 400
+            },
+            "vocabulary_set_revision": null,
+            "alignment": "off",
+            "diarization": "off"
+          },
+          "output": {
+            "transcript_format": "json",
+            "save_artifacts": false
+          }
+        },
+        "required_capabilities": [
+          {
+            "capability": "asr.streaming_preview",
+            "required": true
+          },
+          {
+            "capability": "asr.full_segment_review",
+            "required": true
+          }
+        ],
+        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_ranges": {
+          "asr.preview_interval_ms": {
+            "minimum": 300,
+            "maximum": 1000
+          }
+        },
+        "slo_ref": "slo/realtime-caption-v1",
+        "publication": {
+          "status": "draft",
+          "published_at": null,
+          "retired_at": null,
+          "disabled_reason": null
+        },
+        "supersedes_revision": "1"
+      }
     }
   ]
 }

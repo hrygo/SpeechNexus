@@ -6,6 +6,13 @@ It contains no business rules, database adapter, server route, or engine.
 Do not import it from any domain package. Interfaces translate validated DTOs
 into their own application/domain values.
 
+Profile draft consumers can parse `ProfileRevisionCreateRequest` through the
+`admin` namespace and the complete `ScenarioProfileRevision` through Python
+`speechnexus_contracts.scenario_profiles` / TypeScript
+`@speechnexus/contracts/scenario-profiles`. These come from the existing admin and
+scenario-profile sources, including root conditionals. See the
+[process-local port and qualification boundary](../../docs/architecture/profile-drafts.md).
+
 ## Generate and verify
 
 From the repository root, with locked Python and Node dependencies installed:
@@ -146,14 +153,14 @@ TypedDicts, a typed parser, an offline schema bundle and generated TypeScript
 types. HTTP profiles additionally expose basic clients; the two public realtime
 profiles parse data without opening connections. Entry points are explicitly listed in `bindings.json`:
 
-| Profile     | Runtime entrypoints                                                  |
-| ----------- | -------------------------------------------------------------------- |
-| `admin`     | Workspace create/CAS request, Workspace/List response, shared ErrorResponse |
-| `workbench` | Project create/CAS and Project/List; transcripts; status/errors; shared deletion; Meeting/create/seal and Minutes/create |
-| `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
-| `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
-| `realtime` | Public session create/response and shared PCM descriptor; reuses speech TS types |
-| `realtime_events` | Original public event union, fourteen-member standard transcription selection, OpenAI PCM format |
+| Profile           | Runtime entrypoints                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `admin`           | Workspace create/CAS request, Workspace/List response, shared ErrorResponse                                              |
+| `workbench`       | Project create/CAS and Project/List; transcripts; status/errors; shared deletion; Meeting/create/seal and Minutes/create |
+| `execution`       | Submit request/receipt/status, abort, barrier request/response, control errors                                           |
+| `runtime`         | Runtime instance intent request/receipt, node reconciliation request                                                     |
+| `realtime`        | Public session create/response and shared PCM descriptor; reuses speech TS types                                         |
+| `realtime_events` | Original public event union, fourteen-member standard transcription selection, OpenAI PCM format                         |
 
 ```python
 from speechnexus_contracts.execution import parse
@@ -442,7 +449,6 @@ The running backend merges this complete projection with health schemas; it
 never publishes the unimplemented speech paths in its OpenAPI. Schema default
 annotations stay optional in TypeScript (`--default-non-nullable false`) and
 never cause runtime default insertion. Generated files remain drift-protected.
-
 
 ## Workspace read HTTP contract
 

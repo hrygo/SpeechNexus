@@ -24,6 +24,11 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 
 ## 18 个端口
 
+A02 的 `0009_profile_drafts` 另加三个 speech 配置私有表：
+`speech_profile_families`、`speech_profile_revisions`、`speech_profile_commands`。
+它们只支持不可变草稿分配/原键恢复，不扩共享协调端口，不授权 B/C 写入；
+见[草稿端口与迁移边界](profile-drafts.md)。
+
 | 端口                                                  | 主责           | 权威写入范围                                                             |
 | ----------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |
 | acquire_owner / renew_owner / activate_owner          | A              | resource_pools                                                           |

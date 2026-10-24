@@ -49,7 +49,8 @@
         "WorkspacePatch",
         "Workspace",
         "WorkspaceList",
-        "ErrorResponse"
+        "ErrorResponse",
+        "ProfileRevisionCreateRequest"
       ]
     },
     "workbench": {
@@ -141,6 +142,16 @@
             "#/$defs/ErrorEvent"
           ]
         }
+      }
+    },
+    "scenario_profiles": {
+      "source": "scenario-profile.schema.json",
+      "version": "1.0.0",
+      "format": "json-schema",
+      "client": false,
+      "schemas": ["ScenarioProfileRevision"],
+      "schema_refs": {
+        "ScenarioProfileRevision": "#"
       }
     }
   },

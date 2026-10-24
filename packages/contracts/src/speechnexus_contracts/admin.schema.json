@@ -7,7 +7,8 @@
     "WorkspacePatch",
     "Workspace",
     "WorkspaceList",
-    "ErrorResponse"
+    "ErrorResponse",
+    "ProfileRevisionCreateRequest"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -614,6 +615,406 @@
         "observed.turn_detection.mode",
         "observed.turn_detection.silence_duration_ms"
       ]
+    },
+    "ProfileRevisionCreateRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileDefinition"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["profile_id", "expected_latest_revision"],
+      "properties": {
+        "profile_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expected_latest_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_ProfileDefinition": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["asr", "tts", "duplex"],
+          "description": "duplex profiles are valid only for realtime sessions that reserve both ASR and TTS resources atomically."
+        },
+        "release_tier": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileReleaseTier"
+        },
+        "execution_classes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ExecutionClass"
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileParameters"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_CapabilityRequirement"
+          }
+        },
+        "override_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+          },
+          "description": "Only these paths may be overridden by a request. Omitted paths are not overridable even when the value is within a declared range."
+        },
+        "override_ranges": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_OverrideRange"
+          },
+          "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
+        },
+        "slo_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Reference to the deployment SLO document or qualification report scenario. It is not a numeric promise in this schema."
+        }
+      },
+      "required": [
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes",
+        "parameters",
+        "required_capabilities",
+        "override_allowlist",
+        "override_ranges",
+        "slo_ref"
+      ]
+    },
+    "External_scenario_profile_schema_json_ProfileReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ProfileReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ProfileReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "production"],
+      "description": "Scenario profiles do not claim the model-binding-only best_effort tier."
+    },
+    "External_scenario_profile_schema_json_ExecutionClass": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+    },
+    "External_shared_capability_domains_schema_json_ServiceClass": {
+      "type": "string",
+      "enum": ["realtime", "interactive", "batch"]
+    },
+    "External_scenario_profile_schema_json_ProfileParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_AsrParameters"
+        },
+        "tts": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_TtsParameters"
+        },
+        "output": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_OutputParameters"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_AsrParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "finalization",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "rollback_tokens",
+        "turn_detection",
+        "alignment",
+        "diarization"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+        },
+        "preview_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+        },
+        "final_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "auxiliary_deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 5000
+        },
+        "rollback_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32,
+          "default": 5
+        },
+        "turn_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "silence_duration_ms"],
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+            },
+            "silence_duration_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 3000
+            }
+          }
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_scenario_profile_schema_json_ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_scenario_profile_schema_json_TtsParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "text_commit_mode", "audio_delivery", "speed", "planner"],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2.0,
+          "default": 1.0
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_chars", "max_wait_ms"],
+          "properties": {
+            "max_chars": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 400
+            },
+            "max_wait_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 3000
+            }
+          }
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_OutputParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transcript_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+        },
+        "audio_format": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+        },
+        "save_artifacts": {
+          "type": "boolean"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_CapabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "required"],
+      "properties": {
+        "capability": {
+          "type": "string",
+          "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "constraint": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "enum": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": ["string", "number", "boolean"]
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": ["minimum"]
+            },
+            {
+              "required": ["maximum"]
+            },
+            {
+              "required": ["enum"]
+            }
+          ]
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_ParameterPath": {
+      "type": "string",
+      "enum": [
+        "asr.language",
+        "asr.preview_interval_ms",
+        "asr.max_segment_ms",
+        "asr.finalization",
+        "asr.final_deadline_ms",
+        "asr.auxiliary_deadline_ms",
+        "asr.rollback_tokens",
+        "asr.turn_detection.mode",
+        "asr.turn_detection.silence_duration_ms",
+        "asr.vocabulary_set_revision",
+        "asr.alignment",
+        "asr.diarization",
+        "tts.language",
+        "tts.text_commit_mode",
+        "tts.audio_delivery",
+        "tts.speed",
+        "tts.instructions",
+        "tts.pronunciation_revision",
+        "tts.seed",
+        "tts.planner.max_chars",
+        "tts.planner.max_wait_ms",
+        "output.transcript_format",
+        "output.audio_format",
+        "output.save_artifacts"
+      ]
+    },
+    "External_scenario_profile_schema_json_OverrideRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["minimum"]
+        },
+        {
+          "required": ["maximum"]
+        },
+        {
+          "required": ["enum"]
+        }
+      ]
     }
   },
   "anyOf": [
@@ -631,6 +1032,9 @@
     },
     {
       "$ref": "#/$defs/ErrorResponse"
+    },
+    {
+      "$ref": "#/$defs/ProfileRevisionCreateRequest"
     }
   ]
 }

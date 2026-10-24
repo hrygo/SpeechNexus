@@ -26,6 +26,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
     RecordStop,
     SubmissionIntent,
+    VerifiedStopEvidence,
 )
 
 
@@ -46,6 +47,25 @@ class EngineObservation:
     state: EngineObservedState
     error_code: ExecutionErrorCode | None = None
     dispatched_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AbortOutcome:
+    """What one bounded abort attempt learned about an already-issued identity.
+
+    ``evidence`` carries the two release confirmations only when the adapter itself
+    observed them. An unconfirmed attempt reports no evidence: the execution keeps
+    holding capacity instead of being reported as stopped.
+    """
+
+    observed_at: datetime
+    evidence: VerifiedStopEvidence | None = None
+    error_code: ExecutionErrorCode | None = None
+    engine_request_id: str | None = None
+
+    @property
+    def verified_stop(self) -> bool:
+        return self.evidence is not None and self.evidence.is_verified
 
 
 class ExecutionObservationLedger(Protocol):
@@ -84,6 +104,19 @@ class EngineObservationPort(Protocol):
     def observe(self, intent: SubmissionIntent) -> EngineObservation | None: ...
 
 
+class EngineAbortPort(Protocol):
+    """Requests engine abort for one issued identity within the caller's bounded wait.
+
+    An implementation must not synthesize stop evidence, not treat its own transport
+    timeout, disconnect or a "not found" answer as release, and not exceed the wait it
+    was given. Unconfirmed work stays quarantined and keeps holding capacity.
+    """
+
+    def abort(
+        self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int
+    ) -> AbortOutcome: ...
+
+
 class IngressOwnership(Protocol):
     @property
     def node_id(self) -> str: ...
@@ -102,6 +135,10 @@ class BarrierLedger(Protocol):
 
 class ExecutionRecoveryLedger(Protocol):
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent: ...
+
+
+class ExecutionAbortLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
+    """One abort needs the recorded intent, verified stop evidence and the unknown transition."""
 
 
 class ExecutionQueryPort(Protocol):

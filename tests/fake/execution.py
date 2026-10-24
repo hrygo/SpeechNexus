@@ -20,7 +20,7 @@ from speechnexus_gateway.domain.command_redaction import (
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
-from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
+from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -271,3 +271,22 @@ class ScriptedEngine:
 
     def observe(self, intent: SubmissionIntent) -> EngineObservation | None:
         return self._observations.get(intent.identity.submit_intent_id)
+
+
+class ScriptedAbort:
+    """Abort double: reports only scripted outcomes and never contacts an engine."""
+
+    def __init__(self, *, now: Callable[[], datetime] | None = None) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+        self._outcomes: deque[AbortOutcome] = deque()
+        self._now = now or (lambda: datetime.now(UTC))
+
+    def script_outcome(self, outcome: AbortOutcome) -> None:
+        self._outcomes.append(outcome)
+
+    def abort(self, intent: SubmissionIntent, *, reason: str, wait_timeout_ms: int) -> AbortOutcome:
+        self.calls.append((intent.identity.submit_intent_id, reason, wait_timeout_ms))
+        if self._outcomes:
+            return self._outcomes.popleft()
+        # The default is the honest one: nothing was verified, so nothing is released.
+        return AbortOutcome(observed_at=self._now())

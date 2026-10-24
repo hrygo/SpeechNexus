@@ -16,6 +16,8 @@ from psycopg_pool import ConnectionPool
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
+from tests.integration.test_production_leases import LeaseDatabase
+from tests.integration.test_production_leases import lease_database as lease_database
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.owner_database import MySQLOwnerTransactions
 
@@ -162,6 +164,7 @@ def test_expiry_never_revives_an_epoch_and_takeover_increments_token(
 
 def test_activation_requires_barriers_and_resolved_dispatch_without_releasing_budgets(
     owner_database: OwnerDatabase,
+    lease_database: LeaseDatabase,
 ) -> None:
     db = owner_database.foundation.database
     owner_database.acquire()
@@ -173,6 +176,8 @@ def test_activation_requires_barriers_and_resolved_dispatch_without_releasing_bu
         "UPDATE submit_intents SET execution_state = 'unknown_quarantined', "
         "cleanup_state = 'quarantined'"
     )
+    assert owner_database.port.activate_owner(request).error_code == "reconciliation_required"
+    assert lease_database.port.quarantine_lease(lease_database.request()).outcome == "committed"
     budgets = [
         db.query(f"SELECT * FROM {table}")
         for table in ("host_nodes", "engine_instances", "workspace_quotas", "admission_leases")
@@ -188,10 +193,15 @@ def test_activation_requires_barriers_and_resolved_dispatch_without_releasing_bu
 
 def test_activation_does_not_ignore_a_second_gateway_or_stale_barrier(
     owner_database: OwnerDatabase,
+    lease_database: LeaseDatabase,
 ) -> None:
     db = owner_database.foundation.database
     owner_database.acquire()
-    db.query("UPDATE submit_intents SET execution_state = 'unknown_quarantined'")
+    db.query(
+        "UPDATE submit_intents SET execution_state='unknown_quarantined',"
+        "cleanup_state='quarantined'"
+    )
+    assert lease_database.port.quarantine_lease(lease_database.request()).outcome == "committed"
     db.query(
         "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, pool_id, "
         "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "

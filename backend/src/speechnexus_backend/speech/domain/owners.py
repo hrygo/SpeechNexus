@@ -139,11 +139,14 @@ class ActivationFacts:
     affected_gateways: frozenset[str]
     barriers: tuple[BarrierFact, ...]
     unresolved_submissions: bool
+    unaccounted_quarantines: bool
 
     def ready_for(self, token: int) -> bool:
         sealed = {fact.gateway_id: fact.min_fencing_token for fact in self.barriers}
-        return not self.unresolved_submissions and all(
-            sealed.get(gateway, 0) >= token for gateway in self.affected_gateways
+        return (
+            not self.unresolved_submissions
+            and not self.unaccounted_quarantines
+            and all(sealed.get(gateway, 0) >= token for gateway in self.affected_gateways)
         )
 
 

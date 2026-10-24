@@ -25,6 +25,7 @@ from speechnexus_backend.speech.domain.owners import (
     renewed,
     unknown,
 )
+from speechnexus_backend.speech.infrastructure.leases_sql import _record as lease_record
 
 
 class OwnerCursor(Protocol):
@@ -71,11 +72,18 @@ def activation_facts(cursor: OwnerCursor, pool_id: str) -> ActivationFacts:
     )
     gateways = frozenset(row["gateway_id"] for row in cursor.fetchall())
     cursor.execute(
-        "SELECT lease_id FROM admission_leases WHERE pool_id = %s "
+        "SELECT * FROM admission_leases WHERE pool_id = %s "
         "AND lease_state <> 'released' ORDER BY lease_id FOR UPDATE",
         (pool_id,),
     )
-    cursor.fetchall()
+    try:
+        accounted = {
+            lease.lease_id
+            for row in cursor.fetchall()
+            if (lease := lease_record(row)).lease_state == "quarantined"
+        }
+    except ValueError, TypeError, KeyError:
+        raise OwnerRejectedError("reconciliation_required") from None
     cursor.execute(
         "SELECT gateway_id, min_fencing_token, sealed_evidence_digest AS evidence_digest "
         "FROM gateway_fencing_barriers WHERE pool_id = %s ORDER BY gateway_id FOR UPDATE",
@@ -86,13 +94,26 @@ def activation_facts(cursor: OwnerCursor, pool_id: str) -> ActivationFacts:
     except ValueError, TypeError:
         raise OwnerRejectedError("reconciliation_required") from None
     cursor.execute(
-        "SELECT submit_intent_id FROM submit_intents WHERE lease_id IN "
+        "SELECT submit_intent_id, lease_id, execution_state, cleanup_state "
+        "FROM submit_intents WHERE lease_id IN "
         "(SELECT lease_id FROM admission_leases WHERE pool_id = %s) "
-        "AND execution_state IN ('submitting', 'executing', 'stopping') "
+        "AND execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined') "
         "ORDER BY submit_intent_id FOR UPDATE",
         (pool_id,),
     )
-    return ActivationFacts(gateways, barriers, bool(cursor.fetchall()))
+    submissions = cursor.fetchall()
+    # The A lease marker commits with all quarantine projections and threshold
+    # handling. The B unknown marker alone cannot establish that completion.
+    return ActivationFacts(
+        gateways,
+        barriers,
+        any(row["execution_state"] != "unknown_quarantined" for row in submissions),
+        any(
+            row["execution_state"] == "unknown_quarantined"
+            and (row["lease_id"] not in accounted or row["cleanup_state"] != "quarantined")
+            for row in submissions
+        ),
+    )
 
 
 def mutate_in_transaction(

@@ -166,3 +166,13 @@ unchanged command/lease/Job/outbox/quota/budget snapshots before recovering the
 same original identity. Commit-reply loss is injected after the actual commit;
 read pressure is native. InnoDB uses the existing test-only DBAPI oracle around
 the unchanged production SQL, not a product MySQL adapter or engine qualification.
+
+
+`test_owner_activation_quarantine.py` runs real PG/InnoDB owner and lease ports
+with minimum roles. A persisted gateway unknown marker alone cannot activate an
+owner: the A quarantine transaction must first commit its lease marker, resource,
+slot and quota projections, and threshold disposition. Tests observe actual
+host/pool lock waits while activation races quarantine commit or a forced rollback
+after the host write; verify old-owner fencing; and preserve total occupancy and
+gateway history. Gateway observations are synthetic persisted fixtures, not
+physical stop, GPU or deployment-fencing qualification.

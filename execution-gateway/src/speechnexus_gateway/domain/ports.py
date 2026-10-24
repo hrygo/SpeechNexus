@@ -137,8 +137,8 @@ class ExecutionRecoveryLedger(Protocol):
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent: ...
 
 
-class ExecutionAbortLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
-    """One abort needs the recorded intent, verified stop evidence and the unknown transition."""
+class ExecutionFactLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
+    """One execution fact needs the recorded intent, its stop evidence and its unknown state."""
 
 
 class ExecutionQueryPort(Protocol):

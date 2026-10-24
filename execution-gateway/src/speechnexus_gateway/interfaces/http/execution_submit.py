@@ -7,12 +7,10 @@ cannot verify never reports a stop.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Path, Request
 from fastapi.responses import JSONResponse
-from speechnexus_contracts import execution_models as models
 from speechnexus_contracts.execution import parse
 from starlette.concurrency import run_in_threadpool
 
@@ -22,11 +20,9 @@ from speechnexus_gateway.application.abort_execution import (
 )
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.recovery import submission_response
-from speechnexus_gateway.domain.submission import (
-    InvalidExecutionRequestError,
-    SubmissionIdentity,
-    SubmitRequest,
-    derived_output_stream_id,
+from speechnexus_gateway.interfaces.execution_payloads import (
+    derived_stream_id_for,
+    submit_request_from_payload,
 )
 from speechnexus_gateway.interfaces.http.control_errors import control_response
 from speechnexus_gateway.interfaces.http.control_schemas import (
@@ -48,52 +44,6 @@ _NO_DISPATCH_ADAPTER = (
 _NO_ABORT_ADAPTER = (
     "No engine abort adapter is configured on this gateway; the execution state is unchanged."
 )
-
-
-def submit_request_from_payload(payload: models.SubmitExecutionRequest) -> SubmitRequest:
-    """Translate one frozen wire request into the domain request, rejecting bad values.
-
-    The frozen request carries the output ceiling and sample rate but no stream name, so an
-    attempt that emits PCM names its single logical output stream from its own identity.
-    """
-    try:
-        deadline_at = datetime.fromisoformat(payload["deadline_at"])
-    except ValueError as error:
-        raise InvalidExecutionRequestError("deadline_at must be an RFC 3339 instant") from error
-    sample_rate_hz = payload["sample_rate_hz"]
-    try:
-        identity = SubmissionIdentity(
-            submit_intent_id=payload["submit_intent_id"],
-            lease_id=payload["lease_id"],
-            operation_id=payload["operation_id"],
-            attempt_id=payload["attempt_id"],
-            stage_id=payload["stage_id"],
-            workspace_id=payload["workspace_id"],
-            pool_id=payload["pool_id"],
-            host_node_id=payload["host_node_id"],
-            gateway_id=payload["gateway_id"],
-            instance_id=payload["instance_id"],
-            instance_generation=payload["instance_generation"],
-            binding_revision_id=payload["binding_revision_id"],
-            policy_revision_id=payload["policy_revision_id"],
-            voice_revision_id=payload["voice_revision_id"],
-            fencing_token=payload["fencing_token"],
-            command_digest=payload["command_digest"],
-            deadline_at=deadline_at,
-            max_output_audio_ms=payload["max_output_audio_ms"],
-            sample_rate_hz=sample_rate_hz,
-        )
-        return SubmitRequest(
-            identity=identity,
-            command=cast(Any, payload["command"]),
-            output_stream_id=(
-                None
-                if sample_rate_hz is None
-                else derived_output_stream_id(identity.operation_id, identity.attempt_id)
-            ),
-        )
-    except ValueError as error:
-        raise InvalidExecutionRequestError(f"the execution request is invalid: {error}") from error
 
 
 def _error_responses(descriptions: dict[int, str]) -> dict[int | str, dict[str, Any]]:
@@ -153,7 +103,10 @@ def create_execution_submit_router(*, credential: ComponentCredential) -> APIRou
             return control_response(
                 "control_store_unavailable", _NO_DISPATCH_ADAPTER, 503, "retry_transaction"
             )
-        outcome = await run_in_threadpool(service.submit, submit_request_from_payload(payload))
+        outcome = await run_in_threadpool(
+            service.submit,
+            submit_request_from_payload(payload, output_stream_id=derived_stream_id_for(payload)),
+        )
         return parse(
             "SubmitExecutionResponse",
             submission_response(outcome.intent, idempotent_replay=outcome.idempotent_replay),

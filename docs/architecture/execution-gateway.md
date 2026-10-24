@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.9.0"
+version: "1.10.0"
 date: 2026-10-24
 ---
 
@@ -30,6 +30,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 | 提交/停止应用服务、重放与隔离对账 | `speechnexus_gateway.application.submit_execution` | 通过 domain 端口访问外部系统，不自己发 SQL |
 | 未知转换与只读执行快照 | `domain.recovery`、`application.query_execution` | 独立 recovery/query 端口；查询不调用引擎、不触发对账或状态转换 |
 | 观察裁决与受信事务边界 | `domain.observation`、`application.observe_execution`、`interfaces.observation_transactions` | 完整身份、版本与状态检查；生成契约校验与完整 TransactionResult，不新增 HTTP 路由 |
+| 提交/停止/未知的受信事务结果 | `interfaces.submit_transactions`、`interfaces.execution_payloads` | 与 HTTP 提交共用一份冻结请求翻译；重复事务报 `replayed`，终态不被降级，仍不释放预算 |
 | 命令正文清理与许可端口 | `domain.command_redaction`、`application.redact_execution_command`、`interfaces.command_redaction_transactions` | 必须显式接入可信删除协调器；仅清正文并原子留 tombstone，不提供默认许可或 HTTP 入口 |
 | 输出区间追加与原事实查询 | `domain.output_intervals`、`application.output_intervals`、`infrastructure.output_interval_sql`、`interfaces.output_interval_transactions` | 跨阶段/资源池按逻辑流串行；权威用量是区间长度，不是最大水位；受信原生入口，无 HTTP 计量路由 |
 | 入口排序、屏障请求与证明 | `speechnexus_gateway.application.ingress`、`domain.fencing` | 同一个 guard 覆盖落 intent、完整外发握手与结果保存；网络期间不占数据库事务 |
@@ -397,12 +398,28 @@ wire 输入保持原样。输入中的布尔、数字字符串、额外权威字
 
 本表仅完成输出分项映射；其他旧用例仍需逐项分类与验收，退出条件尚未全部满足，旧门禁继续过渡保留。
 
-## 12. 未交付与已知缺口
+## 12. 提交、停止与未知的具名结果边界
 
-- 输出区间追加和原区间查询已有，真实计量采集器、A 用量消费与资格验证仍待接入；
+`ExecutionFactBoundary`（`interfaces.submit_transactions`）是这三个事务的受信进程内入口：
+它不开 HTTP 路由、不授予外发权限，调用方拿到冻结的完整 `TransactionResult` —— outcome、
+稳定错误码、恢复提示、版本与 `ExecutionSnapshot` —— 而不是领域异常。它与认证 HTTP 提交共用
+`interfaces.execution_payloads` 里同一份冻结请求翻译，因此两条入口拒绝同样的值；命令中的
+`output_stream_id` 由命令显式给出（HTTP 入口没有该字段时按 attempt 身份派生），采样率非空时必须存在。
+
+重复同一事务报 `replayed` 并返回原事实，不改写时间与版本；同一 intent 换命令、已终态执行被降级为
+unknown、对不存在的执行报事实，分别是 `submit_intent_conflict`、`execution_cleanup_pending`
+（`reconcile`）与 `invalid_execution_request`。版本只在新事实写入时前进，所以“版本未变”就是原重放。
+停止事实仍只追加、仍不释放任何预算，未知转换仍保留全部身份与占用。
+
+`seal_barrier` 的具名入口仍待补一个只读屏障事实端口：同一屏障命令的重放不能靠「再封锁一次」取得
+原事实，因为 owner 已被替换时再次封锁会因权限过期被拒，而不是返回原事实。
+
+## 13. 未交付与已知缺口
+
+- 提交、停止、未知、观察、清理与区间事务都已返回完整具名 TransactionResult，`seal_barrier`
+  的具名入口仍待补只读屏障事实端口；真实计量采集器、A 用量消费与资格验证仍待接入；
   命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
-  unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
-  观察端口已有完整具名结果边界，其余 B 事务的统一结果入口仍待收敛。
+  unknown 事务和 submit 查询分支已有，自动恢复循环仍待装配。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
   但完整事务响应封装、`drain` 路由与真实引擎 dispatch/abort adapter 仍未交付；
   在没有 adapter 的组合根里两条引擎路由只返回可重试的不可用，不产生任何执行事实。
@@ -414,13 +431,14 @@ wire 输入保持原样。输入中的布尔、数字字符串、额外权威字
 - 提交入口已服务并通过真实 PG 集成测试，但完整 deadline/运行资格校验与实际引擎外发仍需接入；
   没有引擎 adapter 时入口只会拒绝，因此不能据此称为生产执行链路就绪。
 
-## 13. 验证
+## 14. 验证
 
 ```sh
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
 SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
     tests/integration/test_gateway_submit_http.py \
+    tests/integration/test_gateway_fact_transactions.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
     tests/integration/test_gateway_command_redaction.py \

@@ -366,13 +366,13 @@ def test_migration_repeat_and_refused_downgrade_preserve_profile_history(
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migration.upgrade(config, "head")
-            with pytest.raises(RuntimeError, match="Profile history downgrade"):
+            with pytest.raises(RuntimeError, match="Binding history downgrade"):
                 migration.downgrade(config, "0008_runtime_delivery")
     finally:
         engine.dispose()
     assert profiles.snapshot() == before
     assert profiles.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0009_profile_drafts"}
+        {"version_num": "0010_model_binding_drafts"}
     ]
 
 
@@ -433,7 +433,12 @@ def test_failed_upgrade_rolls_back_new_tables_and_preserves_original_history(
             is None
         )
     sandbox.admin.execute("ALTER TABLE speech_profile_commands RENAME TO profile_collision_fixture")
-    sandbox.upgrade()
-    sandbox.upgrade()
+    sandbox.upgrade("0009_profile_drafts")
+    sandbox.upgrade("0009_profile_drafts")
+    assert sandbox.version() == "0009_profile_drafts"
+    with sandbox.engine.connect() as connection:
+        sandbox.config.attributes["connection"] = connection
+        with pytest.raises(RuntimeError, match="Profile history downgrade"):
+            migration.downgrade(sandbox.config, "0008_runtime_delivery")
     assert sandbox.version() == "0009_profile_drafts"
     assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old

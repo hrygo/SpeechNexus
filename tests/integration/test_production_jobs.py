@@ -420,11 +420,11 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            with pytest.raises(RuntimeError, match="Profile history downgrade"):
+            with pytest.raises(RuntimeError, match="Binding history downgrade"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()
     assert database.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0009_profile_drafts"}
+        {"version_num": "0010_model_binding_drafts"}
     ]
     assert database.counts() == (1, 1)

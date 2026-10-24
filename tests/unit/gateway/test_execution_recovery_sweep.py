@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -14,7 +15,11 @@ from speechnexus_gateway.application.recover_executions import (
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
-from speechnexus_gateway.domain.recovery import InstanceTerminationEvidence, MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import (
+    InstanceTerminationEvidence,
+    MarkExecutionUnknown,
+    whole_instance_stop_evidence,
+)
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     DispatchResult,
@@ -186,6 +191,57 @@ def test_verified_termination_closes_the_execution_without_releasing_capacity() 
         "record_execution_observation",
         "record_stop",
     }
+
+
+def test_one_termination_has_distinct_stable_evidence_for_each_execution() -> None:
+    ledger = SpyLedger()
+    _, _, first = quarantined(ledger)
+    _, _, second = quarantined(
+        ledger, identity=identity_for(submit_intent_id="intent-2", lease_id="lease-2")
+    )
+    first_intent, second_intent = (
+        ledger.get(first.submit_intent_id),
+        ledger.get(second.submit_intent_id),
+    )
+    assert first_intent is not None and second_intent is not None
+    source = termination_evidence()
+
+    first_stop = whole_instance_stop_evidence(first_intent, source)
+    second_stop = whole_instance_stop_evidence(second_intent, source)
+
+    assert first_stop is not None and second_stop is not None
+    assert first_stop.evidence_id != second_stop.evidence_id
+    assert first_stop == whole_instance_stop_evidence(first_intent, source)
+    assert second_stop == whole_instance_stop_evidence(second_intent, source)
+    assert first_stop.evidence_digest == second_stop.evidence_digest == source.evidence_digest
+    assert first_stop.observed_at_us == second_stop.observed_at_us
+    assert first_stop.submit_intent_id == first.submit_intent_id
+    assert second_stop.submit_intent_id == second.submit_intent_id
+
+    # An ID is an identity, not a payload hash. A changed fact for the same source
+    # must still collide with its immutable record so record_stop rejects it.
+    changed = whole_instance_stop_evidence(
+        first_intent, replace(source, evidence_digest="sha256:" + "b" * 64)
+    )
+    assert changed is not None
+    assert changed.evidence_id == first_stop.evidence_id
+    assert changed != first_stop
+    other_source = whole_instance_stop_evidence(
+        first_intent, replace(source, evidence_id="stop-evidence-other")
+    )
+    assert other_source is not None
+    assert other_source.evidence_id != first_stop.evidence_id
+
+
+@pytest.mark.parametrize("source_id", ("BAD ID", "x", "a" * 129))
+def test_a_derived_id_does_not_hide_an_invalid_source_evidence_identity(source_id: str) -> None:
+    ledger = SpyLedger()
+    _, _, identity = quarantined(ledger)
+    intent = ledger.get(identity.submit_intent_id)
+    assert intent is not None
+
+    with pytest.raises(ValueError, match="identifiers must match"):
+        whole_instance_stop_evidence(intent, termination_evidence(evidence_id=source_id))
 
 
 @pytest.mark.parametrize(

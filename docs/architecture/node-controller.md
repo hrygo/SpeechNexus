@@ -83,6 +83,8 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   完整可信仍由拥有该协议的引擎适配器判定；HTTP 健康本身仍不是业务 warmup 或模型资格。
   尝试计数按容器与 generation 保存在 adapter 内存中，控制器重启后会重新预热已运行的实例，
   这是安全但更贵的行为，不冒充已有证据。
+- 一次观察最多执行一次预热请求，因此单次 prepare/inspect 可能持续到一个预热期限；调用方
+  超时后应按未解决意图重试，不能把超时当作实例失败或已就绪。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
   `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。

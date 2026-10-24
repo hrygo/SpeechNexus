@@ -81,10 +81,10 @@ InnoDB 容器）上运行完整集成矩阵。未运行：远端 CI、`make veri
 `TransactionResult`：结果文档不携带 `target`，写在那里会是一条永不触发的条件。既有样例的合法性
 未改变，`release_lease`、`admit_recipe`、`create_runtime_intent` 等等价约束保持原样。
 
-门禁范围的不对称仍需明确：PR 只对 OpenAI 标准面做机器 diff，`workbench-openapi.yaml`、
-`admin-openapi.yaml`、运营契约与内部契约没有同级的破坏性变更门禁，只由 `make contracts-check`、
-`uv run pytest tests/contract` 与正负样例覆盖。升级流程因此依赖 ADR 0005 记录的内部协议变更与
-历史 fixture，而不是自动比较。内部契约的可复用 schema diff 门禁按第 8 节关闭为后续单元，当前不接入。
+原审查时点，PR 只对 OpenAI 标准面做机器 diff；管理、工作台和内部契约依赖源校验、样例与
+ADR 0005 的变更记录。当前按原 A00 / 三队计划§7，补入管理、工作台、runtime-control 和
+execution-control 四份HTTP源的已知结构变更检查。其余JSON/WS、授权和业务语义仍需样例与
+消费者验证，不因工具通过扩大兼容承诺，见第8节。
 
 ## 6. 未验证与残余风险
 
@@ -123,13 +123,14 @@ InnoDB 容器）上运行完整集成矩阵。未运行：远端 CI、`make veri
 
 ## 8. 已决策事项与明确不采纳
 
-以下三项已按保守默认关闭，不再等待产品表态：
+以下按当前实施校对；第2项仍服从原计划验收，不以默认延期代替其可比较部分：
 
 1. `query_outcome` 的目标→快照映射（F-05）**维持按职责归属冻结**：查池返回池单据、查尝试返回尝试
    单据，契约与 fixture 保持当前形状；若要改为对 job / interval 返回更弱的 `FactSnapshot`，须走
    显式契约变更并同时改测试。
-2. 内部、工作台与管理面契约**暂不纳入同级机器 diff 门禁**，维持"ADR 记录 + 样例"流程；待这些
-   接口对外发布前统一补自动兼容检查。
+2. 内部、工作台与管理面按**原 A00 / 三队计划§7**补可自动比较部分；此前推迟表述不构成已授权
+   的计划变更。当前新增[四份HTTP源结构检查](../architecture/http-contract-change-checks.md)，保留
+   版本/变更说明、样例和消费者交接要求。纯JSON、WS顺序/授权及业务语义仍未据此完成，不扩大兼容承诺。
 3. 契约类型生成**已开始接入**（实例 drain 的请求/响应为生成产物），生成器版本随锁文件固定；
    其余面按后续单元逐个接入，不一次性铺开。
 

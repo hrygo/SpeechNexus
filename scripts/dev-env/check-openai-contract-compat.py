@@ -56,6 +56,7 @@ class _SchemaSide(NamedTuple):
     path: str
     git_ref: str | None
     documents: dict[tuple[str, str | None], Mapping[str, Any] | None] | None = None
+    standard_only: bool = True
 
 
 def _mapping(value: object) -> Mapping[str, Any] | None:
@@ -113,11 +114,15 @@ def _dereference_schema(
         return schema
     ref = schema_mapping.get("$ref")
     if not isinstance(ref, str) or "://" in ref:
+        if not side.standard_only and "$ref" in schema_mapping:
+            raise ValueError("Nonstandard HTTP comparison requires closed repository references")
         return {
             key: _dereference_schema(value, side, seen) for key, value in schema_mapping.items()
         }
     identity = (side.path, ref)
     if identity in seen:
+        if not side.standard_only:
+            raise ValueError("Recursive HTTP schema comparison needs explicit proof")
         return schema
 
     if ref.startswith("#"):
@@ -129,6 +134,8 @@ def _dereference_schema(
         path_part, separator, fragment = ref.partition("#")
         target_path = posixpath.normpath(posixpath.join(posixpath.dirname(side.path), path_part))
         target_git_ref = side.git_ref
+        if not side.standard_only and not target_path.startswith("contracts/"):
+            raise ValueError("HTTP references must remain within the contract sources")
         cache_key = (target_path, target_git_ref)
         if side.documents is not None and cache_key in side.documents:
             loaded_document = side.documents[cache_key]
@@ -137,19 +144,35 @@ def _dereference_schema(
             if side.documents is not None:
                 side.documents[cache_key] = loaded_document
         if loaded_document is None:
+            if not side.standard_only:
+                raise ValueError("HTTP referenced document is unavailable")
             return schema
         resolved_document = loaded_document
         fragment = fragment if not separator or fragment.startswith("/") else f"/{fragment}"
 
     target = _resolve_local_pointer(_mapping(resolved_document) or {}, fragment)
     if target is None:
+        if not side.standard_only:
+            raise ValueError("HTTP reference pointer is unavailable")
         return schema
     resolved = _dereference_schema(
         target,
-        _SchemaSide(resolved_document, target_path, target_git_ref, side.documents),
+        _SchemaSide(
+            resolved_document, target_path, target_git_ref, side.documents, side.standard_only
+        ),
         seen | {identity},
     )
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
+    if isinstance(resolved, bool) and siblings:
+        # $ref siblings intersect with its target even when that target is a
+        # boolean schema. Keep the reference policy before simplifying false.
+        annotations = {"title", "description", "examples", "$comment"}
+        if not (siblings.keys() - annotations):
+            return resolved
+        resolved_siblings = {
+            key: _dereference_schema(value, side, seen) for key, value in siblings.items()
+        }
+        return resolved_siblings if resolved else False
     resolved_mapping = _mapping(resolved)
     if siblings and resolved_mapping is not None:
         resolved_siblings = {
@@ -210,10 +233,10 @@ def _constraint_break(base: Mapping[str, Any], current: Mapping[str, Any]) -> st
     return None
 
 
-def _compatibility_shape(schema: object) -> object:
-    """Keep constraints, ignoring only annotations and the Nexus extension."""
+def _compatibility_shape(schema: object, *, standard_only: bool = True) -> object:
+    """Keep constraints, excluding Nexus only for the original standard surface."""
     if isinstance(schema, list):
-        return [_compatibility_shape(item) for item in schema]
+        return [_compatibility_shape(item, standard_only=standard_only) for item in schema]
     mapping = _mapping(schema)
     if mapping is None:
         return schema
@@ -225,9 +248,9 @@ def _compatibility_shape(schema: object) -> object:
             children = _mapping(value)
             result[key] = (
                 {
-                    name: _compatibility_shape(child)
+                    name: _compatibility_shape(child, standard_only=standard_only)
                     for name, child in children.items()
-                    if key != "properties" or name != "nexus"
+                    if not standard_only or key != "properties" or name != "nexus"
                 }
                 if children is not None
                 else value
@@ -248,7 +271,7 @@ def _compatibility_shape(schema: object) -> object:
             "then",
             "else",
         }:
-            result[key] = _compatibility_shape(value)
+            result[key] = _compatibility_shape(value, standard_only=standard_only)
         else:
             # In particular, const/enum contain data, not nested schemas.
             result[key] = value
@@ -265,6 +288,9 @@ def _compare_schema(
     base_side: _SchemaSide | None = None,
     current_side: _SchemaSide | None = None,
 ) -> None:
+    standard_only = all(
+        side.standard_only for side in (base_side, current_side) if side is not None
+    )
     if base_side is not None:
         base = _dereference_schema(base, base_side)
     if current_side is not None:
@@ -371,7 +397,7 @@ def _compare_schema(
     current_properties = _mapping(current_schema.get("properties"))
     if base_properties is not None:
         for name, base_property in base_properties.items():
-            if name == "nexus":
+            if standard_only and name == "nexus":
                 continue
             property_pointer = f"{pointer}/properties/{name}"
             if current_properties is None or name not in current_properties:
@@ -390,7 +416,7 @@ def _compare_schema(
     # A newly named property replaces the previous additionalProperties domain.
     # This can narrow a request or widen a response even when it is optional.
     for name, current_property in (current_properties or {}).items():
-        if name == "nexus" or name in (base_properties or {}):
+        if (standard_only and name == "nexus") or name in (base_properties or {}):
             continue
         _compare_schema(
             base_schema.get("additionalProperties", True),
@@ -487,7 +513,9 @@ def _compare_schema(
             # oneOf is not monotone in its branches: widening a request branch
             # can reject old inputs by making two branches match. Require the
             # resolved constraints to stay equal unless compatibility is proven.
-            if _compatibility_shape(base_variants) != _compatibility_shape(current_variants):
+            if _compatibility_shape(
+                base_variants, standard_only=standard_only
+            ) != _compatibility_shape(current_variants, standard_only=standard_only):
                 _issue(
                     issues,
                     f"{pointer}/{keyword}",
@@ -555,12 +583,13 @@ def _compare_openapi(
     path: str,
     *,
     base_git_ref: str | None = None,
+    standard_only: bool = True,
 ) -> list[str]:
     issues: list[str] = []
     # Each comparison owns fresh document snapshots. A process-global cache could
     # hide edits to a shared schema during a later comparison in the same process.
-    base_side = _SchemaSide(base, path, base_git_ref, {})
-    current_side = _SchemaSide(current, path, None, {})
+    base_side = _SchemaSide(base, path, base_git_ref, {}, standard_only)
+    current_side = _SchemaSide(current, path, None, {}, standard_only)
     # Restrict the walk before expanding refs; the complete document stays on each
     # side so shared parameters, responses and component refs still resolve.
     base_paths = (
@@ -569,7 +598,7 @@ def _compare_openapi(
                 {
                     name: item
                     for name, item in (_mapping(base.get("paths")) or {}).items()
-                    if name in _OPENAI_PATHS
+                    if not standard_only or name in _OPENAI_PATHS
                 },
                 base_side,
             )
@@ -582,7 +611,7 @@ def _compare_openapi(
                 {
                     name: item
                     for name, item in (_mapping(current.get("paths")) or {}).items()
-                    if name in _OPENAI_PATHS
+                    if not standard_only or name in _OPENAI_PATHS
                 },
                 current_side,
             )
@@ -590,7 +619,7 @@ def _compare_openapi(
         or {}
     )
     for path_name, base_path_item in base_paths.items():
-        if path_name not in _OPENAI_PATHS:
+        if standard_only and path_name not in _OPENAI_PATHS:
             continue
         current_path_item = current_paths.get(path_name)
         if current_path_item is None:

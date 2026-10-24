@@ -7,9 +7,9 @@ date: 2026-10-24
 
 # B03 Qwen3-TTS 真实引擎可行性复核
 
-本记录更正此前一个错误判断：曾据模型 README 的“目前只支持离线推理”和一次不完整的
-镜像检索，得出“本机 `vllm/vllm-omni:latest` 不支持 Qwen3-TTS 在线服务”。重新核对镜像
-源码与真实运行后，两者都不成立。
+本记录更正此前一个错误判断：曾据模型 README 的“目前只支持离线推理”，再把一次被
+`tail` 截断的检索输出当成“没有匹配”，得出“本机 `vllm/vllm-omni:latest` 不支持 Qwen3-TTS
+在线服务”。重新核对镜像源码与真实运行后，两者都不成立。
 
 ## 镜像事实
 
@@ -25,6 +25,8 @@ date: 2026-10-24
 - 当前 vLLM 0.32 的 V2 model runner 在 Qwen3-TTS 上触发 `get_rope_state` 断言失败；
   设置 `VLLM_USE_V2_MODEL_RUNNER=0` 后退回旧 runner 可正常加载。
 - 模型 README 中的“only offline inference”描述与本机这版 vllm-omni 不符，按实际运行结果为准。
+- 复盘：第一次检索命令本身是对的，是后续 `tail` 只保留了最后的目录列表，把匹配行截掉，
+  我据此误判为“镜像不含 Qwen3-TTS”。同一命令重跑可正常返回匹配文件。
 
 ## 运行条件与结果
 

@@ -9,9 +9,9 @@ date: 2026-10-24
 
 本记录给出受限节点控制器的首个**真实进程级证据**：启动生产入口
 `speechnexus-node-controller`，用一次性组件凭据、真实容器 daemon 与真实持久意图存储，走
-`internal/runtime-control` HTTP 完成 prepare → ready → stop，并在重启该进程后核验已记录意图
-仍在。它不证明真实引擎容器（Qwen3-ASR / TTS）、GPU 请求路径、warmup 门、多实例竞争或可部署
-单元已经可用。
+`internal/runtime-control` HTTP 完成 prepare → ready → stop，在已认领实例仍运行时杀死该进程
+并核验重启后的常规快照不会误隔离或改写记录，再优雅重启核验已记录意图仍在。它不证明真实
+引擎容器（Qwen3-ASR / TTS）、GPU 请求路径、warmup 门、多实例竞争或可部署单元已经可用。
 
 ## 1. 范围、环境与制品
 
@@ -107,11 +107,70 @@ stop 意图只有在容器退出**并且**删除被确认后才写出双确认�
 SQLite 路径启动第二个进程，`GET` 两个意图仍返回 `succeeded`，说明意图身份、状态与停止证据
 都落在本地持久存储里，而不是只活在一次进程生命周期内。
 
-## 5. 未验证与边界
+## 5. 进程被杀死后的常规快照与未认领 generation
+
+控制器在已认领实例仍运行时被 `SIGKILL`（没有优雅退出机会，容器保持运行），随后用同一临时
+SQLite 意图存储与批准模板文件重启，再折叠一次常规快照。两次运行结果一致：
+
+| 观测 | 运行 1 | 运行 2 |
+| --- | --- | --- |
+| 杀死控制器时容器仍在运行 | true | true |
+| 常规快照（`ready`，generation 1）HTTP | 200 | 200 |
+| 该快照报告的隔离实例 | `[]` | `[]` |
+| 意图记录（状态/观察/错误码/更新时间）未变 | true | true |
+| 未认领 generation 快照（`ready`，generation 2）HTTP | 200 | 200 |
+| 该快照报告的隔离实例 | `["instance-probe-inert"]` | 同左 |
+| 重启后的 stop | 200 `succeeded`，退出码 143，容器已删除 | 同左 |
+| 重启进程后意图仍在 / 遗留容器 | true / `[]` | true / `[]` |
+
+运行 2 的相关字段：
+
+```json
+{
+  "crash_container_live": true,
+  "crash_reconcile_status": 200,
+  "crash_reconcile_quarantined": [],
+  "crash_reconcile_record_unchanged": true,
+  "unclaimed_generation_reconcile_status": 200,
+  "unclaimed_generation_quarantined": ["instance-probe-inert"],
+  "stop_status": 200,
+  "stop_state": "succeeded",
+  "stop_exit_code": 143,
+  "container_removed": true,
+  "restart_preserved": true,
+  "leftovers": []
+}
+```
+
+规则对照（修复前后）见第 4 节与本轮代码差异。修复前的 `reconcile` 对“没有未解决意图”的观察
+一律在非 `absent` 时写入隔离名单，于是控制器重启后把**自己已经就绪并仍在运行**的实例上报为
+隔离；同时它**不**报告“已认领 generation 在没有停止证据的情况下消失”。反证：把
+`application/runtime_control.py` 回退到修复前，本轮新增用例 2 项失败
+（`test_reconcile_keeps_a_claimed_ready_instance_out_of_quarantine` 报
+`('instance-asr-1',) == ()`，`test_reconcile_quarantines_a_claimed_generation_that_vanished_without_evidence`），
+其余 6 项通过；修复后 8 项全部通过，控制器 153 项通过。
+
+未认领 generation 的观察只进入隔离名单，且不落任何新意图：回读仍只有 generation 1 的记录。
+因此外部快照不能把本控制器没有认领过的容器当成自己的实例接管。
+
+### 本次未收窄的边界（现状对照，不是已验证能力）
+
+- 快照的 `fencing_token`：契约在该操作 409 描述里写了 “Reconciliation fencing token … does not
+  match the controller scope”，当前实现只在 schema 层要求 ≥1，没有与节点已记录的最高 token
+  比较。要么补节点级 fencing 高位与 409 拒绝，要么修正契约描述，二者都需要 A 参与评审。
+- 快照里的 `stop_evidence`：`reconcile` 路径不调用 `daemon.inspect`，调用方断言的证据会按
+  `RuntimeStopEvidence` 折叠进未解决的 stop 意图并转 `succeeded`；控制器自身的核验只发生在
+  `reconcile_instance`（节点内观察）里。谁有权断言停止证据、是否收窄该入口，属仍需冻结的窄
+  协议，本轮不改语义。
+- 控制器进程被杀死后的“接管”与节点内观察生产者仍未交付；本单元只证明同一控制器进程重启后
+  折叠常规快照与未认领 generation 快照的行为，不证明多控制器竞争或跨节点接管。
+
+## 6. 未验证与边界
 
 - 真实引擎容器（Qwen3-ASR / TTS）的加载、就绪、停止与资格，以及 GPU `DeviceRequests` 路径，
   仍只有合成容器证据；warmup 门没有实现，模板文件也不能声明 `requires_warmup_before_ready`。
-- 未验证多实例并发生命周期、跨节点同 `intent_id` 复用、控制器进程被杀死后的 reconcile 与接管。
+- 合成容器上已验证进程被杀死后重启的常规快照折叠（第 5 节）；未验证多实例并发生命周期、
+  跨节点同 `intent_id` 复用，以及被杀后的接管与节点内观察生产者。
 - 没有 `deploy/` 与 Compose 单元：控制器进程、镜像、健康检查、卷与凭据注入仍需与 A 的部署
   集成排队交付；TLS 与组件凭据轮换属于部署要求。
 - 本记录只覆盖本机单节点、真实进程 + 真实 daemon + 真实本地存储这一条路径。

@@ -1,7 +1,7 @@
 ---
 title: "节点停止检查点与进程崩溃恢复"
 status: active
-version: "0.1.0"
+version: "0.2.0"
 date: 2026-10-24
 ---
 
@@ -63,6 +63,40 @@ prepare、不外发业务执行。GET 和同键 POST 仍只读持久回执，不
 撤销模板、节点不符、存储或 daemon 不可用继续保持未决/隔离；TTL、取消和丢响应均不是释放证据。
 本地历史中的 deadline 已过不等于一个已接受 stop 被撤销，也不能替代物理证明。
 
+## 外部快照与权威证据来源
+
+`POST /internal/v1/nodes/{node_id}/reconcile` 只接收诊断输入。组件凭据证明调用资格，
+不能证明调用方亲眼确认过本节点的物理退出或释放。应用层不把 `ReportedInstanceFact`
+转换为 `InstanceObservation`，也不通过这个端点调用 runtime 或写 store。
+可信事实只经原授权意图的 prepare/stop、本地 inspect 和 `recover_stop` 写入，再由
+GET 原意图供 A 消费；readiness 资格与最终预算释放仍由 A 自己的事务核验。
+
+| 输入 / 事件 | 允许结果 | 禁止结果 |
+| --- | --- | --- |
+| 加载期间上报 ready、absent 或 stopped | 比较本地身份和存在状态、返回诊断名单 | prepare 成功/失败、缩减占用、允许替代代次 |
+| 未决/隔离 stop 收到双确认、正确容器 ID 和退出码 | 保留原意图及检查点，报告消失矛盾 | stop 成功、清除隔离、补 release 或归还预算 |
+| 未认领/迟到代次、模板/摘要不符、已停止却报告存在 | 返回去重的 `quarantined_instance_ids` | 持久隔离当前代次、自动认领、停止替代实例 |
+| 任意大小的合法快照 token、过去或未来 reported_at | token 仅兼容保留，accepted_at 取节点当前时间 | 抬高 fencing 高位、跨资源池裁决任期、采用调用方证据时间 |
+| GET、精确同键 POST、重复诊断、同库重启 | 返回原持久事实 | 通过读或重放制造新证明 |
+| 节点恢复原 stop，补齐已持久 exit 与实际释放 | 单调写检查点及原回执，供消费者重新查询 | 修改另一代次、重复释放预算 |
+
+诊断名单只是响应中的差异提示，不是已经持久生效的 quarantine。空名单同样不授予
+就绪、停止、代次替换或预算释放资格。请求仍按原 schema 验证：其他节点为
+`409 target_node_mismatch`，重复 generation 或形状错误为 `422 invalid_runtime_request`，
+缺少组件凭据为 `401 component_credential_invalid`；没有为诊断添加新错误码或端点。
+
+生产/消费范围已核对：B 的 HTTP 路由生产诊断响应，HTTP 进程探针和控制器测试消费该响应；
+A 的 `HttpRuntimeController` 仅 submit 原意图、GET 原身份，交付 worker 复用这个客户端。
+仓库内未找到将 reconcile 响应作为预算事实的生产客户端；生成 TS/Python 形状仍需遵守上述
+语义。结构索引覆盖核对后另外搜索了路由字面量，不能由缺少图调用边单独断言无消费者。
+
+此次收窄保留 URL、operationId、字段、必填性和错误信封，仅改运行语义与契约说明；
+生成工具未改，说明及源摘要经原生成命令更新。老诊断调用方可保持原 wire，但依赖外部快照
+推进状态的外部部署必须改为查询原意图并等待节点本地观察。应先升级全部可接收控制请求的
+节点进程，再开放入口，不能在新旧控制器混合服务时宣称来源边界已修复。没有数据库迁移；
+回退到仍会采信快照的旧程序会重新暴露该旁路，回退期间应关闭外部 reconcile 入口，
+保留原意图与停止检查点。收窄不能追溯证明旧版已经记录的外部事实，历史可疑占用需另行核验。
+
 ## 存储升级与回退
 
 SQLite schema 从 1 原子升级到 2，新增 `runtime_stop_checkpoints(intent_id, record)`；
@@ -84,7 +118,9 @@ schema 2 的代码；回退不能伪造已经丢失的证明，未知占用仍�
   daemon/资格为合成事实，不证明真实 GPU 已停止或模型资格。
 - [真实 CPU 进程探针](../audits/2026-10-24-b02-stop-recovery-probe.md)使用生产入口、真实 daemon、
   SQLite 和 SIGKILL；故障闸只在探针子进程包装原方法，生产没有故障开关。
+- [外部快照来源验证](../audits/2026-10-24-b02-reconcile-proof-source.md)覆盖伪造就绪/停止证明、
+  只读回执及双库占用保持，节点本地恢复仍可产生可信双证据。
 
 仍待：真实 ASR/TTS 的同类故障资格、ready 实例持续监控、可信整实例事实接网关、网关恢复周期驱动、
-完整执行/lease/预算联合闭环和物理多主机。外部 reconcile 调用方证明、节点级 fencing 作用域仍是
-原有缺口，本地检查点不能替该入口背书。
+完整执行/lease/预算联合闭环和物理多主机。外部快照仅诊断的来源边界已收窄，
+不表示已经取得真实引擎或物理多主机资格。

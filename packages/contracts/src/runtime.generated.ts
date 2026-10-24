@@ -59,7 +59,24 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Report observed local runtime instances and container exit facts for node reconciliation */
+    /**
+     * Compare a diagnostic instance snapshot with persisted node facts
+     * @description This authenticated endpoint accepts caller assertions for diagnostics
+     *     only. It never writes intents or stop checkpoints, inspects or changes
+     *     containers, qualifies readiness, or changes memory holds. In particular,
+     *     supplied stop_evidence is not a node-verified physical fact, even when
+     *     both confirmation flags are true. Authoritative observations come only
+     *     from the node runtime and recovery of an originally accepted intent;
+     *     consumers query that original intent to obtain its persisted facts.
+     *
+     *     fencing_token is retained for wire compatibility and has no authority
+     *     on this diagnostic endpoint. Resource-pool owner terms are independent;
+     *     the controller must not derive a node-wide high water from their tokens
+     *     or use this snapshot to fence intents. reported_at is caller metadata;
+     *     accepted_at is the controller's own processing time. The response's
+     *     quarantined_instance_ids lists diagnostic discrepancies only: it does
+     *     not persist quarantine or authorize adoption, replacement, or release.
+     */
     post: operations["reconcileNodeInstances"];
     delete?: never;
     options?: never;
@@ -375,7 +392,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Node reconciliation snapshot processed. */
+      /** @description Diagnostic snapshot compared; no persisted runtime fact was changed. */
       200: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
@@ -386,7 +403,7 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
-      /** @description Reconciliation fencing token or target node does not match the controller scope. */
+      /** @description The target node or snapshot controller identity does not match this node. */
       409: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];

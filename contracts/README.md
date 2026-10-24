@@ -187,6 +187,15 @@ root/semantic limits and does not alter the default request surface.
   the intent unresolved, and an unknown intent identity is
   `404 runtime_intent_not_found`.
 
+  `POST reconcileNodeInstances` accepts diagnostic assertions only. Its supplied
+  state, stop evidence, timestamp and compatibility fencing token never update
+  persisted intents/checkpoints, qualify readiness, fence resource-pool intents
+  or release memory. `accepted_at` is node processing time; the quarantine list
+  reports discrepancies without persisting quarantine. Consumers obtain
+  authoritative observations by querying the originally accepted intent after
+  node-local inspection/recovery. This semantic tightening preserves wire
+  shapes; all serving nodes must upgrade before relying on it.
+
 MCP tools are a stateless projection of the public speech REST resources. They
 must reuse the same canonical commands, idempotency summaries, and revision
 pins; no separate MCP-only protocol semantics are introduced here.

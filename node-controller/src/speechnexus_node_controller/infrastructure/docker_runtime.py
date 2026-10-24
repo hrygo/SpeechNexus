@@ -11,12 +11,16 @@ needs before releasing reserved capacity.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import socket
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Any, Final, ParamSpec, TypeVar
 
 import httpx
@@ -26,6 +30,7 @@ from speechnexus_node_controller.domain.intents import (
     IntentConflictError,
     MemoryArchitecture,
     ObservedInstanceState,
+    RuntimeActionKind,
     RuntimeControllerUnavailableError,
     RuntimeInstanceIntentRequest,
     RuntimeMemoryVector,
@@ -35,6 +40,7 @@ from speechnexus_node_controller.domain.intents import (
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
     ReadinessKind,
+    WarmupRequest,
 )
 from speechnexus_node_controller.infrastructure.docker_api import (
     ContainerState,
@@ -45,6 +51,8 @@ from speechnexus_node_controller.infrastructure.docker_api import (
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+_MAX_WARMUP_BODY_BYTES: Final = 8 * 1024**2
+logger = logging.getLogger(__name__)
 
 
 def _runtime_action(action: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
@@ -109,6 +117,7 @@ class DockerNodeRuntime:
         self._api = api
         self._node_id = node_id
         self._settings = settings or DockerRuntimeSettings()
+        self._warmup_attempts: dict[tuple[str, int], int] = {}
 
     @_runtime_action("prepare")
     def prepare(
@@ -163,6 +172,7 @@ class DockerNodeRuntime:
 
         if not self._remove_and_confirm(existing.container_id):
             return self._inspect_or_absent(request, template, existing.container_id)
+        self._warmup_attempts.pop((existing.container_id, request.instance_generation), None)
 
         return self._observation(
             request,
@@ -385,7 +395,7 @@ class DockerNodeRuntime:
             instance_generation=request.instance_generation,
             approved_template_id=template.template_id,
             config_digest=request.config_digest,
-            observed_instance_state=self._observed_state(template, state),
+            observed_instance_state=self._observed_state(request, template, state),
             observed_peak_memory=self._observed_memory(request, state),
             stop_evidence=stop_evidence,
         )
@@ -404,11 +414,16 @@ class DockerNodeRuntime:
         )
 
     def _observed_state(
-        self, template: ApprovedRuntimeTemplate, state: ContainerState
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        state: ContainerState,
     ) -> ObservedInstanceState:
         if state.status == "created":
             return ObservedInstanceState.PREPARING
         if state.status == "running":
+            if template.readiness.kind is ReadinessKind.HTTP_WARMUP_OK:
+                return self._warmup_state(request, template, state)
             return (
                 ObservedInstanceState.READY
                 if self._is_ready(template, state)
@@ -421,6 +436,130 @@ class DockerNodeRuntime:
         if state.status in {"exited", "dead", "removing"}:
             return ObservedInstanceState.STOPPED
         return ObservedInstanceState.FAILED
+
+    def _warmup_state(
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        state: ContainerState,
+    ) -> ObservedInstanceState:
+        """Stay at peak until every declared warmup request has completed."""
+        port = template.readiness.port
+        warmup = template.readiness.warmup
+        if port is None or warmup is None:
+            return ObservedInstanceState.LOADING
+        addresses = self._literal_addresses(state)
+        if not self._port_accepts(addresses, port):
+            return ObservedInstanceState.LOADING
+        key = (state.container_id, request.instance_generation)
+        completed = self._warmup_attempts.get(key, 0)
+        if completed >= warmup.attempts:
+            return ObservedInstanceState.READY
+        if request.action is not RuntimeActionKind.PREPARE:
+            # A stop or drain observation never spends model time on warmup.
+            return ObservedInstanceState.WARMING_UP
+        body = self._warmup_body(warmup)
+        if body is not None:
+            for address in addresses:
+                if self._run_warmup(address, port, warmup, body, attempt=completed + 1):
+                    completed += 1
+                    self._warmup_attempts[key] = completed
+                    break
+        if completed >= warmup.attempts:
+            self._warmup_attempts[key] = completed
+            return ObservedInstanceState.READY
+        return ObservedInstanceState.WARMING_UP
+
+    @staticmethod
+    def _literal_addresses(state: ContainerState) -> tuple[str, ...]:
+        literals: list[str] = []
+        for address in state.network_addresses:
+            try:
+                literals.append(str(ip_address(address)))
+            except ValueError:
+                continue
+        return tuple(literals)
+
+    def _port_accepts(self, addresses: tuple[str, ...], port: int) -> bool:
+        for address in addresses:
+            try:
+                with socket.create_connection(
+                    (address, port), timeout=self._settings.readiness_timeout_seconds
+                ):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    @staticmethod
+    def _warmup_body(warmup: WarmupRequest) -> bytes | None:
+        """Read the declared body and prove its digest before every attempt."""
+        try:
+            path = Path(warmup.body_path)
+            if path.stat().st_size > _MAX_WARMUP_BODY_BYTES:
+                return None
+            body = path.read_bytes()
+        except OSError:
+            logger.warning("warmup body is unreadable")
+            return None
+        digest = "sha256:" + hashlib.sha256(body).hexdigest()
+        if not body or digest != warmup.body_sha256:
+            logger.warning("warmup body does not match its approved digest")
+            return None
+        return body
+
+    def _run_warmup(
+        self,
+        address: str,
+        port: int,
+        warmup: WarmupRequest,
+        body: bytes,
+        *,
+        attempt: int,
+    ) -> bool:
+        """Send one fixed request and require a complete 200 response within budget."""
+        literal = ip_address(address)
+        host = f"[{literal}]" if literal.version == 6 else str(literal)
+        started = time.monotonic()
+        try:
+            with (
+                httpx.Client(
+                    trust_env=False,
+                    follow_redirects=False,
+                    timeout=warmup.timeout_seconds,
+                ) as client,
+                client.stream(
+                    "POST",
+                    f"http://{host}:{port}{warmup.path}",
+                    content=body,
+                    headers={
+                        "Content-Type": warmup.content_type,
+                        "Accept": "*/*",
+                        "Accept-Encoding": "identity",
+                    },
+                ) as response,
+            ):
+                if (
+                    response.status_code != 200
+                    or response.headers.get("content-encoding", "identity") != "identity"
+                ):
+                    return False
+                total = 0
+                for chunk in response.iter_bytes(4096):
+                    total += len(chunk)
+                    if total > warmup.max_response_bytes:
+                        return False
+        except httpx.HTTPError:
+            return False
+        logger.info(
+            "warmup attempt completed",
+            extra={
+                "attempt": attempt,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+                "response_bytes": total,
+            },
+        )
+        return True
 
     @staticmethod
     def _observed_memory(

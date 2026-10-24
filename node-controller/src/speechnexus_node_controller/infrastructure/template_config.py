@@ -20,7 +20,20 @@ from speechnexus_node_controller.domain.templates import (
     ReadinessKind,
     ReadinessRule,
     ReadOnlyBind,
+    WarmupRequest,
 )
+
+
+class _WarmupRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    content_type: str
+    body_path: str
+    body_sha256: str
+    attempts: int = Field(default=2, ge=1, le=4)
+    timeout_seconds: float = Field(default=60.0, gt=0, le=300)
+    max_response_bytes: int = Field(default=1024 * 1024, ge=1024, le=8 * 1024 * 1024)
 
 
 class _ReadinessRuleModel(BaseModel):
@@ -29,6 +42,7 @@ class _ReadinessRuleModel(BaseModel):
     kind: ReadinessKind
     port: int | None = Field(default=None, ge=1, le=65535)
     path: str | None = None
+    warmup: _WarmupRequestModel | None = None
 
 
 class _ReadOnlyBindModel(BaseModel):
@@ -80,6 +94,19 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
             kind=model.readiness.kind,
             port=model.readiness.port,
             path=model.readiness.path,
+            warmup=(
+                WarmupRequest(
+                    path=model.readiness.warmup.path,
+                    content_type=model.readiness.warmup.content_type,
+                    body_path=model.readiness.warmup.body_path,
+                    body_sha256=model.readiness.warmup.body_sha256,
+                    attempts=model.readiness.warmup.attempts,
+                    timeout_seconds=model.readiness.warmup.timeout_seconds,
+                    max_response_bytes=model.readiness.warmup.max_response_bytes,
+                )
+                if model.readiness.warmup is not None
+                else None
+            ),
         ),
         command=tuple(model.command) if model.command is not None else None,
         gpu_device_count=model.gpu_device_count,

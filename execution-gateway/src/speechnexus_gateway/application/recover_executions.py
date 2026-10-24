@@ -10,12 +10,13 @@ never writes a budget, never dispatches, and never fabricates stop evidence.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.ports import (
+    ExecutionRecoveryQuery,
     ExecutionSweepLedger,
     InstanceTerminationEvidencePort,
 )
@@ -60,7 +61,7 @@ class ExecutionRecoveryService:
         *,
         ingress: GatewayIngress,
         ledger: ExecutionSweepLedger,
-        submissions: SubmitExecutionService,
+        submissions: ExecutionRecoveryQuery,
         terminations: InstanceTerminationEvidencePort,
     ) -> None:
         self._ingress = ingress
@@ -70,7 +71,9 @@ class ExecutionRecoveryService:
         self._after_submit_intent_id: str | None = None
         self._scan_lock = Lock()
 
-    def sweep(self, *, limit: int = 50) -> RecoverySweepReport:
+    def sweep(
+        self, *, limit: int = 50, should_stop: Callable[[], bool] = lambda: False
+    ) -> RecoverySweepReport:
         """Visit one ID page; an empty page wraps the next pass to the beginning.
 
         Retain this service across passes. The cursor is process-local scheduling
@@ -84,11 +87,13 @@ class ExecutionRecoveryService:
         if not self._scan_lock.acquire(blocking=False):
             raise RuntimeError("a recovery sweep is already running")
         try:
-            return self._sweep(limit)
+            return self._sweep(limit, should_stop)
         finally:
             self._scan_lock.release()
 
-    def _sweep(self, limit: int) -> RecoverySweepReport:
+    def _sweep(self, limit: int, should_stop: Callable[[], bool]) -> RecoverySweepReport:
+        if should_stop():
+            return RecoverySweepReport(0, 0, 0, 0)
         self._ingress.check_ownership()
         examined = observed = closed = still_unknown = 0
         candidates = self._ledger.list_quarantined(
@@ -100,6 +105,8 @@ class ExecutionRecoveryService:
         if not candidates:
             self._after_submit_intent_id = None
         for candidate in candidates:
+            if should_stop():
+                break
             # A failed observation/stop must not pin every later ID forever.
             # Advance only local visit order, never updated_at or durable state.
             self._after_submit_intent_id = candidate.identity.submit_intent_id

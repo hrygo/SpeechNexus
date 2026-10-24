@@ -17,7 +17,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-以 main `402d537` 为本轮开工基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
+以 main `cafc6b9` 为本轮最终整合基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
 已交付检查点背书的节点停止查询与固定TLS网关来源，前一轮PR/合后主干均11项CI全绿。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。
@@ -25,7 +25,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | 工作包 | 状态 | 已交付与剩余 |
 | --- | --- | --- |
 | B00 #27 | in-progress | 环境、ASR/TTS/VAD 分段探针已有；完整许可、请求级停止与拓扑资格待补 |
-| B01 #28 | in-progress | 7 个事务、HTTP/drain、有界恢复及可信节点停止来源已有；真实引擎、默认周期驱动与完整闭环待补 |
+| B01 #28 | in-progress | 7 个事务、HTTP/drain、有界恢复及可信节点停止来源已有；默认周期驱动及真实进程消费者已有；真实引擎与完整闭环待补 |
 | B02 #29 | in-progress | 本地观察/检查点恢复、真实 ASR 预热及可信停止查询已有；真实引擎故障、ready监控与 A 完整闭环待补 |
 | B03 #30 | in-progress | 有界媒体、文件 ASR、CustomVoice TTS 已有；公开入口、持久执行、对象发布及 Base 待补 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM 背压、完整配方与计量待补 |
@@ -37,9 +37,12 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 回执与本地 released 检查点完全匹配才出具事实，旧成功回执不追溯认证；网关经固定 TLS
 验证原绑定、代次、任期及时间，沿用原停止事务关闭每条执行，不写 A 预算。
 原生 TLS/SQLite/双库消费者验证半证据保留占用、重启补齐、共享实例多执行和 A 幂等归还。
-本轮修复[恢复扫描](../architecture/execution-gateway.md#8-未知执行与只读恢复)的前缀饥饿与重复计数：
+前轮修复[恢复扫描](../architecture/execution-gateway.md#8-未知执行与只读恢复)的前缀饥饿与重复计数：
 只读不可变ID分页、本地游标绕回、每条执行互斥分类，保持未知占用和并发用量。
-默认网关周期驱动、真实引擎故障、ready 实例持续监控、完整执行/预算与物理多主机资格仍待。
+本轮交付默认网关周期驱动：显式私有配置、单活本地游标、有界来源、安全join停机及原只读查询；
+实际网关进程验证坏凭据/半证据保持unknown、SIGKILL后重启自动关闭原执行、A独立退预算。
+见[实测记录](../audits/2026-10-24-b01-default-recovery-driver.md)。
+真实引擎故障、ready 实例持续监控、完整执行/预算与物理多主机资格仍待。
 真实引擎适配由 B 主责，A 配合协议消费者与预算/发布边界，不能把 B 自有适配缺口一概标为
 等待 A 提供引擎协议。实施选择由团队处理，不要求用户判断这些技术细节。
 

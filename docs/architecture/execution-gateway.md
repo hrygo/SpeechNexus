@@ -310,7 +310,8 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 每条记录开始访问时推进本地游标，因此某行观察或停止失败不会永久阻塞后续 ID。
 枚举本身失败则没有可信候选，不推进游标；异常继续上抛，不能将未知当作成功。
 同一服务只允许一轮扫描，重叠调用立即报运行错误、不排队；生命周期驱动须串行调用。
-默认网关周期驱动与其配置仍待装配，这个原生 API 不启动后台线程。
+原生 API 本身不启动线程；默认网关组合根在有效恢复配置下启动单活周期驱动，
+持续复用同一个服务和本地游标。缺配置保持原行为；启用方式与生命周期见下文。
 
 `RecoverySweepReport` 的分类互斥：`observed` 表示原身份查询后已不再是 unknown；
 `closed` 表示查询仍 unknown、但完整停止证明被原事务接受（含竞争后的相同证明重放）；
@@ -319,6 +320,64 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 既有用量投影必须保留，不能在完成停止记录后因重复计数抛错。
 旧版反证、501条前缀单元和双库实际并发证据见
 [恢复扫描公平轮转与互斥计数](../audits/2026-10-24-b01-recovery-progress.md)。
+
+### 默认进程的自动恢复配置与生命周期
+
+原控制设置启用后，再成对设置 `SPEECHNEXUS_GATEWAY_RECOVERY_CONFIG_FILE`
+（绝对私有文件路径）和 `SPEECHNEXUS_GATEWAY_RECOVERY_NODE_COMPONENT_TOKEN`
+（独立节点凭据，不复用网关凭据），启动时自动装配来源和周期驱动。缺少二者保持原行为；
+半配置、无控制身份或非法配置拒绝启动，不先获取数据库或入口锁。
+
+[私有机器配置](../../contracts/internal/gateway-recovery.schema.json)版本1.0.0，
+以`gateway_recovery` profile由原流水线生成Python/TS类型与非强制转换校验器。
+全部字段显式提供，不插入默认值；node/gateway身份沿用原控制设置，不允许文件覆盖。
+示例使用部署示意路径，不包含凭据：
+
+```json
+{
+  "schema_version": "1",
+  "node": {
+    "address": "127.0.0.1",
+    "port": 8443,
+    "tls_ca_file": "/run/secrets/node-ca.pem"
+  },
+  "bindings": [
+    {
+      "pool_id": "tts-realtime",
+      "binding_revision_id": "binding-demo",
+      "approved_template_id": "template-demo",
+      "manifest_id": "manifest-demo",
+      "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "scan_interval_seconds": 5,
+  "batch_size": 50,
+  "request_timeout_seconds": 3,
+  "pass_budget_seconds": 10
+}
+```
+
+来源沿用原私网IP/TLS、不可变绑定、同池token及时间校验，不接受DNS、代理或重定向。
+配置与CA分别按契约的512KiB/1MiB上限读取regular file，允许Secret卷符号链接；
+非阻塞打开避免FIFO卡住启动。重复JSON键、非有限数、额外字段、无效CA和歧义binding key
+在激活前拒绝。错误只报固定文本，不包含文件路径、凭据或原异常正文。
+配置只在启动时读取；轮换证书、凭据或绑定后重启进程。
+
+恢复服务依赖窄`ExecutionRecoveryQuery`端口。原真实引擎观察服务仍符合接口；
+默认组合根使用`ExecutionQueryService.query`复用HTTP查询的ownership/scope规则，
+只读原事实，不创建假引擎或重发执行。停止证据仍沿用原`record_stop`事务，预算仍由A裁决。
+
+每轮结束后用Event等待interval；单线程逐行检查停止标志与monotonic pass budget，
+停止前未访问的候选不推进游标、不计入报告。pass budget只限制开始后续记录，
+不是整轮硬期限：已开始的一条记录会在原数据库/入口/TLS各自的有界调用结束后完成。
+异常保留unknown，固定安全日志后等待下一轮，不能把失败报为成功恢复。
+
+停机顺序是设置停止标志、join恢复线程、关数据库pool、释放进程ownership；
+不能join超时后丢下写线程继续释放锁。configured driver未存活时现有`gateway_ingress`
+readiness失败，不新增运营DTO。循环存活不证明来源可用、实例ready或模型资格，
+来源离线或无停止证据时执行仍保持unknown/占用。默认Compose仍未启用这些控制设置。
+真实默认网关进程SIGKILL/重启、TLS/SQLite节点、半证据/坏凭据及A释放联调见
+[本轮实测](../audits/2026-10-24-b01-default-recovery-driver.md)。
 
 一份实例终止事实可能覆盖多条执行，源 `InstanceTerminationEvidence.evidence_id` 标识这次物理
 终止事件；`execution_stop_evidence.evidence_id` 则标识这份事实对某条执行的应用，必须逐执行唯一。
@@ -369,7 +428,8 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 返回完整、经同源校验的 `TransactionResult` 与 `ExecutionSnapshot`。音频观察须携带与原记录
 匹配的完整 output watermark，非音频使用 null；该要求用于冻结关系核对，不产生区间计量。
 边界拒绝非空 staging artifact 发布输入。观察服务与提交服务均核对本 gateway/node，
-不能凭另一个节点的记录调用本节点引擎。没有新增 HTTP 观察路由或自动恢复循环。
+不能凭另一个节点的记录调用本节点引擎。没有新增HTTP观察路由；默认恢复循环只读原事实，
+不会凭空获得引擎观察能力。
 
 `EngineObservation` 可携带可信的原外发时间。崩溃记录没有外发时间、引擎又未提供实际时间时，
 即使 status=executing 也继续 unknown；不能用“本次查询时间”补造 dispatch。
@@ -481,7 +541,7 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   真实计量采集器、A 用量消费与资格验证仍待接入；
   命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
   unknown 事务、submit 查询分支与受信恢复扫描（`ExecutionRecoveryService`）已有，
-  但驱动它的定时器与真实的整实例终止证据生产者（控制器客户端）仍待接入。
+  固定TLS整实例来源和默认进程周期驱动已接入；真实引擎故障、完整调度/计量仍待。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
   实例 drain 路由也已服务（当前组合根只报告、不停止），
   但真实引擎 dispatch/abort adapter 仍未交付。提交事务现在按持久实例状态、代次水位、
@@ -492,8 +552,8 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
   测试 adapter 验证迁移意图，不形成产品 MySQL 支持。数据库连接配置、时钟与异常分类仍在 adapter 内。
-- 这里的证据是最小合成事实，仅证明受控事务与存储规则。真实引擎/控制器如何提供可信双证据、
-  跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
+- 节点检查点/TLS来源、合成daemon与真实网关进程已验证原停止事务和A独立释放；
+  这些不证明真实引擎故障、跨节点屏障、实际abort或物理GPU停止资格。
 - 提交入口已服务并通过真实 PG 集成测试，截止时间与运行资格校验已落进该事务并用存储时钟
   验证；实际引擎外发仍需接入，没有引擎 adapter 时入口只会拒绝，因此不能据此称为生产
   执行链路就绪。

@@ -152,6 +152,12 @@ class ExecutionSweepLedger(SubmissionLedger, ExecutionRecoverySource, Protocol):
     """The intent store a recovery sweep enumerates and then closes through."""
 
 
+class ExecutionRecoveryQuery(Protocol):
+    """Observe the original execution, or read its recorded fact; never redispatch."""
+
+    def query(self, submit_intent_id: str) -> SubmissionIntent | None: ...
+
+
 class IngressOwnership(Protocol):
     @property
     def node_id(self) -> str: ...

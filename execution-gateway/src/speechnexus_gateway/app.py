@@ -18,10 +18,13 @@ from speechnexus_gateway.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
+from speechnexus_gateway.infrastructure.recovery_configuration import load_recovery_configuration
+from speechnexus_gateway.infrastructure.recovery_worker import RecoveryWorker
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
 from speechnexus_gateway.interfaces.http.barrier_control import create_barrier_router
 from speechnexus_gateway.interfaces.http.control_errors import install_control_error_handlers
@@ -48,6 +51,10 @@ class _ControlReadinessProbe:
             self._app.state.execution_query, ExecutionQueryService
         ):
             raise RuntimeError("gateway control is not running")
+        if self._app.state.settings.recovery_config_file is not None:
+            worker = self._app.state.recovery_worker
+            if not isinstance(worker, RecoveryWorker) or not worker.running:
+                raise RuntimeError("gateway recovery is not running")
         await run_in_threadpool(service.check_ownership)
 
 
@@ -71,7 +78,9 @@ def _build_control(
     InstanceDrainService,
     ProcessIngressOwnership,
     GatewayPool,
+    RecoveryWorker | None,
 ]:
+    configuration = load_recovery_configuration(settings)
     directory = settings.ingress_lock_directory
     if directory is None:
         raise ValueError("execution control requires a host lock directory")
@@ -86,17 +95,36 @@ def _build_control(
         pool.open()
         ingress = GatewayIngress(ownership, timeout_seconds=settings.control_timeout_seconds)
         ledger = PostgresSubmissionLedger(pool, timeout_seconds=settings.control_timeout_seconds)
+        queries = ExecutionQueryService(ingress=ingress, ledger=ledger)
+        worker = (
+            None
+            if configuration is None
+            else RecoveryWorker(
+                ExecutionRecoveryService(
+                    ingress=ingress,
+                    ledger=ledger,
+                    submissions=queries,
+                    terminations=configuration.source,
+                ),
+                interval_seconds=configuration.interval_seconds,
+                batch_size=configuration.batch_size,
+                pass_budget_seconds=configuration.pass_budget_seconds,
+            )
+        )
         return (
             GatewayBarrierService(ingress=ingress, ledger=ledger),
-            ExecutionQueryService(ingress=ingress, ledger=ledger),
+            queries,
             InstanceDrainService(ingress=ingress, ledger=ledger),
             ownership,
             pool,
+            worker,
         )
     except BaseException:
-        ownership.close()
-        if pool is not None:
-            pool.close()
+        try:
+            if pool is not None:
+                pool.close()
+        finally:
+            ownership.close()
         raise
 
 
@@ -121,28 +149,38 @@ def create_app(
         raise ValueError("injected execution control still requires explicit control configuration")
     if instance_drain is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
+    if barrier_control is not None and resolved_settings.recovery_config_file is not None:
+        raise ValueError("configured recovery requires the default control lifespan")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if not resolved_settings.execution_control_enabled or barrier_control is not None:
             yield
             return
-        service, queries, drain, ownership, pool = await run_in_threadpool(
+        service, queries, drain, ownership, pool, worker = await run_in_threadpool(
             _build_control, resolved_settings
         )
         app.state.barrier_control = service
         app.state.execution_query = queries
         app.state.instance_drain = drain
+        app.state.recovery_worker = worker
         try:
+            if worker is not None:
+                worker.start()
             yield
         finally:
-            app.state.barrier_control = None
-            app.state.execution_query = None
-            app.state.instance_drain = None
             try:
-                await run_in_threadpool(ownership.close)
+                if worker is not None:
+                    await run_in_threadpool(worker.close)
             finally:
-                await run_in_threadpool(pool.close)
+                app.state.barrier_control = None
+                app.state.execution_query = None
+                app.state.instance_drain = None
+                app.state.recovery_worker = None
+                try:
+                    await run_in_threadpool(pool.close)
+                finally:
+                    await run_in_threadpool(ownership.close)
 
     app = FastAPI(
         title="SpeechNexus execution gateway API",
@@ -161,6 +199,7 @@ def create_app(
     app.state.instance_drain = instance_drain
     app.state.submit_execution = submit_execution
     app.state.abort_execution = abort_execution
+    app.state.recovery_worker = None
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

@@ -10,6 +10,7 @@ PROFILES = frozenset(
         "realtime_events",
         "scenario_profiles",
         "model_bindings",
+        "gateway_recovery",
     )
 )
 HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile", "binding"))

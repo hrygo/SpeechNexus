@@ -27,12 +27,23 @@ and physical cluster qualification remain pending.
 The [checkpoint-backed node source](../docs/architecture/trusted-node-stop.md)
 can now supply the existing recovery sweep with whole-instance stop facts over
 fixed, verified TLS. Missing or conflicting proof keeps execution unknown; gateway
-stop recording does not return scheduler budgets. The default gateway process does
-not yet wire this source or run a periodic recovery loop.
+stop recording does not return scheduler budgets. Set
+`SPEECHNEXUS_GATEWAY_RECOVERY_CONFIG_FILE` (absolute private JSON path) and the independent
+`SPEECHNEXUS_GATEWAY_RECOVERY_NODE_COMPONENT_TOKEN` together to start periodic recovery
+automatically with the existing control configuration. Both absent preserves existing behavior;
+partial or invalid configuration refuses startup. The
+[configuration contract](../contracts/internal/gateway-recovery.schema.json) requires every
+field explicitly: one private IP/TLS CA, approved immutable bindings, interval, batch size and
+request/pass budgets. Credentials stay outside JSON. No DNS/proxy/redirect or execution dispatch
+is introduced. The default driver uses the original read-only ledger query; engine observation
+still requires an engine adapter.
 Recovery passes now retain a process-local cursor over immutable execution IDs,
 so an unresolved first page does not starve later work. Reuse one recovery service
 across passes; an empty page wraps the next pass to the beginning. Reports classify
 each execution once, including when a concurrent generated-usage write changes
 its version while it remains unknown. No scheduling-only database write is made.
+Shutdown stops starting rows, joins the active bounded call, then closes the database pool
+and releases process ownership. A pass budget stops starting rows, not an already active call.
+An alive configured driver participates in readiness; it does not prove node/model readiness.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

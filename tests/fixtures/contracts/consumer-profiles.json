@@ -7554,6 +7554,341 @@
         "schema_version": "1.0.0",
         "parameters": {}
       }
+    },
+    {
+      "id": "producer-create-original",
+      "profile": "binding_defaults_producer",
+      "schema": "BindingDefaultsCreateRequest",
+      "valid": true,
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "max_segment_ms": 30000,
+            "finalization_modes": [
+              "full_segment"
+            ],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental"
+      }
+    },
+    {
+      "id": "producer-defaults-create-sparse",
+      "profile": "binding_defaults_producer",
+      "schema": "BindingDefaultsCreateRequest",
+      "valid": true,
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "max_segment_ms": 30000,
+            "finalization_modes": [
+              "full_segment"
+            ],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "parameter_defaults": {
+          "asr": {
+            "max_segment_ms": 15000
+          }
+        }
+      }
+    },
+    {
+      "id": "producer-defaults-create-explicit-empty",
+      "profile": "binding_defaults_producer",
+      "schema": "BindingDefaultsCreateRequest",
+      "valid": true,
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "max_segment_ms": 30000,
+            "finalization_modes": [
+              "full_segment"
+            ],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "parameter_defaults": {}
+      }
+    },
+    {
+      "id": "producer-defaults-create-invalid-null",
+      "profile": "binding_defaults_producer",
+      "schema": "BindingDefaultsCreateRequest",
+      "valid": false,
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "max_segment_ms": 30000,
+            "finalization_modes": [
+              "full_segment"
+            ],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "parameter_defaults": null
+      }
+    },
+    {
+      "id": "producer-defaults-create-invalid-caller-parent",
+      "profile": "binding_defaults_producer",
+      "schema": "BindingDefaultsCreateRequest",
+      "valid": false,
+      "value": {
+        "binding_id": "asr-quality",
+        "logical_model": "asr-quality",
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
+        "engine": {
+          "kind": "vllm",
+          "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtime_version": "vllm-2026.10"
+        },
+        "artifact_set": [
+          {
+            "role": "weights",
+            "artifact_id": "model-qwen3-asr-1.7b",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "media_type": "application/x-safetensors",
+            "size_bytes": 4000000000
+          }
+        ],
+        "execution_recipe": {
+          "recipe_revision": "3",
+          "capacity_manifest_id": "cap-asr-quality-7",
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
+          "requires_complete_reservation": true
+        },
+        "parameter_domains": {
+          "asr": {
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "max_segment_ms": 30000,
+            "finalization_modes": [
+              "full_segment"
+            ],
+            "supports_prompt": true,
+            "supports_word_timestamps": true,
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "max_speakers": 8,
+            "supports_rollback_tokens": false
+          }
+        },
+        "release_tier": "experimental",
+        "parameter_defaults": {
+          "binding_revision_id": "caller-parent"
+        }
+      }
     }
   ]
 }

@@ -19,7 +19,9 @@
     "./model-bindings": "./src/model_bindings.ts",
     "./binding-http": "./src/binding-http.ts",
     "./gateway-recovery": "./src/gateway_recovery.ts",
-    "./binding-defaults": "./src/binding_defaults.ts"
+    "./binding-defaults": "./src/binding_defaults.ts",
+    "./binding-defaults-producer": "./src/binding_defaults_producer.ts",
+    "./binding-defaults-http": "./src/binding_defaults-http.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

@@ -3,6 +3,10 @@
     "sha256": "8b3a30326cc55777a472b389412cdcf54e15dc986c42c300989339571b1775cf",
     "version": "0.1.0.dev3"
   },
+  "binding-defaults-producer.openapi.yaml": {
+    "sha256": "a04ad64b537f6a08dd030c01b7e61207214b96b1d87b4a3dc3466a1fb1cd5222",
+    "version": "0.1.0.dev0"
+  },
   "binding-parameter-defaults.schema.json": {
     "sha256": "6479a60733585e1f06451efca30496dc94ca91169ff3e21a2a51856631530768",
     "version": null

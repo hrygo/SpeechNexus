@@ -1,0 +1,2721 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SpeechNexus binding default producer contract",
+    "version": "0.1.0.dev0",
+    "description": "Contract-only extension for creating a new binding revision with explicitly declared parameter defaults and reading its fixed snapshot. This profile does not advertise implemented operational routes or prove persistence, authority, publication or qualification. Legacy admin 0.1.0.dev3 remains the implemented draft contract until the producer is wired."
+  },
+  "security": [
+    {
+      "SharedServiceKey": []
+    },
+    {}
+  ],
+  "paths": {
+    "/v1/nexus/admin/model-bindings": {
+      "post": {
+        "tags": ["model-bindings"],
+        "operationId": "createModelBindingDraft",
+        "summary": "Create an immutable draft binding revision",
+        "description": "Creates a new immutable revision in draft state. The registry allocates\nthe family revision and a globally unique revision_id; the caller cannot\nsupply either identity. Independent successful commands append distinct\nrevisions, preserving earlier history. supersedes_revision records a\nsupersession relationship; it is not an expected-head CAS guard.\nPublishing requires separate capacity and qualification evidence.\n\nOptional parameter_defaults explicitly declares sparse canonical parameter\nvalues for this new revision. Omission creates no defaults declaration;\nan explicit empty object declares no defaults. Null is not omission.\nThe registry allocates the snapshot identity and fixed parent references,\nand commits the new revision and at most one snapshot atomically. The\ncaller supplies binding_id as before, but cannot supply snapshot_id,\nallocated revision/revision_id or timestamps. Values\nmust fit the binding's tasks and parameter domains before commit; a\nstructurally valid but incompatible declaration returns 422. No engine\ndefaults are probed or inferred. Existing revisions are never amended.\nThe binding response shape is unchanged; its exact identity addresses\nthe fixed parameter-defaults GET. This declaration is not publication,\nproducer authentication, engine qualification or a default pointer.\n\nReplaying the same Idempotency-Key and canonical complete intent returns\nthe original revision before any allocation. The same key with a different\nintent returns 409 idempotency_conflict without allocating a new revision.\nComplete intent includes parameter_defaults presence and every explicit\nvalue: omission and an empty object are different intents. Recovery must\nreturn the original snapshot as well as the original binding identity;\nlater configuration cannot populate or replace that snapshot.\nMalformed JSON, unknown fields and invalid header/schema values return 400;\nstructurally valid but inconsistent binding composition returns 422.\n\nAn unreadable original result or uncertain commit returns 503\nbinding_result_unknown with retryable: false. It does not establish that\nno revision was created. There is no automatic retry, new key, Operation\nor query-by-key recovery resource. A caller retaining the original key\nmay explicitly replay this same POST with the exact original intent and\nkey to resolve that result. Without an original key automatic recovery\nis not promised; a candidate revision GET does not prove original-command\nownership. Receive refusals do not settle an earlier original-key outcome.\n\nThe bounded public ingress may refuse Host/Origin (403), unsupported\nmethod (405 with Allow), receive timeout (408), request size (413),\nnon-JSON media (415), or local receive capacity (429). Limits are deployment\nconfiguration, not implicit binding parameters or qualification evidence.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/External_admin_openapi_yaml_XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/External_admin_openapi_yaml_IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingDefaultsCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Draft binding revision created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_admin_openapi_yaml_ModelBindingDraftRevision"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingDraftConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_UnprocessableEntity"
+          },
+          "403": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingReceiveTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingMediaUnsupported"
+          },
+          "429": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingReceiveFull"
+          },
+          "503": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingCreationUnknown"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/parameter-defaults": {
+      "get": {
+        "tags": ["model-bindings"],
+        "operationId": "getModelBindingParameterDefaults",
+        "summary": "Get the explicit default parameter snapshot of one fixed binding revision",
+        "description": "Reads only the snapshot allocated with this exact binding revision.\nSnapshot binding_id and binding_revision must match the path and its\nbinding_revision_id must identify the same authoritative parent. These\ncross-resource checks are producer obligations, not schema-only proof.\nNever selects a latest/current/default revision, allocates a snapshot or\nfills engine/schema defaults. An explicit parameters: {} is a successful\ndeclaration; a missing declaration is not that value. Return 404\nbinding_defaults_not_found only after an authoritative read confirms no\nsnapshot for this parent, including absent parents and legacy revisions\ncreated without a declaration. Do not manufacture empty defaults.\nUnreadable parent/snapshot facts return 503 binding_unavailable with\nretryable: true for this same fixed GET; this is not absence, permission\nto repeat a creation under a new key, or proof of original-key ownership.\nA create result remains recoverable only through its original POST,\ncomplete intent and retained key. No keyless recovery is introduced.\nInvalid path/header/query values or read body/framing return 400.\nHost/Origin refusal uses 403; unsupported methods use 405 with Allow.\nReading a declaration proves neither publication nor engine capability\nor the final merged parameter configuration.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/External_admin_openapi_yaml_BindingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/External_admin_openapi_yaml_RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/External_admin_openapi_yaml_XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Immutable explicit declaration for the exact parent revision.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_binding_parameter_defaults_schema_json_Root"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_Forbidden"
+          },
+          "404": {
+            "description": "Authoritative read confirms no default declaration for this fixed parent.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingDefaultsMissingError"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingReadMethodNotAllowed"
+          },
+          "503": {
+            "$ref": "#/components/responses/External_admin_openapi_yaml_BindingReadUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "External_admin_openapi_yaml_XRequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "External_admin_openapi_yaml_IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        }
+      },
+      "External_admin_openapi_yaml_BindingIdPath": {
+        "name": "binding_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/External_admin_openapi_yaml_Identifier"
+        }
+      },
+      "External_admin_openapi_yaml_RevisionPath": {
+        "name": "revision",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/External_admin_openapi_yaml_Revision"
+        }
+      }
+    },
+    "schemas": {
+      "BindingDefaultsCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "binding_id",
+          "logical_model",
+          "tasks",
+          "engine",
+          "artifact_set",
+          "execution_recipe",
+          "parameter_domains",
+          "release_tier"
+        ],
+        "properties": {
+          "binding_id": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_binding_id"
+          },
+          "supersedes_revision": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_supersedes_revision"
+          },
+          "logical_model": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_logical_model"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_tasks"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_engine"
+          },
+          "artifact_set": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_artifact_set"
+          },
+          "execution_recipe": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_execution_recipe"
+          },
+          "parameter_domains": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_parameter_domains"
+          },
+          "release_tier": {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_release_tier"
+          },
+          "parameter_defaults": {
+            "$ref": "#/components/schemas/External_binding_parameter_defaults_schema_json_BindingDefaultParameters",
+            "description": "Explicit sparse values. Omission creates no declaration; {} explicitly declares none. No schema default populates a value."
+          }
+        }
+      },
+      "External_admin_openapi_yaml_binding_id": {
+        "$ref": "#/components/schemas/External_admin_openapi_yaml_Identifier"
+      },
+      "External_admin_openapi_yaml_Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_shared_identifiers_schema_json_Identifier": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+        "minLength": 3,
+        "maxLength": 128,
+        "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+      },
+      "External_admin_openapi_yaml_supersedes_revision": {
+        "$ref": "#/components/schemas/External_admin_openapi_yaml_Revision"
+      },
+      "External_admin_openapi_yaml_Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+      },
+      "External_shared_identifiers_schema_json_Revision": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,18}$",
+        "maxLength": 19,
+        "description": "Monotonic decimal revision represented as a string."
+      },
+      "External_admin_openapi_yaml_logical_model": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"
+      },
+      "External_admin_openapi_yaml_tasks": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/components/schemas/External_model_binding_schema_json_SpeechTaskKind"
+        }
+      },
+      "External_model_binding_schema_json_SpeechTaskKind": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_SpeechTaskKind"
+      },
+      "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+        "type": "string",
+        "enum": [
+          "asr_realtime",
+          "asr_full_segment_review",
+          "asr_file",
+          "tts_realtime",
+          "tts_file",
+          "voice_design",
+          "voice_clone",
+          "voice_validation",
+          "forced_alignment",
+          "speaker_diarization",
+          "vad"
+        ]
+      },
+      "External_admin_openapi_yaml_engine": {
+        "$ref": "#/components/schemas/External_model_binding_schema_json_EngineDescriptor"
+      },
+      "External_model_binding_schema_json_EngineDescriptor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "image_digest", "runtime_version"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_EngineKind"
+          },
+          "image_digest": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Sha256Digest"
+          },
+          "runtime_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "External_model_binding_schema_json_EngineKind": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_EngineKind"
+      },
+      "External_shared_capability_domains_schema_json_EngineKind": {
+        "type": "string",
+        "enum": ["vllm", "vllm_omni", "nemo", "qwen_forced_aligner", "onnx_runtime", "cpu_native"]
+      },
+      "External_model_binding_schema_json_Sha256Digest": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "External_admin_openapi_yaml_artifact_set": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/External_model_binding_schema_json_ArtifactReference"
+        }
+      },
+      "External_model_binding_schema_json_ArtifactReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "artifact_id", "digest", "media_type"],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["weights", "tokenizer", "codec", "config", "vocab", "connector"]
+          },
+          "artifact_id": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+          },
+          "digest": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Sha256Digest"
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "External_model_binding_schema_json_Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "External_admin_openapi_yaml_execution_recipe": {
+        "$ref": "#/components/schemas/External_model_binding_schema_json_ExecutionRecipe"
+      },
+      "External_model_binding_schema_json_ExecutionRecipe": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recipe_revision", "capacity_manifest_id", "stage_roles"],
+        "properties": {
+          "recipe_revision": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+          },
+          "capacity_manifest_id": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+          },
+          "stage_roles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_model_binding_schema_json_StageRole"
+            }
+          },
+          "requires_complete_reservation": {
+            "type": "boolean",
+            "default": true,
+            "description": "True when every stage, including required review or auxiliary work, must be admitted before execution starts."
+          }
+        }
+      },
+      "External_model_binding_schema_json_Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+      },
+      "External_model_binding_schema_json_StageRole": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_StageRole"
+      },
+      "External_shared_capability_domains_schema_json_StageRole": {
+        "type": "string",
+        "enum": [
+          "vad",
+          "asr_preview",
+          "asr_review",
+          "asr_batch",
+          "tts_talker",
+          "tts_code2wav",
+          "tts_connector",
+          "voice_design",
+          "voice_clone_base",
+          "alignment",
+          "diarization"
+        ]
+      },
+      "External_admin_openapi_yaml_parameter_domains": {
+        "$ref": "#/components/schemas/External_model_binding_schema_json_ParameterDomains"
+      },
+      "External_model_binding_schema_json_ParameterDomains": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "asr": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_AsrParameterDomain"
+          },
+          "tts": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_TtsParameterDomain"
+          },
+          "voice": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_VoiceParameterDomain"
+          }
+        },
+        "minProperties": 1
+      },
+      "External_model_binding_schema_json_AsrParameterDomain": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "languages",
+          "max_segment_ms",
+          "finalization_modes",
+          "supports_prompt",
+          "alignment_modes",
+          "diarization_modes"
+        ],
+        "properties": {
+          "languages": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 35
+            }
+          },
+          "max_segment_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 30000
+          },
+          "finalization_modes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+            }
+          },
+          "supports_prompt": {
+            "type": "boolean"
+          },
+          "supports_word_timestamps": {
+            "type": "boolean"
+          },
+          "alignment_modes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+            }
+          },
+          "diarization_modes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+            }
+          },
+          "max_speakers": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 64
+          },
+          "supports_rollback_tokens": {
+            "type": "boolean"
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_FinalizationMode": {
+        "type": "string",
+        "enum": ["full_segment", "streaming_finalize"]
+      },
+      "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+        "type": "string",
+        "enum": ["off", "required", "best_effort"]
+      },
+      "External_model_binding_schema_json_TtsParameterDomain": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "languages",
+          "audio_formats",
+          "sample_rates_hz",
+          "text_commit_modes",
+          "audio_delivery_modes",
+          "supports_instructions",
+          "max_input_codepoints"
+        ],
+        "properties": {
+          "languages": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 35
+            }
+          },
+          "audio_formats": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+            }
+          },
+          "sample_rates_hz": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 8000,
+              "maximum": 96000
+            }
+          },
+          "text_commit_modes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+            }
+          },
+          "audio_delivery_modes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+            }
+          },
+          "supports_instructions": {
+            "type": "boolean"
+          },
+          "supports_speed": {
+            "type": "boolean"
+          },
+          "speed_range": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["minimum", "maximum"],
+            "properties": {
+              "minimum": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 4.0
+              },
+              "maximum": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 4.0
+              }
+            }
+          },
+          "max_input_codepoints": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "supports_seed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_AudioFormat": {
+        "type": "string",
+        "enum": ["mp3", "wav", "pcm"]
+      },
+      "External_shared_capability_domains_schema_json_TextCommitMode": {
+        "type": "string",
+        "enum": ["explicit", "sentence"]
+      },
+      "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+        "type": "string",
+        "enum": ["complete", "chunked"]
+      },
+      "External_model_binding_schema_json_VoiceParameterDomain": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["design_supported", "clone_supported", "reusable_voice_supported"],
+        "properties": {
+          "design_supported": {
+            "type": "boolean"
+          },
+          "clone_supported": {
+            "type": "boolean"
+          },
+          "preview_only_possible": {
+            "type": "boolean"
+          },
+          "reusable_voice_supported": {
+            "type": "boolean"
+          },
+          "validation_set_revisions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_release_tier": {
+        "$ref": "#/components/schemas/External_model_binding_schema_json_ReleaseTier"
+      },
+      "External_model_binding_schema_json_ReleaseTier": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_ReleaseTier"
+      },
+      "External_shared_capability_domains_schema_json_ReleaseTier": {
+        "type": "string",
+        "enum": ["experimental", "best_effort", "production"]
+      },
+      "External_binding_parameter_defaults_schema_json_BindingDefaultParameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Explicit sparse canonical parameter fields. Nested objects retain their original required fields. No schema annotation supplies an omitted value. An explicit empty map declares no defaults and is not a substitute for an absent/unreadable snapshot.",
+        "properties": {
+          "asr": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrParameterFields"
+          },
+          "tts": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsParameterFields"
+          },
+          "output": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_OutputParameterFields"
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrParameterFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrLanguage"
+          },
+          "preview_interval_ms": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"
+          },
+          "max_segment_ms": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"
+          },
+          "finalization": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrFinalization"
+          },
+          "final_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"
+          },
+          "auxiliary_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"
+          },
+          "rollback_tokens": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"
+          },
+          "turn_detection": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrTurnDetection"
+          },
+          "vocabulary_set_revision": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision"
+          },
+          "alignment": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrAlignment"
+          },
+          "diarization": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrDiarization"
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrLanguage": {
+        "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+      },
+      "External_shared_language_schema_json_LanguageTag": {
+        "type": "string",
+        "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+        "maxLength": 35
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 5000
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 30000,
+        "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrFinalization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000,
+        "default": 5000
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrRollbackTokens": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 32,
+        "default": 5
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrTurnDetection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "silence_duration_ms"],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_VadMode"
+          },
+          "silence_duration_ms": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_VadMode": {
+        "type": "string",
+        "enum": ["server_vad", "manual"]
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision": {
+        "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
+      },
+      "External_shared_profile_parameter_values_schema_json_NullableResourceReference": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_references_schema_json_ResourceReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "revision"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrAlignment": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_profile_parameter_values_schema_json_AsrDiarization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsParameterFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsLanguage"
+          },
+          "text_commit_mode": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"
+          },
+          "audio_delivery": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"
+          },
+          "speed": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsSpeed"
+          },
+          "instructions": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsInstructions"
+          },
+          "pronunciation_revision": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision"
+          },
+          "seed": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsSeed"
+          },
+          "planner": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsPlanner"
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsLanguage": {
+        "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsTextCommitMode": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsAudioDelivery": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsSpeed": {
+        "type": "number",
+        "minimum": 0.5,
+        "maximum": 2.0,
+        "default": 1.0
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsInstructions": {
+        "type": ["string", "null"],
+        "maxLength": 2000
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision": {
+        "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsSeed": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "External_shared_profile_parameter_values_schema_json_TtsPlanner": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["max_chars", "max_wait_ms"],
+        "properties": {
+          "max_chars": {
+            "type": "integer",
+            "minimum": 40,
+            "maximum": 400
+          },
+          "max_wait_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_OutputParameterFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transcript_format": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat"
+          },
+          "audio_format": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_OutputAudioFormat"
+          },
+          "save_artifacts": {
+            "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts"
+          }
+        }
+      },
+      "External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TranscriptFormat"
+      },
+      "External_shared_capability_domains_schema_json_TranscriptFormat": {
+        "type": "string",
+        "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+      },
+      "External_shared_profile_parameter_values_schema_json_OutputAudioFormat": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+      },
+      "External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts": {
+        "type": "boolean"
+      },
+      "External_admin_openapi_yaml_ModelBindingDraftRevision": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Root"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "publication": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "draft"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_model_binding_schema_json_Root": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ModelBindingRevision",
+        "description": "Immutable logical-model binding from a public model name to engine, artifacts, execution recipe, parameter domains, capacity manifest, and qualification evidence. It is separate from any runtime instance, generation, lease, or readiness fact.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "binding_id",
+          "revision",
+          "revision_id",
+          "logical_model",
+          "tasks",
+          "engine",
+          "artifact_set",
+          "execution_recipe",
+          "parameter_domains",
+          "release_tier",
+          "publication"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+          },
+          "binding_id": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+          },
+          "revision_id": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier",
+            "description": "Globally unique immutable identifier for this exact (binding_id, revision). Capacity manifests, qualification reports, runtime instances, leases, submit intents, and receipts use this value as binding_revision_id."
+          },
+          "logical_model": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$",
+            "description": "Public logical model name returned by GET /v1/models and accepted in model request fields. It is not an engine model path."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_model_binding_schema_json_SpeechTaskKind"
+            }
+          },
+          "engine": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_EngineDescriptor"
+          },
+          "artifact_set": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/External_model_binding_schema_json_ArtifactReference"
+            }
+          },
+          "execution_recipe": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_ExecutionRecipe"
+          },
+          "parameter_domains": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_ParameterDomains"
+          },
+          "release_tier": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_ReleaseTier",
+            "description": "Publication claim for this revision. A draft may target production without evidence identifiers; any published, retired, or disabled production revision requires the bound capacity manifest and qualification report."
+          },
+          "publication": {
+            "$ref": "#/components/schemas/External_model_binding_schema_json_PublicationState",
+            "description": "Mutable lifecycle projection over the immutable binding definition. Drafts cannot carry publication timestamps or evidence identifiers."
+          },
+          "supersedes_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "status": {
+                      "const": "published"
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["publication"]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "required": ["published_at", "capacity_manifest_id", "qualification_report_id"],
+                  "properties": {
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "capacity_manifest_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    },
+                    "qualification_report_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "status": {
+                      "const": "draft"
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["publication"]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "published_at": {
+                      "type": "null"
+                    },
+                    "retired_at": {
+                      "type": "null"
+                    },
+                    "capacity_manifest_id": {
+                      "type": "null"
+                    },
+                    "qualification_report_id": {
+                      "type": "null"
+                    },
+                    "disabled_reason": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "status": {
+                      "const": "published"
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["publication"]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "retired_at": {
+                      "type": "null"
+                    },
+                    "disabled_reason": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "status": {
+                      "const": "retired"
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["publication"]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "required": [
+                    "published_at",
+                    "retired_at",
+                    "capacity_manifest_id",
+                    "qualification_report_id"
+                  ],
+                  "properties": {
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "retired_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "capacity_manifest_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    },
+                    "qualification_report_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    },
+                    "disabled_reason": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "release_tier": {
+                      "const": "production"
+                    }
+                  },
+                  "required": ["release_tier"]
+                },
+                {
+                  "properties": {
+                    "publication": {
+                      "properties": {
+                        "status": {
+                          "not": {
+                            "const": "draft"
+                          }
+                        }
+                      },
+                      "required": ["status"]
+                    }
+                  },
+                  "required": ["publication"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "required": [
+                    "status",
+                    "published_at",
+                    "capacity_manifest_id",
+                    "qualification_report_id"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": ["published", "retired", "disabled"]
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "capacity_manifest_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    },
+                    "qualification_report_id": {
+                      "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publication": {
+                  "properties": {
+                    "status": {
+                      "const": "disabled"
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["publication"]
+            },
+            "then": {
+              "properties": {
+                "publication": {
+                  "required": ["disabled_reason"],
+                  "properties": {
+                    "disabled_reason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "tasks": {
+                  "contains": {
+                    "const": "voice_design"
+                  }
+                }
+              },
+              "required": ["tasks"]
+            },
+            "then": {
+              "properties": {
+                "engine": {
+                  "properties": {
+                    "kind": {
+                      "const": "vllm_omni"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "$defs": {
+          "Identifier": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "Revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          "Sha256Digest": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "ReleaseTier": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_ReleaseTier"
+          },
+          "SpeechTaskKind": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_SpeechTaskKind"
+          },
+          "EngineKind": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_EngineKind"
+          },
+          "StageRole": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_StageRole"
+          },
+          "EngineDescriptor": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "image_digest", "runtime_version"],
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_EngineKind"
+              },
+              "image_digest": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Sha256Digest"
+              },
+              "runtime_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "ArtifactReference": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "artifact_id", "digest", "media_type"],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["weights", "tokenizer", "codec", "config", "vocab", "connector"]
+              },
+              "artifact_id": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+              },
+              "digest": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Sha256Digest"
+              },
+              "media_type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "ExecutionRecipe": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["recipe_revision", "capacity_manifest_id", "stage_roles"],
+            "properties": {
+              "recipe_revision": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+              },
+              "capacity_manifest_id": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+              },
+              "stage_roles": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_StageRole"
+                }
+              },
+              "requires_complete_reservation": {
+                "type": "boolean",
+                "default": true,
+                "description": "True when every stage, including required review or auxiliary work, must be admitted before execution starts."
+              }
+            }
+          },
+          "AsrParameterDomain": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "languages",
+              "max_segment_ms",
+              "finalization_modes",
+              "supports_prompt",
+              "alignment_modes",
+              "diarization_modes"
+            ],
+            "properties": {
+              "languages": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "maxLength": 35
+                }
+              },
+              "max_segment_ms": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 30000
+              },
+              "finalization_modes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+                }
+              },
+              "supports_prompt": {
+                "type": "boolean"
+              },
+              "supports_word_timestamps": {
+                "type": "boolean"
+              },
+              "alignment_modes": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+                }
+              },
+              "diarization_modes": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+                }
+              },
+              "max_speakers": {
+                "type": ["integer", "null"],
+                "minimum": 1,
+                "maximum": 64
+              },
+              "supports_rollback_tokens": {
+                "type": "boolean"
+              }
+            }
+          },
+          "TtsParameterDomain": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "languages",
+              "audio_formats",
+              "sample_rates_hz",
+              "text_commit_modes",
+              "audio_delivery_modes",
+              "supports_instructions",
+              "max_input_codepoints"
+            ],
+            "properties": {
+              "languages": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "maxLength": 35
+                }
+              },
+              "audio_formats": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+                }
+              },
+              "sample_rates_hz": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 8000,
+                  "maximum": 96000
+                }
+              },
+              "text_commit_modes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+                }
+              },
+              "audio_delivery_modes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+                }
+              },
+              "supports_instructions": {
+                "type": "boolean"
+              },
+              "supports_speed": {
+                "type": "boolean"
+              },
+              "speed_range": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["minimum", "maximum"],
+                "properties": {
+                  "minimum": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 4.0
+                  },
+                  "maximum": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 4.0
+                  }
+                }
+              },
+              "max_input_codepoints": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "supports_seed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "VoiceParameterDomain": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["design_supported", "clone_supported", "reusable_voice_supported"],
+            "properties": {
+              "design_supported": {
+                "type": "boolean"
+              },
+              "clone_supported": {
+                "type": "boolean"
+              },
+              "preview_only_possible": {
+                "type": "boolean"
+              },
+              "reusable_voice_supported": {
+                "type": "boolean"
+              },
+              "validation_set_revisions": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_Revision"
+                }
+              }
+            }
+          },
+          "ParameterDomains": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "asr": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_AsrParameterDomain"
+              },
+              "tts": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_TtsParameterDomain"
+              },
+              "voice": {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_VoiceParameterDomain"
+              }
+            },
+            "minProperties": 1
+          },
+          "PublicationState": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["draft", "published", "retired", "disabled"]
+              },
+              "published_at": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retired_at": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capacity_manifest_id": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "qualification_report_id": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled_reason": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "examples": [
+          {
+            "schema_version": "1.0.0",
+            "binding_id": "asr-quality",
+            "revision": "7",
+            "revision_id": "mbrev-asr-quality-7",
+            "logical_model": "asr-quality",
+            "description": "File and full-segment review ASR binding.",
+            "tasks": ["asr_file", "asr_full_segment_review"],
+            "engine": {
+              "kind": "vllm",
+              "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "runtime_version": "vllm-2026.10"
+            },
+            "artifact_set": [
+              {
+                "role": "weights",
+                "artifact_id": "model-qwen3-asr-1.7b",
+                "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "media_type": "application/x-safetensors",
+                "size_bytes": 4000000000
+              }
+            ],
+            "execution_recipe": {
+              "recipe_revision": "3",
+              "capacity_manifest_id": "cap-asr-quality-7",
+              "stage_roles": ["asr_batch", "asr_review"],
+              "requires_complete_reservation": true
+            },
+            "parameter_domains": {
+              "asr": {
+                "languages": ["zh", "en", "auto"],
+                "max_segment_ms": 30000,
+                "finalization_modes": ["full_segment"],
+                "supports_prompt": true,
+                "supports_word_timestamps": true,
+                "alignment_modes": ["off", "required", "best_effort"],
+                "diarization_modes": ["off", "required", "best_effort"],
+                "max_speakers": 8,
+                "supports_rollback_tokens": false
+              }
+            },
+            "release_tier": "experimental",
+            "publication": {
+              "status": "published",
+              "published_at": "2026-10-22T09:00:00Z",
+              "retired_at": null,
+              "capacity_manifest_id": "cap-asr-quality-7",
+              "qualification_report_id": "qrep-asr-quality-7",
+              "disabled_reason": null
+            },
+            "supersedes_revision": "6",
+            "created_at": "2026-10-22T09:00:00Z"
+          },
+          {
+            "schema_version": "1.0.0",
+            "binding_id": "tts-interactive",
+            "revision": "5",
+            "revision_id": "mbrev-tts-interactive-5",
+            "logical_model": "tts-interactive",
+            "tasks": ["tts_realtime", "tts_file"],
+            "engine": {
+              "kind": "vllm_omni",
+              "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "runtime_version": "vllm-omni-2026.10"
+            },
+            "artifact_set": [
+              {
+                "role": "weights",
+                "artifact_id": "model-qwen3-tts-customvoice",
+                "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                "media_type": "application/x-safetensors",
+                "size_bytes": 4000000000
+              }
+            ],
+            "execution_recipe": {
+              "recipe_revision": "2",
+              "capacity_manifest_id": "cap-tts-interactive-5",
+              "stage_roles": ["tts_talker", "tts_code2wav", "tts_connector"],
+              "requires_complete_reservation": true
+            },
+            "parameter_domains": {
+              "tts": {
+                "languages": ["zh", "en"],
+                "audio_formats": ["mp3", "wav", "pcm"],
+                "sample_rates_hz": [24000],
+                "text_commit_modes": ["explicit", "sentence"],
+                "audio_delivery_modes": ["complete", "chunked"],
+                "supports_instructions": true,
+                "supports_speed": true,
+                "speed_range": {
+                  "minimum": 0.75,
+                  "maximum": 1.25
+                },
+                "max_input_codepoints": 2000,
+                "supports_seed": false
+              }
+            },
+            "release_tier": "experimental",
+            "publication": {
+              "status": "published",
+              "published_at": "2026-10-22T09:00:00Z",
+              "retired_at": null,
+              "capacity_manifest_id": "cap-tts-interactive-5",
+              "qualification_report_id": "qrep-tts-interactive-5",
+              "disabled_reason": null
+            },
+            "supersedes_revision": "4",
+            "created_at": "2026-10-22T09:00:00Z"
+          },
+          {
+            "schema_version": "1.0.0",
+            "binding_id": "voice-design",
+            "revision": "3",
+            "revision_id": "mbrev-voice-design-3",
+            "logical_model": "voice-design",
+            "tasks": ["voice_design", "voice_validation"],
+            "engine": {
+              "kind": "vllm_omni",
+              "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "runtime_version": "vllm-omni-2026.10"
+            },
+            "artifact_set": [
+              {
+                "role": "weights",
+                "artifact_id": "model-qwen3-tts-voicedesign",
+                "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                "media_type": "application/x-safetensors",
+                "size_bytes": 4000000000
+              }
+            ],
+            "execution_recipe": {
+              "recipe_revision": "1",
+              "capacity_manifest_id": "cap-voice-design-3",
+              "stage_roles": ["voice_design", "voice_clone_base"],
+              "requires_complete_reservation": true
+            },
+            "parameter_domains": {
+              "voice": {
+                "design_supported": true,
+                "clone_supported": true,
+                "preview_only_possible": true,
+                "reusable_voice_supported": true,
+                "validation_set_revisions": ["1", "2"]
+              }
+            },
+            "release_tier": "experimental",
+            "publication": {
+              "status": "draft",
+              "published_at": null,
+              "retired_at": null,
+              "capacity_manifest_id": null,
+              "qualification_report_id": null,
+              "disabled_reason": null
+            },
+            "supersedes_revision": null,
+            "created_at": "2026-10-22T09:00:00Z"
+          },
+          {
+            "schema_version": "1.0.0",
+            "binding_id": "asr-realtime",
+            "revision": "4",
+            "revision_id": "mbrev-asr-realtime-4",
+            "logical_model": "asr-realtime",
+            "description": "Realtime ASR binding with VAD preview and full-segment review.",
+            "tasks": ["vad", "asr_realtime", "asr_full_segment_review"],
+            "engine": {
+              "kind": "vllm",
+              "image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+              "runtime_version": "vllm-2026.10"
+            },
+            "artifact_set": [
+              {
+                "role": "weights",
+                "artifact_id": "model-qwen3-asr-realtime",
+                "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "media_type": "application/x-safetensors",
+                "size_bytes": 4000000000
+              }
+            ],
+            "execution_recipe": {
+              "recipe_revision": "4",
+              "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+              "stage_roles": ["vad", "asr_preview", "asr_review"],
+              "requires_complete_reservation": true
+            },
+            "parameter_domains": {
+              "asr": {
+                "languages": ["zh", "en", "auto"],
+                "max_segment_ms": 30000,
+                "finalization_modes": ["full_segment"],
+                "supports_prompt": true,
+                "supports_word_timestamps": false,
+                "alignment_modes": ["off", "best_effort"],
+                "diarization_modes": ["off", "best_effort"],
+                "max_speakers": 8,
+                "supports_rollback_tokens": true
+              }
+            },
+            "release_tier": "experimental",
+            "publication": {
+              "status": "published",
+              "published_at": "2026-10-22T09:00:00Z",
+              "retired_at": null,
+              "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+              "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+              "disabled_reason": null
+            },
+            "supersedes_revision": "3",
+            "created_at": "2026-10-22T09:00:00Z"
+          }
+        ]
+      },
+      "External_model_binding_schema_json_PublicationState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["draft", "published", "retired", "disabled"]
+          },
+          "published_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retired_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capacity_manifest_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qualification_report_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_model_binding_schema_json_Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled_reason": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "External_admin_openapi_yaml_ErrorResponse": {
+        "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+      },
+      "External_shared_errors_schema_json_ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+          }
+        }
+      },
+      "External_shared_errors_schema_json_ErrorBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "type", "message", "param", "request_id", "retryable"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$",
+            "description": "Stable machine-readable error code."
+          },
+          "type": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorType"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "param": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "nexus": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_OperationRecovery"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "enum": ["operation_in_progress", "response_not_replayable"]
+                }
+              }
+            },
+            "then": {
+              "required": ["nexus"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "response_not_replayable"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "nexus": {
+                  "required": ["receipt"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_errors_schema_json_ErrorType": {
+        "type": "string",
+        "enum": [
+          "invalid_request_error",
+          "authentication_error",
+          "permission_error",
+          "not_found_error",
+          "rate_limit_error",
+          "api_error",
+          "service_unavailable_error"
+        ]
+      },
+      "External_shared_errors_schema_json_OperationRecovery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_ExecutionReceipt"
+          }
+        },
+        "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+      },
+      "External_shared_receipts_schema_json_ExecutionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+        "properties": {
+          "receipt_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "request_id": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requested": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "observed": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "missing": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          },
+          "unknown": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_PublicExecutionFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+          },
+          "seed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_seed"
+          },
+          "speed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_speed"
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 384000
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+              },
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TranscriptFormat"
+              }
+            ]
+          },
+          "max_segment_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_max_segment_ms"
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "voice": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "pronunciation": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "turn_detection": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_turn_detection"
+          },
+          "finalization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_finalization"
+          },
+          "preview_interval_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_preview_interval_ms"
+          },
+          "rollback_tokens": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_rollback_tokens"
+          },
+          "final_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_final_deadline_ms"
+          },
+          "auxiliary_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+          },
+          "alignment": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_alignment"
+          },
+          "diarization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_diarization"
+          },
+          "vocabulary_set_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+          },
+          "text_commit_mode": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_text_commit_mode"
+          },
+          "audio_delivery": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_audio_delivery"
+          },
+          "pronunciation_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_pronunciation_revision"
+          },
+          "planner": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_planner"
+          },
+          "instructions_present": {
+            "type": "boolean"
+          },
+          "prompt_present": {
+            "type": "boolean"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "vocabulary": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          }
+        },
+        "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+      },
+      "External_shared_speech_overrides_schema_json_seed": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "External_shared_speech_overrides_schema_json_speed": {
+        "type": "number",
+        "minimum": 0.25,
+        "maximum": 4.0
+      },
+      "External_shared_speech_overrides_schema_json_max_segment_ms": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 30000
+      },
+      "External_shared_speech_overrides_schema_json_turn_detection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_VadMode"
+          },
+          "silence_duration_ms": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_speech_overrides_schema_json_finalization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+      },
+      "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 5000
+      },
+      "External_shared_speech_overrides_schema_json_rollback_tokens": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 32
+      },
+      "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_alignment": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_speech_overrides_schema_json_diarization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_text_commit_mode": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+      },
+      "External_shared_speech_overrides_schema_json_audio_delivery": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+      },
+      "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_planner": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_chars": {
+            "type": "integer",
+            "minimum": 40,
+            "maximum": 400
+          },
+          "max_wait_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_ReceiptFactPath": {
+        "type": "string",
+        "enum": [
+          "requested.language",
+          "requested.seed",
+          "requested.speed",
+          "requested.sample_rate_hz",
+          "requested.response_format",
+          "requested.max_segment_ms",
+          "requested.model_binding",
+          "requested.profile",
+          "requested.voice",
+          "requested.pronunciation",
+          "requested.turn_detection",
+          "requested.finalization",
+          "requested.preview_interval_ms",
+          "requested.rollback_tokens",
+          "requested.final_deadline_ms",
+          "requested.auxiliary_deadline_ms",
+          "requested.alignment",
+          "requested.diarization",
+          "requested.vocabulary_set_revision",
+          "requested.text_commit_mode",
+          "requested.audio_delivery",
+          "requested.pronunciation_revision",
+          "requested.planner",
+          "requested.instructions_present",
+          "requested.prompt_present",
+          "requested.policy",
+          "requested.vocabulary",
+          "effective.language",
+          "effective.seed",
+          "effective.speed",
+          "effective.sample_rate_hz",
+          "effective.response_format",
+          "effective.max_segment_ms",
+          "effective.model_binding",
+          "effective.profile",
+          "effective.voice",
+          "effective.pronunciation",
+          "effective.turn_detection",
+          "effective.finalization",
+          "effective.preview_interval_ms",
+          "effective.rollback_tokens",
+          "effective.final_deadline_ms",
+          "effective.auxiliary_deadline_ms",
+          "effective.alignment",
+          "effective.diarization",
+          "effective.vocabulary_set_revision",
+          "effective.text_commit_mode",
+          "effective.audio_delivery",
+          "effective.pronunciation_revision",
+          "effective.planner",
+          "effective.instructions_present",
+          "effective.prompt_present",
+          "effective.policy",
+          "effective.vocabulary",
+          "observed.language",
+          "observed.seed",
+          "observed.speed",
+          "observed.sample_rate_hz",
+          "observed.response_format",
+          "observed.max_segment_ms",
+          "observed.model_binding",
+          "observed.profile",
+          "observed.voice",
+          "observed.pronunciation",
+          "observed.turn_detection",
+          "observed.finalization",
+          "observed.preview_interval_ms",
+          "observed.rollback_tokens",
+          "observed.final_deadline_ms",
+          "observed.auxiliary_deadline_ms",
+          "observed.alignment",
+          "observed.diarization",
+          "observed.vocabulary_set_revision",
+          "observed.text_commit_mode",
+          "observed.audio_delivery",
+          "observed.pronunciation_revision",
+          "observed.planner",
+          "observed.instructions_present",
+          "observed.prompt_present",
+          "observed.policy",
+          "observed.vocabulary",
+          "requested.planner.max_chars",
+          "requested.planner.max_wait_ms",
+          "requested.turn_detection.mode",
+          "requested.turn_detection.silence_duration_ms",
+          "effective.planner.max_chars",
+          "effective.planner.max_wait_ms",
+          "effective.turn_detection.mode",
+          "effective.turn_detection.silence_duration_ms",
+          "observed.planner.max_chars",
+          "observed.planner.max_wait_ms",
+          "observed.turn_detection.mode",
+          "observed.turn_detection.silence_duration_ms"
+        ]
+      },
+      "External_admin_openapi_yaml_BindingDraftConflictError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "idempotency_conflict"
+                  },
+                  "type": {
+                    "const": "invalid_request_error"
+                  },
+                  "retryable": {
+                    "const": false
+                  },
+                  "retry_after_ms": {
+                    "type": "null"
+                  },
+                  "nexus": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_admin_openapi_yaml_BindingCreationUnknownError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "binding_result_unknown"
+                  },
+                  "type": {
+                    "const": "service_unavailable_error"
+                  },
+                  "retryable": {
+                    "const": false
+                  },
+                  "retry_after_ms": {
+                    "type": "null"
+                  },
+                  "param": {
+                    "type": "null"
+                  },
+                  "nexus": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_binding_parameter_defaults_schema_json_Root": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "BindingParameterDefaultsSnapshot",
+        "description": "Registry-owned immutable declaration of profile-compatible default parameter values for one exact binding revision. Omission, explicit null and an explicit empty parameter map remain distinct. It is a declaration, not an engine-default probe or publication evidence. Parent identity, producer authority and final parameter compatibility are checked separately. It defines no create/get operation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "snapshot_id",
+          "binding_id",
+          "binding_revision",
+          "binding_revision_id",
+          "parameters",
+          "created_at"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1.0.0"
+          },
+          "snapshot_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "binding_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "binding_revision_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "binding_revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/External_binding_parameter_defaults_schema_json_BindingDefaultParameters"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "$defs": {
+          "BindingDefaultParameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Explicit sparse canonical parameter fields. Nested objects retain their original required fields. No schema annotation supplies an omitted value. An explicit empty map declares no defaults and is not a substitute for an absent/unreadable snapshot.",
+            "properties": {
+              "asr": {
+                "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_AsrParameterFields"
+              },
+              "tts": {
+                "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_TtsParameterFields"
+              },
+              "output": {
+                "$ref": "#/components/schemas/External_shared_profile_parameter_values_schema_json_OutputParameterFields"
+              }
+            }
+          }
+        },
+        "examples": [
+          {
+            "snapshot_id": "binding-defaults-synthetic-1",
+            "binding_id": "asr-quality",
+            "binding_revision": "1",
+            "binding_revision_id": "binding-revision-synthetic-1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "schema_version": "1.0.0",
+            "parameters": {
+              "asr": {
+                "max_segment_ms": 15000
+              }
+            }
+          }
+        ]
+      },
+      "BindingDefaultsMissingError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "binding_defaults_not_found"
+                  },
+                  "type": {
+                    "const": "not_found_error"
+                  },
+                  "retryable": {
+                    "const": false
+                  },
+                  "retry_after_ms": {
+                    "type": "null"
+                  },
+                  "param": {
+                    "type": "null"
+                  },
+                  "nexus": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_admin_openapi_yaml_BindingReadUnavailableError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "binding_unavailable"
+                  },
+                  "type": {
+                    "const": "service_unavailable_error"
+                  },
+                  "retryable": {
+                    "const": true
+                  },
+                  "param": {
+                    "type": "null"
+                  },
+                  "nexus": false
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "headers": {
+      "External_admin_openapi_yaml_XRequestId": {
+        "description": "Validated client request ID or a server-generated correlation ID.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "External_admin_openapi_yaml_BadRequest": {
+        "description": "Malformed request or unknown field.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_Unauthorized": {
+        "description": "Shared service credential required or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingDraftConflict": {
+        "description": "The original key belongs to a different complete intent; no new revision.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_BindingDraftConflictError"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_UnprocessableEntity": {
+        "description": "Invalid binding, capacity, qualification, or policy composition.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_Forbidden": {
+        "description": "The deployment Host or Origin policy refused the request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingCreateMethodNotAllowed": {
+        "description": "The selected draft creation path accepts POST only.",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "POST"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingReceiveTimeout": {
+        "description": "The bounded JSON receive deadline expired; no new outcome is inferred.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingRequestTooLarge": {
+        "description": "Actual or declared request bytes exceed the configured ingress bound.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingMediaUnsupported": {
+        "description": "Draft creation requires application/json encoded as UTF-8.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingReceiveFull": {
+        "description": "Local bounded receive capacity is full; earlier original-key state is unknown.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingCreationUnknown": {
+        "description": "Original creation result unreadable or commit uncertain; retain original intent/key.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_BindingCreationUnknownError"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingReadMethodNotAllowed": {
+        "description": "The selected fixed revision path accepts GET only.",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "GET"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_ErrorResponse"
+            }
+          }
+        }
+      },
+      "External_admin_openapi_yaml_BindingReadUnavailable": {
+        "description": "Fixed revision could not be read; this does not confirm absence.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/External_admin_openapi_yaml_XRequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/External_admin_openapi_yaml_BindingReadUnavailableError"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "SharedServiceKey": {
+        "$ref": "#/components/securitySchemes/External_admin_openapi_yaml_SharedServiceKey"
+      },
+      "External_admin_openapi_yaml_SharedServiceKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional deployment-wide shared credential; not a user identity."
+      }
+    }
+  }
+}

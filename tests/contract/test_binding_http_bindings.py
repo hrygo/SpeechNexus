@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import unquote, urldefrag, urlparse
 
 import httpx
 import pytest
@@ -26,26 +27,37 @@ CONFIG = json.loads((ROOT / "contracts/bindings.json").read_text())["http_surfac
 POST, GET = "createModelBindingDraft", "getModelBindingRevision"
 
 
-def resolve(node: dict[str, Any]) -> dict[str, Any]:
-    while node.get("$ref", "").startswith("#/components/"):
-        reference, node = node["$ref"], SOURCE
-        for token in reference[2:].split("/"):
-            node = node[token]
-    return node
+def resolve(node: dict[str, Any], source: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve OpenAPI objects while retaining their own component context."""
+    seen: set[tuple[str, str]] = set()
+    while "$ref" in node:
+        uri, fragment = urldefrag(node["$ref"])
+        identity = (uri or f"local:{id(source)}", fragment)
+        assert identity not in seen, "OpenAPI reference cycle"
+        seen.add(identity)
+        if uri:
+            parsed = urlparse(uri)
+            assert parsed.scheme == "file"
+            source = document(Path(unquote(parsed.path)))
+        assert fragment.startswith("/")
+        node = source
+        for token in fragment[1:].split("/"):
+            node = node[unquote(token).replace("~1", "/").replace("~0", "~")]
+    return node, source
 
 
-def source_accepts(example: dict[str, Any]) -> bool:
+def source_accepts(example: dict[str, Any], source: dict[str, Any] = SOURCE) -> bool:
     operation = next(
         operation
-        for item in SOURCE["paths"].values()
+        for item in source["paths"].values()
         for operation in item.values()
         if isinstance(operation, dict) and operation.get("operationId") == example["operation"]
     )
     value = example["value"]
 
-    def valid(schema: dict[str, Any], item: Any) -> bool:
+    def valid(schema: dict[str, Any], item: Any, context: dict[str, Any]) -> bool:
         return Draft202012Validator(
-            {"components": SOURCE["components"], **schema},
+            {"components": context["components"], **schema},
             registry=cast(Any, Registry)(retrieve=retrieve),
             format_checker=FormatChecker(),
         ).is_valid(item)
@@ -54,9 +66,9 @@ def source_accepts(example: dict[str, Any]) -> bool:
         raw = operation["responses"].get(str(example["status"]))
         if raw is None or set(value) - {"body", "headers"}:
             return False
-        response = resolve(raw)
+        response, context = resolve(raw, source)
         if "body" not in value or not valid(
-            response["content"]["application/json"]["schema"], value["body"]
+            response["content"]["application/json"]["schema"], value["body"], context
         ):
             return False
         headers = value.get("headers", {})
@@ -64,21 +76,25 @@ def source_accepts(example: dict[str, Any]) -> bool:
             return False
         normalized = {key.lower(): item for key, item in headers.items()}
         for key, header in response.get("headers", {}).items():
-            schema = resolve(header)
+            schema, header_context = resolve(header, context)
             if schema.get("required") and key.lower() not in normalized:
                 return False
-            if key.lower() in normalized and not valid(schema["schema"], normalized[key.lower()]):
+            if key.lower() in normalized and not valid(
+                schema["schema"], normalized[key.lower()], header_context
+            ):
                 return False
         return True
     if set(value) - {"path", "query", "headers", "body"}:
         return False
     request_body = operation.get("requestBody")
     if request_body is not None:
-        request_body = resolve(request_body)
+        request_body, context = resolve(request_body, source)
         if "body" not in value:
             if request_body.get("required"):
                 return False
-        elif not valid(request_body["content"]["application/json"]["schema"], value["body"]):
+        elif not valid(
+            request_body["content"]["application/json"]["schema"], value["body"], context
+        ):
             return False
     elif "body" in value:
         return False
@@ -91,14 +107,14 @@ def source_accepts(example: dict[str, Any]) -> bool:
     groups["headers"] = {key.lower(): item for key, item in headers.items()}
     declared: dict[str, set[str]] = {key: set() for key in groups}
     for raw in operation.get("parameters", []):
-        parameter = resolve(raw)
+        parameter, context = resolve(raw, source)
         location = "headers" if parameter["in"] == "header" else parameter["in"]
         key = parameter["name"].lower() if location == "headers" else parameter["name"]
         declared[location].add(key)
         if key not in groups[location]:
             if parameter.get("required"):
                 return False
-        elif not valid(parameter["schema"], groups[location][key]):
+        elif not valid(parameter["schema"], groups[location][key], context):
             return False
     return all(set(groups[key]) <= declared[key] for key in ("path", "query"))
 

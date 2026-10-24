@@ -210,3 +210,8 @@ A standalone [default snapshot contract](binding-parameter-defaults.md) now
 provides a source-defined declaration format for the remaining parameter-resolution
 work. It does not attach defaults to existing revisions, add ModelBinding wire
 fields, write registry data or establish a published/default configuration.
+
+A separate [default producer profile](binding-defaults-producer.md) defines the
+future input and fixed snapshot lookup. It references the canonical fields above
+and leaves this implemented `binding` surface and its negative-input checks
+unchanged. Actual atomic persistence and HTTP support remain pending.

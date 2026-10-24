@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.14.0"
+version: "1.14.1"
 date: 2026-10-24
 ---
 
@@ -296,6 +296,18 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 证据生产者必须可信覆盖原 instance/generation 的整个生命周期；这些 schema 和合成测试不代替
 第 6 节入口封锁、代际凭据及真实实例终止保证。
 
+`ExecutionRecoveryService.sweep` 每批只枚举本网关、本网关节点的 unknown 执行，默认 50 条、
+允许 1–500 条。先复用原身份的引擎观察规则，再校验整实例终止事实；没有双证据就保持隔离，
+不重发执行、不改 A 的预算或租约。
+
+一份实例终止事实可能覆盖多条执行，源 `InstanceTerminationEvidence.evidence_id` 标识这次物理
+终止事件；`execution_stop_evidence.evidence_id` 则标识这份事实对某条执行的应用，必须逐执行唯一。
+领域转换使用 `stop-instance-` 加 SHA-256 十六进制摘要，摘要输入为 RFC 8785 规范 JSON
+`["whole-instance-stop/v1", source_evidence_id, submit_intent_id]`。同一事件、同一执行在分批或服务
+重建后得到相同 ID，不同执行得到不同 ID；保留源 `evidence_digest`、观察时间、类型与原因，
+生成 ID 不增加任何停止事实。同源身份的证明内容发生变化仍由不可变证据检查拒绝。
+数据库唯一约束保持原样；已关闭的历史执行沿用既有证据 ID，扫描不改写这些终态。
+
 `ExecutionQueryPort.query_outcome(submit_intent_id)` 返回原 `ExecutionSnapshot`，空身份返回 None；
 快照的 `response()` 对应协调契约 submit 分支的 `kind=execution`。认证 GET 仅返回其 execution
 投影，只接受当前 gateway/node 的记录。它不提交、观察、重试引擎，也不协调执行。
@@ -481,6 +493,7 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
     tests/integration/test_gateway_barrier_transactions.py \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
+    tests/integration/test_gateway_recovery_sweep.py \
     tests/integration/test_gateway_command_redaction.py \
     tests/integration/test_gateway_output_intervals.py \
     tests/integration/test_gateway_barrier_http.py tests/integration/test_gateway_drain_http.py -q
@@ -514,6 +527,10 @@ token、owner/token/期限/node 核对、单调版本、回滚，以及 A 激活
 `test_gateway_recovery.py` 在 PG/InnoDB 验证 unknown、原身份查询、无外发时间的实例中止、
 并发单版本、冲突与未来观察拒绝、写入失败回滚，逐项核对 A 预算未改变；PG 另覆盖提交确认丢失恢复。
 共享 `execution-recovery.json` 在源 schema、Python 与 TypeScript 中验证新增协调入口的正负例。
+`test_gateway_recovery_sweep.py` 用真实 PostgreSQL 与非 owner 网关角色验证有界扫描、证据拒绝、
+重复扫描、网关作用域，以及同实例终止事实在同批/分批关闭不同租约上的多条执行。共享终止场景
+比较 `host_nodes`、`resource_pools`、`engine_instances`、`admission_attempts`、`admission_leases`
+的整行快照，证明扫描未改预算/租约事实。证据生产者仍是测试脚本，不证明真实停止链路已装配。
 `test_gateway_barrier_http.py` 用真实回环 TCP 与生产 lifespan、非 owner PG 角色验证 readiness、
 凭据、持久屏障、重放、owner 变更、pending/unknown/closed 查询、无版本或预算副作用和同身份候选进程启动拒绝，
 退出后同时清除两个控制服务并可重新取得锁。

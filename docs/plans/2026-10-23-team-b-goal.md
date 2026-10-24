@@ -1,8 +1,8 @@
 ---
 title: "SpeechNexus 团队 B 执行目标"
-status: planned
-version: "0.1.0"
-date: 2026-10-23
+status: active
+version: "0.2.0"
+date: 2026-10-24
 ---
 
 # SpeechNexus 团队 B 执行目标
@@ -14,6 +14,28 @@ date: 2026-10-23
 B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution_unknown`、`record_stop`、`record_execution_observation`、`redact_execution_command`、`append_interval`，以及 `query_outcome` 中自身事实的查询实现；A 维护总矩阵与验收。执行控制/执行流契约、引擎事实、停止证据和目标拓扑/模型资格由 B 唯一维护，A 参与评审，涉及浏览器行为时加 C。
 
 本文件是可执行目标定义，不证明应用原生 Goal 已启用。原生 Goal 的启用状态以 Codex 应用或目标工具返回结果为准。
+
+## 当前对齐（2026-10-24）
+
+以 main `e247afe`（[PR #112](https://github.com/hrygo/SpeechNexus/pull/112)）为本轮开工基线。
+原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
+唯一状态标签已统一，分轮实测保留在折叠历史中。
+
+| 工作包 | 状态 | 已交付与剩余 |
+| --- | --- | --- |
+| B00 #27 | in-progress | 环境、ASR/TTS/VAD 分段探针已有；完整许可、请求级停止与拓扑资格待补 |
+| B01 #28 | in-progress | 7 个事务、HTTP/drain、提交期限/资格、有界恢复扫描及真实 PG 回归已有；真实引擎与停止/预算闭环待补 |
+| B02 #29 | in-progress | 控制器、真实 ASR 预热和合成容器崩溃重启已有；真实 ASR 故障、peak→steady 与 A 联合闭环待补 |
+| B03 #30 | in-progress | 有界媒体、文件 ASR、CustomVoice TTS 已有；公开入口、持久执行、对象发布及 Base 待补 |
+| B04 #31 | in-progress | 区间账本已有；真实双工、PCM 背压、完整配方与计量待补 |
+| B05 #32 | planned | VoiceDesign/Base、克隆、声音材料恢复和发布完整路径未开工 |
+| B06 #33 | in-progress | CPU VAD 与文件消费者已有；流式接入、词级对齐、匿名分人和质量资格待补 |
+| B07 #34 | planned | 已收集资格输入；模板、混合负载、长时与物理多主机资格未开工 |
+
+本轮继续 B01：验证同一实例终止证明覆盖多条执行的落库和幂等，保留数据库唯一约束与停止双证据；
+完成后再接可信终止事实生产者和周期驱动。真实引擎适配由 B 主责，A 配合协议消费者与预算/发布
+边界，不能把 B 自有适配缺口一概标为等待 A 提供引擎协议。节点快照的 fencing 仍需明确与各池
+token 的作用域，不能用跨池取最大值实现。实施选择由团队处理，不要求用户判断这些技术细节。
 
 ## 首个里程碑：B00 与 B01/B02 的最小准备
 

@@ -139,8 +139,8 @@ resource_pools
 
 `0007_admission_commands` 增加的 [operation/原请求存储](production-admission-storage.md)
 位于资源父锁之后、attempt 之前；请求记录在 attempt 之后创建并引用两者。
-该存储基础尚无完整准入消费者，不改变已交付端口的行为。
-未来准入在 operation 锁下核对原 workspace/业务摘要与当前 attempt，未知执行不得换身份绕过。
+[独立完整准入事务](production-admission.md)已在同一cursor消费该存储；实际业务进程另行接线。
+独立准入在 operation 锁下核对原 workspace/业务摘要与当前 attempt，未知执行不得换身份绕过。
 
 生产 gateway 已实现该输出追加与原区间查询，两个不同 pool/stage 共享输出流的真实行锁等待
 已在 PG/InnoDB 验证。用量取 generated 区间长度之和，max-end 水位不是消耗总量；

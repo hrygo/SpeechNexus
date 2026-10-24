@@ -18,6 +18,7 @@
 - [文件 ASR 原生识别接口](file-asr-recognition.md)：固定内网 vLLM、请求/终态/token 校验、无语音零外发和源/模型样本关联；持久 dispatch/公开服务仍待装配。
 - [生产协调存储基线](production-coordination-storage.md)：包内 `0002_coordination`、15 表、A/B 最小权限、升级回滚与迁移互斥证据；事务实现另行验收。
 - [完整准入的私有命令存储](production-admission-storage.md)：`0007` 的 operation 权威、原业务/准入请求、独立摘要与正文 tombstone 约束；完整准入仍待实现。
+- [完整配方准入独立事务](production-admission.md)：受信命令/计划、全部阶段原子预留、原身份恢复与显式并发配额范围；真实业务/资格仍待装配。
 - [资产发布与保留期存储](production-assets.md)：实际文本检查、PG/版本化 MinIO 发布、原身份恢复和删除账本；公开路由与常驻维护进程后续接入。
 - [生产 owner 任期事务](production-owners.md)：获取/续约/激活、完整当前权威查询、锁后数据库取时和未知提交恢复。
 - [集群协调与存储可移植性决定](../decisions/0006-cluster-coordination-and-storage-portability.md)：集群能力不降级、应用事务边界与数据库支持范围；[重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)记录实际交付与待验收范围。

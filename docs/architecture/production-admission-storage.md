@@ -4,8 +4,8 @@
 [A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)。包内增量迁移
 `0007_admission_commands` 增加两张 A-owned 表，不改 0001–0006，
 不写入预算、租约、Job 或 outbox，也不启动执行。
-**本单元只交付存储基础；`admit_recipe`、命令解析与生产调度消费者尚未实现。**
-A 的独立 write 端口仍为 9/10，完整业务配额、计量结算与真实资格继续单独验收。
+该存储单元只交付基础；后续[独立完整准入事务](production-admission.md)已消费这些表。
+命令解析、实际调度消费者、完整业务配额、计量结算和真实资格继续单独验收。
 
 ## 两份原请求与两种摘要
 
@@ -28,7 +28,7 @@ Operation/receipt 投影。私有正文不得出现在日志、公开 DTO 或异
 
 ## 同一事务中的锁与身份
 
-完整准入必须先按现有顺序锁完全部 pool、quota、host、runtime head、generation 和
+完整准入须先按现有顺序锁完全部 pool、quota、host、runtime head、generation 和
 相关 runtime intent，再锁或创建 `admission_operations`，然后写 attempt、
 `admission_requests`、全部 leases、Job/outbox。新增位置见
 [协调锁序](coordination-transactions.md#4-锁序隔离与数据库适配)。
@@ -37,7 +37,7 @@ Operation/receipt 投影。私有正文不得出现在日志、公开 DTO 或异
 owner 与资格窗口；插入完成不是提交成功的证据。
 
 operation 的全局主键可作为不同 pool、workspace 或新 attempt 竞争时的共同权威。
-未来受控用例必须在该锁下核对原 workspace、业务摘要、原命令与当前 attempt，
+受控准入用例须在该锁下核对原 workspace、业务摘要、原命令与当前 attempt，
 未解决或未释放的执行不得换 attempt 绕过。`current_attempt_id` 和 version 为以后
 安全转换保留；表本身没有实现重试许可，不将唯一键冲突直接解释成安全重放。
 新 attempt 必须先证明原执行结果允许、停止/释放证据及业务语义均满足；否则协调原身份。

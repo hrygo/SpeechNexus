@@ -45,7 +45,7 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 配置列由控制面维护，运行角色不能提高配额或预算；跨 owner 的锁定版本列不代表
 业务所有权转移。该表是协调表范围，不是全产品表清单。
 `0007_admission_commands` 新增的 operation/准入请求表仅 A 可读写，B 不获跨 owner 锁授权；
-详见[准入命令存储](production-admission-storage.md)，完整 admit_recipe 仍待交付。
+详见[准入命令存储](production-admission-storage.md)，独立admit_recipe事务见[准入实现](production-admission.md)，完整业务配额/消费者与真实资格仍待。
 
 ## 未知结果恢复映射
 
@@ -64,5 +64,5 @@ unknown 只能查询原身份或协调，不能新建执行普通重试。B 的�
 证据要求仍以[协调事务设计](coordination-transactions.md)为准。
 
 [租约隔离与释放事务](production-leases.md)提供 A 的 quarantine_lease、release_lease 与只读 LeaseSnapshot
-入口，按权威事实保留/结算六维增量、槽位和最后 stage 的 attempt 配额。admit_recipe 仍待交付；
+入口，按权威事实保留/结算六维增量、槽位和最后 stage 的 attempt 配额。独立admit_recipe已接入同事务预留；
 parser、数据库接线和真实业务/引擎资格分别验收。

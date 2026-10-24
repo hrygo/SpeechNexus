@@ -12,6 +12,7 @@ export type Contracts = Pick<
   | "WorkspaceList"
   | "ErrorResponse"
   | "ProfileRevisionCreateRequest"
+  | "ModelBindingCreateRequest"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

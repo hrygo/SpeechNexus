@@ -20,6 +20,17 @@ HTTP readiness accepts only 200 from a fixed container IP/path, without
 environment proxies or redirects. A declared custom network is supplied by
 deployment configuration; its name alone does not prove egress isolation.
 
+The process starts one local observation loop by default. It pages unresolved
+receipts in ID order, calls the node's own inspector, and persists observations
+without replaying prepare/stop. Reads remain read-only. Lifecycle actions and
+warmup inspections are serialized within the controller; shutdown joins the
+active bounded inspection before closing its store and Docker client.
+`SPEECHNEXUS_CONTROLLER_LOCAL_OBSERVER_ENABLED` defaults to true,
+`SPEECHNEXUS_CONTROLLER_OBSERVATION_INTERVAL_SECONDS` to 2, and
+`SPEECHNEXUS_CONTROLLER_OBSERVATION_BATCH_SIZE` to 50
+(1–500). Container absence without stop proof keeps authoritative capacity held;
+HTTP ready does not create the scheduler's qualification receipt.
+
 Template files must declare `container_memory_limit_bytes`; old files fail
 startup rather than retaining an unlimited container. Docker Memory and
 MemorySwap are set to the same fixed value, covered by the intent's host or

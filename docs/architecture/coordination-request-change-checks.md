@@ -72,3 +72,42 @@ consumer upgrades and deployment qualification still need their own evidence.
 The existing PR Python job runs this check against its fetched base. Required
 status names, all six integration partitions and their union check are
 unchanged. Passing this command does not complete A00 or a cross-team Gate.
+
+## Explicit result surface
+
+`CONTRACT_BASE_REF=origin/main make contracts-coordination-results` selects only
+`$defs/TransactionResult` from the same source. The equivalent CLI is:
+
+```bash
+uv run python scripts/dev-env/check-coordination-request-changes.py \
+  --base origin/main --surface result --format json
+```
+
+This surface compares **response** guarantees: new permitted outputs must retain
+the old consumer's known constraints. For example, removing the required
+`scope_id` makes a formerly invalid result valid; it is rejected as a lost
+response guarantee. Adding enum values, widening types or removing constraints
+is checked in this direction. A stronger existing-field guarantee or narrower
+output enum is a positive structural control, not permission to change an
+outcome's business behavior. Changes to conditionals or exclusive variants that
+cannot be proven are rejected for explicit review.
+
+The report explicitly names `TransactionResult`, `direction=response`, both
+version origins and the still-unverified scope. The default CLI and
+`contracts-coordination-requests` keep their existing 18-request selection and
+output; the result is not silently compared as a request. Both commands reuse
+the pinned baseline, fixed generator mapping, closed references and resolved
+schema validation. Bumping source/binding versions never waives a finding.
+The selected result's own `schema_version` property is included in the
+comparison; the source/binding versions describe provenance and do not select
+or authorize a new wire version.
+
+This result check includes the selected definition's seven typed-value branches
+and declared operation/outcome constraints, but does not certify their runtime
+production or transaction semantics. The shared fixtures have 22 valid and two
+invalid results. Python and the JS generic parser validate those same shapes;
+this is not evidence of a dedicated exported client or full execution readiness.
+Command envelopes and constraints on the mixed root, separate request
+entrypoints, other JSON/event protocols, complete schema inclusion,
+recovery/stop/budget facts and real qualification remain outside this command. It runs as a separate step in the
+same PR Python job, with existing status names and six integration partitions.

@@ -39,10 +39,10 @@ def test_seal_cannot_succeed_while_a_previously_persisted_send_can_still_resume(
         entered.set()
         assert resume.wait(5)
 
-    engine = ScriptedEngine(before_dispatch=pause)
+    engine = ScriptedEngine(before_dispatch=pause, now=lambda: NOW)
     ingress = fake_ingress(timeout_seconds=0.05)
     service = SubmitExecutionService(
-        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine
+        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine, now=lambda: NOW
     )
     with ThreadPoolExecutor(max_workers=1) as workers:
         submitted = workers.submit(service.submit, SubmitRequest(identity_for(COMMAND), COMMAND))

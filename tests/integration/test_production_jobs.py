@@ -420,7 +420,7 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            with pytest.raises(RuntimeError, match="Destructive runtime intent downgrade"):
+            with pytest.raises(RuntimeError, match="Destructive runtime readiness downgrade"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()

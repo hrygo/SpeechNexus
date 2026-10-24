@@ -3,12 +3,14 @@
 from dataclasses import dataclass, field
 from typing import cast
 
+from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.domain.leases import (
     LeaseRejectedError,
     LeaseResult,
     QuarantineLease,
     rejected,
 )
+from speechnexus_backend.speech.infrastructure.lease_release_sql import release_in_transaction
 from speechnexus_backend.speech.infrastructure.leases_sql import (
     LeaseCursor,
     quarantine_in_transaction,
@@ -21,7 +23,7 @@ from tests.support.job_database import MySQLJobTransactions
 class MySQLLeaseTransactions:
     driver: MySQLJobTransactions = field(repr=False)
 
-    def _run(self, request: QuarantineLease | str) -> LeaseResult:
+    def _run(self, request: QuarantineLease | ReleaseLease | str) -> LeaseResult:
         connection = self.driver.connect()
         lease_id = request if isinstance(request, str) else request.lease_id
         try:
@@ -39,7 +41,11 @@ class MySQLLeaseTransactions:
                         )
                         return cast(int, cursor.fetchall()[0]["now_us"])
 
-                    result = quarantine_in_transaction(cursor, request, clock=clock)
+                    result = (
+                        release_in_transaction(cursor, request, clock=clock)
+                        if isinstance(request, ReleaseLease)
+                        else quarantine_in_transaction(cursor, request, clock=clock)
+                    )
             connection.commit()
             return result
         except LeaseRejectedError as error:
@@ -59,3 +65,6 @@ class MySQLLeaseTransactions:
 
     def query_lease(self, lease_id: str) -> LeaseResult:
         return self._run(lease_id)
+
+    def release_lease(self, request: ReleaseLease) -> LeaseResult:
+        return self._run(request)

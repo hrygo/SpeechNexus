@@ -11,29 +11,32 @@ const examples = JSON.parse(
   ),
 );
 
-for (const command of examples.valid_commands.filter(
-  (item) => item.operation === "quarantine_lease",
+for (const command of examples.valid_commands.filter((item) =>
+  ["quarantine_lease", "release_lease"].includes(item.operation),
 )) {
-  test("shared quarantine request preserves original reason and observation", () => {
-    assert.equal(parse("quarantine_lease", command.request), command.request);
+  test(`shared ${command.operation} request preserves its original fields`, () => {
+    assert.equal(parse(command.operation, command.request), command.request);
   });
 }
-for (const example of examples.invalid_commands.filter(
-  (item) => item.command.operation === "quarantine_lease",
+for (const example of examples.invalid_commands.filter((item) =>
+  ["quarantine_lease", "release_lease"].includes(item.command.operation),
 )) {
-  test(`shared quarantine rejects ${example.reason}`, () => {
-    assert.throws(() => parse("quarantine_lease", example.command.request), {
+  test(`shared ${example.command.operation} rejects ${example.reason}`, () => {
+    assert.throws(() => parse(example.command.operation, example.command.request), {
       name: "ContractValidationError",
-      message: "Invalid quarantine_lease",
+      message: `Invalid ${example.command.operation}`,
     });
   });
 }
-for (const result of examples.valid_results.filter(
-  (item) => item.operation === "quarantine_lease",
+for (const result of examples.valid_results.filter((item) =>
+  ["quarantine_lease", "release_lease"].includes(item.operation),
 )) {
-  test("shared quarantine snapshot retains string revision", () => {
+  test(`shared ${result.operation} snapshot retains string revision`, () => {
     assert.equal(parse("TransactionResult", result), result);
-    assert.equal(result.value.lease_state, "quarantined");
+    assert.equal(
+      result.value.lease_state,
+      result.operation === "release_lease" ? "released" : "quarantined",
+    );
     assert.equal(typeof result.value.version, "string");
   });
 }

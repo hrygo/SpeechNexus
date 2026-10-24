@@ -1,13 +1,14 @@
-# 生产租约隔离事务
+# 生产租约隔离与释放事务
 
 本单元属于 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)。提供独立
-`quarantine_lease` 与 `query_outcome(lease)`，消费 B 的持久执行事实，不写 gateway 表，
-不执行容器、网络或停止操作。完整配方准入、lease 释放、实际 scheduler 装配与
+`quarantine_lease`、`release_lease` 与 `query_outcome(lease)`，消费 B 的持久执行事实，不写 gateway 表，
+不调用引擎、容器控制或外部 HTTP。完整配方准入、实际 scheduler 装配与
 真实 GPU/多主机资格不包含在本单元。
 
 ## 入口与所有权
 
 - `speech.domain.leases`：不可变请求、租约快照、六维资源/槽位/attempt 账目和纯隔离决策。
+- `speech.domain.lease_release`：停止/未外发事实裁决、version 前提与最后 stage 的配额结算。
 - `speech.application.leases`：`LeaseTransactions` / `LeaseService` 窄端口。
 - `speech.infrastructure.leases_postgres.PostgresLeaseTransactions`：显式有界
   `SpeechPool`，默认共享三秒请求预算、最多三次已确认回滚重试。
@@ -44,7 +45,7 @@ active host 转 quarantined；已有非 active 管理状态保持。没有自动
 
 同一原因重放保留第一次观察时间、原因及版本，不再次搬移。即使 gateway 后续得到
 停止事实，重放也不重写历史；换原因返回 idempotency_conflict。只有独立 release
-事务核验足够停止/释放事实后才可能归还占用，本端口始终不写 budget_released_at_us。
+事务核验足够停止/释放事实后才可能归还占用，隔离端口始终不写 budget_released_at_us。
 版本耗尽、负投影、已超容量或身份漂移拒绝并回滚，不能用负账目抵消未知执行。
 调用方收到 reconciliation_required 后须停止依赖该账目的新准入并交给协调流程；
 本单元没有实现自动对账或 scheduler 控制循环。
@@ -52,6 +53,35 @@ active host 转 quarantined；已有非 active 管理状态保持。没有自动
 所有更新带原 version 条件；任一步失败整笔回滚。事务内没有 sleep、外部 I/O 或新执行。
 连接/提交确认不明返回 unknown/query_original，不透明重试；deadlock/serialization
 仅在确认整笔回滚且连接归还后有限重试。租约查询使用只读事务。
+
+## 释放与最后阶段结算
+
+`release_lease({"lease_id": original_id, "expected_version": "2"})` 只接受原 ID 与
+十进制字符串 revision，不接受调用方提供停止标志、预算或其他事实。只有未释放的
+当前 version 可结算；冲突返回 version_conflict/query_original，已释放则按原
+version/时间只读重放，即使请求仍带旧 version 也不能再次扣减。
+
+释放沿用相同父锁序。持有 submit 锁后，读取 B 只追加、不可删除的停止证据，不对
+无 UPDATE 权限的证据表加 FOR UPDATE。已提交执行须 terminal + cleanup complete，
+停止与资源释放均已确认且观察时间不晚于锁后 DB 时间；成功必须是 terminal response。
+quarantined lease 只接受 controller/operator 停止事实对应的 aborted，不能靠 timeout、
+迟到成功或失败/未外发声明解除隔离。
+
+B 原生 record_execution_observation 写入的 failed/not_required 是另一条权威事实：
+该端口已核对无 dispatch、request ID、staging、生成样本与输出区间，并禁止从 unknown
+降级到该状态。A 消费这个持久事实，不读取 B 的私有请求正文，也不另造停止证据。
+从未创建 submit 的 lease 可在 lease 锁下关闭；B 新 submit 必须锁同一 pool/attempt/lease
+并核对未释放状态，因此提交与释放最多一方成功。本边界不证明 B 的真实观察提供者资格。
+
+attempt 锁串行化 A 的准入/隔离/释放。释放前核对冻结 required_stage_ids 与实际全部
+lease 的 stage 集合完全一致、无缺失或重复，再读取其他 lease 的已释放事实；无需倒序
+锁其他 host/pool 的兄弟 lease。只扣当前 lease 的 held 或 quarantine 六维增量及槽位，
+最后一个 lease 才从 attempt 原 quota_state 归还一次并发 quota。首次隔离的 quota
+不会因某个已隔离 stage 先结束而提前返还。host 不自动恢复 active。
+
+release 只记当前 lease 的 budget_released_at_us，不改变 gateway 历史或
+engine_instances 的基线预算类型/内存。实例基线即使已有单次执行停止事实，也须由
+独立 runtime 停止流程核对退出、资源释放、全部 lease 和执行事实后才能归还。
 
 ## 存储、验证与保护边界
 
@@ -61,16 +91,22 @@ active host 转 quarantined；已有非 active 管理状态保持。没有自动
 针对性测试覆盖同键竞争、跨池 stage 共享 attempt quota、两种内存架构的全部资源维度、
 阈值、首观察保留、活动/终态拒绝、锁后数据库时间、最新 gateway 事实、版本耗尽、
 中途失败回滚，以及原生 B mark_execution_unknown → A quarantine 的数据库接线。
+释放额外覆盖真实跨池 last-stage 行锁竞争、B 新 submit 与 A release 的互斥、
+原生 B stop/failed-not_required → A release、未释放兄弟 lease 及 runtime 基线保留。
 提交确认丢失的 adapter 故障模型只验证分类策略，不声称确定远端实际提交状态。
+PG 专用回归另在实际提交后丢弃确认，验证 unknown、原 ID 只读恢复及无重复扣减；
+运行中的未知结果仍须查询，不能从超时推定提交或回滚。
 这些事实均不替代真实引擎停止、内容网络边界或集群资格。
 
 ```sh
 uv run pytest tests/unit/test_production_leases.py -q
+uv run pytest tests/unit/test_lease_release.py -q
 # 两个 DSN 均须指向本项目隔离实例；缺一不可，跳过不计通过。
 uv run pytest tests/integration/test_production_leases.py -q
+uv run pytest tests/integration/test_lease_release.py -q
 make coordination-test
 make integration-test
 ```
 
-ADR 0007 复核：本单元迁入了旧隔离不变量；完整准入、释放及其联合行为尚未全部
+ADR 0007 复核：本单元迁入了隔离/释放不变量；完整准入及其联合行为尚未全部
 迁入生产端口，因此继续保留旧必跑门禁，不提前删除原型或声称整体退出完成。

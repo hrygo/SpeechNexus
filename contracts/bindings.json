@@ -33,7 +33,8 @@
       "record_execution_observation",
       "redact_execution_command",
       "append_interval",
-      "quarantine_lease"
+      "quarantine_lease",
+      "release_lease"
     ]
   },
   "profiles": {

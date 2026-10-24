@@ -100,8 +100,8 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要，不引发执行；目标分支用 `x-nexus-result-kind` 声明对应快照：pool→OwnerSnapshot、attempt→AdmissionSnapshot、job→ClaimSnapshot、submit→ExecutionSnapshot、lease→LeaseSnapshot、interval→FactSnapshot、runtime_intent→RuntimeSnapshot | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
 
 后续实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口。
-其中 [quarantine_lease 与原租约查询](production-leases.md)已有独立生产实现，
-只搬移隔离投影；release_lease、完整配方准入与实际调度接入仍待后续单元。
+其中 [quarantine_lease、release_lease 与原租约查询](production-leases.md)已有独立生产实现，
+只按网关权威事实搬移/结算当前 lease；完整配方准入与实际调度接入仍待后续单元。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
 再期待异常时逐项补偿。attempt/submit/runtime 等持久幂等身份的摘要不匹配必须报冲突；
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。

@@ -1,4 +1,4 @@
-"""Bounded PostgreSQL isolation transactions and read-only unknown recovery."""
+"""Bounded PostgreSQL lease transactions and read-only unknown recovery."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from speechnexus_contracts.validation import validate_coordination
 
+from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.domain.leases import (
     LeaseRejectedError,
     LeaseResult,
@@ -18,6 +19,7 @@ from speechnexus_backend.speech.domain.leases import (
     unknown,
 )
 from speechnexus_backend.speech.domain.runtime_intents import identifier
+from speechnexus_backend.speech.infrastructure.lease_release_sql import release_in_transaction
 from speechnexus_backend.speech.infrastructure.leases_sql import (
     LeaseCursor,
     quarantine_in_transaction,
@@ -69,16 +71,24 @@ class PostgresLeaseTransactions:
         self._timeout = timeout_seconds
         self._max_attempts = max_attempts
 
-    def _run(self, request: QuarantineLease | str) -> LeaseResult:
+    def _run(self, request: QuarantineLease | ReleaseLease | str) -> LeaseResult:
         lease_id = request if isinstance(request, str) else request.lease_id
         identifier(lease_id)
-        if not isinstance(request, str):
+        if isinstance(request, QuarantineLease):
             validate_coordination(
                 "quarantine_lease",
                 {
                     "lease_id": request.lease_id,
                     "reason_code": request.reason_code,
                     "observed_at_us": request.observed_at_us,
+                },
+            )
+        elif isinstance(request, ReleaseLease):
+            validate_coordination(
+                "release_lease",
+                {
+                    "lease_id": request.lease_id,
+                    "expected_version": str(request.expected_version),
                 },
             )
         deadline = time.monotonic() + self._timeout
@@ -94,11 +104,12 @@ class PostgresLeaseTransactions:
                         connection.execute("SET TRANSACTION READ ONLY")
                     with connection.cursor() as raw:
                         cursor = _DeadlineCursor(cast(LeaseCursor, raw), deadline)
-                        result = (
-                            query_in_transaction(cursor, request)
-                            if isinstance(request, str)
-                            else quarantine_in_transaction(cursor, request, clock=cursor.clock)
-                        )
+                        if isinstance(request, str):
+                            result = query_in_transaction(cursor, request)
+                        elif isinstance(request, ReleaseLease):
+                            result = release_in_transaction(cursor, request, clock=cursor.clock)
+                        else:
+                            result = quarantine_in_transaction(cursor, request, clock=cursor.clock)
                         if time.monotonic() >= deadline:
                             raise _BudgetExpiredError
                 return result  # Commit acknowledgement precedes success.
@@ -123,3 +134,6 @@ class PostgresLeaseTransactions:
 
     def query_lease(self, lease_id: str) -> LeaseResult:
         return self._run(lease_id)
+
+    def release_lease(self, request: ReleaseLease) -> LeaseResult:
+        return self._run(request)

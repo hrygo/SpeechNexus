@@ -88,10 +88,15 @@ jobs:
       - name: Build Python distributions
         run: uv build --all-packages --out-dir dist/python
 
-  coordination:
-    name: PostgreSQL and InnoDB integration
+  integration_shards:
+    name: PostgreSQL/InnoDB shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [0, 1]
     services:
       postgres:
         image: postgres:16.15-alpine
@@ -139,7 +144,7 @@ jobs:
       - name: Start isolated versioned object storage
         run: ./scripts/dev-env/minio-test-service.sh
 
-      - name: Verify legacy PostgreSQL guards, shared PG/InnoDB transactions and MinIO publication
+      - name: Run a complete integration partition with PG, InnoDB and MinIO
         env:
           SPEECHNEXUS_TEST_DATABASE_URL: postgresql://speechnexus:speechnexus_test@127.0.0.1:5432/speechnexus_test
           SPEECHNEXUS_TEST_MYSQL_URL: mysql://root:speechnexus_test@127.0.0.1:3306/
@@ -149,7 +154,58 @@ jobs:
         run: |
           test -n "$SPEECHNEXUS_TEST_DATABASE_URL"
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
-          uv run pytest -m integration tests/integration -q
+          uv run python scripts/dev-env/integration-shards.py run \
+            --index "${{ matrix.shard }}" --count 2 \
+            --report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"
+
+      - name: Preserve integration partition evidence
+        if: ${{ always() }}
+        # Official v7.0.2; reports contain only test identities and results.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: integration-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  # Preserve the protected status name and require both actual execution and
+  # a complete, disjoint inventory. Failure/cancellation/skipping cannot pass.
+  coordination:
+    name: PostgreSQL and InnoDB integration
+    needs: [integration_shards]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every integration shard
+        env:
+          SHARDS_RESULT: ${{ needs.integration_shards.result }}
+        run: |
+          if [[ "$SHARDS_RESULT" != success ]]; then
+            echo "::error::Integration shards=$SHARDS_RESULT"
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Download integration partition evidence
+        # Official v8.0.2; only artifacts from this repository/run are used.
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: integration-shard-*
+          path: ${{ runner.temp }}/integration-shards
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Require the complete integration collection exactly once
+        run: |
+          python3 scripts/dev-env/integration-shards.py check \
+            --count 2 --head "$(git rev-parse HEAD)" \
+            --reports-dir "$RUNNER_TEMP/integration-shards"
 
   # Keep the protected status name stable; a failed, cancelled or skipped
   # prerequisite must never turn into a successful merge gate.

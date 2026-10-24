@@ -121,3 +121,57 @@ uv run pytest tests/contract/test_consumer_bindings.py \
 新增 33 项解析语义/安全/回退验证也全部通过。这是同机局部测试集合测量，
 不是整体 CI 加速承诺；远端完整检查结果和耗时以本次 PR 对应 Actions run 为准。
 继续保留原有用例、覆盖率和数据库门禁，不减少测试集合。
+
+## 第三轮：完整集成集合分片
+
+随着真实协调用例增加，[PR #88 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40071291404)
+的双库作业在06:42:57–06:51:08 UTC执行，耗时491秒，接近原10分钟上限。
+同轮Python静态/单元143秒、Web28秒；本轮优化对象是双库关键路径。
+该源码基线为`eb299f7a6a14868be77adb09c70c0ad19a6a9987`，完整集成904项：
+本地888 passed、16个既有PG-only参数跳过另计；不能与早期186秒的小集合混算。
+
+采用两个独立GitHub runner，各自启动相同PG16.15、InnoDB8.4.8及版本化MinIO。
+每个runner先收集同一完整`-m integration tests/integration`集合，再按
+`SHA256(nodeid) % 2`稳定分配完整用例。基线实际分为452/452项，完整集合摘要为
+`sha256:3c0bb1ddc88dcc735b63568de6a8c304a0fb7f139eff69a5fef14e93a4f91da6`。
+没有维护可能漏掉新增文件的白名单，也没有减少数据库参数或拆散单个竞争测试的参与者。
+
+取舍依据：
+
+- [GitHub matrix指南](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations)
+  说明独立作业、制品汇总、fail-fast和max-parallel；本轮`max-parallel: 2`、
+  `fail-fast: false`，一份失败仍收集另一份证据，不设continue-on-error。
+- 保留原五个检查名。`PostgreSQL and InnoDB integration`现在依赖两个分片，
+  仅matrix结果success且完整证据核验通过才success；失败/取消/跳过也执行汇总并失败。
+  原`Python quality and tests`继续要求Python静态/单元和该双库汇总均成功。
+- 使用官方upload-artifact v7.0.2和download-artifact v8.0.2，分别固定SHA
+  `cf430e030ddbb5b0abf93d22962f4752f3646cd9` /
+  `9000827ccba6bdab643e8b6fd33ac0654aef8333`；两者使用Node24。
+  [下载action参数](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/action.yml)
+  明确支持当前run的pattern/merge-multiple及摘要不符时报错。
+- 报告使用每分片唯一文件名，只含测试身份/结果/摘要/耗时，不含凭据、DSN、正文或捕获输出。
+  上传缺文件即失败，保留7天；同run重跑同分片覆盖其旧报告，成功分片可复用同源码证据。
+  聚合只下载当前repo/run，要求相同checkout SHA，不能混合另一提交。
+- 汇总脚本只用stdlib，在runner系统Python3.12执行，不增加uv/依赖安装；新增制品步骤
+  是完整性核验的成本，不宣称减少总runner分钟或服务启动成本。
+
+### 执行证据不能由数量替代
+
+`scripts/dev-env/integration-shards.py`在pytest完成后记录完整/选中nodeids、逐用例结果、
+退出码与实际执行标志。聚合核对报告闭合形状、版本、source SHA、分片身份、完整集合摘要、
+相同收集结果、稳定选中集合、互斥/并集，以及每个选中用例都有成功执行结果。
+缺失/重复报告、错误SHA、不同/不完整集合、失败/取消/xfail、仅收集、缺失结果均不能通过。
+
+只允许现存`test_gateway_submit_ledger.py`的`[mysql]`参数报告为不适用跳过，当前16项，
+在step summary单列且不计通过；其他集成用例跳过会失败。原测试的skip条件没有修改。
+runner固定完整pytest入口，拒绝`PYTEST_ADDOPTS`及-k/-m缩窄、ignore、deselect、--lf等筛选。
+原`make coordination-test` / `make integration-test`保持不变，仍可运行完整未分片门禁。
+
+新增32项专项包含临时git仓库中的真实pytest运行/失败/collect-only，以及遗漏/重复/篡改、
+不完整结果和失败/取消/跳过汇总守卫。checker用`python -I -S`验证无需site packages，
+并验证Python3.12语法兼容。业务代码、集成测试和SQL/迁移/权限均未修改。
+
+本机按同一隔离服务顺序验证两个分片：各444 passed / 8 skipped，pytest耗时201.33秒和192.93秒；聚合核对完整904项并集、888 passed / 16既有跳过。新runner报告最长执行201.44秒（含收集/收尾）；这不是GitHub并行加速实测。
+远端两个runner的实际作业耗时、保护检查和完整性核验结果，记录在
+[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)本轮交付块及其Actions链接。
+比较时同时报告关键路径与并行增加的服务/runner成本，不用本地时间推导远端倍数。

@@ -327,8 +327,8 @@ def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(resu
     shards = jobs["integration_shards"]
     assert shards["strategy"] == {
         "fail-fast": False,
-        "max-parallel": 2,
-        "matrix": {"shard": [0, 1]},
+        "max-parallel": 4,
+        "matrix": {"shard": [0, 1, 2, 3]},
     }
     assert set(shards["services"]) == {"postgres", "mysql"}
     gate = jobs["coordination"]

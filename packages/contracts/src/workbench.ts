@@ -4,7 +4,25 @@ export { ContractValidationError } from "./errors.mjs";
 import bundle from "./speechnexus_contracts/workbench.schema.json" with { type: "json" };
 import type { components } from "./workbench.generated";
 export type { components } from "./workbench.generated";
-export type Contracts = Pick<components["schemas"], "ProjectCreateRequest" | "ProjectPatch">;
+export type Contracts = Pick<
+  components["schemas"],
+  | "ProjectCreateRequest"
+  | "ProjectPatch"
+  | "Project"
+  | "ProjectList"
+  | "TranscriptCreateRequest"
+  | "TranscriptRevisionCreateRequest"
+  | "Transcript"
+  | "TranscriptRevision"
+  | "TranscriptView"
+  | "TranscriptList"
+  | "WorkbenchStatus"
+  | "ErrorResponse"
+  | "DeletionPlanRequest"
+  | "DeletionCreateRequest"
+  | "DeletionPlan"
+  | "Deletion"
+>;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {
   return parseValue(name, value) as Contracts[K];

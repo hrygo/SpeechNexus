@@ -117,8 +117,21 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
             return [rewrite(value, path) for value in node]
         return node
 
+    references = manifest.get("schema_refs", {})
+    if references.keys() - set(manifest["schemas"]):
+        raise ValueError("An entrypoint reference must name a declared schema")
     for name in manifest["schemas"]:
-        include(primary, manifest.get("definitions_prefix", "/components/schemas/") + name)
+        if name not in references:
+            include(primary, manifest.get("definitions_prefix", "/components/schemas/") + name)
+            continue
+        target, separator, fragment = references[name].partition("#")
+        if not separator or ":" in target or not fragment.startswith("/"):
+            raise ValueError("An entrypoint reference must be a local JSON pointer")
+        resolved = include(primary.parent / target if target else primary, fragment)
+        if name != resolved:
+            if name in definitions:
+                raise ValueError(f"Duplicate generated entrypoint: {name}")
+            definitions[name] = {"$ref": f"#/$defs/{resolved}"}
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": manifest.get("title", "FileContract"),

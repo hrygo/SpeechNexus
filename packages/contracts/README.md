@@ -148,7 +148,7 @@ types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
 | Profile     | Runtime entrypoints                                                  |
 | ----------- | -------------------------------------------------------------------- |
 | `admin`     | Workspace create and metadata CAS patch                              |
-| `workbench` | Project create and metadata CAS patch                                |
+| `workbench` | Project create/CAS and Project/List; transcript create/revision/View/List; status/errors; shared deletion plan/create/records |
 | `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
 | `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
 
@@ -170,6 +170,45 @@ are boundary DTOs, not domain values. Typed HTTP clients require an explicit
 deployment URL, do not retry, and do not automatically validate responses.
 The default and workbench parsers reject internal protocol names. A separate
 profile is an import/API namespace, not an authorization mechanism.
+
+The workbench JSON slice preserves `ProjectCreateRequest` and `ProjectPatch`,
+then adds `Project`, `ProjectList`, `TranscriptCreateRequest`,
+`TranscriptRevisionCreateRequest`, `Transcript`, `TranscriptRevision`,
+`TranscriptView`, `TranscriptList`, `WorkbenchStatus`, `ErrorResponse`,
+`DeletionPlanRequest`, `DeletionCreateRequest`, `DeletionPlan`, and `Deletion`.
+The four deletion entrypoints use explicit `schema_refs` into the authoritative
+`shared/deletion.schema.json`; their bundled names are aliases to resolved
+definitions, not new wire schemas. Existing full OpenAPI TypeScript types are
+reused. Project metadata revisions are integers; transcript and deletion
+revisions are decimal strings. Parsers neither insert defaults nor convert them.
+
+```python
+from speechnexus_contracts.workbench import parse
+
+command = parse("TranscriptCreateRequest", untrusted_json)
+view = parse("TranscriptView", response_json)
+```
+
+```ts
+import { createClient, parse } from "@speechnexus/contracts/workbench";
+
+const client = createClient(deploymentBaseUrl);
+const result = await client.POST("/v1/workbench/projects/{project_id}/transcripts", {
+  params: { path: { project_id: projectId }, header: { "Idempotency-Key": originalKey } },
+  body: parse("TranscriptCreateRequest", untrustedJson),
+});
+const view = result.data
+  ? parse("TranscriptView", result.data)
+  : parse("ErrorResponse", result.error);
+```
+
+These calls validate JSON bodies only. HTTP path/query/header/status validation,
+automatic client validation, Meeting/Minutes and public realtime runtime
+entrypoints remain separate A00 units. Schema validation does not establish a
+cross-record transcript/revision match, deletion ownership of the selected
+route, a fresh plan, actual cleanup, or permission to release budgets. C owns
+those application/transport checks and its workbench migrations/routes; this
+package does not register them in the speech backend.
 
 Execution control `0.4.0.dev0` includes barrier and error parser entrypoints. Control
 failures carry a constrained recovery hint: a lost commit acknowledgment is

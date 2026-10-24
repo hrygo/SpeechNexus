@@ -279,6 +279,13 @@ The first file-workflow consumer package is documented in
 coordination ports and preserves typed unknown-outcome recovery. These artifacts
 do not imply implemented business routes or completed consumer integration.
 
+The explicit workbench JSON profile now includes projects, transcripts,
+status/errors and the four shared deletion entrypoints. `schema_refs` in the
+binding manifest selects external definitions without copying their wire
+contracts. HTTP parameter/status validation, Meeting/Minutes and public realtime
+runtime entrypoints remain separate delivery units; see the package's explicit
+profile list and shared positive/negative examples.
+
 ## Validation
 
 Run:

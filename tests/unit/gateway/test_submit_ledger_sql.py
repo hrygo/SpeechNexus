@@ -15,8 +15,11 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.submission import (
+    ExecutionRejectedError,
     ExecutionState,
+    InstanceDrainingError,
     InvalidExecutionRequestError,
+    LeaseNotActiveError,
     StaleFencingTokenError,
     StaleSubmissionVersionError,
     SubmissionIdentity,
@@ -81,6 +84,11 @@ def authority_row(**overrides: object) -> dict[str, Any]:
         "gateway_id": "gateway-1",
         "fencing_token": 1,
         "lease_state": "reserved",
+        "lease_cleanup_state": "pending",
+        "deadline_at_us": to_unix_micros(NOW + timedelta(minutes=30)),
+        "instance_state": "ready",
+        "instance_current_generation": 1,
+        "instance_last_fencing_token": 1,
         "workspace_id": "ws-1",
         "binding_revision_id": "binding-rev-1",
         "policy_revision_id": "policy-rev-1",
@@ -190,7 +198,7 @@ def test_micros_round_trip_and_naive_values_are_rejected() -> None:
         to_unix_micros(datetime(1969, 1, 1, tzinfo=UTC))
 
 
-def test_create_submit_locks_the_pool_attempt_and_lease_in_global_order() -> None:
+def test_create_submit_locks_the_authority_rows_in_the_contract_global_order() -> None:
     cursor = StubCursor(
         {
             "FROM admission_leases": [authority_row()],
@@ -198,13 +206,15 @@ def test_create_submit_locks_the_pool_attempt_and_lease_in_global_order() -> Non
         }
     )
 
-    create_submit_in_transaction(cursor, INTENT, "{}")
+    create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
 
-    locks = [statement.split(" WHERE")[0] for statement in cursor.calls[:3]]
+    locks = [statement.split(" WHERE")[0] for statement in cursor.calls[:5]]
     assert locks[0].startswith("SELECT pool_id FROM resource_pools")
-    assert locks[1].startswith("SELECT operation_id FROM admission_attempts")
-    assert locks[2].startswith("SELECT lease_id FROM admission_leases")
-    assert cursor.calls[3].startswith("\nSELECT") or "FROM admission_leases AS l" in cursor.calls[3]
+    assert locks[1].startswith("SELECT instance_id FROM runtime_instance_heads")
+    assert locks[2].startswith("SELECT instance_id FROM engine_instances")
+    assert locks[3].startswith("SELECT operation_id FROM admission_attempts")
+    assert locks[4].startswith("SELECT lease_id FROM admission_leases")
+    assert any("FROM admission_leases AS l" in statement for statement in cursor.calls)
     assert any(statement.startswith("INSERT INTO submit_intents") for statement in cursor.calls)
     assert any(
         statement.startswith("INSERT INTO output_stream_heads") for statement in cursor.calls
@@ -215,7 +225,7 @@ def test_create_submit_rejects_a_claim_the_lease_contradicts() -> None:
     cursor = StubCursor({"FROM admission_leases": [authority_row(fencing_token=9)]})
 
     with pytest.raises(StaleFencingTokenError):
-        create_submit_in_transaction(cursor, INTENT, "{}")
+        create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
 
     assert not any(statement.startswith("INSERT INTO submit_intents") for statement in cursor.calls)
 
@@ -225,7 +235,7 @@ def test_create_submit_rejects_an_unknown_lease_without_inserting() -> None:
     cursor.fail_rowcount("SELECT lease_id FROM admission_leases", 0)
 
     with pytest.raises(InvalidExecutionRequestError, match="unknown lease"):
-        create_submit_in_transaction(cursor, INTENT, "{}")
+        create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
 
     assert not any(statement.startswith("INSERT INTO submit_intents") for statement in cursor.calls)
 
@@ -238,7 +248,7 @@ def test_create_submit_reuses_a_frozen_stream_head_but_refuses_another_rate() ->
         }
     )
 
-    create_submit_in_transaction(same_rate, INTENT, "{}")
+    create_submit_in_transaction(same_rate, INTENT, "{}", clock=lambda: NOW)
 
     assert not any(
         statement.startswith("INSERT INTO output_stream_heads") for statement in same_rate.calls
@@ -251,7 +261,7 @@ def test_create_submit_reuses_a_frozen_stream_head_but_refuses_another_rate() ->
         }
     )
     with pytest.raises(InvalidExecutionRequestError, match="sample rate"):
-        create_submit_in_transaction(conflicting, INTENT, "{}")
+        create_submit_in_transaction(conflicting, INTENT, "{}", clock=lambda: NOW)
 
 
 def test_a_stage_without_audio_never_creates_a_stream_head() -> None:
@@ -263,7 +273,7 @@ def test_a_stage_without_audio_never_creates_a_stream_head() -> None:
     )
     cursor = StubCursor({"FROM admission_leases": [authority_row()]})
 
-    create_submit_in_transaction(cursor, silent, "{}")
+    create_submit_in_transaction(cursor, silent, "{}", clock=lambda: NOW)
 
     assert not any("output_stream_heads" in statement for statement in cursor.calls)
 
@@ -348,4 +358,39 @@ def test_an_unreadable_lease_state_is_reported_instead_of_guessed() -> None:
     cursor = StubCursor({"FROM admission_leases": [authority_row(lease_state="reconciling")]})
 
     with pytest.raises(SubmissionStoreError):
-        create_submit_in_transaction(cursor, INTENT, "{}")
+        create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
+
+
+def test_an_unreadable_instance_state_is_reported_instead_of_guessed() -> None:
+    cursor = StubCursor({"FROM admission_leases": [authority_row(instance_state="reconciling")]})
+
+    with pytest.raises(SubmissionStoreError):
+        create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"deadline_at_us": to_unix_micros(NOW)}, LeaseNotActiveError),
+        ({"lease_cleanup_state": "complete"}, LeaseNotActiveError),
+        ({"instance_state": "draining"}, InstanceDrainingError),
+        ({"instance_state": "preparing"}, InstanceDrainingError),
+        ({"instance_current_generation": 2}, InstanceDrainingError),
+        ({"instance_last_fencing_token": 9}, StaleFencingTokenError),
+    ],
+)
+def test_create_submit_refuses_an_ineligible_authority_without_inserting(
+    overrides: dict[str, Any], expected: type[ExecutionRejectedError]
+) -> None:
+    cursor = StubCursor(
+        {
+            "FROM admission_leases": [authority_row(**overrides)],
+            "FROM output_stream_heads": [],
+        }
+    )
+
+    with pytest.raises(expected) as raised:
+        create_submit_in_transaction(cursor, INTENT, "{}", clock=lambda: NOW)
+
+    assert raised.value.error_code is expected.error_code
+    assert not any(statement.startswith("INSERT INTO submit_intents") for statement in cursor.calls)

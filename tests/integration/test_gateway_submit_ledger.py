@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -28,10 +29,13 @@ from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     ExecutionCleanupPendingError,
+    ExecutionErrorCode,
     ExecutionState,
     GatewayBarrierFencedError,
+    InstanceDrainingError,
     InvalidExecutionRequestError,
     LeaseNotActiveError,
+    StaleFencingTokenError,
     StaleSubmissionVersionError,
     StopEvidenceKind,
     SubmissionIdentity,
@@ -42,12 +46,21 @@ from speechnexus_gateway.domain.submission import (
 )
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.submit_postgres import PostgresSubmissionLedger
+from speechnexus_gateway.infrastructure.submit_sql import to_unix_micros
 
 pytestmark = pytest.mark.integration
 
 DIGEST = "sha256:" + "a" * 64
 PASSWORD = "synthetic_foundation_test"
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
+#: A reservation deadline far enough ahead that a live submit still sits inside it.
+LEASE_DEADLINE_AT_US = to_unix_micros(datetime(2099, 1, 1, tzinfo=UTC))
+#: A request deadline that is still in the future when the store validates it.
+#:
+#: The store compares deadlines with its own clock, so a fixture instant frozen at some
+#: calendar date only works while that date happens to be ahead of the running clock. The
+#: value is fixed per session so that repeated identities keep one request digest.
+SUBMIT_DEADLINE_AT = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=6)
 COMMAND: JsonValue = {"schema_version": "1", "task": "tts.synthesize", "input": {"text": "hi"}}
 
 
@@ -70,8 +83,8 @@ def seed_second_attempt(foundation: Foundation) -> None:
             "host_node_id, instance_id, instance_generation, pool_id, gateway_id, fencing_token, "
             "reserved_slots, deadline_at_us, reserved_unified_physical_memory_bytes) VALUES "
             "(%s, 'operation-test', 'attempt-alt', %s, 'host-test', 'instance-test', 1, "
-            "'tts-realtime', 'gateway-test', %s, 1, 1, 1)",
-            (lease_id, stage_id, fencing_token),
+            "'tts-realtime', 'gateway-test', %s, 1, %s, 1)",
+            (lease_id, stage_id, fencing_token, LEASE_DEADLINE_AT_US),
         )
 
 
@@ -102,7 +115,7 @@ def identity_for(
         voice_revision_id=None,
         fencing_token=fencing_token,
         command_digest=command_digest(COMMAND),
-        deadline_at=NOW + timedelta(minutes=5),
+        deadline_at=SUBMIT_DEADLINE_AT,
         max_output_audio_ms=max_output_audio_ms,
         sample_rate_hz=sample_rate_hz,
     )
@@ -256,6 +269,140 @@ def test_a_second_intent_for_the_same_lease_is_a_conflict(
     assert raised.value.recovery == "query_original"
     assert engine.dispatch_count == 1
     assert count_intents(foundation, "lease-alt-stage-main") == 1
+
+
+def expired_deadline_micros() -> int:
+    """A reservation deadline that has already passed on the store's clock."""
+    return to_unix_micros(datetime.now(UTC)) - 1
+
+
+def test_a_reservation_outside_its_deadline_never_takes_a_submit(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    foundation.database.query(
+        "UPDATE admission_leases SET deadline_at_us = %s WHERE lease_id = 'lease-alt-stage-main'",
+        (expired_deadline_micros(),),
+    )
+    service, engine = service_for(ledger)
+
+    with pytest.raises(LeaseNotActiveError) as raised:
+        service.submit(
+            request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+        )
+
+    assert raised.value.error_code is ExecutionErrorCode.LEASE_NOT_ACTIVE
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
+
+
+def test_a_request_deadline_beyond_the_reservation_is_rejected(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    identity = replace(
+        identity_for("lease-alt-stage-main", submit_intent_id="intent-a"),
+        deadline_at=datetime(2100, 1, 1, tzinfo=UTC),
+    )
+    service, engine = service_for(ledger)
+
+    with pytest.raises(LeaseNotActiveError) as raised:
+        service.submit(request_for(identity))
+
+    assert raised.value.error_code is ExecutionErrorCode.LEASE_NOT_ACTIVE
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
+
+
+def test_a_reservation_being_cleaned_up_is_rejected(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    foundation.database.query(
+        "UPDATE admission_leases SET cleanup_state = 'complete' "
+        "WHERE lease_id = 'lease-alt-stage-main'"
+    )
+    service, engine = service_for(ledger)
+
+    with pytest.raises(LeaseNotActiveError) as raised:
+        service.submit(
+            request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+        )
+
+    assert raised.value.error_code is ExecutionErrorCode.LEASE_NOT_ACTIVE
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
+
+
+def test_an_instance_that_cannot_run_this_generation_is_rejected(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    service, engine = service_for(ledger)
+
+    for instance_state in ("loading", "draining", "stopping", "stopped"):
+        foundation.database.query(
+            "UPDATE engine_instances SET instance_state = %s "
+            "WHERE instance_id = 'instance-test' AND instance_generation = 1",
+            (instance_state,),
+        )
+        with pytest.raises(InstanceDrainingError) as raised:
+            service.submit(
+                request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+            )
+        assert raised.value.error_code is ExecutionErrorCode.INSTANCE_DRAINING, instance_state
+
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
+
+
+def test_a_generation_head_past_the_claimed_generation_is_rejected(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    foundation.database.query(
+        "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, pool_id, "
+        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
+        "loading_policy, config_digest, instance_state, max_slots, held_slots) "
+        "SELECT 'instance-test', 2, host_node_id, pool_id, gateway_id, binding_revision_id, "
+        "manifest_id, approved_template_id, management_mode, loading_policy, config_digest, "
+        "'ready', max_slots, 0 FROM engine_instances "
+        "WHERE instance_id = 'instance-test' AND instance_generation = 1"
+    )
+    foundation.database.query(
+        "UPDATE runtime_instance_heads SET current_generation = 2, generation_high_water = 2 "
+        "WHERE instance_id = 'instance-test'"
+    )
+    service, engine = service_for(ledger)
+
+    with pytest.raises(InstanceDrainingError) as raised:
+        service.submit(
+            request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+        )
+
+    assert raised.value.error_code is ExecutionErrorCode.INSTANCE_DRAINING
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
+
+
+def test_an_instance_that_already_accepted_a_higher_token_rejects_the_claim(
+    foundation: Foundation, ledger: PostgresSubmissionLedger
+) -> None:
+    seed_second_attempt(foundation)
+    foundation.database.query(
+        "UPDATE engine_instances SET last_fencing_token = 2 "
+        "WHERE instance_id = 'instance-test' AND instance_generation = 1"
+    )
+    service, engine = service_for(ledger)
+
+    with pytest.raises(StaleFencingTokenError) as raised:
+        service.submit(
+            request_for(identity_for("lease-alt-stage-main", submit_intent_id="intent-a"))
+        )
+
+    assert raised.value.error_code is ExecutionErrorCode.STALE_FENCING_TOKEN
+    assert engine.dispatch_count == 0
+    assert count_intents(foundation, "lease-alt-stage-main") == 0
 
 
 def test_save_writes_conditions_on_the_version_the_caller_read(

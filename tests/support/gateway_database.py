@@ -103,7 +103,11 @@ class MySQLSubmissionLedger:
         )
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
-        self._run(lambda cursor: create_submit_in_transaction(cursor, intent, request_document))
+        self._run(
+            lambda cursor: create_submit_in_transaction(
+                cursor, intent, request_document, clock=lambda: self._clock(cursor)
+            )
+        )
 
     def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:
         return self._run(

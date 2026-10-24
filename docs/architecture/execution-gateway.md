@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.12.0"
+version: "1.13.0"
 date: 2026-10-24
 ---
 
@@ -52,9 +52,10 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 入口只接受 version=1 的新 submitting/pending intent：尚无外发、错误、输出或停止事实，
 创建与更新时间一致。不能通过首次 INSERT 直接导入 executing、终态或 not_required 结论。
 
-1. 按全局顺序取行锁：`resource_pools` → `admission_attempts` → `admission_leases`，每条语句
-   都通过普通 `SELECT … FOR UPDATE` 命中一行，否则按未知身份拒绝。
-   不依赖无变化 UPDATE 的影响行数，避免 PG 与 InnoDB 的 rowcount 差异。
+1. 按全局顺序取行锁：`resource_pools` → `runtime_instance_heads` → `engine_instances` →
+   `admission_attempts` → `admission_leases`，每条语句都通过普通 `SELECT … FOR UPDATE`
+   命中一行，否则按未知身份拒绝。不依赖无变化 UPDATE 的影响行数，避免 PG 与 InnoDB 的
+   rowcount 差异。实例指针与代次先锁，drain 与 prepare 不能在本次校验之后改变运行资格。
 2. 锁后重新读取租约/attempt 权威事实，逐字段核对身份：lease/operation/attempt/stage/workspace/
    pool/host/gateway/instance/binding/policy 不一致为 `invalid_execution_request`，generation 不一致为
    `instance_generation_mismatch`，token 不一致为 `stale_fencing_token`。
@@ -63,10 +64,19 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 4. 已封屏障 `gateway_fencing_barriers.min_fencing_token` 高于本次 token 时
    `gateway_barrier_fenced`。屏障行不存在时不假装入口已封锁；屏障与新任期由 `seal_barrier`
    和 `activate_owner` 负责。
-5. 写入一行 `submit_intents`（含规范正文与完整请求摘要），需要输出流时再写
+5. 用**存储时钟**（同一事务内读取，不采信调用方时间）校验截止时间与运行资格，任一不满足
+   即拒绝且一行不写：
+   - 租约自身已过期（`admission_leases.deadline_at_us` 不晚于当前时刻）或清理状态不再是
+     `pending`：`lease_not_active`；
+   - 请求 `deadline_at` 已过期或晚于租约 deadline：`lease_not_active`；
+   - `engine_instances.last_fencing_token` 已高于本次 token：`stale_fencing_token`；
+   - 该实例当前代次不是 `ready`，或 `runtime_instance_heads.current_generation` 已越过本次
+     generation：`instance_draining`。
+   过期租约只拒绝新提交；它不构成停止证据，也不释放任何预算。
+6. 写入一行 `submit_intents`（含规范正文与完整请求摘要），需要输出流时再写
    `output_stream_heads`。同一 (operation, attempt, stream) 已有流权威行时只校验并复用其
    采样率，不重复建行，也不按 submit ID 分开计量。
-6. 提交。已存在的 intent 或已占用的租约让 INSERT 冲突，adapter 报
+7. 提交。已存在的 intent 或已占用的租约让 INSERT 冲突，adapter 报
    `idempotency_conflict`（`query_original`），绝不把旧记录当作本次创建成功返回，调用方必须
    查询原身份；重放始终不再外发。
 
@@ -441,16 +451,23 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   unknown 事务和 submit 查询分支已有，自动恢复循环仍待装配。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
   实例 drain 路由也已服务（当前组合根只报告、不停止），
-  但真实引擎 dispatch/abort adapter 仍未交付，按 instance 代次拒绝新外发也还没有持久记录
-  （引擎执行协议本身尚不存在）；
+  但真实引擎 dispatch/abort adapter 仍未交付。提交事务现在按持久实例状态、代次水位、
+  实例已接受最高 token 与存储时钟拒绝不合格的提交（含非 `ready` 与已过期租约），
+  因此"排空中不再接受新提交"已有落库证据；仍缺的是对**已外发**请求按代次拒绝或中止的
+  引擎侧保证，它需要尚不存在的引擎执行协议；
   在没有 adapter 的组合根里两条引擎路由只返回可重试的不可用，不产生任何执行事实。
   Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
   测试 adapter 验证迁移意图，不形成产品 MySQL 支持。数据库连接配置、时钟与异常分类仍在 adapter 内。
 - 这里的证据是最小合成事实，仅证明受控事务与存储规则。真实引擎/控制器如何提供可信双证据、
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
-- 提交入口已服务并通过真实 PG 集成测试，但完整 deadline/运行资格校验与实际引擎外发仍需接入；
-  没有引擎 adapter 时入口只会拒绝，因此不能据此称为生产执行链路就绪。
+- 提交入口已服务并通过真实 PG 集成测试，截止时间与运行资格校验已落进该事务并用存储时钟
+  验证；实际引擎外发仍需接入，没有引擎 adapter 时入口只会拒绝，因此不能据此称为生产
+  执行链路就绪。
+- 提交事务与生产协调实现的参考/fixture 语义存在一处已知差异：身份字段与租约不一致时，
+  网关按其 HTTP 边界冻结的映射报 `invalid_execution_request`，fixture oracle 报
+  `submit_intent_conflict`。两侧的截止时间与运行资格判定已一致；错误码对齐需与 A 一起
+  确认消费者映射后再改，不能单方面放宽任一侧。
 
 ## 14. 验证
 

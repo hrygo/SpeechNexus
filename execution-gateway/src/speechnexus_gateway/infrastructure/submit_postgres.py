@@ -140,7 +140,12 @@ class PostgresSubmissionLedger:
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
         self._run(
             read_only=False,
-            work=lambda cursor: create_submit_in_transaction(cursor, intent, request_document),
+            work=lambda cursor: create_submit_in_transaction(
+                cursor,
+                intent,
+                request_document,
+                clock=cast(_DeadlineCursor, cursor).clock,
+            ),
         )
 
     def record_execution_observation(self, request: RecordExecutionObservation) -> SubmissionIntent:

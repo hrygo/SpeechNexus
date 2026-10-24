@@ -13,11 +13,14 @@ import yaml
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
 from speechnexus_gateway.domain.submission import (
+    EngineInstanceState,
     ExecutionErrorCode,
     ExecutionRejectedError,
     GatewayBarrierFencedError,
+    InstanceDrainingError,
     InstanceGenerationMismatchError,
     InvalidExecutionRequestError,
+    LeaseCleanupState,
     LeaseFacts,
     LeaseNotActiveError,
     LeaseState,
@@ -30,6 +33,7 @@ from speechnexus_gateway.domain.submission import (
     contract_instant_text,
     hard_output_ceiling_samples,
     max_output_audio_ms_for,
+    verify_submit_eligibility,
     verify_submit_identity,
 )
 from tests.fake.execution import InMemorySubmissionLedger, ScriptedEngine, fake_ingress
@@ -79,6 +83,11 @@ def facts_for(identity: SubmissionIdentity, **overrides: object) -> LeaseFacts:
         "instance_generation": identity.instance_generation,
         "fencing_token": identity.fencing_token,
         "lease_state": LeaseState.RESERVED,
+        "lease_cleanup_state": LeaseCleanupState.PENDING,
+        "deadline_at": NOW + timedelta(minutes=30),
+        "instance_state": EngineInstanceState.READY,
+        "instance_current_generation": identity.instance_generation,
+        "instance_last_fencing_token": identity.fencing_token,
         "binding_revision_id": identity.binding_revision_id,
         "policy_revision_id": identity.policy_revision_id,
     }
@@ -276,6 +285,83 @@ def test_a_sealed_barrier_rejects_a_lower_fencing_token() -> None:
         verify_submit_identity(identity, facts_for(identity), sealed_min_fencing_token=8)
 
     assert raised.value.error_code is ExecutionErrorCode.GATEWAY_BARRIER_FENCED
+
+
+def test_an_eligible_claim_inside_its_deadlines_passes() -> None:
+    identity = identity_for()
+
+    verify_submit_eligibility(identity, facts_for(identity), now=NOW)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"deadline_at": NOW}, "reservation deadline"),
+        ({"deadline_at": NOW - timedelta(seconds=1)}, "reservation deadline"),
+        ({"lease_cleanup_state": LeaseCleanupState.COMPLETE}, "cleanup"),
+    ],
+)
+def test_an_expired_or_cleaned_reservation_never_takes_a_submit(
+    overrides: dict[str, object], expected: str
+) -> None:
+    identity = identity_for()
+
+    with pytest.raises(LeaseNotActiveError, match=expected) as raised:
+        verify_submit_eligibility(identity, facts_for(identity, **overrides), now=NOW)
+
+    assert raised.value.error_code is ExecutionErrorCode.LEASE_NOT_ACTIVE
+
+
+@pytest.mark.parametrize(
+    "deadline_at",
+    [
+        NOW,
+        NOW - timedelta(hours=1),
+        NOW + timedelta(minutes=45),
+    ],
+)
+def test_a_request_deadline_outside_the_reservation_window_is_rejected(
+    deadline_at: datetime,
+) -> None:
+    identity = identity_for(deadline_at=deadline_at)
+
+    with pytest.raises(LeaseNotActiveError):
+        verify_submit_eligibility(identity, facts_for(identity), now=NOW)
+
+
+def test_a_request_deadline_at_the_reservation_deadline_is_accepted() -> None:
+    facts = facts_for(identity_for())
+    identity = identity_for(deadline_at=facts.deadline_at)
+
+    verify_submit_eligibility(identity, facts_for(identity), now=NOW)
+
+
+def test_a_naive_request_deadline_is_never_compared_as_if_it_were_utc() -> None:
+    naive = identity_for(deadline_at=datetime(2026, 10, 24, 0, 30))
+
+    with pytest.raises(InvalidExecutionRequestError, match="timezone"):
+        verify_submit_eligibility(naive, facts_for(naive), now=NOW)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"instance_state": EngineInstanceState.DRAINING}, InstanceDrainingError),
+        ({"instance_state": EngineInstanceState.PREPARING}, InstanceDrainingError),
+        ({"instance_state": EngineInstanceState.STOPPED}, InstanceDrainingError),
+        ({"instance_current_generation": 2}, InstanceDrainingError),
+        ({"instance_last_fencing_token": 99}, StaleFencingTokenError),
+    ],
+)
+def test_an_instance_that_cannot_run_this_generation_is_rejected(
+    overrides: dict[str, object], expected: type[ExecutionRejectedError]
+) -> None:
+    identity = identity_for()
+
+    with pytest.raises(expected) as raised:
+        verify_submit_eligibility(identity, facts_for(identity, **overrides), now=NOW)
+
+    assert raised.value.error_code is expected.error_code
 
 
 def _subclasses(parent: type[Any]) -> set[type[Any]]:

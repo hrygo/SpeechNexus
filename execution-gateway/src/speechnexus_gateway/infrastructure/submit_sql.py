@@ -1,23 +1,27 @@
 """Explicit submit-intent statements; the caller owns the transaction.
 
-``create_submit`` locks the pool row, the attempt and the lease in the contract's global
-order, re-reads the authority after waiting for those locks, verifies the claim against it,
-then writes one ``submit_intents`` row and, for a PCM stage, its ``output_stream_heads``
-row. No engine call, object write, budget calculation or sleep happens inside the
-transaction, and the canonical request body is written but never selected back here.
+``create_submit`` locks the pool row, the instance head, the instance generation, the
+attempt and the lease in the contract's global order, re-reads the authority after waiting
+for those locks, verifies the claim and the deadline/instance eligibility against it, then
+writes one ``submit_intents`` row and, for a PCM stage, its ``output_stream_heads`` row.
+No engine call, object write, budget calculation or sleep happens inside the transaction,
+and the canonical request body is written but never selected back here.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Protocol
 
 from speechnexus_gateway.domain.submission import (
     CleanupState,
+    EngineInstanceState,
     ExecutionCleanupPendingError,
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
+    LeaseCleanupState,
     LeaseFacts,
     LeaseState,
     StaleSubmissionVersionError,
@@ -27,6 +31,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
     hard_output_ceiling_samples,
     max_output_audio_ms_for,
+    verify_submit_eligibility,
     verify_submit_identity,
 )
 
@@ -88,15 +93,30 @@ _LOCK_ATTEMPT = (
     "WHERE operation_id = %s AND attempt_id = %s FOR UPDATE"
 )
 
+_LOCK_INSTANCE_HEAD = (
+    "SELECT instance_id FROM runtime_instance_heads WHERE instance_id = %s FOR UPDATE"
+)
+
+_LOCK_INSTANCE = (
+    "SELECT instance_id FROM engine_instances "
+    "WHERE instance_id = %s AND instance_generation = %s FOR UPDATE"
+)
+
 _LOCK_LEASE = "SELECT lease_id FROM admission_leases WHERE lease_id = %s FOR UPDATE"
 
 _SELECT_AUTHORITY = """
 SELECT l.lease_id, l.operation_id, l.attempt_id, l.stage_id, l.host_node_id, l.instance_id,
        l.instance_generation, l.pool_id, l.gateway_id, l.fencing_token, l.lease_state,
+       l.cleanup_state AS lease_cleanup_state, l.deadline_at_us,
+       i.instance_state, i.last_fencing_token AS instance_last_fencing_token,
+       h.current_generation AS instance_current_generation,
        a.workspace_id, a.binding_revision_id, a.policy_revision_id
 FROM admission_leases AS l
 JOIN admission_attempts AS a
   ON a.operation_id = l.operation_id AND a.attempt_id = l.attempt_id
+JOIN engine_instances AS i
+  ON i.instance_id = l.instance_id AND i.instance_generation = l.instance_generation
+JOIN runtime_instance_heads AS h ON h.instance_id = l.instance_id
 WHERE l.lease_id = %s
 """
 
@@ -213,9 +233,15 @@ def submit_intent_update_values(intent: SubmissionIntent) -> dict[str, object]:
 
 
 def _lock_authority_rows(cursor: SubmitCursor, identity: SubmissionIdentity) -> None:
-    """Take the pool, attempt and lease rows in the contract's global order."""
+    """Take the pool, instance head, instance, attempt and lease rows in the global order."""
     for statement, parameters, description in (
         (_LOCK_POOL, (identity.pool_id,), "pool"),
+        (_LOCK_INSTANCE_HEAD, (identity.instance_id,), "instance head"),
+        (
+            _LOCK_INSTANCE,
+            (identity.instance_id, identity.instance_generation),
+            "instance",
+        ),
         (
             _LOCK_ATTEMPT,
             (identity.operation_id, identity.attempt_id),
@@ -248,6 +274,11 @@ def _read_lease_facts(cursor: SubmitCursor, lease_id: str) -> LeaseFacts:
             instance_generation=row["instance_generation"],
             fencing_token=row["fencing_token"],
             lease_state=LeaseState(row["lease_state"]),
+            lease_cleanup_state=LeaseCleanupState(row["lease_cleanup_state"]),
+            deadline_at=from_unix_micros(row["deadline_at_us"]),
+            instance_state=EngineInstanceState(row["instance_state"]),
+            instance_current_generation=row["instance_current_generation"],
+            instance_last_fencing_token=row["instance_last_fencing_token"],
             binding_revision_id=row["binding_revision_id"],
             policy_revision_id=row["policy_revision_id"],
         )
@@ -285,9 +316,13 @@ def _create_output_stream_head(cursor: SubmitCursor, intent: SubmissionIntent) -
 
 
 def create_submit_in_transaction(
-    cursor: SubmitCursor, intent: SubmissionIntent, request_document: str
+    cursor: SubmitCursor,
+    intent: SubmissionIntent,
+    request_document: str,
+    *,
+    clock: Callable[[], datetime],
 ) -> None:
-    """Write one intent for a verified claim; an existing record is never returned."""
+    """Write one intent for an eligible claim; an existing record is never returned."""
     intent.validate_new()
     identity = intent.identity
     _lock_authority_rows(cursor, identity)
@@ -297,6 +332,7 @@ def create_submit_in_transaction(
         facts,
         sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
     )
+    verify_submit_eligibility(identity, facts, now=clock())
     values = submit_intent_values(intent, request_document)
     if tuple(values) != SUBMIT_INTENT_INSERT_COLUMNS:
         raise RuntimeError("submit intent insert columns drifted from the statement")

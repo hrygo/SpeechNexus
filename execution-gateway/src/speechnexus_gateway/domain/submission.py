@@ -81,6 +81,41 @@ class LeaseState(StrEnum):
         return self in {LeaseState.RESERVED, LeaseState.EXECUTING}
 
 
+class LeaseCleanupState(StrEnum):
+    """Content-cleanup progress of the reservation a submit claims."""
+
+    PENDING = "pending"
+    COMPLETE = "complete"
+
+    @property
+    def accepts_submit(self) -> bool:
+        """A reservation being cleaned up never takes a first submit."""
+        return self is LeaseCleanupState.PENDING
+
+
+class EngineInstanceState(StrEnum):
+    """Lifecycle state of the engine instance a lease generation points at.
+
+    Mirrors ``engine_instances.instance_state`` and the shared runtime-state enum. Only
+    ``ready`` accepts new work: every other state either has not finished loading, is
+    being drained, or may still hold the resources of an execution nobody confirmed.
+    """
+
+    PREPARING = "preparing"
+    LOADING = "loading"
+    WARMING_UP = "warming_up"
+    READY = "ready"
+    DRAINING = "draining"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+    FAILED = "failed"
+    QUARANTINED = "quarantined"
+
+    @property
+    def accepts_submit(self) -> bool:
+        return self is EngineInstanceState.READY
+
+
 class StopEvidenceKind(StrEnum):
     NONE = "none"
     ENGINE_ABORT_ACK = "engine_abort_ack"
@@ -168,6 +203,10 @@ class StaleFencingTokenError(ExecutionRejectedError):
 
 class InstanceGenerationMismatchError(ExecutionRejectedError):
     error_code = ExecutionErrorCode.INSTANCE_GENERATION_MISMATCH
+
+
+class InstanceDrainingError(ExecutionRejectedError):
+    error_code = ExecutionErrorCode.INSTANCE_DRAINING
 
 
 class GatewayBarrierFencedError(ExecutionRejectedError):
@@ -268,7 +307,8 @@ class LeaseFacts:
     """Authoritative lease and attempt facts, read under the submit port's row locks.
 
     A claim is never trusted on its own: the adapter locks the pool, the attempt and the
-    lease, then :func:`verify_submit_identity` compares every shared field with these rows.
+    lease, then :func:`verify_submit_identity` compares every shared field with these rows
+    and :func:`verify_submit_eligibility` checks the deadline and instance facts.
     """
 
     lease_id: str
@@ -283,6 +323,11 @@ class LeaseFacts:
     instance_generation: int
     fencing_token: int
     lease_state: LeaseState
+    lease_cleanup_state: LeaseCleanupState
+    deadline_at: datetime
+    instance_state: EngineInstanceState
+    instance_current_generation: int
+    instance_last_fencing_token: int
     binding_revision_id: str
     policy_revision_id: str
 
@@ -324,6 +369,37 @@ def verify_submit_identity(
         raise GatewayBarrierFencedError(
             "a sealed gateway barrier already requires a higher fencing token"
         )
+
+
+def verify_submit_eligibility(
+    identity: SubmissionIdentity, facts: LeaseFacts, *, now: datetime
+) -> None:
+    """Reject a submit the authority no longer calls eligible at ``now``.
+
+    ``now`` is the control store's clock inside the same transaction, so a caller's clock
+    skew cannot extend or cut a deadline. The rules mirror the frozen preconditions: the
+    reservation must still be inside its deadline and not being cleaned up, the requested
+    deadline must lie between now and that reservation deadline, the instance must be
+    ``ready`` at the claimed generation, and the instance must not have accepted a higher
+    fencing token already.
+    """
+    if identity.deadline_at.tzinfo is None or identity.deadline_at.utcoffset() is None:
+        raise InvalidExecutionRequestError("a submit deadline must carry a timezone")
+    if facts.deadline_at <= now:
+        raise LeaseNotActiveError("the reservation deadline has passed")
+    if not facts.lease_cleanup_state.accepts_submit:
+        raise LeaseNotActiveError(f"lease cleanup is {facts.lease_cleanup_state}")
+    deadline_at = identity.deadline_at.astimezone(UTC)
+    if deadline_at <= now:
+        raise LeaseNotActiveError("the requested deadline has passed")
+    if deadline_at > facts.deadline_at:
+        raise LeaseNotActiveError("the requested deadline is beyond the reservation deadline")
+    if identity.fencing_token < facts.instance_last_fencing_token:
+        raise StaleFencingTokenError("the instance already accepted a higher fencing token")
+    if not facts.instance_state.accepts_submit:
+        raise InstanceDrainingError(f"instance is {facts.instance_state}")
+    if facts.instance_current_generation != identity.instance_generation:
+        raise InstanceDrainingError("the instance generation head moved past this generation")
 
 
 def hard_output_ceiling_samples(

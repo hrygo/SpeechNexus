@@ -219,8 +219,32 @@ export interface paths {
     put?: never;
     /**
      * Create an immutable draft binding revision
-     * @description Creates a new revision in `draft` state. Publishing requires separate
-     *     capacity and qualification evidence.
+     * @description Creates a new immutable revision in draft state. The registry allocates
+     *     the family revision and a globally unique revision_id; the caller cannot
+     *     supply either identity. Independent successful commands append distinct
+     *     revisions, preserving earlier history. supersedes_revision records a
+     *     supersession relationship; it is not an expected-head CAS guard.
+     *     Publishing requires separate capacity and qualification evidence.
+     *
+     *     Replaying the same Idempotency-Key and canonical complete intent returns
+     *     the original revision before any allocation. The same key with a different
+     *     intent returns 409 idempotency_conflict without allocating a new revision.
+     *     Malformed JSON, unknown fields and invalid header/schema values return 400;
+     *     structurally valid but inconsistent binding composition returns 422.
+     *
+     *     An unreadable original result or uncertain commit returns 503
+     *     binding_result_unknown with retryable: false. It does not establish that
+     *     no revision was created. There is no automatic retry, new key, Operation
+     *     or query-by-key recovery resource. A caller retaining the original key
+     *     may explicitly replay this same POST with the exact original intent and
+     *     key to resolve that result. Without an original key automatic recovery
+     *     is not promised; a candidate revision GET does not prove original-command
+     *     ownership. Receive refusals do not settle an earlier original-key outcome.
+     *
+     *     The bounded public ingress may refuse Host/Origin (403), unsupported
+     *     method (405 with Allow), receive timeout (408), request size (413),
+     *     non-JSON media (415), or local receive capacity (429). Limits are deployment
+     *     configuration, not implicit binding parameters or qualification evidence.
      */
     post: operations["createModelBindingDraft"];
     delete?: never;
@@ -236,7 +260,17 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get one immutable binding revision */
+    /**
+     * Get one immutable binding revision
+     * @description Reads only the explicitly named immutable revision; never allocates,
+     *     publishes, activates or selects a current/default revision. Invalid
+     *     path/header/query values or read body/framing return 400. Return 404
+     *     only when an authoritative read confirms this revision is absent.
+     *     Unreadable metadata returns 503 binding_unavailable with retryable: true
+     *     for this same fixed GET. It is not absence or evidence that a prior
+     *     create did not commit. Host/Origin refusal uses 403; unsupported methods
+     *     use 405 with Allow. No Operation or keyless recovery is implied.
+     */
     get: operations["getModelBindingRevision"];
     put?: never;
     post?: never;
@@ -827,6 +861,49 @@ export interface components {
       data: components["schemas"]["AuditEvent"][];
       has_more: boolean;
       next_cursor: string | null;
+    };
+    ModelBindingDraftRevision: components["schemas"]["model-binding.schema"] & {
+      publication?: {
+        /** @constant */
+        status?: "draft";
+      };
+    };
+    BindingDraftConflictError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @constant */
+        code?: "idempotency_conflict";
+        /** @constant */
+        type?: "invalid_request_error";
+        /** @constant */
+        retryable?: false;
+        retry_after_ms?: null;
+        nexus?: never;
+      };
+    };
+    BindingCreationUnknownError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @constant */
+        code?: "binding_result_unknown";
+        /** @constant */
+        type?: "service_unavailable_error";
+        /** @constant */
+        retryable?: false;
+        retry_after_ms?: null;
+        param?: null;
+        nexus?: never;
+      };
+    };
+    BindingReadUnavailableError: components["schemas"]["ErrorResponse"] & {
+      error?: {
+        /** @constant */
+        code?: "binding_unavailable";
+        /** @constant */
+        type?: "service_unavailable_error";
+        /** @constant */
+        retryable?: true;
+        param?: null;
+        nexus?: never;
+      };
     };
     /** @enum {string} */
     ErrorType:
@@ -3142,6 +3219,92 @@ export interface components {
         "application/json": components["schemas"]["ProfileReadUnavailableError"];
       };
     };
+    /** @description The selected draft creation path accepts POST only. */
+    BindingCreateMethodNotAllowed: {
+      headers: {
+        Allow: "POST";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description The bounded JSON receive deadline expired; no new outcome is inferred. */
+    BindingReceiveTimeout: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Actual or declared request bytes exceed the configured ingress bound. */
+    BindingRequestTooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Draft creation requires application/json encoded as UTF-8. */
+    BindingMediaUnsupported: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Local bounded receive capacity is full; earlier original-key state is unknown. */
+    BindingReceiveFull: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description The original key belongs to a different complete intent; no new revision. */
+    BindingDraftConflict: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["BindingDraftConflictError"];
+      };
+    };
+    /** @description Original creation result unreadable or commit uncertain; retain original intent/key. */
+    BindingCreationUnknown: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["BindingCreationUnknownError"];
+      };
+    };
+    /** @description The selected fixed revision path accepts GET only. */
+    BindingReadMethodNotAllowed: {
+      headers: {
+        Allow: "GET";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Fixed revision could not be read; this does not confirm absence. */
+    BindingReadUnavailable: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["BindingReadUnavailableError"];
+      };
+    };
   };
   parameters: {
     XRequestId: string;
@@ -3553,13 +3716,20 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["model-binding.schema"];
+          "application/json": components["schemas"]["ModelBindingDraftRevision"];
         };
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
-      409: components["responses"]["Conflict"];
+      403: components["responses"]["Forbidden"];
+      405: components["responses"]["BindingCreateMethodNotAllowed"];
+      408: components["responses"]["BindingReceiveTimeout"];
+      409: components["responses"]["BindingDraftConflict"];
+      413: components["responses"]["BindingRequestTooLarge"];
+      415: components["responses"]["BindingMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["BindingReceiveFull"];
+      503: components["responses"]["BindingCreationUnknown"];
     };
   };
   getModelBindingRevision: {
@@ -3586,8 +3756,12 @@ export interface operations {
           "application/json": components["schemas"]["model-binding.schema"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["BindingReadMethodNotAllowed"];
+      503: components["responses"]["BindingReadUnavailable"];
     };
   };
   publishModelBindingRevision: {

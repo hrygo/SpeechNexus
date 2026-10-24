@@ -116,7 +116,10 @@ root/semantic limits and does not alter the default request surface.
   artifact set, execution recipe, parameter domains, capacity manifest, and
   qualification evidence, including a globally unique immutable `revision_id`
   used by capacity, qualification, instance, lease, intent, and receipt
-  identities. It is separate from runtime instances.
+  identities. It is separate from runtime instances. The selected admin draft
+  creation/fixed revision HTTP validators and full runtime DTO entrypoint are
+  described in [the draft contract handoff](../docs/architecture/model-binding-drafts.md);
+  their existence does not implement the registry or publish/activate a model.
 - `model-instance.schema.json`: internal runtime instance identity, generation,
   configuration digest, readiness, observed facts, stop evidence, and
   quarantine state. `quarantine_reason` is present only for a quarantined
@@ -413,7 +416,6 @@ into controlled application transactions. PostgreSQL remains the official
 product target; the MySQL/InnoDB prototype validates key coordination behavior only.
 The [refactoring plan](../docs/plans/2026-10-23-cluster-coordination-refactor.md)
 does not constitute an implemented adapter or a new database support claim.
-
 
 ### Versioned HTTP structural change checks
 

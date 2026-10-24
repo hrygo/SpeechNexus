@@ -1,0 +1,792 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModelBindingsContracts",
+  "x-nexus-bindings-version": "1.0.0",
+  "x-nexus-entrypoints": ["ModelBindingRevision"],
+  "$defs": {
+    "Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ModelBindingRevision",
+      "description": "Immutable logical-model binding from a public model name to engine, artifacts, execution recipe, parameter domains, capacity manifest, and qualification evidence. It is separate from any runtime instance, generation, lease, or readiness fact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "binding_id",
+        "revision",
+        "revision_id",
+        "logical_model",
+        "tasks",
+        "engine",
+        "artifact_set",
+        "execution_recipe",
+        "parameter_domains",
+        "release_tier",
+        "publication"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "binding_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/Identifier",
+          "description": "Globally unique immutable identifier for this exact (binding_id, revision). Capacity manifests, qualification reports, runtime instances, leases, submit intents, and receipts use this value as binding_revision_id."
+        },
+        "logical_model": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$",
+          "description": "Public logical model name returned by GET /v1/models and accepted in model request fields. It is not an engine model path."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SpeechTaskKind"
+          }
+        },
+        "engine": {
+          "$ref": "#/$defs/EngineDescriptor"
+        },
+        "artifact_set": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          }
+        },
+        "execution_recipe": {
+          "$ref": "#/$defs/ExecutionRecipe"
+        },
+        "parameter_domains": {
+          "$ref": "#/$defs/ParameterDomains"
+        },
+        "release_tier": {
+          "$ref": "#/$defs/ReleaseTier",
+          "description": "Publication claim for this revision. A draft may target production without evidence identifiers; any published, retired, or disabled production revision requires the bound capacity manifest and qualification report."
+        },
+        "publication": {
+          "$ref": "#/$defs/PublicationState",
+          "description": "Mutable lifecycle projection over the immutable binding definition. Drafts cannot carry publication timestamps or evidence identifiers."
+        },
+        "supersedes_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "published"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at", "capacity_manifest_id", "qualification_report_id"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "capacity_manifest_id": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "qualification_report_id": {
+                    "$ref": "#/$defs/Identifier"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "draft"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "published_at": {
+                    "type": "null"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "capacity_manifest_id": {
+                    "type": "null"
+                  },
+                  "qualification_report_id": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "published"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "retired"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": [
+                  "published_at",
+                  "retired_at",
+                  "capacity_manifest_id",
+                  "qualification_report_id"
+                ],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "capacity_manifest_id": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "qualification_report_id": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "release_tier": {
+                    "const": "production"
+                  }
+                },
+                "required": ["release_tier"]
+              },
+              {
+                "properties": {
+                  "publication": {
+                    "properties": {
+                      "status": {
+                        "not": {
+                          "const": "draft"
+                        }
+                      }
+                    },
+                    "required": ["status"]
+                  }
+                },
+                "required": ["publication"]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": [
+                  "status",
+                  "published_at",
+                  "capacity_manifest_id",
+                  "qualification_report_id"
+                ],
+                "properties": {
+                  "status": {
+                    "enum": ["published", "retired", "disabled"]
+                  },
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "capacity_manifest_id": {
+                    "$ref": "#/$defs/Identifier"
+                  },
+                  "qualification_report_id": {
+                    "$ref": "#/$defs/Identifier"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "disabled"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["disabled_reason"],
+                "properties": {
+                  "disabled_reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tasks": {
+                "contains": {
+                  "const": "voice_design"
+                }
+              }
+            },
+            "required": ["tasks"]
+          },
+          "then": {
+            "properties": {
+              "engine": {
+                "properties": {
+                  "kind": {
+                    "const": "vllm_omni"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "SpeechTaskKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_SpeechTaskKind"
+    },
+    "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+      "type": "string",
+      "enum": [
+        "asr_realtime",
+        "asr_full_segment_review",
+        "asr_file",
+        "tts_realtime",
+        "tts_file",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+        "forced_alignment",
+        "speaker_diarization",
+        "vad"
+      ]
+    },
+    "EngineDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "image_digest", "runtime_version"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EngineKind"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "runtime_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "EngineKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_EngineKind"
+    },
+    "External_shared_capability_domains_schema_json_EngineKind": {
+      "type": "string",
+      "enum": ["vllm", "vllm_omni", "nemo", "qwen_forced_aligner", "onnx_runtime", "cpu_native"]
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ArtifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "artifact_id", "digest", "media_type"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["weights", "tokenizer", "codec", "config", "vocab", "connector"]
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ExecutionRecipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipe_revision", "capacity_manifest_id", "stage_roles"],
+      "properties": {
+        "recipe_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "capacity_manifest_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stage_roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/StageRole"
+          }
+        },
+        "requires_complete_reservation": {
+          "type": "boolean",
+          "default": true,
+          "description": "True when every stage, including required review or auxiliary work, must be admitted before execution starts."
+        }
+      }
+    },
+    "StageRole": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_StageRole"
+    },
+    "External_shared_capability_domains_schema_json_StageRole": {
+      "type": "string",
+      "enum": [
+        "vad",
+        "asr_preview",
+        "asr_review",
+        "asr_batch",
+        "tts_talker",
+        "tts_code2wav",
+        "tts_connector",
+        "voice_design",
+        "voice_clone_base",
+        "alignment",
+        "diarization"
+      ]
+    },
+    "ParameterDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/AsrParameterDomain"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsParameterDomain"
+        },
+        "voice": {
+          "$ref": "#/$defs/VoiceParameterDomain"
+        }
+      },
+      "minProperties": 1
+    },
+    "AsrParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "max_segment_ms",
+        "finalization_modes",
+        "supports_prompt",
+        "alignment_modes",
+        "diarization_modes"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "max_segment_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "finalization_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+          }
+        },
+        "supports_prompt": {
+          "type": "boolean"
+        },
+        "supports_word_timestamps": {
+          "type": "boolean"
+        },
+        "alignment_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          }
+        },
+        "diarization_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+          }
+        },
+        "max_speakers": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 64
+        },
+        "supports_rollback_tokens": {
+          "type": "boolean"
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "TtsParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "audio_formats",
+        "sample_rates_hz",
+        "text_commit_modes",
+        "audio_delivery_modes",
+        "supports_instructions",
+        "max_input_codepoints"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+          }
+        },
+        "sample_rates_hz": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 96000
+          }
+        },
+        "text_commit_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+          }
+        },
+        "audio_delivery_modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+          }
+        },
+        "supports_instructions": {
+          "type": "boolean"
+        },
+        "supports_speed": {
+          "type": "boolean"
+        },
+        "speed_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 4.0
+            }
+          }
+        },
+        "max_input_codepoints": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "supports_seed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "VoiceParameterDomain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design_supported", "clone_supported", "reusable_voice_supported"],
+      "properties": {
+        "design_supported": {
+          "type": "boolean"
+        },
+        "clone_supported": {
+          "type": "boolean"
+        },
+        "preview_only_possible": {
+          "type": "boolean"
+        },
+        "reusable_voice_supported": {
+          "type": "boolean"
+        },
+        "validation_set_revisions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Revision"
+          }
+        }
+      }
+    },
+    "ReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "best_effort", "production"]
+    },
+    "PublicationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["draft", "published", "retired", "disabled"]
+        },
+        "published_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retired_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capacity_manifest_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qualification_report_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabled_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ModelBindingRevision": {
+      "$ref": "#/$defs/Root"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/ModelBindingRevision"
+    }
+  ]
+}

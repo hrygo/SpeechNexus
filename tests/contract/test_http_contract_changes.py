@@ -505,3 +505,340 @@ def test_false_reference_simplification_keeps_the_closed_reference_policy(
     ] = [{"$ref": "https://deployment.invalid/unavailable.json"}]
     _write(path, value)
     assert module.inspect_sources(base)["findings"]
+
+
+@pytest.mark.parametrize("as_reference", [False, True])
+def test_response_intersection_retains_complete_original_guarantee(as_reference: bool) -> None:
+    original = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["state"],
+        "properties": {"state": {"enum": ["draft", "published"]}},
+        "allOf": [{"properties": {"state": {"type": "string"}}}],
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = copy.deepcopy(baseline)
+    response = current["paths"]["/v1/audio/speech"]["post"]["responses"]["201"]
+    if as_reference:
+        current["components"] = {"schemas": {"Original": original}}
+    response["content"]["application/json"]["schema"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/Original"} if as_reference else original,
+            {"properties": {"state": {"const": "draft"}}},
+        ]
+    }
+    assert (
+        kernel()._compare_openapi(
+            baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("direction", ["request", "response"])
+@pytest.mark.parametrize("composition", ["allOf", "anyOf", "oneOf"])
+def test_intersection_proof_does_not_allow_lost_guarantee_or_request_narrowing(
+    direction: str, composition: str
+) -> None:
+    original = {
+        "type": "object",
+        "required": ["state"],
+        "properties": {"state": {"type": "string"}},
+    }
+    changed = copy.deepcopy(original)
+    if direction == "response":
+        changed.pop("required")
+    elif composition != "allOf":
+        changed = {"type": "integer"}
+    current = {composition: [changed, {"type": "object", "required": ["extra"]}]}
+    module = kernel()
+    side = module._SchemaSide({}, "contracts/admin-openapi.yaml", None, standard_only=False)
+    issues: list[str] = []
+    module._compare_schema(
+        original,
+        current,
+        "synthetic",
+        issues,
+        direction=direction,
+        base_side=side,
+        current_side=side,
+    )
+    assert issues
+
+
+@pytest.mark.parametrize("reference", ["$dynamicRef", "$recursiveRef"])
+def test_response_intersection_does_not_prove_dynamic_reference_inclusion(reference: str) -> None:
+    module = kernel()
+    original = {"type": "object", reference: "#dynamic"}
+    current = {"allOf": [original, {"type": "object"}]}
+    side = module._SchemaSide({}, "contracts/admin-openapi.yaml", None, standard_only=False)
+    issues: list[str] = []
+    module._compare_schema(
+        original,
+        current,
+        "synthetic",
+        issues,
+        direction="response",
+        base_side=side,
+        current_side=side,
+    )
+    assert issues
+
+
+def test_response_intersection_keeps_original_openai_comparison_policy() -> None:
+    original = {
+        "type": "object",
+        "required": ["state"],
+        "properties": {"state": {"type": "string"}},
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response={"allOf": [original, {"type": "object"}]})
+    assert kernel()._compare_openapi(baseline, current, "contracts/speech-openapi.yaml")
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+@pytest.mark.parametrize("old,new", [(True, 1), (False, 0), (1, True), (0, False)])
+def test_response_intersection_preserves_json_boolean_and_numeric_types(
+    keyword: str, old: bool | int, new: bool | int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    def schema(value: bool | int) -> dict[str, Any]:
+        constraint = [value] if keyword == "enum" else value
+        return {
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {keyword: constraint}},
+        }
+
+    original = schema(old)
+    changed = {"allOf": [schema(new), {"type": "object"}]}
+    witness = {"value": new}
+    assert not Draft202012Validator(original).is_valid(witness)
+    assert Draft202012Validator(changed).is_valid(witness)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+@pytest.mark.parametrize("value", [True, False, 1, 0])
+def test_response_intersection_accepts_identical_json_types_and_safe_tightening(
+    keyword: str, value: bool | int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    original = {
+        "type": "object",
+        "required": ["value"],
+        "properties": {"value": {keyword: [value] if keyword == "enum" else value}},
+    }
+    tightened = {"allOf": [copy.deepcopy(original), {"required": ["extra"]}]}
+    assert Draft202012Validator(original).is_valid({"value": value})
+    assert not Draft202012Validator(tightened).is_valid({"value": value})
+    assert Draft202012Validator(tightened).is_valid({"value": value, "extra": None})
+    assert (
+        kernel()._compare_openapi(
+            document("/v1/audio/speech", response=original),
+            document("/v1/audio/speech", response=tightened),
+            "contracts/admin-openapi.yaml",
+            standard_only=False,
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+def test_response_intersection_never_resolves_literal_json_references(keyword: str) -> None:
+    from jsonschema import Draft202012Validator
+
+    literal = {"$ref": "#/components/schemas/A"}
+    expanded = {"type": "string"}
+    original = {"type": "object", keyword: [literal] if keyword == "enum" else literal}
+    changed = {
+        "allOf": [
+            {"type": "object", keyword: [expanded] if keyword == "enum" else expanded},
+            {"type": "object"},
+        ]
+    }
+    assert not Draft202012Validator(original).is_valid(expanded)
+    assert Draft202012Validator(changed).is_valid(expanded)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    for source in (baseline, current):
+        source["components"] = {"schemas": {"A": {"type": "string"}}}
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )
+
+
+def test_schema_reference_in_property_named_const_is_still_resolved() -> None:
+    original = {
+        "type": "object",
+        "required": ["const"],
+        "properties": {"const": {"$ref": "#/components/schemas/A"}},
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = document(
+        "/v1/audio/speech", response={"allOf": [copy.deepcopy(original), {"required": ["extra"]}]}
+    )
+    for source in (baseline, current):
+        source["components"] = {"schemas": {"A": {"type": "string"}}}
+    assert (
+        kernel()._compare_openapi(
+            baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("boolean,number", [(True, 1), (False, 0)])
+def test_reference_sibling_intersection_preserves_json_types_before_proof(
+    boolean: bool, number: int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    components = {"schemas": {"A": {"const": number}}}
+    original = {"$ref": "#/components/schemas/A", "const": boolean}
+    changed = {"allOf": [{"const": boolean}, {"type": "boolean"}]}
+    assert not Draft202012Validator({**original, "components": components}).is_valid(boolean)
+    assert Draft202012Validator(changed).is_valid(boolean)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    baseline["components"] = components
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )
+
+
+@pytest.mark.parametrize("kind", ["response", "requestBody", "parameter", "header"])
+@pytest.mark.parametrize("external", [False, True])
+def test_openapi_object_refs_preserve_schema_checks_in_full_comparator_and_cli(
+    repository: tuple[ModuleType, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    external: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    module, root, _ = repository
+    source, path = SOURCES[0]
+    old: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "literal": {"const": {"$ref": "#/components/schemas/LiteralDataOnly"}},
+        },
+    }
+    if kind == "response":
+        old["required"] = ["id"]
+    elif kind in {"parameter", "header"}:
+        old = {"type": "string", "enum": ["a", "b"] if kind == "parameter" else ["a"]}
+    new = copy.deepcopy(old)
+    if kind == "response":
+        new.pop("required")
+    elif kind == "requestBody":
+        new["required"] = ["id"]
+    else:
+        new["enum"] = ["a"] if kind == "parameter" else ["a", "b"]
+    witness: Any = "b" if kind in {"parameter", "header"} else {}
+    assert Draft202012Validator(old).is_valid(witness) is (kind not in {"response", "header"})
+    assert Draft202012Validator(new).is_valid(witness) is (kind in {"response", "header"})
+    groups = {
+        "response": "responses",
+        "requestBody": "requestBodies",
+        "parameter": "parameters",
+        "header": "headers",
+    }
+    group = groups[kind]
+    schema: dict[str, Any] = {"$ref": "./payload.schema.json#/$defs/Value"} if external else old
+    component: dict[str, Any]
+    if kind == "header":
+        component = {"required": True, "schema": schema}
+    elif kind == "parameter":
+        component = {"name": "X-Synthetic", "in": "header", "required": True, "schema": schema}
+    else:
+        component = {"content": {"application/json": {"schema": schema}}}
+        component["description" if kind == "response" else "required"] = (
+            "Synthetic" if kind == "response" else True
+        )
+    components = {group: {"Selected": component}}
+    doc = document(path)
+    operation = doc["paths"][path]["post"]
+    prefix = "shared/object-components.yaml" if external else ""
+    reference = {"$ref": prefix + f"#/components/{group}/Selected"}
+    if kind == "header":
+        operation["responses"]["201"]["headers"] = {"schema": reference}
+    elif kind == "response":
+        operation["responses"]["201"] = reference
+    elif kind == "requestBody":
+        operation["requestBody"] = reference
+    else:
+        operation["parameters"] = [reference]
+    if external:
+        _write(root / "contracts/shared/object-components.yaml", {"components": components})
+        _write(root / "contracts/shared/payload.schema.json", {"$defs": {"Value": old}})
+    else:
+        doc["components"] = components
+    _write(root / source, doc)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Freeze object references")
+    base = _git(root, "rev-parse", "HEAD")
+    baseline = copy.deepcopy(doc)
+    assert module.inspect_sources(base)["findings"] == []
+    if external:
+        _write(root / "contracts/shared/payload.schema.json", {"$defs": {"Value": new}})
+    elif kind in {"parameter", "header"}:
+        component["schema"] = new
+        _write(root / source, doc)
+    else:
+        component["content"]["application/json"]["schema"] = new
+        _write(root / source, doc)
+    findings = module._kernel()._compare_openapi(
+        baseline, doc, source, base_git_ref=base, standard_only=False
+    )
+    assert findings, (kind, external)
+    monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
+    assert module.main() == 1
+    assert json.loads(capsys.readouterr().out)["findings"]
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_path_item_reference_preserves_full_cli_response_guarantees(
+    repository: tuple[ModuleType, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    external: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    module, root, _ = repository
+    source, path = SOURCES[0]
+    schema = {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}}
+    doc = document(path, response=schema)
+    item = doc["paths"][path]
+    components = {"pathItems": {"Selected": item}}
+    prefix = "shared/path-items.yaml" if external else ""
+    doc["paths"][path] = {"$ref": prefix + "#/components/pathItems/Selected"}
+    if external:
+        _write(root / "contracts/shared/path-items.yaml", {"components": components})
+    else:
+        doc["components"] = components
+    _write(root / source, doc)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Freeze path item reference")
+    base = _git(root, "rev-parse", "HEAD")
+    assert module.inspect_sources(base)["findings"] == []
+    assert not Draft202012Validator(schema).is_valid({})
+    schema.pop("required")
+    assert Draft202012Validator(schema).is_valid({})
+    if external:
+        _write(root / "contracts/shared/path-items.yaml", {"components": components})
+    else:
+        _write(root / source, doc)
+    monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
+    assert module.main() == 1
+    assert json.loads(capsys.readouterr().out)["findings"]

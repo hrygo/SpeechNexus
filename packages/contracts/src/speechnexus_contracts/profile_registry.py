@@ -9,6 +9,7 @@ PROFILES = frozenset(
         "realtime",
         "realtime_events",
         "scenario_profiles",
+        "model_bindings",
     )
 )
-HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile"))
+HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile", "binding"))

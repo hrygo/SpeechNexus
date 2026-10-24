@@ -50,7 +50,8 @@
         "Workspace",
         "WorkspaceList",
         "ErrorResponse",
-        "ProfileRevisionCreateRequest"
+        "ProfileRevisionCreateRequest",
+        "ModelBindingCreateRequest"
       ]
     },
     "workbench": {
@@ -155,6 +156,16 @@
       "schema_refs": {
         "ScenarioProfileRevision": "#"
       }
+    },
+    "model_bindings": {
+      "source": "model-binding.schema.json",
+      "version": "1.0.0",
+      "format": "json-schema",
+      "client": false,
+      "schemas": ["ModelBindingRevision"],
+      "schema_refs": {
+        "ModelBindingRevision": "#"
+      }
     }
   },
   "http_surfaces": {
@@ -211,6 +222,16 @@
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
       ],
       "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
+    },
+    "binding": {
+      "source": "admin-openapi.yaml",
+      "validate": true,
+      "typescript_source": "admin",
+      "paths": [
+        "/v1/nexus/admin/model-bindings",
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"
+      ],
+      "operations": ["createModelBindingDraft", "getModelBindingRevision"]
     }
   }
 }

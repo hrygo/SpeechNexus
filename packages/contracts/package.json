@@ -15,7 +15,9 @@
     "./realtime": "./src/realtime.ts",
     "./realtime-events": "./src/realtime_events.ts",
     "./scenario-profiles": "./src/scenario_profiles.ts",
-    "./profile-http": "./src/profile-http.ts"
+    "./profile-http": "./src/profile-http.ts",
+    "./model-bindings": "./src/model_bindings.ts",
+    "./binding-http": "./src/binding-http.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

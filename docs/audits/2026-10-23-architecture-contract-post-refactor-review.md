@@ -84,7 +84,7 @@ InnoDB 容器）上运行完整集成矩阵。未运行：远端 CI、`make veri
 门禁范围的不对称仍需明确：PR 只对 OpenAI 标准面做机器 diff，`workbench-openapi.yaml`、
 `admin-openapi.yaml`、运营契约与内部契约没有同级的破坏性变更门禁，只由 `make contracts-check`、
 `uv run pytest tests/contract` 与正负样例覆盖。升级流程因此依赖 ADR 0005 记录的内部协议变更与
-历史 fixture，而不是自动比较。是否要为内部契约增加可复用的 schema diff 门禁，属第 8 节的产品决策。
+历史 fixture，而不是自动比较。内部契约的可复用 schema diff 门禁按第 8 节关闭为后续单元，当前不接入。
 
 ## 6. 未验证与残余风险
 
@@ -121,14 +121,17 @@ InnoDB 容器）上运行完整集成矩阵。未运行：远端 CI、`make veri
 | `git diff --check` | 通过 |
 | 两库测试残留 | `sn_coord_*` namespace / database 0，`sn_speech_*`、`sn_gateway_*` 角色 / 用户 0 |
 
-## 8. 需要产品决策与明确不采纳
+## 8. 已决策事项与明确不采纳
 
-需要决策：
+以下三项已按保守默认关闭，不再等待产品表态：
 
-1. `query_outcome` 的目标→快照映射（F-05）是按当前职责归属冻结，还是改为对 job / interval 返回
-   更弱的 `FactSnapshot`。若调整，请同时修订契约声明与 fixture。
-2. 是否把内部、工作台与管理面契约纳入同级机器 diff 门禁（第 5 节），或维持"ADR 记录 + 样例"流程。
-3. 是否在本轮之后立即接入契约类型生成（P0-A），以及生成器版本锁定方式。
+1. `query_outcome` 的目标→快照映射（F-05）**维持按职责归属冻结**：查池返回池单据、查尝试返回尝试
+   单据，契约与 fixture 保持当前形状；若要改为对 job / interval 返回更弱的 `FactSnapshot`，须走
+   显式契约变更并同时改测试。
+2. 内部、工作台与管理面契约**暂不纳入同级机器 diff 门禁**，维持"ADR 记录 + 样例"流程；待这些
+   接口对外发布前统一补自动兼容检查。
+3. 契约类型生成**已开始接入**（实例 drain 的请求/响应为生成产物），生成器版本随锁文件固定；
+   其余面按后续单元逐个接入，不一次性铺开。
 
 明确不采纳：
 

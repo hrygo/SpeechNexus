@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.13.0"
+version: "1.14.0"
 date: 2026-10-24
 ---
 
@@ -448,7 +448,8 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
 - 提交、停止、未知、屏障、观察、清理与区间事务都已返回完整具名 TransactionResult；
   真实计量采集器、A 用量消费与资格验证仍待接入；
   命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
-  unknown 事务和 submit 查询分支已有，自动恢复循环仍待装配。
+  unknown 事务、submit 查询分支与受信恢复扫描（`ExecutionRecoveryService`）已有，
+  但驱动它的定时器与真实的整实例终止证据生产者（控制器客户端）仍待接入。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
   实例 drain 路由也已服务（当前组合根只报告、不停止），
   但真实引擎 dispatch/abort adapter 仍未交付。提交事务现在按持久实例状态、代次水位、

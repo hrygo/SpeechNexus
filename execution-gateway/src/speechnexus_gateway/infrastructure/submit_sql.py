@@ -134,7 +134,7 @@ _INSERT_STREAM_HEAD = (
     "(operation_id, attempt_id, output_stream_id, sample_rate_hz) VALUES (%s, %s, %s, %s)"
 )
 
-_SELECT_INTENT = """
+_INTENT_SELECTION = """
 SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_digest,
        s.request_digest, s.voice_revision_id, s.deadline_at_us, s.recorded_at_us,
        s.updated_at_us, s.execution_state, s.cleanup_state, s.engine_request_id,
@@ -155,8 +155,16 @@ JOIN admission_leases AS l
 JOIN admission_attempts AS a
   ON a.operation_id = s.operation_id AND a.attempt_id = s.attempt_id
 LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = s.submit_intent_id
-WHERE s.submit_intent_id = %s
 """
+
+_SELECT_INTENT = _INTENT_SELECTION + "WHERE s.submit_intent_id = %s\n"
+
+#: Uncertain work this gateway is still holding, oldest first so a bounded sweep drains it.
+_SELECT_QUARANTINED = (
+    _INTENT_SELECTION + "WHERE s.execution_state = 'unknown_quarantined' "
+    "AND l.gateway_id = %s AND l.host_node_id = %s "
+    "ORDER BY s.updated_at_us, s.submit_intent_id LIMIT %s\n"
+)
 
 
 class SubmitCursor(Protocol):
@@ -349,6 +357,21 @@ def read_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> Submissio
     if len(rows) != 1:
         raise SubmissionStoreError("submit intent does not resolve to exactly one authority")
     return _intent_from_row(rows[0])
+
+
+def list_quarantined_intents(
+    cursor: SubmitCursor, *, gateway_id: str, host_node_id: str, limit: int
+) -> list[SubmissionIntent]:
+    """Read this gateway's uncertain executions, newest state first in a bounded batch.
+
+    Only rows this gateway and node already own are returned, and every row is rebuilt
+    through the same projection a single read uses, so a sweep cannot reinterpret an
+    unreadable record as a closable one.
+    """
+    if not 1 <= limit <= 500:
+        raise ValueError("a recovery sweep reads between 1 and 500 executions")
+    cursor.execute(_SELECT_QUARANTINED, (gateway_id, host_node_id, limit))
+    return [_intent_from_row(row) for row in cursor.fetchall()]
 
 
 def save_submit_intent(

@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     database_schema: str = Field(default="speech", pattern=r"^[a-z][a-z0-9_]{2,62}$")
     object_storage_access_key: SecretStr | None = Field(default=None, min_length=1)
     object_storage_secret_key: SecretStr | None = Field(default=None, min_length=1)
-    asset_default_ttl_seconds: int | None = Field(default=None, ge=60, le=31536000)
+    asset_default_ttl_seconds: int | None = Field(default=604800, ge=60, le=31536000)
     asset_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1, le=4 * 1024 * 1024)
     asset_upload_concurrency: int = Field(default=4, ge=1, le=4)
     asset_receive_timeout_seconds: float = Field(default=30, gt=0, le=120)

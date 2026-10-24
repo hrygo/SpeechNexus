@@ -42,10 +42,13 @@ that evidence. This is safety coverage, not complete crash-liveness qualificatio
 
 ## Retention and references
 
-Upload TTL is 60–31,536,000 seconds. Deployment default retention is an explicit
-`AssetPolicy.default_ttl_seconds`; `None` requires a request TTL. No production
-default is selected by tests. Effective expiry is fixed with the original record
-using the database clock. Content/metadata reads reject expired content even
+Upload TTL is 60–31,536,000 seconds. The process default is **7 days (604800
+seconds)**, selected by the product owner; deployments can override
+`SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS`. An explicit upload `ttl_seconds` takes
+precedence. The low-level `AssetPolicy(None)` still requires a request TTL.
+Effective expiry is fixed with the original record using the database clock;
+changing process defaults never changes an existing Asset or its replay identity.
+Content/metadata reads reject expired content even
 before a maintenance poll changes its stored state.
 
 `maintain(limit)` reconciles at most `limit` originals and handles at most
@@ -111,8 +114,13 @@ health remains available. A partial credential pair is a configuration error;
 validation excludes input values from error messages. Use dedicated object
 credentials; synthetic test root keys do not qualify production IAM.
 
-`SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS` is optional and has no selected product
-default. Without it, uploads require `ttl_seconds`. `asset_max_bytes` is 1–4 MiB
+`SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS` is optional and defaults to **604800
+seconds (7 days)**. Set a value in 60–31,536,000 seconds to override it; invalid
+values fail configuration instead of silently falling back. Uploads may omit
+`ttl_seconds`, or explicitly override the deployment default. Omission remains
+absent in the request digest; replays use the original persisted expiry, even
+after a configuration change. This setting does not rewrite existing content,
+enable object credentials, or replace the retention worker. `asset_max_bytes` is 1–4 MiB
 (default 4 MiB); ingress allows another 16 KiB for multipart framing. A process
 accepts at most `asset_upload_concurrency` concurrent private upload buffers
 (default/hard maximum 4), with no waiting queue. The complete receive deadline is

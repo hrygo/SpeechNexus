@@ -121,7 +121,9 @@ def test_coordination_ownership_covers_ports_tables_and_query_snapshots() -> Non
     }
     assert ports == set(matrix["ports"])
     ddl = (ROOT / "migrations/0001_cluster_coordination_draft.sql").read_text()
-    assert set(re.findall(r"^CREATE TABLE (\w+)", ddl, re.MULTILINE)) == set(matrix["tables"])
+    # The frozen draft remains a subset. Production DDL/role coverage, including
+    # additive migrations, is checked exactly in test_coordination_foundation.
+    assert set(re.findall(r"^CREATE TABLE (\w+)", ddl, re.MULTILINE)) <= set(matrix["tables"])
     for name, port in matrix["ports"].items():
         assert port["producer"] and port["consumer"]
         assert all(matrix["tables"][table] == port["owner"] for table in port["writes"]), name

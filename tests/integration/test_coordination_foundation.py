@@ -29,6 +29,9 @@ from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
 
+from speechnexus_backend.speech.infrastructure.admission_command_schema import (
+    ADMISSION_COMMAND_DDL,
+)
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     GATEWAY_UPDATES,
     SPEECH_UPDATES,
@@ -150,7 +153,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
         for ddl in COORDINATION_DDL:
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             db.query(re.sub(r"\bTEXT\b", "LONGTEXT", ddl))
-        for ddl in (*RUNTIME_INTENT_DDL, *RUNTIME_OBSERVATION_DDL):
+        for ddl in (*RUNTIME_INTENT_DDL, *RUNTIME_OBSERVATION_DDL, *ADMISSION_COMMAND_DDL):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
                 "ALTER COLUMN job_id DROP NOT NULL",
@@ -438,7 +441,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0006_runtime_observation"
+    assert sandbox.version() == "0007_admission_commands"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -505,7 +508,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0006_runtime_observation"
+        assert sandbox.version() == "0007_admission_commands"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

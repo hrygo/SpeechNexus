@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from speechnexus_backend.speech.infrastructure.admission_command_schema import (
+    ADMISSION_COMMAND_DDL,
+)
 from speechnexus_backend.speech.infrastructure.coordination_grants import (
     GATEWAY_UPDATES,
     SPEECH_UPDATES,
@@ -20,7 +23,7 @@ def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> N
     owners = json.loads((root / "contracts/coordination-ownership.json").read_text())["tables"]
     tables = {
         match[1]
-        for ddl in (*JOB_DDL, *COORDINATION_DDL)
+        for ddl in (*JOB_DDL, *COORDINATION_DDL, *ADMISSION_COMMAND_DDL)
         if (match := re.match(r"CREATE TABLE (\w+)", ddl))
     }
     assert tables == set(owners)

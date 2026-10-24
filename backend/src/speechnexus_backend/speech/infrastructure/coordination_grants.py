@@ -37,6 +37,11 @@ SPEECH_UPDATES = {
         "readiness_document version"
     ),
     "admission_attempts": "quota_state version",
+    "admission_operations": (
+        "current_attempt_id request_document command_redacted_at_us command_deletion_job_id "
+        "command_deletion_evidence_digest version"
+    ),
+    "admission_requests": "",
     "admission_leases": (
         "lease_state cleanup_state budget_released_at_us "
         "quarantine_observed_at_us quarantine_reason_code version"
@@ -57,6 +62,7 @@ GATEWAY_UPDATES = {
     "output_sample_intervals": "",
 }
 CONTROL_PLANE_TABLES = frozenset({"resource_pools", "workspace_quotas", "host_nodes"})
+PRIVATE_SPEECH_TABLES = frozenset({"admission_operations", "admission_requests"})
 INSERT_COLUMNS = {
     "coordination_jobs": (
         "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest"
@@ -82,7 +88,7 @@ def coordination_runtime_grants(
     """No DDL, history deletion, foreign private bodies or config inserts/updates.
 
     Only version-column UPDATE crosses ownership, to permit PostgreSQL row locks.
-    Request-body UPDATE is the gateway's explicit deletion-tombstone exception.
+    Request-body UPDATE is only an owner's deletion-tombstone exception.
     """
     schema, speech_role, gateway_role = map(checked_sql_name, (schema, speech_role, gateway_role))
     if speech_role == gateway_role:
@@ -95,6 +101,10 @@ def coordination_runtime_grants(
     ):
         grants.append(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
         for table, updates in all_updates.items():
+            if table in PRIVATE_SPEECH_TABLES and table not in owned:
+                # No gateway read or UPDATE(version) grant: this is A's private
+                # original business command and admission identity authority.
+                continue
             target = f'"{schema}"."{table}"'
             columns = ", ".join(narrow.get(table, "").split())
             readable = f"SELECT ({columns})" if columns else "SELECT"

@@ -233,6 +233,17 @@ def test_one_termination_has_distinct_stable_evidence_for_each_execution() -> No
     assert other_source.evidence_id != first_stop.evidence_id
 
 
+@pytest.mark.parametrize("source_id", ("BAD ID", "x", "a" * 129))
+def test_a_derived_id_does_not_hide_an_invalid_source_evidence_identity(source_id: str) -> None:
+    ledger = SpyLedger()
+    _, _, identity = quarantined(ledger)
+    intent = ledger.get(identity.submit_intent_id)
+    assert intent is not None
+
+    with pytest.raises(ValueError, match="identifiers must match"):
+        whole_instance_stop_evidence(intent, termination_evidence(evidence_id=source_id))
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

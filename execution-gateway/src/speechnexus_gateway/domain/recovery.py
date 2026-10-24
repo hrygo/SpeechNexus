@@ -3,7 +3,7 @@
 import hashlib
 import re
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from speechnexus_gateway.domain.canonical import canonical_json
@@ -228,14 +228,9 @@ def whole_instance_stop_evidence(
         return None
     if evidence.observed_at < intent.recorded_at:
         return None
-    # One physical termination can cover many executions. The append-only stop ledger
-    # requires an execution-specific identity, stable across batches and restarts.
-    # Keep the producer's digest and instant: deriving an identity adds no stop facts.
-    evidence_key = canonical_json(
-        ["whole-instance-stop/v1", evidence.evidence_id, identity.submit_intent_id]
-    )
-    return VerifiedStopEvidence(
-        evidence_id="stop-instance-" + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest(),
+    # Validate the source identity too: hashing must not hide malformed producer data.
+    stop = VerifiedStopEvidence(
+        evidence_id=evidence.evidence_id,
         submit_intent_id=identity.submit_intent_id,
         evidence_kind=evidence.evidence_kind,
         evidence_digest=evidence.evidence_digest,
@@ -243,4 +238,14 @@ def whole_instance_stop_evidence(
         execution_stopped=True,
         resources_released=True,
         reason=evidence.reason,
+    )
+    # One physical termination can cover many executions. The append-only stop ledger
+    # requires an execution-specific identity, stable across batches and restarts.
+    # Keep the producer's digest and instant: deriving an identity adds no stop facts.
+    evidence_key = canonical_json(
+        ["whole-instance-stop/v1", evidence.evidence_id, identity.submit_intent_id]
+    )
+    return replace(
+        stop,
+        evidence_id="stop-instance-" + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest(),
     )

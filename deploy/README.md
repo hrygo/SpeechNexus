@@ -61,19 +61,23 @@ cluster-ready from day one.
 | `SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT`        | Backend | S3-compatible private object endpoint                                                                                    |
 | `SPEECHNEXUS_OBJECT_STORAGE_HEALTHCHECK_URL` | Backend | Dependency probe URL                                                                                                     |
 | `SPEECHNEXUS_OBJECT_STORAGE_BUCKET`          | Backend | Deployment object bucket                                                                                                 |
+| `SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS`      | Backend/asset worker | Asset default retention in seconds: 604800 (7 days); explicit upload TTL overrides it |
 | `SPEECHNEXUS_GATEWAY_NODE_ID`                | Gateway | Host node identity associated with the execution gateway                                                                 |
 | `SPEECHNEXUS_GATEWAY_GATEWAY_ID`             | Gateway | Unique execution gateway identity for submit-intent fencing                                                              |
 | `SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL`   | Gateway | PostgreSQL control-plane DSN                                                                                             |
 
 Production entry points, Host / Origin policy, shared service credentials,
-backup, retention and capacity qualification remain deployment decisions. The
+backup and capacity qualification remain deployment decisions. Asset retention
+defaults to 7 days and can be overridden by deployment configuration. The
 initial product has no login, user directory, RBAC, or tenant isolation.
 
 ## Asset API and retention worker
 
 The [asset configuration and recovery guide](../docs/architecture/production-assets.md)
 describes paired object keys, pre-created versioned buckets, non-owner runtime
-grants, explicit TTL/default policy and Host/Origin guards. The public Asset API
+grants, the 7-day default/explicit TTL policy and Host/Origin guards. Defaults are
+resolved only when creating a new Asset; a changed default never extends or
+shortens existing records or same-key replays. The public Asset API
 shares the backend process; it has no enabled object credentials in the bootstrap.
 A separate `speechnexus-asset-maintain` entry point uses `job-worker` plus explicit
 node/instance identities. Provision its bucket/role before running it; it never

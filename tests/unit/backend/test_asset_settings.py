@@ -46,9 +46,9 @@ def test_credentials_are_paired_and_validation_does_not_print_input() -> None:
     assert "private_test_key" not in str(caught.value)
 
 
-def test_retention_omission_and_network_defaults_are_explicit() -> None:
+def test_retention_and_network_defaults_are_explicit() -> None:
     settings = _settings()
-    assert settings.asset_default_ttl_seconds is None
+    assert settings.asset_default_ttl_seconds == 604800
     assert settings.asset_allowed_hosts == ("localhost", "127.0.0.1", "::1")
     assert settings.asset_allowed_origins == ()
     configured = Settings(
@@ -57,8 +57,8 @@ def test_retention_omission_and_network_defaults_are_explicit() -> None:
             | {
                 "asset_allowed_hosts": ("trusted.test", "::1"),
                 "asset_allowed_origins": ("https://trusted.test",),
-                "asset_default_ttl_seconds": 604800,
+                "asset_default_ttl_seconds": 3600,
             }
         )
     )
-    assert configured.asset_default_ttl_seconds == 604800
+    assert configured.asset_default_ttl_seconds == 3600

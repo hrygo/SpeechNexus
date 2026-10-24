@@ -367,3 +367,98 @@ async def test_configured_app_lifespan_publishes_through_its_owned_runtime(asset
         downloaded = await client.get(uploaded.headers["Location"] + "/content")
         assert downloaded.status_code == 200 and downloaded.content == BODY
     assert len(assets.versions()) == 1
+
+
+@pytest.mark.parametrize(
+    "deployment_ttl,requested_ttl,expected_ttl",
+    [
+        (None, None, 604800),
+        ("3600", None, 3600),
+        (None, 120, 120),
+        ("3600", 120, 120),
+        ("60", None, 60),
+    ],
+)
+async def test_process_retention_defaults_overrides_and_replay_survive_reconfiguration(
+    assets: Assets,
+    monkeypatch: pytest.MonkeyPatch,
+    deployment_ttl: str | None,
+    requested_ttl: int | None,
+    expected_ttl: int,
+) -> None:
+    def settings_for(value: str | None) -> Settings:
+        if value is None:
+            monkeypatch.delenv("SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS", raising=False)
+        else:
+            monkeypatch.setenv("SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS", value)
+        # Rebuild from process configuration, instead of overriding AssetPolicy or
+        # injecting the fixture's fixed-TTL service into the real application.
+        values = configuration(assets).model_dump(exclude={"asset_default_ttl_seconds"})
+        values.update(process_role="api", instance_id="api-retention-test")
+        return Settings(**values)
+
+    headers = {"Idempotency-Key": "original-retention-key"}
+    fields = {"purpose": "text_input"}
+    if requested_ttl is not None:
+        fields["ttl_seconds"] = str(requested_ttl)
+    app = create_app(settings=settings_for(deployment_ttl))
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        first = await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("synthetic.txt", BODY)},
+            data=fields,
+            headers=headers,
+        )
+        assert first.status_code == 201
+        original = assets.db.query("SELECT * FROM speech_assets")[0]
+        assert original["expires_at_us"] - original["created_at_us"] == expected_ttl * 1000000
+        assert (await client.get(first.headers["Location"] + "/content")).content == BODY
+
+    # Includes the old 60-second deployment policy -> new seven-day process
+    # default: replay must retain the old expiry and must not add another object.
+    changed_default = "7200" if deployment_ttl is None else None
+    settings = settings_for(changed_default)
+    app = create_app(settings=settings)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        replay = await client.post(
+            "/v1/nexus/assets", files={"file": ("replayed.txt", BODY)}, data=fields, headers=headers
+        )
+        assert replay.status_code == 201 and replay.json() == first.json()
+        assert replay.headers["Location"] == first.headers["Location"]
+        assert assets.db.query("SELECT * FROM speech_assets") == [original]
+        assert len(assets.versions()) == 1
+        # Even an explicit TTL equal to the old effective default is a different
+        # request from omission. A new configuration cannot reinterpret its key.
+        changed_fields = fields | {
+            "ttl_seconds": str(expected_ttl if requested_ttl is None else 180)
+        }
+        conflict = await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("changed.txt", BODY)},
+            data=changed_fields,
+            headers=headers,
+        )
+        assert conflict.status_code == 409
+        assert assets.db.query("SELECT * FROM speech_assets") == [original]
+        fresh = await client.post(
+            "/v1/nexus/assets",
+            files={"file": ("fresh.txt", BODY)},
+            data={"purpose": "text_input"},
+            headers={"Idempotency-Key": "new-retention-key"},
+        )
+        assert fresh.status_code == 201
+        row = assets.db.query(
+            "SELECT * FROM speech_assets WHERE asset_id = %s", (fresh.json()["id"],)
+        )[0]
+        assert settings.asset_default_ttl_seconds is not None
+        assert (
+            row["expires_at_us"] - row["created_at_us"]
+            == settings.asset_default_ttl_seconds * 1000000
+        )
+        assert len(assets.versions()) == 2

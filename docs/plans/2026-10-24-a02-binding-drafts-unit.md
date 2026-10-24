@@ -8,7 +8,7 @@ date: 2026-10-24
 # ModelBinding draft persistence
 
 Team A owns this A02 unit, Refs #19/#21. Integration base is
-`402d537b51f2e1ebec25257b57df9e51267e0b13`, including B #123. The #122 contract
+`22d50ee451a2b9e94038ba7d3f0e282e3e7a2b5a`, including B #123/#124. The #122 contract
 preflight is already merged; do not repeat it or change its public wire fields.
 
 Deliver only process-local prepare/create/recover/fixed-get and the private

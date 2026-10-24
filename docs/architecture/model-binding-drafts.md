@@ -171,4 +171,4 @@ qualification are not implemented here.
 Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,
 resource qualification, real speech execution and A02/Gate acceptance remain open.
-B #123 source/artifacts and all existing consumer namespaces are preserved.
+B #123/#124 source/artifacts and all existing consumer namespaces are preserved.

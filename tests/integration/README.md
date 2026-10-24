@@ -156,3 +156,13 @@ PG-only subprocess cases exercise the installed worker, SIGTERM and owner-DSN
 refusal; the worker does not require S3 or call remote STOP on exit. Daemon and
 plans are synthetic; no GPU, deployment TLS, node observation loop or full
 scheduler qualification is implied. See [runtime delivery](../../docs/architecture/production-runtime-delivery.md).
+
+
+`test_admission_recovery_pressure.py` commits a real admission and loses the
+commit reply, then prevents the recovery query from reading its original facts:
+a genuinely exhausted one-slot PG pool or a native InnoDB metadata-lock timeout.
+It verifies unknown/original-query recovery, one admission SQL invocation, and
+unchanged command/lease/Job/outbox/quota/budget snapshots before recovering the
+same original identity. Commit-reply loss is injected after the actual commit;
+read pressure is native. InnoDB uses the existing test-only DBAPI oracle around
+the unchanged production SQL, not a product MySQL adapter or engine qualification.

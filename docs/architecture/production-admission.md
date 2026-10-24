@@ -89,7 +89,9 @@ owner、当前策略或runtime改变而重新分配。物理向量保留，快�
 PG adapter使用现有有界SpeechPool及逐语句剩余超时。只有确认回滚的死锁/序列化中止
 可在归还连接后有限重试；唯一键冲突只读恢复。提交确认阶段的连接、取消或其他不确定
 错误返回 `unknown/query_original`，不作普通重试。查询明确READ ONLY；原attempt不存在
-仍为unknown，不能许可新执行。
+仍为unknown，不能许可新执行。连接池关闭/超时、队列满、查询取消或总预算/只读重试耗尽时，
+恢复查询仍返回 `unknown/query_original`；该查询自身未写入或已回滚，不能证明先前准入未提交。
+已确认回滚的写入事务仍沿原有有界重试路径执行。
 
 后续由[隔离/释放事务](production-leases.md)消费B的持久事实：unknown保持总占用，
 确切停止/释放或可信从未外发事实后才退当前lease增量，最后required stage才退attempt
@@ -100,7 +102,7 @@ quota。runtime基线另走停止流程。A07预检、正文删除许可和恢�
 
 组合根使用 `AdmissionService(PostgresAdmissionTransactions(pool, max_command_bytes=limit))`
 及 `AdmissionTransactionBoundary(..., decode_request=request_from_wire)`；上限显式配置。
-迁移仍到0007并安装已有生产最小角色。本单元不改历史迁移、不扩权；B不读私有原正文，
+复用既有schema及最小角色，当前包内迁移head为0008。本单元不改历史迁移、不扩权；B不读私有原正文，
 C继续通过公开业务协议消费。
 
 `test_production_admission.py`验证PG/InnoDB真实父锁/operation/唯一键等待、共享末预算、

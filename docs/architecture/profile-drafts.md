@@ -172,11 +172,18 @@ is allowed only in the `api` process role and has its own bounded pool/lifetime.
 
 An operator must first apply migration `0009_profile_drafts` and provision a
 separate non-owner identity with exactly the existing `profile_draft_grants`
-declaration. Startup checks database/schema/table owner membership, schema CREATE,
+declaration. Startup independently checks both `SESSION_USER` (the actual login)
+and `CURRENT_USER` (the effective role), including database/schema/table owner
+membership, schema CREATE,
 required SELECT/INSERT, exact UPDATE columns, forbidden DELETE/TRUNCATE/REFERENCES/
 TRIGGER and privileges on other tables in the configured speech schema. This is a
-startup check of the configured identity, not an audit of every schema or a guard
-against later operator privilege changes. Startup never grants roles or runs DDL.
+startup check of both identities, not an audit of every schema or a guard
+against later operator privilege changes. A privileged login with a restricted
+startup role is rejected before exposing the provider. The checks name each
+principal explicitly; they never change the connection role. In PostgreSQL,
+`RESET ROLE` can restore the restricted startup role, while `SET ROLE NONE`
+returns to the actual login, so a reset is not an authority check. Startup never
+grants roles or runs DDL.
 Failure closes its pool; later owned-runtime startup failure also closes it.
 Shutdown closes the pool and clears the provider; reopening constructs a fresh
 pool and reads the same durable facts. Pool connection diagnostics and wire errors

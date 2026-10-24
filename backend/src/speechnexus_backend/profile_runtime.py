@@ -7,7 +7,11 @@ import threading
 import uuid
 
 from speechnexus_backend.settings import Settings
-from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    SpeechConnection,
+    SpeechPool,
+    speech_pool,
+)
 from speechnexus_backend.speech.infrastructure.profile_drafts_postgres import PostgresProfileDrafts
 
 
@@ -74,66 +78,78 @@ class ProfileRuntime:
                 ) from None
 
     def _verify_principal(self, pool: SpeechPool) -> None:
-        schema = self._settings.database_schema
         with pool.connection(timeout=3) as connection:
             connection.execute("SET LOCAL statement_timeout='3s'")
+            identities = connection.execute(
+                "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
+            ).fetchone()
+            if identities is None:
+                raise ValueError("Profile writer identity is unavailable")
+            # A startup role can hide the login's authority. RESET ROLE restores
+            # that startup role, not necessarily the login. Inspect both names
+            # directly without changing any connection role or server grants.
+            for role in dict.fromkeys((identities["login"], identities["effective"])):
+                self._verify_role(connection, role)
+
+    def _verify_role(self, connection: SpeechConnection, role: str) -> None:
+        schema = self._settings.database_schema
+        row = connection.execute(
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+            "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
+            (role, schema, role, schema, role, role),
+        ).fetchone()
+        if row is None or row["forbidden"]:
+            raise ValueError("Profile writer requires a non-owner runtime identity")
+        extra = connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+            "AND c.relname NOT IN ('speech_profile_families','speech_profile_revisions',"
+            "'speech_profile_commands') AND ("
+            "pg_catalog.has_table_privilege(%s::name,c.oid,"
+            "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
+            "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
+            "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
+            (schema, role, role),
+        ).fetchone()
+        if extra is None or extra["forbidden"]:
+            raise ValueError("Profile writer cannot hold other speech table privileges")
+        for table in (
+            "speech_profile_families",
+            "speech_profile_revisions",
+            "speech_profile_commands",
+        ):
+            name = f'"{schema}".{table}'
             row = connection.execute(
-                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s,'CREATE') "
-                "OR pg_catalog.pg_has_role(d.datdba,'MEMBER') OR EXISTS ("
-                "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                "ON n.oid=c.relnamespace WHERE n.nspname=%s "
-                "AND pg_catalog.pg_has_role(c.relowner,'MEMBER')) AS forbidden "
-                "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                "WHERE r.rolname=CURRENT_USER AND d.datname=CURRENT_DATABASE()",
-                (schema, schema),
+                "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') "
+                "AND pg_catalog.has_table_privilege(%s::name,%s,'INSERT') "
+                "AND NOT pg_catalog.has_table_privilege(%s::name,%s,'DELETE') "
+                "AND NOT pg_catalog.has_table_privilege(%s::name,%s,'TRUNCATE,REFERENCES,TRIGGER') "
+                "AS permitted",
+                (role, name, role, name, role, name, role, name),
             ).fetchone()
-            if row is None or row["forbidden"]:
-                raise ValueError("Profile writer requires a non-owner runtime identity")
-            extra = connection.execute(
-                "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
-                "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-                "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-                "AND c.relname NOT IN ('speech_profile_families','speech_profile_revisions',"
-                "'speech_profile_commands') AND ("
-                "pg_catalog.has_table_privilege(c.oid,"
-                "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
-                "OR pg_catalog.has_any_column_privilege(c.oid,'SELECT,INSERT,UPDATE,REFERENCES'))) "
-                "AS forbidden",
-                (schema,),
-            ).fetchone()
-            if extra is None or extra["forbidden"]:
-                raise ValueError("Profile writer cannot hold other speech table privileges")
-            for table in (
-                "speech_profile_families",
-                "speech_profile_revisions",
-                "speech_profile_commands",
-            ):
-                name = f'"{schema}".{table}'
-                row = connection.execute(
-                    "SELECT pg_catalog.has_table_privilege(%s,'SELECT') "
-                    "AND pg_catalog.has_table_privilege(%s,'INSERT') "
-                    "AND NOT pg_catalog.has_table_privilege(%s,'DELETE') "
-                    "AND NOT pg_catalog.has_table_privilege(%s,'TRUNCATE,REFERENCES,TRIGGER') "
-                    "AS permitted",
-                    (name, name, name, name),
-                ).fetchone()
-                if row is None or not row["permitted"]:
-                    raise ValueError("Profile writer privileges do not match the port")
-                mutable = (
-                    {"latest_revision"}
-                    if table == "speech_profile_families"
-                    else {"command_state", "revision", "error_code"}
-                    if table == "speech_profile_commands"
-                    else set()
-                )
-                columns = connection.execute(
-                    "SELECT column_name, pg_catalog.has_column_privilege(%s,column_name,'UPDATE') "
-                    "AS updatable FROM information_schema.columns "
-                    "WHERE table_schema=%s AND table_name=%s",
-                    (name, schema, table),
-                ).fetchall()
-                if not columns or {c["column_name"] for c in columns if c["updatable"]} != mutable:
-                    raise ValueError("Profile immutable history cannot be updatable")
+            if row is None or not row["permitted"]:
+                raise ValueError("Profile writer privileges do not match the port")
+            mutable = (
+                {"latest_revision"}
+                if table == "speech_profile_families"
+                else {"command_state", "revision", "error_code"}
+                if table == "speech_profile_commands"
+                else set()
+            )
+            columns = connection.execute(
+                "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
+                "'UPDATE') AS updatable FROM information_schema.columns "
+                "WHERE table_schema=%s AND table_name=%s",
+                (role, name, schema, table),
+            ).fetchall()
+            if not columns or {c["column_name"] for c in columns if c["updatable"]} != mutable:
+                raise ValueError("Profile immutable history cannot be updatable")
 
     def close(self) -> None:
         with self._lifetime:

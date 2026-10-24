@@ -465,3 +465,70 @@ def test_sql_deadline_returns_unknown_without_committing_partial_command(
         # Only the caller's explicit original-key POST may attempt its original intent again.
         assert client.post(PATH, json=body, headers=KEY).status_code == 201
     assert len(http_db.snapshot()["speech_profile_commands"]) == 1
+
+
+@pytest.mark.parametrize("login_kind", ["superuser", "schema_owner"])
+def test_privileged_login_cannot_hide_behind_restricted_startup_role(
+    http_db: HTTPDatabase,
+    caplog: pytest.LogCaptureFixture,
+    login_kind: str,
+) -> None:
+    import psycopg
+    from pydantic import SecretStr
+
+    db, profile_role = http_db.db, http_db.role
+    session = db.query("SELECT SESSION_USER AS name")[0]["name"]
+    login_role = profile_role + "_owner"
+    created = False
+    try:
+        if login_kind == "schema_owner":
+            db.query(
+                f"CREATE ROLE \"{login_role}\" LOGIN PASSWORD 'synthetic_http_owner' NOINHERIT"
+            )
+            created = True
+            db.query(f'GRANT "{profile_role}" TO "{login_role}"')
+            db.query(f'ALTER SCHEMA "{db.schema}" OWNER TO "{login_role}"')
+            url = make_conninfo(db.url, user=login_role, password="synthetic_http_owner")
+            session = login_role
+        else:
+            url = db.url
+        # Actual libpq startup role, not a mocked CURRENT_USER observation.
+        url = make_conninfo(
+            url, options=f"-c role={profile_role}", application_name="synthetic_login_canary"
+        )
+        with psycopg.connect(url) as probe:
+            assert probe.execute("SELECT SESSION_USER, CURRENT_USER").fetchone() == (
+                session,
+                profile_role,
+            )
+            probe.execute("SET ROLE NONE")
+            assert probe.execute("SELECT CURRENT_USER").fetchone() == (session,)
+            # RESET restores the startup role; it does not reveal the login's authority.
+            probe.execute("RESET ROLE")
+            assert probe.execute("SELECT CURRENT_USER").fetchone() == (profile_role,)
+        app = http_db.app(profile_writer_database_url=SecretStr(url))
+        logger = logging.getLogger("psycopg.pool")
+        filters = list(logger.filters)
+        before = http_db.snapshot()
+        with (
+            pytest.raises(ValueError, match="Profile writer startup rejected") as caught,
+            TestClient(app),
+        ):
+            pass
+        runtime = app.state.profile_runtime
+        assert runtime.provider is None and runtime._pool.closed
+        assert list(logger.filters) == filters
+        assert http_db.snapshot() == before and http_db.db.counts() == (0, 0)
+        for secret in (url, "synthetic_http_owner", "synthetic_login_canary"):
+            assert secret not in str(caught.value) and secret not in caplog.text
+    finally:
+        if created:
+            from psycopg import sql
+
+            db.admin.execute(
+                sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(
+                    sql.Identifier(db.schema), sql.Identifier(db.admin.info.user)
+                )
+            )
+            db.query(f'DROP OWNED BY "{login_role}"')
+            db.query(f'DROP ROLE "{login_role}"')

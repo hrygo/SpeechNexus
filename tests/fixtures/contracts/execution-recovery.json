@@ -290,6 +290,173 @@
           "deletion_job_id": "deletion-test"
         }
       }
+    },
+    {
+      "id": "interval-generated-valid",
+      "schema": "append_interval",
+      "valid": true,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "generated",
+        "sample_start": 0,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-delivered-valid",
+      "schema": "append_interval",
+      "valid": true,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "delivered",
+        "sample_start": 0,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-played-valid",
+      "schema": "append_interval",
+      "valid": true,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "played",
+        "sample_start": 0,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-boolean-position",
+      "schema": "append_interval",
+      "valid": false,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "generated",
+        "sample_start": false,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-unsafe-position",
+      "schema": "append_interval",
+      "valid": false,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "generated",
+        "sample_start": 0,
+        "sample_end": 9007199254740992
+      }
+    },
+    {
+      "id": "interval-no-rate",
+      "schema": "append_interval",
+      "valid": false,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 0,
+        "meter_kind": "generated",
+        "sample_start": 0,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-untrusted-authority",
+      "schema": "append_interval",
+      "valid": false,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000,
+        "meter_kind": "generated",
+        "sample_start": 0,
+        "sample_end": 100,
+        "release_budget": true
+      }
+    },
+    {
+      "id": "interval-whole-numeric-position",
+      "schema": "append_interval",
+      "valid": true,
+      "value": {
+        "interval_id": "interval-test",
+        "submit_intent_id": "intent-test",
+        "output_stream_id": "tts-main",
+        "sample_rate_hz": 24000.0,
+        "meter_kind": "generated",
+        "sample_start": 0.0,
+        "sample_end": 100
+      }
+    },
+    {
+      "id": "interval-complete-fact",
+      "schema": "TransactionResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "operation": "append_interval",
+        "scope_id": "interval-test",
+        "outcome": "committed",
+        "recovery": "none",
+        "value": {
+          "kind": "fact",
+          "fact_id": "interval-test",
+          "request_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    },
+    {
+      "id": "interval-result-needs-fact",
+      "schema": "TransactionResult",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "operation": "append_interval",
+        "scope_id": "interval-test",
+        "outcome": "committed",
+        "recovery": "none"
+      }
+    },
+    {
+      "id": "interval-original-query",
+      "schema": "query_outcome",
+      "valid": true,
+      "value": {
+        "target": {
+          "kind": "interval",
+          "interval_id": "interval-test"
+        },
+        "request_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "id": "interval-unknown-original-result",
+      "schema": "TransactionResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "operation": "query_outcome",
+        "scope_id": "interval-test",
+        "outcome": "unknown",
+        "error_code": "outcome_unknown",
+        "recovery": "query_original"
+      }
     }
   ]
 }

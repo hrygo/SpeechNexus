@@ -1,8 +1,8 @@
 ---
 title: 受控协调事务：程序实现方案与契约
 status: active
-version: "1.0.0"
-date: 2026-10-23
+version: "1.0.1"
+date: 2026-10-24
 ---
 
 # 受控协调事务：程序实现方案与契约
@@ -132,6 +132,12 @@ resource_pools
 新 generation 锁 host/head。创建输出流先锁 attempt，追加则锁对应 submit 和
 `(operation_id, attempt_id, output_stream_id)` 的流权威行；不能只按 submit ID 排斥，
 否则不同 stage 可在同一逻辑流重复计量。外键父行的隐式锁也必须纳入此顺序。
+
+生产 gateway 已实现该输出追加与原区间查询，两个不同 pool/stage 共享输出流的真实行锁等待
+已在 PG/InnoDB 验证。用量取 generated 区间长度之和，max-end 水位不是消耗总量；
+任意已记输出区间都阻止无外发清理结论，诊断 meter 不退生成用量。
+结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
+[执行网关](execution-gateway.md#11-append_interval-与原区间查询)。
 
 等待锁以后，再从数据库取时间判断当前租期。PG 用 adapter 内的数据库时钟语句，
 MySQL 用其数据库时钟；不把客户端时钟或事务开始前的旧时间当作续租依据。

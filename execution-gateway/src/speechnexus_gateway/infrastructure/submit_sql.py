@@ -121,6 +121,10 @@ SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_d
        s.dispatched_at_us, s.error_code, s.output_stream_id, s.sample_rate_hz,
        s.hard_output_ceiling_samples, s.generated_pcm_samples, s.staging_output_object_key,
        s.version, s.terminated_at_us,
+       EXISTS (SELECT 1 FROM output_sample_intervals AS i
+               WHERE i.operation_id = s.operation_id AND i.attempt_id = s.attempt_id
+                 AND i.output_stream_id = s.output_stream_id
+                 AND i.submit_intent_id = s.submit_intent_id) AS has_output_intervals,
        e.evidence_kind, e.evidence_digest,
        l.stage_id, l.pool_id, l.host_node_id, l.gateway_id, l.instance_id,
        l.instance_generation, l.fencing_token,
@@ -331,6 +335,7 @@ def save_submit_intent(
         or current.output_stream_id != intent.output_stream_id
         or current.generated_pcm_samples != intent.generated_pcm_samples
         or current.has_staging_output != intent.has_staging_output
+        or current.has_output_intervals != intent.has_output_intervals
         or (
             current.engine_request_id is not None
             and current.engine_request_id != intent.engine_request_id
@@ -467,6 +472,7 @@ def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
             version=row["version"],
             generated_pcm_samples=row["generated_pcm_samples"],
             has_staging_output=row["staging_output_object_key"] is not None,
+            has_output_intervals=bool(row["has_output_intervals"]),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise SubmissionStoreError(

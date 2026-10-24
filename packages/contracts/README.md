@@ -71,7 +71,7 @@ internal `create_job` request and full `TransactionResult`. These use a separate
 generated offline bundle; domain types remain independent of boundary DTOs.
 The coordination bundle also validates owner acquire/renew/activate,
 `claim_job`, `query_outcome`, `mark_execution_unknown` and
-`record_execution_observation` and `redact_execution_command` requests. The production
+`record_execution_observation`, `redact_execution_command` and `append_interval` requests. The production
 owner boundary implements the pool target, the claim boundary handles Job
 current-authority queries, and the gateway implements its own submit snapshot.
 An unclaimed Job row returns unknown, and an expired/later claim snapshot neither
@@ -87,8 +87,9 @@ consumers must handle this branch before adopting the new producer. It cannot
 report successful lifecycle completion, and an observe result requires the
 actual response branch. The controller HTTP response schema is unchanged.
 Shared producer/consumer cases live in
-`tests/fixtures/coordination/transaction-examples.json`; production transaction
-and dispatch implementations remain pending.
+`tests/fixtures/coordination/transaction-examples.json`; native runtime
+create/query/observe transactions are implemented, while real controller
+dispatch and qualification providers remain pending.
 The trusted gateway observation boundary returns a complete validated
 `TransactionResult`. It compares the full frozen identity and current version;
 output/staging publication and verified stop remain separate writers. A stale
@@ -101,6 +102,14 @@ cleanup and A's lease release, then erases only the body and stores an immutable
 tombstone. Matching job/evidence replays preserve time/version; no default
 authorizer or HTTP deletion route is supplied. Shared recovery examples cover
 both boundary requests and their required result types.
+The trusted native interval boundary appends immutable generated/delivered/played
+facts and queries the original interval. Its `FactSnapshot` contains the interval
+ID and digest of the complete canonical append request; there is no invented
+interval version. Reads never write or dispatch, and an absent original remains
+unknown. Shared Python/TypeScript examples cover complete results and recovery.
+Logical-flow locking, overlap/ceiling decisions and cleanup eligibility are
+application rules tested on PG/InnoDB; this package does not collect real audio
+or settle usage.
 Multipart `AssetUploadRequest.file` is a schema-level string placeholder;
 actual upload transports must send binary media and need separate integration
 tests. No service or browser integration is claimed here.

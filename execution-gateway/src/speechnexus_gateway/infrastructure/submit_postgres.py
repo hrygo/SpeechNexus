@@ -23,6 +23,11 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
+from speechnexus_gateway.domain.output_intervals import (
+    OutputIntervalConflictError,
+    OutputIntervalRecord,
+    OutputIntervalWrite,
+)
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     RecordStop,
@@ -39,6 +44,10 @@ from speechnexus_gateway.infrastructure.command_redaction_sql import (
 )
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
+)
+from speechnexus_gateway.infrastructure.output_interval_sql import (
+    append_interval_in_transaction,
+    read_output_interval,
 )
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool
 from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
@@ -130,6 +139,25 @@ class PostgresSubmissionLedger:
             work=lambda cursor: record_execution_observation_in_transaction(
                 cursor, request, clock=cast(_DeadlineCursor, cursor).clock
             ),
+        )
+
+    def append_interval(self, record: OutputIntervalRecord) -> OutputIntervalWrite:
+        try:
+            return self._run(
+                read_only=False,
+                work=lambda cursor: append_interval_in_transaction(
+                    cursor, record, clock=cast(_DeadlineCursor, cursor).clock
+                ),
+            )
+        except SubmissionIntentExistsError as error:
+            raise OutputIntervalConflictError(
+                "interval identity already has a durable fact"
+            ) from error
+
+    def query_output_interval(self, interval_id: str) -> OutputIntervalRecord | None:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_output_interval(cursor, interval_id),
         )
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:

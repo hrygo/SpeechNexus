@@ -3,8 +3,8 @@
 These rules mirror the invariants of ``contracts/internal/execution-control.openapi.yaml``:
 an intent is persisted before an engine request, a repeated intent never causes a
 second dispatch, an ambiguous dispatch stays quarantined while holding capacity,
-and a failure that never reached the engine releases capacity as
-``not_required`` instead of fabricating stop evidence.
+and a failure that never reached the engine records ``not_required`` instead of
+fabricating stop evidence. Scheduler independently decides capacity release.
 
 The port that persists the intent is ``create_submit`` in
 ``contracts/internal/coordination-transactions.schema.json``: it validates the complete
@@ -486,6 +486,7 @@ class SubmissionIntent:
     generated_pcm_samples: int = 0
     has_staging_output: bool = False
     version: int = field(default=1)
+    has_output_intervals: bool = False
 
     def __post_init__(self) -> None:
         self.validate()
@@ -503,6 +504,7 @@ class SubmissionIntent:
             or self.terminated_at is not None
             or self.generated_pcm_samples != 0
             or self.has_staging_output
+            or self.has_output_intervals
             or type(self.version) is not int
             or self.version != 1
             or self.updated_at != self.recorded_at
@@ -529,6 +531,8 @@ class SubmissionIntent:
             raise ValueError("generated samples contradict the frozen output budget")
         if type(self.has_staging_output) is not bool:
             raise ValueError("staging presence must be a boolean fact")
+        if type(self.has_output_intervals) is not bool:
+            raise ValueError("output interval presence must be a boolean fact")
         allowed = _CLEANUP_BY_STATE[self.execution_state]
         if self.cleanup_state not in allowed:
             raise ValueError(
@@ -565,10 +569,12 @@ class SubmissionIntent:
                 or self.engine_request_id is not None
                 or self.generated_pcm_samples != 0
                 or self.has_staging_output
+                or self.has_output_intervals
             ):
                 raise ValueError(
                     "cleanup_state not_required requires no dispatch time, "
-                    "no engine request, no generated output and no staging output"
+                    "no engine request, no generated output, no staging output "
+                    "and no output interval"
                 )
             if self.cleanup_state is CleanupState.COMPLETE and self.dispatched_at is None:
                 raise ValueError("failed-with-cleanup intent requires a dispatch time")
@@ -594,7 +600,7 @@ class SubmissionIntent:
         self._touch(at)
 
     def mark_not_dispatched_failure(self, error_code: ExecutionErrorCode, *, at: datetime) -> None:
-        """Release capacity in the ``not_required`` branch, never as a stop."""
+        """Record the ``not_required`` fact, never a stop or Scheduler budget release."""
         self.execution_state = ExecutionState.FAILED
         self.cleanup_state = CleanupState.NOT_REQUIRED
         self.dispatched_at = None

@@ -15,7 +15,7 @@ from speechnexus_gateway.domain.submission import (
 
 
 def execution_transaction_result(
-    operation: str, scope_id: str, work: Callable[[], tuple[bool, int, dict[str, object]]]
+    operation: str, scope_id: str, work: Callable[[], tuple[bool, int | None, dict[str, object]]]
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "schema_version": "1.0.0",
@@ -27,9 +27,10 @@ def execution_transaction_result(
         replayed, version, value = work()
         result.update(
             outcome="replayed" if replayed else "committed",
-            version=str(version),
             value=value,
         )
+        if version is not None:
+            result["version"] = str(version)
     except SubmissionOutcomeUnknownError:
         result.update(outcome="unknown", error_code="outcome_unknown", recovery="query_original")
     except SubmissionStoreError as error:

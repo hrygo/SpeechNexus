@@ -18,6 +18,7 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
+from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -121,3 +122,9 @@ class ExecutionCommandRedactionLedger(Protocol):
     def redact_execution_command(
         self, permit: AuthorizedCommandRedaction
     ) -> CommandRedactionResult: ...
+
+
+class OutputIntervalLedger(ExecutionQueryPort, Protocol):
+    def append_interval(self, record: OutputIntervalRecord) -> OutputIntervalWrite: ...
+
+    def query_output_interval(self, interval_id: str) -> OutputIntervalRecord | None: ...

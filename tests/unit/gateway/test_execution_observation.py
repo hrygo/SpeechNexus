@@ -286,6 +286,7 @@ def test_domain_version_cannot_be_coerced_or_exceed_the_storage_domain(version: 
         {"updated_at": LATER},
         {"generated_pcm_samples": 1},
         {"has_staging_output": True},
+        {"has_output_intervals": True},
     ],
 )
 def test_creation_does_not_import_existing_observation_facts(changes: dict[str, Any]) -> None:

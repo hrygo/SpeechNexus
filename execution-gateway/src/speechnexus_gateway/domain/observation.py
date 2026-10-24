@@ -123,6 +123,7 @@ class RecordExecutionObservation:
             or current.engine_request_id is not None
             or current.generated_pcm_samples != 0
             or current.has_staging_output
+            or current.has_output_intervals
         ):
             raise ExecutionCleanupPendingError("no-dispatch cleanup contradicts stored facts")
         if observed.execution_state is ExecutionState.UNKNOWN_QUARANTINED:

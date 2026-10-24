@@ -5,13 +5,11 @@ from __future__ import annotations
 import asyncio
 import importlib
 import io
-import ipaddress
 import json
 import re
 import secrets
 import wave
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any
 
 from speechnexus_gateway.domain.asr import (
@@ -21,6 +19,9 @@ from speechnexus_gateway.domain.asr import (
     AsrPolicy,
     AsrText,
 )
+from speechnexus_gateway.infrastructure.private_engine_endpoint import (
+    PrivateEngineEndpoint,
+)
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _MAX_RESPONSE_BYTES = 1024 * 1024
@@ -29,54 +30,8 @@ _MAX_TEXT_BYTES = 65536
 _MAX_EVENTS = 8192
 
 
-@dataclass(frozen=True, slots=True)
-class VllmAsrEndpoint:
-    address: str = field(repr=False)
-    port: int
-    served_model: str = field(repr=False)
-    binding_revision_id: str
-    bearer_token: str | None = field(default=None, repr=False)
-
-    def __post_init__(self) -> None:
-        if type(self.address) is not str:
-            raise ValueError("ASR endpoint must use a configured private IP literal")
-        try:
-            address = ipaddress.ip_address(self.address)
-        except ValueError:
-            raise ValueError("ASR endpoint must use a configured private IP literal") from None
-        if not (
-            address.is_loopback
-            or (
-                address.is_private
-                and not address.is_unspecified
-                and not address.is_multicast
-                and not address.is_link_local
-                and not address.is_reserved
-            )
-        ):
-            raise ValueError("ASR endpoint must remain on the configured deployment network")
-        if (
-            type(self.port) is not int
-            or not 1 <= self.port <= 65535
-            or type(self.served_model) is not str
-            or _ID.fullmatch(self.served_model) is None
-            or type(self.binding_revision_id) is not str
-            or _ID.fullmatch(self.binding_revision_id) is None
-            or (
-                self.bearer_token is not None
-                and (
-                    type(self.bearer_token) is not str
-                    or not 1 <= len(self.bearer_token) <= 4096
-                    or any(not 33 <= ord(char) <= 126 for char in self.bearer_token)
-                )
-            )
-        ):
-            raise ValueError("invalid configured ASR endpoint")
-
-    @property
-    def base_url(self) -> str:
-        address = f"[{self.address}]" if ":" in self.address else self.address
-        return f"http://{address}:{self.port}"
+class VllmAsrEndpoint(PrivateEngineEndpoint):
+    """A configured private IP literal for the fixed vLLM ASR endpoint."""
 
 
 def _invalid() -> AsrCallError:

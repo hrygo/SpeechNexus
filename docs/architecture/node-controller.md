@@ -1,7 +1,7 @@
 ---
 title: "受限节点控制器：接口、规则与当前实现"
 status: active
-version: "0.2.0"
+version: "0.3.0"
 date: 2026-10-24
 ---
 
@@ -42,6 +42,7 @@ scheduler ◀──observation/reconcile 快照───────────
 | `infrastructure/docker_runtime.py` | 受控容器 adapter：镜像摘要核对、标签化实例身份、prepare/stop/inspect 与停止双证据 | 已实现；合成容器真实探针见下文 |
 | `infrastructure/template_config.py` | 批准模板配置文件加载（未知字段拒绝） | 已实现并有单元测试 |
 | `infrastructure/sqlite_intent_store.py` | 本地持久意图事实（版本守卫、schema 版本、WAL + 同步提交） | 已实现并有单元测试 |
+| `infrastructure/local_observer.py` | 随进程启停、有界轮转未决意图、调用节点自身 inspect | 已实现；合成容器重启后自动推进的证据见 HTTP 探针第 7 节 |
 | `interfaces/http/` | `internal/runtime-control` 路由、组件凭据、`X-Request-ID`、契约错误信封与 `/healthz`、`/readyz` | 已实现并有单元测试与合约校验 |
 | `app.py` / `main.py` / `settings.py` | 组合根、进程入口 `speechnexus-node-controller`、启动即校验的配置 | 已实现；部署单元待 A 排队集成 |
 
@@ -190,11 +191,38 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   `COMPONENT_TOKEN`、`APPROVED_TEMPLATES_FILE`、`INTENT_STORE_PATH`；可选 `NODE_ID`、`HOST`、
   `PORT`（默认 8020）、`DOCKER_SOCKET_PATH`、`DOCKER_REQUEST_TIMEOUT_SECONDS`、
   `STOP_TIMEOUT_SECONDS`、`EXIT_WAIT_SECONDS`、`READINESS_TIMEOUT_SECONDS`、`LOG_LEVEL`。
+- 本地观察默认启用：`LOCAL_OBSERVER_ENABLED=true`，`OBSERVATION_INTERVAL_SECONDS=2`
+  （大于 0、至多 3600），`OBSERVATION_BATCH_SIZE=50`（1–500）。显式关闭时需要另行运行可信
+  节点观察生产者；GET 与同键 POST 不会因此主动检查 daemon。
+- 一个节点的进程入口固定一个 uvicorn worker。生命周期动作与观察在本进程串行，观察遇到
+  在途动作就跳过并轮转重试，防止重复预热；GET 不获取该动作锁，仍只读本地持久事实。
 - 健康检查：`/healthz` 报进程存活，`/readyz` 检查本地容器 daemon 与意图存储，任一不可用即
   `503`；两者遵循 [运维契约](../../contracts/operations.openapi.yaml)。
 - 需要挂载：容器 socket（只给控制器进程，业务 API、worker 与工作台不挂载）、批准模板文件、
   意图存储目录。
 - 传输安全：组件凭据不替代 TLS；控制面内部仍需 TLS 或等价保护。
+
+### 5.1 节点内观察循环
+
+进程启动后读取自己的 SQLite 回执，按 `intent_id` 升序、有界游标读取
+`pending/reconciling/quarantined`，每轮结束后等待配置间隔。到页尾下一轮回到起点；
+长期 loading、未知停止或失效模板不会让后续记录永久饥饿。游标只决定检查顺序，不是新租约、
+预算或执行权威；重启从起点继续，不重放 prepare/stop 动作。
+
+每项在检查前重新读取，跳过其他节点、已终结的意图或撤销模板；复用 `reconcile_instance`
+同一份 inspect/观察折叠与版本守卫。单条运行时失败或陈旧写入保留原持久事实并继续后续项。
+完整批次读取失败留待下一轮，日志只记录固定分类和数量，不记录异常正文、路径或凭据。
+同一进程的生命周期变更串行；多节点由各自控制器维护，不引入新的全局协调权威。
+
+循环只检查，不创建/停止容器、不发业务执行，也不写 A 的权威数据库。Docker inspect 看到
+`absent` 不构成停止双证据；prepare 可能报告失败、stop 保持隔离，A 仍保留实际基线预算。
+控制器 ready 也不构成资格凭据；A 只有核验固定 binding/拓扑/资格后才可 peak→steady。
+TLS＋PG/InnoDB 回归分别验证自动 ready 无资格不得缩减、自动 absent 无停止证明不得退还基线。
+
+关闭进程先发出停止标记，结束当前有界 inspect、停止本批后续项并等待观察线程退出，再关闭
+进程拥有的 SQLite 和 Docker 客户端。等待时间受当前 daemon/模板预热请求的配置期限约束，
+不能把任务取消误认为线程已停止。终结意图不会在本循环中重新检查；ready 实例持续监控、
+停止中途崩溃的证据恢复、多控制器接管与真实 ASR 故障资格仍需后续单元。
 
 ## 6. 当前未实现与交接
 
@@ -209,10 +237,11 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   [B02 预热门探针](../audits/2026-10-24-b02-warmup-gate-probe.md)。这些是一次性单并发证据，
   不是稳态 P95、并发资格或 A 控制循环下的预算缩减；peak→steady 仍未取得。
 - 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
-  语音、回执重建与停止证据。TTS、请求级 abort、真实 warmup/资格、GPU/统一内存完整隔离、
-  进程故障后的发现/reconcile 与 A 控制循环仍未验证；单句合成语音不能替代模型质量/容量资格。
+  语音、回执重建、warmup 与停止证据。文件 CustomVoice TTS 适配器另有真实探针；
+  请求级 abort、GPU/统一内存完整隔离、真实 ASR 进程故障恢复与 A 完整控制循环仍未验证；
+  单句合成语音不能替代模型质量/容量资格。
 - 真实多实例竞争、跨节点 `intent_id` 复用、控制器不可用时的接管与恢复没有真实证据；进程被
-  杀死后的恢复只验证到“本机重启后意图事实仍在”，不等于故障接管已具备。这些属于
+  杀死后的恢复已验证合成容器在 loading 期间重启后自动推进 ready，不等于故障接管已具备。这些属于
   [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29) 的 G1/G2 检查项。
 - 本包不写 Scheduler 的预算表；`create_runtime_intent`、`observe_runtime` 的事务侧实现由
   runtime 端口维护者提供，控制器通过协议报告事实。

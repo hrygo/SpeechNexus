@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from threading import Lock
 
 from speechnexus_node_controller.domain.intents import (
     GatewayDrainIncompleteError,
@@ -25,6 +26,7 @@ from speechnexus_node_controller.domain.intents import (
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
+    RuntimeControlRejectedError,
     RuntimeInstanceIntent,
     RuntimeInstanceIntentRequest,
     RuntimeIntentErrorCode,
@@ -63,6 +65,17 @@ class ReconcileOutcome:
     quarantined_instance_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ObservationBatch:
+    """One local observation page; the cursor is scheduling, never runtime authority."""
+
+    after_intent_id: str | None
+    examined: int
+    updated: int
+    skipped: int
+    failed: int
+
+
 class NodeRuntimeControlService:
     """Owns the node-scoped intent path and its observation facts."""
 
@@ -80,6 +93,9 @@ class NodeRuntimeControlService:
         self._store = store
         self._runtime = runtime
         self._now = now or (lambda: datetime.now(UTC))
+        # One node's lifecycle actions and warmup inspections must not overlap.
+        # HTTP reads remain independent; authoritative budgets stay with A.
+        self._actions = Lock()
 
     @property
     def node_id(self) -> str:
@@ -87,6 +103,10 @@ class NodeRuntimeControlService:
 
     def submit_intent(self, request: RuntimeInstanceIntentRequest) -> IntentOutcome:
         """Replay or admit one intent, then act outside the intent transaction."""
+        with self._actions:
+            return self._submit_intent(request)
+
+    def _submit_intent(self, request: RuntimeInstanceIntentRequest) -> IntentOutcome:
         existing = self._store.get(request.intent_id)
         if existing is not None:
             if existing.request != request:
@@ -126,22 +146,72 @@ class NodeRuntimeControlService:
 
     def reconcile_instance(self, instance_id: str, instance_generation: int) -> list[IntentOutcome]:
         """Fold the current node observation into the unresolved intents of one generation."""
-        outcomes: list[IntentOutcome] = []
-        for intent in self._unresolved(instance_id, instance_generation):
-            template = self._resolve_template(intent.request.approved_template_id)
-            if template is None:
+        with self._actions:
+            outcomes: list[IntentOutcome] = []
+            for intent in self._unresolved(instance_id, instance_generation):
+                outcome = self._inspect_intent(intent)
+                if outcome is not None:
+                    outcomes.append(outcome)
+            return outcomes
+
+    def observe_pending(
+        self,
+        *,
+        after_intent_id: str | None = None,
+        limit: int = 50,
+        should_stop: Callable[[], bool] = lambda: False,
+    ) -> ObservationBatch:
+        """Inspect a bounded page, skipping busy lifecycle actions and keeping failed facts."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise InvalidRuntimeRequestError("an observation batch requires a limit within 1..500")
+        candidates = self._store.list_unresolved(after_intent_id=after_intent_id, limit=limit)
+        cursor = after_intent_id if candidates else None
+        examined = updated = skipped = failed = 0
+        for candidate in candidates:
+            if should_stop():
+                break
+            cursor = candidate.intent_id
+            examined += 1
+            if not self._actions.acquire(blocking=False):
+                skipped += 1
                 continue
-            observation = self._runtime.inspect(intent.request, template)
-            if observation is None:
-                continue
-            version = intent.version
-            self._apply_observation(intent, observation)
-            self._store.save(intent, expected_version=version)
-            outcomes.append(IntentOutcome(intent=intent, idempotent_replay=False))
-        return outcomes
+            try:
+                # Re-read after enumeration: another actor may already have settled it.
+                current = self._store.get(candidate.intent_id)
+                if (
+                    current is None
+                    or not current.intent_state.is_unresolved
+                    or current.request.target_node_id != self._node_id
+                    or self._inspect_intent(current) is None
+                ):
+                    skipped += 1
+                else:
+                    updated += 1
+            except RuntimeControlRejectedError, ValueError:
+                # Failed inspection or stale CAS is not an observation or release fact.
+                failed += 1
+            finally:
+                self._actions.release()
+        return ObservationBatch(cursor, examined, updated, skipped, failed)
+
+    def _inspect_intent(self, intent: RuntimeInstanceIntent) -> IntentOutcome | None:
+        template = self._resolve_template(intent.request.approved_template_id)
+        if template is None:
+            return None
+        observation = self._runtime.inspect(intent.request, template)
+        if observation is None:
+            return None
+        version = intent.version
+        self._apply_observation(intent, observation)
+        self._store.save(intent, expected_version=version)
+        return IntentOutcome(intent=intent, idempotent_replay=False)
 
     def reconcile(self, snapshot: NodeReconcileSnapshot) -> ReconcileOutcome:
         """Fold a node snapshot; duplicate generations and missing evidence are refused."""
+        with self._actions:
+            return self._reconcile(snapshot)
+
+    def _reconcile(self, snapshot: NodeReconcileSnapshot) -> ReconcileOutcome:
         if snapshot.controller_id != self._node_id:
             raise TargetNodeMismatchError(
                 f"snapshot belongs to controller {snapshot.controller_id}, not {self._node_id}"

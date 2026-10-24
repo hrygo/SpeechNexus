@@ -355,7 +355,10 @@ async def test_settings_driven_composition_fails_closed_without_a_daemon(
     """A missing daemon socket leaves the process alive but not ready."""
     app = create_app(settings=settings)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+    ):
         health = await client.get("/healthz")
         readiness = await client.get("/readyz")
 

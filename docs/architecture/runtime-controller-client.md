@@ -7,8 +7,9 @@
 submit/query。输入是 A 已提交并保存的完整原 `RuntimeIntent`，输出是闭合、匹配的
 `ControllerObservation` 及有界原观察正文。客户端不创建资格凭据、不修改数据库。
 
-**持久 outbox 派发、owner 接管协调、节点内观察循环、批准/真实资格 provider、运行进程
-与部署 TLS 配置仍待接入。** 不能因客户端存在而开放业务入口或宣称实际调度闭环完成。
+原意图持久投递与 B 的节点内未决观察循环已有独立实现。**owner 接管联合协调、批准/真实资格
+provider、完整调度循环与部署 TLS 配置仍待接入。** 不能因客户端或局部循环存在而开放业务
+入口或宣称实际调度闭环完成。
 
 ## 契约与校验
 
@@ -74,8 +75,9 @@ A 的预算。`request_may_have_run=False` 只说明本次调用尚未发出，�
 现有 `reconcile` HTTP 接受外部快照，A 不能伪造节点事实来推进预热。
 
 因此 GET 可能持续返回 loading/warming_up，直到节点本地生产者完成观察并持久化。
-实际控制循环还需 B 交付节点内观察生产者，或双方冻结后续窄协议；还需部署的节点 TLS
-地址/CA/组件凭据和 A 的批准/真实资格 provider。未具备时保持预算，不能靠客户端重试制造
+B 的本地观察循环现已随控制器 lifespan 默认启用，有界轮转本节点未决回执并调用自己的 inspect。
+实际完整控制循环仍需节点 TLS 地址/CA/组件凭据和 A 的批准/真实资格 provider；ready 实例持续
+监控、可信停止事实与停止途中崩溃恢复也须独立取证。未具备时保持预算，不能靠客户端重试制造
 新事实或 fake ready。这个依赖不阻止 A 的其他独立工作包继续实施。
 
 ## 验证边界
@@ -89,8 +91,13 @@ PG/InnoDB 上验证 A create→HTTP→A observe、原应用重启/精确重放�
 已经运行。daemon、批准计划与 readiness 均为合成事实，内存按合法 MiB 单位换算以满足 B
 真实的6 MiB模板约束；不加载模型、不启动容器，不证明 GPU、预热质量、内容网络或多主机资格。
 
+新增的观察循环场景运行真实 app lifespan/SQLite/回环 TLS，由脚本化 daemon 更新本地事实；
+调用方只 GET 原身份，不手动 reconcile。PG/InnoDB 分别验证：自动 ready 缺资格不缩减 peak，
+补齐合成资格后由 A 事务转 steady；自动 absent 没有停止双证据时即使 prepare 报失败，也不归还
+权威基线。真实容器上的进程重启与自动推进另见 [B02 HTTP 探针第 7 节](../audits/2026-10-24-b02-controller-http-shell-probe.md#7-节点内自动观察与未决状态下重启2026-10-24)。
+
 ## 持久投递消费者
 
 [原意图持久投递](production-runtime-delivery.md)提供独立每节点 worker：创建 intent 同事务
 写入 unsent，外发前提交 unknown 标记，响应未知后只 GET 原身份；ACK 不调用 observe
-或改变预算。该进程不替代节点内观察生产者、批准/真实资格 provider 或完整调度循环。
+或改变预算。该进程消费节点内生产者的持久事实，不替代批准/真实资格 provider 或完整调度循环。

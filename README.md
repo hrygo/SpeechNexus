@@ -61,7 +61,7 @@ SpeechNexus 希望服务于三类需求：
 
 [运行时意图事务](docs/architecture/production-runtime-intents.md)已提供独立 create/query/observe 端口：同事务预留完整 peak，核验受信 warmup/资格后转 steady，确认停止且清理完成后才归还基线；PG/InnoDB 合成事实验证不代表真实 GPU 资格。原意图持久投递已由独立 worker 消费；批准计划/资格提供者与完整调度/观察循环仍待接入，没有新增公开路由。
 
-[固定节点 HTTPS 客户端](docs/architecture/runtime-controller-client.md)提供有界、证书校验的原 runtime 意图提交/查询，复用同源生成的 HTTP 校验；超时只查原身份，HTTP ready 不生成资格。B 的 GET/精确重放只读持久快照，实际推进仍需节点内观察生产者；[持久投递 worker](docs/architecture/production-runtime-delivery.md)已装配原请求、租约恢复与投递确认；TLS 部署和完整控制循环仍待接入。
+[固定节点 HTTPS 客户端](docs/architecture/runtime-controller-client.md)提供有界、证书校验的原 runtime 意图提交/查询，复用同源生成的 HTTP 校验；超时只查原身份，HTTP ready 不生成资格。B 的节点内观察循环已默认启用，由自己的 inspect 更新未决回执；GET/精确重放仍只读持久事实。[持久投递 worker](docs/architecture/production-runtime-delivery.md)已装配原请求、租约恢复与投递确认；TLS 部署、真实资格 provider 和完整控制循环仍待接入。
 
 [租约隔离与释放事务](docs/architecture/production-leases.md)提供独立 `quarantine_lease`、`release_lease` 和只读租约查询：未知占用移入隔离并保持总量，核对网关持久停止/释放或未外发事实后才归还当前 lease 增量，最后阶段才归还 attempt 配额。实例基线仍由 runtime 停止流程处理；独立准入共用同一预算权威，实际调度消费者仍待接入。
 
@@ -69,9 +69,9 @@ SpeechNexus 希望服务于三类需求：
 
 [完整配方准入独立事务](docs/architecture/production-admission.md)提供 `admit_recipe` 与原 attempt 查询，同事务保存私有原命令、全部阶段租约、六维/槽位/并发 attempt 配额和 Job/outbox；未知只查原身份。当前仅支持明确的并发配额策略，其他业务配额账本、原命令解析/资格 provider、调度循环和公开 Operation/receipt 尚未装配。
 
-[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实计量采集/消费、删除许可签发、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
+[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 屏障、提交/中止、drain 与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实引擎 adapter、计量采集/消费、删除许可签发与跨宿主资格仍待交付；未注入引擎 adapter 时提交/中止只返回不可用，默认 Compose 尚未启用该控制入口。
 
-[受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 实现，批准模板固定容器内存上限和 HTTP 健康判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；静音幻觉、长非语音慢响应、TTS、A 预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。
+[受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 与有界本地观察循环，批准模板固定容器内存上限和 HTTP/预热判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；合成容器在 loading 期间杀死控制器后重启，已验证由后台检查自动推进 ready。静音幻觉、长非语音慢响应、真实引擎故障恢复、A 完整预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。CustomVoice TTS 的独立适配器及实测见[文件 TTS](docs/architecture/file-tts.md)。
 
 [CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、调度链路中的 ASR 外发及真实录音质量仍待集成和验收。
 

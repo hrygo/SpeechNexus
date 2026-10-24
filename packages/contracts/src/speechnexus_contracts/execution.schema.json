@@ -9,7 +9,9 @@
     "AbortExecutionRequest",
     "GatewayFencingBarrierRequest",
     "GatewayFencingBarrierResponse",
-    "ExecutionControlErrorResponse"
+    "ExecutionControlErrorResponse",
+    "DrainInstanceRequest",
+    "DrainInstanceResponse"
   ],
   "$defs": {
     "SubmitExecutionRequest": {
@@ -2256,6 +2258,129 @@
           ]
         }
       }
+    },
+    "DrainInstanceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_node_id",
+        "pool_id",
+        "instance_generation",
+        "fencing_token",
+        "max_drain_wait_ms"
+      ],
+      "properties": {
+        "host_node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/PoolId"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_drain_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000
+        }
+      }
+    },
+    "DrainInstanceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_id",
+        "instance_generation",
+        "drain_state",
+        "active_intent_count",
+        "submitting_intent_count",
+        "quarantined_intent_count",
+        "safe_to_stop_instance",
+        "updated_at"
+      ],
+      "properties": {
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "drain_state": {
+          "type": "string",
+          "enum": ["draining", "drained", "quarantined"]
+        },
+        "active_intent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "submitting_intent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantined_intent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "safe_to_stop_instance": {
+          "type": "boolean"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "drain_state": {
+                "const": "drained"
+              }
+            },
+            "required": ["drain_state"]
+          },
+          "then": {
+            "properties": {
+              "active_intent_count": {
+                "const": 0
+              },
+              "submitting_intent_count": {
+                "const": 0
+              },
+              "quarantined_intent_count": {
+                "const": 0
+              },
+              "safe_to_stop_instance": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "drain_state": {
+                "enum": ["draining", "quarantined"]
+              }
+            },
+            "required": ["drain_state"]
+          },
+          "then": {
+            "properties": {
+              "safe_to_stop_instance": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "anyOf": [
@@ -2279,6 +2404,12 @@
     },
     {
       "$ref": "#/$defs/ExecutionControlErrorResponse"
+    },
+    {
+      "$ref": "#/$defs/DrainInstanceRequest"
+    },
+    {
+      "$ref": "#/$defs/DrainInstanceResponse"
     }
   ]
 }

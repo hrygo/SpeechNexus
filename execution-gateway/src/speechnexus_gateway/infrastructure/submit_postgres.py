@@ -22,6 +22,7 @@ from speechnexus_gateway.domain.command_redaction import (
     CommandRedactionResult,
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import (
     OutputIntervalConflictError,
@@ -44,6 +45,12 @@ from speechnexus_gateway.infrastructure.barrier_sql import (
 )
 from speechnexus_gateway.infrastructure.command_redaction_sql import (
     redact_execution_command_in_transaction,
+)
+from speechnexus_gateway.infrastructure.drain_sql import (
+    read_drain_inventory as read_drain_inventory_rows,
+)
+from speechnexus_gateway.infrastructure.drain_sql import (
+    read_instance_identity as read_instance_identity_row,
 )
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
@@ -198,6 +205,22 @@ class PostgresSubmissionLedger:
             work=lambda cursor: read_barrier(
                 cursor, gateway_id, pool_id, clock=cast(_DeadlineCursor, cursor).clock
             ),
+        )
+
+    def read_instance_identity(
+        self, instance_id: str, instance_generation: int
+    ) -> InstanceIdentity | None:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_instance_identity_row(
+                cursor, instance_id, instance_generation
+            ),
+        )
+
+    def read_drain_inventory(self, identity: InstanceIdentity) -> DrainInventory:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_drain_inventory_rows(cursor, identity),
         )
 
     def _run(self, *, read_only: bool, work: Callable[[SubmitCursor], _Result]) -> _Result:

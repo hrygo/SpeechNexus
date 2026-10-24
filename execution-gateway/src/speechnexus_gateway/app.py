@@ -12,6 +12,7 @@ from speechnexus_gateway import __version__
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import (
     ReadinessProbe,
@@ -30,6 +31,7 @@ from speechnexus_gateway.interfaces.http.execution_submit import (
     create_execution_submit_router,
 )
 from speechnexus_gateway.interfaces.http.health import create_health_router
+from speechnexus_gateway.interfaces.http.instance_drain import create_instance_drain_router
 from speechnexus_gateway.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_gateway.settings import Settings
 
@@ -63,7 +65,13 @@ def _build_readiness(settings: Settings, app: FastAPI) -> ReadinessService:
 
 def _build_control(
     settings: Settings,
-) -> tuple[GatewayBarrierService, ExecutionQueryService, ProcessIngressOwnership, GatewayPool]:
+) -> tuple[
+    GatewayBarrierService,
+    ExecutionQueryService,
+    InstanceDrainService,
+    ProcessIngressOwnership,
+    GatewayPool,
+]:
     directory = settings.ingress_lock_directory
     if directory is None:
         raise ValueError("execution control requires a host lock directory")
@@ -81,6 +89,7 @@ def _build_control(
         return (
             GatewayBarrierService(ingress=ingress, ledger=ledger),
             ExecutionQueryService(ingress=ingress, ledger=ledger),
+            InstanceDrainService(ingress=ingress, ledger=ledger),
             ownership,
             pool,
         )
@@ -97,6 +106,7 @@ def create_app(
     readiness: ReadinessService | None = None,
     barrier_control: GatewayBarrierService | None = None,
     execution_query: ExecutionQueryService | None = None,
+    instance_drain: InstanceDrainService | None = None,
     submit_execution: SubmitExecutionService | None = None,
     abort_execution: ExecutionAbortService | None = None,
 ) -> FastAPI:
@@ -109,22 +119,26 @@ def create_app(
         raise ValueError("inject both engine submit and abort services, or neither")
     if submit_execution is not None and not resolved_settings.execution_control_enabled:
         raise ValueError("injected execution control still requires explicit control configuration")
+    if instance_drain is not None and not resolved_settings.execution_control_enabled:
+        raise ValueError("injected execution control still requires explicit control configuration")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if not resolved_settings.execution_control_enabled or barrier_control is not None:
             yield
             return
-        service, queries, ownership, pool = await run_in_threadpool(
+        service, queries, drain, ownership, pool = await run_in_threadpool(
             _build_control, resolved_settings
         )
         app.state.barrier_control = service
         app.state.execution_query = queries
+        app.state.instance_drain = drain
         try:
             yield
         finally:
             app.state.barrier_control = None
             app.state.execution_query = None
+            app.state.instance_drain = None
             try:
                 await run_in_threadpool(ownership.close)
             finally:
@@ -136,12 +150,15 @@ def create_app(
         description=(
             "Operational endpoints, opt-in authenticated ingress barriers and recorded status. "
             "Engine submission and abort need a configured engine adapter: without one they "
-            "answer with a retryable unavailability error and record nothing."
+            "answer with a retryable unavailability error and record nothing. An instance "
+            "drain always reports the recorded in-flight work and only claims a safe stop "
+            "from an empty inventory."
         ),
         lifespan=lifespan,
     )
     app.state.barrier_control = barrier_control
     app.state.execution_query = execution_query
+    app.state.instance_drain = instance_drain
     app.state.submit_execution = submit_execution
     app.state.abort_execution = abort_execution
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
@@ -159,5 +176,6 @@ def create_app(
         app.include_router(create_barrier_router(credential=credential))
         app.include_router(create_execution_query_router(credential=credential))
         app.include_router(create_execution_submit_router(credential=credential))
+        app.include_router(create_instance_drain_router(credential=credential))
     app.state.settings = resolved_settings
     return app

@@ -44,5 +44,13 @@ def parse(
 ) -> models.ExecutionControlErrorResponse: ...
 
 
+@overload
+def parse(name: Literal["DrainInstanceRequest"], value: Any) -> models.DrainInstanceRequest: ...
+
+
+@overload
+def parse(name: Literal["DrainInstanceResponse"], value: Any) -> models.DrainInstanceResponse: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("execution", name, value)

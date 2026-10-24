@@ -17,6 +17,7 @@ from speechnexus_gateway.domain.command_redaction import (
     RedactExecutionCommand,
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
@@ -151,6 +152,20 @@ class ExecutionFactLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
 
 class ExecutionQueryPort(Protocol):
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None: ...
+
+
+class InstanceDrainLedger(BarrierLedger, ExecutionFactLedger, Protocol):
+    """The recorded identity and the in-flight inventory of one instance generation.
+
+    Both reads are ordinary reads: a drain reports what is still unfinished and never
+    releases capacity, which the Scheduler owns.
+    """
+
+    def read_instance_identity(
+        self, instance_id: str, instance_generation: int
+    ) -> InstanceIdentity | None: ...
+
+    def read_drain_inventory(self, identity: InstanceIdentity) -> DrainInventory: ...
 
 
 class ExecutionCommandDeletionAuthorizer(Protocol):

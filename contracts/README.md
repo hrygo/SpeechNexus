@@ -141,7 +141,8 @@ of defaults, units, enum domains, or stable error codes.
   only with whole-instance termination evidence; submit replays in that branch must
   include `stop_evidence_kind`. The new 404 `control_execution_not_found` carries
   `retryable=false/recovery=none`; it does not prove absence of engine work.
-  Strict consumers must upgrade together. Submit/abort/drain HTTP and real qualification remain pending.
+  Strict consumers must upgrade together. The submit, abort and instance-drain HTTP routes are
+  served; real engine dispatch and qualification remain pending.
 - `internal/coordination-transactions.schema.json`: ADR 0006 application
   transaction ports for owner/fencing, complete-recipe admission, claim,
   execution evidence, quarantine/release, runtime lifecycle and interval

@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.11.0"
+version: "1.12.0"
 date: 2026-10-24
 ---
 
@@ -15,7 +15,8 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 `mark_execution_unknown`、`record_execution_observation`、受信命令正文清理
 与自身 submit/interval 分支的 `query_outcome`、`append_interval` 已实现；
 认证 HTTP 屏障、只读执行查询与提交/中止路由已接入生产组合根，但提交与中止要真正外发引擎，
-仍需在组合根注入引擎 adapter。真实计量采集器与 `drain` 仍待后续单元。本页区分已实现、已验证与未交付。
+仍需在组合根注入引擎 adapter。实例 `drain` 路由已服务，但在没有该 adapter 的组合根里只报告
+在途事实，不停止任何执行。真实计量采集器仍待后续单元。本页区分已实现、已验证与未交付。
 
 语音处理侧另有 [CPU VAD](cpu-vad.md)、[有界文件媒体](file-asr-audio.md)和
 [原生文件识别](file-asr-recognition.md)：已实现 VAD 门禁、源样本时钟与真实 vLLM 调用，
@@ -198,8 +199,8 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 已实现 `POST /internal/v1/gateways/{gateway_id}/fencing-barrier`，operation ID 为
 `enforceGatewayFencingBarrier`；只读 `GET /internal/v1/executions/{submit_intent_id}`
 （`getExecution`）；`POST /internal/v1/executions/submit`（`submitExecution`）与
-`POST /internal/v1/executions/{submit_intent_id}/abort`（`abortExecution`）。
-drain 没有占位路由。
+`POST /internal/v1/executions/{submit_intent_id}/abort`（`abortExecution`）；实例级
+`POST /internal/v1/instances/{instance_id}/drain`（`drainEngineInstance`）。
 
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，
 之后才外发一次；重放返回原记录并标记 `idempotent_replay=true`，同一 intent 换命令为
@@ -212,6 +213,17 @@ drain 没有占位路由。
 `control_execution_not_found`，尝试与记录不符为 422，token 不符为 409。
 未注入引擎 adapter 时，两条路由都返回 503 `control_store_unavailable`（`retry_transaction`）
 且不写任何行，避免把“本网关没有 adapter”读成已提交或已停止。
+
+drain 只报告能被核对的事实。先按记录的 instance 身份核对 host/pool/gateway 与代次：代次或宿主
+不符为 409 `instance_generation_mismatch`，低于本网关已封锁最低 token 或本地 floor 的 token 为
+409 `stale_fencing_token`。通过后按该 instance 代次枚举本网关仍在途的 intent，分成
+`submitting`、`executing`/`stopping` 与 `unknown_quarantined` 三桶；只有三桶全为零才报 `drained`
+与 `safe_to_stop_instance=true`，有未确认停止一律 `quarantined` 且 `safe_to_stop_instance=false`，
+其余为 `draining`。当前组合根没有引擎 abort adapter，因此 drain 一律只读：不写任何行、不停止
+任何执行，也从不把在途工作称为可停止。注入 abort adapter 时才对**已发出过引擎请求**的在途 intent
+逐个走有界 abort（复用中止路由的验证规则），没有引擎请求身份的 intent 不会被中止，因为不存在可
+中止的身份；未确认的尝试只记 `unknown_quarantined`。无论哪条路径，drain 都不释放预算，
+`max_drain_wait_ms` 只约束各次尝试的总预算，单次等待不超过冻结的 60 秒上界。
 
 组件凭据独立于公开服务密钥和 controller 凭据；健康端点不把“控制面可用”解释为引擎或模型就绪。
 传输 TLS、凭据分发与出站网络隔离仍由部署实现，本次 HTTP 测试不能证明这些资格。
@@ -428,7 +440,9 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
   unknown 事务和 submit 查询分支已有，自动恢复循环仍待装配。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，提交与中止路由也已服务，
-  但完整事务响应封装、`drain` 路由与真实引擎 dispatch/abort adapter 仍未交付；
+  实例 drain 路由也已服务（当前组合根只报告、不停止），
+  但真实引擎 dispatch/abort adapter 仍未交付，按 instance 代次拒绝新外发也还没有持久记录
+  （引擎执行协议本身尚不存在）；
   在没有 adapter 的组合根里两条引擎路由只返回可重试的不可用，不产生任何执行事实。
   Compose 未配置控制凭据和共享宿主锁目录，仍只开放运营端点。
 - PostgreSQL 已验证并发停止、真实 pool 行锁等待与回滚；InnoDB 使用相同 SQL/领域规则的
@@ -451,7 +465,7 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
     tests/integration/test_gateway_command_redaction.py \
     tests/integration/test_gateway_output_intervals.py \
-    tests/integration/test_gateway_barrier_http.py -q
+    tests/integration/test_gateway_barrier_http.py tests/integration/test_gateway_drain_http.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
 ```
@@ -486,6 +500,13 @@ token、owner/token/期限/node 核对、单调版本、回滚，以及 A 激活
 凭据、持久屏障、重放、owner 变更、pending/unknown/closed 查询、无版本或预算副作用和同身份候选进程启动拒绝，
 退出后同时清除两个控制服务并可重新取得锁。
 这条测试没有注入 fake service/readiness，也没有真实模型执行，不证明真实引擎或跨宿主资格。
+
+`test_gateway_drain_http.py` 在真实 PostgreSQL、非 owner gateway 角色与真实进程入口锁上验证 drain：
+空代次报 `drained` 且 `safe_to_stop_instance=true` 且不写任何行；有在途 intent 时报 `draining` 与
+精确桶计数并保持行、证据与 A 预算不变；另一代次/宿主/pool 为 409 `instance_generation_mismatch`；
+封锁屏障后旧 token 为 409 `stale_fencing_token`；注入 abort adapter 后只有已发出引擎请求的 intent
+被中止，已验证停止记 `aborted`/`complete` 且不退预算，未确认尝试记 `unknown_quarantined`。
+未取证的仍是真实引擎 adapter、按代次拒绝新外发与跨宿主 drain。
 
 `test_gateway_observation.py` 在 PG/InnoDB 验证观察版本与完整结果、确认未外发失败、staging/采样
 保护、并发单版本、失败回滚及 generation/水位冲突，核对 A 预算和停止历史未改变。

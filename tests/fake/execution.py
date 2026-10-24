@@ -18,6 +18,7 @@ from speechnexus_gateway.domain.command_redaction import (
     CommandRedactionResult,
 )
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
+from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
@@ -47,6 +48,7 @@ class InMemorySubmissionLedger:
         self._lease_states: dict[str, LeaseState] = {}
         self._intervals: dict[str, OutputIntervalRecord] = {}
         self._stream_rates: dict[tuple[str, str, str], int] = {}
+        self._instances: dict[tuple[str, int], InstanceIdentity] = {}
         self._now = now or (lambda: datetime.now(UTC))
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
@@ -190,6 +192,56 @@ class InMemorySubmissionLedger:
     def set_test_lease_state(self, lease_id: str, state: LeaseState) -> None:
         """Synthetic fixture fact only; this fake does not implement A's release transaction."""
         self._lease_states[lease_id] = state
+
+    def register_instance(self, identity: InstanceIdentity) -> None:
+        """Synthetic fixture fact only; this fake keeps no ``engine_instances`` table."""
+        self._instances[(identity.instance_id, identity.instance_generation)] = identity
+
+    def read_instance_identity(
+        self, instance_id: str, instance_generation: int
+    ) -> InstanceIdentity | None:
+        return self._instances.get((instance_id, instance_generation))
+
+    def read_drain_inventory(self, identity: InstanceIdentity) -> DrainInventory:
+        key = (
+            identity.instance_id,
+            identity.instance_generation,
+            identity.host_node_id,
+            identity.pool_id,
+            identity.gateway_id,
+        )
+        intents = sorted(
+            (
+                intent
+                for intent in self._intents.values()
+                if (
+                    intent.identity.instance_id,
+                    intent.identity.instance_generation,
+                    intent.identity.host_node_id,
+                    intent.identity.pool_id,
+                    intent.identity.gateway_id,
+                )
+                == key
+            ),
+            key=lambda intent: intent.identity.submit_intent_id,
+        )
+        return DrainInventory(
+            submitting_intent_ids=tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value == "submitting"
+            ),
+            active_intent_ids=tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value in {"executing", "stopping"}
+            ),
+            quarantined_intent_ids=tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value == "unknown_quarantined"
+            ),
+        )
 
     def redact_execution_command(
         self, permit: AuthorizedCommandRedaction

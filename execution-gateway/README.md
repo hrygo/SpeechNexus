@@ -20,7 +20,9 @@ authorized recording excerpts without ASR dispatch or quality acceptance.
 The [native file recognition API](../docs/architecture/file-asr-recognition.md) now
 consumes VAD candidates through a fixed vLLM endpoint and verifies terminal identity,
 finish reason and token usage. Both ASR models were exercised on authorized local inputs.
-HTTP submit/abort/drain, durable ASR/TTS dispatch, public VAD integration and physical
-cluster qualification remain pending.
+The authenticated submit, abort and instance-drain HTTP routes are served: without an engine
+adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
+instance generation without claiming a stop. Durable ASR/TTS dispatch, public VAD integration
+and physical cluster qualification remain pending.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

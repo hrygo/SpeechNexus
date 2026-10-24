@@ -59,6 +59,16 @@ AbortExecutionPayload = Annotated[
     BeforeValidator(lambda value: parse("AbortExecutionRequest", value)),
     WithJsonSchema(wire_schema("AbortExecutionRequest")),
 ]
+DrainInstancePayload = Annotated[
+    models.DrainInstanceRequest,
+    BeforeValidator(lambda value: parse("DrainInstanceRequest", value)),
+    WithJsonSchema(wire_schema("DrainInstanceRequest")),
+]
+DrainInstanceResponse = Annotated[
+    models.DrainInstanceResponse,
+    BeforeValidator(lambda value: parse("DrainInstanceResponse", value)),
+    WithJsonSchema(wire_schema("DrainInstanceResponse")),
+]
 ExecutionStatus = Annotated[
     models.ExecutionStatusResponse,
     BeforeValidator(lambda value: parse("ExecutionStatusResponse", value)),

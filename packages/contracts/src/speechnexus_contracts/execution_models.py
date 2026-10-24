@@ -231,6 +231,25 @@ class GatewayFencingBarrierResponse(TypedDict):
     enforced_at: str
 
 
+class DrainInstanceRequest(TypedDict):
+    host_node_id: Identifier
+    pool_id: PoolId
+    instance_generation: int
+    fencing_token: int
+    max_drain_wait_ms: int
+
+
+class DrainInstanceResponse(TypedDict):
+    instance_id: Identifier
+    instance_generation: int
+    drain_state: Literal["draining", "drained", "quarantined"]
+    active_intent_count: int
+    submitting_intent_count: int
+    quarantined_intent_count: int
+    safe_to_stop_instance: bool
+    updated_at: str
+
+
 class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
     grapheme: str
     phonemes: str
@@ -493,4 +512,6 @@ type ExecutionContracts = (
     | GatewayFencingBarrierRequest
     | GatewayFencingBarrierResponse
     | ExecutionControlErrorResponse
+    | DrainInstanceRequest
+    | DrainInstanceResponse
 )

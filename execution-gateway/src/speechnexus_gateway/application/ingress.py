@@ -57,6 +57,17 @@ class GatewayIngress:
         with self._ownership.hold():
             pass
 
+    def enforced_minimum(self, pool_id: str) -> int:
+        """The lowest token this process currently rejects for one pool, without sending.
+
+        A seal raises the floor before it waits for the durable fact, so this is the
+        strongest locally enforced minimum and may exceed the recorded barrier.
+        """
+        if pool_id not in self._pools:
+            raise InvalidExecutionRequestError("unknown ingress pool")
+        with self._state_lock:
+            return self._pools[pool_id].minimum
+
     @contextmanager
     def dispatch(self, identity: SubmissionIdentity) -> Iterator[None]:
         if identity.pool_id not in self._pools:

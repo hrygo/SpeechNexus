@@ -1,3 +1,4 @@
 # Compose the CPU VAD and media libraries in one isolated runtime.
 -r ../cpu-vad/requirements.in
 av==19.0.2
+httpx==0.28.1

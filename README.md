@@ -67,9 +67,11 @@ SpeechNexus 希望服务于三类需求：
 
 [受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 实现，批准模板固定容器内存上限和 HTTP 健康判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；静音幻觉、长非语音慢响应、TTS、A 预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。
 
-[CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、ASR 外发及真实录音质量仍待集成和验收。
+[CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、调度链路中的 ASR 外发及真实录音质量仍待集成和验收。
 
 [文件媒体输入](docs/architecture/file-asr-audio.md)已提供五种格式的有界解码/重采样、源样本时钟与文件 VAD 组合接口。[本机探针](docs/audits/2026-10-24-b03-bounded-audio-probe.md)通过合成媒体及两段授权真实录音；它只证明输入处理完成，音频 Asset 检查接入、识别质量、ASR/TTS 服务及资源硬隔离仍待验收。
+
+[文件识别原生接口](docs/architecture/file-asr-recognition.md)已将媒体/VAD 接到固定内网 vLLM ASR，校验请求身份、结束原因和实际 token 上限，拒绝截断结果。0.6B/1.7B 已完成合成和授权真实录音调用；公开 ASR、持久派发、结果发布与完整质量/性能资格仍待接入。
 
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 

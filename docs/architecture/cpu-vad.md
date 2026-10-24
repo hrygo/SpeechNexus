@@ -8,8 +8,9 @@ date: 2026-10-24
 # CPU VAD：有界切段与会话状态
 
 这是 [B06 #33](https://github.com/hrygo/SpeechNexus/issues/33) 的原生消费接口。
-领域切段、CPU ONNX adapter 和合成探针已实现；公开实时入口、24→16 kHz 流式重采样、
-ASR 外发、Operation/receipt 与完整配方准入尚未装配。合成结果不能替代真实录音质量或集群资格。
+领域切段、CPU ONNX adapter 和合成探针已实现；另有[原生文件识别消费者](file-asr-recognition.md)。
+公开实时入口、24→16 kHz 流式重采样、持久执行链路、Operation/receipt 与完整配方准入尚未装配。
+合成结果不能替代真实录音质量或集群资格。
 
 ## 代码与消费接口
 

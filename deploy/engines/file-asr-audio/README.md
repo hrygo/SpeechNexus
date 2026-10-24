@@ -1,6 +1,6 @@
 # File ASR audio preparation runtime
 
-This optional environment composes PyAV 19.0.2 with the pinned
+This optional environment composes PyAV 19.0.2 and HTTPX 0.28.1 with the pinned
 [CPU VAD dependencies](../cpu-vad/README.md). NumPy and ONNX Runtime share one
 resolved lock. It is not an enabled Compose service or a qualified runtime template.
 Ordinary gateway startup loads neither the media libraries nor the CPU model.
@@ -49,3 +49,30 @@ See the [native API and limits](../../../docs/architecture/file-asr-audio.md).
 The CPU model's MIT notice is retained in the VAD directory. This directory pins
 runtime packages, not the project's overall model/runtime redistribution decision;
 wheel codec/library configuration and licenses remain part of deployment review.
+
+The [native recognition adapter](../../../docs/architecture/file-asr-recognition.md)
+uses this same optional environment. The controller probe can exercise it with
+explicitly authorized local recordings:
+
+```bash
+uv run --no-sync --with-requirements deploy/engines/file-asr-audio/requirements.txt \
+  python scripts/dev-env/asr-controller-probe.py \
+  --templates-file "$SPEECHNEXUS_APPROVED_ASR_TEMPLATES" \
+  --template-id "$SPEECHNEXUS_ASR_TEMPLATE_ID" \
+  --served-model-name "$SPEECHNEXUS_ASR_MODEL_ALIAS" \
+  --file-asr-vad-model "$SPEECHNEXUS_VAD_MODEL_FILE" \
+  --file-asr-vad-sha256 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3 \
+  --corpus-root "$SPEECHNEXUS_AUDIO_CORPUS_ROOT" \
+  --file-asr-repeat-corpus \
+  --evidence-directory .runtime/probes/file-asr
+```
+
+The approved template must use a pre-created `Internal=true` Docker bridge with
+no host ports, a fixed local image/model and container memory limits. This mode
+requires `--no-enable-log-requests`, `--no-enable-log-outputs` and
+`--disable-uvicorn-access-log` in the template command. The measured vLLM version
+supports these flags; other images require their own verification.
+The optional repeat flag runs the exact same excerpts again, marking `repeat_of`;
+it does not add independent samples. Remove only the empty network owned by this run
+after both model probes exit. Controller stop evidence remains distinct from request
+completion and Scheduler budget release.

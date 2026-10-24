@@ -17,7 +17,10 @@ segmentation and an isolated-state ONNX CPU adapter, checked with synthetic audi
 The [file audio preparation API](../docs/architecture/file-asr-audio.md) adds bounded
 codec/resampling and source-clock mapping into VAD; local checks include two
 authorized recording excerpts without ASR dispatch or quality acceptance.
-HTTP submit/abort/drain, real ASR/TTS dispatch, public VAD integration and physical
+The [native file recognition API](../docs/architecture/file-asr-recognition.md) now
+consumes VAD candidates through a fixed vLLM endpoint and verifies terminal identity,
+finish reason and token usage. Both ASR models were exercised on authorized local inputs.
+HTTP submit/abort/drain, durable ASR/TTS dispatch, public VAD integration and physical
 cluster qualification remain pending.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
 See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).

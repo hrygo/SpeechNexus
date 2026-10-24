@@ -15,6 +15,7 @@
 - [执行网关提交事务](execution-gateway.md)：`create_submit` 的持久意图、锁序、完整请求摘要、版本守卫、错误分类与当前未交付的停止/计量端口；
 - [CPU VAD](cpu-vad.md)：有界切段、会话推理状态、无语音门禁、固定模型与原生消费接口；公开实时链路仍待集成。
 - [文件 ASR 有界媒体输入](file-asr-audio.md)：受控二进制流、五种格式、源时钟/尾部、文件 VAD 组合及尚未接入的外发/发布。
+- [文件 ASR 原生识别接口](file-asr-recognition.md)：固定内网 vLLM、请求/终态/token 校验、无语音零外发和源/模型样本关联；持久 dispatch/公开服务仍待装配。
 - [生产协调存储基线](production-coordination-storage.md)：包内 `0002_coordination`、15 表、A/B 最小权限、升级回滚与迁移互斥证据；事务实现另行验收。
 - [资产发布与保留期存储](production-assets.md)：实际文本检查、PG/版本化 MinIO 发布、原身份恢复和删除账本；公开路由与常驻维护进程后续接入。
 - [生产 owner 任期事务](production-owners.md)：获取/续约/激活、完整当前权威查询、锁后数据库取时和未知提交恢复。

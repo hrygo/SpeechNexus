@@ -1,8 +1,9 @@
 """Probe an approved ASR container through the real controller lifecycle.
 
 Requires explicit runtime authorization, a local pinned image/model, espeak-ng,
-and a pre-created Docker --internal network declared in the template. Only
-synthetic speech, silence and tone are sent to the engine. No transcript,
+and a pre-created Docker --internal network declared in the template. The default
+path uses synthetic speech, silence and tone. The explicit file-ASR/VAD mode may
+also use hash-verified authorized local excerpts with content logging disabled. No transcript,
 credential or model path is printed. This probe does not write scheduler budgets
 or qualify production admission, streaming, cancellation or a physical cluster.
 """
@@ -10,6 +11,7 @@ or qualify production admission, streaming, cancellation or a physical cluster.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import math
@@ -185,10 +187,31 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
     )
     if (
         template.readiness.kind is not ReadinessKind.HTTP_STATUS_OK
+        or template.readiness.port is None
         or template.memory_architecture is not MemoryArchitecture.UNIFIED_MEMORY
         or "asr-batch" not in template.allowed_pool_ids
     ):
         raise ValueError("this probe requires a unified-memory ASR HTTP health template")
+    prepared_audio = arguments.file_asr_vad_model is not None
+    if prepared_audio:
+        required = {
+            "--no-enable-log-requests",
+            "--no-enable-log-outputs",
+            "--disable-uvicorn-access-log",
+        }
+        forbidden = {
+            "--enable-log-requests",
+            "--enable-log-outputs",
+            "--no-disable-uvicorn-access-log",
+        }
+        if (
+            template.command is None
+            or not required.issubset(template.command)
+            or forbidden.intersection(template.command)
+        ):
+            raise ValueError(
+                "file ASR probes require explicitly disabled request/output/access logs"
+            )
     _require_internal_network(template)
     protected_start = _protected_start()
     available_before = _memory_available()
@@ -227,7 +250,7 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
     report: dict[str, object] = {
         "template_id": template.template_id,
         "internal_network": True,
-        "synthetic_only": True,
+        "synthetic_only": arguments.corpus_root is None,
         "scheduler_budget_used": False,
         "protected_llm_started_at": protected_start,
         "available_before_bytes": available_before,
@@ -237,7 +260,7 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
         DockerApi() as api,
     ):
         work = Path(workdir)
-        samples = _samples(work)
+        samples = [] if prepared_audio else _samples(work)
         store = SqliteIntentStore(work / "intents.sqlite3")
         runtime = DockerNodeRuntime(
             api=api,
@@ -301,15 +324,26 @@ def run_probe(arguments: argparse.Namespace) -> dict[str, object]:
             if not replay.idempotent_replay or report["containers_after_restart"] != 1:
                 raise RuntimeError("reconstructing the controller did not preserve one instance")
             address = state.network_addresses[0]
-            with httpx.Client(
-                base_url=f"http://{address}:{template.readiness.port}",
-                timeout=120,
-                trust_env=False,
-                follow_redirects=False,
-            ) as client:
-                report["samples"] = [
-                    _transcribe(client, arguments.served_model_name, *sample) for sample in samples
-                ]
+            if prepared_audio:
+                from file_asr_probe_cases import file_asr_cases
+
+                report["request_output_access_logging_disabled"] = True
+                report["file_asr"] = asyncio.run(
+                    file_asr_cases(
+                        arguments, address, template.readiness.port, work, evidence_directory
+                    )
+                )
+            else:
+                with httpx.Client(
+                    base_url=f"http://{address}:{template.readiness.port}",
+                    timeout=120,
+                    trust_env=False,
+                    follow_redirects=False,
+                ) as client:
+                    report["samples"] = [
+                        _transcribe(client, arguments.served_model_name, *sample)
+                        for sample in samples
+                    ]
             save_engine_log()
             stopped_at = time.monotonic()
             stopped = controller.submit_intent(
@@ -361,7 +395,17 @@ def main() -> None:
     parser.add_argument("--served-model-name", required=True)
     parser.add_argument("--ready-timeout-seconds", type=float, default=300)
     parser.add_argument("--evidence-directory", type=Path, required=True)
+    parser.add_argument("--file-asr-vad-model", type=Path)
+    parser.add_argument("--file-asr-vad-sha256")
+    parser.add_argument("--corpus-root", type=Path)
+    parser.add_argument("--file-asr-repeat-corpus", action="store_true")
     arguments = parser.parse_args()
+    if bool(arguments.file_asr_vad_model) != bool(arguments.file_asr_vad_sha256):
+        parser.error("file ASR requires both the VAD model and its expected digest")
+    if arguments.corpus_root is not None and arguments.file_asr_vad_model is None:
+        parser.error("real corpus probes require the bounded file-ASR/VAD path")
+    if arguments.file_asr_repeat_corpus and arguments.corpus_root is None:
+        parser.error("repeated corpus measurements require explicit authorized corpus inputs")
     print(json.dumps(run_probe(arguments), indent=2, sort_keys=True))
 
 

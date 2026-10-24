@@ -51,7 +51,10 @@ finally:
 
 激活锁 pool、非 stopped 实例、未释放 lease、屏障及在途 submit，按既有全局顺序
 和标识字典序执行。领域规则要求每个受影响 gateway 的持久屏障达到当前 token，且
-没有 submitting/executing/stopping 提交。所有相关受控写入者也必须先锁 pool；
+没有 submitting/executing/stopping 提交。B 的 `unknown_quarantined` 还须关联 A 租约已有
+完整的隔离状态、cleanup 和首次观察记录；只有 B 标记提交而 A 账目尚未完成时拒绝激活。
+该 A 标记与 held→quarantine、槽位/quota 和节点阈值处置在同一个 `quarantine_lease` 事务
+提交，激活只消费此完成事实，不重复移动或释放预算。所有相关受控写入者也必须先锁 pool；
 不能用任意直接 SQL 绕过这个跨所有者串行化前提。
 
 时间来自数据库，在等待 pool/屏障等行锁之后取得；获取/续约的到期时间与激活前的

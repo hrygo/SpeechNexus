@@ -52,7 +52,7 @@ def test_owner_acquisition_renewal_and_activation_keep_budget_and_epoch_separate
     assert refreshed.fencing_token == first.fencing_token
     assert refreshed.expires_at_us == 102000 and refreshed.version == 3
     evidence = ActivationFacts(
-        frozenset({"gateway-test"}), (BarrierFact("gateway-test", 1, DIGEST),), False
+        frozenset({"gateway-test"}), (BarrierFact("gateway-test", 1, DIGEST),), False, False
     )
     active = activated(refreshed, ActivateOwner(AUTHORITY, 3), 3000, evidence)
     assert active.owner_state == "active" and active.version == 4
@@ -75,14 +75,18 @@ def test_renew_cannot_revive_another_or_fenced_owner(authority: OwnerAuthority) 
 @pytest.mark.parametrize(
     "evidence",
     [
-        ActivationFacts(frozenset({"gateway-test"}), (), False),
+        ActivationFacts(
+            frozenset({"gateway-test"}), (BarrierFact("gateway-test", 1, DIGEST),), False, True
+        ),
+        ActivationFacts(frozenset({"gateway-test"}), (), False, False),
         ActivationFacts(
             frozenset({"gateway-test", "gateway-other"}),
             (BarrierFact("gateway-test", 1, DIGEST),),
             False,
+            False,
         ),
         ActivationFacts(
-            frozenset({"gateway-test"}), (BarrierFact("gateway-test", 1, DIGEST),), True
+            frozenset({"gateway-test"}), (BarrierFact("gateway-test", 1, DIGEST),), True, False
         ),
     ],
 )

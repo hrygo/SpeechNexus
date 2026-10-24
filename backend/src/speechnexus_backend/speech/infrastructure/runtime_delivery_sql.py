@@ -53,7 +53,12 @@ def _original(cursor: DeliveryCursor, event_id: str) -> tuple[RuntimeIntent, str
     if len(records) != 1:
         raise ValueError("No authoritative original runtime delivery")
     row = records[0]
-    prepared, _, _ = decode_record(row["request_document"])
+    try:
+        prepared, _, _ = decode_record(row["request_document"])
+    except RecursionError:
+        # The byte bound does not bound JSON nesting. Keep an unreadable
+        # original on the same invalid-record path without rewriting it.
+        raise ValueError("Invalid runtime delivery original structure") from None
     original = prepared.request
     if (
         row["event_id"],

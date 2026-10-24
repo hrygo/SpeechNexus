@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from unittest.mock import AsyncMock
 
 import psycopg
 import pymysql
@@ -23,10 +24,16 @@ from tests.integration.test_runtime_observations import _wire
 from tests.support.job_database import MySQLJobTransactions
 from tests.support.runtime_delivery_database import MySQLRuntimeDelivery
 
-from speechnexus_backend.speech.application.runtime_delivery import RuntimeDeliveryTransactions
+from speechnexus_backend.speech.application.runtime_controller import RuntimeController
+from speechnexus_backend.speech.application.runtime_delivery import (
+    RuntimeDeliveryService,
+    RuntimeDeliveryTransactions,
+)
+from speechnexus_backend.speech.domain.runtime_controller import ControllerObservation
 from speechnexus_backend.speech.domain.runtime_delivery import DeliveryClaimRequest, DeliveryTicket
 from speechnexus_backend.speech.domain.runtime_intents import CreateRuntimeIntent
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.runtime_codec import prepare_request
 from speechnexus_backend.speech.infrastructure.runtime_delivery_postgres import (
     PostgresRuntimeDelivery,
 )
@@ -34,6 +41,7 @@ from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import (
     ADOPT_RUNTIME_DELIVERIES_SQL,
     runtime_delivery_grants,
 )
+from speechnexus_backend.speech.infrastructure.runtime_observation_codec import prepare_observation
 
 pytestmark = pytest.mark.integration
 CLAIM = DeliveryClaimRequest("delivery-test", ("host-test",), 30000000)
@@ -317,3 +325,64 @@ def test_corrupt_original_is_blocked_without_reconstructing_a_request_or_releasi
     assert db.query("SELECT delivered_at_us FROM coordination_outbox")[0]["delivered_at_us"] is None
     assert delivery.port.claim(CLAIM).outcome == "empty"
     assert delivery.physical() == corrupt
+
+
+@pytest.mark.parametrize("phase", ["unsent", "unknown"])
+async def test_deeply_nested_original_is_blocked_and_the_next_healthy_event_is_delivered(
+    delivery: DeliveryDatabase, phase: str
+) -> None:
+    db = delivery.runtime.foundation.database
+    healthy = replace(REQUEST, intent_id="runtime-healthy", instance_id="instance-healthy")
+    assert (
+        delivery.runtime.port.create_runtime_intent(replace(COMMAND, request=healthy)).outcome
+        == "committed"
+    )
+    bad_event, good_event = prepare_request(REQUEST).event_id, prepare_request(healthy).event_id
+    poison = "[" * 65535 + "0" + "]" * 65535
+    assert len(poison.encode()) == 131071  # Within decode_record's existing byte limit.
+    db.query(
+        "UPDATE runtime_instance_intents SET request_document=%s "
+        "WHERE target_node_id=%s AND intent_id=%s",
+        (poison, REQUEST.binding.target_node_id, REQUEST.intent_id),
+    )
+    db.query(
+        "UPDATE runtime_intent_deliveries SET delivery_phase=%s,next_attempt_at_us=0 "
+        "WHERE event_id=%s",
+        (phase, bad_event),
+    )
+    # Both are due, with the corrupt event deterministically selected first.
+    db.query(
+        "UPDATE runtime_intent_deliveries SET next_attempt_at_us=1 WHERE event_id=%s",
+        (good_event,),
+    )
+    before = delivery.physical()
+    response = prepare_observation(_wire(delivery.runtime, healthy))
+    controller = AsyncMock(spec=RuntimeController)
+    controller.submit.return_value = ControllerObservation(response.observation, response.document)
+    service = RuntimeDeliveryService(
+        delivery.port, {healthy.binding.target_node_id: controller}, retry_delay_us=100000
+    )
+
+    batch = await service.run_once(CLAIM, limit=3)
+
+    assert batch.blocked == batch.claimed == batch.acknowledged == 1
+    assert batch.unknown == batch.stale == 0
+    controller.submit.assert_awaited_once_with(healthy)
+    controller.query.assert_not_awaited()  # No POST or GET for the corrupt original.
+    records = {row["event_id"]: row for row in db.query("SELECT * FROM runtime_intent_deliveries")}
+    blocked = records[bad_event]
+    assert blocked["delivery_phase"] == "blocked"
+    assert blocked["last_failure_code"] == "invalid_record"
+    assert blocked["claim_holder_id"] is None and blocked["claim_expires_at_us"] == 0
+    assert blocked["submission_started_at_us"] is blocked["acknowledged_at_us"] is None
+    assert records[good_event]["delivery_phase"] == "acknowledged"
+    events = {
+        row["event_id"]: row["delivered_at_us"]
+        for row in db.query("SELECT event_id,delivered_at_us FROM coordination_outbox")
+    }
+    assert events[bad_event] is None and events[good_event] is not None
+    assert delivery.physical() == before  # Includes the exact corrupt/healthy commands and budgets.
+    again = await service.run_once(CLAIM, limit=3)
+    assert again.claimed == again.blocked == 0
+    controller.submit.assert_awaited_once_with(healthy)
+    controller.query.assert_not_awaited()

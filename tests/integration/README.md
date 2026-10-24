@@ -16,6 +16,13 @@ The two suites exercise different assurance boundaries:
   No business procedures, triggers, GiST, partial indexes or
   `SKIP LOCKED` are used. Both engines execute the same application rules.
 
+`test_gateway_frozen_inputs.py` verifies the gateway's bounded, read-only original
+command port on both engines and consumes version-pinned MinIO objects through
+the existing media/file-ASR pipeline. It uses synthetic audio and scripted
+VAD/recognition, without model loading, budget mutation, stop proof or result
+publication. Both database DSNs and the isolated MinIO variables below are
+required for the complete integration file; skipped cases are not evidence.
+
 The historical PG suite is transitional. [ADR 0007](../../docs/decisions/0007-legacy-coordination-retirement.md)
 defines its exit conditions: migrate valid invariants into current-path tests,
 then remove the legacy CI gate, SQL, tests and obsolete design from the working

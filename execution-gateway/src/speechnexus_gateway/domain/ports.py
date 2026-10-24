@@ -31,6 +31,7 @@ from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
     RecordStop,
     SubmissionIntent,
+    SubmitRequest,
     VerifiedStopEvidence,
 )
 
@@ -101,6 +102,20 @@ class EngineDispatchPort(Protocol):
     """Issues the frozen command to the engine exactly once per call."""
 
     def dispatch(self, intent: SubmissionIntent) -> DispatchOutcome: ...
+
+
+class OriginalExecutionCommandSource(Protocol):
+    """Read the verified frozen request; a read never authorizes redispatch."""
+
+    def read_request(
+        self, intent: SubmissionIntent, *, max_document_bytes: int
+    ) -> SubmitRequest: ...
+
+
+class CommandEngineDispatchPort(Protocol):
+    """Accept one complete effective request, without rereading mutable defaults."""
+
+    def dispatch(self, request: SubmitRequest) -> DispatchOutcome: ...
 
 
 class EngineObservationPort(Protocol):

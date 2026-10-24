@@ -23,6 +23,7 @@ from speechnexus_gateway.domain.submission import (
     StopEvidenceConflictError,
     SubmissionIntent,
     SubmissionStoreError,
+    SubmitRequest,
 )
 from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
@@ -34,6 +35,7 @@ from speechnexus_gateway.infrastructure.command_redaction_sql import (
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
 )
+from speechnexus_gateway.infrastructure.original_command_sql import read_original_request
 from speechnexus_gateway.infrastructure.output_interval_sql import (
     append_interval_in_transaction,
     read_output_interval,
@@ -91,6 +93,14 @@ class MySQLSubmissionLedger:
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
         return self._run(lambda cursor: read_submit_intent(cursor, submit_intent_id))
+
+    def read_request(self, intent: SubmissionIntent, *, max_document_bytes: int) -> SubmitRequest:
+        return self._run(
+            lambda cursor: read_original_request(
+                cursor, intent, max_document_bytes=max_document_bytes
+            ),
+            read_only=True,
+        )
 
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
         intent = self.get(submit_intent_id)

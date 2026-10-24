@@ -11,6 +11,7 @@
 | [OpenAI 兼容与增强边界](architecture/openai-compatibility.md)                                       | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁                              |
 | [资源治理与持久化](architecture/runtime-governance.md)                                              | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除                 |
 | [规范执行命令与内部文本流](architecture/execution-command.md)                                       | 完整有效命令、摘要、受控资源引用与 TTS 文本提交                                 |
+| [原命令与核验文件输入](architecture/frozen-execution-inputs.md) | 原持久请求只读核验、一次提交命令桥、版本固定对象输入及真实执行剩余边界 |
 | [数据删除与依赖裁决](architecture/data-deletion.md)                                                 | 预检、明确级联、独立副本、异步清理和恢复账本                                    |
 | [精简分布式协调 Schema](architecture/distributed-coordination-schema.md)                            | 普通约束、当前指针、表所有权与历史原型隔离                                      |
 | [应用事务方案与契约](architecture/coordination-transactions.md)                                     | 程序职责、原子步骤、锁序、预算、幂等/未知恢复及业务编码交接                     |
@@ -58,7 +59,7 @@
 [完整准入的私有命令存储](architecture/production-admission-storage.md)通过0007新增operation/原请求权威与私有正文约束，独立准入已消费该存储，实际业务/调度消费者仍待接入。
 [完整配方准入独立事务](architecture/production-admission.md)提供全部阶段原子预留与原身份恢复，其他业务配额账本与真实provider仍待装配。
 [固定节点HTTPS客户端](architecture/runtime-controller-client.md)复用runtime源契约，提供有界原意图提交/查询；[持久投递worker](architecture/production-runtime-delivery.md)已接原请求与未知查询。
-[节点停止检查点恢复](architecture/node-stop-recovery.md)及[可信停止到网关](architecture/trusted-node-stop.md)已有原生接口和分段证据；部署TLS、默认网关周期驱动、真实引擎故障资格与完整调度仍待接入。
+[节点停止检查点恢复](architecture/node-stop-recovery.md)及[可信停止到网关](architecture/trusted-node-stop.md)已有原生接口和分段证据；固定 TLS 来源与默认网关周期驱动已由 #123/#127 交付，真实引擎故障资格与完整调度仍待接入。
 这些包内实现与根目录设计/测试草案分离，其余生产事务与真实集群资格继续按所有权取证。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

@@ -43,6 +43,8 @@ FIELDS = frozenset(
 # collection and are never omitted when a tool is absent. Use the same partition
 # function as execution, rather than baking a shard number into the workflow.
 NODE_CONTRACT_TESTS = (
+    "tests/integration/test_binding_http.py::"
+    "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
     "tests/integration/test_profile_http.py::"
     "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
 )

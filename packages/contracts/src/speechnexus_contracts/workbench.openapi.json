@@ -687,6 +687,274 @@
           }
         }
       }
+    },
+    "/v1/workbench/projects/{project_id}/meetings": {
+      "post": {
+        "tags": ["meetings"],
+        "operationId": "createMeeting",
+        "summary": "Create a meeting record",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Meeting created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meeting"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/meetings/{meeting_id}": {
+      "get": {
+        "tags": ["meetings"],
+        "operationId": "getMeeting",
+        "summary": "Get a meeting",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeetingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meeting.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meeting"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/workbench/meetings/{meeting_id}/seal": {
+      "post": {
+        "tags": ["meetings"],
+        "operationId": "sealMeeting",
+        "summary": "Seal a meeting transcript revision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeetingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingSealRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Meeting sealed.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meeting"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/meetings/{meeting_id}/minutes": {
+      "post": {
+        "tags": ["meetings"],
+        "operationId": "createMeetingMinutes",
+        "summary": "Create a meeting-minutes job from a sealed transcript",
+        "description": "LLM integration is optional and disabled by default. Only a sealed\ntranscript revision is accepted. The model and template revisions are\npinned. Failure does not modify the transcript.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeetingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MinutesCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Minutes job accepted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinutesJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}": {
+      "get": {
+        "tags": ["meetings"],
+        "operationId": "getMeetingMinutes",
+        "summary": "Get a meeting-minutes job",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeetingIdPath"
+          },
+          {
+            "name": "minutes_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minutes job.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinutesJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -762,6 +1030,14 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Revision"
+        }
+      },
+      "MeetingIdPath": {
+        "name": "meeting_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
         }
       }
     },
@@ -2115,6 +2391,474 @@
             "format": "date-time"
           }
         }
+      },
+      "MeetingCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["display_name"],
+        "oneOf": [
+          {
+            "required": ["speech_session_id"]
+          },
+          {
+            "required": ["transcript_id"]
+          }
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "speech_session_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "transcript_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "save_audio": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "Meeting": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "project_id",
+          "display_name",
+          "status",
+          "transcript_id",
+          "save_audio",
+          "sealed_revision",
+          "minutes_id",
+          "started_at",
+          "ended_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.meeting"
+          },
+          "project_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "enum": ["capturing", "sealed", "minutes_pending", "minutes_ready", "failed"]
+          },
+          "transcript_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "sealed_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minutes_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "save_audio": {
+            "type": "boolean"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkbenchJobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "capturing"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "sealed_revision": {
+                  "type": "null"
+                },
+                "minutes_id": {
+                  "type": "null"
+                },
+                "ended_at": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "sealed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["sealed_revision", "ended_at"],
+              "properties": {
+                "sealed_revision": {
+                  "$ref": "#/components/schemas/Revision"
+                },
+                "minutes_id": {
+                  "type": "null"
+                },
+                "ended_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": ["minutes_pending", "minutes_ready"]
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["sealed_revision", "minutes_id", "ended_at"],
+              "properties": {
+                "sealed_revision": {
+                  "$ref": "#/components/schemas/Revision"
+                },
+                "minutes_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "ended_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["ended_at", "error"],
+              "properties": {
+                "sealed_revision": {
+                  "type": "null"
+                },
+                "minutes_id": {
+                  "type": "null"
+                },
+                "ended_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "error": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "WorkbenchJobError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "retryable"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "param": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          }
+        }
+      },
+      "MeetingSealRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_transcript_revision"],
+        "properties": {
+          "expected_transcript_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          }
+        }
+      },
+      "MinutesCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["template_revision"],
+        "properties": {
+          "template_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "llm_model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "MinutesJob": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "meeting_id",
+          "status",
+          "source_revision",
+          "template_revision",
+          "llm_model",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.minutes_job"
+          },
+          "meeting_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "running", "succeeded", "failed", "cancelled", "expired"]
+          },
+          "source_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "template_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "llm_model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "minutes_text": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 1000000
+          },
+          "artifact_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkbenchJobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "succeeded"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": ["minutes_text"],
+                  "properties": {
+                    "minutes_text": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                {
+                  "required": ["artifact_id"],
+                  "properties": {
+                    "artifact_id": {
+                      "$ref": "#/components/schemas/Identifier"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "not": {
+                    "const": "succeeded"
+                  }
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "artifact_id": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "responses": {

@@ -18,7 +18,12 @@
     "DeletionPlanRequest",
     "DeletionCreateRequest",
     "DeletionPlan",
-    "Deletion"
+    "Deletion",
+    "Meeting",
+    "MeetingCreateRequest",
+    "MeetingSealRequest",
+    "MinutesCreateRequest",
+    "MinutesJob"
   ],
   "$defs": {
     "ProjectCreateRequest": {
@@ -1367,6 +1372,474 @@
     },
     "Deletion": {
       "$ref": "#/$defs/External_shared_deletion_schema_json_Deletion"
+    },
+    "Meeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "project_id",
+        "display_name",
+        "status",
+        "transcript_id",
+        "save_audio",
+        "sealed_revision",
+        "minutes_id",
+        "started_at",
+        "ended_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.meeting"
+        },
+        "project_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["capturing", "sealed", "minutes_pending", "minutes_ready", "failed"]
+        },
+        "transcript_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sealed_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minutes_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "save_audio": {
+          "type": "boolean"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ended_at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkbenchJobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "capturing"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "sealed_revision": {
+                "type": "null"
+              },
+              "minutes_id": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "sealed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["sealed_revision", "ended_at"],
+            "properties": {
+              "sealed_revision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "minutes_id": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["minutes_pending", "minutes_ready"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["sealed_revision", "minutes_id", "ended_at"],
+            "properties": {
+              "sealed_revision": {
+                "$ref": "#/$defs/Revision"
+              },
+              "minutes_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["ended_at", "error"],
+            "properties": {
+              "sealed_revision": {
+                "type": "null"
+              },
+              "minutes_id": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "WorkbenchJobError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
+    },
+    "MeetingCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_name"],
+      "oneOf": [
+        {
+          "required": ["speech_session_id"]
+        },
+        {
+          "required": ["transcript_id"]
+        }
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "speech_session_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "transcript_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "save_audio": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "MeetingSealRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_transcript_revision"],
+      "properties": {
+        "expected_transcript_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1000000
+        }
+      }
+    },
+    "MinutesCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_revision"],
+      "properties": {
+        "template_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "llm_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "MinutesJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "meeting_id",
+        "status",
+        "source_revision",
+        "template_revision",
+        "llm_model",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.minutes_job"
+        },
+        "meeting_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "running", "succeeded", "failed", "cancelled", "expired"]
+        },
+        "source_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "template_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "llm_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "minutes_text": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "artifact_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkbenchJobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["minutes_text"],
+                "properties": {
+                  "minutes_text": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "required": ["artifact_id"],
+                "properties": {
+                  "artifact_id": {
+                    "$ref": "#/$defs/Identifier"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "artifact_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "anyOf": [
@@ -1417,6 +1890,21 @@
     },
     {
       "$ref": "#/$defs/Deletion"
+    },
+    {
+      "$ref": "#/$defs/Meeting"
+    },
+    {
+      "$ref": "#/$defs/MeetingCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/MeetingSealRequest"
+    },
+    {
+      "$ref": "#/$defs/MinutesCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/MinutesJob"
     }
   ]
 }

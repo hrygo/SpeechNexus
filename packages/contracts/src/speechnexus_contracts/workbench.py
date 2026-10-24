@@ -74,5 +74,25 @@ def parse(name: Literal["DeletionPlan"], value: Any) -> models.DeletionPlan: ...
 def parse(name: Literal["Deletion"], value: Any) -> models.Deletion: ...
 
 
+@overload
+def parse(name: Literal["Meeting"], value: Any) -> models.Meeting: ...
+
+
+@overload
+def parse(name: Literal["MeetingCreateRequest"], value: Any) -> models.MeetingCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["MeetingSealRequest"], value: Any) -> models.MeetingSealRequest: ...
+
+
+@overload
+def parse(name: Literal["MinutesCreateRequest"], value: Any) -> models.MinutesCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["MinutesJob"], value: Any) -> models.MinutesJob: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

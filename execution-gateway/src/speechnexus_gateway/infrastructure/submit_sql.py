@@ -159,11 +159,10 @@ LEFT JOIN execution_stop_evidence AS e ON e.submit_intent_id = s.submit_intent_i
 
 _SELECT_INTENT = _INTENT_SELECTION + "WHERE s.submit_intent_id = %s\n"
 
-#: Uncertain work this gateway is still holding, oldest first so a bounded sweep drains it.
+#: Scope stays fixed; the optional ID cursor and ordering are added at the read boundary.
 _SELECT_QUARANTINED = (
     _INTENT_SELECTION + "WHERE s.execution_state = 'unknown_quarantined' "
     "AND l.gateway_id = %s AND l.host_node_id = %s "
-    "ORDER BY s.updated_at_us, s.submit_intent_id LIMIT %s\n"
 )
 
 
@@ -360,17 +359,34 @@ def read_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> Submissio
 
 
 def list_quarantined_intents(
-    cursor: SubmitCursor, *, gateway_id: str, host_node_id: str, limit: int
+    cursor: SubmitCursor,
+    *,
+    gateway_id: str,
+    host_node_id: str,
+    limit: int,
+    after_submit_intent_id: str | None = None,
 ) -> list[SubmissionIntent]:
-    """Read this gateway's uncertain executions, newest state first in a bounded batch.
+    """Read one strictly increasing ID page without touching unresolved facts.
 
     Only rows this gateway and node already own are returned, and every row is rebuilt
     through the same projection a single read uses, so a sweep cannot reinterpret an
-    unreadable record as a closable one.
+    unreadable record as a closable one. The immutable ID order avoids cursor movement
+    when a concurrent output interval changes a record's version or updated_at.
     """
-    if not 1 <= limit <= 500:
+    if type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("a recovery sweep reads between 1 and 500 executions")
-    cursor.execute(_SELECT_QUARANTINED, (gateway_id, host_node_id, limit))
+    if after_submit_intent_id is not None and (
+        not isinstance(after_submit_intent_id, str) or not 1 <= len(after_submit_intent_id) <= 128
+    ):
+        raise ValueError("a recovery cursor requires a bounded original intent ID")
+    suffix = "ORDER BY s.submit_intent_id LIMIT %s\n"
+    if after_submit_intent_id is None:
+        cursor.execute(_SELECT_QUARANTINED + suffix, (gateway_id, host_node_id, limit))
+    else:
+        cursor.execute(
+            _SELECT_QUARANTINED + "AND s.submit_intent_id > %s " + suffix,
+            (gateway_id, host_node_id, after_submit_intent_id, limit),
+        )
     return [_intent_from_row(row) for row in cursor.fetchall()]
 
 

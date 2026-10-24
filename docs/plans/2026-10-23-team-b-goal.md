@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 团队 B 执行目标"
 status: active
-version: "0.5.0"
+version: "0.6.0"
 date: 2026-10-24
 ---
 
@@ -17,8 +17,8 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-以 main `a180469` 为本轮开工基线；[PR #121](https://github.com/hrygo/SpeechNexus/pull/121)
-已封闭外部快照写权威事实旁路，节点快照仅作诊断。
+以 main `402d537` 为本轮开工基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
+已交付检查点背书的节点停止查询与固定TLS网关来源，前一轮PR/合后主干均11项CI全绿。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。
 
@@ -33,10 +33,12 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | B06 #33 | in-progress | CPU VAD 与文件消费者已有；流式接入、词级对齐、匿名分人和质量资格待补 |
 | B07 #34 | planned | 已收集资格输入；模板、混合负载、长时与物理多主机资格未开工 |
 
-本轮把[节点可信停止查询接入网关](../architecture/trusted-node-stop.md)：只有原 stop
+已交付的[节点可信停止查询接入网关](../architecture/trusted-node-stop.md)：只有原 stop
 回执与本地 released 检查点完全匹配才出具事实，旧成功回执不追溯认证；网关经固定 TLS
 验证原绑定、代次、任期及时间，沿用原停止事务关闭每条执行，不写 A 预算。
 原生 TLS/SQLite/双库消费者验证半证据保留占用、重启补齐、共享实例多执行和 A 幂等归还。
+本轮修复[恢复扫描](../architecture/execution-gateway.md#8-未知执行与只读恢复)的前缀饥饿与重复计数：
+只读不可变ID分页、本地游标绕回、每条执行互斥分类，保持未知占用和并发用量。
 默认网关周期驱动、真实引擎故障、ready 实例持续监控、完整执行/预算与物理多主机资格仍待。
 真实引擎适配由 B 主责，A 配合协议消费者与预算/发布边界，不能把 B 自有适配缺口一概标为
 等待 A 提供引擎协议。实施选择由团队处理，不要求用户判断这些技术细节。

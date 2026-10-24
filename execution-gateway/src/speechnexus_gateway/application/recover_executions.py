@@ -11,6 +11,7 @@ never writes a budget, never dispatches, and never fabricates stop evidence.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Lock
 
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
@@ -31,7 +32,12 @@ MAX_SWEEP_LIMIT = 500
 
 @dataclass(frozen=True, slots=True)
 class RecoverySweepReport:
-    """What one pass did, counted from the durable facts it actually read and wrote."""
+    """Exclusive outcomes: left unknown state, verified closure, or still unknown.
+
+    A version change alone is not an observation: generated usage can change the
+    version while the execution remains unknown. A closure includes an accepted
+    identical stop replay after a race. Every examined row counts once.
+    """
 
     examined: int
     observed: int
@@ -61,26 +67,47 @@ class ExecutionRecoveryService:
         self._ledger = ledger
         self._submissions = submissions
         self._terminations = terminations
+        self._after_submit_intent_id: str | None = None
+        self._scan_lock = Lock()
 
     def sweep(self, *, limit: int = 50) -> RecoverySweepReport:
-        """Reconcile one bounded batch of this gateway's uncertain executions."""
+        """Visit one ID page; an empty page wraps the next pass to the beginning.
+
+        Retain this service across passes. The cursor is process-local scheduling
+        state, never an execution fact or release permission. Restart begins at the
+        first page; concurrent passes are rejected without queuing.
+        """
         if type(limit) is not int or not 1 <= limit <= MAX_SWEEP_LIMIT:
             raise InvalidExecutionRequestError(
                 f"a recovery sweep reads between 1 and {MAX_SWEEP_LIMIT} executions"
             )
+        if not self._scan_lock.acquire(blocking=False):
+            raise RuntimeError("a recovery sweep is already running")
+        try:
+            return self._sweep(limit)
+        finally:
+            self._scan_lock.release()
+
+    def _sweep(self, limit: int) -> RecoverySweepReport:
         self._ingress.check_ownership()
         examined = observed = closed = still_unknown = 0
-        for candidate in self._ledger.list_quarantined(
+        candidates = self._ledger.list_quarantined(
             gateway_id=self._ingress.gateway_id,
             host_node_id=self._ingress.node_id,
             limit=limit,
-        ):
+            after_submit_intent_id=self._after_submit_intent_id,
+        )
+        if not candidates:
+            self._after_submit_intent_id = None
+        for candidate in candidates:
+            # A failed observation/stop must not pin every later ID forever.
+            # Advance only local visit order, never updated_at or durable state.
+            self._after_submit_intent_id = candidate.identity.submit_intent_id
             examined += 1
             # One reconciliation rule for every path that adopts an engine fact.
             current = self._submissions.query(candidate.identity.submit_intent_id) or candidate
-            if current.version != candidate.version:
-                observed += 1
             if current.execution_state is not ExecutionState.UNKNOWN_QUARANTINED:
+                observed += 1
                 continue
             stop = whole_instance_stop_evidence(
                 current, self._terminations.termination_evidence(current)

@@ -105,7 +105,12 @@ prepare 要求服务端显式提供 `ApprovedRuntimePlan`：绑定、模板、ma
 
 事务先只读定位，再按池、host、head、instance、intent、lease、gateway barrier、
 submit 的全局顺序锁定并重新核对作用域；跨节点/池替换会排序锁住旧、新父记录。
-锁等待结束后取 DB 时间，核对 owner_id、fencing、租约和请求期限。prepare 同一
+显式行锁等待结束后取 DB 时间，核对 owner_id、fencing、租约和请求期限。
+跨节点的全局 instance/head 唯一键、以及全局 outbox 事件键还可能等待另一个未提交事务；
+竞争者回滚时 INSERT 会继续成功，不触发唯一冲突异常。因此创建端口在写 intent 前
+重新取 DB 时间，并在 outbox 写入后、返回提交结果前再次核验 owner/request 期限；
+已过期则整笔回滚。recorded_at 保留实际首次 intent 写入时的 DB 时间，重放仍只读。
+prepare 同一
 事务增加 host 全六维 held peak，建立 preparing generation/head、完整意图和 runtime
 outbox。隔离预算始终计入容量，不得因 TTL 或取消归还。资源计数限制在安全整数范围，
 版本使用契约规定的字符串表示，unified memory 不再重复计 host/device RAM。

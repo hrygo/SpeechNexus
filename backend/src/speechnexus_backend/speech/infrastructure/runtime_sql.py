@@ -21,6 +21,7 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     digest,
     integer,
     prepare_resources,
+    require_runtime_authority,
     require_stop,
     unknown,
 )
@@ -476,7 +477,7 @@ def create_in_transaction(
         pool["version"],
     )
     host = _host(hosts[request.binding.target_node_id])
-    now_us = clock()  # After all potentially blocking locks, never a client clock.
+    now_us = clock()  # Explicit row locks are held; INSERTs can still wait on unique keys.
     if request.action == "prepare":
         updated = prepare_resources(
             command,
@@ -606,6 +607,10 @@ def create_in_transaction(
             "version + 1 WHERE instance_id = %s AND version = %s",
             (request.intent_id, head.instance_id, head.version),
         )
+    # A conflicting global instance/head insertion can wait on a transaction
+    # with different resource parents, then succeed after that rival rolls back.
+    now_us = clock()
+    require_runtime_authority(owner, request, now_us, owner_id=command.owner_id)
     # No network, object write or separate transaction in this unit.
     cursor.execute(
         "INSERT INTO runtime_instance_intents (target_node_id, intent_id, "
@@ -634,6 +639,9 @@ def create_in_transaction(
             request.intent_id,
         ),
     )
+    # The global outbox identity can introduce one last uniqueness wait. A
+    # successful INSERT after a rival rollback must not commit expired authority.
+    require_runtime_authority(owner, request, clock(), owner_id=command.owner_id)
     record = RuntimeRecord(
         request, plan, command.owner_id, prepared.request_digest, "pending", now_us, now_us, 1
     )

@@ -1,8 +1,8 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.6.0"
-date: 2026-10-23
+version: "1.7.0"
+date: 2026-10-24
 ---
 
 # 执行网关：提交、屏障与未知执行恢复
@@ -13,8 +13,8 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 冻结的表与网关最小权限角色。`record_stop` 已原子保存停止证据与执行终态；
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
 `mark_execution_unknown`、`record_execution_observation`、受信命令正文清理
-与自身 submit 分支的 `query_outcome` 已实现；
-认证 HTTP 屏障与只读执行查询已接入生产组合根。输出区间写入、HTTP 提交与真实引擎装配仍待后续单元。
+与自身 submit/interval 分支的 `query_outcome`、`append_interval` 已实现；
+认证 HTTP 屏障与只读执行查询已接入生产组合根。真实计量采集器、HTTP 提交与真实引擎装配仍待后续单元。
 本页区分已实现、已验证与未交付。
 
 ## 1. 代码位置与依赖
@@ -26,6 +26,7 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 | 未知转换与只读执行快照 | `domain.recovery`、`application.query_execution` | 独立 recovery/query 端口；查询不调用引擎、不触发对账或状态转换 |
 | 观察裁决与受信事务边界 | `domain.observation`、`application.observe_execution`、`interfaces.observation_transactions` | 完整身份、版本与状态检查；生成契约校验与完整 TransactionResult，不新增 HTTP 路由 |
 | 命令正文清理与许可端口 | `domain.command_redaction`、`application.redact_execution_command`、`interfaces.command_redaction_transactions` | 必须显式接入可信删除协调器；仅清正文并原子留 tombstone，不提供默认许可或 HTTP 入口 |
+| 输出区间追加与原事实查询 | `domain.output_intervals`、`application.output_intervals`、`infrastructure.output_interval_sql`、`interfaces.output_interval_transactions` | 跨阶段/资源池按逻辑流串行；权威用量是区间长度，不是最大水位；受信原生入口，无 HTTP 计量路由 |
 | 入口排序、屏障请求与证明 | `speechnexus_gateway.application.ingress`、`domain.fencing` | 同一个 guard 覆盖落 intent、完整外发握手与结果保存；网络期间不占数据库事务 |
 | 屏障控制用例与 HTTP 边界 | `application.barrier_control`、`interfaces.http.{barrier_control,control_schemas,control_errors,control_security}` | 专用组件凭据；契约生成类型、离线校验和同源 OpenAPI；不伪造引擎服务 |
 | 端口定义（`SubmissionLedger`、外发、观察） | `speechnexus_gateway.domain.ports` | 实现放 infrastructure 或测试 fake |
@@ -256,7 +257,7 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
 投影，只接受当前 gateway/node 的记录。它不提交、观察、重试引擎，也不协调执行。
 存储读取失败为 503，不能转为 404。查询不读取命令正文，不返回内部 staging key；
 仅有 staging key 不足以生成完整制品引用。输出水位读取既有 `generated_pcm_samples` 持久投影，
-不代表 `append_interval` 已交付或真实计量取得资格。unknown 的 wire marker 为
+追加事务已由第 11 节实现；水位不代表完整区间用量或真实计量采集器取得资格。unknown 的 wire marker 为
 `unconfirmed_timeout`，不创建假停止证据行。
 已有生成样本的记录不能被解释成 `failed/not_required`；读取这种矛盾事实要求
 `reconciliation_required/reconcile`，不能对外给出“从未外发、无需清理”的结论。
@@ -283,7 +284,7 @@ OpenAPI 同样取自契约 schema，保留范围、枚举、额外字段限制�
   已有 request ID、外发时间不可改写。迟到 executing 不能撤销 stopping，终态不能复活；
   普通状态响应不能伪装停止与释放证据，成功、中止及有清理的失败仍经 `record_stop`。
 - `failed/not_required` 只从 submitting 产生，并同时要求无外发时间、无 engine request ID、
-  无持久 staging、无生成样本。unknown 不能据此解除隔离。该事实允许 A 后续裁决，
+  无持久 staging、无生成样本及任何已记输出区间。unknown 不能据此解除隔离。该事实允许 A 后续裁决，
   本事务不归还 A 的任何预算。
 - 提交确认丢失返回 unknown/query_original，不自动重写。先读取原 submit；重发旧版本会冲突。
   `query_outcome` 给出当前事实，不据此声称某个更早的请求已提交或回滚。
@@ -331,9 +332,55 @@ A 的真实删除协调器仍待交付。测试使用明确命名的合成 autho
 不可变 tombstone 供受信协调使用。观察与清理边界复用统一错误/恢复映射，
 分别产生契约要求的具名快照。没有新增表、迁移、触发器、存储过程或预算权威。
 
-## 11. 未交付与已知缺口
+## 11. `append_interval` 与原区间查询
 
-- `append_interval` 仍未交付；命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
+输出区间账本由 B 唯一写入，A 读取生成事实作业务额度和结算，不再创建一份 PCM 账本。
+`OutputIntervalBoundary` 消费既有协调契约，事务前只读定位并核对本 gateway/node；
+事务内重核对完整冻结执行身份，按 pool → submit → output_stream_heads 普通行锁，
+在整条 `(operation, attempt, output_stream, meter_kind)` 上检查全部重叠，再追加不可变区间。
+不同 submit/stage，乃至不同 pool 的同一逻辑流都共用这行流权威锁。
+这里没有进程内全局协调、GiST、触发器、存储过程或新表/迁移。
+
+- 区间为 canonical PCM 样本坐标 `[sample_start,sample_end)`，不是毫秒或传输包字节。
+  范围必须正长、非负且不超过 JSON safe integer；采样率、流身份及硬输出上限必须匹配原执行。
+  同 ID 的完整请求相同才可重放；新 ID 即使范围完全相同也按重叠拒绝。相邻、空隙和乱序合法。
+- generated 追加与该 submit 的 `generated_pcm_samples=max(old,end)`、一个新版本和锁后数据库时间
+  同事务提交；任一步失败整体回滚。水位只表示已见最大位置：`[0,100)` 与 `[200,300)` 的
+  水位为 300，实际生成消耗为 200 样本。A 必须按 generated 区间长度求和，不能按水位或各 stage
+  水位相加结算。不同 attempt 实际重新生成仍是消耗。
+- delivered/played 独立记录诊断，不推进生成水位，不回退已生成消耗，也不代替停止/释放证据。
+  任意已记输出区间都会阻止后续声称“从未外发、not_required”，即使生成区间因乱序尚未到达。
+  该存在性事实从账本按原流键读取，不新增一份标量权威或公开字段；首次 INSERT 也不能预填它。
+- 迟到的生成事实可在已有完整停止证据的终态补记，不复活执行、不改停止证据或归还预算。
+  已确认从未外发的失败不能接受新的输出事实；返回 execution_cleanup_pending/reconcile。
+  越硬上限或逻辑流重叠也要求协调，不能伪造停止或改写旧区间来让计量继续。
+
+`append_interval` 和 `query_outcome(target.kind=interval)` 返回完整 `TransactionResult/FactSnapshot`；
+`fact_id` 是原 interval ID，摘要是完整规范 append 请求的 SHA-256，可由不可变区间与冻结流采样率重建。
+区间没有独立版本，结果不编造 version。查询可核对请求摘要，只读原身份，不锁行、不调用引擎，
+不修改区间、执行版本或预算。读不到本 gateway/node 的原事实时返回既有
+unknown/outcome_unknown/query_original，不能推断早前写入已回滚或授权重新生成；
+数据库读取失败也不能冒充“没有事实”。提交确认丢失时 adapter 不自动重复写入。
+
+Python/TS 共用请求、完整结果及未知恢复样例；JSON Schema 接受的整数数值在验证后映射为 domain int，
+wire 输入保持原样。输入中的布尔、数字字符串、额外权威字段仍按源 schema 拒绝。
+此处只提供受信原生事务，不开放浏览器/HTTP 计量入口，也不把任意客户端播放报告当作可信生成事实。
+真实引擎输出、网络交付/播放采集、A 的用量消费与资格负载仍需后续联调。
+
+按 ADR 0007 对旧计量用例作本分项映射：
+
+| 旧检查 | 当前执行位置与证据 | 边界变化 |
+| --- | --- | --- |
+| `test_output_intervals_are_non_overlapping_and_identity_bound` 的重叠、相邻、流/执行/采样率、硬上限、水位与历史保护 | `OutputIntervalRecord`、流锁事务；`test_gateway_output_intervals.py`、`test_output_intervals.py`，配合观察与首次创建守卫测试 | 仍保留业务不变量；同 meter 全流串行，运行角色禁止历史 UPDATE/DELETE |
+| 同用例中 raw SQL 触发器/GiST 抛错、管理员不能直改水位等机制断言 | ADR 0006 的受控事务与最小列权限替代；观察端口拒绝改写计量，只有专用追加端口推进水位 | 不要求数据库独立拦截所有绕过应用的跨表违例，不复制旧触发器 |
+| `test_output_ceiling_cannot_be_introduced_after_generated_output` | 上限在 create_submit 冻结；观察/计量均核对完整原身份，不能迟引入/改上限，native/fake 与双库正负例 | 冻结早于输出，旧 nullable→set 的管理员 DML 路径不再是产品入口 |
+
+本表仅完成输出分项映射；其他旧用例仍需逐项分类与验收，退出条件尚未全部满足，旧门禁继续过渡保留。
+
+## 12. 未交付与已知缺口
+
+- 输出区间追加和原区间查询已有，真实计量采集器、A 用量消费与资格验证仍待接入；
+  命令正文清理事务已有，真实删除协调器与许可签发仍待接入；
   unknown 事务和 submit 查询分支已有，自动恢复循环及完整事务结果边界仍待装配；
   观察端口已有完整具名结果边界，其余 B 事务的统一结果入口仍待收敛。
   `seal_barrier` 的应用入口、持久事务与认证 HTTP 已有，完整事务响应封装、HTTP 提交/中止路由、
@@ -344,7 +391,7 @@ A 的真实删除协调器仍待交付。测试使用明确命名的合成 autho
   跨节点屏障、实际 abort、物理 GPU 停止及 A 的预算释放联调仍需单独取证。
 - 提交端完整 deadline/运行资格校验仍需后续接入，当前没有公开执行入口，不可据本事务称为生产执行链路就绪。
 
-## 12. 验证
+## 13. 验证
 
 ```sh
 # 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
@@ -353,6 +400,7 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
     tests/integration/test_gateway_stop_evidence.py tests/integration/test_gateway_barrier.py \
     tests/integration/test_gateway_recovery.py tests/integration/test_gateway_observation.py \
     tests/integration/test_gateway_command_redaction.py \
+    tests/integration/test_gateway_output_intervals.py \
     tests/integration/test_gateway_barrier_http.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
@@ -404,3 +452,9 @@ PG 另验证真实 pool 锁等待后的取时与提交确认丢失后的只读�
 测试核对其他 submit 字段、停止历史、输出区间和 A 预算不变。
 许可和 A release 仅为合成 fixture，不是完整删除协调器或 A 生产释放的联合资格。
 按 ADR 0007 复核，新增正文清理路径仍不足以完成全部旧用例分类映射，旧门禁继续过渡保留。
+
+`test_gateway_output_intervals.py` 在 PG/InnoDB 验证 generated/delivered/played、完整重放和原区间查询、
+相邻/空隙/乱序、流硬上限、冻结身份及清理冲突、区间 INSERT 后投影失败的整体回滚、最小角色历史保护，
+以及停止/正文清理后仍可查询原用量事实。两个不同 pool/stage 的写者均实际等待同一输出流行锁，
+释放后重核对相邻或重叠；同 ID 并发只提交一次。PG 另有真实提交后丢确认的只读恢复。
+只有合成 PCM 坐标，没有实际语音、网络交付/播放或计费结算资格。

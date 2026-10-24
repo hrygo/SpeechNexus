@@ -31,7 +31,8 @@
       "create_runtime_intent",
       "observe_runtime",
       "record_execution_observation",
-      "redact_execution_command"
+      "redact_execution_command",
+      "append_interval"
     ]
   },
   "profiles": {

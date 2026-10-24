@@ -12,6 +12,11 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
+from speechnexus_gateway.domain.output_intervals import (
+    OutputIntervalConflictError,
+    OutputIntervalRecord,
+    OutputIntervalWrite,
+)
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     RecordStop,
@@ -25,6 +30,10 @@ from speechnexus_gateway.infrastructure.command_redaction_sql import (
 )
 from speechnexus_gateway.infrastructure.observation_sql import (
     record_execution_observation_in_transaction,
+)
+from speechnexus_gateway.infrastructure.output_interval_sql import (
+    append_interval_in_transaction,
+    read_output_interval,
 )
 from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unknown_in_transaction
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
@@ -45,11 +54,13 @@ class MySQLSubmissionLedger:
     def __init__(self, foundation: Foundation) -> None:
         self._foundation = foundation
 
-    def _run(self, work: Callable[[SubmitCursor], _Result]) -> _Result:
+    def _run(self, work: Callable[[SubmitCursor], _Result], *, read_only: bool = False) -> _Result:
         with self._foundation.connection("gateway") as connection:
             connection.autocommit(False)
             try:
                 with connection.cursor() as raw:
+                    if read_only:
+                        raw.execute("SET TRANSACTION READ ONLY")
                     result = work(cast(SubmitCursor, raw))
                 connection.commit()
                 return result
@@ -97,6 +108,21 @@ class MySQLSubmissionLedger:
                 cursor, request, clock=lambda: self._clock(cursor)
             )
         )
+
+    def append_interval(self, record: OutputIntervalRecord) -> OutputIntervalWrite:
+        try:
+            return self._run(
+                lambda cursor: append_interval_in_transaction(
+                    cursor, record, clock=lambda: self._clock(cursor)
+                )
+            )
+        except StopEvidenceConflictError as error:
+            raise OutputIntervalConflictError(
+                "interval identity already has a durable fact"
+            ) from error
+
+    def query_output_interval(self, interval_id: str) -> OutputIntervalRecord | None:
+        return self._run(lambda cursor: read_output_interval(cursor, interval_id), read_only=True)
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:
         return self._run(

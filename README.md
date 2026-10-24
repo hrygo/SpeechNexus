@@ -61,7 +61,7 @@ SpeechNexus 希望服务于三类需求：
 
 [运行时意图事务](docs/architecture/production-runtime-intents.md)已提供独立 create/query/observe 端口：同事务预留完整 peak，核验受信 warmup/资格后转 steady，确认停止且清理完成后才归还基线；PG/InnoDB 合成事实验证不代表真实 GPU 资格。批准计划/资格提供者、持久派发与实际控制循环仍待接入，没有新增公开路由。
 
-[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察和受信命令正文清理事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、未外发失败和正文清理保护也经 PG/InnoDB 合成验证。真实删除许可签发、输出区间写入、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
+[执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实计量采集/消费、删除许可签发、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 

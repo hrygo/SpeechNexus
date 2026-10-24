@@ -19,6 +19,7 @@ from speechnexus_gateway.domain.command_redaction import (
 )
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
+from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
 from speechnexus_gateway.domain.ports import DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
@@ -44,6 +45,8 @@ class InMemorySubmissionLedger:
         self._request_documents: dict[str, str | None] = {}
         self._redactions: dict[str, CommandDeletionTombstone] = {}
         self._lease_states: dict[str, LeaseState] = {}
+        self._intervals: dict[str, OutputIntervalRecord] = {}
+        self._stream_rates: dict[tuple[str, str, str], int] = {}
         self._now = now or (lambda: datetime.now(UTC))
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
@@ -72,6 +75,16 @@ class InMemorySubmissionLedger:
             raise ValueError(f"submit intent {key} already stored")
         if command_digest(json.loads(request_document)) != intent.request_digest:
             raise ValueError("request document does not match the recorded request digest")
+        if intent.output_stream_id is not None and intent.identity.sample_rate_hz is not None:
+            stream_key = (
+                intent.identity.operation_id,
+                intent.identity.attempt_id,
+                intent.output_stream_id,
+            )
+            previous_rate = self._stream_rates.get(stream_key, intent.identity.sample_rate_hz)
+            if previous_rate != intent.identity.sample_rate_hz:
+                raise InvalidExecutionRequestError("logical stream has another sample rate")
+            self._stream_rates[stream_key] = intent.identity.sample_rate_hz
         self._intents[key] = copy.deepcopy(intent)
         self._request_documents[key] = request_document
         self._lease_states.setdefault(intent.identity.lease_id, LeaseState.RESERVED)
@@ -169,6 +182,33 @@ class InMemorySubmissionLedger:
         self._redactions[key] = result.tombstone
         self._request_documents[key] = None
         return result
+
+    def append_interval(self, record: OutputIntervalRecord) -> OutputIntervalWrite:
+        interval = record.interval
+        current = self.get(interval.submit_intent_id)
+        if current is None or record.stream_key not in self._stream_rates:
+            raise InvalidExecutionRequestError("unknown execution or logical output stream")
+        overlaps = any(
+            stored.stream_key == record.stream_key
+            and stored.interval.meter_kind is interval.meter_kind
+            and stored.interval.sample_start < interval.sample_end
+            and stored.interval.sample_end > interval.sample_start
+            for stored in self._intervals.values()
+        )
+        result = record.apply(
+            current,
+            stream_sample_rate_hz=self._stream_rates[record.stream_key],
+            previous=self._intervals.get(interval.interval_id),
+            overlaps=overlaps,
+            at=self._now(),
+        )
+        if not result.replayed:
+            self._intervals[interval.interval_id] = record
+            self._intents[interval.submit_intent_id] = copy.deepcopy(result.intent)
+        return result
+
+    def query_output_interval(self, interval_id: str) -> OutputIntervalRecord | None:
+        return self._intervals.get(interval_id)
 
 
 @dataclass

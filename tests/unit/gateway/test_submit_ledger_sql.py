@@ -112,6 +112,7 @@ def stored_row(**overrides: object) -> dict[str, Any]:
         "hard_output_ceiling_samples": 48000,
         "generated_pcm_samples": 0,
         "staging_output_object_key": None,
+        "has_output_intervals": False,
         "version": 2,
         "evidence_kind": None,
         "evidence_digest": None,

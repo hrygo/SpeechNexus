@@ -1,8 +1,8 @@
 ---
 title: "SpeechNexus 资源治理与持久化设计"
 status: active
-version: "0.5.7"
-date: 2026-10-23
+version: "0.5.8"
+date: 2026-10-24
 ---
 
 # SpeechNexus 资源治理与持久化设计
@@ -157,7 +157,12 @@ queued / retry_wait → cancelled / expired
 
 失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。
 
-用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；数据库拒绝同一 meter 的重叠区间和既有区间改写 / 删除，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
+用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；受控应用事务锁定逻辑流后拒绝同一 meter 的重叠区间，运行角色不得改写或删除区间历史，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
+
+输出追加与原区间查询已由[执行网关](execution-gateway.md#11-append_interval-与原区间查询)实现，
+其双库证据只覆盖合成区间事务。真实输出/诊断采集与业务额度、结算消费仍待联调。
+实际生成消耗按 generated 区间长度求和，不能用 max-end 水位补齐未生成的空隙。
+delivered/played 不减少消耗，但其存在也阻止后续声称从未外发、无需清理。
 
 ### 2.3 保存与删除默认值
 

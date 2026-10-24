@@ -232,9 +232,36 @@ def bundle_http_surface(config: dict[str, Any]) -> dict[str, Any]:
         return node
 
     source = document(primary)
-    paths = {
-        path: rewrite(copy.deepcopy(source["paths"][path]), primary) for path in config["paths"]
-    }
+    chosen = config.get("operations")
+    if "operations" in config and (
+        not isinstance(chosen, list)
+        or not chosen
+        or any(not isinstance(value, str) or not value for value in chosen)
+        or len(chosen) != len(set(chosen))
+    ):
+        raise ValueError("HTTP operation selection requires unique nonempty operation IDs")
+    found: set[str] = set()
+    paths: dict[str, Any] = {}
+    methods = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+    for path in config["paths"]:
+        item = copy.deepcopy(source["paths"][path])
+        if chosen is not None:
+            for method in list(item):
+                if method in methods:
+                    operation = item[method].get("operationId")
+                    if operation not in chosen:
+                        del item[method]
+                    else:
+                        if method == "trace":
+                            raise ValueError("Selected HTTP method is unsupported by validation")
+                        if operation in found:
+                            raise ValueError("Duplicate selected HTTP operation identity")
+                        found.add(operation)
+            if not methods.intersection(item):
+                continue
+        paths[path] = rewrite(item, primary)
+    if chosen is not None and found != set(chosen):
+        raise ValueError("Selected HTTP operation is outside the reviewed paths")
     for name in source.get("components", {}).get("securitySchemes", {}):
         include(primary, "/components/securitySchemes/" + name)
     return {
@@ -404,6 +431,25 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         f"    return validate_http_response({name!r}, operation, status, value)\n"
     )
     types = destination / f"src/{name}-http.ts"
+    if "operations" in config:
+        # A path can include a planned POST/PATCH beside an implemented GET.
+        # The validated client's type must advertise only selected methods.
+        picked = []
+        for path, item in document["paths"].items():
+            methods = [
+                method
+                for method in item
+                if method in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+            ]
+            keys = " | ".join(json.dumps(key) for key in ("parameters", *methods))
+            picked.append(f"  {json.dumps(path)}: Pick<paths[{json.dumps(path)}], {keys}>;")
+        path_types = "type HttpPaths = {\n" + "\n".join(picked) + "\n};\n"
+    else:
+        path_types = (
+            "type HttpPaths = Pick<paths, "
+            + " | ".join(json.dumps(p) for p in document["paths"])
+            + ">;\n"
+        )
     types.write_text(
         "// Generated HTTP validation entrypoints; do not edit.\n"
         'import openapiFetch from "openapi-fetch";\n'
@@ -415,10 +461,8 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         "export type HttpOperation = "
         + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])
         + ";\n"
-        "type HttpPaths = Pick<paths, "
-        + " | ".join(json.dumps(p) for p in document["paths"])
-        + ">;\n"
-        "const validator = createHttpValidator(bundle);\n"
+        + path_types
+        + "const validator = createHttpValidator(bundle);\n"
         "export function validateRequest<T>(operation: HttpOperation, value: T): T {\n"
         "  return validator.validateRequest(operation, value);\n}\n"
         "export function validateResponse<T>("

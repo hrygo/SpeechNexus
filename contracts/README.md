@@ -291,6 +291,14 @@ sources without enabling routes or a socket. Shared trace inputs distinguish
 shape validation from C4/A05 state-machine/real-engine acceptance; see the package
 profile list and examples. Packaged HTTP contracts do not register C's routes.
 
+The opt-in `admin-http` profile selects only `listWorkspaces` and `getWorkspace`
+within the two reviewed workspace paths. `operations` narrows both generated
+OpenAPI and the validated TypeScript client when source paths also declare
+planned writes. Python/TypeScript runtime entrypoints include Workspace,
+WorkspaceList and the canonical shared ErrorResponse. Standard 400/403/503
+responses are declared on the source GET operations. These are contract
+artifacts; backend route and PostgreSQL integration remain pending.
+
 ## Validation
 
 Run:

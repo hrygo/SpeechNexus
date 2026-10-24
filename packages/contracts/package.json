@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./admin": "./src/admin.ts",
+    "./admin-http": "./src/admin-http.ts",
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
     "./runtime": "./src/runtime.ts",

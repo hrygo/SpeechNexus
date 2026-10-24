@@ -1,0 +1,600 @@
+{
+  "examples": [
+    {
+      "id": "list-defaults-omitted",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {},
+      "valid": true
+    },
+    {
+      "id": "list-bounds",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": "100",
+          "cursor": "cursor-demo"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "list-limit-zero",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-limit-too-large",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": 101
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-limit-boolean",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-limit-noncanonical",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": "01"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-limit-fraction",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "limit": "1.5"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-cursor-empty",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "cursor": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-cursor-too-long",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "cursor": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-cursor-array",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "cursor": ["cursor-demo"]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-unknown-query",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "query": {
+          "tenant": "private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-get-body",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "body": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "list-duplicate-header-case",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "headers": {
+          "X-Request-ID": "one",
+          "x-request-id": "two"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-empty-request-id",
+      "operation": "listWorkspaces",
+      "kind": "request",
+      "value": {
+        "headers": {
+          "X-Request-ID": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-default-workspace",
+      "operation": "getWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-default"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "get-path-missing",
+      "operation": "getWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "get-path-traversal",
+      "operation": "getWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "../private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-path-unknown",
+      "operation": "getWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-default",
+          "tenant": "other"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "get-query-rejected",
+      "operation": "getWorkspace",
+      "kind": "request",
+      "value": {
+        "path": {
+          "workspace_id": "workspace-default"
+        },
+        "query": {
+          "limit": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "list-response",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "workspace-default",
+              "object": "nexus.workspace",
+              "display_name": "Shared workspace",
+              "status": "active",
+              "metadata_revision": 1,
+              "policy_revision": "9007199254740993",
+              "created_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "get-response",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": "9007199254740993",
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "get-disabled",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "disabled",
+          "metadata_revision": 1,
+          "policy_revision": "9007199254740993",
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "get-response-numeric-policy",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "get-response-invalid-time",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": "9007199254740993",
+          "created_at": "yesterday"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "get-response-private-field",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "active",
+          "metadata_revision": 1,
+          "policy_revision": "9007199254740993",
+          "created_at": "2026-10-24T00:00:00Z",
+          "engine_endpoint": "http://private.invalid"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "get-response-invalid-state",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "ready",
+          "metadata_revision": 1,
+          "policy_revision": "9007199254740993",
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "get-response-zero-revision",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "id": "workspace-default",
+          "object": "nexus.workspace",
+          "display_name": "Shared workspace",
+          "status": "active",
+          "metadata_revision": 0,
+          "policy_revision": "9007199254740993",
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "list-missing-cursor",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "workspace-default",
+              "object": "nexus.workspace",
+              "display_name": "Shared workspace",
+              "status": "active",
+              "metadata_revision": 1,
+              "policy_revision": "9007199254740993",
+              "created_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "undeclared-list-404",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 404
+    },
+    {
+      "id": "listWorkspaces-error-400",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "listWorkspaces-error-401",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "listWorkspaces-error-403",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 403
+    },
+    {
+      "id": "listWorkspaces-error-503",
+      "operation": "listWorkspaces",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "getWorkspace-error-400",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "getWorkspace-error-401",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getWorkspace-error-403",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 403
+    },
+    {
+      "id": "getWorkspace-error-404",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getWorkspace-error-503",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "error-private-field",
+      "operation": "getWorkspace",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "workspace_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Workspace service unavailable.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false,
+            "dsn": "postgres://private.invalid"
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    }
+  ]
+}

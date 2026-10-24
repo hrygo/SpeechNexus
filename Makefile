@@ -122,6 +122,7 @@ coordination-test:
 	uv run pytest tests/contract/test_coordination_transactions.py \
 		tests/integration/test_coordination_transactions.py \
 		tests/integration/test_production_jobs.py \
+		tests/integration/test_job_recovery_unknown.py \
 		tests/integration/test_production_owners.py \
 		tests/integration/test_production_claims.py \
 		tests/integration/test_production_admission.py \

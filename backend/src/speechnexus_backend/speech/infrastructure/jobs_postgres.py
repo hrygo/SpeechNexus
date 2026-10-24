@@ -56,6 +56,8 @@ class PostgresJobTransactions:
                 with self._pool.connection(timeout=remaining) as connection:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
+                        if recover:
+                            return unknown_result(request)
                         return JobResult(
                             "rejected",
                             request.job_id,
@@ -98,12 +100,17 @@ class PostgresJobTransactions:
                 # Includes lost commit acknowledgments. Never retry the write.
                 return unknown_result(request)
             except psycopg.Error:
+                if recover:
+                    return unknown_result(request)
                 return JobResult(
                     "rejected",
                     request.job_id,
                     error_code="reconciliation_required",
                     recovery="reconcile",
                 )
+        if recover:
+            # A failed read cannot settle the original write or authorize retry.
+            return unknown_result(request)
         return JobResult(
             "rejected",
             request.job_id,

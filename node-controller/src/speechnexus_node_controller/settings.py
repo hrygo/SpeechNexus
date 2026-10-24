@@ -45,3 +45,6 @@ class Settings(BaseSettings):
     stop_timeout_seconds: float = Field(default=20.0, gt=0, le=300)
     exit_wait_seconds: float = Field(default=30.0, gt=0, le=600)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    local_observer_enabled: bool = True
+    observation_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
+    observation_batch_size: int = Field(default=50, ge=1, le=500)

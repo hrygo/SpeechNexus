@@ -112,6 +112,7 @@ def controller_server(
     *,
     runtime: ScriptedNodeRuntime | None = None,
     lose_first_post_reply: bool = False,
+    local_observer_enabled: bool = False,
 ) -> Iterator[LiveController]:
     directory.mkdir(exist_ok=True)
     daemon = runtime if runtime is not None else ScriptedNodeRuntime()
@@ -138,6 +139,10 @@ def controller_server(
         approved_templates_file=directory / "unused-templates.json",
         intent_store_path=directory / "intents.sqlite3",
         docker_socket_path=directory / "unused-socket",
+        # These scenarios explicitly script/fold each observation. Loop coverage
+        # has its own lifespan and real-process tests.
+        local_observer_enabled=local_observer_enabled,
+        observation_interval_seconds=0.02,
     )
     app = create_app(
         settings=settings,
@@ -197,3 +202,4 @@ def controller_server(
                 serving.result(timeout=5)
     finally:
         sock.close()
+        store.close()

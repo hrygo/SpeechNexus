@@ -209,3 +209,44 @@ def test_the_record_carries_the_full_request_and_the_store_schema_is_versioned(
     assert stored["request"] == request_payload(build_request())
     assert stored == intent_record_payload(_intent())
     store.close()
+
+
+def test_unresolved_pages_exclude_terminals_and_survive_reopening(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for suffix, state in (
+        ("c", RuntimeIntentState.QUARANTINED),
+        ("a", RuntimeIntentState.PENDING),
+        ("b", RuntimeIntentState.RECONCILING),
+        ("done", RuntimeIntentState.SUCCEEDED),
+    ):
+        store.add(
+            _intent(
+                intent_id="intent-" + suffix,
+                intent_state=state,
+                observed_instance_state=(
+                    ObservedInstanceState.READY
+                    if state is RuntimeIntentState.SUCCEEDED
+                    else ObservedInstanceState.LOADING
+                ),
+            )
+        )
+    first = store.list_unresolved(after_intent_id=None, limit=2)
+    assert [intent.intent_id for intent in first] == ["intent-a", "intent-b"]
+    store.close()
+    reopened = _store(tmp_path)
+    try:
+        second = reopened.list_unresolved(after_intent_id=first[-1].intent_id, limit=2)
+        assert [intent.intent_id for intent in second] == ["intent-c"]
+        assert reopened.list_unresolved(after_intent_id="intent-c", limit=2) == []
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("limit", (0, 501, True, 1.5))
+def test_the_store_refuses_an_unbounded_observation_query(tmp_path: Path, limit: int) -> None:
+    store = _store(tmp_path)
+    try:
+        with pytest.raises(ValueError, match="limit within"):
+            store.list_unresolved(after_intent_id=None, limit=limit)
+    finally:
+        store.close()

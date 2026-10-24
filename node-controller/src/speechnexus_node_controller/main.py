@@ -17,4 +17,5 @@ def main() -> None:
         log_level=settings.log_level,
         proxy_headers=False,
         server_header=False,
+        workers=1,
     )

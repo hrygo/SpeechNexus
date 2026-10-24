@@ -80,6 +80,15 @@ class ProbeIntentStore:
             if intent.instance_id == instance_id
         ]
 
+    def list_unresolved(
+        self, *, after_intent_id: str | None, limit: int
+    ) -> list[RuntimeInstanceIntent]:
+        return [
+            copy.deepcopy(intent)
+            for key, intent in sorted(self._intents.items())
+            if key > (after_intent_id or "") and intent.intent_state.is_unresolved
+        ][:limit]
+
 
 @dataclass(slots=True)
 class ProbeReport:

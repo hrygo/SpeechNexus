@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev1
+  version: 0.1.0.dev2
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -211,6 +211,13 @@ paths:
         the exact original intent and key to resolve its original result.
         Without an original key, automatic recovery is not promised; a GET of
         a candidate revision does not prove ownership of the original command.
+
+        The bounded public ingress may refuse Host/Origin (403), unsupported
+        method (405 with Allow), receive timeout (408), request size (413),
+        non-JSON media (415), or local receive capacity (429). These refusals
+        concern this HTTP attempt and do not settle any earlier original-key
+        outcome. They do not authorize a new key or automatic create retry.
+        Limits are deployment configuration, not implicit profile parameters.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -234,10 +241,22 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/ProfileCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/ProfileReceiveTimeout"
         "409":
           $ref: "#/components/responses/ProfileDraftConflict"
+        "413":
+          $ref: "#/components/responses/ProfileRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/ProfileMediaUnsupported"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/ProfileReceiveFull"
         "503":
           $ref: "#/components/responses/ProfileCreationUnknown"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}:
@@ -253,6 +272,8 @@ paths:
         `retryable: true` for this same fixed GET; it cannot be reported as 404
         or used to infer that an earlier create did not commit. No Operation
         recovery or default/current revision selection is implied.
+        Host/Origin refusal uses 403; unsupported methods use 405 with Allow.
+        Reads accept no body and invalid read framing is a 400 input error.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -271,8 +292,12 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/ProfileReadMethodNotAllowed"
         "503":
           $ref: "#/components/responses/ProfileReadUnavailable"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications:
@@ -1071,6 +1096,54 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ProfileDraftConflictError"
+    ProfileCreateMethodNotAllowed:
+      description: The selected draft creation path accepts POST only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: POST
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProfileReadMethodNotAllowed:
+      description: The selected fixed revision path accepts GET only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProfileReceiveTimeout:
+      description: The bounded JSON receive deadline expired; no new outcome is inferred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProfileRequestTooLarge:
+      description: Actual or declared request bytes exceed the configured ingress bound.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProfileMediaUnsupported:
+      description: Draft creation requires application/json encoded as UTF-8.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProfileReceiveFull:
+      description: Local bounded receive capacity is full; earlier original-key state is unknown.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     ProfileCreationUnknown:
       description: Original creation result unreadable or commit uncertain; retain original intent/key.
       headers:

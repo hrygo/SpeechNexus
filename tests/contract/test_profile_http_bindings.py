@@ -65,6 +65,8 @@ def source_accepts(example: dict[str, Any]) -> bool:
         normalized = {key.lower(): item for key, item in headers.items()}
         for key, header in response.get("headers", {}).items():
             schema = resolve(header)
+            if schema.get("required") and key.lower() not in normalized:
+                return False
             if key.lower() in normalized and not valid(schema["schema"], normalized[key.lower()]):
                 return False
         return True
@@ -129,7 +131,7 @@ def test_profile_surface_does_not_advertise_other_admin_methods_or_change_worksp
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev1"
+    assert actual["info"]["version"] == "0.1.0.dev2"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/profiles"]) == {"post"}
     assert set(actual["paths"]["/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"]) == {

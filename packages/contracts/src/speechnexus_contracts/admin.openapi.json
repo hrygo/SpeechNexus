@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev1",
+    "version": "0.1.0.dev2",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions, runtime instances, capacity manifests, and\nqualification reports are separate resources. No response exposes private\nartifact paths, engine endpoints, credentials, or arbitrary container\ncontrol.\n"
   },
   "security": [

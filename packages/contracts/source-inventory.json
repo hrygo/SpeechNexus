@@ -1,7 +1,7 @@
 {
   "admin-openapi.yaml": {
-    "sha256": "199a60a750154923f105b8a54f565ddfa6eddc8d3e79c6a8e557a7eb5dd0efae",
-    "version": "0.1.0.dev1"
+    "sha256": "819a74b9679e11752a62ab421ab82d117311af034f3fd71da8196fa26939930e",
+    "version": "0.1.0.dev2"
   },
   "capacity-manifest.schema.json": {
     "sha256": "3f27dfa3d0b30542c8506abcb5124d13a81b41a54539297c5d0604858b247b40",

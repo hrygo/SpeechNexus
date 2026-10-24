@@ -204,7 +204,14 @@ def bundle_http_surface(config: dict[str, Any]) -> dict[str, Any]:
         if path == primary and len(tokens) == 3 and tokens[0] == "components":
             category, name = tokens[1:]
         else:
-            category = "schemas"
+            # External OpenAPI objects retain their real namespace. A parameter
+            # and header may share a name; neither is a JSON Schema component.
+            external_component = (
+                len(tokens) == 3
+                and tokens[0] == "components"
+                and str(document(path).get("openapi", "")).startswith("3.")
+            )
+            category = tokens[1] if external_component else "schemas"
             external = str(path.relative_to(CONTRACTS)).replace("/", "_").replace(".", "_")
             name = (
                 "External_" + external.replace("-", "_") + "_" + (tokens[-1] if tokens else "Root")

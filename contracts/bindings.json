@@ -184,6 +184,13 @@
       "schema_refs": {
         "BindingParameterDefaultsSnapshot": "#"
       }
+    },
+    "binding_defaults_producer": {
+      "source": "binding-defaults-producer.openapi.yaml",
+      "client": false,
+      "schemas": [
+        "BindingDefaultsCreateRequest"
+      ]
     }
   },
   "http_surfaces": {
@@ -250,6 +257,19 @@
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"
       ],
       "operations": ["createModelBindingDraft", "getModelBindingRevision"]
+    },
+    "binding_defaults": {
+      "source": "binding-defaults-producer.openapi.yaml",
+      "validate": true,
+      "typescript_source": "binding_defaults_producer",
+      "paths": [
+        "/v1/nexus/admin/model-bindings",
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/parameter-defaults"
+      ],
+      "operations": [
+        "createModelBindingDraft",
+        "getModelBindingParameterDefaults"
+      ]
     }
   }
 }

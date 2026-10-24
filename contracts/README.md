@@ -452,3 +452,11 @@ complete profiles, which keep their original requiredness and domains. The
 [format and lifecycle requirements](../docs/architecture/binding-parameter-defaults.md)
 separate parsing from registry storage, published configuration and qualification.
 No default-snapshot HTTP operation or ModelBinding wire-field change is introduced.
+
+The separate `binding-defaults-producer.openapi.yaml` `0.1.0.dev0`
+[producer profile](../docs/architecture/binding-defaults-producer.md) declares
+optional `parameter_defaults` on new draft creation and a fixed snapshot GET.
+It reuses the legacy admin request's canonical field schemas. Its own
+`binding_defaults_producer` / `binding_defaults` artifacts remain `contract`;
+the implemented admin `0.1.0.dev3` / `binding` surface is unchanged and does not
+advertise or admit these future capabilities. Snapshot `1.0.0` stays unchanged.

@@ -1,0 +1,226 @@
+openapi: 3.1.0
+info:
+  title: SpeechNexus binding default producer contract
+  version: 0.1.0.dev0
+  description: Contract-only extension for creating a new binding revision with explicitly declared parameter
+    defaults and reading its fixed snapshot. This profile does not advertise implemented operational routes
+    or prove persistence, authority, publication or qualification. Legacy admin 0.1.0.dev3 remains the
+    implemented draft contract until the producer is wired.
+servers:
+- url: /
+security:
+- SharedServiceKey: []
+- {}
+tags:
+- name: model-bindings
+paths:
+  /v1/nexus/admin/model-bindings:
+    post:
+      tags:
+      - model-bindings
+      operationId: createModelBindingDraft
+      summary: Create an immutable draft binding revision
+      description: |
+        Creates a new immutable revision in draft state. The registry allocates
+        the family revision and a globally unique revision_id; the caller cannot
+        supply either identity. Independent successful commands append distinct
+        revisions, preserving earlier history. supersedes_revision records a
+        supersession relationship; it is not an expected-head CAS guard.
+        Publishing requires separate capacity and qualification evidence.
+
+        Optional parameter_defaults explicitly declares sparse canonical parameter
+        values for this new revision. Omission creates no defaults declaration;
+        an explicit empty object declares no defaults. Null is not omission.
+        The registry allocates the snapshot identity and fixed parent references,
+        and commits the new revision and at most one snapshot atomically. The
+        caller supplies binding_id as before, but cannot supply snapshot_id,
+        allocated revision/revision_id or timestamps. Values
+        must fit the binding's tasks and parameter domains before commit; a
+        structurally valid but incompatible declaration returns 422. No engine
+        defaults are probed or inferred. Existing revisions are never amended.
+        The binding response shape is unchanged; its exact identity addresses
+        the fixed parameter-defaults GET. This declaration is not publication,
+        producer authentication, engine qualification or a default pointer.
+
+        Replaying the same Idempotency-Key and canonical complete intent returns
+        the original revision before any allocation. The same key with a different
+        intent returns 409 idempotency_conflict without allocating a new revision.
+        Complete intent includes parameter_defaults presence and every explicit
+        value: omission and an empty object are different intents. Recovery must
+        return the original snapshot as well as the original binding identity;
+        later configuration cannot populate or replace that snapshot.
+        Malformed JSON, unknown fields and invalid header/schema values return 400;
+        structurally valid but inconsistent binding composition returns 422.
+
+        An unreadable original result or uncertain commit returns 503
+        binding_result_unknown with retryable: false. It does not establish that
+        no revision was created. There is no automatic retry, new key, Operation
+        or query-by-key recovery resource. A caller retaining the original key
+        may explicitly replay this same POST with the exact original intent and
+        key to resolve that result. Without an original key automatic recovery
+        is not promised; a candidate revision GET does not prove original-command
+        ownership. Receive refusals do not settle an earlier original-key outcome.
+
+        The bounded public ingress may refuse Host/Origin (403), unsupported
+        method (405 with Allow), receive timeout (408), request size (413),
+        non-JSON media (415), or local receive capacity (429). Limits are deployment
+        configuration, not implicit binding parameters or qualification evidence.
+      parameters:
+      - $ref: admin-openapi.yaml#/components/parameters/XRequestId
+      - $ref: admin-openapi.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingDefaultsCreateRequest'
+      responses:
+        '201':
+          description: Draft binding revision created.
+          headers:
+            X-Request-ID:
+              $ref: admin-openapi.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: admin-openapi.yaml#/components/schemas/ModelBindingDraftRevision
+        '400':
+          $ref: admin-openapi.yaml#/components/responses/BadRequest
+        '401':
+          $ref: admin-openapi.yaml#/components/responses/Unauthorized
+        '409':
+          $ref: admin-openapi.yaml#/components/responses/BindingDraftConflict
+        '422':
+          $ref: admin-openapi.yaml#/components/responses/UnprocessableEntity
+        '403':
+          $ref: admin-openapi.yaml#/components/responses/Forbidden
+        '405':
+          $ref: admin-openapi.yaml#/components/responses/BindingCreateMethodNotAllowed
+        '408':
+          $ref: admin-openapi.yaml#/components/responses/BindingReceiveTimeout
+        '413':
+          $ref: admin-openapi.yaml#/components/responses/BindingRequestTooLarge
+        '415':
+          $ref: admin-openapi.yaml#/components/responses/BindingMediaUnsupported
+        '429':
+          $ref: admin-openapi.yaml#/components/responses/BindingReceiveFull
+        '503':
+          $ref: admin-openapi.yaml#/components/responses/BindingCreationUnknown
+  /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/parameter-defaults:
+    get:
+      tags:
+      - model-bindings
+      operationId: getModelBindingParameterDefaults
+      summary: Get the explicit default parameter snapshot of one fixed binding revision
+      description: |
+        Reads only the snapshot allocated with this exact binding revision.
+        Snapshot binding_id and binding_revision must match the path and its
+        binding_revision_id must identify the same authoritative parent. These
+        cross-resource checks are producer obligations, not schema-only proof.
+        Never selects a latest/current/default revision, allocates a snapshot or
+        fills engine/schema defaults. An explicit parameters: {} is a successful
+        declaration; a missing declaration is not that value. Return 404
+        binding_defaults_not_found only after an authoritative read confirms no
+        snapshot for this parent, including absent parents and legacy revisions
+        created without a declaration. Do not manufacture empty defaults.
+        Unreadable parent/snapshot facts return 503 binding_unavailable with
+        retryable: true for this same fixed GET; this is not absence, permission
+        to repeat a creation under a new key, or proof of original-key ownership.
+        A create result remains recoverable only through its original POST,
+        complete intent and retained key. No keyless recovery is introduced.
+        Invalid path/header/query values or read body/framing return 400.
+        Host/Origin refusal uses 403; unsupported methods use 405 with Allow.
+        Reading a declaration proves neither publication nor engine capability
+        or the final merged parameter configuration.
+      parameters:
+      - $ref: admin-openapi.yaml#/components/parameters/BindingIdPath
+      - $ref: admin-openapi.yaml#/components/parameters/RevisionPath
+      - $ref: admin-openapi.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Immutable explicit declaration for the exact parent revision.
+          headers:
+            X-Request-ID:
+              $ref: admin-openapi.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: ./binding-parameter-defaults.schema.json
+        '400':
+          $ref: admin-openapi.yaml#/components/responses/BadRequest
+        '401':
+          $ref: admin-openapi.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: admin-openapi.yaml#/components/responses/Forbidden
+        '404':
+          description: Authoritative read confirms no default declaration for this fixed parent.
+          headers:
+            X-Request-ID:
+              $ref: admin-openapi.yaml#/components/headers/XRequestId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingDefaultsMissingError'
+        '405':
+          $ref: admin-openapi.yaml#/components/responses/BindingReadMethodNotAllowed
+        '503':
+          $ref: admin-openapi.yaml#/components/responses/BindingReadUnavailable
+components:
+  securitySchemes:
+    SharedServiceKey:
+      $ref: admin-openapi.yaml#/components/securitySchemes/SharedServiceKey
+  schemas:
+    BindingDefaultsCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - binding_id
+      - logical_model
+      - tasks
+      - engine
+      - artifact_set
+      - execution_recipe
+      - parameter_domains
+      - release_tier
+      properties:
+        binding_id:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/binding_id
+        supersedes_revision:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/supersedes_revision
+        logical_model:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/logical_model
+        tasks:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/tasks
+        engine:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/engine
+        artifact_set:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/artifact_set
+        execution_recipe:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/execution_recipe
+        parameter_domains:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/parameter_domains
+        release_tier:
+          $ref: admin-openapi.yaml#/components/schemas/ModelBindingCreateRequest/properties/release_tier
+        parameter_defaults:
+          $ref: binding-parameter-defaults.schema.json#/$defs/BindingDefaultParameters
+          description: Explicit sparse values. Omission creates no declaration; {} explicitly declares
+            none. No schema default populates a value.
+    BindingDefaultsMissingError:
+      allOf:
+      - $ref: admin-openapi.yaml#/components/schemas/ErrorResponse
+      - type: object
+        properties:
+          error:
+            type: object
+            properties:
+              code:
+                const: binding_defaults_not_found
+              type:
+                const: not_found_error
+              retryable:
+                const: false
+              retry_after_ms:
+                type: 'null'
+              param:
+                type: 'null'
+              nexus: false

@@ -12,6 +12,7 @@ import * as model_bindings from "../src/model_bindings.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
 import * as gateway_recovery from "../src/gateway_recovery.ts";
 import * as binding_defaults from "../src/binding_defaults.ts";
+import * as binding_defaults_producer from "../src/binding_defaults_producer.ts";
 import { exampleValue } from "./contract-examples.mjs";
 
 const profiles = {
@@ -25,6 +26,7 @@ const profiles = {
   model_bindings,
   gateway_recovery,
   binding_defaults,
+  binding_defaults_producer,
 };
 const fixtures = JSON.parse(
   readFileSync(

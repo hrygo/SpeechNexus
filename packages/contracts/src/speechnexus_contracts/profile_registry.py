@@ -12,6 +12,9 @@ PROFILES = frozenset(
         "model_bindings",
         "gateway_recovery",
         "binding_defaults",
+        "binding_defaults_producer",
     )
 )
-HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile", "binding"))
+HTTP_PROFILES = frozenset(
+    ("admin", "runtime", "workbench", "profile", "binding", "binding_defaults")
+)

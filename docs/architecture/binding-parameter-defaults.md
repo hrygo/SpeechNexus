@@ -74,8 +74,9 @@ The schema checks field types and individual domains. It does not perform a
 registry lookup, validate producer authority, negotiate segment budgets or prove
 cross-resource/merged-parameter compatibility. Storage transactions, publication
 CAS/default pointers and actual engine/capacity/quality evidence still require
-separate implementation and acceptance. No creation, lookup or recovery endpoint
-is declared by this unit.
+separate implementation and acceptance. The standalone format defines no operation. The separate
+[producer HTTP contract](binding-defaults-producer.md) declares explicit input and
+fixed lookup; its persistence and actual route support remain separate acceptance.
 
 ## Consumers and compatibility evidence
 

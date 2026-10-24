@@ -176,6 +176,71 @@ runner固定完整pytest入口，拒绝`PYTEST_ADDOPTS`及-k/-m缩窄、ignore�
 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)本轮交付块及其Actions链接。
 比较时同时报告关键路径与并行增加的服务/runner成本，不用本地时间推导远端倍数。
 
+## 第五轮：慢运行器方差与 6 片分区
+
+四片并行（第四轮）生效起（含该 PR 自身的验证运行与合并后的 `main` push），连续 10 次运行全部
+success，整轮落在 175–214 秒（约 2 分 55 秒–3 分 34 秒），没有再出现优化前 4–8 分钟的整轮：
+
+| run | 提交 | 事件/分支 | 整轮 |
+| --- | --- | --- | ---: |
+| [203](https://github.com/hrygo/SpeechNexus/actions/runs/40076497465) | `14541411` | PR `codex/ci-shard-4` | 175 秒 |
+| [204](https://github.com/hrygo/SpeechNexus/actions/runs/40076807703) | `5ce396ae` | push `main` | 191 秒 |
+| [205](https://github.com/hrygo/SpeechNexus/actions/runs/40076893032) | `199a7a48` | PR `feat/a00-workspace-read-contracts` | 210 秒 |
+| [206](https://github.com/hrygo/SpeechNexus/actions/runs/40077135439) | `2a46c6e2` | push `main` | 198 秒 |
+| [208](https://github.com/hrygo/SpeechNexus/actions/runs/40077836265) | `5a60da7e` | PR `feat/a04-workspace-read-api` | 202 秒 |
+| [209](https://github.com/hrygo/SpeechNexus/actions/runs/40078130260) | `4b08c396` | push `main` | 196 秒 |
+| [210](https://github.com/hrygo/SpeechNexus/actions/runs/40080023597) | `d67b13bd` | PR `task/b-b03-tts-adapter` | 211 秒 |
+| [211](https://github.com/hrygo/SpeechNexus/actions/runs/40080382232) | `d683d31d` | PR `task/b-b03-tts-adapter` | 197 秒 |
+| [212](https://github.com/hrygo/SpeechNexus/actions/runs/40080701926) | `32c2bf1f` | push `main` | 198 秒 |
+| [213](https://github.com/hrygo/SpeechNexus/actions/runs/40082831951) | `99d47cdd` | PR `task/b-b02-controller-reconcile` | 214 秒 |
+
+列表之后的一次 [run 40083273624](https://github.com/hrygo/SpeechNexus/actions/runs/40083273624)
+整轮 317 秒（5 分 17 秒），越过 5 分钟预算。原因不是测试集合变化，而是一台运行器整体变慢：
+
+| 观测 | 该运行 | 同期正常运行 |
+| --- | ---: | ---: |
+| `Initialize containers`（分片 1） | 57 秒 | 30–42 秒 |
+| 对象存储构建与启动（分片 1） | 16 秒 | 8–16 秒 |
+| pytest 分片 1 | 216 秒 | 104–128 秒 |
+| pytest 分片 0 / 2 / 3（同一次运行） | 118 / 122 / 87 秒 | — |
+| 整轮 | 317 秒 | 175–214 秒 |
+
+同一次运行里其余分片仍在正常区间，分片 1 的用例数（224）也与其它分片接近，所以多出的时间是该
+运行器的 CPU/磁盘/网络，而不是分区失衡。稳定哈希分区对*用例数*均衡，对*用例耗时*不均衡：
+只要最慢的那台运行器整体变慢约 1.7 倍，四片配置的整轮就会超过 5 分钟。
+
+因此本轮把稳定哈希分区从 4 片改为 6 片（`max-parallel: 6`、`shard: [0…5]`、`--count 6`），
+`fail-fast: false`、双库服务、完整性核验、既有跳过规则与分片证据全部不变。同一份完整集合
+（摘要 `sha256:8690ba6cc9329d67404852f971769f9676151e1321acb003e2a8f76479d83dca`，914 项）
+按 `SHA256(nodeid) % 6` 重新分区，互斥且并集完整：
+
+| 分区 | 每片用例数 |
+| --- | --- |
+| 4 片 | 217 / 224 / 237 / 236 |
+| 6 片 | 139 / 144 / 168 / 150 / 147 / 166 |
+
+六片实测 [run 40083884260](https://github.com/hrygo/SpeechNexus/actions/runs/40083884260)：整轮
+163 秒，六个分片作业 125–146 秒（作业内 pytest 61–94 秒、`Initialize containers` 31–40 秒、对象
+存储 8–14 秒），分片跨度从四片时的 98 秒降到 21 秒；同一轮 `python_checks` 106 秒、Web 27 秒、
+部署 4 秒，双库汇总 7 秒、`Python quality and tests` 3 秒。按同一比例外推，即使再遇到 1.7 倍慢
+运行器，整轮仍落在 4 分钟以内。
+
+| 观测 | 四片（run 212 / 213） | 慢运行器（run 40083273624） | 六片（run 40083884260） |
+| --- | ---: | ---: | ---: |
+| 单分片 pytest | 104–128 秒 | 216 秒 | 61–94 秒 |
+| 分片作业 | 164–200 秒 | 141–303 秒 | 125–146 秒 |
+| 整轮 | 198–214 秒 | 317 秒 | 163 秒 |
+
+关键路径与预算归属：最慢分片作业 ≈ 作业内固定开销（`Initialize containers` 31–40 秒、对象存储
+8–14 秒、检出与依赖约 8 秒）+ 该片 pytest 时间，再加双库完整性汇总（7 秒）与
+`Python quality and tests`（3 秒）。代价是每次运行 6 个运行器、每个仍自建 PG 16.15 /
+InnoDB 8.4.8 / 版本化 MinIO，服务启动总量高于四片；本轮优先保证 5 分钟反馈目标。
+
+观测与触发下一档调整：聚合脚本已经把 `Longest shard execution …s` 写进步摘要，分片变慢会先在
+运行摘要可见。触发条件（任一）：单分片 pytest 步骤超过 3 分钟、整轮超过 4 分钟，或再次出现整轮
+被单台慢运行器拉过 4 分半。届时优先降低单分片用例成本（例如减少每个用例的建库/迁移开销）而不是
+继续加片；仍然不通过减少测试集合、放宽双库/完整性核验、跳过检查或路径过滤来提速。
+
 ## 第四轮：四片并行把整轮压到三分半
 
 双库分片（PR #90）之后，[PR #92 首轮 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40075633811)

@@ -1,10 +1,12 @@
 """Uncertainty transitions and read-only projections; neither may issue engine work."""
 
+import hashlib
 import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from speechnexus_gateway.domain.canonical import canonical_json
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     ExecutionCleanupPendingError,
@@ -177,6 +179,8 @@ class InstanceTerminationEvidence:
     ``process_exited`` and ``resources_released`` are two separate observations. A
     controller status, a failed reconcile, a timeout or a disconnect reports neither, so
     uncertain work keeps holding capacity instead of being reported as stopped.
+    ``evidence_id`` identifies the source event; the execution ledger derives its own
+    per-execution ID so one physical termination can cover every affected execution.
     """
 
     instance_id: str
@@ -224,8 +228,14 @@ def whole_instance_stop_evidence(
         return None
     if evidence.observed_at < intent.recorded_at:
         return None
+    # One physical termination can cover many executions. The append-only stop ledger
+    # requires an execution-specific identity, stable across batches and restarts.
+    # Keep the producer's digest and instant: deriving an identity adds no stop facts.
+    evidence_key = canonical_json(
+        ["whole-instance-stop/v1", evidence.evidence_id, identity.submit_intent_id]
+    )
     return VerifiedStopEvidence(
-        evidence_id=evidence.evidence_id,
+        evidence_id="stop-instance-" + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest(),
         submit_intent_id=identity.submit_intent_id,
         evidence_kind=evidence.evidence_kind,
         evidence_digest=evidence.evidence_digest,

@@ -154,6 +154,9 @@ class PostgresAdmissionTransactions:
                 if ready_to_commit:
                     return unknown(identity)
                 return rejected(identity, "reconciliation_required")
+        # An exhausted read cannot prove that the original admission write rolled back.
+        if prepared is None:
+            return unknown(identity)
         return AdmissionResult(
             "rejected", identity, error_code="reconciliation_required", recovery="retry_transaction"
         )

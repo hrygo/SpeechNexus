@@ -14,6 +14,7 @@ from speechnexus_backend.speech.domain.admission import unknown
 from speechnexus_backend.speech.infrastructure.admission_postgres import (
     PostgresAdmissionTransactions,
 )
+from speechnexus_backend.speech.infrastructure.leases_postgres import _BudgetExpiredError
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from tests.fake.admission import COMMAND
 from tests.unit.test_runtime_postgres import FaultPool
@@ -172,3 +173,80 @@ def test_error_after_work_finishes_cannot_claim_confirmed_rollback(
 def test_configuration_does_not_allow_unbounded_transactions(timeout: float, attempts: int) -> None:
     with pytest.raises(ValueError):
         _port(None, timeout_seconds=timeout, max_attempts=attempts)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PoolClosed(),
+        PoolTimeout(),
+        TooManyRequests(),
+        psycopg.errors.QueryCanceled(),
+        _BudgetExpiredError(),
+        psycopg.errors.DeadlockDetected(),
+        psycopg.errors.SerializationFailure(),
+    ],
+)
+def test_original_query_backpressure_never_authorizes_retrying_the_admission_write(
+    error: Exception, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pool = FaultPool(error)
+
+    def pause(seconds: float) -> None:
+        assert not pool.active
+
+    monkeypatch.setattr(
+        "speechnexus_backend.speech.infrastructure.admission_postgres.time.sleep", pause
+    )
+    result = _port(pool).query_admission(COMMAND.request.identity)
+    assert result == unknown(COMMAND.request.identity)
+    expected = (
+        3
+        if isinstance(error, (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure))
+        else 1
+    )
+    assert pool.calls == expected and not pool.active
+    assert pool.statements == ["SET TRANSACTION READ ONLY"] * expected
+
+
+@pytest.mark.parametrize("stage", ["before-checkout", "after-checkout"])
+def test_original_query_deadline_exhaustion_keeps_original_write_unknown(
+    stage: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [0.0]
+    checks = [0]
+    entries: list[float] = []
+
+    class DelayedPool:
+        @contextmanager
+        def connection(self, *, timeout: float) -> Iterator[Any]:
+            entries.append(timeout)
+            now[0] = 2
+            yield object()  # No statement can be issued after this expired checkout.
+
+    def clock() -> float:
+        checks[0] += 1
+        if stage == "before-checkout" and checks[0] >= 2:
+            now[0] = 2
+        return now[0]
+
+    monkeypatch.setattr(
+        "speechnexus_backend.speech.infrastructure.admission_postgres.time.monotonic", clock
+    )
+    result = _port(DelayedPool(), timeout_seconds=1).query_admission(COMMAND.request.identity)
+    assert result == unknown(COMMAND.request.identity)
+    assert len(entries) == (0 if stage == "before-checkout" else 1)
+
+
+def test_unique_collision_recovery_pressure_does_not_reenter_admission() -> None:
+    class RecoveryPressurePool(FaultPool):
+        @contextmanager
+        def connection(self, *, timeout: float) -> Iterator[Any]:
+            self.error = psycopg.errors.UniqueViolation() if self.calls == 0 else PoolTimeout()
+            with super().connection(timeout=timeout) as connection:
+                yield connection
+
+    pool = RecoveryPressurePool(psycopg.errors.UniqueViolation())
+    result = _port(pool).admit_recipe(COMMAND)
+    assert result == unknown(COMMAND.request.identity)
+    assert pool.calls == 2 and pool.statements == ["SET TRANSACTION READ ONLY"]

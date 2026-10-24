@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import cast
 
 import pymysql
+from pymysql.cursors import DictCursor
 
 from speechnexus_backend.speech.domain.admission import (
     AdmissionIdentity,
@@ -39,8 +40,10 @@ class MySQLAdmissionTransactions:
         recover_prepared: PreparedAdmission | None = None,
         conflict_if_absent: bool = False,
     ) -> AdmissionResult:
-        connection = self.driver.connect()
+        connection: pymysql.Connection[DictCursor] | None = None
+        ready_to_commit = False
         try:
+            connection = self.driver.connect()
             with connection.cursor() as raw:
                 cursor = cast(AdmissionCursor, raw)
                 if prepared is None:
@@ -71,25 +74,35 @@ class MySQLAdmissionTransactions:
                     result = admit_in_transaction(
                         cursor, prepared, clock=clock, max_command_bytes=self.max_command_bytes
                     )
+            ready_to_commit = True
             connection.commit()
             return result
         except AdmissionRejectedError as error:
-            connection.rollback()
+            if connection is not None:
+                connection.rollback()
             return rejected(identity, error.code)
         except pymysql.IntegrityError as error:
-            connection.rollback()
+            if connection is not None:
+                connection.rollback()
             if error.args[0] != 1062 or prepared is None:
                 return rejected(identity, "reconciliation_required")
         except pymysql.OperationalError as error:
-            connection.rollback()
+            if connection is not None:
+                connection.rollback()
+            if prepared is None or ready_to_commit:
+                # A failed read cannot disprove the original write. A lost
+                # commit reply cannot authorize another admission either.
+                return unknown(identity)
             if error.args[0] == 3819:  # MySQL classifies CHECK failure as operational.
                 return rejected(identity, "reconciliation_required")
             raise
         except BaseException:
-            connection.rollback()
+            if connection is not None:
+                connection.rollback()
             raise
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
         return self._run(identity, recover_prepared=prepared, conflict_if_absent=True)
 
     def admit_recipe(self, command: AdmitRecipe) -> AdmissionResult:

@@ -47,6 +47,9 @@ class ContainerState:
     labels: dict[str, str]
     network_addresses: tuple[str, ...]
     memory_peak_bytes: int | None
+    memory_limit_bytes: int | None = None
+    memory_swap_limit_bytes: int | None = None
+    network_mode: str | None = None
 
 
 class DockerEngineApi(Protocol):
@@ -178,6 +181,7 @@ class DockerApi:
         state = payload.get("State") or {}
         config = payload.get("Config") or {}
         labels = config.get("Labels") or {}
+        host_config = payload.get("HostConfig") or {}
         statistics = self._send_optional_json(
             "GET", f"/containers/{container_id}/stats", params={"stream": "false"}
         )
@@ -189,6 +193,9 @@ class DockerApi:
             labels={str(key): str(value) for key, value in labels.items()},
             network_addresses=_network_addresses(payload),
             memory_peak_bytes=_memory_peak(statistics),
+            memory_limit_bytes=host_config.get("Memory"),
+            memory_swap_limit_bytes=host_config.get("MemorySwap"),
+            network_mode=host_config.get("NetworkMode"),
         )
 
     def wait_container(self, container_id: str, *, timeout_seconds: float) -> int:

@@ -58,6 +58,7 @@ def settings(tmp_path: Path) -> Settings:
                         "memory_architecture": "unified_memory",
                         "allowed_pool_ids": ["asr-batch"],
                         "max_peak_memory_bytes": 16 * 1024**3,
+                        "container_memory_limit_bytes": 1024**3,
                         "readiness": {"kind": "process_running"},
                     }
                 ]

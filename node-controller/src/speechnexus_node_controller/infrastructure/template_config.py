@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from speechnexus_node_controller.domain.intents import MemoryArchitecture
 from speechnexus_node_controller.domain.templates import (
+    MIN_CONTAINER_MEMORY_BYTES,
     ApprovedRuntimeTemplate,
     ReadinessKind,
     ReadinessRule,
@@ -27,6 +28,7 @@ class _ReadinessRuleModel(BaseModel):
 
     kind: ReadinessKind
     port: int | None = Field(default=None, ge=1, le=65535)
+    path: str | None = None
 
 
 class _ReadOnlyBindModel(BaseModel):
@@ -45,10 +47,12 @@ class _TemplateModel(BaseModel):
     memory_architecture: MemoryArchitecture
     allowed_pool_ids: list[str] = Field(min_length=1)
     max_peak_memory_bytes: int = Field(gt=0)
+    container_memory_limit_bytes: int = Field(ge=MIN_CONTAINER_MEMORY_BYTES, strict=True)
     readiness: _ReadinessRuleModel
     command: list[str] | None = None
     gpu_device_count: int = Field(default=0, ge=0)
     read_only_binds: list[_ReadOnlyBindModel] = Field(default_factory=list)
+    network_name: str | None = None
 
 
 class _TemplateFileModel(BaseModel):
@@ -71,13 +75,16 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
         memory_architecture=model.memory_architecture,
         allowed_pool_ids=frozenset(model.allowed_pool_ids),
         max_peak_memory_bytes=model.max_peak_memory_bytes,
+        container_memory_limit_bytes=model.container_memory_limit_bytes,
         readiness=ReadinessRule(
             kind=model.readiness.kind,
             port=model.readiness.port,
+            path=model.readiness.path,
         ),
         command=tuple(model.command) if model.command is not None else None,
         gpu_device_count=model.gpu_device_count,
         read_only_binds=tuple(
             ReadOnlyBind(source=bind.source, target=bind.target) for bind in model.read_only_binds
         ),
+        network_name=model.network_name,
     )

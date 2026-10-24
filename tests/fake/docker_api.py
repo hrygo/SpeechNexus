@@ -158,4 +158,7 @@ class FakeDockerEngine:
             labels=dict(container.labels),
             network_addresses=container.addresses,
             memory_peak_bytes=container.memory_peak_bytes,
+            memory_limit_bytes=container.host_config.get("Memory"),
+            memory_swap_limit_bytes=container.host_config.get("MemorySwap"),
+            network_mode=container.host_config.get("NetworkMode"),
         )

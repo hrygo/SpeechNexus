@@ -21,6 +21,7 @@ from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
     IntentConflictError,
     InvalidRuntimeRequestError,
+    MemoryArchitecture,
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
@@ -237,6 +238,15 @@ class NodeRuntimeControlService:
             raise InvalidRuntimeRequestError(
                 f"peak reservation {peak_bytes} exceeds the approved template bound "
                 f"{template.max_peak_memory_bytes}"
+            )
+        container_peak = (
+            reservation.peak.unified_memory_bytes
+            if reservation.architecture is MemoryArchitecture.UNIFIED_MEMORY
+            else reservation.peak.host_memory_bytes
+        )
+        if container_peak < template.container_memory_limit_bytes:
+            raise InvalidRuntimeRequestError(
+                "peak host/unified reservation must cover the approved container memory limit"
             )
 
     @staticmethod

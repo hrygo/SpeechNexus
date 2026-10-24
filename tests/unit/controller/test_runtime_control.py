@@ -114,6 +114,58 @@ def test_peak_reservation_above_the_template_bound_is_refused() -> None:
     assert runtime.prepared == []
 
 
+@pytest.mark.parametrize(
+    ("architecture", "peak", "steady"),
+    [
+        (
+            MemoryArchitecture.UNIFIED_MEMORY,
+            RuntimeMemoryVector(unified_memory_bytes=8 * GIB),
+            RuntimeMemoryVector(unified_memory_bytes=4 * GIB),
+        ),
+        (
+            MemoryArchitecture.DISCRETE_DEVICE_MEMORY,
+            RuntimeMemoryVector(host_memory_bytes=2 * GIB, device_memory_bytes=8 * GIB),
+            RuntimeMemoryVector(host_memory_bytes=GIB, device_memory_bytes=4 * GIB),
+        ),
+    ],
+)
+def test_peak_host_reservation_must_cover_the_fixed_container_limit(
+    architecture: MemoryArchitecture, peak: RuntimeMemoryVector, steady: RuntimeMemoryVector
+) -> None:
+    service, runtime, store = _service(
+        templates=(
+            build_template(architecture=architecture, container_memory_limit_bytes=10 * GIB),
+        ),
+    )
+    request = build_request(
+        reserved_memory=build_reservation(architecture=architecture, peak=peak, steady=steady)
+    )
+    with pytest.raises(InvalidRuntimeRequestError, match="must cover"):
+        service.submit_intent(request)
+    assert runtime.prepared == []
+    assert store.get(request.intent_id) is None
+
+
+def test_discrete_device_budget_is_separate_from_the_container_host_limit() -> None:
+    service, runtime, _ = _service(
+        templates=(
+            build_template(
+                architecture=MemoryArchitecture.DISCRETE_DEVICE_MEMORY,
+                container_memory_limit_bytes=2 * GIB,
+            ),
+        ),
+    )
+    request = build_request(
+        reserved_memory=build_reservation(
+            architecture=MemoryArchitecture.DISCRETE_DEVICE_MEMORY,
+            peak=RuntimeMemoryVector(host_memory_bytes=2 * GIB, device_memory_bytes=8 * GIB),
+            steady=RuntimeMemoryVector(host_memory_bytes=GIB, device_memory_bytes=4 * GIB),
+        )
+    )
+    assert service.submit_intent(request).intent.memory_hold is MemoryHold.PEAK
+    assert runtime.prepared == [request]
+
+
 def test_first_prepare_keeps_peak_until_readiness_is_observed() -> None:
     service, runtime, _ = _service()
     outcome = service.submit_intent(build_request())

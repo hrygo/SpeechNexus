@@ -10,6 +10,7 @@ declared here once, so an intent cannot widen it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -24,6 +25,8 @@ from speechnexus_node_controller.domain.intents import (
 )
 
 _TEMPLATE_ID_PREFIX: Final = "template-"
+MIN_CONTAINER_MEMORY_BYTES: Final = 6 * 1024**2
+_HEALTH_PATH: Final = re.compile(r"/[A-Za-z0-9_.~/-]*")
 
 
 class ReadinessKind(StrEnum):
@@ -31,6 +34,7 @@ class ReadinessKind(StrEnum):
 
     PROCESS_RUNNING = "process_running"
     TCP_PORT_ACCEPTING = "tcp_port_accepting"
+    HTTP_STATUS_OK = "http_status_ok"
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,13 +43,25 @@ class ReadinessRule:
 
     kind: ReadinessKind
     port: int | None = None
+    path: str | None = None
 
     def __post_init__(self) -> None:
-        if self.kind is ReadinessKind.TCP_PORT_ACCEPTING:
+        if self.kind in {ReadinessKind.TCP_PORT_ACCEPTING, ReadinessKind.HTTP_STATUS_OK}:
             if self.port is None or not 1 <= self.port <= 65535:
-                raise ValueError("tcp_port_accepting readiness requires a port between 1 and 65535")
+                raise ValueError(f"{self.kind} readiness requires a port between 1 and 65535")
         elif self.port is not None:
             raise ValueError("process_running readiness carries no port")
+        if self.kind is ReadinessKind.HTTP_STATUS_OK:
+            if (
+                self.path is None
+                or len(self.path) > 256
+                or _HEALTH_PATH.fullmatch(self.path) is None
+                or "//" in self.path
+                or any(part in {".", ".."} for part in self.path.split("/"))
+            ):
+                raise ValueError("http_status_ok requires a fixed absolute health path")
+        elif self.path is not None:
+            raise ValueError("only http_status_ok readiness carries a path")
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,10 +86,12 @@ class ApprovedRuntimeTemplate:
     memory_architecture: MemoryArchitecture
     allowed_pool_ids: frozenset[str]
     max_peak_memory_bytes: int
+    container_memory_limit_bytes: int
     readiness: ReadinessRule = ReadinessRule(ReadinessKind.PROCESS_RUNNING)
     command: tuple[str, ...] | None = None
     gpu_device_count: int = 0
     read_only_binds: tuple[ReadOnlyBind, ...] = ()
+    network_name: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.template_id, "template_id")
@@ -86,6 +104,11 @@ class ApprovedRuntimeTemplate:
             raise ValueError("a declared command must not be empty")
         if self.gpu_device_count < 0:
             raise ValueError("gpu_device_count must not be negative")
+        if self.network_name is not None and (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", self.network_name) is None
+            or self.network_name in {"host", "none", "default", "bridge"}
+        ):
+            raise ValueError("network_name must name an approved custom network")
         if not self.allowed_pool_ids:
             raise ValueError("an approved template declares at least one pool")
         unknown_pools = self.allowed_pool_ids - POOL_IDS
@@ -93,6 +116,14 @@ class ApprovedRuntimeTemplate:
             raise ValueError(f"approved template declares unknown pools {sorted(unknown_pools)}")
         if self.max_peak_memory_bytes <= 0:
             raise ValueError("max_peak_memory_bytes must be positive")
+        if (
+            not MIN_CONTAINER_MEMORY_BYTES
+            <= self.container_memory_limit_bytes
+            <= (self.max_peak_memory_bytes)
+        ):
+            raise ValueError(
+                "container_memory_limit_bytes must be at least 6 MiB and within the peak bound"
+            )
 
 
 class ApprovedTemplateRegistry:

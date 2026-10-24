@@ -165,7 +165,15 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   观察到 `stopped` 却没有证据时进入 `quarantined` 并继续报告原留宿内存，不能凭超时或断连
   冒充停止。
 - **迟到观察隔离**：观察的实例身份、generation、模板与配置摘要必须与意图完全一致；不一致
-  或不属于任何已认领意图的实例进入 quarantine 名单，不修改当前 generation。
+  或不属于任何已认领 generation 的实例进入 quarantine 名单，不修改当前 generation。已认领且
+  已终结的 generation 只在观察与其记录矛盾时进入名单：控制器仍把它持有为 live 却观察到
+  `absent`/`stopped`，或没有成功的 prepare 仍持有它却观察到容器存在。常规快照不会把健康的
+  运行实例列进名单，也不改写意图的版本、状态或留宿内存。
+- **外部快照边界**：`reconcile` 快照由持组件凭据的调用方给出，该路径折叠其中的观察但不调用
+  `daemon.inspect`；因此快照里的 `stop_evidence` 是调用方断言，不是本控制器的核验结果（自身
+  核验只发生在节点内 `reconcile_instance`）。快照的 `fencing_token` 目前只有契约最小值校验，
+  尚未与节点已记录的最高 token 比较。是否收窄该入口、如何定义节点级 fencing 高位属待冻结的
+  窄协议；现状与差异见[B02 HTTP 外壳探针](../audits/2026-10-24-b02-controller-http-shell-probe.md)。
 - **reconcile**：同一快照内同一 `(instance_id, instance_generation)` 出现两次即拒绝，
   不采用不确定的“最后一次观察”。
 

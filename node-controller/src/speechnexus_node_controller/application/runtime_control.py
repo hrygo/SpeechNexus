@@ -157,8 +157,7 @@ class NodeRuntimeControlService:
                 and intent.intent_state.is_unresolved
             ]
             if not unresolved:
-                if fact.observed_instance_state is not ObservedInstanceState.ABSENT:
-                    quarantined.append(fact.instance_id)
+                self._report_resolved_contradiction(fact, quarantined)
                 continue
             for intent in unresolved:
                 version = intent.version
@@ -216,6 +215,51 @@ class NodeRuntimeControlService:
             if intent.instance_generation == instance_generation
             and intent.intent_state.is_unresolved
         ]
+
+    def _report_resolved_contradiction(
+        self, fact: ReportedInstanceFact, quarantined: list[str]
+    ) -> None:
+        """Report only a claimed generation whose observation contradicts its record.
+
+        A generation with no unresolved intent is either already settled here or
+        was never claimed by this controller. A settled generation is normal, so
+        a healthy tracked instance must not be quarantined by a routine snapshot;
+        the two anomalies are a generation the controller still holds live that
+        has disappeared without verified stop evidence, and a container that is
+        present although no succeeded prepare still holds that generation live.
+        A generation with no recorded intent at all stays quarantined while it is
+        observed, and no path adopts it.
+        """
+        recorded = [
+            intent
+            for intent in self._store.list_for_instance(fact.instance_id)
+            if intent.instance_generation == fact.instance_generation
+        ]
+        observed_gone = fact.observed_instance_state in {
+            ObservedInstanceState.ABSENT,
+            ObservedInstanceState.STOPPED,
+        }
+        if not recorded:
+            if not observed_gone:
+                quarantined.append(fact.instance_id)
+            return
+        verified_stopped = any(
+            intent.action is RuntimeActionKind.STOP
+            and intent.intent_state is RuntimeIntentState.SUCCEEDED
+            for intent in recorded
+        )
+        holds_live = (
+            any(
+                intent.action is RuntimeActionKind.PREPARE
+                and intent.intent_state is RuntimeIntentState.SUCCEEDED
+                for intent in recorded
+            )
+            and not verified_stopped
+        )
+        # Contradiction in either direction: vanished while still held live, or
+        # present although no succeeded prepare still holds that generation.
+        if (observed_gone and holds_live) or (not observed_gone and not holds_live):
+            quarantined.append(fact.instance_id)
 
     def _resolve_template(self, template_id: str) -> ApprovedRuntimeTemplate | None:
         """Resolve a recorded template; a withdrawn template leaves the intent unresolved."""

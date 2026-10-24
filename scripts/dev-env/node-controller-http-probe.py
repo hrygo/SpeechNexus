@@ -3,10 +3,12 @@
 The probe starts the real ``speechnexus-node-controller`` process with a
 synthetic approved template, a real durable intent store, and the local
 container daemon, drives ``prepare`` → ``ready`` → ``stop`` over
-``internal/runtime-control``, restarts the process to prove the recorded intent
-survives, and removes the container it created. It loads no model, touches no
-GPU service, publishes no host port, and uses only synthetic identifiers; the
-JSON it prints is the reproducible evidence in the B02 audit note.
+``internal/runtime-control``, kills the process while the claimed instance is
+still running to fold a reconcile snapshot after the restart, restarts it again
+gracefully to prove the recorded intent survives, and removes the container it
+created. It loads no model, touches no GPU service, publishes no host port, and
+uses only synthetic identifiers; the JSON it prints is the reproducible evidence
+in the B02 audit note.
 """
 
 from __future__ import annotations
@@ -65,6 +67,12 @@ class ProbeReport:
     stop_exit_code: int | None = None
     stop_verified_at: str = ""
     container_removed: bool = False
+    crash_container_live: bool = False
+    crash_reconcile_status: int = 0
+    crash_reconcile_quarantined: list[str] = field(default_factory=list)
+    crash_reconcile_record_unchanged: bool = False
+    unclaimed_generation_reconcile_status: int = 0
+    unclaimed_generation_quarantined: list[str] = field(default_factory=list)
     restart_preserved: bool = False
     intents_after_restart: list[dict[str, str]] = field(default_factory=list)
     leftovers: list[str] = field(default_factory=list)
@@ -89,6 +97,12 @@ class ProbeReport:
             "stop_exit_code": self.stop_exit_code,
             "stop_verified_at": self.stop_verified_at,
             "container_removed": self.container_removed,
+            "crash_container_live": self.crash_container_live,
+            "crash_reconcile_status": self.crash_reconcile_status,
+            "crash_reconcile_quarantined": self.crash_reconcile_quarantined,
+            "crash_reconcile_record_unchanged": self.crash_reconcile_record_unchanged,
+            "unclaimed_generation_reconcile_status": (self.unclaimed_generation_reconcile_status),
+            "unclaimed_generation_quarantined": self.unclaimed_generation_quarantined,
             "restart_preserved": self.restart_preserved,
             "intents_after_restart": self.intents_after_restart,
             "leftovers": self.leftovers,
@@ -158,6 +172,29 @@ def _write_templates(path: Path, image_reference: str, image_id: str) -> None:
     )
 
 
+def _reconcile_path() -> str:
+    return f"/internal/v1/nodes/{_NODE_ID}/reconcile"
+
+
+def _reconcile_body(*, fencing_token: int, facts: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "controller_id": _NODE_ID,
+        "fencing_token": fencing_token,
+        "reported_at": datetime.now(UTC).isoformat(),
+        "instances": facts,
+    }
+
+
+def _fact_body(*, instance_generation: int, observed_instance_state: str) -> dict[str, Any]:
+    return {
+        "instance_id": _INSTANCE_ID,
+        "instance_generation": instance_generation,
+        "approved_template_id": _TEMPLATE_ID,
+        "config_digest": _CONFIG_DIGEST,
+        "observed_instance_state": observed_instance_state,
+    }
+
+
 class ControllerProcess:
     """One real controller process, with the environment a deployment would set."""
 
@@ -202,6 +239,13 @@ class ControllerProcess:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait(timeout=15)
+        self._log.close()
+
+    def kill(self) -> None:
+        """Terminate immediately, the way a crashed controller process would."""
+        if self._process.poll() is None:
+            self._process.kill()
+            self._process.wait(timeout=15)
         self._log.close()
 
 
@@ -338,6 +382,68 @@ def run_probe(
                 raise SystemExit("the prepared container could not be found on this node")
             report.container_id = found.container_id
             report.container_hardening = _host_config_readout(socket_path, found.container_id)
+            record_before_crash = client.get(
+                _intents_path("intent-probe-prepare"), headers=headers
+            ).json()
+
+        # The controller dies without a graceful shutdown while the instance it
+        # already claimed is still running. A restarted controller that folds a
+        # routine snapshot of its own healthy instance must neither quarantine it
+        # nor rewrite the recorded intent.
+        controller.kill()
+        live = api.inspect_container(found.container_id)
+        report.crash_container_live = live is not None and live.running
+        controller = ControllerProcess(
+            command=command,
+            workdir=workdir,
+            port=port,
+            socket_path=socket_path,
+            log_path=workdir / "controller-after-crash.log",
+        )
+
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=30.0) as client:
+            _wait_for_health(client, timeout_seconds=30.0)
+            reconciled = client.post(
+                _reconcile_path(),
+                json=_reconcile_body(
+                    fencing_token=2,
+                    facts=[_fact_body(instance_generation=1, observed_instance_state="ready")],
+                ),
+                headers=headers,
+            )
+            report.crash_reconcile_status = reconciled.status_code
+            if reconciled.status_code != 200:
+                raise SystemExit(f"reconcile was refused: {reconciled.text}")
+            report.crash_reconcile_quarantined = list(reconciled.json()["quarantined_instance_ids"])
+            record_after_reconcile = client.get(
+                _intents_path("intent-probe-prepare"), headers=headers
+            ).json()
+            # The response projects the durable record; an unchanged update time
+            # means the snapshot folded no observation into the settled intent.
+            report.crash_reconcile_record_unchanged = all(
+                record_after_reconcile[field] == record_before_crash[field]
+                for field in (
+                    "intent_state",
+                    "observed_instance_state",
+                    "error_code",
+                    "updated_at",
+                )
+            )
+
+            # A generation this controller never claimed stays quarantined while
+            # it is observed, so a snapshot cannot adopt it as a live instance.
+            unclaimed = client.post(
+                _reconcile_path(),
+                json=_reconcile_body(
+                    fencing_token=3,
+                    facts=[_fact_body(instance_generation=2, observed_instance_state="ready")],
+                ),
+                headers=headers,
+            )
+            report.unclaimed_generation_reconcile_status = unclaimed.status_code
+            report.unclaimed_generation_quarantined = list(
+                unclaimed.json()["quarantined_instance_ids"]
+            )
 
             stop_started = time.monotonic()
             stopped = client.post(

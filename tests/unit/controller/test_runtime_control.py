@@ -426,6 +426,122 @@ def test_reconcile_reports_an_untracked_instance_without_adopting_it() -> None:
     assert store.list_for_instance("instance-rogue-1") == []
 
 
+def _fact(
+    state: ObservedInstanceState,
+    *,
+    instance_id: str = SAMPLE_INSTANCE_ID,
+    instance_generation: int = 1,
+) -> ReportedInstanceFact:
+    return ReportedInstanceFact(
+        instance_id=instance_id,
+        instance_generation=instance_generation,
+        approved_template_id=SAMPLE_TEMPLATE_ID,
+        config_digest=SAMPLE_DIGEST,
+        observed_instance_state=state,
+    )
+
+
+def _snapshot(*facts: ReportedInstanceFact) -> NodeReconcileSnapshot:
+    return NodeReconcileSnapshot(
+        controller_id=SAMPLE_NODE_ID,
+        fencing_token=2,
+        reported_at=datetime(2026, 10, 24, 9, 5, tzinfo=UTC),
+        instances=facts,
+    )
+
+
+def test_reconcile_keeps_a_claimed_ready_instance_out_of_quarantine() -> None:
+    request = build_request()
+    service, runtime, store = _service()
+    service.submit_intent(request)
+    runtime.mark_ready(request)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+    before = store.get(request.intent_id)
+    assert before is not None and before.intent_state is RuntimeIntentState.SUCCEEDED
+
+    outcome = service.reconcile(_snapshot(_fact(ObservedInstanceState.READY)))
+
+    assert outcome.quarantined_instance_ids == ()
+    after = store.get(request.intent_id)
+    assert after is not None
+    assert after.version == before.version
+    assert after.intent_state is before.intent_state
+    assert after.memory_hold is before.memory_hold
+    assert after.observed_instance_state is before.observed_instance_state
+
+
+def test_reconcile_quarantines_a_claimed_generation_that_vanished_without_evidence() -> None:
+    request = build_request()
+    service, runtime, _ = _service()
+    service.submit_intent(request)
+    runtime.mark_ready(request)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+    for state in (ObservedInstanceState.ABSENT, ObservedInstanceState.STOPPED):
+        assert service.reconcile(_snapshot(_fact(state))).quarantined_instance_ids == (
+            SAMPLE_INSTANCE_ID,
+        )
+
+
+def test_reconcile_quarantines_a_present_container_without_a_live_record() -> None:
+    request = build_request()
+    service, runtime, _ = _service()
+    service.submit_intent(request)
+    runtime.observe_as(request, ObservedInstanceState.ABSENT)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+    failed = service.get_intent(request.intent_id)
+    assert failed is not None and failed.intent_state is RuntimeIntentState.FAILED
+
+    assert (
+        service.reconcile(_snapshot(_fact(ObservedInstanceState.ABSENT))).quarantined_instance_ids
+        == ()
+    )
+    assert service.reconcile(
+        _snapshot(_fact(ObservedInstanceState.LOADING))
+    ).quarantined_instance_ids == (SAMPLE_INSTANCE_ID,)
+
+
+def test_reconcile_quarantines_a_verified_stopped_generation_that_is_still_present() -> None:
+    request = build_request()
+    service, runtime, _ = _service()
+    service.submit_intent(request)
+    runtime.mark_ready(request)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+    stopped = service.submit_intent(
+        build_request(
+            intent_id="intent-stop-1",
+            action=RuntimeActionKind.STOP,
+            fencing_token=2,
+        )
+    )
+    assert stopped.intent.intent_state is RuntimeIntentState.SUCCEEDED
+
+    assert (
+        service.reconcile(_snapshot(_fact(ObservedInstanceState.ABSENT))).quarantined_instance_ids
+        == ()
+    )
+    assert service.reconcile(
+        _snapshot(_fact(ObservedInstanceState.READY))
+    ).quarantined_instance_ids == (SAMPLE_INSTANCE_ID,)
+
+
+def test_reconcile_quarantines_a_later_generation_this_controller_never_claimed() -> None:
+    request = build_request()
+    service, runtime, store = _service()
+    service.submit_intent(request)
+    runtime.mark_ready(request)
+    service.reconcile_instance(SAMPLE_INSTANCE_ID, 1)
+
+    outcome = service.reconcile(
+        _snapshot(_fact(ObservedInstanceState.READY, instance_generation=2))
+    )
+
+    assert outcome.quarantined_instance_ids == (SAMPLE_INSTANCE_ID,)
+    assert [
+        intent.instance_generation for intent in store.list_for_instance(SAMPLE_INSTANCE_ID)
+    ] == [1]
+
+
 def test_absent_fact_for_an_untracked_instance_is_not_quarantined() -> None:
     service, _, _ = _service()
     snapshot = NodeReconcileSnapshot(

@@ -17,7 +17,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-以 main `97e9a30` 为本轮集成基线；前一轮 [PR #116](https://github.com/hrygo/SpeechNexus/pull/116)
+以 main `85babde` 为本轮最终集成基线；前一轮 [PR #116](https://github.com/hrygo/SpeechNexus/pull/116)
 已交付节点内未决观察循环，原意图在加载期间崩溃/重启后可自动推进。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。

@@ -8,8 +8,12 @@ date: 2026-10-24
 
 ## 代码、环境与范围
 
-集成基线 `97e9a30399d04aacee84f623022ab50d70853a4d`；最终实测代码
-`667078e3cbc6bd37139fad6de5d49f8ddf240fbb`，后续提交只更新文档。
+进程探针受测代码 `667078e3cbc6bd37139fad6de5d49f8ddf240fbb`，当时集成基线为
+`97e9a30399d04aacee84f623022ab50d70853a4d`。纳入 A 的 #118 后最终集成基线为
+`85babde15046900a9e3cc4c9e9a8e3323dba98ca`，节点代码提交为
+`a8331e57d9b45419430d6ea395ae3e959dd3e6cb`。已逐项核对 117 个节点变更、直接机器协议、
+生成类型和依赖文件的 Git blob，与受测版本相同；因此真实进程/相关集成证据继续有效，
+新组合另跑完整非集成与四项兼容门禁。后续自身提交只更新文档。
 Linux ARM64、kernel `7.0.0-1019-nvidia`、Python 3.14.9、Docker 29.6.2。
 使用本机已有 `python:3.14.9-slim-bookworm`，固定镜像 ID：
 `sha256:7e0522950230cad1ec100ada6e3898c22c6bc82851289b4bdf0bf77c1c829cd5`。
@@ -60,8 +64,9 @@ Linux ARM64、kernel `7.0.0-1019-nvidia`、Python 3.14.9、Docker 29.6.2。
 
 ## 验证与复现
 
-最终代码全量非集成 **2,946 passed，覆盖率 81.40%**；相关 runtime/intent 集成
-**198 passed、0 skipped**。新消费者场景在真实 TLS/SQLite/PG/InnoDB 上装配原生 Docker adapter，
+初次集成非集成 **2,946 passed，覆盖率 81.40%**；纳入 #118 后新组合全量非集成
+**2,970 passed，覆盖率 81.40%**；相关 runtime/intent 集成 **198 passed、0 skipped**。
+新消费者场景在真实 TLS/SQLite/PG/InnoDB 上装配原生 Docker adapter，
 但 daemon 和资格是合成事实：只有退出、容器未删除时 A 保留总占用；节点重启补齐双证据后，
 由 A 的事务归还原基线。它不证明真实 GPU 或完整 scheduler 联合资格。
 
@@ -70,6 +75,9 @@ Linux ARM64、kernel `7.0.0-1019-nvidia`、Python 3.14.9、Docker 29.6.2。
 重复/损坏 JSON、v1 升级不改原回执、未知 schema 拒绝和 COMMIT 失败回滚。
 28 份共享契约校验、私有 checkpoint 机器契约正负例、生成漂移、公开兼容检查、
 Ruff、mypy、7 条依赖边界及四个 Python 包构建均通过。
+新基线的 OpenAI、HTTP 结构、协调请求、协调结果四项独立兼容命令也均通过。
+旧 schema 1 程序真实读取 v2 测试库时明确拒绝启动，未改原回执或检查点；重新用 v2 程序
+读取，原停止证明完整保留，结果已写入本机验证元数据。
 
 ```bash
 uv run pytest -m 'not integration' --cov --cov-report=term

@@ -44,6 +44,11 @@ Job 行冻结初始 event ID/digest；outbox 后续可追加其他事件，不�
 结果，不新增 HTTP 路由或机器协议 operation。Job 或 outbox 缺失不能靠补写修复：
 尚无可见 Job 时仍 unknown；已有 Job 却缺少对应 outbox 时进入 reconcile。
 恢复只读，既不补建 Job，也不授予重新执行权限。
+读取原结果时，连接池关闭/容量不足、checkout后deadline耗尽或数据库查询错误均保持
+unknown/query_original；读取失败不证明原创建被拒绝，也不授予重做事务。原生查询超时/
+取消已有同一语义。已确认未开始的新写入重试及已读到的账本损坏reconcile规则不变。
+实际PG/InnoDB回归先提交并丢弃回执，再使读取失败，最后恢复原identity/fact并核对
+完整Job/outbox不变；它不证明完整业务额度、调度或公开Job已交付。
 `query_outcome(job)` 由下面的独立 claim 边界返回当前 `ClaimSnapshot`；
 它不代替不可变创建身份的 `recover_create_job`。
 

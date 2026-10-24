@@ -431,6 +431,7 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         f"    return validate_http_response({name!r}, operation, status, value)\n"
     )
     types = destination / f"src/{name}-http.ts"
+    types_source = config.get("typescript_source", name)
     if "operations" in config:
         # A path can include a planned POST/PATCH beside an implemented GET.
         # The validated client's type must advertise only selected methods.
@@ -456,7 +457,7 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         'import { createHttpValidator } from "./http-runtime.mjs";\n'
         f'import bundle from "./speechnexus_contracts/{name}-http.schema.json" '
         'with { type: "json" };\n'
-        f'import type {{ paths }} from "./{name}.generated";\n'
+        f'import type {{ paths }} from "./{types_source}.generated";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
         "export type HttpOperation = "
         + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])

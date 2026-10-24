@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev0
+  version: 0.1.0.dev1
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -196,6 +196,21 @@ paths:
         is published. Replaying the same Idempotency-Key and canonical intent
         returns the original revision; the same key with a different intent
         returns 409 `idempotency_conflict`.
+
+        A recorded `configuration_changed` result remains the result of that
+        key even if the allocation head later changes. Original-key lookup
+        precedes revision allocation. Malformed JSON, unknown fields, invalid
+        path/header values and schema-invalid input return 400. A structurally
+        valid definition that violates cross-field profile rules returns 422.
+
+        An unreadable original result or uncertain commit returns 503
+        `profile_result_unknown`, with `retryable: false`. It does not establish
+        that no revision was created. There is no automatic retry, new key,
+        Operation or HTTP query-by-key recovery resource. A caller retaining
+        the original Idempotency-Key may explicitly replay this same POST with
+        the exact original intent and key to resolve its original result.
+        Without an original key, automatic recovery is not promised; a GET of
+        a candidate revision does not prove ownership of the original command.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -207,27 +222,37 @@ paths:
               $ref: "#/components/schemas/ProfileRevisionCreateRequest"
       responses:
         "201":
-          description: Draft profile revision created.
+          description: Draft profile revision created, without validation or qualification evidence.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "./scenario-profile.schema.json"
+                $ref: "#/components/schemas/ProfileDraftRevision"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/ProfileDraftConflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ProfileCreationUnknown"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}:
     get:
       tags: [profiles]
       operationId: getProfileRevisionForAdministration
       summary: Get a draft or historical profile revision
+      description: |
+        Read only the explicitly named immutable revision; never allocate,
+        publish or activate one. Invalid path/header/query values return 400.
+        Return 404 only when an authoritative read confirms that this revision
+        is absent. Unreadable metadata returns 503 `profile_unavailable`, with
+        `retryable: true` for this same fixed GET; it cannot be reported as 404
+        or used to infer that an earlier create did not commit. No Operation
+        recovery or default/current revision selection is implied.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -242,10 +267,14 @@ paths:
             application/json:
               schema:
                 $ref: "./scenario-profile.schema.json"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ProfileReadUnavailable"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications:
     post:
       tags: [profiles]
@@ -1033,6 +1062,33 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    ProfileDraftConflict:
+      description: The original key conflicts or its allocation CAS was rejected; no new revision.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileDraftConflictError"
+    ProfileCreationUnknown:
+      description: Original creation result unreadable or commit uncertain; retain original intent/key.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileCreationUnknownError"
+    ProfileReadUnavailable:
+      description: Fixed revision could not be read; this does not confirm absence.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileReadUnavailableError"
   schemas:
     Identifier:
       $ref: "shared/identifiers.schema.json#/$defs/Identifier"
@@ -1059,6 +1115,70 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Revision"
             - type: "null"
+    ProfileDraftRevision:
+      allOf:
+        - $ref: "./scenario-profile.schema.json"
+        - type: object
+          properties:
+            validation: false
+            publication:
+              type: object
+              properties:
+                status:
+                  const: draft
+    ProfileDraftConflictError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  enum: [configuration_changed, idempotency_conflict]
+                type:
+                  const: invalid_request_error
+                retryable:
+                  const: false
+                retry_after_ms:
+                  type: "null"
+                nexus: false
+    ProfileCreationUnknownError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  const: profile_result_unknown
+                type:
+                  const: service_unavailable_error
+                retryable:
+                  const: false
+                retry_after_ms:
+                  type: "null"
+                param:
+                  type: "null"
+                nexus: false
+    ProfileReadUnavailableError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  const: profile_unavailable
+                type:
+                  const: service_unavailable_error
+                retryable:
+                  const: true
+                param:
+                  type: "null"
+                nexus: false
     ProfileFamilySummary:
       type: object
       additionalProperties: false

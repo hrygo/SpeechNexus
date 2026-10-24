@@ -13,6 +13,12 @@ Profile draft consumers can parse `ProfileRevisionCreateRequest` through the
 scenario-profile sources, including root conditionals. See the
 [process-local port and qualification boundary](../../docs/architecture/profile-drafts.md).
 
+The separate `profile-http` TypeScript / `profile_http` Python surface selects
+only profile creation and fixed revision reads from admin source `0.1.0.dev1`.
+It validates their request/error/replay envelopes without advertising profile
+routes through the existing workspace client. HTTP service implementation remains
+separate; no validator call creates or publishes a profile.
+
 ## Generate and verify
 
 From the repository root, with locked Python and Node dependencies installed:

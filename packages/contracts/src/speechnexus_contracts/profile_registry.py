@@ -11,4 +11,4 @@ PROFILES = frozenset(
         "scenario_profiles",
     )
 )
-HTTP_PROFILES = frozenset(("admin", "runtime", "workbench"))
+HTTP_PROFILES = frozenset(("admin", "runtime", "workbench", "profile"))

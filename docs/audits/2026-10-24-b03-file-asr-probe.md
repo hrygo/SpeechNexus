@@ -99,6 +99,17 @@ adapter 同时校验实际 finish reason/usage，而不是只依据参数名或 
 预热与资格完成前保持加载峰值预算，不能凭健康检查切 steady 或宣称实时 ready。
 该条件交接 B02/B07 与 A 的 readiness/准入 provider，当前未自动装配到控制循环。
 
+## 合入前验证
+
+rebase 基线 main `b6414b7bf64ae6ed4950e027e3c2d90a409da9ff`，受检提交
+`964273709eda46abb83c0a02a9d95ba39f838700`。
+
+- `uv run pytest -m "not integration" --cov`：2009 passed、742 deselected，覆盖率 81.92%。
+- 本轮专项 82 passed；`ruff format --check`、`ruff check`、`mypy`（312 files）、
+  `lint-imports`、`make contracts-check`、`make contracts-drift`、`make stack-config` 全部通过。
+- 双库/对象集成由 PR CI 在隔离 PG/MinIO/InnoDB 上执行并单独记录通过数；
+  既有 PostgreSQL 专用 adapter 参数组合仍按跳过计，不计通过。
+
 ## 证据与未验证项
 
 原始报告位于忽略目录 `.runtime/probes/b03-file-asr/` 下的

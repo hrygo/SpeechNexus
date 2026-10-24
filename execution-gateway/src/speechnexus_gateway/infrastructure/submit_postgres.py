@@ -38,7 +38,10 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
     SubmissionStoreUnavailableError,
 )
-from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.barrier_sql import (
+    read_barrier,
+    seal_barrier_in_transaction,
+)
 from speechnexus_gateway.infrastructure.command_redaction_sql import (
     redact_execution_command_in_transaction,
 )
@@ -186,6 +189,14 @@ class PostgresSubmissionLedger:
             read_only=False,
             work=lambda cursor: seal_barrier_in_transaction(
                 cursor, fence, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
+
+    def get_barrier(self, gateway_id: str, pool_id: str) -> BarrierSnapshot | None:
+        return self._run(
+            read_only=True,
+            work=lambda cursor: read_barrier(
+                cursor, gateway_id, pool_id, clock=cast(_DeadlineCursor, cursor).clock
             ),
         )
 

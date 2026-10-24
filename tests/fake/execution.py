@@ -114,6 +114,47 @@ class InMemorySubmissionLedger:
         self._intents[key] = copy.deepcopy(updated)
         return updated
 
+    def _barrier_fact(
+        self,
+        key: tuple[str, str],
+        *,
+        min_fencing_token: int,
+        evidence_digest: str,
+        version: int,
+    ) -> BarrierSnapshot:
+        """Rebuild one barrier fact with the inventory as it stands now."""
+        intents = sorted(
+            (
+                intent
+                for intent in self._intents.values()
+                if (intent.identity.gateway_id, intent.identity.pool_id) == key
+            ),
+            key=lambda intent: intent.identity.submit_intent_id,
+        )
+        return BarrierSnapshot(
+            key[0],
+            key[1],
+            min_fencing_token,
+            evidence_digest,
+            version,
+            int(self._now().timestamp() * 1_000_000),
+            tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value == "submitting"
+            ),
+            tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value in {"executing", "stopping"}
+            ),
+            tuple(
+                intent.identity.submit_intent_id
+                for intent in intents
+                if intent.execution_state.value == "unknown_quarantined"
+            ),
+        )
+
     def seal_barrier(self, fence: IngressFence) -> BarrierSnapshot:
         key = (fence.gateway_id, fence.request.pool_id)
         previous = self._barriers.get(key)
@@ -126,39 +167,25 @@ class InMemorySubmissionLedger:
                 if previous.evidence_digest != fence.evidence_digest:
                     raise BarrierConflictError("barrier has another proof")
                 version = previous.version
-        intents = sorted(
-            (
-                i
-                for i in self._intents.values()
-                if (i.identity.gateway_id, i.identity.pool_id) == key
-            ),
-            key=lambda i: i.identity.submit_intent_id,
-        )
-        fact = BarrierSnapshot(
-            key[0],
-            key[1],
-            token,
-            fence.evidence_digest,
-            version,
-            int(self._now().timestamp() * 1_000_000),
-            tuple(
-                i.identity.submit_intent_id
-                for i in intents
-                if i.execution_state.value == "submitting"
-            ),
-            tuple(
-                i.identity.submit_intent_id
-                for i in intents
-                if i.execution_state.value in {"executing", "stopping"}
-            ),
-            tuple(
-                i.identity.submit_intent_id
-                for i in intents
-                if i.execution_state.value == "unknown_quarantined"
-            ),
+        fact = self._barrier_fact(
+            key,
+            min_fencing_token=token,
+            evidence_digest=fence.evidence_digest,
+            version=version,
         )
         self._barriers[key] = fact
         return fact
+
+    def get_barrier(self, gateway_id: str, pool_id: str) -> BarrierSnapshot | None:
+        stored = self._barriers.get((gateway_id, pool_id))
+        if stored is None:
+            return None
+        return self._barrier_fact(
+            (gateway_id, pool_id),
+            min_fencing_token=stored.min_fencing_token,
+            evidence_digest=stored.evidence_digest,
+            version=stored.version,
+        )
 
     def set_test_lease_state(self, lease_id: str, state: LeaseState) -> None:
         """Synthetic fixture fact only; this fake does not implement A's release transaction."""

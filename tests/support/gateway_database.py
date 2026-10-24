@@ -24,7 +24,10 @@ from speechnexus_gateway.domain.submission import (
     SubmissionIntent,
     SubmissionStoreError,
 )
-from speechnexus_gateway.infrastructure.barrier_sql import seal_barrier_in_transaction
+from speechnexus_gateway.infrastructure.barrier_sql import (
+    read_barrier,
+    seal_barrier_in_transaction,
+)
 from speechnexus_gateway.infrastructure.command_redaction_sql import (
     redact_execution_command_in_transaction,
 )
@@ -135,6 +138,13 @@ class MySQLSubmissionLedger:
         return self._run(
             lambda cursor: seal_barrier_in_transaction(
                 cursor, fence, clock=lambda: self._clock(cursor)
+            )
+        )
+
+    def get_barrier(self, gateway_id: str, pool_id: str) -> BarrierSnapshot | None:
+        return self._run(
+            lambda cursor: read_barrier(
+                cursor, gateway_id, pool_id, clock=lambda: self._clock(cursor)
             )
         )
 

@@ -33,7 +33,9 @@
 | [文件 ASR 有界媒体输入](architecture/file-asr-audio.md) | 五种格式解码/重采样、源样本时钟、文件 VAD 组合与接入边界 |
 | [B03 有界媒体与真实录音输入探针](audits/2026-10-24-b03-bounded-audio-probe.md) | 合成媒体、两段授权录音及尾部处理实测；不代表识别质量或完整服务 |
 | [文件 ASR 原生识别接口](architecture/file-asr-recognition.md) | 固定内网 ASR、VAD 门禁、SSE 完成/截断判定、源时钟及未装配的持久执行边界 |
+| [文件 TTS 原生合成接口](architecture/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
 | [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 0.6B/1.7B、真实录音、无语音零外发、真实截断负例与同片段重复测量 |
+| [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 1.7B CustomVoice 经适配器的 WAV/MP3 交付、24→16 kHz 解码与 0.6B ASR 回环、停止与清理证据 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力           |
 | [开发与测试环境](development-environment.md)                                                        | 当前主机工具链、独立服务、媒体与无头浏览器验证、初始化和隔离边界                |

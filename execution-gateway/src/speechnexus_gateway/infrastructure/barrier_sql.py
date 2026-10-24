@@ -17,6 +17,63 @@ from speechnexus_gateway.domain.submission import (
 from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, to_unix_micros
 
 
+def barrier_inventory(
+    cursor: SubmitCursor, gateway_id: str, pool_id: str
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Fresh inventory of this gateway's unfinished intents for one pool.
+
+    Plain reads only: every controlled writer takes the pool row first, so joining a lease
+    ``FOR UPDATE`` after the barrier row would reverse that order.
+    """
+    cursor.execute(
+        "SELECT s.submit_intent_id, s.execution_state FROM submit_intents s "
+        "JOIN admission_leases l ON l.lease_id = s.lease_id "
+        "WHERE l.gateway_id = %s AND l.pool_id = %s "
+        "AND s.execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined') "
+        "ORDER BY s.submit_intent_id",
+        (gateway_id, pool_id),
+    )
+    rows = cursor.fetchall()
+    return (
+        tuple(r["submit_intent_id"] for r in rows if r["execution_state"] == "submitting"),
+        tuple(
+            r["submit_intent_id"] for r in rows if r["execution_state"] in {"executing", "stopping"}
+        ),
+        tuple(r["submit_intent_id"] for r in rows if r["execution_state"] == "unknown_quarantined"),
+    )
+
+
+def read_barrier(
+    cursor: SubmitCursor, gateway_id: str, pool_id: str, *, clock: Callable[[], datetime]
+) -> BarrierSnapshot | None:
+    """Read the recorded barrier fact without locking it or accepting a new minimum.
+
+    Inventory and observation time come from this read: only the enforced minimum and its
+    proof digest are the immutable fact, so a replay can return the original proof after the
+    owner that sealed it was replaced.
+    """
+    cursor.execute(
+        "SELECT min_fencing_token, sealed_evidence_digest, version FROM gateway_fencing_barriers "
+        "WHERE gateway_id = %s AND pool_id = %s",
+        (gateway_id, pool_id),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    submitting, executing, quarantined = barrier_inventory(cursor, gateway_id, pool_id)
+    return BarrierSnapshot(
+        gateway_id=gateway_id,
+        pool_id=pool_id,
+        min_fencing_token=rows[0]["min_fencing_token"],
+        evidence_digest=rows[0]["sealed_evidence_digest"],
+        version=int(rows[0]["version"]),
+        observed_at_us=to_unix_micros(clock()),
+        submitting_intent_ids=submitting,
+        executing_intent_ids=executing,
+        quarantined_intent_ids=quarantined,
+    )
+
+
 def seal_barrier_in_transaction(
     cursor: SubmitCursor,
     fence: IngressFence,
@@ -88,17 +145,9 @@ def seal_barrier_in_transaction(
             (fence.gateway_id, request.pool_id, request.min_accepted_fencing_token, digest),
         )
         version = 1
-    # All controlled writers take the pool first. Plain reads here avoid taking lease
-    # locks after the barrier row through a joined FOR UPDATE (which reverses lock order).
-    cursor.execute(
-        "SELECT s.submit_intent_id, s.execution_state FROM submit_intents s "
-        "JOIN admission_leases l ON l.lease_id = s.lease_id "
-        "WHERE l.gateway_id = %s AND l.pool_id = %s "
-        "AND s.execution_state IN ('submitting', 'executing', 'stopping', 'unknown_quarantined') "
-        "ORDER BY s.submit_intent_id",
-        (fence.gateway_id, request.pool_id),
+    submitting, executing, quarantined = barrier_inventory(
+        cursor, fence.gateway_id, request.pool_id
     )
-    rows = cursor.fetchall()
     return BarrierSnapshot(
         gateway_id=fence.gateway_id,
         pool_id=request.pool_id,
@@ -106,13 +155,7 @@ def seal_barrier_in_transaction(
         evidence_digest=digest,
         version=version,
         observed_at_us=now_us,
-        submitting_intent_ids=tuple(
-            r["submit_intent_id"] for r in rows if r["execution_state"] == "submitting"
-        ),
-        executing_intent_ids=tuple(
-            r["submit_intent_id"] for r in rows if r["execution_state"] in {"executing", "stopping"}
-        ),
-        quarantined_intent_ids=tuple(
-            r["submit_intent_id"] for r in rows if r["execution_state"] == "unknown_quarantined"
-        ),
+        submitting_intent_ids=submitting,
+        executing_intent_ids=executing,
+        quarantined_intent_ids=quarantined,
     )

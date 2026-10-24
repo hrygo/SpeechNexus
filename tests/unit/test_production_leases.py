@@ -14,6 +14,7 @@ from speechnexus_contracts import ContractValidationError
 
 from speechnexus_backend.speech.application.leases import LeaseService
 from speechnexus_backend.speech.domain.capacity import PhysicalResources
+from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.domain.leases import (
     LeaseAccounting,
     LeaseRecord,
@@ -187,6 +188,9 @@ def test_future_observations_underflow_and_inconsistent_quota_are_not_writes() -
 
 
 class Port:
+    def release_lease(self, request: ReleaseLease) -> LeaseResult:
+        raise AssertionError("Isolation tests do not authorize a release")
+
     def quarantine_lease(self, request: QuarantineLease) -> LeaseResult:
         return LeaseResult("committed", request.lease_id, decide().lease)
 

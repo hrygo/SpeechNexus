@@ -260,10 +260,10 @@ class LeaseResult:
 
 def rejected(lease_id: str, code: str) -> LeaseResult:
     return LeaseResult(
-        "conflict" if code == "idempotency_conflict" else "rejected",
+        "conflict" if code in ("idempotency_conflict", "version_conflict") else "rejected",
         lease_id,
         error_code=code,
-        recovery="reconcile",
+        recovery="query_original" if code == "version_conflict" else "reconcile",
     )
 
 

@@ -849,6 +849,29 @@
   ],
   "invalid_commands": [
     {
+      "reason": "release revision is not a decimal string",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "release_lease",
+        "request": {
+          "lease_id": "lease-test-stage-main",
+          "expected_version": 1
+        }
+      }
+    },
+    {
+      "reason": "release rejects caller-supplied stop authority",
+      "command": {
+        "schema_version": "1.0.0",
+        "operation": "release_lease",
+        "request": {
+          "lease_id": "lease-test-stage-main",
+          "expected_version": "1",
+          "execution_stopped": true
+        }
+      }
+    },
+    {
       "reason": "unknown request property",
       "command": {
         "schema_version": "1.0.0",

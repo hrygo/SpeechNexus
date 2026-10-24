@@ -61,7 +61,7 @@ SpeechNexus 希望服务于三类需求：
 
 [运行时意图事务](docs/architecture/production-runtime-intents.md)已提供独立 create/query/observe 端口：同事务预留完整 peak，核验受信 warmup/资格后转 steady，确认停止且清理完成后才归还基线；PG/InnoDB 合成事实验证不代表真实 GPU 资格。批准计划/资格提供者、持久派发与实际控制循环仍待接入，没有新增公开路由。
 
-[租约隔离事务](docs/architecture/production-leases.md)提供独立 `quarantine_lease` 和只读租约查询：消费网关持久未知事实，同事务把物理占用、槽位及首次 attempt 配额移入隔离，总占用保持不变。完整配方准入、租约释放和实际调度消费者仍待接入。
+[租约隔离与释放事务](docs/architecture/production-leases.md)提供独立 `quarantine_lease`、`release_lease` 和只读租约查询：未知占用移入隔离并保持总量，核对网关持久停止/释放或未外发事实后才归还当前 lease 增量，最后阶段才归还 attempt 配额。实例基线仍由 runtime 停止流程处理；完整配方准入和实际调度消费者仍待接入。
 
 [执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 入口屏障与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实计量采集/消费、删除许可签发、提交/中止路由、真实引擎和跨宿主资格仍待交付，默认 Compose 尚未启用该控制入口。
 

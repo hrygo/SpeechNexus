@@ -61,6 +61,6 @@ unknown 只能查询原身份或协调，不能新建执行普通重试。B 的�
 配额与结算。取消请求、TTL 和断线不是停止/释放证据。完整锁序、跨表裁决及最低
 证据要求仍以[协调事务设计](coordination-transactions.md)为准。
 
-[租约隔离事务](production-leases.md)提供 A 的 quarantine_lease 与只读 LeaseSnapshot
-入口，保留六维物理占用、槽位和 attempt 配额。release_lease 与 admit_recipe 仍待交付；
+[租约隔离与释放事务](production-leases.md)提供 A 的 quarantine_lease、release_lease 与只读 LeaseSnapshot
+入口，按权威事实保留/结算六维增量、槽位和最后 stage 的 attempt 配额。admit_recipe 仍待交付；
 parser、数据库接线和真实业务/引擎资格分别验收。

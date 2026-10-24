@@ -50,7 +50,7 @@
 包内生产迁移已交付 [Job/outbox 创建与恢复](architecture/production-jobs.md)和
 [`0002_coordination` 存储/权限基线](architecture/production-coordination-storage.md)；
 新增 [资产发布存储单元](architecture/production-assets.md) 使用 `0003_assets` 接入真实文本、版本化 MinIO 与保留期账本。
-[租约隔离事务](architecture/production-leases.md)消费持久未知执行事实并保留全部占用；隔离不构成停止或释放证据。
+[租约隔离与释放事务](architecture/production-leases.md)消费网关持久未知/停止/未外发事实；隔离保留占用，释放只扣当前 lease 增量，最后 stage 才结算 attempt 配额。
 这些包内实现与根目录设计/测试草案分离，其余生产事务与真实集群资格继续按所有权取证。
 
 [架构文档](architecture/README.md) · [计划](plans/README.md) · [审查记录](audits/README.md) · [项目说明](../README.md)

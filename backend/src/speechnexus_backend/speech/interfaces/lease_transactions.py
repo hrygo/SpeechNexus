@@ -1,4 +1,4 @@
-"""Original coordination contract at the lease-isolation boundary; no HTTP route."""
+"""Original coordination contract at the lease boundary; no HTTP route."""
 
 from typing import Any
 
@@ -6,6 +6,7 @@ from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.validation import validate_coordination
 
 from speechnexus_backend.speech.application.leases import LeaseService
+from speechnexus_backend.speech.domain.lease_release import ReleaseLease
 from speechnexus_backend.speech.domain.leases import LeaseResult, QuarantineLease
 
 
@@ -31,6 +32,15 @@ class LeaseTransactionBoundary:
         if request["target"]["kind"] != "lease" or "request_digest" in request:
             raise ContractValidationError("Lease query requires the original lease identity")
         return self._wire("query_outcome", self._service.query(request["target"]["lease_id"]))
+
+    def release_lease(self, request: Any) -> dict[str, Any]:
+        validate_coordination("release_lease", request)
+        return self._wire(
+            "release_lease",
+            self._service.release(
+                ReleaseLease(request["lease_id"], int(request["expected_version"]))
+            ),
+        )
 
     @staticmethod
     def _wire(operation: str, result: LeaseResult) -> dict[str, Any]:

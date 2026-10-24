@@ -16,7 +16,8 @@
     "record_execution_observation",
     "redact_execution_command",
     "append_interval",
-    "quarantine_lease"
+    "quarantine_lease",
+    "release_lease"
   ],
   "$defs": {
     "create_job": {
@@ -2284,6 +2285,19 @@
           "maximum": 9007199254740991
         }
       }
+    },
+    "release_lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease_id", "expected_version"],
+      "properties": {
+        "lease_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "expected_version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
     }
   },
   "anyOf": [
@@ -2328,6 +2342,9 @@
     },
     {
       "$ref": "#/$defs/quarantine_lease"
+    },
+    {
+      "$ref": "#/$defs/release_lease"
     }
   ]
 }

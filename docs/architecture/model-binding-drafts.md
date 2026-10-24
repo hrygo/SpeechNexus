@@ -205,3 +205,8 @@ Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,
 resource qualification, real speech execution and A02/Gate acceptance remain open.
 B #123/#124 source/artifacts and all existing consumer namespaces are preserved.
+
+A standalone [default snapshot contract](binding-parameter-defaults.md) now
+provides a source-defined declaration format for the remaining parameter-resolution
+work. It does not attach defaults to existing revisions, add ModelBinding wire
+fields, write registry data or establish a published/default configuration.

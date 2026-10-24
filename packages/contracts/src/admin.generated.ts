@@ -1106,43 +1106,54 @@ export interface components {
      * @enum {string}
      */
     ProfileReleaseTier: "experimental" | "production";
+    AsrPreviewIntervalMs: number;
+    /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
+    AsrMaxSegmentMs: number;
+    AsrFinalDeadlineMs: number;
+    /** @default 5000 */
+    AsrAuxiliaryDeadlineMs: number;
+    /** @default 5 */
+    AsrRollbackTokens: number;
+    AsrTurnDetection: {
+      mode: components["schemas"]["VadMode"];
+      silence_duration_ms: number;
+    };
     AsrParameters: {
       language: components["schemas"]["LanguageTag"];
-      preview_interval_ms: number;
-      /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
-      max_segment_ms: number;
+      preview_interval_ms: components["schemas"]["AsrPreviewIntervalMs"];
+      max_segment_ms: components["schemas"]["AsrMaxSegmentMs"];
       finalization: components["schemas"]["FinalizationMode"];
-      final_deadline_ms: number;
-      /** @default 5000 */
-      auxiliary_deadline_ms: number;
-      /** @default 5 */
-      rollback_tokens: number;
-      turn_detection: {
-        mode: components["schemas"]["VadMode"];
-        silence_duration_ms: number;
-      };
+      final_deadline_ms: components["schemas"]["AsrFinalDeadlineMs"];
+      auxiliary_deadline_ms: components["schemas"]["AsrAuxiliaryDeadlineMs"];
+      rollback_tokens: components["schemas"]["AsrRollbackTokens"];
+      turn_detection: components["schemas"]["AsrTurnDetection"];
       vocabulary_set_revision?: components["schemas"]["ResourceReference"] | null;
       alignment: components["schemas"]["AuxiliaryMode"];
       diarization: components["schemas"]["AuxiliaryMode"];
+    };
+    /** @default 1 */
+    TtsSpeed: number;
+    TtsInstructions: string | null;
+    TtsSeed: number | null;
+    TtsPlanner: {
+      max_chars: number;
+      max_wait_ms: number;
     };
     TtsParameters: {
       language: components["schemas"]["LanguageTag"];
       text_commit_mode: components["schemas"]["TextCommitMode"];
       audio_delivery: components["schemas"]["AudioDeliveryMode"];
-      /** @default 1 */
-      speed: number;
-      instructions?: string | null;
+      speed: components["schemas"]["TtsSpeed"];
+      instructions?: components["schemas"]["TtsInstructions"];
       pronunciation_revision?: components["schemas"]["ResourceReference"] | null;
-      seed?: number | null;
-      planner: {
-        max_chars: number;
-        max_wait_ms: number;
-      };
+      seed?: components["schemas"]["TtsSeed"];
+      planner: components["schemas"]["TtsPlanner"];
     };
+    OutputSaveArtifacts: boolean;
     OutputParameters: {
       transcript_format?: components["schemas"]["TranscriptFormat"];
       audio_format?: components["schemas"]["AudioFormat"];
-      save_artifacts?: boolean;
+      save_artifacts?: components["schemas"]["OutputSaveArtifacts"];
     };
     ProfileParameters: {
       asr?: components["schemas"]["AsrParameters"];
@@ -1557,7 +1568,6 @@ export interface components {
         Sha256Digest: components["schemas"]["Sha256Digest"];
         ProfileReleaseTier: components["schemas"]["ProfileReleaseTier"];
         ExecutionClass: components["schemas"]["ServiceClass"];
-        LanguageTag: components["schemas"]["LanguageTag"];
         /** @enum {string} */
         ParameterPath:
           | "asr.language"
@@ -1584,7 +1594,6 @@ export interface components {
           | "output.transcript_format"
           | "output.audio_format"
           | "output.save_artifacts";
-        ResourceReference: components["schemas"]["ResourceReference"];
         OverrideRange:
           | {
               minimum?: number;
@@ -1596,19 +1605,13 @@ export interface components {
           | unknown;
         AsrParameters: {
           language: components["schemas"]["LanguageTag"];
-          preview_interval_ms: number;
-          /** @description Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it. */
-          max_segment_ms: number;
+          preview_interval_ms: components["schemas"]["AsrPreviewIntervalMs"];
+          max_segment_ms: components["schemas"]["AsrMaxSegmentMs"];
           finalization: components["schemas"]["FinalizationMode"];
-          final_deadline_ms: number;
-          /** @default 5000 */
-          auxiliary_deadline_ms: number;
-          /** @default 5 */
-          rollback_tokens: number;
-          turn_detection: {
-            mode: components["schemas"]["VadMode"];
-            silence_duration_ms: number;
-          };
+          final_deadline_ms: components["schemas"]["AsrFinalDeadlineMs"];
+          auxiliary_deadline_ms: components["schemas"]["AsrAuxiliaryDeadlineMs"];
+          rollback_tokens: components["schemas"]["AsrRollbackTokens"];
+          turn_detection: components["schemas"]["AsrTurnDetection"];
           vocabulary_set_revision?: components["schemas"]["ResourceReference"] | null;
           alignment: components["schemas"]["AuxiliaryMode"];
           diarization: components["schemas"]["AuxiliaryMode"];
@@ -1617,20 +1620,16 @@ export interface components {
           language: components["schemas"]["LanguageTag"];
           text_commit_mode: components["schemas"]["TextCommitMode"];
           audio_delivery: components["schemas"]["AudioDeliveryMode"];
-          /** @default 1 */
-          speed: number;
-          instructions?: string | null;
+          speed: components["schemas"]["TtsSpeed"];
+          instructions?: components["schemas"]["TtsInstructions"];
           pronunciation_revision?: components["schemas"]["ResourceReference"] | null;
-          seed?: number | null;
-          planner: {
-            max_chars: number;
-            max_wait_ms: number;
-          };
+          seed?: components["schemas"]["TtsSeed"];
+          planner: components["schemas"]["TtsPlanner"];
         };
         OutputParameters: {
           transcript_format?: components["schemas"]["TranscriptFormat"];
           audio_format?: components["schemas"]["AudioFormat"];
-          save_artifacts?: boolean;
+          save_artifacts?: components["schemas"]["OutputSaveArtifacts"];
         };
         ProfileParameters: {
           asr?: components["schemas"]["AsrParameters"];
@@ -1662,6 +1661,8 @@ export interface components {
           corpus_revision?: string;
           notes?: string;
         };
+        LanguageTag: components["schemas"]["LanguageTag"];
+        ResourceReference: components["schemas"]["ResourceReference"];
       };
     } & (components["schemas"]["ProfileDefinition"] &
       unknown &

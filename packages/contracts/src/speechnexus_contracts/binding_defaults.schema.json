@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BindingDefaultsContracts",
+  "x-nexus-bindings-version": "1.0.0",
+  "x-nexus-entrypoints": ["BindingParameterDefaultsSnapshot"],
+  "$defs": {
+    "Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "BindingParameterDefaultsSnapshot",
+      "description": "Registry-owned immutable declaration of profile-compatible default parameter values for one exact binding revision. Omission, explicit null and an explicit empty parameter map remain distinct. It is a declaration, not an engine-default probe or publication evidence. Parent identity, producer authority and final parameter compatibility are checked separately. It defines no create/get operation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "snapshot_id",
+        "binding_id",
+        "binding_revision",
+        "binding_revision_id",
+        "parameters",
+        "created_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "binding_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "binding_revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "parameters": {
+          "$ref": "#/$defs/BindingDefaultParameters"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "BindingDefaultParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit sparse canonical parameter fields. Nested objects retain their original required fields. No schema annotation supplies an omitted value. An explicit empty map declares no defaults and is not a substitute for an absent/unreadable snapshot.",
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrParameterFields"
+        },
+        "tts": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsParameterFields"
+        },
+        "output": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputParameterFields"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrLanguage"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalization"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrTurnDetection"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAlignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrDiarization"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrLanguage": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000,
+      "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrFinalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000,
+      "default": 5000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrRollbackTokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32,
+      "default": 5
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrTurnDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "silence_duration_ms"],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrVocabularySetRevision": {
+      "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
+    },
+    "External_shared_profile_parameter_values_schema_json_NullableResourceReference": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrAlignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrDiarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsLanguage"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSpeed"
+        },
+        "instructions": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsInstructions"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSeed"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPlanner"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsLanguage": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsTextCommitMode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsAudioDelivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsSpeed": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2.0,
+      "default": 1.0
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsInstructions": {
+      "type": ["string", "null"],
+      "maxLength": 2000
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsPronunciationRevision": {
+      "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_NullableResourceReference"
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsSeed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsPlanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_chars", "max_wait_ms"],
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputParameterFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transcript_format": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat"
+        },
+        "audio_format": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputAudioFormat"
+        },
+        "save_artifacts": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputAudioFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts": {
+      "type": "boolean"
+    },
+    "BindingParameterDefaultsSnapshot": {
+      "$ref": "#/$defs/Root"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/BindingParameterDefaultsSnapshot"
+    }
+  ]
+}

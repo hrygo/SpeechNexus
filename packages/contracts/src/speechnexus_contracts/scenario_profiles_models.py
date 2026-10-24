@@ -23,9 +23,14 @@ type ExternalSharedCapabilityDomainsSchemaJsonServiceClass = Literal[
     "realtime", "interactive", "batch"
 ]
 type ExternalSharedLanguageSchemaJsonLanguageTag = str
+type ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs = int
 type ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode = Literal[
     "full_segment", "streaming_finalize"
 ]
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs = int
+type ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens = int
 type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
 
 
@@ -37,19 +42,26 @@ class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
 type ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode = Literal[
     "off", "required", "best_effort"
 ]
+type ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
+type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed = float
+type ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions = str | None
+type ExternalSharedProfileParameterValuesSchemaJsonTtsSeed = int | None
 
 
-class Planner(TypedDict):
+class ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner(TypedDict):
     max_chars: int
     max_wait_ms: int
 
 
-type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
-type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
 type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
     "json", "text", "verbose_json", "srt", "vtt"
 ]
 type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
+type ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts = bool
 
 
 class Constraint(TypedDict):
@@ -128,32 +140,33 @@ type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
 type ProfileReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonProfileReleaseTier
 type ExecutionClass = ExternalSharedCapabilityDomainsSchemaJsonServiceClass
+type LanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
+type ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization = (
+    ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+)
 
 
-class TurnDetection(TypedDict):
+class ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection(TypedDict):
     mode: ExternalSharedCapabilityDomainsSchemaJsonVadMode
     silence_duration_ms: int
 
 
-type LanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
-
-
-class TtsParameters(TypedDict):
-    language: LanguageTag
-    text_commit_mode: ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
-    audio_delivery: ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
-    speed: float
-    instructions: NotRequired[str | None]
-    pronunciation_revision: NotRequired[ResourceReference | None]
-    seed: NotRequired[int | None]
-    planner: Planner
-
-
-class OutputParameters(TypedDict):
-    transcript_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat]
-    audio_format: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonAudioFormat]
-    save_artifacts: NotRequired[bool]
+type ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode = (
+    ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+)
+type ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat = (
+    ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat
+)
+type ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
+)
 
 
 class ProfileValidation(TypedDict):
@@ -169,16 +182,35 @@ class ProfileValidation(TypedDict):
 
 class AsrParameters(TypedDict):
     language: LanguageTag
-    preview_interval_ms: int
-    max_segment_ms: int
-    finalization: ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
-    final_deadline_ms: int
-    auxiliary_deadline_ms: int
-    rollback_tokens: int
-    turn_detection: TurnDetection
+    preview_interval_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrPreviewIntervalMs
+    max_segment_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrMaxSegmentMs
+    finalization: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalization
+    final_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrFinalDeadlineMs
+    auxiliary_deadline_ms: ExternalSharedProfileParameterValuesSchemaJsonAsrAuxiliaryDeadlineMs
+    rollback_tokens: ExternalSharedProfileParameterValuesSchemaJsonAsrRollbackTokens
+    turn_detection: ExternalSharedProfileParameterValuesSchemaJsonAsrTurnDetection
     vocabulary_set_revision: NotRequired[ResourceReference | None]
-    alignment: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
-    diarization: ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+    alignment: ExternalSharedProfileParameterValuesSchemaJsonAsrAlignment
+    diarization: ExternalSharedProfileParameterValuesSchemaJsonAsrDiarization
+
+
+class TtsParameters(TypedDict):
+    language: LanguageTag
+    text_commit_mode: ExternalSharedProfileParameterValuesSchemaJsonTtsTextCommitMode
+    audio_delivery: ExternalSharedProfileParameterValuesSchemaJsonTtsAudioDelivery
+    speed: ExternalSharedProfileParameterValuesSchemaJsonTtsSpeed
+    instructions: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsInstructions]
+    pronunciation_revision: NotRequired[ResourceReference | None]
+    seed: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonTtsSeed]
+    planner: ExternalSharedProfileParameterValuesSchemaJsonTtsPlanner
+
+
+class OutputParameters(TypedDict):
+    transcript_format: NotRequired[
+        ExternalSharedProfileParameterValuesSchemaJsonOutputTranscriptFormat
+    ]
+    audio_format: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputAudioFormat]
+    save_artifacts: NotRequired[ExternalSharedProfileParameterValuesSchemaJsonOutputSaveArtifacts]
 
 
 class ProfileParameters(TypedDict):

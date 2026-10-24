@@ -230,6 +230,30 @@ def test_capacity_manifest_envelope_aggregation_is_frozen() -> None:
     assert envelope["realtime_reserved_slots"] <= envelope["max_active_slots"]
 
 
+def _terminal_schema_alias(node: dict[str, Any], source: Path) -> tuple[Path, str]:
+    """Follow only pure aliases, proving the terminal canonical source identity."""
+    seen: set[tuple[Path, str]] = set()
+    while True:
+        assert set(node) == {"$ref"}
+        ref = node["$ref"]
+        assert isinstance(ref, str)
+        parsed = urlparse(ref)
+        assert not parsed.scheme and not parsed.netloc
+        source = (source.parent / unquote(parsed.path)).resolve() if parsed.path else source
+        assert source.is_relative_to(_ROOT / "contracts")
+        identity = (source, parsed.fragment)
+        assert identity not in seen, "schema alias cycle"
+        seen.add(identity)
+        target = json.loads(source.read_text(encoding="utf-8"))
+        assert parsed.fragment.startswith("/")
+        for token in parsed.fragment[1:].split("/"):
+            target = target[unquote(token).replace("~1", "/").replace("~0", "~")]
+        assert isinstance(target, dict)
+        if "$ref" not in target:
+            return identity
+        node = target
+
+
 def test_shared_speech_control_domains_have_one_source() -> None:
     domains = json.loads(_CAPABILITY_DOMAINS_SCHEMA_PATH.read_text(encoding="utf-8"))
     defs = domains["$defs"]
@@ -256,18 +280,15 @@ def test_shared_speech_control_domains_have_one_source() -> None:
 
     scenario = json.loads(_SCENARIO_PROFILE_SCHEMA_PATH.read_text(encoding="utf-8"))
     scenario_defs = scenario["$defs"]
-    assert scenario_defs["AsrParameters"]["properties"]["finalization"]["$ref"].endswith(
-        "shared/capability-domains.schema.json#/$defs/FinalizationMode"
-    )
-    assert scenario_defs["AsrParameters"]["properties"]["alignment"]["$ref"].endswith(
-        "shared/capability-domains.schema.json#/$defs/AuxiliaryMode"
-    )
-    assert scenario_defs["TtsParameters"]["properties"]["text_commit_mode"]["$ref"].endswith(
-        "shared/capability-domains.schema.json#/$defs/TextCommitMode"
-    )
-    assert scenario_defs["OutputParameters"]["properties"]["audio_format"]["$ref"].endswith(
-        "shared/capability-domains.schema.json#/$defs/AudioFormat"
-    )
+    for section, field, domain in (
+        ("AsrParameters", "finalization", "FinalizationMode"),
+        ("AsrParameters", "alignment", "AuxiliaryMode"),
+        ("TtsParameters", "text_commit_mode", "TextCommitMode"),
+        ("OutputParameters", "audio_format", "AudioFormat"),
+    ):
+        assert _terminal_schema_alias(
+            scenario_defs[section]["properties"][field], _SCENARIO_PROFILE_SCHEMA_PATH
+        ) == (_CAPABILITY_DOMAINS_SCHEMA_PATH, f"/$defs/{domain}")
 
     voice = json.loads(_VOICE_RESOURCE_SCHEMA_PATH.read_text(encoding="utf-8"))
     voice_capabilities = voice["$defs"]["VoiceCapabilities"]["properties"]

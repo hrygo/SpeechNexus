@@ -18,7 +18,8 @@
     "./profile-http": "./src/profile-http.ts",
     "./model-bindings": "./src/model_bindings.ts",
     "./binding-http": "./src/binding-http.ts",
-    "./gateway-recovery": "./src/gateway_recovery.ts"
+    "./gateway-recovery": "./src/gateway_recovery.ts",
+    "./binding-defaults": "./src/binding_defaults.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

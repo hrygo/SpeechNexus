@@ -22,6 +22,8 @@ InnoDB 仅验证相同协调 SQL、约束和最小权限。固定 HTTPS 规则�
 fresh 请求的 before-wire 标记必须提交成功才获得一次 POST 许可；失去提交回执就没有许可。
 任何已开始请求，即使本次调用报告尚未发送，也不能自动变回 unsent。unknown 可在原 deadline
 之后查询；404、认证失败、HTTP取消、超时和 worker 退出都不是未外发或物理释放证明。
+字节上限内仍可能有过深嵌套的损坏原记录；结构解码的 `RecursionError` 归一为
+既有 invalid_record/blocked，保留原命令与预算，使后续健康事件可继续处理。
 首次请求已过期或被当前 head 替代时也只查询，不再次启动旧实例。B 的持久 fence/generation
 与 STOP tombstone 防止 stop 后迟到的 unseen prepare 复活；A 不修改 B 的实现。
 

@@ -19,6 +19,7 @@ from typing import Final
 from speechnexus_node_controller.domain.intents import (
     InvalidRuntimeRequestError,
     RuntimeInstanceIntent,
+    RuntimeIntentState,
 )
 from speechnexus_node_controller.domain.payloads import (
     intent_record_payload,
@@ -48,6 +49,10 @@ _SCHEMA: Final = (
     CREATE INDEX IF NOT EXISTS runtime_instance_intents_instance
         ON runtime_instance_intents (instance_id, instance_generation)
     """,
+    """
+    CREATE INDEX IF NOT EXISTS runtime_instance_intents_unresolved
+        ON runtime_instance_intents (intent_state, intent_id)
+    """,
 )
 
 
@@ -66,7 +71,11 @@ class SqliteIntentStore:
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA synchronous=FULL")
         self._connection.execute("PRAGMA busy_timeout=5000")
-        self._create_schema()
+        try:
+            self._create_schema()
+        except BaseException:
+            self._connection.close()
+            raise
 
     @property
     def path(self) -> Path:
@@ -142,6 +151,22 @@ class SqliteIntentStore:
                 "SELECT intent_id, record FROM runtime_instance_intents "
                 "WHERE instance_id = ? ORDER BY rowid",
                 (instance_id,),
+            ).fetchall()
+        return [_decode(str(record), str(intent_id)) for intent_id, record in rows]
+
+    def list_unresolved(
+        self, *, after_intent_id: str | None, limit: int
+    ) -> list[RuntimeInstanceIntent]:
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("an observation page requires a limit within 1..500")
+        states = tuple(state.value for state in RuntimeIntentState if state.is_unresolved)
+        placeholders = ", ".join("?" for _ in states)
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT intent_id, record FROM runtime_instance_intents "
+                f"WHERE intent_state IN ({placeholders}) "
+                "AND intent_id > ? ORDER BY intent_id LIMIT ?",
+                (*states, after_intent_id or "", limit),
             ).fetchall()
         return [_decode(str(record), str(intent_id)) for intent_id, record in rows]
 

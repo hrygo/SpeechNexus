@@ -31,6 +31,12 @@ class IntentStore(Protocol):
 
     def list_for_instance(self, instance_id: str) -> list[RuntimeInstanceIntent]: ...
 
+    def list_unresolved(
+        self, *, after_intent_id: str | None, limit: int
+    ) -> list[RuntimeInstanceIntent]:
+        """One bounded page in ascending intent ID order; terminal facts are excluded."""
+        ...
+
 
 class NodeRuntimePort(Protocol):
     """Node-local container runtime restricted to approved templates.

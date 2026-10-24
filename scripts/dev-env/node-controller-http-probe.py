@@ -59,6 +59,9 @@ class ProbeReport:
     container_hardening: dict[str, Any] = field(default_factory=dict)
     prepare_status: int = 0
     prepare_state: str = ""
+    initial_prepare_observed_state: str = ""
+    pending_crash_container_live: bool = False
+    automatic_ready_after_restart: bool = False
     ready_seconds: float | None = None
     observed_peak_bytes: int | None = None
     stop_status: int = 0
@@ -89,6 +92,9 @@ class ProbeReport:
             "container_hardening": self.container_hardening,
             "prepare_status": self.prepare_status,
             "prepare_state": self.prepare_state,
+            "initial_prepare_observed_state": self.initial_prepare_observed_state,
+            "pending_crash_container_live": self.pending_crash_container_live,
+            "automatic_ready_after_restart": self.automatic_ready_after_restart,
             "ready_seconds": self.ready_seconds,
             "observed_peak_bytes": self.observed_peak_bytes,
             "stop_status": self.stop_status,
@@ -150,6 +156,9 @@ def _intent_body(*, intent_id: str, action: str, fencing_token: int) -> dict[str
 
 
 def _write_templates(path: Path, image_reference: str, image_id: str) -> None:
+    gate = path.parent / "readiness-gate"
+    gate.mkdir(mode=0o755)
+    gate.chmod(0o755)
     path.write_text(
         json.dumps(
             {
@@ -163,7 +172,17 @@ def _write_templates(path: Path, image_reference: str, image_id: str) -> None:
                         "max_peak_memory_bytes": 2 * 1024**3,
                         "container_memory_limit_bytes": 256 * 1024**2,
                         "readiness": {"kind": "tcp_port_accepting", "port": _READINESS_PORT},
-                        "command": ["python", "-m", "http.server", str(_READINESS_PORT)],
+                        "read_only_binds": [{"source": str(gate), "target": "/readiness-gate"}],
+                        "command": [
+                            "python",
+                            "-c",
+                            "from pathlib import Path\n"
+                            "import time,sys,runpy\n"
+                            "while not Path('/readiness-gate/ready').exists():\n"
+                            "    time.sleep(0.05)\n"
+                            f"sys.argv=['http.server','{_READINESS_PORT}']\n"
+                            "runpy.run_module('http.server',run_name='__main__')\n",
+                        ],
                     }
                 ]
             }
@@ -225,6 +244,7 @@ class ControllerProcess:
                 "SPEECHNEXUS_CONTROLLER_HOST": "127.0.0.1",
                 "SPEECHNEXUS_CONTROLLER_PORT": str(port),
                 "SPEECHNEXUS_CONTROLLER_LOG_LEVEL": "warning",
+                "SPEECHNEXUS_CONTROLLER_OBSERVATION_INTERVAL_SECONDS": "0.2",
             },
             stdout=self._log,
             stderr=self._log,
@@ -363,6 +383,29 @@ def run_probe(
             if prepared.status_code != 200:
                 raise SystemExit(f"prepare was refused: {prepared.text}")
             report.prepare_state = prepared.json()["observed_instance_state"]
+            report.initial_prepare_observed_state = report.prepare_state
+            if report.initial_prepare_observed_state != "loading":
+                raise SystemExit("the unopened readiness gate did not hold the prepare in loading")
+            pending_container = api.find_container(
+                {MANAGED_BY_LABEL: MANAGED_BY_VALUE, INSTANCE_ID_LABEL: _INSTANCE_ID}
+            )
+            if pending_container is None:
+                raise SystemExit("the pending container could not be found")
+            # Crash while the original receipt is unresolved. After restart, open
+            # the container's read-only gate and only GET the original identity;
+            # no reconcile snapshot or repeated POST is allowed to drive readiness.
+            controller.kill()
+            pending_live = api.inspect_container(pending_container.container_id)
+            report.pending_crash_container_live = pending_live is not None and pending_live.running
+            controller = ControllerProcess(
+                command=command,
+                workdir=workdir,
+                port=port,
+                socket_path=socket_path,
+                log_path=workdir / "controller-pending-restart.log",
+            )
+            _wait_for_health(client, timeout_seconds=30.0)
+            (workdir / "readiness-gate" / "ready").touch(mode=0o644)
             ready = _await_terminal(
                 client,
                 "intent-probe-prepare",
@@ -371,6 +414,13 @@ def run_probe(
             )
             report.ready_seconds = round(time.monotonic() - started, 3)
             report.prepare_state = ready["intent_state"]
+            report.automatic_ready_after_restart = (
+                ready["intent_state"] == "succeeded"
+                and ready["observed_instance_state"] == "ready"
+                and report.pending_crash_container_live
+            )
+            if not report.automatic_ready_after_restart:
+                raise SystemExit("the restarted local observer did not publish verified readiness")
             peak = ready.get("observed_peak_memory")
             if isinstance(peak, dict):
                 report.observed_peak_bytes = peak["unified_memory_bytes"]

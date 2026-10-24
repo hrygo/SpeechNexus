@@ -142,6 +142,77 @@ async def test_native_tls_warming_ready_and_stop_preserve_the_single_budget_auth
         assert len(node.runtime.prepared) == len(node.runtime.stopped) == 1
 
 
+async def test_local_observer_publishes_ready_over_tls_without_granting_budget_authority(
+    tls_runtime: RuntimeDatabase, controller_tls: TLSFiles, tmp_path: Path
+) -> None:
+    runtime = tls_runtime
+    created = runtime.port.create_runtime_intent(COMMAND)
+    assert created.outcome == "committed" and created.fact is not None
+    original = created.fact.request
+    with controller_server(
+        tmp_path / "observing-node", controller_tls, local_observer_enabled=True
+    ) as node:
+        async with HttpRuntimeController(
+            node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
+        ) as client:
+            loading = await client.submit(original)
+            assert loading.observation.observed_instance_state == "loading"
+            assert observe(runtime, loading).outcome == "committed"
+            peak = held(runtime)
+            assert peak == HOST.held.add(PLAN.peak).values
+            node.runtime.mark_ready(node.runtime.prepared[0])
+            async with asyncio.timeout(3):
+                while True:
+                    ready = await client.query(original)
+                    if ready.observation.observed_instance_state == "ready":
+                        break
+                    await asyncio.sleep(0.01)
+            # The loop produced the observation, but only A's qualified transaction
+            # may change the authoritative physical budget from peak to steady.
+            before = runtime.snapshot()
+            assert observe(runtime, ready).error_code == "reconciliation_required"
+            assert runtime.snapshot() == before and held(runtime) == peak
+            assert observe(runtime, ready, qualified=True).outcome == "committed"
+            assert held(runtime) == HOST.held.add(PLAN.steady).values
+        assert node.runtime.inspections
+        assert len(node.runtime.prepared) == 1 and node.runtime.stopped == []
+        assert node.methods[0] == "POST" and set(node.methods[1:]) == {"GET"}
+
+
+async def test_local_observer_absence_without_stop_proof_keeps_the_authoritative_peak(
+    tls_runtime: RuntimeDatabase, controller_tls: TLSFiles, tmp_path: Path
+) -> None:
+    runtime = tls_runtime
+    created = runtime.port.create_runtime_intent(COMMAND)
+    assert created.outcome == "committed" and created.fact is not None
+    original = created.fact.request
+    with controller_server(
+        tmp_path / "absent-node", controller_tls, local_observer_enabled=True
+    ) as node:
+        async with HttpRuntimeController(
+            node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
+        ) as client:
+            assert observe(runtime, await client.submit(original)).outcome == "committed"
+            peak = held(runtime)
+            node.runtime.observe_as(node.runtime.prepared[0], ObservedInstanceState.ABSENT)
+            async with asyncio.timeout(3):
+                while True:
+                    missing = await client.query(original)
+                    if missing.observation.intent_state == "failed":
+                        break
+                    await asyncio.sleep(0.01)
+            assert missing.observation.stop_evidence is None
+            assert observe(runtime, missing).outcome == "committed"
+            assert held(runtime) == peak == HOST.held.add(PLAN.peak).values
+            row = runtime.foundation.database.query(
+                "SELECT base_budget_kind FROM engine_instances "
+                "WHERE instance_id = %s AND instance_generation = %s",
+                (original.instance_id, original.instance_generation),
+            )[0]
+            assert row["base_budget_kind"] == "peak"
+        assert node.runtime.stopped == []
+
+
 class SlowPrepare(ScriptedNodeRuntime):
     def __init__(self) -> None:
         super().__init__(ready_on_prepare=True)

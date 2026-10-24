@@ -4,6 +4,12 @@ Contracts in this directory are the source of truth for public and internal
 producer/consumer protocols. Consumers must not hand-maintain independent copies
 of defaults, units, enum domains, or stable error codes.
 
+The [coordination request structure check](../docs/architecture/coordination-request-change-checks.md)
+compares the 18 frozen raw transaction request entrypoints with
+`CONTRACT_BASE_REF=origin/main make contracts-coordination-requests`. Its report
+separates schema and binding version evidence. Results, mixed root envelopes
+and complete protocol compatibility remain outside that command's scope.
+
 ## Current scope
 
 - `operations.openapi.yaml`: liveness and readiness protocol shared by the

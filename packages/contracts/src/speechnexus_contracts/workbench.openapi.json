@@ -1,0 +1,2195 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SpeechNexus workbench API",
+    "version": "0.1.0.dev0",
+    "description": "Optional application layer for projects, transcripts, meetings, assistant\nturns, teleprompter state, audiobook rendering, saved copies, and exports.\n\nThis API is not OpenAI-compatible and never replaces the public speech API.\nIt calls the speech base through public Job/Artifact APIs and keeps its own\nrecords, staging, outbox, and export artifacts. Every workspace is shared in\nP0; no route establishes a user identity or personal private space.\n"
+  },
+  "security": [
+    {
+      "SharedServiceKey": []
+    },
+    {}
+  ],
+  "paths": {
+    "/v1/workbench/status": {
+      "get": {
+        "tags": ["status"],
+        "operationId": "getWorkbenchStatus",
+        "summary": "Report workbench feature availability",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workbench status.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/workbench/projects": {
+      "get": {
+        "tags": ["projects"],
+        "operationId": "listProjects",
+        "summary": "List projects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceIdQuery"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": ["projects"],
+        "operationId": "createProject",
+        "summary": "Create a project",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/projects/{project_id}": {
+      "get": {
+        "tags": ["projects"],
+        "operationId": "getProject",
+        "summary": "Get a project",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["projects"],
+        "operationId": "updateProject",
+        "summary": "Update project metadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/projects/{project_id}/transcripts": {
+      "get": {
+        "tags": ["transcripts"],
+        "operationId": "listTranscripts",
+        "summary": "List project transcripts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transcripts.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": ["transcripts"],
+        "operationId": "createTranscript",
+        "summary": "Create a transcript from a speech artifact or plain text",
+        "description": "A speech artifact import records its source artifact and receipt. A\nmanual transcript starts as a draft revision. The workbench never writes\nthe speech base artifact or Job state.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Transcript created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/transcripts/{transcript_id}": {
+      "get": {
+        "tags": ["transcripts"],
+        "operationId": "getTranscript",
+        "summary": "Get a transcript and its current revision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TranscriptIdPath"
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Revision"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transcript view.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptView"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/workbench/transcripts/{transcript_id}/revisions": {
+      "post": {
+        "tags": ["transcripts"],
+        "operationId": "createTranscriptRevision",
+        "summary": "Create a new transcript revision",
+        "description": "Creates a new revision from the expected current head. Sealed revisions\nare immutable; a later correction creates another revision and preserves\nthe source relation. Downstream minutes become stale when their source\nrevision changes.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TranscriptIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptRevisionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Transcript revision created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRevision"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/v1/workbench/transcripts/{transcript_id}/revisions/{revision}": {
+      "get": {
+        "tags": ["transcripts"],
+        "operationId": "getTranscriptRevision",
+        "summary": "Get one transcript revision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TranscriptIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transcript revision.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/workbench/deletion-plans": {
+      "post": {
+        "operationId": "workbenchCreateDeletionPlan",
+        "summary": "createDeletionPlan",
+        "description": "This endpoint owns only workbench resources. Another owner returns\n422 deletion_owner_mismatch. Plans pin all dependencies and expire;\nexecution rechecks the complete snapshot atomically. See data-deletion.md.\n",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Immutable plan or original asynchronous deletion record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionPlan"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target, plan or deletion resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Dependency, revision, plan expiry or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid target owner or confirmation scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workbench/deletions": {
+      "post": {
+        "operationId": "workbenchCreateDeletion",
+        "summary": "createDeletion",
+        "description": "This endpoint owns only workbench resources. Another owner returns\n422 deletion_owner_mismatch. Plans pin all dependencies and expire;\nexecution rechecks the complete snapshot atomically. See data-deletion.md.\n",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Immutable plan or original asynchronous deletion record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_deletion_schema_json_Deletion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target, plan or deletion resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Dependency, revision, plan expiry or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid target owner or confirmation scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workbench/deletions/{deletion_id}": {
+      "get": {
+        "operationId": "workbenchGetDeletion",
+        "summary": "getDeletion",
+        "description": "This endpoint owns only workbench resources. Another owner returns\n422 deletion_owner_mismatch. Plans pin all dependencies and expire;\nexecution rechecks the complete snapshot atomically. See data-deletion.md.\n",
+        "parameters": [
+          {
+            "name": "deletion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Immutable plan or original asynchronous deletion record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_deletion_schema_json_Deletion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target, plan or deletion resource not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Dependency, revision, plan expiry or idempotency conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid target owner or confirmation scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "XRequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "WorkspaceIdQuery": {
+        "name": "workspace_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        }
+      },
+      "ProjectIdPath": {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "TranscriptIdPath": {
+        "name": "transcript_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "RevisionPath": {
+        "name": "revision",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Revision"
+        }
+      }
+    },
+    "headers": {
+      "XRequestId": {
+        "description": "Validated client request ID or a server-generated correlation ID.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RetryAfter": {
+        "description": "Seconds to wait before retrying cancellation coordination.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "schemas": {
+      "WorkbenchStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "object",
+          "workbench_enabled",
+          "llm_enabled",
+          "shared_deployment_notice",
+          "capabilities"
+        ],
+        "properties": {
+          "object": {
+            "const": "nexus.workbench_status"
+          },
+          "workbench_enabled": {
+            "type": "boolean"
+          },
+          "llm_enabled": {
+            "type": "boolean",
+            "description": "True only when a deployment-approved intranet LLM is configured."
+          },
+          "shared_deployment_notice": {
+            "type": "string",
+            "const": "shared_deployment",
+            "description": "UI must localize this code as \"all workspaces are shared within this deployment; no personal isolation is implied\"."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "status"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "transcription",
+                    "meeting_minutes",
+                    "assistant",
+                    "teleprompter",
+                    "audiobook_export"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["available", "disabled", "unavailable"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
+      },
+      "External_shared_errors_schema_json_ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+          }
+        }
+      },
+      "External_shared_errors_schema_json_ErrorBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "type", "message", "param", "request_id", "retryable"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$",
+            "description": "Stable machine-readable error code."
+          },
+          "type": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorType"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "param": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "nexus": {
+            "$ref": "#/components/schemas/External_shared_errors_schema_json_OperationRecovery"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "enum": ["operation_in_progress", "response_not_replayable"]
+                }
+              }
+            },
+            "then": {
+              "required": ["nexus"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "response_not_replayable"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "nexus": {
+                  "required": ["receipt"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_errors_schema_json_ErrorType": {
+        "type": "string",
+        "enum": [
+          "invalid_request_error",
+          "authentication_error",
+          "permission_error",
+          "not_found_error",
+          "rate_limit_error",
+          "api_error",
+          "service_unavailable_error"
+        ]
+      },
+      "External_shared_errors_schema_json_OperationRecovery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_ExecutionReceipt"
+          }
+        },
+        "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+      },
+      "External_shared_identifiers_schema_json_Identifier": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+        "minLength": 3,
+        "maxLength": 128,
+        "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+      },
+      "External_shared_receipts_schema_json_ExecutionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+        "properties": {
+          "receipt_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "request_id": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requested": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "observed": {
+            "$ref": "#/components/schemas/External_shared_receipts_schema_json_PublicExecutionFacts"
+          },
+          "missing": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          },
+          "unknown": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_receipts_schema_json_ReceiptFactPath"
+            }
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_PublicExecutionFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/External_shared_language_schema_json_LanguageTag"
+          },
+          "seed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_seed"
+          },
+          "speed": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_speed"
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 384000
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioFormat"
+              },
+              {
+                "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TranscriptFormat"
+              }
+            ]
+          },
+          "max_segment_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_max_segment_ms"
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "voice": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "pronunciation": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "turn_detection": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_turn_detection"
+          },
+          "finalization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_finalization"
+          },
+          "preview_interval_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_preview_interval_ms"
+          },
+          "rollback_tokens": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_rollback_tokens"
+          },
+          "final_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_final_deadline_ms"
+          },
+          "auxiliary_deadline_ms": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+          },
+          "alignment": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_alignment"
+          },
+          "diarization": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_diarization"
+          },
+          "vocabulary_set_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+          },
+          "text_commit_mode": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_text_commit_mode"
+          },
+          "audio_delivery": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_audio_delivery"
+          },
+          "pronunciation_revision": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_pronunciation_revision"
+          },
+          "planner": {
+            "$ref": "#/components/schemas/External_shared_speech_overrides_schema_json_planner"
+          },
+          "instructions_present": {
+            "type": "boolean"
+          },
+          "prompt_present": {
+            "type": "boolean"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          },
+          "vocabulary": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          }
+        },
+        "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+      },
+      "External_shared_language_schema_json_LanguageTag": {
+        "type": "string",
+        "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+        "maxLength": 35
+      },
+      "External_shared_speech_overrides_schema_json_seed": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "External_shared_speech_overrides_schema_json_speed": {
+        "type": "number",
+        "minimum": 0.25,
+        "maximum": 4.0
+      },
+      "External_shared_capability_domains_schema_json_AudioFormat": {
+        "type": "string",
+        "enum": ["mp3", "wav", "pcm"]
+      },
+      "External_shared_capability_domains_schema_json_TranscriptFormat": {
+        "type": "string",
+        "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+      },
+      "External_shared_speech_overrides_schema_json_max_segment_ms": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 30000
+      },
+      "External_shared_references_schema_json_ResourceReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "revision"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          }
+        }
+      },
+      "External_shared_identifiers_schema_json_Revision": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,18}$",
+        "maxLength": 19,
+        "description": "Monotonic decimal revision represented as a string."
+      },
+      "External_shared_speech_overrides_schema_json_turn_detection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_VadMode"
+          },
+          "silence_duration_ms": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_capability_domains_schema_json_VadMode": {
+        "type": "string",
+        "enum": ["server_vad", "manual"]
+      },
+      "External_shared_speech_overrides_schema_json_finalization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_FinalizationMode"
+      },
+      "External_shared_capability_domains_schema_json_FinalizationMode": {
+        "type": "string",
+        "enum": ["full_segment", "streaming_finalize"]
+      },
+      "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 5000
+      },
+      "External_shared_speech_overrides_schema_json_rollback_tokens": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 32
+      },
+      "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "External_shared_speech_overrides_schema_json_alignment": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+        "type": "string",
+        "enum": ["off", "required", "best_effort"]
+      },
+      "External_shared_speech_overrides_schema_json_diarization": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AuxiliaryMode"
+      },
+      "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_text_commit_mode": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_TextCommitMode"
+      },
+      "External_shared_capability_domains_schema_json_TextCommitMode": {
+        "type": "string",
+        "enum": ["explicit", "sentence"]
+      },
+      "External_shared_speech_overrides_schema_json_audio_delivery": {
+        "$ref": "#/components/schemas/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+      },
+      "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+        "type": "string",
+        "enum": ["complete", "chunked"]
+      },
+      "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "External_shared_speech_overrides_schema_json_planner": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_chars": {
+            "type": "integer",
+            "minimum": 40,
+            "maximum": 400
+          },
+          "max_wait_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 3000
+          }
+        }
+      },
+      "External_shared_receipts_schema_json_ReceiptFactPath": {
+        "type": "string",
+        "enum": [
+          "requested.language",
+          "requested.seed",
+          "requested.speed",
+          "requested.sample_rate_hz",
+          "requested.response_format",
+          "requested.max_segment_ms",
+          "requested.model_binding",
+          "requested.profile",
+          "requested.voice",
+          "requested.pronunciation",
+          "requested.turn_detection",
+          "requested.finalization",
+          "requested.preview_interval_ms",
+          "requested.rollback_tokens",
+          "requested.final_deadline_ms",
+          "requested.auxiliary_deadline_ms",
+          "requested.alignment",
+          "requested.diarization",
+          "requested.vocabulary_set_revision",
+          "requested.text_commit_mode",
+          "requested.audio_delivery",
+          "requested.pronunciation_revision",
+          "requested.planner",
+          "requested.instructions_present",
+          "requested.prompt_present",
+          "requested.policy",
+          "requested.vocabulary",
+          "effective.language",
+          "effective.seed",
+          "effective.speed",
+          "effective.sample_rate_hz",
+          "effective.response_format",
+          "effective.max_segment_ms",
+          "effective.model_binding",
+          "effective.profile",
+          "effective.voice",
+          "effective.pronunciation",
+          "effective.turn_detection",
+          "effective.finalization",
+          "effective.preview_interval_ms",
+          "effective.rollback_tokens",
+          "effective.final_deadline_ms",
+          "effective.auxiliary_deadline_ms",
+          "effective.alignment",
+          "effective.diarization",
+          "effective.vocabulary_set_revision",
+          "effective.text_commit_mode",
+          "effective.audio_delivery",
+          "effective.pronunciation_revision",
+          "effective.planner",
+          "effective.instructions_present",
+          "effective.prompt_present",
+          "effective.policy",
+          "effective.vocabulary",
+          "observed.language",
+          "observed.seed",
+          "observed.speed",
+          "observed.sample_rate_hz",
+          "observed.response_format",
+          "observed.max_segment_ms",
+          "observed.model_binding",
+          "observed.profile",
+          "observed.voice",
+          "observed.pronunciation",
+          "observed.turn_detection",
+          "observed.finalization",
+          "observed.preview_interval_ms",
+          "observed.rollback_tokens",
+          "observed.final_deadline_ms",
+          "observed.auxiliary_deadline_ms",
+          "observed.alignment",
+          "observed.diarization",
+          "observed.vocabulary_set_revision",
+          "observed.text_commit_mode",
+          "observed.audio_delivery",
+          "observed.pronunciation_revision",
+          "observed.planner",
+          "observed.instructions_present",
+          "observed.prompt_present",
+          "observed.policy",
+          "observed.vocabulary",
+          "requested.planner.max_chars",
+          "requested.planner.max_wait_ms",
+          "requested.turn_detection.mode",
+          "requested.turn_detection.silence_duration_ms",
+          "effective.planner.max_chars",
+          "effective.planner.max_wait_ms",
+          "effective.turn_detection.mode",
+          "effective.turn_detection.silence_duration_ms",
+          "observed.planner.max_chars",
+          "observed.planner.max_wait_ms",
+          "observed.turn_detection.mode",
+          "observed.turn_detection.silence_duration_ms"
+        ]
+      },
+      "Identifier": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+      },
+      "ProjectList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "workspace_id",
+          "name",
+          "status",
+          "metadata_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.workbench_project"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "archived"]
+          },
+          "metadata_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "workspace_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        }
+      },
+      "ProjectPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 2,
+        "required": ["expected_metadata_revision"],
+        "properties": {
+          "expected_metadata_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "archived"]
+          }
+        }
+      },
+      "TranscriptList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transcript"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "Transcript": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "project_id",
+          "display_name",
+          "head_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.transcript"
+          },
+          "project_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "head_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "source_artifact_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_receipt_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "dependentRequired": {
+          "source_artifact_id": ["source_receipt_id"],
+          "source_receipt_id": ["source_artifact_id"]
+        }
+      },
+      "Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+      },
+      "TranscriptCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["display_name", "source"],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source": {
+            "$ref": "#/components/schemas/TranscriptSource"
+          }
+        }
+      },
+      "TranscriptSource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "artifact_id", "receipt_id"],
+            "properties": {
+              "kind": {
+                "const": "speech_artifact"
+              },
+              "artifact_id": {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              "receipt_id": {
+                "$ref": "#/components/schemas/Identifier"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "text"],
+            "properties": {
+              "kind": {
+                "const": "manual"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000000
+              }
+            }
+          }
+        ]
+      },
+      "TranscriptView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "transcript", "revision"],
+        "properties": {
+          "object": {
+            "const": "nexus.transcript_view"
+          },
+          "transcript": {
+            "$ref": "#/components/schemas/Transcript"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/TranscriptRevision"
+          }
+        }
+      },
+      "TranscriptRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "transcript_id",
+          "revision",
+          "status",
+          "text",
+          "source_revision",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.transcript_revision"
+          },
+          "transcript_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["sealed", "draft"]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "source_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_artifact_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_receipt_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "dependentRequired": {
+          "source_artifact_id": ["source_receipt_id"],
+          "source_receipt_id": ["source_artifact_id"]
+        }
+      },
+      "TranscriptRevisionCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_revision", "text"],
+        "properties": {
+          "expected_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "source_revision": {
+            "$ref": "#/components/schemas/Revision"
+          }
+        }
+      },
+      "External_shared_deletion_schema_json_DeletionPlanRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "mode"],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionMode"
+          }
+        }
+      },
+      "External_shared_deletion_schema_json_DeletionTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "kind", "resource"],
+        "properties": {
+          "owner": {
+            "enum": ["speech", "workbench"]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_ResourceKind"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "owner": {
+                  "const": "speech"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "kind": {
+                  "enum": ["asset", "artifact", "voice_revision", "operation_content"]
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "kind": {
+                  "enum": ["project", "saved_asset", "transcript", "meeting", "audiobook"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_deletion_schema_json_ResourceKind": {
+        "enum": [
+          "asset",
+          "artifact",
+          "voice_revision",
+          "operation_content",
+          "project",
+          "saved_asset",
+          "transcript",
+          "meeting",
+          "audiobook"
+        ]
+      },
+      "External_shared_deletion_schema_json_DeletionMode": {
+        "enum": ["ordinary", "cascade"]
+      },
+      "External_shared_deletion_schema_json_DeletionPlan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "target",
+          "mode",
+          "plan_revision",
+          "plan_digest",
+          "created_at",
+          "expires_at",
+          "dependencies",
+          "eligible"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "object": {
+            "const": "nexus.deletion_plan"
+          },
+          "target": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionMode"
+          },
+          "plan_revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          "plan_digest": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dependencies": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_deletion_schema_json_Dependency"
+            }
+          },
+          "eligible": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "dependencies": {
+                  "contains": {
+                    "properties": {
+                      "disposition": {
+                        "const": "blocks"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "eligible": {
+                  "const": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "eligible": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "ordinary"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "dependencies": {
+                  "items": {
+                    "properties": {
+                      "disposition": {
+                        "enum": ["blocks", "retain"]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_identifiers_schema_json_Sha256Digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "External_shared_deletion_schema_json_Dependency": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "relation", "disposition"],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+          },
+          "relation": {
+            "enum": ["persistent_reference", "active_execution", "owned_child", "independent_copy"]
+          },
+          "disposition": {
+            "enum": ["blocks", "cascade", "retain"]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "relation": {
+                  "const": "independent_copy"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "disposition": {
+                  "const": "retain"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "relation": {
+                  "const": "active_execution"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "disposition": {
+                  "enum": ["blocks", "cascade"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_deletion_schema_json_DeletionCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["plan_id", "expected_plan_revision", "plan_digest", "confirm_targets"],
+        "properties": {
+          "plan_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "expected_plan_revision": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
+          },
+          "plan_digest": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "confirm_targets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+            }
+          }
+        }
+      },
+      "External_shared_deletion_schema_json_Deletion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "plan_id",
+          "plan_digest",
+          "status",
+          "cleanup_state",
+          "created_at",
+          "updated_at",
+          "result",
+          "error"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "object": {
+            "const": "nexus.deletion"
+          },
+          "plan_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "plan_digest": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Sha256Digest"
+          },
+          "status": {
+            "enum": ["queued", "running", "blocked", "succeeded", "failed"]
+          },
+          "cleanup_state": {
+            "enum": ["pending", "quarantined", "complete"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "cleanup_state": {
+                  "const": "complete"
+                },
+                "result": {
+                  "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionResult"
+                },
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "result": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": ["blocked", "failed"]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "error": {
+                  "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorBody"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": ["queued", "running"]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "cleanup_state": {
+                  "const": "pending"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "External_shared_deletion_schema_json_DeletionResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["deleted", "retained_independent_copies", "ledger_id", "completed_at"],
+        "properties": {
+          "deleted": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+            }
+          },
+          "retained_independent_copies": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/External_shared_deletion_schema_json_DeletionTarget"
+            }
+          },
+          "ledger_id": {
+            "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Identifier"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Shared service credential required or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Workbench or optional LLM dependency unavailable.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Malformed request or unknown field.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Revision mismatch, idempotency conflict, or incompatible lifecycle transition.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Invalid source, unsupported unit composition, or feature disabled.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "SharedServiceKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional deployment-wide shared credential; not a user identity."
+      }
+    }
+  }
+}

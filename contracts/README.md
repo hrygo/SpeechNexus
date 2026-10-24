@@ -282,9 +282,11 @@ do not imply implemented business routes or completed consumer integration.
 The explicit workbench JSON profile now includes projects, transcripts,
 status/errors and the four shared deletion entrypoints. `schema_refs` in the
 binding manifest selects external definitions without copying their wire
-contracts. HTTP parameter/status validation, Meeting/Minutes and public realtime
-runtime entrypoints remain separate delivery units; see the package's explicit
-profile list and shared positive/negative examples.
+contracts. An opt-in `workbench-http` profile adds derived path/query/header,
+per-status response/error validation and a bounded client for ten selected
+paths. Meeting/Minutes and public realtime runtime entrypoints remain separate
+delivery units; see the package's explicit profile list and shared
+positive/negative examples. Packaged HTTP contracts do not register C's routes.
 
 ## Validation
 

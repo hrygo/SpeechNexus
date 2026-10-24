@@ -33,6 +33,17 @@ const wrongDeletionRevision: number = parseWorkbench(
 ).expected_plan_revision;
 void [wrongProjectRevision, wrongDeletionRevision];
 
+import { createValidatedClient, validateRequest } from "../src/workbench-http";
+const validatedWorkbench = createValidatedClient("http://deployment.invalid", 8 * 1024 * 1024);
+void validatedWorkbench.GET("/v1/workbench/projects");
+validateRequest("getProject", { path: { project_id: "project-demo" } });
+// @ts-expect-error Meeting HTTP entrypoints are delivered separately.
+validateRequest("createMeeting", {});
+// @ts-expect-error The validated client exposes only the selected HTTP surface.
+void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {});
+// @ts-expect-error No implicit JSON byte budget for network parsing.
+createValidatedClient("http://deployment.invalid");
+
 // @ts-expect-error Internal commands are absent from the workbench parser.
 parseWorkbench("SubmitExecutionRequest", wire);
 // @ts-expect-error No implicit deployment endpoint.

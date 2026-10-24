@@ -1,0 +1,2500 @@
+{
+  "examples": [
+    {
+      "id": "getWorkbenchStatus-request-valid",
+      "kind": "request",
+      "operation": "getWorkbenchStatus",
+      "value": {},
+      "valid": true
+    },
+    {
+      "id": "getWorkbenchStatus-response-declared-200",
+      "kind": "response",
+      "operation": "getWorkbenchStatus",
+      "value": {
+        "body": {
+          "object": "nexus.workbench_status",
+          "workbench_enabled": true,
+          "llm_enabled": false,
+          "shared_deployment_notice": "shared_deployment",
+          "capabilities": [
+            {
+              "name": "transcription",
+              "status": "disabled"
+            }
+          ]
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getWorkbenchStatus-response-declared-401",
+      "kind": "response",
+      "operation": "getWorkbenchStatus",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getWorkbenchStatus-response-undeclared-status",
+      "kind": "response",
+      "operation": "getWorkbenchStatus",
+      "value": {
+        "body": {
+          "object": "nexus.workbench_status",
+          "workbench_enabled": true,
+          "llm_enabled": false,
+          "shared_deployment_notice": "shared_deployment",
+          "capabilities": [
+            {
+              "name": "transcription",
+              "status": "disabled"
+            }
+          ]
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "listProjects-request-valid",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "50"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "listProjects-response-declared-200",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "project-demo",
+              "object": "nexus.workbench_project",
+              "workspace_id": "workspace-demo",
+              "name": "Synthetic project",
+              "status": "active",
+              "metadata_revision": 1,
+              "created_at": "2026-10-24T00:00:00Z",
+              "updated_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "listProjects-response-declared-401",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "listProjects-response-declared-503",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-undeclared-status",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "project-demo",
+              "object": "nexus.workbench_project",
+              "workspace_id": "workspace-demo",
+              "name": "Synthetic project",
+              "status": "active",
+              "metadata_revision": 1,
+              "created_at": "2026-10-24T00:00:00Z",
+              "updated_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "createProject-request-valid",
+      "kind": "request",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "name": "Synthetic project"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProject-request-missing-body",
+      "kind": "request",
+      "operation": "createProject",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "createProject-request-private-body-field",
+      "kind": "request",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "name": "Synthetic project",
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createProject-response-declared-201",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "createProject-response-declared-400",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createProject-response-declared-401",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createProject-response-declared-409",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createProject-response-declared-422",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createProject-response-undeclared-status",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "getProject-request-valid",
+      "kind": "request",
+      "operation": "getProject",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getProject-request-missing-path",
+      "kind": "request",
+      "operation": "getProject",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "getProject-request-invalid-path",
+      "kind": "request",
+      "operation": "getProject",
+      "value": {
+        "path": {
+          "project_id": "../private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getProject-response-declared-200",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getProject-response-declared-401",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getProject-response-declared-404",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getProject-response-undeclared-status",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "updateProject-request-valid",
+      "kind": "request",
+      "operation": "updateProject",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "expected_metadata_revision": 1,
+          "description": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "updateProject-request-missing-path",
+      "kind": "request",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "expected_metadata_revision": 1,
+          "description": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "updateProject-request-invalid-path",
+      "kind": "request",
+      "operation": "updateProject",
+      "value": {
+        "path": {
+          "project_id": "../private"
+        },
+        "body": {
+          "expected_metadata_revision": 1,
+          "description": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "updateProject-request-missing-body",
+      "kind": "request",
+      "operation": "updateProject",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "updateProject-request-private-body-field",
+      "kind": "request",
+      "operation": "updateProject",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "expected_metadata_revision": 1,
+          "description": null,
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "updateProject-response-declared-200",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "updateProject-response-declared-400",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "updateProject-response-declared-401",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "updateProject-response-declared-404",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "updateProject-response-declared-409",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "updateProject-response-declared-422",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "updateProject-response-undeclared-status",
+      "kind": "response",
+      "operation": "updateProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "listTranscripts-request-valid",
+      "kind": "request",
+      "operation": "listTranscripts",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "query": {
+          "limit": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "listTranscripts-request-missing-path",
+      "kind": "request",
+      "operation": "listTranscripts",
+      "value": {
+        "query": {
+          "limit": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listTranscripts-request-invalid-path",
+      "kind": "request",
+      "operation": "listTranscripts",
+      "value": {
+        "path": {
+          "project_id": "../private"
+        },
+        "query": {
+          "limit": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listTranscripts-response-declared-200",
+      "kind": "response",
+      "operation": "listTranscripts",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "transcript-demo",
+              "object": "nexus.transcript",
+              "project_id": "project-demo",
+              "display_name": "Synthetic transcript",
+              "head_revision": "1",
+              "created_at": "2026-10-24T00:00:00Z",
+              "updated_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "listTranscripts-response-declared-401",
+      "kind": "response",
+      "operation": "listTranscripts",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "listTranscripts-response-declared-404",
+      "kind": "response",
+      "operation": "listTranscripts",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "listTranscripts-response-undeclared-status",
+      "kind": "response",
+      "operation": "listTranscripts",
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "transcript-demo",
+              "object": "nexus.transcript",
+              "project_id": "project-demo",
+              "display_name": "Synthetic transcript",
+              "head_revision": "1",
+              "created_at": "2026-10-24T00:00:00Z",
+              "updated_at": "2026-10-24T00:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "createTranscript-request-valid",
+      "kind": "request",
+      "operation": "createTranscript",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "display_name": "Synthetic transcript",
+          "source": {
+            "kind": "manual",
+            "text": "Synthetic text."
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createTranscript-request-missing-path",
+      "kind": "request",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "display_name": "Synthetic transcript",
+          "source": {
+            "kind": "manual",
+            "text": "Synthetic text."
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscript-request-invalid-path",
+      "kind": "request",
+      "operation": "createTranscript",
+      "value": {
+        "path": {
+          "project_id": "../private"
+        },
+        "body": {
+          "display_name": "Synthetic transcript",
+          "source": {
+            "kind": "manual",
+            "text": "Synthetic text."
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscript-request-missing-body",
+      "kind": "request",
+      "operation": "createTranscript",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscript-request-private-body-field",
+      "kind": "request",
+      "operation": "createTranscript",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "display_name": "Synthetic transcript",
+          "source": {
+            "kind": "manual",
+            "text": "Synthetic text."
+          },
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscript-response-declared-201",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "object": "nexus.transcript_view",
+          "transcript": {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          },
+          "revision": {
+            "id": "revision-demo",
+            "object": "nexus.transcript_revision",
+            "transcript_id": "transcript-demo",
+            "revision": "1",
+            "status": "sealed",
+            "text": "Synthetic text.",
+            "source_revision": null,
+            "created_at": "2026-10-24T00:00:00Z"
+          }
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "createTranscript-response-declared-400",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createTranscript-response-declared-401",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createTranscript-response-declared-404",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "createTranscript-response-declared-409",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createTranscript-response-declared-422",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createTranscript-response-undeclared-status",
+      "kind": "response",
+      "operation": "createTranscript",
+      "value": {
+        "body": {
+          "object": "nexus.transcript_view",
+          "transcript": {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          },
+          "revision": {
+            "id": "revision-demo",
+            "object": "nexus.transcript_revision",
+            "transcript_id": "transcript-demo",
+            "revision": "1",
+            "status": "sealed",
+            "text": "Synthetic text.",
+            "source_revision": null,
+            "created_at": "2026-10-24T00:00:00Z"
+          }
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "getTranscript-request-valid",
+      "kind": "request",
+      "operation": "getTranscript",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo"
+        },
+        "query": {
+          "revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getTranscript-request-missing-path",
+      "kind": "request",
+      "operation": "getTranscript",
+      "value": {
+        "query": {
+          "revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getTranscript-request-invalid-path",
+      "kind": "request",
+      "operation": "getTranscript",
+      "value": {
+        "path": {
+          "transcript_id": "../private"
+        },
+        "query": {
+          "revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getTranscript-response-declared-200",
+      "kind": "response",
+      "operation": "getTranscript",
+      "value": {
+        "body": {
+          "object": "nexus.transcript_view",
+          "transcript": {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          },
+          "revision": {
+            "id": "revision-demo",
+            "object": "nexus.transcript_revision",
+            "transcript_id": "transcript-demo",
+            "revision": "1",
+            "status": "sealed",
+            "text": "Synthetic text.",
+            "source_revision": null,
+            "created_at": "2026-10-24T00:00:00Z"
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getTranscript-response-declared-401",
+      "kind": "response",
+      "operation": "getTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getTranscript-response-declared-404",
+      "kind": "response",
+      "operation": "getTranscript",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getTranscript-response-undeclared-status",
+      "kind": "response",
+      "operation": "getTranscript",
+      "value": {
+        "body": {
+          "object": "nexus.transcript_view",
+          "transcript": {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          },
+          "revision": {
+            "id": "revision-demo",
+            "object": "nexus.transcript_revision",
+            "transcript_id": "transcript-demo",
+            "revision": "1",
+            "status": "sealed",
+            "text": "Synthetic text.",
+            "source_revision": null,
+            "created_at": "2026-10-24T00:00:00Z"
+          }
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "createTranscriptRevision-request-valid",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo"
+        },
+        "body": {
+          "expected_revision": "1",
+          "text": "Synthetic revision."
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createTranscriptRevision-request-missing-path",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "expected_revision": "1",
+          "text": "Synthetic revision."
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscriptRevision-request-invalid-path",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "../private"
+        },
+        "body": {
+          "expected_revision": "1",
+          "text": "Synthetic revision."
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscriptRevision-request-missing-body",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscriptRevision-request-private-body-field",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo"
+        },
+        "body": {
+          "expected_revision": "1",
+          "text": "Synthetic revision.",
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-201",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-400",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-401",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-404",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-409",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createTranscriptRevision-response-declared-422",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createTranscriptRevision-response-undeclared-status",
+      "kind": "response",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "body": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "getTranscriptRevision-request-valid",
+      "kind": "request",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo",
+          "revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getTranscriptRevision-request-missing-path",
+      "kind": "request",
+      "operation": "getTranscriptRevision",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "getTranscriptRevision-request-invalid-path",
+      "kind": "request",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "../private",
+          "revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getTranscriptRevision-response-declared-200",
+      "kind": "response",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "body": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getTranscriptRevision-response-declared-401",
+      "kind": "response",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getTranscriptRevision-response-declared-404",
+      "kind": "response",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getTranscriptRevision-response-undeclared-status",
+      "kind": "response",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "body": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-valid",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-missing-body",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-private-body-field",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary",
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-response-declared-200",
+      "kind": "response",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "id": "plan-demo",
+          "object": "nexus.deletion_plan",
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary",
+          "plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "created_at": "2026-10-24T00:00:00Z",
+          "expires_at": "2026-10-24T01:00:00Z",
+          "dependencies": [],
+          "eligible": true
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-response-declared-404",
+      "kind": "response",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-response-declared-409",
+      "kind": "response",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-response-declared-422",
+      "kind": "response",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-response-undeclared-status",
+      "kind": "response",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "id": "plan-demo",
+          "object": "nexus.deletion_plan",
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary",
+          "plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "created_at": "2026-10-24T00:00:00Z",
+          "expires_at": "2026-10-24T01:00:00Z",
+          "dependencies": [],
+          "eligible": true
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "workbenchCreateDeletion-request-valid",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "plan_id": "plan-demo",
+          "expected_plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "confirm_targets": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbenchCreateDeletion-request-missing-body",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletion-request-private-body-field",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "plan_id": "plan-demo",
+          "expected_plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "confirm_targets": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ],
+          "internal_endpoint": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletion-response-declared-202",
+      "kind": "response",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "id": "deletion-demo",
+          "object": "nexus.deletion",
+          "plan_id": "plan-demo",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "status": "blocked",
+          "cleanup_state": "quarantined",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z",
+          "result": null,
+          "error": {
+            "code": "deletion_stop_unconfirmed",
+            "type": "invalid_request_error",
+            "message": "Synthetic cleanup remains unconfirmed.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 202
+    },
+    {
+      "id": "workbenchCreateDeletion-response-declared-404",
+      "kind": "response",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "workbenchCreateDeletion-response-declared-409",
+      "kind": "response",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "workbenchCreateDeletion-response-declared-422",
+      "kind": "response",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "workbenchCreateDeletion-response-undeclared-status",
+      "kind": "response",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "id": "deletion-demo",
+          "object": "nexus.deletion",
+          "plan_id": "plan-demo",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "status": "blocked",
+          "cleanup_state": "quarantined",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z",
+          "result": null,
+          "error": {
+            "code": "deletion_stop_unconfirmed",
+            "type": "invalid_request_error",
+            "message": "Synthetic cleanup remains unconfirmed.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "workbenchGetDeletion-request-valid",
+      "kind": "request",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "path": {
+          "deletion_id": "deletion-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbenchGetDeletion-request-missing-path",
+      "kind": "request",
+      "operation": "workbenchGetDeletion",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "workbenchGetDeletion-request-invalid-path",
+      "kind": "request",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "path": {
+          "deletion_id": "../private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchGetDeletion-response-declared-200",
+      "kind": "response",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "body": {
+          "id": "deletion-demo",
+          "object": "nexus.deletion",
+          "plan_id": "plan-demo",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "status": "blocked",
+          "cleanup_state": "quarantined",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z",
+          "result": null,
+          "error": {
+            "code": "deletion_stop_unconfirmed",
+            "type": "invalid_request_error",
+            "message": "Synthetic cleanup remains unconfirmed.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "workbenchGetDeletion-response-declared-404",
+      "kind": "response",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "workbenchGetDeletion-response-declared-409",
+      "kind": "response",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "workbenchGetDeletion-response-declared-422",
+      "kind": "response",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "workbenchGetDeletion-response-undeclared-status",
+      "kind": "response",
+      "operation": "workbenchGetDeletion",
+      "value": {
+        "body": {
+          "id": "deletion-demo",
+          "object": "nexus.deletion",
+          "plan_id": "plan-demo",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "status": "blocked",
+          "cleanup_state": "quarantined",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z",
+          "result": null,
+          "error": {
+            "code": "deletion_stop_unconfirmed",
+            "type": "invalid_request_error",
+            "message": "Synthetic cleanup remains unconfirmed.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "createProject-request-header-not-global-default",
+      "kind": "request",
+      "operation": "createProject",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "name": "Synthetic project"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-missing-required-header",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "body": {
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-case-insensitive-header",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "headers": {
+          "IDEMPOTENCY-KEY": "x"
+        },
+        "body": {
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbenchCreateDeletionPlan-request-conflicting-header-case",
+      "kind": "request",
+      "operation": "workbenchCreateDeletionPlan",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x",
+          "idempotency-key": "y"
+        },
+        "body": {
+          "target": {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          },
+          "mode": "ordinary"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletion-request-missing-required-header",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "body": {
+          "plan_id": "plan-demo",
+          "expected_plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "confirm_targets": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbenchCreateDeletion-request-case-insensitive-header",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "headers": {
+          "IDEMPOTENCY-KEY": "x"
+        },
+        "body": {
+          "plan_id": "plan-demo",
+          "expected_plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "confirm_targets": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbenchCreateDeletion-request-conflicting-header-case",
+      "kind": "request",
+      "operation": "workbenchCreateDeletion",
+      "value": {
+        "headers": {
+          "Idempotency-Key": "x",
+          "idempotency-key": "y"
+        },
+        "body": {
+          "plan_id": "plan-demo",
+          "expected_plan_revision": "1",
+          "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "confirm_targets": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-113",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-114",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "101"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-115",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-116",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "01"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-117",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "+1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-118",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "1e1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-119",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": "9007199254740992"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-120",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-bad-limit-121",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "limit": {
+            "unexpected": "object"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-request-no-default-insertion",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {},
+      "valid": true
+    },
+    {
+      "id": "listProjects-request-unknown-query",
+      "kind": "request",
+      "operation": "listProjects",
+      "value": {
+        "query": {
+          "arbitrary": "value"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getTranscriptRevision-request-numeric-revision",
+      "kind": "request",
+      "operation": "getTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo",
+          "revision": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createTranscriptRevision-request-numeric-body-revision",
+      "kind": "request",
+      "operation": "createTranscriptRevision",
+      "value": {
+        "path": {
+          "transcript_id": "transcript-demo"
+        },
+        "body": {
+          "expected_revision": 1,
+          "text": "Synthetic text."
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getProject-request-empty-request-id",
+      "kind": "request",
+      "operation": "getProject",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "headers": {
+          "X-Request-ID": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listProjects-response-retry-header-127",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "0"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-retry-header-128",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "120"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-retry-header-129",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": 120
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-bad-retry-header-130",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "-1"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-bad-retry-header-131",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "1.5"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-bad-retry-header-132",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "01"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-bad-retry-header-133",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": "9007199254740992"
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "listProjects-response-bad-retry-header-134",
+      "kind": "response",
+      "operation": "listProjects",
+      "value": {
+        "headers": {
+          "Retry-After": false
+        },
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "createProject-response-private-error-body",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false,
+            "command_document": "synthetic-private-marker"
+          }
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "getProject-response-error-on-success",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "createProject-response-success-on-error",
+      "kind": "response",
+      "operation": "createProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "getProject-response-missing-json-body",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {},
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getProject-response-string-status",
+      "kind": "response",
+      "operation": "getProject",
+      "value": {
+        "body": {
+          "id": "project-demo",
+          "object": "nexus.workbench_project",
+          "workspace_id": "workspace-demo",
+          "name": "Synthetic project",
+          "status": "active",
+          "metadata_revision": 1,
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": "200"
+    }
+  ]
+}

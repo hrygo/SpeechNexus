@@ -8,7 +8,8 @@
     "./admin": "./src/admin.ts",
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./workbench-http": "./src/workbench-http.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

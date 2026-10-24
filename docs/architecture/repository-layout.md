@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.3.7"
+version: "0.3.8"
 date: 2026-10-24
 ---
 
@@ -68,6 +68,10 @@ date: 2026-10-24
 | `speechnexus-backend` | `speechnexus-api` | 语音底座 HTTP 外壳；`/healthz`、`/readyz` |
 | `speechnexus-execution-gateway` | `speechnexus-gateway` | 持久提交/停止/未知隔离/执行观察、受信正文清理与输出区间事务、控制库就绪检查；显式配置后提供认证 HTTP 屏障、只读执行查询与宿主进程独占；真实计量采集/消费、删除许可、引擎和 submit/abort 路由待实现 |
 | `speechnexus-node-controller` | `speechnexus-node-controller` | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则，本地持久意图与容器 daemon adapter，`/healthz`、`/readyz` 与 `internal/runtime-control` 路由；部署单元待集成 |
+
+网关另提供 [CPU VAD 原生接口](cpu-vad.md)，实现会话隔离和有界切段；固定 ONNX CPU
+adapter 的 vendor 依赖由 `deploy/engines/cpu-vad/` 独立锁定。默认启动不加载模型，公开实时链路
+与实际 ASR 外发尚未接入。
 
 依赖图由 `import-linter` 检查：
 

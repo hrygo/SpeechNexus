@@ -65,6 +65,8 @@ SpeechNexus 希望服务于三类需求：
 
 [受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 实现，批准模板固定容器内存上限和 HTTP 健康判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；静音幻觉、长非语音慢响应、TTS、A 预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。
 
+[CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、ASR 外发及真实录音质量仍待集成和验收。
+
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。

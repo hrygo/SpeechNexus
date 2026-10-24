@@ -28,6 +28,8 @@
 | [B00 MegaCube 环境与能力缺口前检](audits/2026-10-24-b00-megacube-environment-and-capability-gap.md) | GB10 主机与既有 GPU 占用、制品获取与摘要、首个真实 ASR 生命周期探针与停止证据   |
 | [B02 控制器容器生命周期探针](audits/2026-10-24-b02-controller-container-lifecycle-probe.md)         | 合成容器的 prepare / ready / stop 与停止双证据、`Init` 缺口与清理结果           |
 | [B02 控制器 HTTP 外壳与持久意图探针](audits/2026-10-24-b02-controller-http-shell-probe.md)          | 真实控制器进程的鉴权、prepare→ready→stop、停机双证据与重启后持久意图            |
+| [CPU VAD 原生接口](architecture/cpu-vad.md) | 会话隔离、有界切段、前缀、固定 CPU 模型与尚未接入的公开链路 |
+| [B06 CPU VAD 合成探针](audits/2026-10-24-b06-cpu-vad-probe.md) | 合成人声/静音/正弦音、输入分块一致性与模型状态隔离；不代表真实录音资格 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力           |
 | [开发与测试环境](development-environment.md)                                                        | 当前主机工具链、独立服务、媒体与无头浏览器验证、初始化和隔离边界                |

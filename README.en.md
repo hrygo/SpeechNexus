@@ -65,6 +65,8 @@ The [execution gateway (Chinese)](docs/architecture/execution-gateway.md) provid
 
 The [restricted node controller (Chinese)](docs/architecture/node-controller.md) includes HTTP, SQLite and Docker adapters, with approved container memory limits and HTTP health probes. Actual Qwen3-ASR 0.6B/1.7B loading, synthetic speech and verified stopping have [local evidence](docs/audits/2026-10-24-b02-real-asr-controller-probe.md). Silence hallucinations, slow long non-speech responses, TTS, the scheduler budget control loop and cluster qualification remain unresolved; this does not make the public speech workflow available.
 
+[CPU VAD (Chinese)](docs/architecture/cpu-vad.md) implements isolated session state, prefix buffering and versioned bounded segmentation. The pinned ONNX CPU model's [synthetic probe (Chinese)](docs/audits/2026-10-24-b06-cpu-vad-probe.md) detects speech while silence/tone produce no ASR candidate segments. Public realtime ingress, ASR dispatch and real-recording quality still require integration and acceptance.
+
 [Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
 
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.

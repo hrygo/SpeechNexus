@@ -81,6 +81,7 @@ class RuntimeDatabase:
                 ("runtime_instance_heads", "instance_id"),
                 ("runtime_instance_intents", "target_node_id, intent_id"),
                 ("coordination_outbox", "event_id"),
+                ("runtime_intent_deliveries", "event_id"),
             )
         }
 
@@ -136,6 +137,13 @@ def test_prepare_pins_full_plan_peak_and_outbox_atomically(
     assert result.outcome == "committed" and result.fact is not None
     assert before_time <= result.fact.recorded_at_us <= runtime.now()
     assert result.fact.request == REQUEST and result.fact.approved_plan == PLAN
+    delivery = db.query("SELECT * FROM runtime_intent_deliveries")[0]
+    assert delivery["event_id"] == prepare_request(REQUEST).event_id
+    assert delivery["delivery_phase"] == "unsent"
+    assert delivery["claim_holder_id"] is None
+    assert delivery["created_at_us"] == result.fact.recorded_at_us
+    assert delivery["submission_started_at_us"] is None
+
     host = db.query("SELECT * FROM host_nodes")[0]
     assert tuple(host["held_" + name] for name in DIMENSIONS) == HOST.held.add(PLAN.peak).values
     assert tuple(host["quarantined_" + name] for name in DIMENSIONS) == HOST.quarantined.values

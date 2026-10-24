@@ -639,6 +639,14 @@ def create_in_transaction(
             request.intent_id,
         ),
     )
+    # Only this same-transaction creation proves a fresh unsent command. Old
+    # pending outbox rows are adopted as unknown by migration, never recreated.
+    cursor.execute(
+        "INSERT INTO runtime_intent_deliveries "
+        "(event_id, delivery_phase, created_at_us, updated_at_us) "
+        "VALUES (%s, 'unsent', %s, %s)",
+        (prepared.event_id, now_us, now_us),
+    )
     # The global outbox identity can introduce one last uniqueness wait. A
     # successful INSERT after a rival rollback must not commit expired authority.
     require_runtime_authority(owner, request, clock(), owner_id=command.owner_id)

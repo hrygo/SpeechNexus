@@ -79,7 +79,8 @@
         "runtime_instance_intents",
         "engine_instances",
         "host_nodes",
-        "coordination_outbox"
+        "coordination_outbox",
+        "runtime_intent_deliveries"
       ],
       "producer": "Scheduler",
       "consumer": "runtime transaction"
@@ -161,7 +162,8 @@
     "submit_intents": "B",
     "output_stream_heads": "B",
     "execution_stop_evidence": "B",
-    "output_sample_intervals": "B"
+    "output_sample_intervals": "B",
+    "runtime_intent_deliveries": "A"
   },
   "query_outcome": {
     "pool": {

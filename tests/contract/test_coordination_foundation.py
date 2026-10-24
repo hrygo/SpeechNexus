@@ -16,6 +16,7 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
 )
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import JOB_DDL
+from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
 
 
 def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> None:
@@ -23,7 +24,7 @@ def test_production_storage_and_dml_owners_match_the_authoritative_matrix() -> N
     owners = json.loads((root / "contracts/coordination-ownership.json").read_text())["tables"]
     tables = {
         match[1]
-        for ddl in (*JOB_DDL, *COORDINATION_DDL, *ADMISSION_COMMAND_DDL)
+        for ddl in (*JOB_DDL, *COORDINATION_DDL, *ADMISSION_COMMAND_DDL, *RUNTIME_DELIVERY_DDL)
         if (match := re.match(r"CREATE TABLE (\w+)", ddl))
     }
     assert tables == set(owners)

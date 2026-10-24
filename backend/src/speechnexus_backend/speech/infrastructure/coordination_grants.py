@@ -48,6 +48,7 @@ SPEECH_UPDATES = {
     ),
     "coordination_jobs": "claim_owner_id claim_expires_at_us claim_version job_state",
     "coordination_outbox": "delivered_at_us",
+    "runtime_intent_deliveries": "",
 }
 GATEWAY_UPDATES = {
     "gateway_fencing_barriers": "min_fencing_token sealed_evidence_digest version",
@@ -62,12 +63,15 @@ GATEWAY_UPDATES = {
     "output_sample_intervals": "",
 }
 CONTROL_PLANE_TABLES = frozenset({"resource_pools", "workspace_quotas", "host_nodes"})
-PRIVATE_SPEECH_TABLES = frozenset({"admission_operations", "admission_requests"})
+PRIVATE_SPEECH_TABLES = frozenset(
+    {"admission_operations", "admission_requests", "runtime_intent_deliveries"}
+)
 INSERT_COLUMNS = {
     "coordination_jobs": (
         "job_id operation_id attempt_id initial_event_id initial_event_digest request_digest"
     ),
     "coordination_outbox": "event_id job_id event_digest event_kind target_node_id intent_id",
+    "runtime_intent_deliveries": "event_id delivery_phase created_at_us updated_at_us",
 }
 SPEECH_NARROW_SELECT = {
     "submit_intents": (

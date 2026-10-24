@@ -183,9 +183,9 @@ optional request field mandatory in TypeScript or insert a value at runtime.
 
 ## Storage, grants and local evidence
 
-The packaged Alembic head is `0007_admission_commands`. Its admission command
-storage and the runtime/outbox/private readiness extensions preserve the frozen
-`0006_runtime_observation`, `0005_runtime_intents`,
+The packaged Alembic head is `0008_runtime_delivery`. Its private transport ledger,
+admission command storage and runtime/outbox/private readiness extensions preserve
+the frozen `0007_admission_commands`, `0006_runtime_observation`, `0005_runtime_intents`,
 `0004_asset_storage`, `0003_assets` and
 `0002_coordination` migrations. `0003_assets` creates
 the shared `workspace-default`, Asset/command/object/reference/event tables and

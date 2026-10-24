@@ -140,3 +140,19 @@ make integration-test
 The helper provisions an isolated synthetic service only; tests enable versioning on their own buckets. The product never creates a bucket or changes its policy. See [production assets](../../docs/architecture/production-assets.md) for recovery limits, explicit TTL configuration, minimum-role boundaries and the subsequent HTTP/maintenance integration.
 
 `test_admission_command_storage.py` covers the `0007_admission_commands` storage foundation in both databases: separate private business/admission records, long bodies, complete tombstones, minimum roles, actual operation-key/row-lock contention and atomic rollback with Job/outbox. PostgreSQL also verifies migration failure rollback and unchanged legacy rows/ACLs. This is storage evidence; complete `admit_recipe`, retry/deletion authorization and actual scheduler consumers remain pending. See [admission storage](../../docs/architecture/production-admission-storage.md).
+
+`test_runtime_delivery.py` runs the same private delivery SQL under dedicated
+minimum roles on PG and InnoDB: competing claims, stale holder/version/expiry,
+actual outbox lock waits, original identity checks, legacy query-only recovery,
+atomic ACK and denied command/budget/history writes. `test_runtime_delivery_commit_loss.py`
+loses replies after real commits at claim/start/ACK, without automatic transaction
+reexecution. `test_runtime_delivery_migration.py` exercises actual PG 0007→0008,
+DDL failure rollback, untouched old rows/ACLs and repeat upgrade.
+
+`test_runtime_delivery_tls.py` uses actual loopback TLS with native B/SQLite,
+including accepted POST reply loss followed by GET only, legacy 404 and native
+STOP-before-unseen-PREPARE. These shared cases run on both databases without skips.
+PG-only subprocess cases exercise the installed worker, SIGTERM and owner-DSN
+refusal; the worker does not require S3 or call remote STOP on exit. Daemon and
+plans are synthetic; no GPU, deployment TLS, node observation loop or full
+scheduler qualification is implied. See [runtime delivery](../../docs/architecture/production-runtime-delivery.md).

@@ -2495,6 +2495,1049 @@
       },
       "valid": false,
       "status": "200"
+    },
+    {
+      "id": "createMeeting-request-valid",
+      "kind": "request",
+      "operation": "createMeeting",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "display_name": "Synthetic meeting",
+          "transcript_id": "transcript-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createMeeting-request-missing-path",
+      "kind": "request",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "display_name": "Synthetic meeting",
+          "transcript_id": "transcript-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeeting-request-invalid-path",
+      "kind": "request",
+      "operation": "createMeeting",
+      "value": {
+        "path": {
+          "project_id": "../private"
+        },
+        "body": {
+          "display_name": "Synthetic meeting",
+          "transcript_id": "transcript-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeeting-request-missing-body",
+      "kind": "request",
+      "operation": "createMeeting",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeeting-request-private-body-field",
+      "kind": "request",
+      "operation": "createMeeting",
+      "value": {
+        "path": {
+          "project_id": "project-demo"
+        },
+        "body": {
+          "display_name": "Synthetic meeting",
+          "transcript_id": "transcript-demo",
+          "internal_task_id": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeeting-response-declared-201",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "capturing",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": null,
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": null,
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 201
+    },
+    {
+      "id": "createMeeting-response-declared-400",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createMeeting-response-declared-401",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createMeeting-response-declared-404",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "createMeeting-response-declared-409",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createMeeting-response-declared-422",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createMeeting-response-undeclared-status",
+      "kind": "response",
+      "operation": "createMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "capturing",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": null,
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": null,
+          "error": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "getMeeting-request-valid",
+      "kind": "request",
+      "operation": "getMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getMeeting-request-missing-path",
+      "kind": "request",
+      "operation": "getMeeting",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "getMeeting-request-invalid-path",
+      "kind": "request",
+      "operation": "getMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "../private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getMeeting-response-declared-200",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "capturing",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": null,
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": null,
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getMeeting-response-declared-401",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getMeeting-response-declared-404",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getMeeting-response-undeclared-status",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "capturing",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": null,
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": null,
+          "error": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "sealMeeting-request-valid",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "expected_transcript_revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "sealMeeting-request-missing-path",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "expected_transcript_revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "sealMeeting-request-invalid-path",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "../private"
+        },
+        "body": {
+          "expected_transcript_revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "sealMeeting-request-missing-body",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "sealMeeting-request-private-body-field",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "expected_transcript_revision": "1",
+          "internal_task_id": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "sealMeeting-response-declared-200",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "sealed",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": "1",
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "sealMeeting-response-declared-400",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "sealMeeting-response-declared-401",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "sealMeeting-response-declared-404",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "sealMeeting-response-declared-409",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "sealMeeting-response-declared-422",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "sealMeeting-response-undeclared-status",
+      "kind": "response",
+      "operation": "sealMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "sealed",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": "1",
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "createMeetingMinutes-request-valid",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "template_revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createMeetingMinutes-request-missing-path",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "template_revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeetingMinutes-request-invalid-path",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "../private"
+        },
+        "body": {
+          "template_revision": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeetingMinutes-request-missing-body",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeetingMinutes-request-private-body-field",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "template_revision": "1",
+          "internal_task_id": "synthetic-private-marker"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-202",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "queued",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 202
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-400",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-401",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-404",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-409",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-422",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "createMeetingMinutes-response-declared-503",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "createMeetingMinutes-response-undeclared-status",
+      "kind": "response",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "queued",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "getMeetingMinutes-request-valid",
+      "kind": "request",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo",
+          "minutes_id": "minutes-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getMeetingMinutes-request-missing-path",
+      "kind": "request",
+      "operation": "getMeetingMinutes",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "getMeetingMinutes-request-invalid-path",
+      "kind": "request",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "../private",
+          "minutes_id": "minutes-demo"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getMeetingMinutes-response-declared-200",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "queued",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getMeetingMinutes-response-declared-401",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "getMeetingMinutes-response-declared-404",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "getMeetingMinutes-response-undeclared-status",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "queued",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": false,
+      "status": 299
+    },
+    {
+      "id": "sealMeeting-request-reject-number-revision",
+      "kind": "request",
+      "operation": "sealMeeting",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "expected_transcript_revision": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createMeetingMinutes-request-reject-model-endpoint",
+      "kind": "request",
+      "operation": "createMeetingMinutes",
+      "value": {
+        "path": {
+          "meeting_id": "meeting-demo"
+        },
+        "body": {
+          "template_revision": "1",
+          "endpoint": "http://unapproved.invalid"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getMeeting-response-capture-failure",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "failed",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": null,
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": "2026-10-24T00:01:00Z",
+          "error": {
+            "code": "capture_failed",
+            "message": "Synthetic capture failure.",
+            "retryable": false,
+            "param": null
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getMeeting-response-pending-retains-seal",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "minutes_pending",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": "1",
+          "minutes_id": "minutes-demo",
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": "2026-10-24T00:01:00Z",
+          "error": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getMeeting-response-reject-failure-with-seal",
+      "kind": "response",
+      "operation": "getMeeting",
+      "value": {
+        "body": {
+          "id": "meeting-demo",
+          "object": "nexus.meeting",
+          "project_id": "project-demo",
+          "display_name": "Synthetic meeting",
+          "status": "failed",
+          "transcript_id": "transcript-demo",
+          "save_audio": false,
+          "sealed_revision": "1",
+          "minutes_id": null,
+          "started_at": "2026-10-24T00:00:00Z",
+          "ended_at": "2026-10-24T00:01:00Z",
+          "error": {
+            "code": "capture_failed",
+            "message": "Synthetic capture failure.",
+            "retryable": false,
+            "param": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getMeetingMinutes-response-failed-job-with-partial-text",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "failed",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": {
+            "code": "llm_unavailable",
+            "message": "Synthetic internal service unavailable.",
+            "retryable": true,
+            "param": null
+          },
+          "minutes_text": "Synthetic partial text.",
+          "artifact_id": null
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "getMeetingMinutes-response-reject-private-usage",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "queued",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null,
+          "usage": {
+            "input_tokens": 1
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "getMeetingMinutes-response-success-with-artifact",
+      "kind": "response",
+      "operation": "getMeetingMinutes",
+      "value": {
+        "body": {
+          "id": "minutes-demo",
+          "object": "nexus.minutes_job",
+          "meeting_id": "meeting-demo",
+          "status": "succeeded",
+          "source_revision": "1",
+          "template_revision": "1",
+          "llm_model": "local-approved-model",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:01:00Z",
+          "error": null,
+          "artifact_id": "artifact-minutes-demo"
+        }
+      },
+      "valid": true,
+      "status": 200
     }
   ]
 }

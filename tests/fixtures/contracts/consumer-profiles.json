@@ -3273,6 +3273,781 @@
         "result": null,
         "error": null
       }
+    },
+    {
+      "id": "workbench-Meeting-valid",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "capturing",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": null,
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": null,
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Meeting-reject-private-field",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "capturing",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": null,
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": null,
+        "error": null,
+        "internal_task_id": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "transcript_id": "transcript-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-reject-private-field",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "transcript_id": "transcript-demo",
+        "internal_task_id": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingSealRequest-valid",
+      "profile": "workbench",
+      "schema": "MeetingSealRequest",
+      "value": {
+        "expected_transcript_revision": "1"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MeetingSealRequest-reject-private-field",
+      "profile": "workbench",
+      "schema": "MeetingSealRequest",
+      "value": {
+        "expected_transcript_revision": "1",
+        "internal_task_id": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "MinutesCreateRequest",
+      "value": {
+        "template_revision": "1"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesCreateRequest-reject-private-field",
+      "profile": "workbench",
+      "schema": "MinutesCreateRequest",
+      "value": {
+        "template_revision": "1",
+        "internal_task_id": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-valid",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "queued",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-reject-private-field",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "queued",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "internal_task_id": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-from-speech-session",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "speech_session_id": "session-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-reject-two-sources",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "transcript_id": "transcript-demo",
+        "speech_session_id": "session-demo"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-reject-no-source",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-explicit-save-audio",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "transcript_id": "transcript-demo",
+        "save_audio": true
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MeetingCreateRequest-reject-string-boolean",
+      "profile": "workbench",
+      "schema": "MeetingCreateRequest",
+      "value": {
+        "display_name": "Synthetic meeting",
+        "transcript_id": "transcript-demo",
+        "save_audio": "false"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MeetingSealRequest-explicit-empty-text",
+      "profile": "workbench",
+      "schema": "MeetingSealRequest",
+      "value": {
+        "expected_transcript_revision": "1",
+        "text": ""
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MeetingSealRequest-reject-number-revision",
+      "profile": "workbench",
+      "schema": "MeetingSealRequest",
+      "value": {
+        "expected_transcript_revision": 1
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesCreateRequest-explicit-model",
+      "profile": "workbench",
+      "schema": "MinutesCreateRequest",
+      "value": {
+        "template_revision": "1",
+        "llm_model": "local-approved-model"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesCreateRequest-reject-number-revision",
+      "profile": "workbench",
+      "schema": "MinutesCreateRequest",
+      "value": {
+        "template_revision": 1
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesCreateRequest-reject-endpoint",
+      "profile": "workbench",
+      "schema": "MinutesCreateRequest",
+      "value": {
+        "template_revision": "1",
+        "endpoint": "http://unapproved.invalid"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-sealed",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "sealed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Meeting-minutes-pending",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "minutes_pending",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": "minutes-demo",
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Meeting-minutes-ready",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "minutes_ready",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": "minutes-demo",
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Meeting-capture-failed",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "failed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": null,
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "capture_failed",
+          "message": "Synthetic capture failure.",
+          "retryable": false,
+          "param": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Meeting-reject-capturing-with-seal",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "capturing",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": null,
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-sealed-without-time",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "sealed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": null,
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-sealed-number-revision",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "sealed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": 1,
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-pending-without-minutes",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "minutes_pending",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-minutes-error-on-meeting",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "minutes_pending",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": "minutes-demo",
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "llm_unavailable",
+          "message": "Synthetic internal service unavailable.",
+          "retryable": true,
+          "param": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-capture-failure-with-seal",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "failed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": "1",
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "capture_failed",
+          "message": "Synthetic capture failure.",
+          "retryable": false,
+          "param": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-capture-failure-without-error",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "failed",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": null,
+        "minutes_id": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Meeting-reject-omitted-required-null",
+      "profile": "workbench",
+      "schema": "Meeting",
+      "value": {
+        "id": "meeting-demo",
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "display_name": "Synthetic meeting",
+        "status": "capturing",
+        "transcript_id": "transcript-demo",
+        "save_audio": false,
+        "sealed_revision": null,
+        "started_at": "2026-10-24T00:00:00Z",
+        "ended_at": null,
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-running",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "running",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": "Synthetic partial text."
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-cancelled",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "cancelled",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": "Synthetic partial text."
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-expired",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "expired",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": "Synthetic partial text."
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-failed-partial",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "failed",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "llm_unavailable",
+          "message": "Synthetic internal service unavailable.",
+          "retryable": true,
+          "param": null
+        },
+        "minutes_text": "Synthetic partial text.",
+        "artifact_id": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-succeeded-text",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "succeeded",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": "Synthetic minutes."
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-succeeded-artifact",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "succeeded",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "artifact_id": "artifact-minutes-demo"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-MinutesJob-reject-success-without-result",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "succeeded",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-empty-success",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "succeeded",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-failure-without-error",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "failed",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "minutes_text": "Synthetic partial text.",
+        "artifact_id": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-failure-string-error",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "failed",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": "synthetic-private-marker",
+        "minutes_text": "Synthetic partial text.",
+        "artifact_id": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-failure-published-artifact",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "failed",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "llm_unavailable",
+          "message": "Synthetic internal service unavailable.",
+          "retryable": true,
+          "param": null
+        },
+        "minutes_text": "Synthetic partial text.",
+        "artifact_id": "artifact-minutes-demo"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-error-on-running",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "running",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": {
+          "code": "llm_unavailable",
+          "message": "Synthetic internal service unavailable.",
+          "retryable": true,
+          "param": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-internal-usage-field",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "queued",
+        "source_revision": "1",
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null,
+        "usage": {
+          "input_tokens": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-MinutesJob-reject-number-source-revision",
+      "profile": "workbench",
+      "schema": "MinutesJob",
+      "value": {
+        "id": "minutes-demo",
+        "object": "nexus.minutes_job",
+        "meeting_id": "meeting-demo",
+        "status": "queued",
+        "source_revision": 1,
+        "template_revision": "1",
+        "llm_model": "local-approved-model",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:01:00Z",
+        "error": null
+      },
+      "valid": false
     }
   ]
 }

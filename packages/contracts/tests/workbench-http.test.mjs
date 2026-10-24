@@ -209,7 +209,7 @@ test(
 );
 
 test("unknown operations and implicit/unbounded byte limits are rejected", () => {
-  assert.throws(() => validateRequest("createMeeting", {}), /Unknown HTTP operation/);
+  assert.throws(() => validateRequest("createAssistantTurn", {}), /Unknown HTTP operation/);
   for (const limit of [undefined, 0, -1, Infinity, 1.5]) {
     assert.throws(
       () => createValidatedClient("http://deployment.invalid", limit),
@@ -257,4 +257,54 @@ test("native loopback HTTP validates a reply and never follows a POST redirect",
     await close(server);
     await close(target);
   }
+});
+
+test("minutes consumer sends no model default and keeps failed minutes separate from capture", async () => {
+  const profiles = JSON.parse(
+    readFileSync(
+      new URL("../../../tests/fixtures/contracts/consumer-profiles.json", import.meta.url),
+    ),
+  ).examples;
+  const body = (id) => structuredClone(profiles.find((e) => e.id === id).value);
+  let calls = 0;
+  const client = createValidatedClient("http://deployment.invalid", 8192, async (request) => {
+    calls++;
+    if (request.method === "POST") {
+      assert.equal(
+        request.url,
+        "http://deployment.invalid/v1/workbench/meetings/meeting-demo/minutes",
+      );
+      assert.equal(request.headers.get("Idempotency-Key"), "original-minutes-key");
+      assert.deepEqual(await request.json(), { template_revision: "1" });
+      return Response.json(body("workbench-MinutesJob-valid"), { status: 202 });
+    }
+    return Response.json(
+      body(
+        request.url.endsWith("/minutes/minutes-demo")
+          ? "workbench-MinutesJob-failed-partial"
+          : "workbench-Meeting-minutes-pending",
+      ),
+    );
+  });
+  const created = await client.POST("/v1/workbench/meetings/{meeting_id}/minutes", {
+    params: {
+      path: { meeting_id: "meeting-demo" },
+      header: { "Idempotency-Key": "original-minutes-key" },
+    },
+    body: { template_revision: "1" },
+  });
+  assert.equal(created.data.status, "queued");
+  const minutes = await client.GET("/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}", {
+    params: { path: { meeting_id: "meeting-demo", minutes_id: "minutes-demo" } },
+  });
+  const meeting = await client.GET("/v1/workbench/meetings/{meeting_id}", {
+    params: { path: { meeting_id: "meeting-demo" } },
+  });
+  assert.equal(minutes.data.status, "failed");
+  assert.equal(minutes.data.artifact_id, null);
+  assert.equal(meeting.data.status, "minutes_pending");
+  assert.equal(meeting.data.error, null);
+  assert.equal(meeting.data.sealed_revision, minutes.data.source_revision);
+  assert.equal(meeting.data.minutes_id, minutes.data.id);
+  assert.equal(calls, 3);
 });

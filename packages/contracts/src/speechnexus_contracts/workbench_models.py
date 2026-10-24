@@ -199,6 +199,15 @@ type ExternalSharedDeletionSchemaJsonResourceKind = Literal[
 ]
 type ExternalSharedDeletionSchemaJsonDeletionMode = Literal["ordinary", "cascade"]
 type ExternalSharedIdentifiersSchemaJsonSha256Digest = str
+
+
+class WorkbenchJobError(TypedDict):
+    code: str
+    message: str
+    retryable: bool
+    param: NotRequired[str | None]
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -315,6 +324,63 @@ class ExternalSharedDeletionSchemaJsonDeletionResult(TypedDict):
     retained_independent_copies: list[ExternalSharedDeletionSchemaJsonDeletionTarget]
     ledger_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     completed_at: str
+
+
+class Meeting(TypedDict):
+    id: Identifier
+    object: Literal["nexus.meeting"]
+    project_id: Identifier
+    display_name: str
+    status: Literal["capturing", "sealed", "minutes_pending", "minutes_ready", "failed"]
+    transcript_id: Identifier
+    sealed_revision: Revision | None
+    minutes_id: Identifier | None
+    save_audio: bool
+    started_at: str
+    ended_at: str | None
+    error: NotRequired[WorkbenchJobError | None]
+
+
+class MeetingCreateRequest1(TypedDict):
+    display_name: str
+    speech_session_id: Identifier
+    transcript_id: NotRequired[Identifier]
+    save_audio: NotRequired[bool]
+
+
+class MeetingCreateRequest2(TypedDict):
+    display_name: str
+    speech_session_id: NotRequired[Identifier]
+    transcript_id: Identifier
+    save_audio: NotRequired[bool]
+
+
+type MeetingCreateRequest = MeetingCreateRequest1 | MeetingCreateRequest2
+
+
+class MeetingSealRequest(TypedDict):
+    expected_transcript_revision: Revision
+    text: NotRequired[str]
+
+
+class MinutesCreateRequest(TypedDict):
+    template_revision: Revision
+    llm_model: NotRequired[str]
+
+
+class MinutesJob(TypedDict):
+    id: Identifier
+    object: Literal["nexus.minutes_job"]
+    meeting_id: Identifier
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "expired"]
+    source_revision: Revision
+    template_revision: Revision
+    llm_model: str
+    minutes_text: NotRequired[str | None]
+    artifact_id: NotRequired[Identifier | None]
+    error: NotRequired[WorkbenchJobError | None]
+    created_at: str
+    updated_at: str
 
 
 class ProjectCreateRequest(TypedDict):
@@ -459,4 +525,9 @@ type WorkbenchContracts = (
     | DeletionCreateRequest
     | DeletionPlan
     | Deletion
+    | Meeting
+    | MeetingCreateRequest
+    | MeetingSealRequest
+    | MinutesCreateRequest
+    | MinutesJob
 )

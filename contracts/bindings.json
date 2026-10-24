@@ -58,7 +58,12 @@
         "DeletionPlanRequest",
         "DeletionCreateRequest",
         "DeletionPlan",
-        "Deletion"
+        "Deletion",
+        "Meeting",
+        "MeetingCreateRequest",
+        "MeetingSealRequest",
+        "MinutesCreateRequest",
+        "MinutesJob"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -110,7 +115,12 @@
         "/v1/workbench/transcripts/{transcript_id}/revisions/{revision}",
         "/v1/workbench/deletion-plans",
         "/v1/workbench/deletions",
-        "/v1/workbench/deletions/{deletion_id}"
+        "/v1/workbench/deletions/{deletion_id}",
+        "/v1/workbench/projects/{project_id}/meetings",
+        "/v1/workbench/meetings/{meeting_id}",
+        "/v1/workbench/meetings/{meeting_id}/seal",
+        "/v1/workbench/meetings/{meeting_id}/minutes",
+        "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}"
       ]
     }
   }

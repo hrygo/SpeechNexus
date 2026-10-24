@@ -37,10 +37,21 @@ import { createValidatedClient, validateRequest } from "../src/workbench-http";
 const validatedWorkbench = createValidatedClient("http://deployment.invalid", 8 * 1024 * 1024);
 void validatedWorkbench.GET("/v1/workbench/projects");
 validateRequest("getProject", { path: { project_id: "project-demo" } });
-// @ts-expect-error Meeting HTTP entrypoints are delivered separately.
-validateRequest("createMeeting", {});
+const meeting = parseWorkbench("MeetingCreateRequest", wire);
+const sealRevision: string | null = parseWorkbench("Meeting", wire).sealed_revision;
+const minutesRevision: string = parseWorkbench("MinutesJob", wire).source_revision;
+void [sealRevision, minutesRevision];
+void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {
+  params: { path: { project_id: "project-demo" } },
+  body: meeting,
+});
+validateRequest("createMeeting", { path: { project_id: "project-demo" }, body: meeting });
+// @ts-expect-error Assistant HTTP entrypoints are delivered separately.
+validateRequest("createAssistantTurn", {});
 // @ts-expect-error The validated client exposes only the selected HTTP surface.
-void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {});
+void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/assistant-turns", {});
+// @ts-expect-error Public minutes DTOs do not expose C's private usage/task ledger.
+void parseWorkbench("MinutesJob", wire).usage;
 // @ts-expect-error No implicit JSON byte budget for network parsing.
 createValidatedClient("http://deployment.invalid");
 

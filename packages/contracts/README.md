@@ -148,7 +148,7 @@ types/client. Runtime entrypoints are explicitly listed in `bindings.json`:
 | Profile     | Runtime entrypoints                                                  |
 | ----------- | -------------------------------------------------------------------- |
 | `admin`     | Workspace create and metadata CAS patch                              |
-| `workbench` | Project create/CAS and Project/List; transcript create/revision/View/List; status/errors; shared deletion plan/create/records |
+| `workbench` | Project create/CAS and Project/List; transcripts; status/errors; shared deletion; Meeting/create/seal and Minutes/create |
 | `execution` | Submit request/receipt/status, abort, barrier request/response, control errors |
 | `runtime`   | Runtime instance intent request/receipt, node reconciliation request |
 
@@ -204,7 +204,7 @@ const view = result.data
 
 These calls validate JSON bodies only. The opt-in HTTP profile below checks
 transport parameters/status and validates client requests/responses.
-Meeting/Minutes and public realtime runtime entrypoints remain separate A00 units.
+Meeting/Minutes also have JSON and HTTP entrypoints; public realtime remains a separate A00 unit.
 Schema validation does not establish a
 cross-record transcript/revision match, deletion ownership of the selected
 route, a fresh plan, actual cleanup, or permission to release budgets. C owns
@@ -213,9 +213,10 @@ package does not register them in the speech backend.
 
 ### Workbench HTTP boundary
 
-`workbench-http` derives ten paths / thirteen operations from the source
+`workbench-http` derives fifteen paths / eighteen operations from the source
 OpenAPI: status, project create/read/update/list, transcript create/read/list and
-revision create/read, and deletion plan/create/read. The packaged
+revision create/read, deletion plan/create/read, meeting create/read/seal and
+minutes create/read. The packaged
 `workbench.openapi.json` is a closed contract for C's handlers and documentation;
 loading it does not start a server or register a route. It retains the original
 parameter/header requirements, per-status JSON response schemas and public
@@ -273,6 +274,43 @@ the TS mock transport covers rejection before network I/O, byte bounds, cancella
 unknown responses and no retries. A native loopback HTTP check also verifies a
 parsed reply and zero requests to a POST redirect target. Actual C handlers, their migrations and
 target-network/browser qualification remain C's versioned integration work.
+
+### Meeting and minutes projection
+
+The JSON profile adds `Meeting`, `MeetingCreateRequest`, `MeetingSealRequest`,
+`MinutesCreateRequest`, and `MinutesJob`. The HTTP profile selects the same five
+source routes, including the `202` minutes-creation reply and declared failure
+envelopes. This adds generated entries and shared examples without changing the
+wire schemas or inventing a second model/default policy.
+
+Meeting creation has exactly one source: `speech_session_id` or `transcript_id`.
+Parsers preserve an omitted `save_audio` rather than inserting its server default.
+Seal, source and template revisions are decimal strings. An omitted minutes
+model is resolved by C against the deployment-approved configuration; the parser
+and client never select or enable an LLM or accept an endpoint field.
+
+`Meeting.failed` describes capture failure before sealing: it has an end time
+and structured error, and no sealed revision or minutes reference. A failed
+`MinutesJob` may contain partial text but no publishable Artifact. It does not
+turn an already sealed meeting into capture failure: the meeting remains
+`minutes_pending` with its sealed revision/minutes reference, and the linked job
+carries its own structured error. Successful minutes require non-empty text or
+an Artifact; non-failed jobs do not carry a non-null error.
+
+C must verify the linked transcript/revision is sealed and owned by the project,
+the minutes job belongs to the meeting and pins its exact sealed revision, and
+the referenced job has succeeded before reporting `minutes_ready`. These are
+cross-record/application checks; validating each DTO independently cannot prove
+them. The shared failure/partial/success examples and client trace provide
+versioned inputs for that integration, not evidence that C's handlers ran.
+
+The public `MinutesJob` has no `usage` field. C's durable task and usage ledger
+remain separate from this projection and must survive content cleanup as
+required by their ownership rules. A public usage extension needs an explicit
+source-contract change reviewed by A/C; internal task rows are rejected as DTOs.
+C supplies its owner migration fragments, grants and root/HTTP integration
+points; these generated packages neither reserve a migration revision nor
+mount C's routes in the speech API.
 
 Execution control `0.4.0.dev0` includes barrier and error parser entrypoints. Control
 failures carry a constrained recovery hint: a lost commit acknowledgment is

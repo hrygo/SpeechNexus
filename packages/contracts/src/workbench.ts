@@ -22,6 +22,11 @@ export type Contracts = Pick<
   | "DeletionCreateRequest"
   | "DeletionPlan"
   | "Deletion"
+  | "Meeting"
+  | "MeetingCreateRequest"
+  | "MeetingSealRequest"
+  | "MinutesCreateRequest"
+  | "MinutesJob"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

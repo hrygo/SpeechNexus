@@ -2,31 +2,19 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 from speechnexus_backend.speech.domain.assets import identifier
-
-MAX_REVISION = 10**19 - 1
-MAX_DOCUMENT_BYTES = 262144
+from speechnexus_backend.speech.domain.configuration import MAX_DOCUMENT_BYTES as MAX_DOCUMENT_BYTES
+from speechnexus_backend.speech.domain.configuration import MAX_REVISION as MAX_REVISION
+from speechnexus_backend.speech.domain.configuration import document_digest as document_digest
+from speechnexus_backend.speech.domain.configuration import revision_number as revision_number
 
 
 class ProfileUnavailableError(Exception):
     """The original configuration result cannot be established safely."""
-
-
-def revision_number(value: str) -> int:
-    if not isinstance(value, str) or re.fullmatch(r"[1-9][0-9]{0,18}", value) is None:
-        raise ValueError("Invalid profile revision")
-    return int(value)
-
-
-def document_digest(value: bytes) -> str:
-    if not isinstance(value, bytes) or not 1 <= len(value) <= MAX_DOCUMENT_BYTES:
-        raise ValueError("Invalid bounded profile document")
-    return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

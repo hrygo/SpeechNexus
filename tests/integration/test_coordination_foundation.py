@@ -219,14 +219,22 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    binding_tables = (
+        {"speech_binding_families", "speech_binding_revisions", "speech_binding_commands"}
+        if db.dialect == "postgresql"
+        else set()
+    )
+    assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
-    assert {row["name"] for row in rows} - {"alembic_version"} - asset_tables - profile_tables == (
+    assert {row["name"] for row in rows} - {
+        "alembic_version"
+    } - asset_tables - profile_tables - binding_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
     if db.dialect == "postgresql":
         # New configuration tables are outside shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables:
+            for table in profile_tables | binding_tables:
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,
@@ -463,7 +471,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0009_profile_drafts"
+    assert sandbox.version() == "0010_model_binding_drafts"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -530,7 +538,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0009_profile_drafts"
+        assert sandbox.version() == "0010_model_binding_drafts"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

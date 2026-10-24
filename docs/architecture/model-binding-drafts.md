@@ -1,8 +1,9 @@
-# ModelBinding draft contract preflight
+# Immutable ModelBinding drafts
 
-This is a contract and consumer handoff for A00/A02. It does not implement a
-registry provider, database migration, HTTP route, publication, activation or
-model loading. The existing Profile draft provider remains a separate resource.
+This A02 unit implements the process-local draft registry on PostgreSQL, using
+the A00/A02 contract preflight from #122. HTTP routes, publication, activation,
+default selection, qualification and model loading remain separate work. The
+existing Profile draft provider remains a separate resource.
 
 The authoritative sources are admin OpenAPI `0.1.0.dev3` and
 `model-binding.schema.json` (`schema_version: "1.0.0"`). The selected operations
@@ -69,17 +70,105 @@ This proof is limited to nonstandard responses; requests,
 other unions, lost guarantees and the original OpenAI comparison policy retain
 their existing checks. It is not general JSON Schema inclusion or runtime proof.
 
+## Process-local registry
+
+`prepare_binding_draft(request, idempotency_key)` validates the existing admin
+request and the complete draft revision. Full-source conditions, including the
+voice-design engine constraint, are checked without duplicating wire schemas.
+The returned immutable private command retains complete intent and definition.
+No caller-supplied revision ID, CAS field or publication claim is accepted.
+
+`PostgresBindingDrafts(pool).create(command)` appends a revision; `recover(command)`
+is read-only original-key recovery; `get(binding_id, revision)` reads that fixed
+revision. `draft_to_wire(record)` projects the actual persisted revision ID and
+microsecond creation time with publication `draft` and no evidence. Publication
+and capacity/artifact reference eligibility are not established by storing a draft.
+
+The optional key retains the source 8–128 character range. Its SHA256 identity is
+scoped to this operation in the shared deployment, including across families;
+the raw key is not stored. Keyless preparation creates a fresh private identity.
+Retaining that private command permits server-side recovery, without adding a
+public keyless recovery promise. No public response exposes the private key digest.
+
+## Private canonical documents
+
+Binding private document version 1 is deterministic UTF-8 JSON: object keys are
+sorted by Unicode codepoint, arrays retain order, strings receive no Unicode
+normalization, boolean values remain distinct from numbers, and finite integral
+floats normalize to their exact integer value. Nonintegral finite floats use the
+Python JSON representation. Omission stays distinct from explicit fields; no
+schema defaults are inserted. Stored bytes must decode and re-encode identically.
+
+Unlike the existing Profile RFC8785 codec, this private codec preserves arbitrary
+source-allowed integer counts without float conversion, including beyond
+`2^53-1` and the interpreter's default integer/string digit guard. Exact Decimal
+conversions handle those integers locally; no global guard is changed. Documents
+are bounded to 256 KiB and 64 nesting levels; oversized, nonfinite, invalid Unicode,
+non-JSON or noncanonical stored values fail closed. This is a private versioned
+storage/digest format, not a new public digest field or client algorithm contract.
+Profile's RFC8785 behavior is retained; only pure revision/digest bound helpers are
+shared, with its previous module exports preserved.
+
+## Atomic allocation and minimum-role history
+
+Append-only migration `0010_model_binding_drafts` follows 0009. It adds only these
+A-owned configuration tables, outside the eighteen shared coordination ports:
+
+| Table | Runtime writes | Authority |
+| --- | --- | --- |
+| speech_binding_commands | INSERT | Immutable original key, full intent, digest and document version |
+| speech_binding_revisions | INSERT | Immutable definition, global revision ID and unique command/result link |
+| speech_binding_families | INSERT and UPDATE latest_revision | Internal allocation head, without a publication/default pointer |
+
+The unique command INSERT waits for an earlier same-key transaction. Existing
+command/result facts are immutable, so reading them needs no UPDATE grant or
+explicit command-row lock. A new command then locks the family row and appends
+its next decimal revision. Independent commands both succeed after serialization;
+there is no client CAS rejection. The same transaction inserts the original
+journal, immutable result and allocation projection. No network, object storage,
+engine, Job or outbox work occurs inside it.
+
+`revision_id` is assigned by the registry and unique globally. A unique foreign-key
+link binds exactly one revision to the original key, family, request digest and
+document version. Runtime permissions cannot retarget a result or mutate original
+intent/definition. Only the allocation head is updatable. Fixed reads also verify
+the complete original intent, not just a recomputed definition checksum.
+
+Replay lookup precedes allocation, so the original revision and global ID survive
+later family revisions and process restart. Different intent under the original
+key returns conflict without changing history. An unreadable result, missing
+linked result, pool/query failure, cancellation, deadline or uncertain commit
+remains unknown with query_original. Recovery never inserts even a missing
+command; an orphaned committed journal is an operator-fixture corruption case,
+not permission to allocate. Fixed-read unavailability is distinct from absence.
+
+The PG adapter performs no automatic write retry. The test-only InnoDB oracle
+retries native 1213 only when it proves complete rollback, retaining the same
+command; it does not retry commit uncertainty or unreadable recovery.
+
+`binding_draft_grants` only declares explicit provisioning: SELECT/INSERT on the
+three tables and UPDATE of the family head. It grants no command/revision UPDATE,
+DELETE, DDL or Job/coordination authority. Application startup performs no grants
+or DDL. Downgrade refuses automatic history deletion; code rollback must preserve
+the tables and use reviewed forward recovery. Production provisioning is separate.
+
+`tests/integration/test_binding_drafts.py` uses restricted non-owner roles and the
+same SQL on actual isolated PG/InnoDB, including observed key/family contention,
+immutable global ID collisions, exact large integers and documents above 64 KiB,
+real committed writes with discarded replies, pressured reads, query cancellation,
+statement deadlines, closed pools, corruption and immutable original-result links.
+PG separately verifies failed/repeated migrations and preserved older rows/ACLs.
+Synthetic SQL fixtures do not qualify a physical cluster or speech engine.
+
 ## Remaining implementation
 
-A separate unit must provide bounded immutable draft persistence, allocation,
-original-intent storage, replay/conflict and unknown-result recovery, with real
-isolated PostgreSQL tests. Fixed revision histories and independent commands must
-survive concurrency and restart without duplicate side effects. Another unit will
-wire the selected HTTP routes and controlled writer lifecycle after persistence.
-No running service is claimed by the mocked consumer transports in this preflight.
+A separate unit must wire the selected HTTP routes and controlled writer lifecycle,
+with real HTTP consumers and the same unavailable/unknown semantics. This registry
+port is not a running public service; mocked preflight transports prove only their
+consumer boundary. Public lists, publication/activation/CAS, default pointers and
+qualification are not implemented here.
 
-Model parameter domains do not carry defaults. This preflight neither adds a
-parameter-default field nor fabricates a published registry. Full effective
-parameter resolution, resource qualification, publication/default-pointer CAS,
-real speech execution and the A02/Gate acceptance remain open. B runtime proof
-changes from #121 and all existing consumer namespaces are preserved.
+Model parameter domains still do not carry defaults. This unit neither adds that
+field nor fabricates a published registry. Full effective parameter resolution,
+resource qualification, real speech execution and A02/Gate acceptance remain open.
+B #123 source/artifacts and all existing consumer namespaces are preserved.

@@ -410,3 +410,98 @@ def test_default_ci_text_mode_reports_the_result_and_returns_a_failure_for_break
     assert base in text and all(source in text for source, _ in SOURCES)
     assert ("path removed" in text) is broken
     assert "Not a full protocol compatibility proof" in text
+
+
+@pytest.mark.parametrize("standard_only", [False, True])
+def test_boolean_ref_sibling_type_narrowing_rejects_previously_accepted_42(
+    standard_only: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    path = "/v1/audio/speech"
+    base = document(path, {"$ref": "#/components/schemas/Any"})
+    base["components"] = {"schemas": {"Any": True}}
+    current = copy.deepcopy(base)
+    current["paths"][path]["post"]["requestBody"]["content"]["application/json"]["schema"][
+        "type"
+    ] = "string"
+    old_schema = {"components": base["components"], "$ref": "#/components/schemas/Any"}
+    new_schema = {**old_schema, "type": "string"}
+    assert Draft202012Validator(old_schema).is_valid(42)
+    assert not Draft202012Validator(new_schema).is_valid(42)
+    assert Draft202012Validator(new_schema).is_valid("synthetic")
+    findings = kernel()._compare_openapi(
+        base, current, "synthetic.openapi.yaml", standard_only=standard_only
+    )
+    assert findings, "Resolved true must not discard an adjacent type restriction"
+
+
+@pytest.mark.parametrize("standard_only", [False, True])
+@pytest.mark.parametrize("target", [True, False])
+def test_boolean_ref_annotation_or_false_intersection_preserves_acceptance(
+    standard_only: bool,
+    target: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    path = "/v1/audio/speech"
+    base = document(path, {"$ref": "#/components/schemas/Any"})
+    base["components"] = {"schemas": {"Any": target}}
+    current = copy.deepcopy(base)
+    sibling = {"description": "Synthetic explanation"} if target else {"type": "string"}
+    current["paths"][path]["post"]["requestBody"]["content"]["application/json"]["schema"].update(
+        sibling
+    )
+    for value in (42, "synthetic", None):
+        old = {"components": base["components"], "$ref": "#/components/schemas/Any"}
+        assert Draft202012Validator(old).is_valid(value) == Draft202012Validator(
+            {**old, **sibling}
+        ).is_valid(value)
+    assert (
+        kernel()._compare_openapi(
+            base, current, "synthetic.openapi.yaml", standard_only=standard_only
+        )
+        == []
+    )
+
+
+def test_cli_rejects_boolean_reference_sibling_narrowing_at_the_same_source_version(
+    repository: tuple[ModuleType, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, root, _ = repository
+    value = document(SOURCES[0][1], {"$ref": "#/components/schemas/Any"})
+    value["components"] = {"schemas": {"Any": True}}
+    path = root / SOURCES[0][0]
+    _write(path, value)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Synthetic true reference baseline")
+    base = _git(root, "rev-parse", "HEAD")
+    value["paths"][SOURCES[0][1]]["post"]["requestBody"]["content"]["application/json"]["schema"][
+        "type"
+    ] = "string"
+    _write(path, value)
+    monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
+    assert module.main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["findings"]
+    assert report["sources"][0]["base_version"] == report["sources"][0]["current_version"]
+
+
+def test_false_reference_simplification_keeps_the_closed_reference_policy(
+    repository: tuple[ModuleType, Path, str],
+) -> None:
+    module, root, _ = repository
+    value = document(SOURCES[0][1], {"$ref": "#/components/schemas/Never"})
+    value["components"] = {"schemas": {"Never": False}}
+    path = root / SOURCES[0][0]
+    _write(path, value)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Synthetic false reference baseline")
+    base = _git(root, "rev-parse", "HEAD")
+    value["paths"][SOURCES[0][1]]["post"]["requestBody"]["content"]["application/json"]["schema"][
+        "allOf"
+    ] = [{"$ref": "https://deployment.invalid/unavailable.json"}]
+    _write(path, value)
+    assert module.inspect_sources(base)["findings"]

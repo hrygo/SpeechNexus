@@ -163,6 +163,16 @@ def _dereference_schema(
         seen | {identity},
     )
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
+    if isinstance(resolved, bool) and siblings:
+        # $ref siblings intersect with its target even when that target is a
+        # boolean schema. Keep the reference policy before simplifying false.
+        annotations = {"title", "description", "examples", "$comment"}
+        if not (siblings.keys() - annotations):
+            return resolved
+        resolved_siblings = {
+            key: _dereference_schema(value, side, seen) for key, value in siblings.items()
+        }
+        return resolved_siblings if resolved else False
     resolved_mapping = _mapping(resolved)
     if siblings and resolved_mapping is not None:
         resolved_siblings = {

@@ -49,7 +49,9 @@ required response headers, object fields, supported types/enums/constants,
 defaults, formats, bounds and boolean schemas. Supported conditional/composed
 changes require explicit proof rather than being assumed safe. Unchanged
 repository references are resolved against their own old/current document trees;
-Nexus fields are included throughout this mode.
+Nexus fields are included throughout this mode. Boolean reference targets retain
+the sibling intersection: true leaves adjacent constraints effective, false stays
+unsatisfiable, and annotation-only edits do not change acceptance.
 
 The policy selection, not a mutable global path list, separates this mode from
 the OpenAI standard gate. Original OpenAI regression cases continue to use its

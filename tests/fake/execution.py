@@ -25,6 +25,7 @@ from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, Engi
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
+    ExecutionState,
     GatewayBarrierFencedError,
     InvalidExecutionRequestError,
     LeaseState,
@@ -58,6 +59,22 @@ class InMemorySubmissionLedger:
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
         intent = self.get(submit_intent_id)
         return None if intent is None else ExecutionSnapshot(intent)
+
+    def list_quarantined(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[SubmissionIntent]:
+        """The same bounded, gateway-scoped read the SQL adapter performs."""
+        if not 1 <= limit <= 500:
+            raise ValueError("a recovery sweep reads between 1 and 500 executions")
+        candidates = [
+            copy.deepcopy(intent)
+            for intent in self._intents.values()
+            if intent.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+            and (intent.identity.gateway_id, intent.identity.host_node_id)
+            == (gateway_id, host_node_id)
+        ]
+        candidates.sort(key=lambda intent: (intent.updated_at, intent.identity.submit_intent_id))
+        return candidates[:limit]
 
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
         current = self.get(request.submit_intent_id)

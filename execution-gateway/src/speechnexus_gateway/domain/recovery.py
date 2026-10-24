@@ -11,8 +11,10 @@ from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
     ExecutionState,
     InvalidExecutionRequestError,
+    StopEvidenceKind,
     SubmissionIntent,
     SubmissionStoreError,
+    VerifiedStopEvidence,
     contract_instant_text,
     hard_output_ceiling_samples,
 )
@@ -166,3 +168,69 @@ class ExecutionSnapshot:
 
     def response(self) -> dict[str, object]:
         return {"kind": "execution", "execution": self.status()}
+
+
+@dataclass(frozen=True, slots=True)
+class InstanceTerminationEvidence:
+    """Whole-instance termination facts reported by one trusted producer.
+
+    ``process_exited`` and ``resources_released`` are two separate observations. A
+    controller status, a failed reconcile, a timeout or a disconnect reports neither, so
+    uncertain work keeps holding capacity instead of being reported as stopped.
+    """
+
+    instance_id: str
+    instance_generation: int
+    evidence_id: str
+    evidence_kind: StopEvidenceKind
+    evidence_digest: str
+    observed_at: datetime
+    process_exited: bool
+    resources_released: bool
+    reason: str | None = None
+
+    @property
+    def is_complete(self) -> bool:
+        """True only for a kind that covers a whole instance generation, both confirmed."""
+        return (
+            self.evidence_kind
+            in {
+                StopEvidenceKind.INSTANCE_TERMINATED_BY_CONTROLLER,
+                StopEvidenceKind.OPERATOR_VERIFIED_INSTANCE_TERMINATED,
+            }
+            and self.process_exited is True
+            and self.resources_released is True
+        )
+
+
+def whole_instance_stop_evidence(
+    intent: SubmissionIntent, evidence: InstanceTerminationEvidence | None
+) -> VerifiedStopEvidence | None:
+    """Return verified stop evidence for ``intent``, or ``None`` when it is not proof.
+
+    Evidence only closes the execution it actually covers: it must name the same instance
+    generation the intent was admitted against, it must not predate the intent it is
+    applied to, and it must confirm both the terminated process and the released
+    resources. Anything less leaves the execution quarantined and holding capacity, and a
+    caller must never turn "no answer" into stop evidence.
+    """
+    if evidence is None or not evidence.is_complete:
+        return None
+    identity = intent.identity
+    if (evidence.instance_id, evidence.instance_generation) != (
+        identity.instance_id,
+        identity.instance_generation,
+    ):
+        return None
+    if evidence.observed_at < intent.recorded_at:
+        return None
+    return VerifiedStopEvidence(
+        evidence_id=evidence.evidence_id,
+        submit_intent_id=identity.submit_intent_id,
+        evidence_kind=evidence.evidence_kind,
+        evidence_digest=evidence.evidence_digest,
+        observed_at_us=observed_at_microseconds(evidence.observed_at),
+        execution_stopped=True,
+        resources_released=True,
+        reason=evidence.reason,
+    )

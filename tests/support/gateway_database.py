@@ -44,6 +44,7 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
     create_submit_in_transaction,
     from_unix_micros,
+    list_quarantined_intents,
     read_submit_intent,
 )
 from tests.integration.test_coordination_foundation import Foundation
@@ -94,6 +95,16 @@ class MySQLSubmissionLedger:
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
         intent = self.get(submit_intent_id)
         return None if intent is None else ExecutionSnapshot(intent)
+
+    def list_quarantined(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[SubmissionIntent]:
+        return self._run(
+            lambda cursor: list_quarantined_intents(
+                cursor, gateway_id=gateway_id, host_node_id=host_node_id, limit=limit
+            ),
+            read_only=True,
+        )
 
     def mark_execution_unknown(self, request: MarkExecutionUnknown) -> SubmissionIntent:
         return self._run(

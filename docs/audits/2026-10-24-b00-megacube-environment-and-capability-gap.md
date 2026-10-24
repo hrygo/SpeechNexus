@@ -154,6 +154,12 @@ B01 的首个闭合单元已经实现并通过门禁，PG 落库仍待 A01 的�
 2. 用已就绪制品跑 VAD、对齐与分人探针（CPU/GPU 分别记录），补齐逐能力支持矩阵。
 3. 在 vLLM-Omni 离线形态下验证 TTS 三模型的加载、输出格式与停止行为，并据此确定网关的 TTS 适配器形态。
 4. 继续 B01/B02 的无 GPU 单元：PG 适配器等待 A01，控制器 fake 与 generation 场景可先行。
-5. 需要用户裁决：`openmdw-1.1` 等许可口径、可用的授权语音语料、是否放宽 35B 占用以并行探针。
+5. 已按保守默认处理，不再等待用户裁决：
+   - 许可：模型权重只在本机与部署网络内使用，不分发容器、权重或衍生制品；仓库只记录来源与许可
+     名称（`apache-2.0`、MIT、`openmdw-1.1`），需要对外分发或商用前再单独做法务判断。
+   - 语料：使用 [AGENTS.md](../../AGENTS.md) 已登记的 `/home/huangzhonghui/datasets/audio-corpus-20261024/`
+     与 SpeechRail 测试语料；音频、转写与派生内容不出部署网络。
+   - GPU：不停止 `cube-ccba-qwen36-35b-nvfp4`。探针在剩余统一内存内排队串行执行，只把互不
+     争用的轻量步骤并行；不为了让探针更快而占用或重启 35B。
 
 [跟踪矩阵](../plans/2026-10-23-implementation-tracking.md) · [团队 B 目标](../plans/2026-10-23-team-b-goal.md) · [三团队实施方案](../plans/2026-10-23-three-team-delivery-plan.md)

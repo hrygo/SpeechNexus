@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProcessRole = Literal[
@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     asset_maintenance_batch_size: int = Field(default=10, ge=1, le=100)
     asset_allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "::1")
     asset_allowed_origins: tuple[str, ...] = ()
+    profile_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    profile_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
+    profile_receive_concurrency: int = Field(default=4, ge=1, le=4)
+    profile_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    profile_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
+    @field_validator("profile_writer_database_url", mode="before")
+    @classmethod
+    def empty_profile_writer_is_disabled(cls, value: Any) -> Any:
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return None if isinstance(raw, str) and not raw.strip() else value
 
     @model_validator(mode="after")
     def asset_credentials_are_paired(self) -> Self:

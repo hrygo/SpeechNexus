@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -15,8 +15,10 @@ from starlette.responses import Response
 
 from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
+from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService
+from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
@@ -32,6 +34,9 @@ from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngres
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
+from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
+from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
+from speechnexus_backend.speech.interfaces.http.profiles import create_profile_router
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
     PREFIX as WORKSPACE_PREFIX,
@@ -51,7 +56,11 @@ class _SpeechAPI(FastAPI):
         if not self._business_contracts_added:
             # Project the complete source schemas for implemented methods only.
             # Namespaced admin components coexist with the original asset ones.
-            for contract in (asset_http_contract(), workspace_http_contract()):
+            for contract in (
+                asset_http_contract(),
+                workspace_http_contract(),
+                profile_http_contract(),
+            ):
                 surface = copy.deepcopy(contract)
                 document["paths"].update(surface["paths"])
                 components = document.setdefault("components", {})
@@ -85,6 +94,7 @@ def create_app(
     readiness: ReadinessService | None = None,
     assets: AssetService | None = None,
     workspaces: WorkspaceService | None = None,
+    profiles: ProfileDrafts | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -97,27 +107,37 @@ def create_app(
     )
     asset_service = assets or (runtime.service if runtime is not None else None)
     workspace_service = workspaces or (runtime.workspaces if runtime is not None else None)
+    profile_runtime = (
+        ProfileRuntime(resolved_settings)
+        if profiles is None and resolved_settings.profile_writer_database_url is not None
+        else None
+    )
+
+    def get_profiles() -> ProfileDrafts | None:
+        if profiles is not None:
+            return profiles
+        return profile_runtime.provider if profile_runtime is not None else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        if runtime is not None:
-            await run_in_threadpool(runtime.open)
-        try:
+        async with AsyncExitStack() as resources:
+            if profile_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, profile_runtime.close)
+                await run_in_threadpool(profile_runtime.open)
             if runtime is not None:
+                await run_in_threadpool(runtime.open)
+                resources.push_async_callback(run_in_threadpool, runtime.close)
                 # Replay a bounded original/ledger pass before accepting traffic.
                 # Every subsequent read independently enforces persisted expiry.
                 await run_in_threadpool(
                     runtime.service.maintain, resolved_settings.asset_maintenance_batch_size
                 )
             yield
-        finally:
-            if runtime is not None:
-                await run_in_threadpool(runtime.close)
 
     app = _SpeechAPI(
-        title="SpeechNexus operational, asset and workspace API",
+        title="SpeechNexus operational, asset, workspace and profile API",
         version=__version__,
-        description="Operational endpoints, bounded asset publication and shared workspace reads.",
+        description="Operational endpoints, assets, workspace reads and immutable profile drafts.",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -135,10 +155,20 @@ def create_app(
         allowed_hosts=resolved_settings.asset_allowed_hosts,
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
+    app.add_middleware(
+        ProfileIngress,
+        max_bytes=resolved_settings.profile_receive_max_bytes,
+        concurrency=resolved_settings.profile_receive_concurrency,
+        receive_timeout_seconds=resolved_settings.profile_receive_timeout_seconds,
+        is_enabled=lambda: get_profiles() is not None,
+        allowed_hosts=resolved_settings.asset_allowed_hosts,
+        allowed_origins=resolved_settings.asset_allowed_origins,
+    )
     # Request IDs wrap early ingress errors as well as route responses.
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_workspace_router(lambda: workspace_service))
+    app.include_router(create_profile_router(get_profiles))
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
@@ -177,4 +207,5 @@ def create_app(
         )
     )
     app.state.settings = resolved_settings
+    app.state.profile_runtime = profile_runtime
     return app

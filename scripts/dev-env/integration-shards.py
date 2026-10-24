@@ -39,6 +39,15 @@ FIELDS = frozenset(
 )
 
 
+# Explicit external-tool prerequisites; these cases still belong to the complete
+# collection and are never omitted when a tool is absent. Use the same partition
+# function as execution, rather than baking a shard number into the workflow.
+NODE_CONTRACT_TESTS = (
+    "tests/integration/test_profile_http.py::"
+    "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
+)
+
+
 def check_count(count: int) -> None:
     if type(count) is not int or not 1 <= count <= 16:
         raise ValueError("Shard count must be within 1..16")
@@ -257,6 +266,9 @@ def run_shard(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    tools = commands.add_parser("requirements", help="Select tools for this integration partition")
+    tools.add_argument("--index", type=int, required=True)
+    tools.add_argument("--count", type=int, required=True)
     run = commands.add_parser("run", help="Run one complete integration partition")
     run.add_argument("--index", type=int, required=True)
     run.add_argument("--count", type=int, required=True)
@@ -268,6 +280,10 @@ def main() -> int:
     check.add_argument("--reports-dir", type=Path, required=True)
     args = parser.parse_args()
     try:
+        if args.command == "requirements":
+            needed = bool(partition(NODE_CONTRACT_TESTS, args.index, args.count))
+            print("node_contracts=" + str(needed).lower())
+            return 0
         if args.command == "run":
             return run_shard(args)
         evidence = verify_reports(

@@ -1,8 +1,9 @@
 # Immutable profile drafts
 
-This A02 unit implements a process-local configuration port, not HTTP routes,
-publication, activation, public profile listing, default selection, qualification
-or historical Job changes. C consumes the public contracts; it does not write
+This A02 unit implements the configuration port and explicitly configured draft
+POST / fixed-revision GET routes. Publication, activation, public profile listing,
+default selection, qualification and historical Job changes remain separate work.
+C consumes the public contracts; it does not write
 these speech-owned tables. A published profile requires separate real validation
 and lifecycle work.
 
@@ -89,8 +90,8 @@ or turns a failed query into permission to write.
 does not grant roles or run DDL. Only fixture roles receive it in these tests:
 SELECT/INSERT for the three tables and UPDATE of allocation/result columns. No
 UPDATE of original intent/revision content, DELETE, DDL or existing Job/policy
-permissions are added. Production role provisioning and HTTP composition remain
-unimplemented deployment/integration work.
+permissions are added. Production role provisioning remains explicit operator work;
+the HTTP composition verifies authority without applying these declarations.
 
 Migration failures roll back the new DDL and Alembic head while preserving prior
 Job history. Repeat upgrade is stable. Automatic downgrade refuses to delete
@@ -108,9 +109,8 @@ portability oracle, not a product database or physical speech qualification.
 
 ## HTTP contract preflight
 
-Admin source version `0.1.0.dev1` freezes the create/fixed-read boundary for the
-next HTTP implementation. It does not register routes, open a writer pool, apply
-permissions or expose a working service. The independent generated HTTP surface
+Admin source version `0.1.0.dev2` defines the implemented create/fixed-read boundary.
+The independent generated HTTP surface
 selects only `createProfileRevision` and `getProfileRevisionForAdministration`.
 The existing workspace HTTP surface still selects only workspace reads. TypeScript
 reuses the full `admin.generated` types instead of maintaining another DTO copy.
@@ -119,7 +119,10 @@ reuses the full `admin.generated` types instead of maintaining another DTO copy.
 | --- | --- |
 | New or original-key replayed create | 201, complete source revision with publication status fixed to draft |
 | Invalid envelope/schema/header or fixed-read path/query | 400; no revision allocation from invalid input |
-| Source shared-service credential refusal | Existing 401 envelope |
+| Source shared-service credential refusal | Existing 401 envelope; this unit adds no login or identity boundary |
+| Host / Origin refusal | 403 |
+| Unsupported method | 405, required Allow: POST or GET for the selected source operation |
+| POST receive timeout / bytes exceeded / non-JSON media / receive capacity full | 408 / 413 / 415 / 429; no create retry permission |
 | Create original-key conflict / allocation CAS rejection | 409, idempotency_conflict / configuration_changed, retryable=false |
 | Structurally valid definition violating cross-field producer rules | 422 |
 | Create original result unreadable or commit uncertain | 503, profile_result_unknown, retryable=false |
@@ -153,6 +156,62 @@ draft-only create, valid historical read shapes, stable conflicts, unknown versu
 unavailable errors, and refusal of fabricated Operation recovery. Python compares
 these against original OpenAPI independently of the generated bundle. Python/TS
 transport-consumer fixtures cover keyless uncertainty and explicit original-key
-replay. They validate consumers and schemas; they do not implement HTTP persistence
-or prove qualification. Actual bounded POST/fixed GET routing and PG/ingress tests
-remain a separate integration PR based on this contract.
+replay. Consumer/schema evidence does not prove physical speech qualification.
+`tests/integration/test_profile_http.py` separately exercises the real PG-backed
+HTTP handlers and a generated TypeScript client over a loopback HTTP server.
+
+
+## HTTP runtime and controlled writer
+
+The composition root exposes only `POST /v1/nexus/admin/profiles` and
+`GET /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}`. With no explicit
+`SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`, create returns unknown 503 and pinned
+reads return unavailable 503. A blank value also disables the writer. It never
+falls back to `SPEECHNEXUS_DATABASE_URL` or a migration/owner identity. The writer
+is allowed only in the `api` process role and has its own bounded pool/lifetime.
+
+An operator must first apply migration `0009_profile_drafts` and provision a
+separate non-owner identity with exactly the existing `profile_draft_grants`
+declaration. Startup independently checks both `SESSION_USER` (the actual login)
+and `CURRENT_USER` (the effective role), including database/schema/table owner
+membership, schema CREATE,
+required SELECT/INSERT, exact UPDATE columns, forbidden DELETE/TRUNCATE/REFERENCES/
+TRIGGER and privileges on other tables in the configured speech schema. This is a
+startup check of both identities, not an audit of every schema or a guard
+against later operator privilege changes. A privileged login with a restricted
+startup role is rejected before exposing the provider. The checks name each
+principal explicitly; they never change the connection role. In PostgreSQL,
+`RESET ROLE` can restore the restricted startup role, while `SET ROLE NONE`
+returns to the actual login, so a reset is not an authority check. Startup never
+grants roles or runs DDL.
+Failure closes its pool; later owned-runtime startup failure also closes it.
+Shutdown closes the pool and clears the provider; reopening constructs a fresh
+pool and reads the same durable facts. Pool connection diagnostics and wire errors
+do not disclose the URL, credentials or original profile command.
+
+| API setting (SPEECHNEXUS_ prefix) | Default | Bound |
+| --- | --- | --- |
+| PROFILE_RECEIVE_MAX_BYTES | 262144 | 1–1048576 bytes |
+| PROFILE_RECEIVE_CONCURRENCY | 4 | 1–4 complete or receiving POST requests per process |
+| PROFILE_RECEIVE_TIMEOUT_SECONDS | 5 | >0–30 seconds |
+| PROFILE_TRANSACTION_TIMEOUT_SECONDS | 3 | >0–30 seconds, including pool acquisition |
+
+The canonical stored command/definition still has its existing 262144-byte bound;
+raising the HTTP receive limit does not enlarge storage. Existing
+`ASSET_ALLOWED_HOSTS` / `ASSET_ALLOWED_ORIGINS` also govern profile requests, using
+the same policy as asset/workspace routes. These deployment boundaries do not
+introduce authentication or private spaces. Invalid JSON, duplicate keys, nonfinite
+numbers, ambiguous framing/headers/query parameters, unknown fields and invalid
+path values fail before the writer. POST reception checks actual bytes, declared
+length, a 4096-frame bound and the configured deadline. Fixed GETs accept no body.
+The local semaphore only bounds private HTTP buffers, not global coordination.
+
+A complete POST that has entered its handler retains its local receive permit
+until processing ends, even if the caller cancels. Partial/disconnected reception
+never invokes the writer. SQL deadlines remain bounded; cancellation is not proof
+of rollback. Neither ingress refusal nor transport cancellation settles any earlier
+original-key request. Responses carry shared error envelopes and request IDs;
+success/error responses are `Cache-Control: no-store`. No response invents a
+Location, Operation or original-key lookup endpoint. Publication, activation,
+default-pointer changes, real validation/qualification and the complete A02 package
+remain separate work.

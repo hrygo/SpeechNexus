@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev1",
+    "version": "0.1.0.dev2",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions, runtime instances, capacity manifests, and\nqualification reports are separate resources. No response exposes private\nartifact paths, engine endpoints, credentials, or arbitrary container\ncontrol.\n"
   },
   "security": [
@@ -17,7 +17,7 @@
         "tags": ["profiles"],
         "operationId": "createProfileRevision",
         "summary": "Create an immutable draft scenario-profile revision",
-        "description": "Creates the next immutable revision in a profile family. The request\ncarries `expected_latest_revision` for revision allocation; null is\nvalid only for a new family. An existing mismatch returns 409\n`configuration_changed`. The new revision starts in publication\n`draft` state and is not returned by the public profile list until it\nis published. Replaying the same Idempotency-Key and canonical intent\nreturns the original revision; the same key with a different intent\nreturns 409 `idempotency_conflict`.\n\nA recorded `configuration_changed` result remains the result of that\nkey even if the allocation head later changes. Original-key lookup\nprecedes revision allocation. Malformed JSON, unknown fields, invalid\npath/header values and schema-invalid input return 400. A structurally\nvalid definition that violates cross-field profile rules returns 422.\n\nAn unreadable original result or uncertain commit returns 503\n`profile_result_unknown`, with `retryable: false`. It does not establish\nthat no revision was created. There is no automatic retry, new key,\nOperation or HTTP query-by-key recovery resource. A caller retaining\nthe original Idempotency-Key may explicitly replay this same POST with\nthe exact original intent and key to resolve its original result.\nWithout an original key, automatic recovery is not promised; a GET of\na candidate revision does not prove ownership of the original command.\n",
+        "description": "Creates the next immutable revision in a profile family. The request\ncarries `expected_latest_revision` for revision allocation; null is\nvalid only for a new family. An existing mismatch returns 409\n`configuration_changed`. The new revision starts in publication\n`draft` state and is not returned by the public profile list until it\nis published. Replaying the same Idempotency-Key and canonical intent\nreturns the original revision; the same key with a different intent\nreturns 409 `idempotency_conflict`.\n\nA recorded `configuration_changed` result remains the result of that\nkey even if the allocation head later changes. Original-key lookup\nprecedes revision allocation. Malformed JSON, unknown fields, invalid\npath/header values and schema-invalid input return 400. A structurally\nvalid definition that violates cross-field profile rules returns 422.\n\nAn unreadable original result or uncertain commit returns 503\n`profile_result_unknown`, with `retryable: false`. It does not establish\nthat no revision was created. There is no automatic retry, new key,\nOperation or HTTP query-by-key recovery resource. A caller retaining\nthe original Idempotency-Key may explicitly replay this same POST with\nthe exact original intent and key to resolve its original result.\nWithout an original key, automatic recovery is not promised; a GET of\na candidate revision does not prove ownership of the original command.\n\nThe bounded public ingress may refuse Host/Origin (403), unsupported\nmethod (405 with Allow), receive timeout (408), request size (413),\nnon-JSON media (415), or local receive capacity (429). These refusals\nconcern this HTTP attempt and do not settle any earlier original-key\noutcome. They do not authorize a new key or automatic create retry.\nLimits are deployment configuration, not implicit profile parameters.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/XRequestId"
@@ -58,11 +58,29 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/ProfileCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/ProfileReceiveTimeout"
+          },
           "409": {
             "$ref": "#/components/responses/ProfileDraftConflict"
           },
+          "413": {
+            "$ref": "#/components/responses/ProfileRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/ProfileMediaUnsupported"
+          },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/ProfileReceiveFull"
           },
           "503": {
             "$ref": "#/components/responses/ProfileCreationUnknown"
@@ -75,7 +93,7 @@
         "tags": ["profiles"],
         "operationId": "getProfileRevisionForAdministration",
         "summary": "Get a draft or historical profile revision",
-        "description": "Read only the explicitly named immutable revision; never allocate,\npublish or activate one. Invalid path/header/query values return 400.\nReturn 404 only when an authoritative read confirms that this revision\nis absent. Unreadable metadata returns 503 `profile_unavailable`, with\n`retryable: true` for this same fixed GET; it cannot be reported as 404\nor used to infer that an earlier create did not commit. No Operation\nrecovery or default/current revision selection is implied.\n",
+        "description": "Read only the explicitly named immutable revision; never allocate,\npublish or activate one. Invalid path/header/query values return 400.\nReturn 404 only when an authoritative read confirms that this revision\nis absent. Unreadable metadata returns 503 `profile_unavailable`, with\n`retryable: true` for this same fixed GET; it cannot be reported as 404\nor used to infer that an earlier create did not commit. No Operation\nrecovery or default/current revision selection is implied.\nHost/Origin refusal uses 403; unsupported methods use 405 with Allow.\nReads accept no body and invalid read framing is a 400 input error.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProfileIdPath"
@@ -109,8 +127,14 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/ProfileReadMethodNotAllowed"
           },
           "503": {
             "$ref": "#/components/responses/ProfileReadUnavailable"
@@ -2285,6 +2309,45 @@
           }
         }
       },
+      "Forbidden": {
+        "description": "The deployment Host or Origin policy refused the request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProfileCreateMethodNotAllowed": {
+        "description": "The selected draft creation path accepts POST only.",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "POST"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProfileReceiveTimeout": {
+        "description": "The bounded JSON receive deadline expired; no new outcome is inferred.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
       "ProfileDraftConflict": {
         "description": "The original key conflicts or its allocation CAS was rejected; no new revision.",
         "headers": {
@@ -2300,8 +2363,38 @@
           }
         }
       },
+      "ProfileRequestTooLarge": {
+        "description": "Actual or declared request bytes exceed the configured ingress bound.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProfileMediaUnsupported": {
+        "description": "Draft creation requires application/json encoded as UTF-8.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
       "UnprocessableEntity": {
         "description": "Invalid binding, capacity, qualification, or policy composition.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProfileReceiveFull": {
+        "description": "Local bounded receive capacity is full; earlier original-key state is unknown.",
         "content": {
           "application/json": {
             "schema": {
@@ -2327,6 +2420,25 @@
       },
       "NotFound": {
         "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ProfileReadMethodNotAllowed": {
+        "description": "The selected fixed revision path accepts GET only.",
+        "headers": {
+          "Allow": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "GET"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {

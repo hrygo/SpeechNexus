@@ -83,6 +83,13 @@ export interface paths {
      *     the exact original intent and key to resolve its original result.
      *     Without an original key, automatic recovery is not promised; a GET of
      *     a candidate revision does not prove ownership of the original command.
+     *
+     *     The bounded public ingress may refuse Host/Origin (403), unsupported
+     *     method (405 with Allow), receive timeout (408), request size (413),
+     *     non-JSON media (415), or local receive capacity (429). These refusals
+     *     concern this HTTP attempt and do not settle any earlier original-key
+     *     outcome. They do not authorize a new key or automatic create retry.
+     *     Limits are deployment configuration, not implicit profile parameters.
      */
     post: operations["createProfileRevision"];
     delete?: never;
@@ -107,6 +114,8 @@ export interface paths {
      *     `retryable: true` for this same fixed GET; it cannot be reported as 404
      *     or used to infer that an earlier create did not commit. No Operation
      *     recovery or default/current revision selection is implied.
+     *     Host/Origin refusal uses 403; unsupported methods use 405 with Allow.
+     *     Reads accept no body and invalid read framing is a 400 input error.
      */
     get: operations["getProfileRevisionForAdministration"];
     put?: never;
@@ -3057,6 +3066,62 @@ export interface components {
         "application/json": components["schemas"]["ProfileDraftConflictError"];
       };
     };
+    /** @description The selected draft creation path accepts POST only. */
+    ProfileCreateMethodNotAllowed: {
+      headers: {
+        Allow: "POST";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description The selected fixed revision path accepts GET only. */
+    ProfileReadMethodNotAllowed: {
+      headers: {
+        Allow: "GET";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description The bounded JSON receive deadline expired; no new outcome is inferred. */
+    ProfileReceiveTimeout: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Actual or declared request bytes exceed the configured ingress bound. */
+    ProfileRequestTooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Draft creation requires application/json encoded as UTF-8. */
+    ProfileMediaUnsupported: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Local bounded receive capacity is full; earlier original-key state is unknown. */
+    ProfileReceiveFull: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Original creation result unreadable or commit uncertain; retain original intent/key. */
     ProfileCreationUnknown: {
       headers: {
@@ -3286,8 +3351,14 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      405: components["responses"]["ProfileCreateMethodNotAllowed"];
+      408: components["responses"]["ProfileReceiveTimeout"];
       409: components["responses"]["ProfileDraftConflict"];
+      413: components["responses"]["ProfileRequestTooLarge"];
+      415: components["responses"]["ProfileMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["ProfileReceiveFull"];
       503: components["responses"]["ProfileCreationUnknown"];
     };
   };
@@ -3317,7 +3388,9 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["ProfileReadMethodNotAllowed"];
       503: components["responses"]["ProfileReadUnavailable"];
     };
   };

@@ -341,3 +341,50 @@ def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(resu
         check=False,
     )
     assert (executed.returncode == 0) == (result == "success")
+
+
+def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> None:
+    path = ROOT / "tests/integration/test_profile_http.py"
+    consumer = "test_generated_typescript_client_consumes_actual_loopback_http"
+    definitions = {
+        node.name for node in ast.parse(path.read_text()).body if isinstance(node, ast.FunctionDef)
+    }
+    assert consumer in definitions
+    assert (f"{path.relative_to(ROOT)}::{consumer}[postgresql]",) == GATE.NODE_CONTRACT_TESTS
+    selected: list[int] = []
+    for index in range(6):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "requirements", "--index", str(index), "--count", "6"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout in ("node_contracts=true\n", "node_contracts=false\n")
+        if result.stdout == "node_contracts=true\n":
+            selected.append(index)
+    assert selected == [3]
+    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
+        "integration_shards"
+    ]["steps"]
+    choose = next(step for step in steps if step.get("id") == "integration_tools")
+    assert "requirements" in choose["run"] and '--count 6 >> "$GITHUB_OUTPUT"' in choose["run"]
+    node = next(
+        step
+        for step in steps
+        if step["name"] == "Set up Node.js for actual contract HTTP consumption"
+    )
+    deps = next(
+        step for step in steps if step["name"] == "Install locked contract runtime dependencies"
+    )
+    for step in (node, deps):
+        assert step["if"] == "steps.integration_tools.outputs.node_contracts == 'true'"
+    assert node["with"]["node-version-file"] == ".nvmrc"
+    assert "pnpm@${PNPM_VERSION}" in deps["run"]
+    assert (
+        "--filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts"
+        in deps["run"]
+    )
+    assert steps.index(choose) < steps.index(node) < steps.index(deps)
+    assert steps.index(deps) < next(
+        i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
+    )

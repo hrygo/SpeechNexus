@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0.dev1",
+  "version": "0.1.0.dev2",
   "examples": [
     {
       "id": "create-original",
@@ -1218,6 +1218,248 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "createProfileRevision-ingress-403",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 403,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_host_rejected",
+            "type": "permission_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getProfileRevisionForAdministration-ingress-403",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "status": 403,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_origin_rejected",
+            "type": "permission_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProfileRevision-ingress-405",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProfileRevision-allow-missing",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "createProfileRevision-allow-wrong",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "DELETE"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getProfileRevisionForAdministration-ingress-405",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "GET"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "getProfileRevisionForAdministration-allow-missing",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "getProfileRevisionForAdministration-allow-wrong",
+      "operation": "getProfileRevisionForAdministration",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "DELETE"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "createProfileRevision-ingress-408",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 408,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_receive_timeout",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProfileRevision-ingress-413",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 413,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_too_large",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProfileRevision-ingress-415",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 415,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_media_unsupported",
+            "type": "invalid_request_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createProfileRevision-ingress-429",
+      "operation": "createProfileRevision",
+      "kind": "response",
+      "status": 429,
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_ingress_full",
+            "type": "rate_limit_error",
+            "message": "Synthetic ingress refusal.",
+            "param": null,
+            "request_id": "profile-ingress-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     }
   ]
 }

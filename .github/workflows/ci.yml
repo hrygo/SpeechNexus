@@ -141,6 +141,24 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --all-packages --all-groups
 
+      - name: Select external tools for this integration partition
+        id: integration_tools
+        run: |
+          python3 scripts/dev-env/integration-shards.py requirements \
+            --index "${{ matrix.shard }}" --count 6 >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js for actual contract HTTP consumption
+        if: steps.integration_tools.outputs.node_contracts == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install locked contract runtime dependencies
+        if: steps.integration_tools.outputs.node_contracts == 'true'
+        run: |
+          npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
+          pnpm --filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts
+
       - name: Start isolated versioned object storage
         run: ./scripts/dev-env/minio-test-service.sh
 

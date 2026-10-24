@@ -182,3 +182,10 @@ post-write rollback, commit-reply loss and native read pressure. PG verifies
 append-only migration 0009 and preservation on failed upgrade/refused downgrade.
 This does not qualify profile publication, HTTP routes, default selection or
 speech engines. See [profile drafts](../../docs/architecture/profile-drafts.md).
+
+
+公开 profile 草稿 HTTP 的原生 TypeScript 消费回归也属于完整集成集合，不能因缺少
+Node 或 JS 依赖跳过。本机先按 `.nvmrc` / `packageManager` 准备工具并执行锁定安装。
+CI 使用 `integration-shards.py requirements` 与测试相同的 SHA256 分片算法，仅给
+承载该用例的分片准备锁定 Node/pnpm 和 `@speechnexus/contracts` 生产依赖；其余分片
+保留 Python 工具链。该前置选择不改变测试分配、全集报告或失败聚合条件。

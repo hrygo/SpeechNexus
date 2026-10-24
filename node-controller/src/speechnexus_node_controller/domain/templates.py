@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final
 
@@ -27,6 +27,7 @@ from speechnexus_node_controller.domain.intents import (
 _TEMPLATE_ID_PREFIX: Final = "template-"
 MIN_CONTAINER_MEMORY_BYTES: Final = 6 * 1024**2
 _HEALTH_PATH: Final = re.compile(r"/[A-Za-z0-9_.~/-]*")
+_DIGEST: Final = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 class ReadinessKind(StrEnum):
@@ -35,6 +36,60 @@ class ReadinessKind(StrEnum):
     PROCESS_RUNNING = "process_running"
     TCP_PORT_ACCEPTING = "tcp_port_accepting"
     HTTP_STATUS_OK = "http_status_ok"
+    HTTP_WARMUP_OK = "http_warmup_ok"
+
+
+@dataclass(frozen=True, slots=True)
+class WarmupRequest:
+    """One approved warmup call that must succeed before an instance may serve.
+
+    Transport readiness only proves that the process listens. A template that
+    declares warmup stays at peak memory and reports ``warming_up`` until the
+    same request, with a hash-verified body, has completed for every declared
+    attempt. The controller never interprets the response body; judging the
+    result belongs to the engine adapter that owns the protocol.
+    """
+
+    path: str
+    content_type: str
+    body_path: str = field(repr=False)
+    body_sha256: str
+    attempts: int = 2
+    timeout_seconds: float = 60.0
+    max_response_bytes: int = 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if (
+            len(self.path) > 256
+            or _HEALTH_PATH.fullmatch(self.path) is None
+            or "//" in self.path
+            or any(part in {".", ".."} for part in self.path.split("/"))
+        ):
+            raise ValueError("warmup requires a fixed absolute path")
+        if (
+            not self.content_type
+            or len(self.content_type) > 128
+            or "/" not in self.content_type
+            or any(not 32 <= ord(char) < 127 for char in self.content_type)
+        ):
+            raise ValueError("warmup content_type must be a single printable media type")
+        if (
+            not self.body_path.startswith("/")
+            or len(self.body_path) > 1024
+            or ".." in self.body_path.split("/")
+            or any(not 32 <= ord(char) < 127 for char in self.body_path)
+        ):
+            raise ValueError("warmup body must be a fixed absolute file path")
+        if _DIGEST.fullmatch(self.body_sha256) is None:
+            raise ValueError("warmup body requires a sha256 digest")
+        if type(self.attempts) is not int or not 1 <= self.attempts <= 4:
+            raise ValueError("warmup attempts must be between 1 and 4")
+        if type(self.timeout_seconds) not in (int, float) or not 0 < self.timeout_seconds <= 300:
+            raise ValueError("warmup timeout must be positive and at most 300 seconds")
+        if type(self.max_response_bytes) is not int or not 1024 <= self.max_response_bytes <= 8 * (
+            1024**2
+        ):
+            raise ValueError("warmup response budget must be between 1 KiB and 8 MiB")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +99,14 @@ class ReadinessRule:
     kind: ReadinessKind
     port: int | None = None
     path: str | None = None
+    warmup: WarmupRequest | None = None
 
     def __post_init__(self) -> None:
-        if self.kind in {ReadinessKind.TCP_PORT_ACCEPTING, ReadinessKind.HTTP_STATUS_OK}:
+        if self.kind in {
+            ReadinessKind.TCP_PORT_ACCEPTING,
+            ReadinessKind.HTTP_STATUS_OK,
+            ReadinessKind.HTTP_WARMUP_OK,
+        }:
             if self.port is None or not 1 <= self.port <= 65535:
                 raise ValueError(f"{self.kind} readiness requires a port between 1 and 65535")
         elif self.port is not None:
@@ -60,8 +120,13 @@ class ReadinessRule:
                 or any(part in {".", ".."} for part in self.path.split("/"))
             ):
                 raise ValueError("http_status_ok requires a fixed absolute health path")
+        elif self.kind is ReadinessKind.HTTP_WARMUP_OK:
+            if self.path is not None or self.warmup is None:
+                raise ValueError("http_warmup_ok requires a declared warmup request")
         elif self.path is not None:
             raise ValueError("only http_status_ok readiness carries a path")
+        if self.kind is not ReadinessKind.HTTP_WARMUP_OK and self.warmup is not None:
+            raise ValueError("only http_warmup_ok readiness carries a warmup request")
 
 
 @dataclass(frozen=True, slots=True)

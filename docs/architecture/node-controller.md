@@ -71,10 +71,18 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 - **prepare 幂等**：同一 `(instance_id, generation)` 已有容器且标签摘要一致时复用，不再创建
   第二个；标签摘要不同则报 `intent_conflict`。
 - **readiness**：模板声明 `process_running`、`tcp_port_accepting:port`，或
-  `http_status_ok:port/path`。HTTP 只访问 daemon 返回的容器 IP 与模板固定绝对路径，只认
+  `http_status_ok:port/path`，或需要真实预热的 `http_warmup_ok:port`。HTTP 只访问 daemon
+  返回的容器 IP 与模板固定绝对路径，只认
   200，不使用环境代理、不跟随重定向、不读取响应正文；拒绝 URL、查询串、fragment、编码路径
-  和相对路径。503、其他状态、断连与超时继续 `loading`（保持 peak）。HTTP 健康不是业务
-  warmup 或模型资格，A 仍须核验独立受信资格后才能实际缩减预算。
+  和相对路径。503、其他状态、断连与超时继续 `loading`（保持 peak）。
+- **warmup 门**：`http_warmup_ok` 模板必须声明固定 `path`、`content_type`、只读 `body_path`
+  与其 `sha256`、`attempts`（1–4）、单次 `timeout_seconds` 与响应字节预算。端口可达后控制器
+  逐次发送同一请求，每次都重新读取并核对请求体摘要；只有每次都拿到 200、身份编码且响应在
+  字节预算内完整结束时才累计一次成功，达到 `attempts` 才报告 `ready`，否则保持 `warming_up`
+  与 peak。摘要不符或请求体不可读时**不发送**任何请求。控制器不解析响应正文的语义，正文是否
+  完整可信仍由拥有该协议的引擎适配器判定；HTTP 健康本身仍不是业务 warmup 或模型资格。
+  尝试计数按容器与 generation 保存在 adapter 内存中，控制器重启后会重新预热已运行的实例，
+  这是安全但更贵的行为，不冒充已有证据。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出
   `process_or_container_exited` 与 `resources_released_confirmed` 双确认证据；等待超时、删除
   失败或容器仍存活时只报告当前观察，不伪造证据（意图留在未解决或 quarantine）。
@@ -184,8 +192,9 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   第 5 节固定了它需要的接口。
 - 批准模板清单（`approved_template_id` → 固定镜像摘要、峰值上限）需要 B00 制品摘要与
   部署绑定共同落地，当前只有校验规则、注册表与配置文件加载。
-- warmup 门尚未实现：模板不能声明 `requires_warmup_before_ready`；process、TCP 或 HTTP
-  readiness 只证明其各自条件。加载期的 peak 留宿仍按“未 ready”处理，健康不能冒充资格。
+- warmup 门已实现到 adapter 与批准模板：`http_warmup_ok` 声明固定请求、请求体摘要与成功次数，
+  未完成时报告 `warming_up` 并保持 peak。真实 ASR 的最大窗口预热请求体、首轮/复测耗时与资格
+  证据尚未取得；当前只有确定性本地 TCP 服务器测试，不能当作模型预热已完成。
 - 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
   语音、回执重建与停止证据。TTS、请求级 abort、真实 warmup/资格、GPU/统一内存完整隔离、
   进程故障后的发现/reconcile 与 A 控制循环仍未验证；单句合成语音不能替代模型质量/容量资格。

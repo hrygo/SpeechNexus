@@ -140,3 +140,81 @@ def test_legacy_template_cannot_silently_keep_unlimited_container_memory(tmp_pat
     del legacy["container_memory_limit_bytes"]
     with pytest.raises(ValidationError, match="container_memory_limit_bytes"):
         load_approved_templates(_write(tmp_path, {"templates": [legacy]}))
+
+
+def _warmup_readiness(**overrides: Any) -> dict[str, Any]:
+    readiness: dict[str, Any] = {
+        "kind": "http_warmup_ok",
+        "port": 8000,
+        "warmup": {
+            "path": "/v1/audio/transcriptions",
+            "content_type": "application/octet-stream",
+            "body_path": "/srv/artifacts/warmup.bin",
+            "body_sha256": "sha256:" + "a" * 64,
+            "attempts": 2,
+            "timeout_seconds": 90,
+            "max_response_bytes": 65536,
+        },
+    }
+    readiness.update(overrides)
+    return readiness
+
+
+def test_a_warmup_template_loads_its_bounded_request(tmp_path: Path) -> None:
+    templates = load_approved_templates(
+        _write(tmp_path, {"templates": [_template(readiness=_warmup_readiness())]})
+    )
+
+    readiness = templates[0].readiness
+    assert readiness.kind is ReadinessKind.HTTP_WARMUP_OK
+    assert readiness.path is None
+    assert readiness.warmup is not None
+    assert readiness.warmup.path == "/v1/audio/transcriptions"
+    assert readiness.warmup.body_path == "/srv/artifacts/warmup.bin"
+    assert readiness.warmup.body_sha256 == "sha256:" + "a" * 64
+    assert readiness.warmup.attempts == 2
+    assert readiness.warmup.timeout_seconds == 90
+    assert readiness.warmup.max_response_bytes == 65536
+
+
+@pytest.mark.parametrize(
+    ("readiness", "message"),
+    [
+        (
+            _warmup_readiness(warmup=None),
+            "http_warmup_ok requires a declared warmup request",
+        ),
+        (
+            _warmup_readiness(kind="http_status_ok", path="/health"),
+            "only http_warmup_ok readiness carries a warmup request",
+        ),
+        (
+            _warmup_readiness(
+                warmup={
+                    "path": "/v1/audio/transcriptions",
+                    "content_type": "application/octet-stream",
+                    "body_path": "/srv/artifacts/warmup.bin",
+                    "body_sha256": "sha256:short",
+                }
+            ),
+            "warmup body requires a sha256 digest",
+        ),
+        (
+            _warmup_readiness(
+                warmup={
+                    "path": "/v1/audio/transcriptions",
+                    "content_type": "application/octet-stream",
+                    "body_path": "/srv/artifacts/warmup.bin",
+                    "body_sha256": "sha256:" + "a" * 64,
+                    "attempts": 0,
+                }
+            ),
+            "greater than or equal to 1",
+        ),
+    ],
+)
+def test_a_warmup_template_that_widens_the_contract_is_refused(
+    tmp_path: Path, readiness: dict[str, Any], message: str
+) -> None:
+    with pytest.raises((ValueError, ValidationError), match=message):
+        load_approved_templates(_write(tmp_path, {"templates": [_template(readiness=readiness)]}))

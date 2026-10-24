@@ -23,6 +23,10 @@
     "sha256": "ae26a1834d3c119e672204c4ae7964170689bd0f0688c98de378b48be4a40bf4",
     "version": null
   },
+  "internal/gateway-recovery.schema.json": {
+    "sha256": "d1ddf832a4226ba0ccdb7575968d3be4d7bfb6c43e96cca123964f57662fd40b",
+    "version": "1.0.0"
+  },
   "internal/runtime-control.openapi.yaml": {
     "sha256": "dfe00b58de7fbe8a219f5ea8e5145e03c1541cc9f9e42b22ebbae8efb642be97",
     "version": "0.1.0.dev1"

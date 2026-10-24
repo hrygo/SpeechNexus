@@ -10,6 +10,7 @@ import * as realtime from "../src/realtime.ts";
 import * as realtime_events from "../src/realtime_events.ts";
 import * as model_bindings from "../src/model_bindings.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
+import * as gateway_recovery from "../src/gateway_recovery.ts";
 import { exampleValue } from "./contract-examples.mjs";
 
 const profiles = {
@@ -21,6 +22,7 @@ const profiles = {
   realtime_events,
   scenario_profiles,
   model_bindings,
+  gateway_recovery,
 };
 const fixtures = JSON.parse(
   readFileSync(

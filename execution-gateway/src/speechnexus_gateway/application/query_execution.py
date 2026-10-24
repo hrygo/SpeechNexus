@@ -3,6 +3,7 @@
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.ports import ExecutionQueryPort
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot
+from speechnexus_gateway.domain.submission import SubmissionIntent
 
 
 class ExecutionQueryService:
@@ -22,3 +23,8 @@ class ExecutionQueryService:
         ):
             return None
         return snapshot
+
+    def query(self, submit_intent_id: str) -> SubmissionIntent | None:
+        """The recovery query port shares the HTTP query's ownership/scope checks."""
+        snapshot = self.query_outcome(submit_intent_id)
+        return None if snapshot is None else snapshot.intent

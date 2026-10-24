@@ -166,6 +166,14 @@
       "schema_refs": {
         "ModelBindingRevision": "#"
       }
+    },
+    "gateway_recovery": {
+      "source": "internal/gateway-recovery.schema.json",
+      "version": "1.0.0",
+      "format": "json-schema",
+      "client": false,
+      "definitions_prefix": "/$defs/",
+      "schemas": ["GatewayRecoveryConfig"]
     }
   },
   "http_surfaces": {

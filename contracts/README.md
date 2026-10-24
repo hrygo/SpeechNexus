@@ -419,6 +419,13 @@ does not constitute an implemented adapter or a new database support claim.
 
 ### Versioned HTTP structural change checks
 
+`internal/gateway-recovery.schema.json` 1.0.0 defines private server-side activation of
+the gateway's periodic stop recovery. Its `gateway_recovery` Python/TypeScript profile
+uses the existing offline generator and shared positive/negative fixtures. Every field
+is explicit; node credentials remain separate Secret settings. This adds no public HTTP
+operation, database authority or engine qualification. See
+[activation and lifecycle](../docs/architecture/execution-gateway.md#默认进程的自动恢复配置与生命周期).
+
 `CONTRACT_BASE_REF=<frozen commit/ref> make contracts-http-changes` checks known
 request/response structure changes across admin, workbench, runtime-control and
 execution-control OpenAPI sources, including their repository references and

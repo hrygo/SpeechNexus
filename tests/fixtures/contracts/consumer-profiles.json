@@ -6649,6 +6649,484 @@
         "created_at": "2026-10-22T09:00:00Z"
       },
       "valid": false
+    },
+    {
+      "id": "gateway-recovery-valid",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-public-ip",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "8.8.8.8",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-dns",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "node.internal",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-link-local",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "169.254.1.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-scope-ip",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "fd00::1%eth0",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-bad-port",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 0,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-relative-ca",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-empty-bindings",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-extra-field",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10,
+        "extra": true
+      }
+    },
+    {
+      "id": "gateway-recovery-coerced-batch",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": "50",
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-bool-batch",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": true,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-unbounded-batch",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 501,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-unbounded-timeout",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 31,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-zero-interval",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 0,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-missing-budget",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "127.0.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3
+      }
+    },
+    {
+      "id": "gateway-recovery-private-v4",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "172.31.0.1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-private-v6",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "fd12:3456::1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
+    },
+    {
+      "id": "gateway-recovery-loopback-v6",
+      "profile": "gateway_recovery",
+      "schema": "GatewayRecoveryConfig",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "node": {
+          "address": "::1",
+          "port": 8443,
+          "tls_ca_file": "/run/secrets/node-ca.pem"
+        },
+        "bindings": [
+          {
+            "pool_id": "tts-realtime",
+            "binding_revision_id": "binding-demo",
+            "approved_template_id": "template-demo",
+            "manifest_id": "manifest-demo",
+            "config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "scan_interval_seconds": 5,
+        "batch_size": 50,
+        "request_timeout_seconds": 3,
+        "pass_budget_seconds": 10
+      }
     }
   ]
 }

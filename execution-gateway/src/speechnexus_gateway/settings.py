@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     ingress_lock_directory: Path | None = None
     control_schema: str = Field(default="speech", pattern=r"^[a-z][a-z0-9_]{2,62}$")
     control_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    recovery_config_file: Path | None = Field(default=None, repr=False)
+    recovery_node_component_token: SecretStr | None = Field(default=None, repr=False)
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:
@@ -51,6 +53,15 @@ class Settings(BaseSettings):
                 raise ValueError("ingress lock directory must be an absolute host-mounted path")
             if not {"node_id", "gateway_id"} <= self.model_fields_set:
                 raise ValueError("execution control requires explicit node and gateway identities")
+        if (self.recovery_config_file is None) != (self.recovery_node_component_token is None):
+            raise ValueError("recovery requires both a configuration file and a node credential")
+        if self.recovery_config_file is not None:
+            if not self.execution_control_enabled or not self.recovery_config_file.is_absolute():
+                raise ValueError(
+                    "recovery requires execution control and an absolute configuration"
+                )
+            if self.recovery_node_component_token == self.component_token:
+                raise ValueError("recovery requires an independent node credential")
         return self
 
     @property

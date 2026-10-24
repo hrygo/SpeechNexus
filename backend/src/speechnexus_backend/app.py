@@ -21,6 +21,7 @@ from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
@@ -31,27 +32,36 @@ from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngres
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
+from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
+from speechnexus_backend.speech.interfaces.http.workspaces import (
+    PREFIX as WORKSPACE_PREFIX,
+)
+from speechnexus_backend.speech.interfaces.http.workspaces import (
+    WorkspaceIngress,
+    create_workspace_router,
+    workspace_error,
+)
 
 
 class _SpeechAPI(FastAPI):
-    _asset_contract_added = False
+    _business_contracts_added = False
 
     def openapi(self) -> dict[str, Any]:
         document = super().openapi()
-        if not self._asset_contract_added:
-            surface = copy.deepcopy(asset_http_contract())
-            # Override generated path docs with the complete reviewed schemas,
-            # including conditionals. Only these three implemented paths exist
-            # in the projection; other speech operations are never advertised.
-            document["paths"].update(surface["paths"])
-            components = document.setdefault("components", {})
-            for category, definitions in surface["components"].items():
-                namespace = components.setdefault(category, {})
-                for name, definition in definitions.items():
-                    if name in namespace and namespace[name] != definition:
-                        raise ValueError("Conflicting API contract component")
-                    namespace[name] = definition
-            self._asset_contract_added = True
+        if not self._business_contracts_added:
+            # Project the complete source schemas for implemented methods only.
+            # Namespaced admin components coexist with the original asset ones.
+            for contract in (asset_http_contract(), workspace_http_contract()):
+                surface = copy.deepcopy(contract)
+                document["paths"].update(surface["paths"])
+                components = document.setdefault("components", {})
+                for category, definitions in surface["components"].items():
+                    namespace = components.setdefault(category, {})
+                    for name, definition in definitions.items():
+                        if name in namespace and namespace[name] != definition:
+                            raise ValueError("Conflicting API contract component")
+                        namespace[name] = definition
+            self._business_contracts_added = True
         return document
 
 
@@ -74,6 +84,7 @@ def create_app(
     settings: Settings | None = None,
     readiness: ReadinessService | None = None,
     assets: AssetService | None = None,
+    workspaces: WorkspaceService | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -85,6 +96,7 @@ def create_app(
         else None
     )
     asset_service = assets or (runtime.service if runtime is not None else None)
+    workspace_service = workspaces or (runtime.workspaces if runtime is not None else None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -103,9 +115,9 @@ def create_app(
                 await run_in_threadpool(runtime.close)
 
     app = _SpeechAPI(
-        title="SpeechNexus operational and asset API",
+        title="SpeechNexus operational, asset and workspace API",
         version=__version__,
-        description="Operational endpoints and bounded input-asset publication.",
+        description="Operational endpoints, bounded asset publication and shared workspace reads.",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -117,9 +129,16 @@ def create_app(
         allowed_hosts=resolved_settings.asset_allowed_hosts,
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
+    app.add_middleware(
+        WorkspaceIngress,
+        is_enabled=lambda: workspace_service is not None,
+        allowed_hosts=resolved_settings.asset_allowed_hosts,
+        allowed_origins=resolved_settings.asset_allowed_origins,
+    )
     # Request IDs wrap early ingress errors as well as route responses.
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
+    app.include_router(create_workspace_router(lambda: workspace_service))
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
@@ -134,6 +153,20 @@ def create_app(
                 else {}
             )
             return asset_error(code, request.state.request_id, headers=headers)
+        if (
+            path == WORKSPACE_PREFIX or path.startswith(WORKSPACE_PREFIX + "/")
+        ) and error.status_code in (404, 405):
+            code = (
+                "workspace_not_found"
+                if error.status_code == 404
+                else "workspace_method_not_allowed"
+            )
+            headers = (
+                {"Allow": error.headers["Allow"]}
+                if error.headers and "Allow" in error.headers
+                else {}
+            )
+            return workspace_error(code, request.state.request_id, headers=headers)
         return await http_exception_handler(request, error)
 
     app.include_router(

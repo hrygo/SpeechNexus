@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService, TextAssetInspector
+from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.domain.assets import AssetError, AssetPolicy
 from speechnexus_backend.speech.infrastructure.assets_minio import MinioAssetObjects
 from speechnexus_backend.speech.infrastructure.assets_postgres import PostgresAssetMetadata
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.workspaces_postgres import PostgresWorkspaceReads
 
 
 class AssetRuntime:
@@ -16,6 +18,7 @@ class AssetRuntime:
             raise ValueError("Explicit object-storage credentials are required")
         self._schema = settings.database_schema
         self._pool = speech_pool(settings.database_url.get_secret_value(), schema=self._schema)
+        self.workspaces = WorkspaceService(PostgresWorkspaceReads(self._pool))
         self._objects = MinioAssetObjects(
             str(settings.object_storage_endpoint),
             settings.object_storage_bucket,

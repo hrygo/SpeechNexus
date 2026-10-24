@@ -183,8 +183,9 @@ optional request field mandatory in TypeScript or insert a value at runtime.
 
 ## Storage, grants and local evidence
 
-The packaged Alembic head is `0006_runtime_observation`. The runtime/outbox and
-private readiness extensions preserve the frozen `0005_runtime_intents`,
+The packaged Alembic head is `0007_admission_commands`. Its admission command
+storage and the runtime/outbox/private readiness extensions preserve the frozen
+`0006_runtime_observation`, `0005_runtime_intents`,
 `0004_asset_storage`, `0003_assets` and
 `0002_coordination` migrations. `0003_assets` creates
 the shared `workspace-default`, Asset/command/object/reference/event tables and
@@ -227,3 +228,47 @@ blocked references, uncertain cleanup and pinned-version preservation. The
 InnoDB gate remains mandatory for coordination; this product asset path is PG
 only. CI starts MinIO in the existing integration job and retains the protected
 aggregate and 80% unit/contract coverage requirement.
+
+
+## Shared workspace reads
+
+The backend implements `GET /v1/nexus/workspaces` and
+`GET /v1/nexus/workspaces/{workspace_id}` using the existing `0003_assets`
+`speech_workspaces` authority. The default group is the actual migration row:
+missing records are never synthesized. Both active and disabled groups remain
+readable; existing asset upload rules continue to reject disabled groups.
+Workspace grouping does not establish a user, ACL, tenant or private boundary.
+
+The pure application read port exposes get and bounded keyset scan. Its PG
+adapter uses the existing runtime pool, original SELECT grants, explicit columns
+and read-only transactions, with bounded pool waits and SQL deadlines. It adds
+no migrations, grants or writes. Invalid stored values fail closed with a fixed
+503 error. Numeric metadata revisions stay within exact JSON integer range;
+policy revisions retain the complete stored BIGINT as a decimal string. UTC
+creation times preserve microseconds. No policy object or budget is invented.
+
+List limits come from the generated source contract: default 50, range 1–100.
+The adapter reads at most limit + 1 ordered keys. The opaque, canonical cursor
+identifies the workspace-list version and original last key; invalid, cross
+resource or noncanonical cursors return 400. Cursors are shared-group navigation,
+not authorization tokens. Each page uses current committed records; concurrent
+inserts behind the cursor do not rewind the list, and this is not a snapshot
+pagination guarantee. Unknown/repeated query parameters, invalid paths, repeated
+request IDs and GET bodies are rejected before database access.
+
+The composition root shares the configured asset runtime and database pool.
+Missing configuration or unavailable storage returns 503. Existing
+`asset_allowed_hosts`/`asset_allowed_origins` apply through the same extracted
+policy as asset routes; no new identity system or client-selected endpoint is
+introduced. Fixed public errors never include SQL, credentials or private paths.
+The runtime OpenAPI includes only the two implemented GETs with namespaced admin
+components; planned workspace POST/PATCH and policy-management routes remain
+unregistered. The optional Python service injection is for explicit composition
+and isolated tests, and never creates a fallback record.
+
+Unit, actual non-owner PG/MinIO ASGI and native Uvicorn TCP HTTP tests cover
+malformed and repeated
+parameters, canonical cursor paging, disabled/missing/corrupt records, locked
+storage deadlines, read-only enforcement, service reconstruction, configured
+lifetimes and the original asset upload/read path. These tests use synthetic
+content and do not qualify a speech engine, GPU capacity or production network.

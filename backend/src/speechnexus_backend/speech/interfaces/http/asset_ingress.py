@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from tempfile import SpooledTemporaryFile
-from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from speechnexus_backend.speech.interfaces.http.asset_errors import asset_error
+from speechnexus_backend.speech.interfaces.http.origin_policy import rejected_authority
 
 
 class AssetIngress:
@@ -49,33 +49,9 @@ class AssetIngress:
             await asset_error("asset_service_unavailable", request_id)(scope, receive, send)
             return
         headers = Headers(scope=scope)
-        host_values, origins = headers.getlist("host"), headers.getlist("origin")
-        host = None
-        try:
-            if (
-                len(host_values) == 1
-                and len(host_values[0]) <= 300
-                and not any(ord(char) <= 32 or ord(char) >= 127 for char in host_values[0])
-            ):
-                authority = urlsplit("//" + host_values[0])
-                # Accessing port also rejects malformed/out-of-range ports.
-                if (authority.port is None or authority.port > 0) and not any(
-                    (
-                        authority.username,
-                        authority.password,
-                        authority.path,
-                        authority.query,
-                        authority.fragment,
-                    )
-                ):
-                    host = authority.hostname
-        except ValueError:
-            pass
-        if host not in self._hosts:
-            await asset_error("asset_host_rejected", request_id)(scope, receive, send)
-            return
-        if len(origins) > 1 or (origins and origins[0] not in self._origins):
-            await asset_error("asset_origin_rejected", request_id)(scope, receive, send)
+        rejected = rejected_authority(headers, self._hosts, self._origins)
+        if rejected is not None:
+            await asset_error("asset_" + rejected + "_rejected", request_id)(scope, receive, send)
             return
         if scope["method"] != "POST" or scope["path"] not in prefixes:
             await self._app(scope, receive, send)

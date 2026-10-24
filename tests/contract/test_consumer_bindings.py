@@ -26,8 +26,13 @@ EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/consumer-profiles.json")
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])
 def test_consumer_profile_agrees_with_original(example: dict[str, Any]) -> None:
     profile, name = example["profile"], example["schema"]
-    source = document(ROOT / "contracts" / MANIFEST["profiles"][profile]["source"])
-    source["$ref"] = f"#/components/schemas/{name}"
+    config = MANIFEST["profiles"][profile]
+    path = ROOT / "contracts" / config["source"]
+    reference = config.get("schema_refs", {}).get(name, f"#/components/schemas/{name}")
+    target, _, fragment = reference.partition("#")
+    source = document(path.parent / target if target else path)
+    source.pop("oneOf", None)
+    source["$ref"] = "#" + fragment
     original = Draft202012Validator(
         source, registry=cast(Any, Registry)(retrieve=retrieve), format_checker=FormatChecker()
     )

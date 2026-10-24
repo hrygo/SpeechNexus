@@ -14,5 +14,65 @@ def parse(name: Literal["ProjectCreateRequest"], value: Any) -> models.ProjectCr
 def parse(name: Literal["ProjectPatch"], value: Any) -> models.ProjectPatch: ...
 
 
+@overload
+def parse(name: Literal["Project"], value: Any) -> models.Project: ...
+
+
+@overload
+def parse(name: Literal["ProjectList"], value: Any) -> models.ProjectList: ...
+
+
+@overload
+def parse(
+    name: Literal["TranscriptCreateRequest"], value: Any
+) -> models.TranscriptCreateRequest: ...
+
+
+@overload
+def parse(
+    name: Literal["TranscriptRevisionCreateRequest"], value: Any
+) -> models.TranscriptRevisionCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["Transcript"], value: Any) -> models.Transcript: ...
+
+
+@overload
+def parse(name: Literal["TranscriptRevision"], value: Any) -> models.TranscriptRevision: ...
+
+
+@overload
+def parse(name: Literal["TranscriptView"], value: Any) -> models.TranscriptView: ...
+
+
+@overload
+def parse(name: Literal["TranscriptList"], value: Any) -> models.TranscriptList: ...
+
+
+@overload
+def parse(name: Literal["WorkbenchStatus"], value: Any) -> models.WorkbenchStatus: ...
+
+
+@overload
+def parse(name: Literal["ErrorResponse"], value: Any) -> models.ErrorResponse: ...
+
+
+@overload
+def parse(name: Literal["DeletionPlanRequest"], value: Any) -> models.DeletionPlanRequest: ...
+
+
+@overload
+def parse(name: Literal["DeletionCreateRequest"], value: Any) -> models.DeletionCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["DeletionPlan"], value: Any) -> models.DeletionPlan: ...
+
+
+@overload
+def parse(name: Literal["Deletion"], value: Any) -> models.Deletion: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

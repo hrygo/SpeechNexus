@@ -10,8 +10,28 @@ const fence: number = execution.fencing_token;
 const identity: string = execution.command.resources.voice?.id ?? "synthetic";
 const action: "prepare" | "stop" = parseRuntime("RuntimeInstanceIntentRequest", wire).action;
 const projectName: string = parseWorkbench("ProjectCreateRequest", wire).name;
+const projectRevision: number = parseWorkbench("Project", wire).metadata_revision;
+const transcriptRevision: string = parseWorkbench("TranscriptRevision", wire).revision;
+const deletionRevision: string = parseWorkbench(
+  "DeletionCreateRequest",
+  wire,
+).expected_plan_revision;
+const deletionState: "queued" | "running" | "blocked" | "succeeded" | "failed" = parseWorkbench(
+  "Deletion",
+  wire,
+).status;
 const workspaceName: string = parseAdmin("WorkspaceCreateRequest", wire).display_name;
 void [fence, identity, action, projectName, workspaceName];
+void [projectRevision, transcriptRevision, deletionRevision, deletionState];
+
+// @ts-expect-error Project metadata revisions are numeric; transcript revisions are strings.
+const wrongProjectRevision: string = parseWorkbench("Project", wire).metadata_revision;
+// @ts-expect-error A deletion confirmation never substitutes a numeric revision.
+const wrongDeletionRevision: number = parseWorkbench(
+  "DeletionCreateRequest",
+  wire,
+).expected_plan_revision;
+void [wrongProjectRevision, wrongDeletionRevision];
 
 // @ts-expect-error Internal commands are absent from the workbench parser.
 parseWorkbench("SubmitExecutionRequest", wire);

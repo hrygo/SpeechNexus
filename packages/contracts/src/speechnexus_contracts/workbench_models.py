@@ -15,7 +15,306 @@ class ProjectPatch(TypedDict):
     status: NotRequired[Literal["active", "archived"]]
 
 
+class TranscriptSource2(TypedDict):
+    kind: Literal["manual"]
+    text: str
+
+
+type ExternalSharedIdentifiersSchemaJsonRevision = str
+
+
+class Capability(TypedDict):
+    name: Literal[
+        "transcription", "meeting_minutes", "assistant", "teleprompter", "audiobook_export"
+    ]
+    status: Literal["available", "disabled", "unavailable"]
+
+
+class WorkbenchStatus(TypedDict):
+    object: Literal["nexus.workbench_status"]
+    workbench_enabled: bool
+    llm_enabled: bool
+    shared_deployment_notice: Literal["shared_deployment"]
+    capabilities: list[Capability]
+
+
+type ExternalSharedErrorsSchemaJsonErrorType = Literal[
+    "invalid_request_error",
+    "authentication_error",
+    "permission_error",
+    "not_found_error",
+    "rate_limit_error",
+    "api_error",
+    "service_unavailable_error",
+]
+type ExternalSharedLanguageSchemaJsonLanguageTag = str
+type ExternalSharedSpeechOverridesSchemaJsonSeed = int | None
+type ExternalSharedSpeechOverridesSchemaJsonSpeed = float
+type ExternalSharedCapabilityDomainsSchemaJsonAudioFormat = Literal["mp3", "wav", "pcm"]
+type ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat = Literal[
+    "json", "text", "verbose_json", "srt", "vtt"
+]
+type ExternalSharedSpeechOverridesSchemaJsonMaxSegmentMs = int
+
+
+class ExternalSharedReferencesSchemaJsonResourceReference(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    revision: ExternalSharedIdentifiersSchemaJsonRevision
+
+
+type ExternalSharedCapabilityDomainsSchemaJsonVadMode = Literal["server_vad", "manual"]
+type ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode = Literal[
+    "full_segment", "streaming_finalize"
+]
+type ExternalSharedSpeechOverridesSchemaJsonPreviewIntervalMs = int
+type ExternalSharedSpeechOverridesSchemaJsonRollbackTokens = int
+type ExternalSharedSpeechOverridesSchemaJsonFinalDeadlineMs = int
+type ExternalSharedSpeechOverridesSchemaJsonAuxiliaryDeadlineMs = int
+type ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode = Literal[
+    "off", "required", "best_effort"
+]
+type ExternalSharedSpeechOverridesSchemaJsonDiarization = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonVocabularySetRevision = (
+    ExternalSharedIdentifiersSchemaJsonRevision | None
+)
+type ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode = Literal["explicit", "sentence"]
+type ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode = Literal["complete", "chunked"]
+type ExternalSharedSpeechOverridesSchemaJsonPronunciationRevision = (
+    ExternalSharedIdentifiersSchemaJsonRevision | None
+)
+
+
+class ExternalSharedSpeechOverridesSchemaJsonPlanner(TypedDict):
+    max_chars: NotRequired[int]
+    max_wait_ms: NotRequired[int]
+
+
+type ExternalSharedReceiptsSchemaJsonReceiptFactPath = Literal[
+    "requested.language",
+    "requested.seed",
+    "requested.speed",
+    "requested.sample_rate_hz",
+    "requested.response_format",
+    "requested.max_segment_ms",
+    "requested.model_binding",
+    "requested.profile",
+    "requested.voice",
+    "requested.pronunciation",
+    "requested.turn_detection",
+    "requested.finalization",
+    "requested.preview_interval_ms",
+    "requested.rollback_tokens",
+    "requested.final_deadline_ms",
+    "requested.auxiliary_deadline_ms",
+    "requested.alignment",
+    "requested.diarization",
+    "requested.vocabulary_set_revision",
+    "requested.text_commit_mode",
+    "requested.audio_delivery",
+    "requested.pronunciation_revision",
+    "requested.planner",
+    "requested.instructions_present",
+    "requested.prompt_present",
+    "requested.policy",
+    "requested.vocabulary",
+    "effective.language",
+    "effective.seed",
+    "effective.speed",
+    "effective.sample_rate_hz",
+    "effective.response_format",
+    "effective.max_segment_ms",
+    "effective.model_binding",
+    "effective.profile",
+    "effective.voice",
+    "effective.pronunciation",
+    "effective.turn_detection",
+    "effective.finalization",
+    "effective.preview_interval_ms",
+    "effective.rollback_tokens",
+    "effective.final_deadline_ms",
+    "effective.auxiliary_deadline_ms",
+    "effective.alignment",
+    "effective.diarization",
+    "effective.vocabulary_set_revision",
+    "effective.text_commit_mode",
+    "effective.audio_delivery",
+    "effective.pronunciation_revision",
+    "effective.planner",
+    "effective.instructions_present",
+    "effective.prompt_present",
+    "effective.policy",
+    "effective.vocabulary",
+    "observed.language",
+    "observed.seed",
+    "observed.speed",
+    "observed.sample_rate_hz",
+    "observed.response_format",
+    "observed.max_segment_ms",
+    "observed.model_binding",
+    "observed.profile",
+    "observed.voice",
+    "observed.pronunciation",
+    "observed.turn_detection",
+    "observed.finalization",
+    "observed.preview_interval_ms",
+    "observed.rollback_tokens",
+    "observed.final_deadline_ms",
+    "observed.auxiliary_deadline_ms",
+    "observed.alignment",
+    "observed.diarization",
+    "observed.vocabulary_set_revision",
+    "observed.text_commit_mode",
+    "observed.audio_delivery",
+    "observed.pronunciation_revision",
+    "observed.planner",
+    "observed.instructions_present",
+    "observed.prompt_present",
+    "observed.policy",
+    "observed.vocabulary",
+    "requested.planner.max_chars",
+    "requested.planner.max_wait_ms",
+    "requested.turn_detection.mode",
+    "requested.turn_detection.silence_duration_ms",
+    "effective.planner.max_chars",
+    "effective.planner.max_wait_ms",
+    "effective.turn_detection.mode",
+    "effective.turn_detection.silence_duration_ms",
+    "observed.planner.max_chars",
+    "observed.planner.max_wait_ms",
+    "observed.turn_detection.mode",
+    "observed.turn_detection.silence_duration_ms",
+]
+type ExternalSharedDeletionSchemaJsonResourceKind = Literal[
+    "asset",
+    "artifact",
+    "voice_revision",
+    "operation_content",
+    "project",
+    "saved_asset",
+    "transcript",
+    "meeting",
+    "audiobook",
+]
+type ExternalSharedDeletionSchemaJsonDeletionMode = Literal["ordinary", "cascade"]
+type ExternalSharedIdentifiersSchemaJsonSha256Digest = str
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
+
+
+class Project(TypedDict):
+    id: Identifier
+    object: Literal["nexus.workbench_project"]
+    workspace_id: Identifier
+    name: str
+    description: NotRequired[str | None]
+    status: Literal["active", "archived"]
+    metadata_revision: int
+    created_at: str
+    updated_at: str
+
+
+class ProjectList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[Project]
+    has_more: bool
+    next_cursor: str | None
+
+
+class TranscriptSource1(TypedDict):
+    kind: Literal["speech_artifact"]
+    artifact_id: Identifier
+    receipt_id: Identifier
+
+
+type TranscriptSource = TranscriptSource1 | TranscriptSource2
+type Revision = ExternalSharedIdentifiersSchemaJsonRevision
+
+
+class Transcript(TypedDict):
+    id: Identifier
+    object: Literal["nexus.transcript"]
+    project_id: Identifier
+    display_name: str
+    head_revision: Revision
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    created_at: str
+    updated_at: str
+
+
+class TranscriptRevision(TypedDict):
+    id: Identifier
+    object: Literal["nexus.transcript_revision"]
+    transcript_id: Identifier
+    revision: Revision
+    status: Literal["sealed", "draft"]
+    text: str
+    source_revision: Revision | None
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    created_at: str
+
+
+class TranscriptView(TypedDict):
+    object: Literal["nexus.transcript_view"]
+    transcript: Transcript
+    revision: TranscriptRevision
+
+
+class TranscriptList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[Transcript]
+    has_more: bool
+    next_cursor: str | None
+
+
+class ExternalSharedSpeechOverridesSchemaJsonTurnDetection(TypedDict):
+    mode: NotRequired[ExternalSharedCapabilityDomainsSchemaJsonVadMode]
+    silence_duration_ms: NotRequired[int]
+
+
+type ExternalSharedSpeechOverridesSchemaJsonFinalization = (
+    ExternalSharedCapabilityDomainsSchemaJsonFinalizationMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonAlignment = (
+    ExternalSharedCapabilityDomainsSchemaJsonAuxiliaryMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonTextCommitMode = (
+    ExternalSharedCapabilityDomainsSchemaJsonTextCommitMode
+)
+type ExternalSharedSpeechOverridesSchemaJsonAudioDelivery = (
+    ExternalSharedCapabilityDomainsSchemaJsonAudioDeliveryMode
+)
+
+
+class ExternalSharedDeletionSchemaJsonDeletionTarget(TypedDict):
+    owner: Literal["speech", "workbench"]
+    kind: ExternalSharedDeletionSchemaJsonResourceKind
+    resource: ExternalSharedReferencesSchemaJsonResourceReference
+
+
+class ExternalSharedDeletionSchemaJsonDeletionCreateRequest(TypedDict):
+    plan_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    expected_plan_revision: ExternalSharedIdentifiersSchemaJsonRevision
+    plan_digest: ExternalSharedIdentifiersSchemaJsonSha256Digest
+    confirm_targets: list[ExternalSharedDeletionSchemaJsonDeletionTarget]
+
+
+type DeletionCreateRequest = ExternalSharedDeletionSchemaJsonDeletionCreateRequest
+
+
+class ExternalSharedDeletionSchemaJsonDependency(TypedDict):
+    target: ExternalSharedDeletionSchemaJsonDeletionTarget
+    relation: Literal["persistent_reference", "active_execution", "owned_child", "independent_copy"]
+    disposition: Literal["blocks", "cascade", "retain"]
+
+
+class ExternalSharedDeletionSchemaJsonDeletionResult(TypedDict):
+    deleted: list[ExternalSharedDeletionSchemaJsonDeletionTarget]
+    retained_independent_copies: list[ExternalSharedDeletionSchemaJsonDeletionTarget]
+    ledger_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    completed_at: str
 
 
 class ProjectCreateRequest(TypedDict):
@@ -24,4 +323,140 @@ class ProjectCreateRequest(TypedDict):
     description: NotRequired[str | None]
 
 
-type WorkbenchContracts = ProjectCreateRequest | ProjectPatch
+class TranscriptCreateRequest(TypedDict):
+    display_name: str
+    source: TranscriptSource
+
+
+class TranscriptRevisionCreateRequest(TypedDict):
+    expected_revision: Revision
+    text: str
+    source_revision: NotRequired[Revision]
+
+
+class ExternalSharedReceiptsSchemaJsonPublicExecutionFacts(TypedDict):
+    language: NotRequired[ExternalSharedLanguageSchemaJsonLanguageTag]
+    seed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSeed]
+    speed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSpeed]
+    sample_rate_hz: NotRequired[int]
+    response_format: NotRequired[
+        ExternalSharedCapabilityDomainsSchemaJsonAudioFormat
+        | ExternalSharedCapabilityDomainsSchemaJsonTranscriptFormat
+    ]
+    max_segment_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonMaxSegmentMs]
+    model_binding: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    profile: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    voice: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    pronunciation: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    turn_detection: NotRequired[ExternalSharedSpeechOverridesSchemaJsonTurnDetection]
+    finalization: NotRequired[ExternalSharedSpeechOverridesSchemaJsonFinalization]
+    preview_interval_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonPreviewIntervalMs]
+    rollback_tokens: NotRequired[ExternalSharedSpeechOverridesSchemaJsonRollbackTokens]
+    final_deadline_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonFinalDeadlineMs]
+    auxiliary_deadline_ms: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAuxiliaryDeadlineMs]
+    alignment: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAlignment]
+    diarization: NotRequired[ExternalSharedSpeechOverridesSchemaJsonDiarization]
+    vocabulary_set_revision: NotRequired[
+        ExternalSharedSpeechOverridesSchemaJsonVocabularySetRevision
+    ]
+    text_commit_mode: NotRequired[ExternalSharedSpeechOverridesSchemaJsonTextCommitMode]
+    audio_delivery: NotRequired[ExternalSharedSpeechOverridesSchemaJsonAudioDelivery]
+    pronunciation_revision: NotRequired[
+        ExternalSharedSpeechOverridesSchemaJsonPronunciationRevision
+    ]
+    planner: NotRequired[ExternalSharedSpeechOverridesSchemaJsonPlanner]
+    instructions_present: NotRequired[bool]
+    prompt_present: NotRequired[bool]
+    policy: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+    vocabulary: NotRequired[ExternalSharedReferencesSchemaJsonResourceReference]
+
+
+class ExternalSharedDeletionSchemaJsonDeletionPlanRequest(TypedDict):
+    target: ExternalSharedDeletionSchemaJsonDeletionTarget
+    mode: ExternalSharedDeletionSchemaJsonDeletionMode
+
+
+type DeletionPlanRequest = ExternalSharedDeletionSchemaJsonDeletionPlanRequest
+
+
+class ExternalSharedDeletionSchemaJsonDeletionPlan(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    object: Literal["nexus.deletion_plan"]
+    target: ExternalSharedDeletionSchemaJsonDeletionTarget
+    mode: ExternalSharedDeletionSchemaJsonDeletionMode
+    plan_revision: ExternalSharedIdentifiersSchemaJsonRevision
+    plan_digest: ExternalSharedIdentifiersSchemaJsonSha256Digest
+    created_at: str
+    expires_at: str
+    dependencies: list[ExternalSharedDeletionSchemaJsonDependency]
+    eligible: bool
+
+
+type DeletionPlan = ExternalSharedDeletionSchemaJsonDeletionPlan
+
+
+class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
+    receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    request_id: NotRequired[str | None]
+    requested: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    effective: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    observed: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
+    missing: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+    unknown: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+
+
+class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
+    operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
+    code: str
+    type: ExternalSharedErrorsSchemaJsonErrorType
+    message: str
+    param: str | None
+    request_id: str
+    retryable: bool
+    retry_after_ms: NotRequired[int | None]
+    nexus: NotRequired[ExternalSharedErrorsSchemaJsonOperationRecovery]
+
+
+class ExternalSharedDeletionSchemaJsonDeletion(TypedDict):
+    id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    object: Literal["nexus.deletion"]
+    plan_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    plan_digest: ExternalSharedIdentifiersSchemaJsonSha256Digest
+    status: Literal["queued", "running", "blocked", "succeeded", "failed"]
+    cleanup_state: Literal["pending", "quarantined", "complete"]
+    created_at: str
+    updated_at: str
+    result: ExternalSharedDeletionSchemaJsonDeletionResult | None
+    error: ExternalSharedErrorsSchemaJsonErrorBody | None
+
+
+type Deletion = ExternalSharedDeletionSchemaJsonDeletion
+
+
+class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
+    error: ExternalSharedErrorsSchemaJsonErrorBody
+
+
+type ErrorResponse = ExternalSharedErrorsSchemaJsonErrorResponse
+type WorkbenchContracts = (
+    ProjectCreateRequest
+    | ProjectPatch
+    | Project
+    | ProjectList
+    | TranscriptCreateRequest
+    | TranscriptRevisionCreateRequest
+    | Transcript
+    | TranscriptRevision
+    | TranscriptView
+    | TranscriptList
+    | WorkbenchStatus
+    | ErrorResponse
+    | DeletionPlanRequest
+    | DeletionCreateRequest
+    | DeletionPlan
+    | Deletion
+)

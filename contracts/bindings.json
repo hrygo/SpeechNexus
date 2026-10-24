@@ -38,17 +38,34 @@
   "profiles": {
     "admin": {
       "source": "admin-openapi.yaml",
-      "schemas": [
-        "WorkspaceCreateRequest",
-        "WorkspacePatch"
-      ]
+      "schemas": ["WorkspaceCreateRequest", "WorkspacePatch"]
     },
     "workbench": {
       "source": "workbench-openapi.yaml",
       "schemas": [
         "ProjectCreateRequest",
-        "ProjectPatch"
-      ]
+        "ProjectPatch",
+        "Project",
+        "ProjectList",
+        "TranscriptCreateRequest",
+        "TranscriptRevisionCreateRequest",
+        "Transcript",
+        "TranscriptRevision",
+        "TranscriptView",
+        "TranscriptList",
+        "WorkbenchStatus",
+        "ErrorResponse",
+        "DeletionPlanRequest",
+        "DeletionCreateRequest",
+        "DeletionPlan",
+        "Deletion"
+      ],
+      "schema_refs": {
+        "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
+        "DeletionCreateRequest": "shared/deletion.schema.json#/$defs/DeletionCreateRequest",
+        "DeletionPlan": "shared/deletion.schema.json#/$defs/DeletionPlan",
+        "Deletion": "shared/deletion.schema.json#/$defs/Deletion"
+      }
     },
     "execution": {
       "source": "internal/execution-control.openapi.yaml",

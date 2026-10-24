@@ -300,9 +300,7 @@
         "pool_id": "tts-realtime",
         "enforced_min_fencing_token": 2,
         "barrier_sealed": true,
-        "submitting_intent_ids": [
-          "intent-submitting"
-        ],
+        "submitting_intent_ids": ["intent-submitting"],
         "executing_intent_ids": [],
         "quarantined_intent_ids": [],
         "enforced_at": "2026-10-23T21:00:00Z"
@@ -1651,9 +1649,7 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": [
-            "reusable_tts"
-          ]
+          "validation_checks": ["reusable_tts"]
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",
         "max_output_audio_ms": 1000,
@@ -1713,9 +1709,7 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": [
-            "reusable_tts"
-          ],
+          "validation_checks": ["reusable_tts"],
           "undeclared": true
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",
@@ -2165,6 +2159,1119 @@
         "deadline_at": "2026-10-23T12:01:00+00:00",
         "max_output_audio_ms": 1000,
         "sample_rate_hz": 24000
+      }
+    },
+    {
+      "id": "workbench-Project-valid",
+      "profile": "workbench",
+      "schema": "Project",
+      "valid": true,
+      "value": {
+        "id": "project-demo",
+        "object": "nexus.workbench_project",
+        "workspace_id": "workspace-demo",
+        "name": "Synthetic project",
+        "status": "active",
+        "metadata_revision": 1,
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-Project-reject-extra-field",
+      "profile": "workbench",
+      "schema": "Project",
+      "valid": false,
+      "value": {
+        "id": "project-demo",
+        "object": "nexus.workbench_project",
+        "workspace_id": "workspace-demo",
+        "name": "Synthetic project",
+        "status": "active",
+        "metadata_revision": 1,
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-ProjectList-valid",
+      "profile": "workbench",
+      "schema": "ProjectList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "project-demo",
+            "object": "nexus.workbench_project",
+            "workspace_id": "workspace-demo",
+            "name": "Synthetic project",
+            "status": "active",
+            "metadata_revision": 1,
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "workbench-ProjectList-reject-extra-field",
+      "profile": "workbench",
+      "schema": "ProjectList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "project-demo",
+            "object": "nexus.workbench_project",
+            "workspace_id": "workspace-demo",
+            "name": "Synthetic project",
+            "status": "active",
+            "metadata_revision": 1,
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null,
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-TranscriptCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "TranscriptCreateRequest",
+      "valid": true,
+      "value": {
+        "display_name": "Synthetic transcript",
+        "source": {
+          "kind": "manual",
+          "text": "Synthetic text."
+        }
+      }
+    },
+    {
+      "id": "workbench-TranscriptCreateRequest-reject-extra-field",
+      "profile": "workbench",
+      "schema": "TranscriptCreateRequest",
+      "valid": false,
+      "value": {
+        "display_name": "Synthetic transcript",
+        "source": {
+          "kind": "manual",
+          "text": "Synthetic text."
+        },
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevisionCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "TranscriptRevisionCreateRequest",
+      "valid": true,
+      "value": {
+        "expected_revision": "1",
+        "text": "Synthetic revision."
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevisionCreateRequest-reject-extra-field",
+      "profile": "workbench",
+      "schema": "TranscriptRevisionCreateRequest",
+      "valid": false,
+      "value": {
+        "expected_revision": "1",
+        "text": "Synthetic revision.",
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-Transcript-valid",
+      "profile": "workbench",
+      "schema": "Transcript",
+      "valid": true,
+      "value": {
+        "id": "transcript-demo",
+        "object": "nexus.transcript",
+        "project_id": "project-demo",
+        "display_name": "Synthetic transcript",
+        "head_revision": "1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-Transcript-reject-extra-field",
+      "profile": "workbench",
+      "schema": "Transcript",
+      "valid": false,
+      "value": {
+        "id": "transcript-demo",
+        "object": "nexus.transcript",
+        "project_id": "project-demo",
+        "display_name": "Synthetic transcript",
+        "head_revision": "1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevision-valid",
+      "profile": "workbench",
+      "schema": "TranscriptRevision",
+      "valid": true,
+      "value": {
+        "id": "revision-demo",
+        "object": "nexus.transcript_revision",
+        "transcript_id": "transcript-demo",
+        "revision": "1",
+        "status": "sealed",
+        "text": "Synthetic text.",
+        "source_revision": null,
+        "created_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevision-reject-extra-field",
+      "profile": "workbench",
+      "schema": "TranscriptRevision",
+      "valid": false,
+      "value": {
+        "id": "revision-demo",
+        "object": "nexus.transcript_revision",
+        "transcript_id": "transcript-demo",
+        "revision": "1",
+        "status": "sealed",
+        "text": "Synthetic text.",
+        "source_revision": null,
+        "created_at": "2026-10-24T00:00:00Z",
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-TranscriptView-valid",
+      "profile": "workbench",
+      "schema": "TranscriptView",
+      "valid": true,
+      "value": {
+        "object": "nexus.transcript_view",
+        "transcript": {
+          "id": "transcript-demo",
+          "object": "nexus.transcript",
+          "project_id": "project-demo",
+          "display_name": "Synthetic transcript",
+          "head_revision": "1",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        },
+        "revision": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "workbench-TranscriptView-reject-extra-field",
+      "profile": "workbench",
+      "schema": "TranscriptView",
+      "valid": false,
+      "value": {
+        "object": "nexus.transcript_view",
+        "transcript": {
+          "id": "transcript-demo",
+          "object": "nexus.transcript",
+          "project_id": "project-demo",
+          "display_name": "Synthetic transcript",
+          "head_revision": "1",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        },
+        "revision": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": "1",
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        },
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-TranscriptList-valid",
+      "profile": "workbench",
+      "schema": "TranscriptList",
+      "valid": true,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "workbench-TranscriptList-reject-extra-field",
+      "profile": "workbench",
+      "schema": "TranscriptList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": "1",
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null,
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-valid",
+      "profile": "workbench",
+      "schema": "WorkbenchStatus",
+      "valid": true,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "disabled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-reject-extra-field",
+      "profile": "workbench",
+      "schema": "WorkbenchStatus",
+      "valid": false,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "disabled"
+          }
+        ],
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-ErrorResponse-valid",
+      "profile": "workbench",
+      "schema": "ErrorResponse",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "revision_conflict",
+          "type": "invalid_request_error",
+          "message": "Synthetic conflict.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "id": "workbench-ErrorResponse-reject-extra-field",
+      "profile": "workbench",
+      "schema": "ErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "revision_conflict",
+          "type": "invalid_request_error",
+          "message": "Synthetic conflict.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        },
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-DeletionPlanRequest-valid",
+      "profile": "workbench",
+      "schema": "DeletionPlanRequest",
+      "valid": true,
+      "value": {
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary"
+      }
+    },
+    {
+      "id": "workbench-DeletionPlanRequest-reject-extra-field",
+      "profile": "workbench",
+      "schema": "DeletionPlanRequest",
+      "valid": false,
+      "value": {
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-DeletionCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "DeletionCreateRequest",
+      "valid": true,
+      "value": {
+        "plan_id": "plan-demo",
+        "expected_plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "confirm_targets": [
+          {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-DeletionCreateRequest-reject-extra-field",
+      "profile": "workbench",
+      "schema": "DeletionCreateRequest",
+      "valid": false,
+      "value": {
+        "plan_id": "plan-demo",
+        "expected_plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "confirm_targets": [
+          {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          }
+        ],
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-valid",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": true,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [],
+        "eligible": true
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-reject-extra-field",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": false,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [],
+        "eligible": true,
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-Deletion-valid",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": true,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "blocked",
+        "cleanup_state": "quarantined",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": null,
+        "error": {
+          "code": "deletion_stop_unconfirmed",
+          "type": "invalid_request_error",
+          "message": "Synthetic cleanup remains unconfirmed.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "id": "workbench-Deletion-reject-extra-field",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": false,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "blocked",
+        "cleanup_state": "quarantined",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": null,
+        "error": {
+          "code": "deletion_stop_unconfirmed",
+          "type": "invalid_request_error",
+          "message": "Synthetic cleanup remains unconfirmed.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false
+        },
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-Project-reject-string-metadata-revision",
+      "profile": "workbench",
+      "schema": "Project",
+      "valid": false,
+      "value": {
+        "id": "project-demo",
+        "object": "nexus.workbench_project",
+        "workspace_id": "workspace-demo",
+        "name": "Synthetic project",
+        "status": "active",
+        "metadata_revision": "1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-ProjectList-reject-invalid-nested-project",
+      "profile": "workbench",
+      "schema": "ProjectList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "project-demo",
+            "object": "nexus.workbench_project",
+            "workspace_id": "workspace-demo",
+            "name": "Synthetic project",
+            "status": "ready",
+            "metadata_revision": 1,
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "workbench-TranscriptCreateRequest-artifact-receipt-pair",
+      "profile": "workbench",
+      "schema": "TranscriptCreateRequest",
+      "valid": true,
+      "value": {
+        "display_name": "Imported synthetic text",
+        "source": {
+          "kind": "speech_artifact",
+          "artifact_id": "artifact-demo",
+          "receipt_id": "receipt-demo"
+        }
+      }
+    },
+    {
+      "id": "workbench-TranscriptCreateRequest-reject-unpinned-artifact",
+      "profile": "workbench",
+      "schema": "TranscriptCreateRequest",
+      "valid": false,
+      "value": {
+        "display_name": "Imported synthetic text",
+        "source": {
+          "kind": "speech_artifact",
+          "artifact_id": "artifact-demo"
+        }
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevisionCreateRequest-reject-number-revision",
+      "profile": "workbench",
+      "schema": "TranscriptRevisionCreateRequest",
+      "valid": false,
+      "value": {
+        "expected_revision": 1,
+        "text": "Synthetic revision."
+      }
+    },
+    {
+      "id": "workbench-Transcript-artifact-receipt-pair",
+      "profile": "workbench",
+      "schema": "Transcript",
+      "valid": true,
+      "value": {
+        "id": "transcript-demo",
+        "object": "nexus.transcript",
+        "project_id": "project-demo",
+        "display_name": "Synthetic transcript",
+        "head_revision": "1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "source_artifact_id": "artifact-demo",
+        "source_receipt_id": "receipt-demo"
+      }
+    },
+    {
+      "id": "workbench-Transcript-reject-unpaired-artifact",
+      "profile": "workbench",
+      "schema": "Transcript",
+      "valid": false,
+      "value": {
+        "id": "transcript-demo",
+        "object": "nexus.transcript",
+        "project_id": "project-demo",
+        "display_name": "Synthetic transcript",
+        "head_revision": "1",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "source_artifact_id": "artifact-demo"
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevision-artifact-receipt-pair",
+      "profile": "workbench",
+      "schema": "TranscriptRevision",
+      "valid": true,
+      "value": {
+        "id": "revision-demo",
+        "object": "nexus.transcript_revision",
+        "transcript_id": "transcript-demo",
+        "revision": "1",
+        "status": "sealed",
+        "text": "Synthetic text.",
+        "source_revision": null,
+        "created_at": "2026-10-24T00:00:00Z",
+        "source_artifact_id": "artifact-demo",
+        "source_receipt_id": "receipt-demo"
+      }
+    },
+    {
+      "id": "workbench-TranscriptRevision-reject-unpaired-artifact",
+      "profile": "workbench",
+      "schema": "TranscriptRevision",
+      "valid": false,
+      "value": {
+        "id": "revision-demo",
+        "object": "nexus.transcript_revision",
+        "transcript_id": "transcript-demo",
+        "revision": "1",
+        "status": "sealed",
+        "text": "Synthetic text.",
+        "source_revision": null,
+        "created_at": "2026-10-24T00:00:00Z",
+        "source_artifact_id": "artifact-demo"
+      }
+    },
+    {
+      "id": "workbench-TranscriptView-reject-invalid-nested-revision",
+      "profile": "workbench",
+      "schema": "TranscriptView",
+      "valid": false,
+      "value": {
+        "object": "nexus.transcript_view",
+        "transcript": {
+          "id": "transcript-demo",
+          "object": "nexus.transcript",
+          "project_id": "project-demo",
+          "display_name": "Synthetic transcript",
+          "head_revision": "1",
+          "created_at": "2026-10-24T00:00:00Z",
+          "updated_at": "2026-10-24T00:00:00Z"
+        },
+        "revision": {
+          "id": "revision-demo",
+          "object": "nexus.transcript_revision",
+          "transcript_id": "transcript-demo",
+          "revision": 1,
+          "status": "sealed",
+          "text": "Synthetic text.",
+          "source_revision": null,
+          "created_at": "2026-10-24T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "workbench-TranscriptList-reject-invalid-nested-transcript",
+      "profile": "workbench",
+      "schema": "TranscriptList",
+      "valid": false,
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "id": "transcript-demo",
+            "object": "nexus.transcript",
+            "project_id": "project-demo",
+            "display_name": "Synthetic transcript",
+            "head_revision": 0,
+            "created_at": "2026-10-24T00:00:00Z",
+            "updated_at": "2026-10-24T00:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-reject-ready-capability",
+      "profile": "workbench",
+      "schema": "WorkbenchStatus",
+      "valid": false,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-ErrorResponse-reject-private-diagnostics",
+      "profile": "workbench",
+      "schema": "ErrorResponse",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "revision_conflict",
+          "type": "invalid_request_error",
+          "message": "Synthetic conflict.",
+          "param": null,
+          "request_id": "request-demo",
+          "retryable": false,
+          "command_document": "synthetic-private-marker"
+        }
+      }
+    },
+    {
+      "id": "workbench-DeletionPlanRequest-reject-owner-kind-mismatch",
+      "profile": "workbench",
+      "schema": "DeletionPlanRequest",
+      "valid": false,
+      "value": {
+        "target": {
+          "owner": "speech",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary"
+      }
+    },
+    {
+      "id": "workbench-DeletionCreateRequest-reject-empty-confirmation",
+      "profile": "workbench",
+      "schema": "DeletionCreateRequest",
+      "valid": false,
+      "value": {
+        "plan_id": "plan-demo",
+        "expected_plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "confirm_targets": []
+      }
+    },
+    {
+      "id": "workbench-DeletionCreateRequest-reject-number-revision",
+      "profile": "workbench",
+      "schema": "DeletionCreateRequest",
+      "valid": false,
+      "value": {
+        "plan_id": "plan-demo",
+        "expected_plan_revision": 1,
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "confirm_targets": [
+          {
+            "owner": "workbench",
+            "kind": "project",
+            "resource": {
+              "id": "project-demo",
+              "revision": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-blocked",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": true,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [
+          {
+            "target": {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            },
+            "relation": "active_execution",
+            "disposition": "blocks"
+          }
+        ],
+        "eligible": false
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-reject-eligible-with-blocker",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": false,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [
+          {
+            "target": {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            },
+            "relation": "active_execution",
+            "disposition": "blocks"
+          }
+        ],
+        "eligible": true
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-reject-cascade-in-ordinary-mode",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": false,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [
+          {
+            "target": {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            },
+            "relation": "owned_child",
+            "disposition": "cascade"
+          }
+        ],
+        "eligible": true
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-retained-independent-copy",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": true,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "ordinary",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [
+          {
+            "target": {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            },
+            "relation": "independent_copy",
+            "disposition": "retain"
+          }
+        ],
+        "eligible": true
+      }
+    },
+    {
+      "id": "workbench-DeletionPlan-reject-cascaded-independent-copy",
+      "profile": "workbench",
+      "schema": "DeletionPlan",
+      "valid": false,
+      "value": {
+        "id": "plan-demo",
+        "object": "nexus.deletion_plan",
+        "target": {
+          "owner": "workbench",
+          "kind": "project",
+          "resource": {
+            "id": "project-demo",
+            "revision": "1"
+          }
+        },
+        "mode": "cascade",
+        "plan_revision": "1",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "created_at": "2026-10-24T00:00:00Z",
+        "expires_at": "2026-10-24T01:00:00Z",
+        "dependencies": [
+          {
+            "target": {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            },
+            "relation": "independent_copy",
+            "disposition": "cascade"
+          }
+        ],
+        "eligible": true
+      }
+    },
+    {
+      "id": "workbench-Deletion-success",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": true,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": {
+          "deleted": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ],
+          "retained_independent_copies": [],
+          "ledger_id": "ledger-demo",
+          "completed_at": "2026-10-24T00:00:00Z"
+        },
+        "error": null
+      }
+    },
+    {
+      "id": "workbench-Deletion-reject-success-with-unknown-cleanup",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": false,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "succeeded",
+        "cleanup_state": "quarantined",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": {
+          "deleted": [
+            {
+              "owner": "workbench",
+              "kind": "project",
+              "resource": {
+                "id": "project-demo",
+                "revision": "1"
+              }
+            }
+          ],
+          "retained_independent_copies": [],
+          "ledger_id": "ledger-demo",
+          "completed_at": "2026-10-24T00:00:00Z"
+        },
+        "error": null
+      }
+    },
+    {
+      "id": "workbench-Deletion-reject-success-without-result",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": false,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "succeeded",
+        "cleanup_state": "complete",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "id": "workbench-Deletion-reject-blocked-without-error",
+      "profile": "workbench",
+      "schema": "Deletion",
+      "valid": false,
+      "value": {
+        "id": "deletion-demo",
+        "object": "nexus.deletion",
+        "plan_id": "plan-demo",
+        "plan_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "blocked",
+        "cleanup_state": "quarantined",
+        "created_at": "2026-10-24T00:00:00Z",
+        "updated_at": "2026-10-24T00:00:00Z",
+        "result": null,
+        "error": null
       }
     }
   ]

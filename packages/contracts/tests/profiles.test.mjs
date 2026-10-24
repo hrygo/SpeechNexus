@@ -72,3 +72,38 @@ for (const [profile, schema, path, resolvedPath, params] of [
     assert.equal(requests, 1);
   });
 }
+
+test("workbench transcript consumer explicitly parses both transport bodies", async () => {
+  const sample = (name) =>
+    structuredClone(
+      fixtures.examples.find((e) => e.profile === "workbench" && e.schema === name && e.valid)
+        .value,
+    );
+  const request = workbench.parse("TranscriptCreateRequest", sample("TranscriptCreateRequest"));
+  const reply = sample("TranscriptView");
+  let requests = 0;
+  const client = workbench.createClient("http://deployment.invalid", async (wire) => {
+    requests++;
+    assert.equal(
+      wire.url,
+      "http://deployment.invalid/v1/workbench/projects/project-demo/transcripts",
+    );
+    assert.equal(wire.headers.get("Idempotency-Key"), "synthetic-transcript-key");
+    assert.deepEqual(await wire.json(), request);
+    return Response.json(reply, { status: 201 });
+  });
+  const result = await client.POST("/v1/workbench/projects/{project_id}/transcripts", {
+    params: {
+      path: { project_id: "project-demo" },
+      header: { "Idempotency-Key": "synthetic-transcript-key" },
+    },
+    body: request,
+  });
+  assert.deepEqual(workbench.parse("TranscriptView", result.data), reply);
+  assert.equal(requests, 1);
+  assert.throws(
+    () =>
+      workbench.parse("TranscriptView", { ...reply, revision: { ...reply.revision, revision: 1 } }),
+    workbench.ContractValidationError,
+  );
+});

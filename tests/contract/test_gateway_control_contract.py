@@ -26,6 +26,7 @@ PATH_TEMPLATE = "/internal/v1/gateways/{gateway_id}/fencing-barrier"
 QUERY_PATH = "/internal/v1/executions/{submit_intent_id}"
 SUBMIT_PATH = "/internal/v1/executions/submit"
 ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
+DRAIN_PATH = "/internal/v1/instances/{instance_id}/drain"
 
 
 def frozen_schema(node: Any) -> Any:
@@ -56,6 +57,7 @@ def frozen_schema(node: Any) -> Any:
         (QUERY_PATH, "get"),
         (SUBMIT_PATH, "post"),
         (ABORT_PATH, "post"),
+        (DRAIN_PATH, "post"),
     ],
 )
 def test_served_control_declares_the_frozen_security_statuses_and_full_constraints(
@@ -107,7 +109,8 @@ def test_served_control_declares_the_frozen_security_statuses_and_full_constrain
         QUERY_PATH,
         SUBMIT_PATH,
         ABORT_PATH,
-    }  # No placeholder drain route.
+        DRAIN_PATH,
+    }
 
 
 async def test_success_and_error_payloads_validate_for_the_source_and_generated_consumer(

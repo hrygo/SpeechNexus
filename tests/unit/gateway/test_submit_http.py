@@ -16,6 +16,7 @@ from speechnexus_contracts.execution import parse
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
+from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
@@ -153,6 +154,7 @@ class Harness:
             ),
             barrier_control=GatewayBarrierService(ingress=self.ingress, ledger=self.ledger),
             execution_query=ExecutionQueryService(ingress=self.ingress, ledger=self.ledger),
+            instance_drain=InstanceDrainService(ingress=self.ingress, ledger=self.ledger),
             readiness=ReadinessService([StaticProbe("control_postgresql")], timeout_seconds=1),
             **services,
         )

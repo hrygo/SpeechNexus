@@ -36,6 +36,7 @@ from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
@@ -170,6 +171,7 @@ def gateway(foundation: Foundation, tmp_path: Path) -> Iterator[LiveGateway]:
         ),
         barrier_control=GatewayBarrierService(ingress=ingress, ledger=ledger),
         execution_query=ExecutionQueryService(ingress=ingress, ledger=ledger),
+        instance_drain=InstanceDrainService(ingress=ingress, ledger=ledger),
         submit_execution=SubmitExecutionService(
             ingress=ingress, ledger=ledger, dispatch=engine, observation=engine
         ),

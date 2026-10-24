@@ -94,7 +94,9 @@
         "AbortExecutionRequest",
         "GatewayFencingBarrierRequest",
         "GatewayFencingBarrierResponse",
-        "ExecutionControlErrorResponse"
+        "ExecutionControlErrorResponse",
+        "DrainInstanceRequest",
+        "DrainInstanceResponse"
       ]
     },
     "runtime": {

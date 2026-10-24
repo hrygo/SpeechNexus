@@ -11,6 +11,7 @@ from pydantic import SecretStr, ValidationError
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
 from speechnexus_gateway.application.readiness import ReadinessService
 from speechnexus_gateway.domain.fencing import (
@@ -61,6 +62,7 @@ def app_for(
         settings=settings_for(tmp_path),
         barrier_control=service,
         execution_query=ExecutionQueryService(ingress=ingress, ledger=resolved_ledger),
+        instance_drain=InstanceDrainService(ingress=ingress, ledger=resolved_ledger),
         readiness=ReadinessService([StaticProbe("control_postgresql")], timeout_seconds=1),
     )
     return app, ingress

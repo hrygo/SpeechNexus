@@ -14,6 +14,7 @@ from speechnexus_gateway.domain.submission import (
     StaleFencingTokenError,
     SubmissionStoreError,
 )
+from speechnexus_gateway.infrastructure.drain_sql import drain_inventory_from_rows
 from speechnexus_gateway.infrastructure.submit_sql import SubmitCursor, to_unix_micros
 
 
@@ -33,13 +34,11 @@ def barrier_inventory(
         "ORDER BY s.submit_intent_id",
         (gateway_id, pool_id),
     )
-    rows = cursor.fetchall()
+    inventory = drain_inventory_from_rows(cursor.fetchall())
     return (
-        tuple(r["submit_intent_id"] for r in rows if r["execution_state"] == "submitting"),
-        tuple(
-            r["submit_intent_id"] for r in rows if r["execution_state"] in {"executing", "stopping"}
-        ),
-        tuple(r["submit_intent_id"] for r in rows if r["execution_state"] == "unknown_quarantined"),
+        inventory.submitting_intent_ids,
+        inventory.active_intent_ids,
+        inventory.quarantined_intent_ids,
     )
 
 

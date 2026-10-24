@@ -13,6 +13,8 @@ export type Contracts = Pick<
   | "GatewayFencingBarrierRequest"
   | "GatewayFencingBarrierResponse"
   | "ExecutionControlErrorResponse"
+  | "DrainInstanceRequest"
+  | "DrainInstanceResponse"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

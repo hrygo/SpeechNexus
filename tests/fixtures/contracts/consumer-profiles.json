@@ -6017,6 +6017,80 @@
         },
         "supersedes_revision": "1"
       }
+    },
+    {
+      "id": "execution-DrainInstanceRequest-valid",
+      "profile": "execution",
+      "schema": "DrainInstanceRequest",
+      "valid": true,
+      "value": {
+        "host_node_id": "node-demo",
+        "pool_id": "tts-batch",
+        "instance_generation": 3,
+        "fencing_token": 9,
+        "max_drain_wait_ms": 30000
+      }
+    },
+    {
+      "id": "execution-DrainInstanceRequest-wait-below-contract-bound",
+      "profile": "execution",
+      "schema": "DrainInstanceRequest",
+      "valid": false,
+      "value": {
+        "host_node_id": "node-demo",
+        "pool_id": "tts-batch",
+        "instance_generation": 3,
+        "fencing_token": 9,
+        "max_drain_wait_ms": 99
+      }
+    },
+    {
+      "id": "execution-DrainInstanceResponse-draining-valid",
+      "profile": "execution",
+      "schema": "DrainInstanceResponse",
+      "valid": true,
+      "value": {
+        "instance_id": "instance-demo",
+        "instance_generation": 3,
+        "drain_state": "draining",
+        "active_intent_count": 1,
+        "submitting_intent_count": 1,
+        "quarantined_intent_count": 0,
+        "safe_to_stop_instance": false,
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "execution-DrainInstanceResponse-drained-valid",
+      "profile": "execution",
+      "schema": "DrainInstanceResponse",
+      "valid": true,
+      "value": {
+        "instance_id": "instance-demo",
+        "instance_generation": 3,
+        "drain_state": "drained",
+        "active_intent_count": 0,
+        "submitting_intent_count": 0,
+        "quarantined_intent_count": 0,
+        "safe_to_stop_instance": true,
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
+    },
+    {
+      "id": "execution-DrainInstanceResponse-drained-with-work",
+      "profile": "execution",
+      "schema": "DrainInstanceResponse",
+      "valid": false,
+      "value": {
+        "instance_id": "instance-demo",
+        "instance_generation": 3,
+        "drain_state": "drained",
+        "active_intent_count": 1,
+        "submitting_intent_count": 0,
+        "quarantined_intent_count": 0,
+        "safe_to_stop_instance": false,
+        "updated_at": "2026-10-24T00:00:00Z"
+      }
     }
   ]
 }

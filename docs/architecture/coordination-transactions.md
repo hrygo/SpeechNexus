@@ -139,7 +139,10 @@ resource_pools
 结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
 [执行网关](execution-gateway.md#11-append_interval-与原区间查询)。
 
-等待锁以后，再从数据库取时间判断当前租期。PG 用 adapter 内的数据库时钟语句，
+等待锁以后，再从数据库取时间判断当前租期。新行的全局唯一键/FK 也可能在 INSERT 时
+等待；竞争事务回滚后 INSERT 会成功，不能仅靠唯一冲突异常识别。创建路径必须在
+最后一次可能等待的写入后重新核验 owner/请求及资格窗口，过期则整笔回滚。
+PG 用 adapter 内的数据库时钟语句，
 MySQL 用其数据库时钟；不把客户端时钟或事务开始前的旧时间当作续租依据。
 Job 认领基线锁定候选行并执行带 claim_version/expiry 的条件更新；
 `SKIP LOCKED` 仅是后续可测量的优化。没有 Redis 或通知时扫描持久 outbox/待办行。

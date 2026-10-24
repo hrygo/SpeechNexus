@@ -154,16 +154,74 @@ def _dereference_schema(
     side: _SchemaSide,
     seen: frozenset[tuple[str, str]] = frozenset(),
 ) -> object:
+    return _dereference_node(schema, side, seen)
+
+
+def _dereference_openapi(paths: object, side: _SchemaSide) -> object:
+    if side.standard_only:
+        return _dereference_schema(paths, side)
+    return _dereference_node(paths, side, position="paths")
+
+
+def _dereference_children(
+    value: Mapping[str, Any],
+    side: _SchemaSide,
+    seen: frozenset[tuple[str, str]],
+    position: str,
+) -> dict[str, Any]:
+    if position == "schema":
+        return _dereference_schema_children(value, side, seen)
+    # OpenAPI container names and object references are not schema keywords.
+    # Only a media/parameter/header schema enters the JSON Schema walker.
+    containers = {
+        "paths": "path_item",
+        "responses": "response",
+        "headers": "header",
+        "content": "media",
+    }
+    edges = {
+        "path_item": {**dict.fromkeys(_HTTP_METHODS, "operation"), "parameters": "parameters"},
+        "operation": {
+            "parameters": "parameters",
+            "requestBody": "request_body",
+            "responses": "responses",
+        },
+        "response": {"headers": "headers", "content": "content"},
+        "request_body": {"content": "content"},
+        "parameter": {"schema": "schema", "content": "content"},
+        "header": {"schema": "schema", "content": "content"},
+        "media": {"schema": "schema"},
+    }
+    result = dict(value)
+    for key, child in value.items():
+        child_position = containers.get(position) or edges.get(position, {}).get(key)
+        if child_position is not None:
+            result[key] = _dereference_node(child, side, seen, position=child_position)
+    return result
+
+
+def _dereference_node(
+    schema: object,
+    side: _SchemaSide,
+    seen: frozenset[tuple[str, str]] = frozenset(),
+    *,
+    position: str = "schema",
+) -> object:
     schema_mapping = _mapping(schema)
     if schema_mapping is None:
         if isinstance(schema, list):
-            return [_dereference_schema(item, side, seen) for item in schema]
+            return [
+                _dereference_node(
+                    item, side, seen, position="parameter" if position == "parameters" else position
+                )
+                for item in schema
+            ]
         return schema
     ref = schema_mapping.get("$ref")
     if not isinstance(ref, str) or "://" in ref:
         if not side.standard_only and "$ref" in schema_mapping:
             raise ValueError("Nonstandard HTTP comparison requires closed repository references")
-        return _dereference_schema_children(schema_mapping, side, seen)
+        return _dereference_children(schema_mapping, side, seen, position)
     identity = (side.path, ref)
     if identity in seen:
         if not side.standard_only:
@@ -200,12 +258,13 @@ def _dereference_schema(
         if not side.standard_only:
             raise ValueError("HTTP reference pointer is unavailable")
         return schema
-    resolved = _dereference_schema(
+    resolved = _dereference_node(
         target,
         _SchemaSide(
             resolved_document, target_path, target_git_ref, side.documents, side.standard_only
         ),
         seen | {identity},
+        position=position,
     )
     siblings = {key: value for key, value in schema_mapping.items() if key != "$ref"}
     if isinstance(resolved, bool) and siblings:
@@ -214,11 +273,11 @@ def _dereference_schema(
         annotations = {"title", "description", "examples", "$comment"}
         if not (siblings.keys() - annotations):
             return resolved
-        resolved_siblings = _dereference_schema_children(siblings, side, seen)
+        resolved_siblings = _dereference_children(siblings, side, seen, position)
         return resolved_siblings if resolved else False
     resolved_mapping = _mapping(resolved)
     if siblings and resolved_mapping is not None:
-        resolved_siblings = _dereference_schema_children(siblings, side, seen)
+        resolved_siblings = _dereference_children(siblings, side, seen, position)
         annotations = {"title", "description", "default", "examples", "$comment"}
         conflicts = (resolved_mapping.keys() & resolved_siblings.keys()) - annotations
         if any(
@@ -682,7 +741,7 @@ def _compare_openapi(
     # side so shared parameters, responses and component refs still resolve.
     base_paths = (
         _mapping(
-            _dereference_schema(
+            _dereference_openapi(
                 {
                     name: item
                     for name, item in (_mapping(base.get("paths")) or {}).items()
@@ -695,7 +754,7 @@ def _compare_openapi(
     )
     current_paths = (
         _mapping(
-            _dereference_schema(
+            _dereference_openapi(
                 {
                     name: item
                     for name, item in (_mapping(current.get("paths")) or {}).items()

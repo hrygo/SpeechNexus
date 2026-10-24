@@ -711,3 +711,134 @@ def test_reference_sibling_intersection_preserves_json_types_before_proof(
     assert kernel()._compare_openapi(
         baseline, current, "contracts/admin-openapi.yaml", standard_only=False
     )
+
+
+@pytest.mark.parametrize("kind", ["response", "requestBody", "parameter", "header"])
+@pytest.mark.parametrize("external", [False, True])
+def test_openapi_object_refs_preserve_schema_checks_in_full_comparator_and_cli(
+    repository: tuple[ModuleType, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    external: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    module, root, _ = repository
+    source, path = SOURCES[0]
+    old: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "literal": {"const": {"$ref": "#/components/schemas/LiteralDataOnly"}},
+        },
+    }
+    if kind == "response":
+        old["required"] = ["id"]
+    elif kind in {"parameter", "header"}:
+        old = {"type": "string", "enum": ["a", "b"] if kind == "parameter" else ["a"]}
+    new = copy.deepcopy(old)
+    if kind == "response":
+        new.pop("required")
+    elif kind == "requestBody":
+        new["required"] = ["id"]
+    else:
+        new["enum"] = ["a"] if kind == "parameter" else ["a", "b"]
+    witness: Any = "b" if kind in {"parameter", "header"} else {}
+    assert Draft202012Validator(old).is_valid(witness) is (kind not in {"response", "header"})
+    assert Draft202012Validator(new).is_valid(witness) is (kind in {"response", "header"})
+    groups = {
+        "response": "responses",
+        "requestBody": "requestBodies",
+        "parameter": "parameters",
+        "header": "headers",
+    }
+    group = groups[kind]
+    schema: dict[str, Any] = {"$ref": "./payload.schema.json#/$defs/Value"} if external else old
+    component: dict[str, Any]
+    if kind == "header":
+        component = {"required": True, "schema": schema}
+    elif kind == "parameter":
+        component = {"name": "X-Synthetic", "in": "header", "required": True, "schema": schema}
+    else:
+        component = {"content": {"application/json": {"schema": schema}}}
+        component["description" if kind == "response" else "required"] = (
+            "Synthetic" if kind == "response" else True
+        )
+    components = {group: {"Selected": component}}
+    doc = document(path)
+    operation = doc["paths"][path]["post"]
+    prefix = "shared/object-components.yaml" if external else ""
+    reference = {"$ref": prefix + f"#/components/{group}/Selected"}
+    if kind == "header":
+        operation["responses"]["201"]["headers"] = {"schema": reference}
+    elif kind == "response":
+        operation["responses"]["201"] = reference
+    elif kind == "requestBody":
+        operation["requestBody"] = reference
+    else:
+        operation["parameters"] = [reference]
+    if external:
+        _write(root / "contracts/shared/object-components.yaml", {"components": components})
+        _write(root / "contracts/shared/payload.schema.json", {"$defs": {"Value": old}})
+    else:
+        doc["components"] = components
+    _write(root / source, doc)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Freeze object references")
+    base = _git(root, "rev-parse", "HEAD")
+    baseline = copy.deepcopy(doc)
+    assert module.inspect_sources(base)["findings"] == []
+    if external:
+        _write(root / "contracts/shared/payload.schema.json", {"$defs": {"Value": new}})
+    elif kind in {"parameter", "header"}:
+        component["schema"] = new
+        _write(root / source, doc)
+    else:
+        component["content"]["application/json"]["schema"] = new
+        _write(root / source, doc)
+    findings = module._kernel()._compare_openapi(
+        baseline, doc, source, base_git_ref=base, standard_only=False
+    )
+    assert findings, (kind, external)
+    monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
+    assert module.main() == 1
+    assert json.loads(capsys.readouterr().out)["findings"]
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_path_item_reference_preserves_full_cli_response_guarantees(
+    repository: tuple[ModuleType, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    external: bool,
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    module, root, _ = repository
+    source, path = SOURCES[0]
+    schema = {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}}
+    doc = document(path, response=schema)
+    item = doc["paths"][path]
+    components = {"pathItems": {"Selected": item}}
+    prefix = "shared/path-items.yaml" if external else ""
+    doc["paths"][path] = {"$ref": prefix + "#/components/pathItems/Selected"}
+    if external:
+        _write(root / "contracts/shared/path-items.yaml", {"components": components})
+    else:
+        doc["components"] = components
+    _write(root / source, doc)
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "Freeze path item reference")
+    base = _git(root, "rev-parse", "HEAD")
+    assert module.inspect_sources(base)["findings"] == []
+    assert not Draft202012Validator(schema).is_valid({})
+    schema.pop("required")
+    assert Draft202012Validator(schema).is_valid({})
+    if external:
+        _write(root / "contracts/shared/path-items.yaml", {"components": components})
+    else:
+        _write(root / source, doc)
+    monkeypatch.setattr(sys, "argv", ["check", "--base", base, "--format", "json"])
+    assert module.main() == 1
+    assert json.loads(capsys.readouterr().out)["findings"]

@@ -61,7 +61,8 @@ static projection revision 1. Package versions and lockfiles are unchanged. Run
 
 The finite HTTP structural gate recognizes this response refinement only when an
 `allOf` branch equals the complete resolved baseline schema tree, preserving JSON
-types (booleans differ from numbers). Nonstandard reference expansion visits schema
+types (booleans differ from numbers). Nonstandard reference expansion separates OpenAPI object positions (path items,
+operations, responses, request bodies, parameters and headers) from JSON Schema
 positions; `const`, `enum`, defaults and examples remain literal JSON data. Literal
 or dynamic references that prevent a closed-tree proof cannot use the shortcut.
 This proof is limited to nonstandard responses; requests,

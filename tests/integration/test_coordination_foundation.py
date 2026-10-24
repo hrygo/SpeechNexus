@@ -214,9 +214,25 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
-    assert {row["name"] for row in rows} - {"alembic_version"} - asset_tables == (
+    profile_tables = (
+        {"speech_profile_families", "speech_profile_revisions", "speech_profile_commands"}
+        if db.dialect == "postgresql"
+        else set()
+    )
+    assert profile_tables <= {row["name"] for row in rows}
+    assert {row["name"] for row in rows} - {"alembic_version"} - asset_tables - profile_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
+    if db.dialect == "postgresql":
+        # New configuration tables are outside shared coordination grants.
+        for owner in ("speech", "gateway"):
+            for table in profile_tables:
+                with (
+                    pytest.raises(psycopg.errors.InsufficientPrivilege),
+                    foundation.connection(owner) as connection,
+                    connection.cursor() as cursor,
+                ):
+                    cursor.execute(f"SELECT * FROM {table}")
     db.query(
         "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
         "VALUES ('TTS-realtime', 'realtime', 'active')"

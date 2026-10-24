@@ -15,12 +15,19 @@ type SpeechPool = ConnectionPool[SpeechConnection]
 
 
 def speech_pool(
-    database_url: str, *, schema: str = "speech", max_size: int = 4, max_waiting: int = 16
+    database_url: str,
+    *,
+    schema: str = "speech",
+    max_size: int = 4,
+    max_waiting: int = 16,
+    name: str = "speech-coordination",
 ) -> SpeechPool:
     if not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
         raise ValueError("Invalid speech schema")
     if not 1 <= max_size <= 64 or not 1 <= max_waiting <= 1024:
         raise ValueError("Speech pool must be bounded")
+    if not re.fullmatch(r"[a-z0-9-]{1,64}", name):
+        raise ValueError("Invalid speech pool label")
 
     def configure(connection: SpeechConnection) -> None:
         connection.isolation_level = IsolationLevel.READ_COMMITTED
@@ -35,7 +42,7 @@ def speech_pool(
         database_url,
         kwargs={"row_factory": dict_row, "connect_timeout": 3},
         configure=configure,
-        name="speech-coordination",
+        name=name,
         min_size=0,
         max_size=max_size,
         max_waiting=max_waiting,

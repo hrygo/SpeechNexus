@@ -36,6 +36,8 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/readyz",
         "/v1/nexus/workspaces",
         "/v1/nexus/workspaces/{workspace_id}",
+        "/v1/nexus/admin/profiles",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
     }
     for path in PATHS:
         assert actual["paths"][path] == document["paths"][path]

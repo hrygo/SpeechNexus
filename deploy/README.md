@@ -87,3 +87,5 @@ unknown-original polling. The API's one startup pass does not replace that worke
 Browser callers use the same-origin proxy and explicitly approved frontend
 Origin. This release does not claim complete backup restoration, production
 object IAM/outbound restrictions, arbitrary audio inspection or G1 qualification.
+
+预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/architecture/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。

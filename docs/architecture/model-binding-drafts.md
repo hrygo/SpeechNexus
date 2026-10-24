@@ -1,9 +1,9 @@
 # Immutable ModelBinding drafts
 
-This A02 unit implements the process-local draft registry on PostgreSQL, using
-the A00/A02 contract preflight from #122. HTTP routes, publication, activation,
-default selection, qualification and model loading remain separate work. The
-existing Profile draft provider remains a separate resource.
+The PostgreSQL draft registry from #125 now has an opt-in HTTP POST and fixed
+revision GET, using the A00/A02 contract preflight from #122. Publication,
+activation, default selection, qualification and model loading remain separate
+work. The existing Profile draft provider remains a separate resource.
 
 The authoritative sources are admin OpenAPI `0.1.0.dev3` and
 `model-binding.schema.json` (`schema_version: "1.0.0"`). The selected operations
@@ -160,13 +160,46 @@ statement deadlines, closed pools, corruption and immutable original-result link
 PG separately verifies failed/repeated migrations and preserved older rows/ACLs.
 Synthetic SQL fixtures do not qualify a physical cluster or speech engine.
 
+## Opt-in HTTP writer
+
+Configure `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` explicitly for an API process
+using a separate non-owner role with only `binding_draft_grants`. A blank or
+absent value leaves the writer disabled and the selected endpoints unavailable;
+it does not fall back to the general database identity. Startup verifies both
+session and effective identities, table ownership, other speech-table authority
+and exact mutable columns before exposing the provider. It never provisions
+roles, grants or migrations. Failed startup and shutdown close the owned pool
+and remove its diagnostic filter. Profile and Binding roles and pools stay separate.
+
+Binding receive byte, concurrency, receive time and transaction time settings
+are independent `SPEECHNEXUS_BINDING_*` configuration. Host/Origin uses the shared
+explicit allowlist. Profile and Binding reuse the same bounded private receive
+implementation; their routes, source validators and outcomes remain independent.
+A complete request keeps its receive permit until its handler ends even if the
+client cancels. This permit is not a global lease or compute budget.
+
+Request JSON rejects duplicate keys and nonfinite values. Integer parsing and
+response encoding preserve source-allowed large integers without changing the
+interpreter guard or converting them to floats; Python actual-HTTP tests include
+a 5001-digit integer. JavaScript clients retain their native numeric range; the
+actual same-source TypeScript HTTP probe uses representable fixture values.
+The response encoder has a 1 MiB bound including server metadata, independent
+of the 256 KiB private document bound. No public default parameters are added.
+
+Transaction deadlines are cooperative checks and SQL statement timeouts, not a
+hard network interruption of COMMIT. A successful but delayed COMMIT may return
+503 unknown; only the original complete intent/key can resolve it. Real PG tests
+cover delay before/after commit, same-key concurrent different intents, original
+writer rollback, lost acknowledgment, pressure, client cancellation and restart.
+The served OpenAPI projects only these two source-selected methods. Same-source
+TypeScript runs against an actual loopback HTTP server with the minimum-role PG
+writer; CI installs locked Node tools in every partition containing that probe.
+
 ## Remaining implementation
 
-A separate unit must wire the selected HTTP routes and controlled writer lifecycle,
-with real HTTP consumers and the same unavailable/unknown semantics. This registry
-port is not a running public service; mocked preflight transports prove only their
-consumer boundary. Public lists, publication/activation/CAS, default pointers and
-qualification are not implemented here.
+Public lists, publication/activation/CAS, default pointers and qualification
+are not implemented here. Only the selected draft POST and fixed GET are served;
+other administrative operations do not become available through this unit.
 
 Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,

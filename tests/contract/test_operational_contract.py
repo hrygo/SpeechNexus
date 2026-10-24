@@ -198,6 +198,8 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/workspaces/{workspace_id}",
         "/v1/nexus/admin/profiles",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
+        "/v1/nexus/admin/model-bindings",
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
     }
     _assert_contract_matches(_load_contract(), document, require_exact_paths=False)
 

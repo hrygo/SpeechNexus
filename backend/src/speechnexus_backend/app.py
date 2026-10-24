@@ -15,9 +15,11 @@ from starlette.responses import Response
 
 from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
+from speechnexus_backend.binding_runtime import BindingRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService
+from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
@@ -32,6 +34,9 @@ from speechnexus_backend.speech.interfaces.http.asset_contract import asset_http
 from speechnexus_backend.speech.interfaces.http.asset_errors import asset_error
 from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngress
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
+from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
+from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIngress
+from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
@@ -60,6 +65,7 @@ class _SpeechAPI(FastAPI):
                 asset_http_contract(),
                 workspace_http_contract(),
                 profile_http_contract(),
+                binding_http_contract(),
             ):
                 surface = copy.deepcopy(contract)
                 document["paths"].update(surface["paths"])
@@ -95,6 +101,7 @@ def create_app(
     assets: AssetService | None = None,
     workspaces: WorkspaceService | None = None,
     profiles: ProfileDrafts | None = None,
+    bindings: BindingDrafts | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -118,9 +125,23 @@ def create_app(
             return profiles
         return profile_runtime.provider if profile_runtime is not None else None
 
+    binding_runtime = (
+        BindingRuntime(resolved_settings)
+        if bindings is None and resolved_settings.binding_writer_database_url is not None
+        else None
+    )
+
+    def get_bindings() -> BindingDrafts | None:
+        if bindings is not None:
+            return bindings
+        return binding_runtime.provider if binding_runtime is not None else None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
+            if binding_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, binding_runtime.close)
+                await run_in_threadpool(binding_runtime.open)
             if profile_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, profile_runtime.close)
                 await run_in_threadpool(profile_runtime.open)
@@ -135,9 +156,9 @@ def create_app(
             yield
 
     app = _SpeechAPI(
-        title="SpeechNexus operational, asset, workspace and profile API",
+        title="SpeechNexus operational, asset, workspace and draft API",
         version=__version__,
-        description="Operational endpoints, assets, workspace reads and immutable profile drafts.",
+        description="Health, assets, workspace reads and immutable configuration drafts.",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -164,11 +185,21 @@ def create_app(
         allowed_hosts=resolved_settings.asset_allowed_hosts,
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
+    app.add_middleware(
+        BindingIngress,
+        max_bytes=resolved_settings.binding_receive_max_bytes,
+        concurrency=resolved_settings.binding_receive_concurrency,
+        receive_timeout_seconds=resolved_settings.binding_receive_timeout_seconds,
+        is_enabled=lambda: get_bindings() is not None,
+        allowed_hosts=resolved_settings.asset_allowed_hosts,
+        allowed_origins=resolved_settings.asset_allowed_origins,
+    )
     # Request IDs wrap early ingress errors as well as route responses.
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
+    app.include_router(create_binding_router(get_bindings))
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
@@ -208,4 +239,5 @@ def create_app(
     )
     app.state.settings = resolved_settings
     app.state.profile_runtime = profile_runtime
+    app.state.binding_runtime = binding_runtime
     return app

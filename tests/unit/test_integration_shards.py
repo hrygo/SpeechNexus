@@ -344,13 +344,19 @@ def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(resu
 
 
 def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> None:
-    path = ROOT / "tests/integration/test_profile_http.py"
     consumer = "test_generated_typescript_client_consumes_actual_loopback_http"
-    definitions = {
-        node.name for node in ast.parse(path.read_text()).body if isinstance(node, ast.FunctionDef)
-    }
-    assert consumer in definitions
-    assert (f"{path.relative_to(ROOT)}::{consumer}[postgresql]",) == GATE.NODE_CONTRACT_TESTS
+    paths = [
+        ROOT / f"tests/integration/test_{resource}_http.py" for resource in ("binding", "profile")
+    ]
+    for path in paths:
+        definitions = {
+            node.name
+            for node in ast.parse(path.read_text()).body
+            if isinstance(node, ast.FunctionDef)
+        }
+        assert consumer in definitions
+    expected = tuple(f"{path.relative_to(ROOT)}::{consumer}[postgresql]" for path in paths)
+    assert expected == GATE.NODE_CONTRACT_TESTS
     selected: list[int] = []
     for index in range(6):
         result = subprocess.run(
@@ -362,7 +368,8 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
         assert result.stdout in ("node_contracts=true\n", "node_contracts=false\n")
         if result.stdout == "node_contracts=true\n":
             selected.append(index)
-    assert selected == [3]
+    assert selected == sorted({index for index in range(6) if GATE.partition(expected, index, 6)})
+    assert 3 in selected
     steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
         "integration_shards"
     ]["steps"]

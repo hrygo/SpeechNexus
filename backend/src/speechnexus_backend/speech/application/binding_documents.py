@@ -23,7 +23,7 @@ def _integer_text(value: int) -> str:
         return format(Decimal(value), "f")
 
 
-def _parse_integer(value: str) -> int:
+def parse_integer(value: str) -> int:
     try:
         return int(value)
     except ValueError:
@@ -69,25 +69,32 @@ def _encoded(value: Any, depth: int = 0) -> Iterator[str]:
         raise ValueError("Binding documents require JSON values")
 
 
-def encode_document(value: Any) -> bytes:
+def encode_json(value: Any, *, max_bytes: int) -> bytes:
+    """Serialize bounded source JSON with exact integers, including HTTP projections."""
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 1048576:
+        raise ValueError("Invalid JSON byte limit")
     try:
         raw = bytearray()
         for piece in _encoded(value):
             chunk = piece.encode("utf-8")
-            if len(raw) + len(chunk) > MAX_DOCUMENT_BYTES:
+            if len(raw) + len(chunk) > max_bytes:
                 raise ValueError
             raw.extend(chunk)
-        result = bytes(raw)
-        document_digest(result)
-        return result
+        return bytes(raw)
     except ValueError, TypeError, RecursionError, OverflowError:
         raise ValueError("Invalid binding document") from None
+
+
+def encode_document(value: Any) -> bytes:
+    result = encode_json(value, max_bytes=MAX_DOCUMENT_BYTES)
+    document_digest(result)
+    return result
 
 
 def decode_document(raw: bytes) -> dict[str, Any]:
     try:
         document_digest(raw)
-        value = json.loads(raw, parse_int=_parse_integer)
+        value = json.loads(raw, parse_int=parse_integer)
         if not isinstance(value, dict) or encode_document(value) != raw:
             raise ValueError
         return value

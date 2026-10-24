@@ -8,11 +8,12 @@ retention ledgers. Audio inspection, Artifact/Operation/receipt and other speech
 voice, job and workbench business behavior continue in their owned units.
 Machine contracts alone do not prove those runtime capabilities.
 
-The process-local ModelBinding draft registry now provides immutable create,
-original-key recovery and fixed revision reads through a PostgreSQL port. Its
+The ModelBinding draft registry provides immutable create, original-key recovery
+and fixed revision reads through PostgreSQL and an opt-in HTTP writer. Its
 [storage and handoff](../docs/architecture/model-binding-drafts.md) describe migration
-0010 and explicit minimum-role provisioning. ModelBinding HTTP routes, publication,
-activation/default selection and model qualification remain separate work.
+0010, explicit minimum-role provisioning and `SPEECHNEXUS_BINDING_*` settings.
+Only POST and fixed GET are exposed; publication, activation/default selection
+and model qualification remain separate work.
 
 Run from the repository root:
 

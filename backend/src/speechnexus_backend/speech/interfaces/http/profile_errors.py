@@ -1,5 +1,7 @@
 """Fixed source-validated errors; never expose intent, key or DB diagnostics."""
 
+from typing import Any
+
 from speechnexus_contracts.admin import parse
 from speechnexus_contracts.profile_http import validate_response
 from starlette.responses import JSONResponse
@@ -84,3 +86,11 @@ def profile_error(
     if operation is not None:
         validate_response(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)
+
+
+def ingress_error(code: str, request_id: str, **kwargs: Any) -> JSONResponse:
+    return profile_error(
+        "invalid_profile_request" if code == "invalid_request" else "profile_" + code,
+        request_id,
+        **kwargs,
+    )

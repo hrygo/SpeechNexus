@@ -61,7 +61,13 @@ class Settings(BaseSettings):
     profile_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     profile_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
-    @field_validator("profile_writer_database_url", mode="before")
+    binding_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    binding_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
+    binding_receive_concurrency: int = Field(default=4, ge=1, le=4)
+    binding_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    binding_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
+    @field_validator("profile_writer_database_url", "binding_writer_database_url", mode="before")
     @classmethod
     def empty_profile_writer_is_disabled(cls, value: Any) -> Any:
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value

@@ -96,6 +96,22 @@
         "/v1/nexus/assets/{asset_id}",
         "/v1/nexus/assets/{asset_id}/content"
       ]
+    },
+    "workbench": {
+      "source": "workbench-openapi.yaml",
+      "validate": true,
+      "paths": [
+        "/v1/workbench/status",
+        "/v1/workbench/projects",
+        "/v1/workbench/projects/{project_id}",
+        "/v1/workbench/projects/{project_id}/transcripts",
+        "/v1/workbench/transcripts/{transcript_id}",
+        "/v1/workbench/transcripts/{transcript_id}/revisions",
+        "/v1/workbench/transcripts/{transcript_id}/revisions/{revision}",
+        "/v1/workbench/deletion-plans",
+        "/v1/workbench/deletions",
+        "/v1/workbench/deletions/{deletion_id}"
+      ]
     }
   }
 }

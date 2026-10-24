@@ -143,7 +143,7 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def bundle_http_surface(config: dict[str, Any]) -> dict[str, Any]:
-    """Close selected implemented paths into a portable OpenAPI document.
+    """Close selected reviewed paths into a portable OpenAPI document.
 
     Keep parameters/responses/headers in their actual component namespaces;
     external JSON Schemas become named schema components. Never flatten away
@@ -213,6 +213,194 @@ def bundle_http_surface(config: dict[str, Any]) -> dict[str, Any]:
         "paths": paths,
         "components": components,
     }
+
+
+def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
+    """Derive transport envelopes; never maintain a second set of wire rules."""
+
+    def resolve(node: dict[str, Any]) -> dict[str, Any]:
+        while "$ref" in node:
+            reference = node["$ref"]
+            if not reference.startswith("#/components/"):
+                raise ValueError("HTTP metadata must contain closed component references")
+            node = document
+            for token in reference[2:].split("/"):
+                node = node[token.replace("~1", "/").replace("~0", "~")]
+        return node
+
+    def rebase(node: Any) -> Any:
+        if isinstance(node, dict):
+            result = {key: rebase(value) for key, value in node.items()}
+            if "$ref" in result:
+                prefix = "#/components/schemas/"
+                if not result["$ref"].startswith(prefix):
+                    raise ValueError("A transport schema must reference a schema component")
+                result["$ref"] = "#/$defs/" + result["$ref"][len(prefix) :]
+            return result
+        if isinstance(node, list):
+            return [rebase(value) for value in node]
+        return node
+
+    def scalar_type(schema: dict[str, Any]) -> str:
+        kind = resolve(schema).get("type")
+        if kind not in ("string", "integer"):
+            raise ValueError("HTTP validation currently supports scalar string/integer parameters")
+        return str(kind)
+
+    def body(container: dict[str, Any], envelope: dict[str, Any], *, required: bool) -> None:
+        content = container.get("content", {})
+        if content:
+            if set(content) != {"application/json"}:
+                raise ValueError("Validated transport profiles currently support JSON bodies")
+            envelope["properties"]["body"] = rebase(content["application/json"]["schema"])
+            if container.get("required", required):
+                envelope["required"].append("body")
+
+    definitions = rebase(document["components"].get("schemas", {}))
+    operations: dict[str, Any] = {}
+    entrypoints: list[str] = []
+    for path, item in document["paths"].items():
+        for method, operation in item.items():
+            if method not in {"get", "post", "put", "patch", "delete", "head", "options"}:
+                continue
+            name = operation["operationId"]
+            if name in operations:
+                raise ValueError("Duplicate HTTP operation identity")
+            groups: dict[str, Any] = {
+                location: {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": location == "headers",
+                }
+                for location in ("path", "query", "headers")
+            }
+            types: dict[str, dict[str, str]] = {key: {} for key in groups}
+            for parameter in item.get("parameters", []) + operation.get("parameters", []):
+                parameter = resolve(parameter)
+                location = "headers" if parameter["in"] == "header" else parameter["in"]
+                if location not in groups:
+                    raise ValueError("Unsupported HTTP parameter location")
+                key = parameter["name"].lower() if location == "headers" else parameter["name"]
+                if key in groups[location]["properties"]:
+                    raise ValueError("Duplicate HTTP parameter identity")
+                schema = parameter["schema"]
+                types[location][key] = scalar_type(schema)
+                groups[location]["properties"][key] = rebase(schema)
+                if parameter.get("required"):
+                    groups[location]["required"].append(key)
+            request = {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": groups,
+                "required": [key for key, value in groups.items() if value["required"]],
+            }
+            if "requestBody" in operation:
+                body(resolve(operation["requestBody"]), request, required=False)
+            request_name = "HttpRequest_" + name
+            if request_name in definitions:
+                raise ValueError("HTTP envelope collides with a component")
+            definitions[request_name] = request
+            entrypoints.append(request_name)
+            metadata = {
+                "path": path,
+                "method": method,
+                "request": request_name,
+                "parameters": types,
+                "responses": {},
+            }
+            for status, raw in operation["responses"].items():
+                if not status.isdecimal() or len(status) != 3:
+                    raise ValueError("Validated HTTP profiles require explicit response statuses")
+                response = resolve(raw)
+                headers: dict[str, Any] = {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": True,
+                }
+                header_types: dict[str, str] = {}
+                for key, value in response.get("headers", {}).items():
+                    value = resolve(value)
+                    normalized = key.lower()
+                    header_types[normalized] = scalar_type(value["schema"])
+                    headers["properties"][normalized] = rebase(value["schema"])
+                    if value.get("required"):
+                        headers["required"].append(normalized)
+                envelope = {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"headers": headers},
+                    "required": ["headers"] if headers["required"] else [],
+                }
+                body(response, envelope, required=True)
+                response_name = "HttpResponse_" + name + "_" + status
+                if response_name in definitions:
+                    raise ValueError("HTTP envelope collides with a component")
+                definitions[response_name] = envelope
+                entrypoints.append(response_name)
+                metadata["responses"][status] = {
+                    "schema": response_name,
+                    "headers": header_types,
+                    "json": bool(response.get("content")),
+                }
+            operations[name] = metadata
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "x-nexus-http-operations": operations,
+        "x-nexus-entrypoints": entrypoints,
+        "$defs": definitions,
+    }
+
+
+def generate_http_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
+    document = bundle_http_surface(config)
+    bundle = bundle_http_validation(document)
+    python = destination / "src/speechnexus_contracts"
+    schema = python / f"{name}-http.schema.json"
+    schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
+    wrapper = python / f"{name}_http.py"
+    wrapper.write_text(
+        '"""Generated HTTP validation entrypoints; do not edit."""\n'
+        "from typing import Any\n"
+        "from .http_validation import "
+        "contract_for, validate_http_request, validate_http_response\n\n"
+        "def contract() -> dict[str, Any]:\n"
+        f"    return contract_for({name!r})\n\n"
+        "def validate_request(operation: str, value: Any) -> Any:\n"
+        f"    return validate_http_request({name!r}, operation, value)\n\n"
+        "def validate_response(operation: str, status: int, value: Any) -> Any:\n"
+        f"    return validate_http_response({name!r}, operation, status, value)\n"
+    )
+    types = destination / f"src/{name}-http.ts"
+    types.write_text(
+        "// Generated HTTP validation entrypoints; do not edit.\n"
+        'import openapiFetch from "openapi-fetch";\n'
+        'import { createHttpValidator } from "./http-runtime.mjs";\n'
+        f'import bundle from "./speechnexus_contracts/{name}-http.schema.json" '
+        'with { type: "json" };\n'
+        f'import type {{ paths }} from "./{name}.generated";\n'
+        'export { ContractValidationError } from "./errors.mjs";\n'
+        "export type HttpOperation = "
+        + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])
+        + ";\n"
+        "type HttpPaths = Pick<paths, "
+        + " | ".join(json.dumps(p) for p in document["paths"])
+        + ">;\n"
+        "const validator = createHttpValidator(bundle);\n"
+        "export function validateRequest<T>(operation: HttpOperation, value: T): T {\n"
+        "  return validator.validateRequest(operation, value);\n}\n"
+        "export function validateResponse<T>("
+        "operation: HttpOperation, status: number, value: T): T {\n"
+        "  return validator.validateResponse(operation, status, value);\n}\n"
+        "export function createValidatedClient("
+        "baseUrl: string, maxJsonBytes: number, fetch?: typeof globalThis.fetch) {\n"
+        '  const client = openapiFetch<HttpPaths>({ baseUrl, redirect: "error", '
+        "...(fetch ? { fetch } : {}) });\n"
+        "  client.use(validator.middleware(baseUrl, maxJsonBytes));\n"
+        "  return client;\n}\n"
+    )
+    return [path.relative_to(destination) for path in (schema, wrapper, types)]
 
 
 def generate_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
@@ -394,11 +582,21 @@ def generate(destination: Path) -> list[Path]:
     profile_outputs: list[Path] = []
     for profile, config in manifest["profiles"].items():
         profile_outputs.extend(generate_profile(profile, config, destination))
+    http_profiles = {
+        name: config
+        for name, config in manifest.get("http_surfaces", {}).items()
+        if config.get("validate")
+    }
+    for name, config in http_profiles.items():
+        profile_outputs.extend(generate_http_profile(name, config, destination))
     registry = python / "profile_registry.py"
     registry.write_text(
         '"""Generated profile allowlist; do not edit."""\n'
         + "PROFILES = frozenset("
         + repr(tuple(manifest["profiles"]))
+        + ")\n"
+        + "HTTP_PROFILES = frozenset("
+        + repr(tuple(http_profiles))
         + ")\n"
     )
     profile_outputs.append(registry.relative_to(destination))

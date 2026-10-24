@@ -1,0 +1,145 @@
+import { createProfileParser } from "./profile-runtime.mjs";
+import { ContractValidationError } from "./errors.mjs";
+
+function normalize(value, types, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result = { ...value };
+  for (const [location, fields] of Object.entries(types)) {
+    const group = value[location];
+    if (!group || typeof group !== "object" || Array.isArray(group)) continue;
+    const normalized = Object.create(null);
+    for (const [key, original] of Object.entries(group)) {
+      const name = location === "headers" ? key.toLowerCase() : key;
+      if (Object.hasOwn(normalized, name)) throw new ContractValidationError(message);
+      let item = original;
+      if (fields[name] === "integer") {
+        if (typeof item === "string" && item.length <= 17 && /^-?(0|[1-9][0-9]*)$/.test(item)) {
+          item = Number(item);
+        }
+        if (typeof item === "number" && !Number.isSafeInteger(item)) {
+          throw new ContractValidationError(message);
+        }
+      }
+      normalized[name] = item;
+    }
+    result[location] = normalized;
+  }
+  return result;
+}
+
+function jsonContent(headers) {
+  return headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() === "application/json";
+}
+
+async function boundedJson(message, limit, errorMessage) {
+  if (!message.body) return {};
+  const clone = message.clone();
+  const reader = clone.body.getReader();
+  try {
+    if (!jsonContent(message.headers)) throw new Error();
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error();
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { body: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) };
+  } catch {
+    // Cancel both tee branches without waiting on the unread original branch.
+    void reader.cancel().catch(() => {});
+    void message.body.cancel().catch(() => {});
+    throw new ContractValidationError(errorMessage);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export function createHttpValidator(bundle) {
+  const parse = createProfileParser(bundle);
+  const operations = bundle["x-nexus-http-operations"];
+  function operation(name) {
+    if (!Object.hasOwn(operations, name)) throw new Error("Unknown HTTP operation");
+    return operations[name];
+  }
+  function validateRequest(name, value) {
+    const meta = operation(name);
+    try {
+      parse(meta.request, normalize(value, meta.parameters, "Invalid HTTP request"));
+    } catch (error) {
+      if (!(error instanceof ContractValidationError)) throw error;
+      throw new ContractValidationError("Invalid HTTP request");
+    }
+    return value;
+  }
+  function validateResponse(name, status, value) {
+    const responses = operation(name).responses;
+    if (!Number.isInteger(status) || !Object.hasOwn(responses, status)) {
+      throw new ContractValidationError("Invalid HTTP response");
+    }
+    const meta = responses[status];
+    try {
+      parse(meta.schema, normalize(value, { headers: meta.headers }, "Invalid HTTP response"));
+    } catch (error) {
+      if (!(error instanceof ContractValidationError)) throw error;
+      throw new ContractValidationError("Invalid HTTP response");
+    }
+    return value;
+  }
+  function middleware(baseUrl, maxJsonBytes) {
+    if (!Number.isSafeInteger(maxJsonBytes) || maxJsonBytes < 1) {
+      throw new Error("A positive safe JSON byte limit is required");
+    }
+    function locate(schemaPath, request) {
+      const entry = Object.entries(operations).find(
+        ([, meta]) => meta.path === schemaPath && meta.method === request.method.toLowerCase(),
+      );
+      if (!entry) throw new Error("Unknown HTTP operation");
+      return entry;
+    }
+    return {
+      async onRequest({ request, schemaPath, params }) {
+        if (request.redirect !== "error") throw new ContractValidationError("Invalid HTTP request");
+        const [name, meta] = locate(schemaPath, request);
+        // Headers has already merged case variants; reject ambiguous parameter input first.
+        normalize({ headers: params.header }, { headers: {} }, "Invalid HTTP request");
+        const actual = new URL(request.url);
+        const query = Object.create(null);
+        for (const [key, value] of actual.searchParams) {
+          if (Object.hasOwn(query, key)) throw new ContractValidationError("Invalid HTTP request");
+          query[key] = value;
+        }
+        const envelope = {
+          path: params.path ?? {},
+          query,
+          headers: Object.fromEntries(request.headers),
+          ...(await boundedJson(request, maxJsonBytes, "Invalid HTTP request")),
+        };
+        validateRequest(name, envelope);
+        const path = meta.path.replace(/\{([^}]+)\}/g, (_, key) =>
+          encodeURIComponent(envelope.path[key]),
+        );
+        const expected = new URL(baseUrl.replace(/\/$/, "") + path);
+        if (actual.origin !== expected.origin || actual.pathname !== expected.pathname) {
+          throw new ContractValidationError("Invalid HTTP request");
+        }
+      },
+      async onResponse({ request, schemaPath, response }) {
+        const [name] = locate(schemaPath, request);
+        validateResponse(name, response.status, {
+          headers: Object.fromEntries(response.headers),
+          ...(await boundedJson(response, maxJsonBytes, "Invalid HTTP response")),
+        });
+      },
+    };
+  }
+  return { validateRequest, validateResponse, middleware };
+}

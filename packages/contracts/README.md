@@ -202,13 +202,77 @@ const view = result.data
   : parse("ErrorResponse", result.error);
 ```
 
-These calls validate JSON bodies only. HTTP path/query/header/status validation,
-automatic client validation, Meeting/Minutes and public realtime runtime
-entrypoints remain separate A00 units. Schema validation does not establish a
+These calls validate JSON bodies only. The opt-in HTTP profile below checks
+transport parameters/status and validates client requests/responses.
+Meeting/Minutes and public realtime runtime entrypoints remain separate A00 units.
+Schema validation does not establish a
 cross-record transcript/revision match, deletion ownership of the selected
 route, a fresh plan, actual cleanup, or permission to release budgets. C owns
 those application/transport checks and its workbench migrations/routes; this
 package does not register them in the speech backend.
+
+### Workbench HTTP boundary
+
+`workbench-http` derives ten paths / thirteen operations from the source
+OpenAPI: status, project create/read/update/list, transcript create/read/list and
+revision create/read, and deletion plan/create/read. The packaged
+`workbench.openapi.json` is a closed contract for C's handlers and documentation;
+loading it does not start a server or register a route. It retains the original
+parameter/header requirements, per-status JSON response schemas and public
+errors. It does not change the default `workbench.createClient`.
+
+```python
+from speechnexus_contracts.workbench_http import validate_request, validate_response
+
+validate_request("listProjects", {"query": {"limit": "50"}})
+validate_response("listProjects", 200, {"headers": response_headers, "body": response_json})
+```
+
+The envelope accepts optional `path`, `query`, `headers` maps and a JSON `body`
+when the operation declares one; responses contain optional headers and the
+declared body. Required parameters, body and statuses follow the actual route.
+For example, deletion's Idempotency-Key is required and may be one character,
+while project creation's optional key has the source component's eight-character
+minimum. Undeclared path/query keys, duplicate case variants of headers and
+unlisted response statuses are rejected. Extra HTTP headers remain allowed.
+
+Integer query/header values accept a safe integer or its strict decimal HTTP
+serialization. Header names are case insensitive. Validation uses a temporary
+projection and returns the original envelope unchanged; it never changes the
+JSON body, inserts the source's default limit, or converts revision strings.
+The adapter must preserve/reject duplicate scalar query/header wire fields
+before mapping them to a Python dictionary. This is shape validation, not authentication,
+cross-resource ownership, CAS, deletion authorization or cleanup evidence.
+
+```ts
+import { createValidatedClient } from "@speechnexus/contracts/workbench-http";
+import { parse } from "@speechnexus/contracts/workbench";
+
+const client = createValidatedClient(deploymentBaseUrl, 8 * 1024 * 1024);
+const result = await client.POST("/v1/workbench/projects/{project_id}/transcripts", {
+  params: { path: { project_id: projectId }, header: { "Idempotency-Key": originalKey } },
+  body: parse("TranscriptCreateRequest", untrustedJson),
+});
+```
+
+The client checks the final URL, query, headers and serialized JSON before
+fetching, then validates the actual response status, headers and JSON before
+returning it. Its explicit byte limit applies to actual UTF-8 bytes in each
+request/response, independently of Content-Length; overflow/invalid UTF-8/JSON
+cancels reading and returns a safe ContractValidationError. Callers choose a
+bound that covers their supported payloads and retain their own concurrency and
+timeouts. The client prohibits redirects and a different per-call deployment
+origin/path, preserves the supplied body/key, and never retries a network error
+or an unknown outcome. Declared errors keep their original status/body; this
+validation does not grant permission to repeat a write. Consumers that add their
+own middleware/fetch implementation must preserve these transport guarantees.
+
+Both languages consume `workbench-http.json`, including every declared response
+status. Python also checks these cases against the original source operations;
+the TS mock transport covers rejection before network I/O, byte bounds, cancellation,
+unknown responses and no retries. A native loopback HTTP check also verifies a
+parsed reply and zero requests to a POST redirect target. Actual C handlers, their migrations and
+target-network/browser qualification remain C's versioned integration work.
 
 Execution control `0.4.0.dev0` includes barrier and error parser entrypoints. Control
 failures carry a constrained recovery hint: a lost commit acknowledgment is

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.domain.ports import EngineAbortPort, ExecutionAbortLedger
+from speechnexus_gateway.domain.ports import EngineAbortPort, ExecutionFactLedger
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
@@ -68,7 +68,7 @@ class ExecutionAbortService:
         self,
         *,
         ingress: GatewayIngress,
-        ledger: ExecutionAbortLedger,
+        ledger: ExecutionFactLedger,
         abort: EngineAbortPort,
         now: Callable[[], datetime] | None = None,
     ) -> None:

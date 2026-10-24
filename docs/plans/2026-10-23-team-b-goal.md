@@ -17,7 +17,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-以 main `cafc6b9` 为本轮最终整合基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
+以 main `75dc96a` 为本轮最终整合基线；[PR #123](https://github.com/hrygo/SpeechNexus/pull/123)
 已交付检查点背书的节点停止查询与固定TLS网关来源，前一轮PR/合后主干均11项CI全绿。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。

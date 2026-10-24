@@ -6,7 +6,7 @@ date: 2026-10-24
 
 # B01 默认网关自动恢复验证
 
-开工基线`22d50ee`，先整合main`9d927f5`，交付前再同步`cafc6b9`，保留A的ModelBinding草稿与HTTP交付。
+开工基线`22d50ee`，先整合main`9d927f5`，再同步`cafc6b9`，交付前重放至`75dc96a`，保留A草稿/HTTP与原Job未知恢复修复。
 本单元承接#123的可信节点来源和#124的连续扫描；完成的是默认进程自动驱动，
 不完成B01整包、B00–B07、Gate或模型/物理集群资格。
 
@@ -32,7 +32,8 @@ date: 2026-10-24
 进程测试首次失败是退出码断言：Uvicorn完成lifespan后恢复并重抛SIGTERM，返回-15；
 最终断言同时要求-15和`Application shutdown complete.`，不能只接受退出码冒充安全停机。
 终审新增取消停机反例先RED：旧实现的finally在writer仍阻塞时提前关pool/ownership。
-修复为单个同步清理任务，shield等待；重复取消也待join/资源关闭后才传播。反例GREEN。
+修复为单个同步清理任务，shield等待；正常退出、异常退出和重复取消均待join/资源关闭后
+才传播原异常/取消。反例GREEN，异常退出另有实际应用lifespan回归。
 最初命令漏设兼容基线、一次集成文件名写错，均未计通过，随后以正确入口执行。
 
 ## 本地验证
@@ -41,10 +42,10 @@ date: 2026-10-24
 
 | 检查 | 结果与范围 |
 | --- | --- |
-| `uv run pytest -m 'not integration' --cov --cov-report=term` | 3317 passed，81.13%；9项既有警告未隐藏 |
-| 三组恢复/配置/周期单元 | 52 passed |
+| `uv run pytest -m 'not integration' --cov --cov-report=term` | cafc6b9组合3317 passed，81.13%；9项既有警告未隐藏，随后新增异常退出由专项验证 |
+| 三组恢复/配置/周期单元 | 53 passed |
 | 下列8个相关集成模块，PG/InnoDB | 122 passed，0 skipped；含2个实际网关进程和2个原生双库周期消费者 |
-| `uv run ruff format --check .` / `uv run ruff check .` / `uv run mypy` / `uv run lint-imports` | 通过；476源文件类型检查，7项依赖边界 |
+| `uv run ruff format --check .` / `uv run ruff check .` / `uv run mypy` / `uv run lint-imports` | 通过；477源文件类型检查（75dc96a组合），7项依赖边界 |
 | `make contracts-check contracts-drift` | 29份机器源校验及同源生成漂移检查 |
 | `CONTRACT_BASE_REF=origin/main make contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results` | 五个已声明范围的兼容入口通过；不冒称完整协议包含性证明 |
 | 四包构建与源码目录外安装消费 | 通过；新profile解析与TLS来源激活，依赖沿用锁定环境 |
@@ -73,4 +74,5 @@ uv run pytest \
 真实引擎dispatch/abort/fault、ready持续监控、A完整调度预算、流式/音色/对齐/分人、
 混合负载与物理多主机仍待。不采用etcd或Redis权威，集群要求不降级。
 
-CI、PR与合并状态由Issue #28/#6的当前单元记录跟踪，未运行的远端结果不计通过。
+75dc96a组合的原生恢复/Job未知读取专项，以及最终精确head的CI、PR与合并状态，
+由Issue #28/#6的当前单元记录跟踪，未运行的远端结果不计通过。

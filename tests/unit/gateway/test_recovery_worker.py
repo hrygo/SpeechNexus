@@ -246,6 +246,30 @@ async def test_cancelled_lifespan_cannot_close_resources_before_worker_join(
         worker.close()
 
 
+async def test_exceptional_lifespan_exit_joins_before_resources_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, worker, source, closed, _ = app_with_waiting_worker(tmp_path, monkeypatch)
+
+    async def fail_inside_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            assert await asyncio.to_thread(source.entered.wait, 2)
+            raise RuntimeError("synthetic lifecycle failure")
+
+    shutdown = asyncio.create_task(fail_inside_lifespan())
+    try:
+        assert await asyncio.to_thread(worker._stop.wait, 2)
+        assert not shutdown.done() and not closed
+        source.release.set()
+        with pytest.raises(RuntimeError, match="synthetic lifecycle failure"):
+            await asyncio.wait_for(shutdown, 2)
+        assert closed == ["pool", "ownership"]
+        assert app.state.recovery_worker is None
+    finally:
+        source.release.set()
+        worker.close()
+
+
 @pytest.mark.parametrize("running", [None, False])
 async def test_readiness_refuses_a_missing_or_dead_configured_worker(
     tmp_path: Path, running: bool | None

@@ -1,5 +1,5 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
-	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-coordination-requests contracts-coordination-results contracts-sdk-test contracts-generate contracts-drift \
+	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service \
 	format lint typecheck test integration-test coordination-test python-build build verify
 
@@ -64,6 +64,11 @@ contracts-http-changes:
 	@test -n "$$CONTRACT_BASE_REF" || \
 		{ echo "CONTRACT_BASE_REF is required" >&2; exit 2; }
 	uv run python scripts/dev-env/check-http-contract-changes.py --base "$$CONTRACT_BASE_REF"
+
+contracts-speech-changes:
+	@test -n "$$CONTRACT_BASE_REF" || \
+		{ echo "CONTRACT_BASE_REF is required" >&2; exit 2; }
+	uv run python scripts/dev-env/check-http-contract-changes.py --base "$$CONTRACT_BASE_REF" --surface speech
 
 contracts-coordination-requests:
 	@test -n "$$CONTRACT_BASE_REF" || \

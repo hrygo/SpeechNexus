@@ -12,6 +12,7 @@ fake behavior and upgrade impact, followed by consumer verification.
 | workbench-openapi.yaml | 0.1.0.dev0 | All 34 declared paths |
 | internal/runtime-control.openapi.yaml | 0.1.0.dev0 | All 3 declared paths |
 | internal/execution-control.openapi.yaml | 0.4.0.dev0 | All 5 declared paths |
+| speech-openapi.yaml (explicit mode) | 0.1.0.dev0 | All 38 declared HTTP paths, including 33 Nexus paths and full fields |
 
 Counts and versions describe the current baseline; the CLI reads versions from
 the actual documents instead of relying on this table. Unimplemented operations
@@ -19,6 +20,8 @@ in a source are compared as declarations, not advertised as running services.
 The existing OpenAI gate keeps its five standard paths and Nexus exclusion.
 The added explicit policy compares all paths and Nexus fields in these four
 sources, including inside exclusive variants and repository references.
+Those four remain the default selection. The additional speech mode selects only
+the final row; its source and scope are reported separately.
 
 ## Run and consume the change inventory
 
@@ -73,3 +76,35 @@ this unit. The complete A00 package and cross-team Gates remain open.
 PR CI runs this additional check in the existing Python job against the fetched
 base. Existing protected check names, six database partitions, conditional Node
 prerequisites and complete/disjoint report verification remain unchanged.
+
+## Explicit complete speech HTTP selection
+
+```bash
+CONTRACT_BASE_REF=<frozen commit or ref> make contracts-speech-changes
+uv run python scripts/dev-env/check-http-contract-changes.py \
+  --base <frozen commit or ref> --surface speech --format json
+```
+
+This mode selects every HTTP path in `speech-openapi.yaml`, including the Nexus
+resource surface and Nexus fields on standard paths. Its inventory reports the
+source's real version and current path count. The default CLI and
+`contracts-http-changes` retain the four-source selection and text/JSON output.
+The separate OpenAI comparison retains its five standard paths and extension
+exclusion; this extra structural check adds no formal OpenAI compatibility
+promise.
+
+The named real-source counterexample removes `/v1/nexus/assets`: the standard and
+four-source comparators do not report that path removal, while explicit speech
+selection rejects it. This demonstrates a comparator selection gap, not a claim
+that generated drift, SDK compilation or the entire old CI would pass. A
+referenced document also does not imply every path or standalone JSON root was
+previously compared.
+
+The same immutable baseline, source version inventory, directional request and
+response checks and closed repository references are reused. A version bump is
+not a waiver. Positive controls retain annotations and new paths. Missing sources,
+versions or unprovable references cannot silently fall back to checking four
+other documents. Existing source validation, examples and consumer tests remain
+necessary. The general schema/serialization/status/media/security/WS and real
+qualification limits above apply to this mode too. CI runs it as an explicit
+step in the same Python job; no status name, partition or runtime permission changes.

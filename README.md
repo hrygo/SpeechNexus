@@ -81,6 +81,8 @@ SpeechNexus 希望服务于三类需求：
 
 [文件识别原生接口](docs/architecture/file-asr-recognition.md)已将媒体/VAD 接到固定内网 vLLM ASR，校验请求身份、结束原因和实际 token 上限，拒绝截断结果。0.6B/1.7B 已完成合成和授权真实录音调用；公开 ASR、持久派发、结果发布与完整质量/性能资格仍待接入。
 
+[原命令与核验文件输入](docs/architecture/frozen-execution-inputs.md)提供持久完整命令的只读核验、原提交路径的命令桥和版本固定的 MinIO 输入。隔离双库/对象存储测试已将合成文件接到现有媒体与识别消费者；真实引擎派发、完整参数映射、停止证明和最终发布仍待装配。
+
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。

@@ -31,6 +31,8 @@ _IDENTIFIER_MAX_LENGTH: Final = 128
 _SAMPLE_RATES: Final = frozenset({16000, 24000, 48000})
 _MIN_OUTPUT_AUDIO_MS: Final = 100
 _MAX_INT64: Final = 2**63 - 1
+# Process read bound for private stored requests; not a new wire default or quota authority.
+MAX_ORIGINAL_COMMAND_BYTES: Final = 32 * 1024 * 1024
 
 
 class ExecutionState(StrEnum):

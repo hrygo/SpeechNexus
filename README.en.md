@@ -81,6 +81,8 @@ The [trusted node stop source (Chinese)](docs/architecture/trusted-node-stop.md)
 
 [Native file recognition (Chinese)](docs/architecture/file-asr-recognition.md) connects media/VAD to a fixed intranet vLLM ASR endpoint, verifies request identity, completion reason and actual token limits, and rejects truncated results. Both 0.6B and 1.7B completed synthetic and authorized real-recording calls; public ASR, durable dispatch, result publication and full quality/performance qualification remain pending.
 
+[Original commands and verified file inputs (Chinese)](docs/architecture/frozen-execution-inputs.md) provide read-only verification of persisted complete requests, a command bridge for the original submission path, and version-pinned MinIO inputs. Isolated database/object-store tests connect synthetic files to the existing media and recognition consumers; real engine dispatch, complete parameter mapping, stop proof and final publication still require assembly.
+
 [Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
 
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.

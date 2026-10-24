@@ -20,3 +20,4 @@
 - [2026-10-24 B02 真实 ASR 预热就绪门探针](2026-10-24-b02-warmup-gate-probe.md)：`http_warmup_ok` 在真实 0.6B/1.7B 容器上的 `warming_up → ready` 序列、首轮与立即重复耗时、停止双证据与未验证边界。
 - [2026-10-24 B03 Qwen3-TTS 真实引擎可行性复核](2026-10-24-b03-tts-engine-feasibility.md)：更正此前误判；`--omni` 在线服务、旧 runner 兼容、显存预算、两条真实合成请求与 ASR 回环、未验证边界。
 - [2026-10-24 B03 TTS 适配器真实探针](2026-10-24-b03-tts-adapter-probe.md)：通过已提交适配器合成 1.7B CustomVoice、WAV/MP3 交付、24 kHz→16 kHz 解码与 0.6B ASR 回环，以及停止/清理证据与未验证边界。
+- [2026-10-24 B01/B03 原命令与核验文件输入](2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。

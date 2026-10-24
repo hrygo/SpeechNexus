@@ -8,6 +8,7 @@
 - [OpenAI 兼容与增强边界](openai-compatibility.md)：SDK 调用、兼容子集、`nexus.*` 扩展规则与契约门禁。
 - [资源治理与持久化](runtime-governance.md)：调度、fencing、用量、发布与数据生命周期。
 - [规范执行命令](execution-command.md)：完整参数、摘要与内部 TTS 文本流。
+- [原命令与核验文件输入](frozen-execution-inputs.md)：原持久请求只读核验、一次提交命令桥、固定版本对象输入与既有文件消费者；真实引擎与最终发布仍待装配。
 - [数据删除](data-deletion.md)：依赖预检、级联确认、清理证据和恢复账本。
 - [精简协调 Schema](distributed-coordination-schema.md)：普通约束、当前指针、表所有权与历史保护；[旧 PG 原型](legacy-postgresql-coordination.md)保留历史证据。
 - [应用事务方案与契约](coordination-transactions.md)：程序职责、锁序、预算、恢复身份、旧规则映射和后续编码交接。

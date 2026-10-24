@@ -32,7 +32,8 @@
       "observe_runtime",
       "record_execution_observation",
       "redact_execution_command",
-      "append_interval"
+      "append_interval",
+      "quarantine_lease"
     ]
   },
   "profiles": {

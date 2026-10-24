@@ -15,7 +15,8 @@
     "observe_runtime",
     "record_execution_observation",
     "redact_execution_command",
-    "append_interval"
+    "append_interval",
+    "quarantine_lease"
   ],
   "$defs": {
     "create_job": {
@@ -2265,6 +2266,24 @@
           "maximum": 9007199254740991
         }
       }
+    },
+    "quarantine_lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease_id", "reason_code", "observed_at_us"],
+      "properties": {
+        "lease_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+        },
+        "observed_at_us": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
     }
   },
   "anyOf": [
@@ -2306,6 +2325,9 @@
     },
     {
       "$ref": "#/$defs/append_interval"
+    },
+    {
+      "$ref": "#/$defs/quarantine_lease"
     }
   ]
 }

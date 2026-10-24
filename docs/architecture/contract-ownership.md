@@ -11,8 +11,8 @@
 | ------------------------------------ | --------------------------- | --------------------------------- | ------------------------------------------------- |
 | speech OpenAPI                       | A                           | C 工作台后端/Web、MCP；A 公共接口 | 首批文件闭环类型/校验见独立契约包；实际路由待实施 |
 | admin OpenAPI                        | A；B 提供实例/资格事实      | C 管理界面                        | 源契约和变更清单；生成/消费联调待补               |
-| workbench OpenAPI                    | C                           | C Web/MCP                         | 源契约和变更清单；生成/消费联调待补               |
-| realtime events                      | A；B 提供执行流事实         | C 浏览器/A 实时入口               | 源契约；生成/序列消费验证待补                     |
+| workbench OpenAPI                    | C                           | C Web/MCP                         | JSON/HTTP入口与样例已交付（#73/#75/#77）；真实消费者待验收 |
+| realtime events                      | A；B 提供执行流事实         | C 浏览器/A 实时入口               | 公开session/事件parser与时序输入已交付（#79）；真实时序/WS待验收 |
 | execution control / stream / command | B；A 编排调用方             | A Scheduler/Worker/实时服务       | 源契约；生产联调待补                              |
 | runtime control                      | B 控制器；A 生命周期编排    | A/B                               | 源契约；生产联调待补                              |
 | coordination transactions            | A speech/runtime；B gateway | 各自 application 与 adapter       | 下表冻结归属；生产事务分别实施                    |
@@ -60,3 +60,7 @@ speech 表；B 不接管 A 的预算释放裁决。首批独立包的安装、�
 unknown 只能查询原身份或协调，不能新建执行普通重试。B 的区间账本由 A 消费用于
 配额与结算。取消请求、TTL 和断线不是停止/释放证据。完整锁序、跨表裁决及最低
 证据要求仍以[协调事务设计](coordination-transactions.md)为准。
+
+[租约隔离事务](production-leases.md)提供 A 的 quarantine_lease 与只读 LeaseSnapshot
+入口，保留六维物理占用、槽位和 attempt 配额。release_lease 与 admit_recipe 仍待交付；
+parser、数据库接线和真实业务/引擎资格分别验收。

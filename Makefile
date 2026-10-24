@@ -104,6 +104,7 @@ coordination-test:
 		tests/integration/test_production_jobs.py \
 		tests/integration/test_production_owners.py \
 		tests/integration/test_production_claims.py \
+		tests/integration/test_production_leases.py \
 		tests/integration/test_runtime_intent_storage.py \
 		tests/integration/test_production_runtime_intents.py \
 		tests/integration/test_runtime_observations.py \

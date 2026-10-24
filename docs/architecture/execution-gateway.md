@@ -1,7 +1,7 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.8.0"
+version: "1.8.1"
 date: 2026-10-24
 ---
 
@@ -17,9 +17,10 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 认证 HTTP 屏障与只读执行查询已接入生产组合根。真实计量采集器、HTTP 提交与真实引擎装配仍待后续单元。
 本页区分已实现、已验证与未交付。
 
-语音处理侧另有 [CPU VAD 原生单元](cpu-vad.md)：会话隔离、版本化有界切段与固定 ONNX CPU
-adapter 已实现并通过合成探针；尚未装配公开实时入口或实际 ASR 外发，不改变本页的提交与停止
-证据、预算和屏障语义。
+语音处理侧另有 [CPU VAD](cpu-vad.md)、[有界文件媒体](file-asr-audio.md)和
+[原生文件识别](file-asr-recognition.md)：已实现 VAD 门禁、源样本时钟与真实 vLLM 调用，
+通过固定模型/授权录音探针。它们尚未装配公开实时入口或持久 submit dispatch；
+不改变本页的提交与停止证据、预算和屏障语义。
 
 ## 1. 代码位置与依赖
 

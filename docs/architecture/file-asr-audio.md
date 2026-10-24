@@ -8,7 +8,8 @@ date: 2026-10-24
 # 文件 ASR 有界媒体输入
 
 [B03 #30](https://github.com/hrygo/SpeechNexus/issues/30) 已提供原生解码和
-[CPU VAD](cpu-vad.md) 组合接口；尚未接入公开上传检查、调度器、ASR 外发或结果发布。
+[CPU VAD](cpu-vad.md) 组合接口；已有[文件识别原生消费者](file-asr-recognition.md)，
+公开上传检查、调度器与结果发布仍待接入。
 本单元不提供 TTS 编码、流式网络入口、识别交叠合并或外部引擎停止事实。
 
 ## 消费接口与职责

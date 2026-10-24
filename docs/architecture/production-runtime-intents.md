@@ -2,8 +2,9 @@
 
 属于 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)。本单元提供
 `0005_runtime_intents`、最小列授权、协调快照契约，以及独立的 PG
-`create_runtime_intent` / `query_outcome(runtime_intent)` 事务端口。
-**批准计划提供者、observe_runtime、调度循环和控制器客户端尚未接入运行进程。**
+`create_runtime_intent` / `observe_runtime` / `query_outcome(runtime_intent)` 事务端口。
+`0006_runtime_observation` 保存私有 readiness 证据；0001–0005 迁移保持不变。
+**批准计划/资格提供者、调度循环和控制器客户端尚未接入运行进程。**
 端口验证不代表完整配方准入、
 物理停止、GPU 或多主机资格；实施顺序见 [runtime 单元计划](../plans/2026-10-24-a01-runtime-intent-unit.md)。
 兼容边界和消费者顺序由 [ADR 0008](../decisions/0008-runtime-intents-before-controller-observation.md)登记。
@@ -123,7 +124,7 @@ stop 只将实例标为 draining 并记录原命令，不归还 host、base 或 
 lease 已释放、原 stop 观察含退出与资源释放证据，且新 generation 大于历史高水位。
 既有 preparing/reconciling/quarantined 未决意图继续阻止普通新 stop/replacement，须经
 后续观察/协调路径处理。基础预算标签为 peak/steady/q_peak/q_steady/released，保留
-隔离前的资源依据；本单元不执行这些观察驱动的预算转换。
+隔离前的资源依据；下述独立 observe 端口受控执行观察驱动的基线预算转换。
 
 PG 每个语句受剩余请求期限约束，提交确认后才返回 committed；仅确认死锁或序列化
 回滚后有限重试，抖动发生在释放连接之后。唯一冲突回滚后只读查询原身份；连接或
@@ -135,3 +136,62 @@ PG 每个语句受剩余请求期限约束，提交确认后才返回 committed�
 隔离清理屏障及原记录损坏。真实 PG 提交后人为丢失确认，验证只读恢复且不重复写入。
 测试中的观察与释放事实由明确的合成 fixture 提供，不是 observe_runtime 的实现证据，
 也不证明真实 GPU、容器、模型或多主机资格。
+
+
+## 独立 observe_runtime 端口
+
+`RuntimeService.observe`、PG 适配器和内部契约边界接收完整实际控制器响应、期望
+instance/intent version，以及显式服务端 owner。现有 create/query 组合可继续使用；
+启用 observe 必须装配 `observation_for_boundary`，缺少 codec 时拒绝观察，不产生
+默认成功。没有新增 HTTP 路由或真实 controller/warmup 客户端。
+
+按池→host→head→instance→intent→lease→submit 的全局顺序锁定，核对原冻结请求的
+全部身份、memory、generation/action/fencing、当前 head 指针、版本及 owner 租约；
+锁等待结束后取 DB 时间。事实观察允许发生在原请求 deadline 后，因为记录既有事实
+不等于再次执行。旧 generation 的新观察不能修改当前 generation。
+
+| 实际观察与前提 | A 的动作 | 持续限制 |
+| --- | --- | --- |
+| preparing/loading/warming_up | 保存原观察与完整 peak | 不提前归还 transient budget |
+| ready 且受信 gateway warmup/资格 receipt 有效 | 原子 peak→steady、写首次 ready_at | 当前 owner 必须 active；receipt 与实例、绑定、拓扑、qualification、fencing 一致 |
+| failed、没有停止释放证据 | 标记 failed，保留原 peak/steady | 失败不代表资源消失 |
+| quarantined、旧 owner epoch 或观测超限 | 原已保留 base 转入隔离、保留 peak/steady 依据 | 旧 epoch 的实际终态可结束原 intent，便于当前 fencing 清理；不得恢复 ready |
+| stop 成功但 lease/submit 清理尚未完成 | 保存原停止事实，intent 为 reconciling，base 继续占用 | 不写 stopped_at、不归还 base，不允许后继 generation |
+| stop 成功、全部 lease released、submit 正确终结且其他 runtime intent 终态 | 从正确 held/quarantine 分量扣除原 base，写首次 stopped_at | 不扣减其他实例或 slot 预算；host 不自动恢复 active |
+| 同一已记录事实重放 | 返回原完整事实，不重复变更预算或时间 | POST replay flag/等价可选 null 不构成新事实 |
+
+ready 的 `VerifiedRuntimeReadiness` 是明确受信 provider 的私有输入，包含绑定、
+instance/generation、fencing、拓扑与资格摘要、evidence_digest、核验/失效时间。
+构造对象或合法摘要本身不证明真实 warmup/资格；实际 provider 与批准来源仍待交付。
+缺少或过期/错绑定的 receipt 时保留 peak，不能由公开请求自称 qualified。
+旧 epoch 或已经隔离的 generation 即使收到真实 ready，也只记录终态并保留隔离，
+不能凭后续成功响应自动恢复接单。实际准入以 A-owned instance/host/lease 权威为准，
+不能只凭 `RuntimeSnapshot.runtime` 中控制器的 ready/succeeded 判定可调度或资源已返还。
+
+`0006_runtime_observation` 只增加私有 readiness_document 及基本形状约束，保存
+受控 record_version=1 的完整 receipt，不给历史 NULL 补造资格。A 的授权生成器增加
+该列 UPDATE，B 的窄 SELECT 继续排除正文；迁移不自动扩大既有角色的表/列权限。
+部署 owner 须审阅并安装更新后的授权输出，运行进程不执行 DDL/GRANT。
+首次 receipt 与实际 ready 观察、基线变化同事务写入；原 ready_at 和证据在后续停止
+中保留。旧迁移与 Job/outbox、历史命令和原 ACL 保持，破坏性降级继续拒绝。
+
+控制器的 created/updated/verified 时间原文保留，和 A 的 DB recorded/updated/ready/
+stopped 时间分别表达。比较保留亚微秒部分，不向下截断未来停止证据来提前返预算。
+原创建时间、已知 peak 高水位、停止证据与终态事实不可改写；新增进度不能倒退。
+观测超限时隔离已保留量、保存完整测量并禁用 host；它不证明实际 GPU 上界得到强制执行。
+任一维隔离比例超过配置阈值时，host 在同一事务离开 active；释放后或比例下降不会
+自动恢复，需重新健康/拓扑/入口资格。新状态变化不制造 outbox 外发时间，派发器后续
+必须查询原 node/intent 和已存观察，不能把未确认通知当普通重发许可。
+
+真实停止事实可以先于独立 lease 释放流程入库，供后续核验；等待阶段不返还 base。
+lease/submit 清理完成后，使用当前 instance/intent version 再观察同一不可改写事实，
+才关闭 A 的 reconciling 并一次归还基线。unknown_quarantined submit 即使配上声称
+released 的遗留 lease 也继续阻止返还。当前测试中的 lease 清理是显式合成 fixture，
+不是 quarantine_lease/release_lease、B 真实停止或全链路恢复的交付证据。
+
+PG/InnoDB 使用相同 SQL/领域规则和非 owner 角色验证；覆盖真实锁等待后的过期、
+并发观察版本竞争、同事实重放、完整六维转换、迟到 epoch、隔离不自动恢复、
+未知 submit、停止后延迟返还、事务末尾失败整体回滚、真实提交后确认丢失，以及失败
+升级/重复升级/原行与列 ACL 保留。资格 receipt 和控制器响应均为合成事实，不代表
+GPU、真实模型、物理多主机、容器上界或已运行的 scheduler。ADR0007 的旧路径退出
+仍需逐项映射和真实消费者证据，本单元继续保留旧门禁。

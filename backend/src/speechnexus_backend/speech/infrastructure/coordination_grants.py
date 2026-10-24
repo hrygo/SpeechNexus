@@ -33,7 +33,8 @@ SPEECH_UPDATES = {
         "current_prepare_intent_id current_stop_intent_id version"
     ),
     "runtime_instance_intents": (
-        "intent_state stop_evidence_document error_code updated_at_us observation_document version"
+        "intent_state stop_evidence_document error_code updated_at_us observation_document "
+        "readiness_document version"
     ),
     "admission_attempts": "quota_state version",
     "admission_leases": (

@@ -9,6 +9,9 @@ compares the 18 frozen raw transaction request entrypoints with
 `CONTRACT_BASE_REF=origin/main make contracts-coordination-requests`. Its report
 separates schema and binding version evidence. Results, mixed root envelopes
 and complete protocol compatibility remain outside that command's scope.
+An explicit `contracts-coordination-results` target separately checks the
+`TransactionResult` entrypoint in the response direction; it retains those
+root/semantic limits and does not alter the default request surface.
 
 ## Current scope
 

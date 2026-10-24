@@ -1,7 +1,7 @@
-"""Detect known structural changes to 18 frozen coordination request entrypoints.
+"""Check selected coordination entrypoints; 18 requests are the default surface.
 
-These are the raw runtime parser inputs, not the mixed command/result root union.
-This check does not establish complete schema inclusion or transactional semantics.
+The opt-in result surface checks TransactionResult in the response direction.
+Neither surface proves the mixed root, full inclusion or transactional semantics.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 from jsonschema import Draft202012Validator, SchemaError
 
@@ -45,6 +45,11 @@ PORTS = (
 UNVERIFIED = (
     "TransactionResult, response guarantees and unselected definitions",
     "Mixed root oneOf, command/result envelope and wire schema_version constraints",
+    "Complete JSON Schema inclusion, other standalone JSON sources and WS/event ordering",
+    "Atomicity, authorization, budget/stop facts and actual consumer/deployment qualification",
+)
+RESULT_UNVERIFIED = (
+    "The 18 request entrypoints, mixed root oneOf, command envelopes and root constraints",
     "Complete JSON Schema inclusion, other standalone JSON sources and WS/event ordering",
     "Atomicity, authorization, budget/stop facts and actual consumer/deployment qualification",
 )
@@ -137,7 +142,13 @@ def _metadata(document: Any, bindings: Any) -> dict[str, str]:
     return {"schema": version, "binding": str(binding["version"])}
 
 
-def inspect_source(base: str) -> dict[str, Any]:
+def inspect_source(
+    base: str, *, surface: Literal["requests", "result"] = "requests"
+) -> dict[str, Any]:
+    if surface not in {"requests", "result"}:
+        raise ValueError("Unknown coordination comparison surface")
+    is_result = surface == "result"
+    entrypoints = ("TransactionResult",) if is_result else PORTS
     resolved = subprocess.check_output(
         ["git", "-C", str(_ROOT), "rev-parse", "--verify", "--end-of-options", base + "^{commit}"],
         text=True,
@@ -147,12 +158,16 @@ def inspect_source(base: str) -> dict[str, Any]:
     report: dict[str, Any] = {
         "baseline": resolved,
         "source": SOURCE,
-        "scope": "known-coordination-request-entrypoint-structure",
-        "entrypoints": list(PORTS),
+        "scope": "known-coordination-"
+        + ("result" if is_result else "request")
+        + "-entrypoint-structure",
+        "entrypoints": list(entrypoints),
         "versions": {"base": None, "current": None},
         "findings": [],
-        "unverified": list(UNVERIFIED),
+        "unverified": list(RESULT_UNVERIFIED if is_result else UNVERIFIED),
     }
+    if is_result:
+        report["direction"] = "response"
     findings: list[str] = report["findings"]
     try:
         old, new = _load(SOURCE, resolved), _load(SOURCE, None)
@@ -170,21 +185,21 @@ def inspect_source(base: str) -> dict[str, Any]:
         return report
     base_side = kernel._SchemaSide(old, SOURCE, resolved, {}, False)
     current_side = kernel._SchemaSide(new, SOURCE, None, {}, False)
-    for operation in PORTS:
+    for operation in entrypoints:
         pointer = SOURCE + ":$defs/" + operation
         try:
-            old_request = kernel._dereference_schema(old["$defs"][operation], base_side)
-            new_request = kernel._dereference_schema(new["$defs"][operation], current_side)
+            old_schema = kernel._dereference_schema(old["$defs"][operation], base_side)
+            new_schema = kernel._dereference_schema(new["$defs"][operation], current_side)
             # check_schema(document) does not follow repository references. An
             # equally invalid referenced keyword must not become an equality pass.
-            Draft202012Validator.check_schema(old_request)
-            Draft202012Validator.check_schema(new_request)
+            Draft202012Validator.check_schema(old_schema)
+            Draft202012Validator.check_schema(new_schema)
             kernel._compare_schema(
-                old_request,
-                new_request,
+                old_schema,
+                new_schema,
                 pointer,
                 findings,
-                direction="request",
+                direction="response" if is_result else "request",
                 base_side=base_side,
                 current_side=current_side,
             )
@@ -197,25 +212,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True, help="Git commit/ref of the frozen baseline")
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--surface", choices=("requests", "result"), default="requests")
     args = parser.parse_args()
+    kind = "result" if args.surface == "result" else "request"
     try:
-        report = inspect_source(args.base)
+        report = inspect_source(args.base, surface=args.surface)
     except OSError, subprocess.CalledProcessError, RuntimeError:
         print(
-            "Coordination request comparison failed: baseline or kernel unavailable",
+            "Coordination " + kind + " comparison failed: baseline or kernel unavailable",
             file=sys.stderr,
         )
         return 2
     if args.format == "json":
         print(json.dumps(report, sort_keys=True))
     else:
-        print("Coordination request baseline: " + report["baseline"])
+        print("Coordination " + kind + " baseline: " + report["baseline"])
         print(SOURCE + ": " + json.dumps(report["versions"], sort_keys=True))
-        print("Request entrypoints: " + ", ".join(report["entrypoints"]))
+        print(kind.capitalize() + " entrypoints: " + ", ".join(report["entrypoints"]))
         for finding in report["findings"]:
             print("  - " + finding)
         print(
-            "Known request structural checks: " + ("rejected" if report["findings"] else "passed")
+            "Known "
+            + kind
+            + " structural checks: "
+            + ("rejected" if report["findings"] else "passed")
         )
         print("Not a full protocol compatibility proof; see unverified scope:")
         for boundary in report["unverified"]:

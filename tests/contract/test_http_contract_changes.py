@@ -594,3 +594,120 @@ def test_response_intersection_keeps_original_openai_comparison_policy() -> None
     baseline = document("/v1/audio/speech", response=original)
     current = document("/v1/audio/speech", response={"allOf": [original, {"type": "object"}]})
     assert kernel()._compare_openapi(baseline, current, "contracts/speech-openapi.yaml")
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+@pytest.mark.parametrize("old,new", [(True, 1), (False, 0), (1, True), (0, False)])
+def test_response_intersection_preserves_json_boolean_and_numeric_types(
+    keyword: str, old: bool | int, new: bool | int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    def schema(value: bool | int) -> dict[str, Any]:
+        constraint = [value] if keyword == "enum" else value
+        return {
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {keyword: constraint}},
+        }
+
+    original = schema(old)
+    changed = {"allOf": [schema(new), {"type": "object"}]}
+    witness = {"value": new}
+    assert not Draft202012Validator(original).is_valid(witness)
+    assert Draft202012Validator(changed).is_valid(witness)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+@pytest.mark.parametrize("value", [True, False, 1, 0])
+def test_response_intersection_accepts_identical_json_types_and_safe_tightening(
+    keyword: str, value: bool | int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    original = {
+        "type": "object",
+        "required": ["value"],
+        "properties": {"value": {keyword: [value] if keyword == "enum" else value}},
+    }
+    tightened = {"allOf": [copy.deepcopy(original), {"required": ["extra"]}]}
+    assert Draft202012Validator(original).is_valid({"value": value})
+    assert not Draft202012Validator(tightened).is_valid({"value": value})
+    assert Draft202012Validator(tightened).is_valid({"value": value, "extra": None})
+    assert (
+        kernel()._compare_openapi(
+            document("/v1/audio/speech", response=original),
+            document("/v1/audio/speech", response=tightened),
+            "contracts/admin-openapi.yaml",
+            standard_only=False,
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("keyword", ["const", "enum"])
+def test_response_intersection_never_resolves_literal_json_references(keyword: str) -> None:
+    from jsonschema import Draft202012Validator
+
+    literal = {"$ref": "#/components/schemas/A"}
+    expanded = {"type": "string"}
+    original = {"type": "object", keyword: [literal] if keyword == "enum" else literal}
+    changed = {
+        "allOf": [
+            {"type": "object", keyword: [expanded] if keyword == "enum" else expanded},
+            {"type": "object"},
+        ]
+    }
+    assert not Draft202012Validator(original).is_valid(expanded)
+    assert Draft202012Validator(changed).is_valid(expanded)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    for source in (baseline, current):
+        source["components"] = {"schemas": {"A": {"type": "string"}}}
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )
+
+
+def test_schema_reference_in_property_named_const_is_still_resolved() -> None:
+    original = {
+        "type": "object",
+        "required": ["const"],
+        "properties": {"const": {"$ref": "#/components/schemas/A"}},
+    }
+    baseline = document("/v1/audio/speech", response=original)
+    current = document(
+        "/v1/audio/speech", response={"allOf": [copy.deepcopy(original), {"required": ["extra"]}]}
+    )
+    for source in (baseline, current):
+        source["components"] = {"schemas": {"A": {"type": "string"}}}
+    assert (
+        kernel()._compare_openapi(
+            baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("boolean,number", [(True, 1), (False, 0)])
+def test_reference_sibling_intersection_preserves_json_types_before_proof(
+    boolean: bool, number: int
+) -> None:
+    from jsonschema import Draft202012Validator
+
+    components = {"schemas": {"A": {"const": number}}}
+    original = {"$ref": "#/components/schemas/A", "const": boolean}
+    changed = {"allOf": [{"const": boolean}, {"type": "boolean"}]}
+    assert not Draft202012Validator({**original, "components": components}).is_valid(boolean)
+    assert Draft202012Validator(changed).is_valid(boolean)
+    baseline = document("/v1/audio/speech", response=original)
+    current = document("/v1/audio/speech", response=changed)
+    baseline["components"] = components
+    assert kernel()._compare_openapi(
+        baseline, current, "contracts/admin-openapi.yaml", standard_only=False
+    )

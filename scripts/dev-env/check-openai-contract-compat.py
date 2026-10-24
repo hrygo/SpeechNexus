@@ -102,6 +102,53 @@ def _resolve_local_pointer(document: Mapping[str, Any], pointer: str) -> object 
     return current
 
 
+def _dereference_schema_children(
+    schema: Mapping[str, Any],
+    side: _SchemaSide,
+    seen: frozenset[tuple[str, str]],
+) -> dict[str, Any]:
+    if side.standard_only:
+        # Keep the original standard compatibility policy unchanged.
+        return {key: _dereference_schema(value, side, seen) for key, value in schema.items()}
+    # References apply at schema positions, never inside const/enum/default or
+    # example JSON data. Property names (including "const") are map keys, not
+    # schema keywords until their child schema is entered.
+    maps = {
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+        "dependencies",
+    }
+    arrays = {"allOf", "anyOf", "oneOf", "prefixItems"}
+    singles = {
+        "items",
+        "additionalItems",
+        "additionalProperties",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "contains",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+        "contentSchema",
+    }
+    result = dict(schema)
+    for key, value in schema.items():
+        if key in maps and isinstance(value, Mapping):
+            result[key] = {
+                name: _dereference_schema(child, side, seen) for name, child in value.items()
+            }
+        elif key in arrays and isinstance(value, list):
+            result[key] = [_dereference_schema(child, side, seen) for child in value]
+        elif key in singles:
+            result[key] = _dereference_schema(value, side, seen)
+    return result
+
+
 def _dereference_schema(
     schema: object,
     side: _SchemaSide,
@@ -116,9 +163,7 @@ def _dereference_schema(
     if not isinstance(ref, str) or "://" in ref:
         if not side.standard_only and "$ref" in schema_mapping:
             raise ValueError("Nonstandard HTTP comparison requires closed repository references")
-        return {
-            key: _dereference_schema(value, side, seen) for key, value in schema_mapping.items()
-        }
+        return _dereference_schema_children(schema_mapping, side, seen)
     identity = (side.path, ref)
     if identity in seen:
         if not side.standard_only:
@@ -169,18 +214,19 @@ def _dereference_schema(
         annotations = {"title", "description", "examples", "$comment"}
         if not (siblings.keys() - annotations):
             return resolved
-        resolved_siblings = {
-            key: _dereference_schema(value, side, seen) for key, value in siblings.items()
-        }
+        resolved_siblings = _dereference_schema_children(siblings, side, seen)
         return resolved_siblings if resolved else False
     resolved_mapping = _mapping(resolved)
     if siblings and resolved_mapping is not None:
-        resolved_siblings = {
-            key: _dereference_schema(value, side, seen) for key, value in siblings.items()
-        }
+        resolved_siblings = _dereference_schema_children(siblings, side, seen)
         annotations = {"title", "description", "default", "examples", "$comment"}
         conflicts = (resolved_mapping.keys() & resolved_siblings.keys()) - annotations
-        if any(resolved_mapping[key] != resolved_siblings[key] for key in conflicts):
+        if any(
+            resolved_mapping[key] != resolved_siblings[key]
+            if side.standard_only
+            else not _same_json_tree(resolved_mapping[key], resolved_siblings[key])
+            for key in conflicts
+        ):
             # JSON Schema $ref siblings intersect; overriding the target can hide
             # a tighter bound or change the meaning of a composed schema.
             return {"allOf": [resolved_mapping, resolved_siblings]}
@@ -278,6 +324,23 @@ def _compatibility_shape(schema: object, *, standard_only: bool = True) -> objec
     return result
 
 
+def _same_json_tree(left: object, right: object) -> bool:
+    """Retain JSON types: Python's True == 1 and False == 0 are not JSON equality."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return (
+            all(isinstance(key, str) for key in (*left, *right))
+            and left.keys() == right.keys()
+            and all(_same_json_tree(value, right[key]) for key, value in left.items())
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _same_json_tree(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return left == right
+
+
 def _closed_schema_tree(value: object) -> bool:
     """Exact-tree implication needs no unresolved or dynamic reference semantics."""
     if isinstance(value, Mapping):
@@ -329,7 +392,9 @@ def _compare_schema(
     # flatten arbitrary composition, widen requests, or affect OpenAI defaults.
     if direction == "response" and not standard_only and _closed_schema_tree(base_schema):
         variants = _sequence(current_schema.get("allOf"))
-        if variants is not None and any(variant == base_schema for variant in variants):
+        if variants is not None and any(
+            _same_json_tree(variant, base_schema) for variant in variants
+        ):
             return
 
     base_ref = base_schema.get("$ref")

@@ -60,8 +60,11 @@ static projection revision 1. Package versions and lockfiles are unchanged. Run
 `make contracts-generate` and `make contracts-drift`; do not edit generated files.
 
 The finite HTTP structural gate recognizes this response refinement only when an
-`allOf` branch equals the complete resolved baseline schema tree. This proof is
-limited to nonstandard responses without unresolved/dynamic references; requests,
+`allOf` branch equals the complete resolved baseline schema tree, preserving JSON
+types (booleans differ from numbers). Nonstandard reference expansion visits schema
+positions; `const`, `enum`, defaults and examples remain literal JSON data. Literal
+or dynamic references that prevent a closed-tree proof cannot use the shortcut.
+This proof is limited to nonstandard responses; requests,
 other unions, lost guarantees and the original OpenAI comparison policy retain
 their existing checks. It is not general JSON Schema inclusion or runtime proof.
 

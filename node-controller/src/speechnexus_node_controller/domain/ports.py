@@ -80,7 +80,7 @@ class StopCheckpointStore(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ReportedInstanceFact:
-    """One observed instance generation inside a reconcile snapshot."""
+    """Caller assertions for diagnosis; stop evidence here has no runtime authority."""
 
     instance_id: str
     instance_generation: int
@@ -92,7 +92,7 @@ class ReportedInstanceFact:
 
 @dataclass(frozen=True, slots=True)
 class NodeReconcileSnapshot:
-    """Snapshot a node reports for reconciliation."""
+    """Diagnostic snapshot; its compatibility token never fences resource-pool intents."""
 
     controller_id: str
     fencing_token: int

@@ -71,7 +71,7 @@ SpeechNexus 希望服务于三类需求：
 
 [执行网关](docs/architecture/execution-gateway.md)已提供持久提交/停止/未知隔离、受控执行观察、受信命令正文清理与输出区间追加/原事实查询事务，以及显式配置后启用的认证 HTTP 屏障、提交/中止、drain 与只读执行查询。真实回环 HTTP 与 PG 联调已验证；未知恢复、观察、正文清理、区间去重及无外发清理保护也经 PG/InnoDB 合成验证。真实引擎 adapter、计量采集/消费、删除许可签发与跨宿主资格仍待交付；未注入引擎 adapter 时提交/中止只返回不可用，默认 Compose 尚未启用该控制入口。
 
-[受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 与有界本地观察循环，批准模板固定容器内存上限和 HTTP/预热判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；合成容器在 loading 期间杀死控制器后重启，已验证由后台检查自动推进 ready。停止前、退出后、删除前后和回执保存前的崩溃，也已有[本地检查点恢复](docs/architecture/node-stop-recovery.md)及合成容器进程证据。静音幻觉、长非语音慢响应、真实引擎故障恢复、A 完整预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。CustomVoice TTS 的独立适配器及实测见[文件 TTS](docs/architecture/file-tts.md)。
+[受限节点控制器](docs/architecture/node-controller.md)已有 HTTP/SQLite/Docker 与有界本地观察循环，批准模板固定容器内存上限和 HTTP/预热判据。Qwen3-ASR 0.6B/1.7B 的真实加载、合成语音和停止清理已有[本机证据](docs/audits/2026-10-24-b02-real-asr-controller-probe.md)；合成容器在 loading 期间杀死控制器后重启，已验证由后台检查自动推进 ready。停止前、退出后、删除前后和回执保存前的崩溃，也已有[本地检查点恢复](docs/architecture/node-stop-recovery.md)及合成容器进程证据。外部 reconcile 快照仅用于诊断，不能制造就绪或停止事实、改变任期或释放占用。静音幻觉、长非语音慢响应、真实引擎故障恢复、A 完整预算控制循环和集群资格仍待解决，不代表公开语音链路已可用。CustomVoice TTS 的独立适配器及实测见[文件 TTS](docs/architecture/file-tts.md)。
 
 [CPU VAD](docs/architecture/cpu-vad.md)已实现会话状态隔离、前缀缓冲与版本化有界切段。固定 ONNX CPU 模型的[合成探针](docs/audits/2026-10-24-b06-cpu-vad-probe.md)能切出人声，并使静音/正弦音不产生 ASR 候选段；公开实时入口、调度链路中的 ASR 外发及真实录音质量仍待集成和验收。
 

@@ -239,7 +239,7 @@ async def test_a_foreign_node_path_is_refused_before_reading_anything(settings: 
     assert response.json()["error"]["code"] == "target_node_mismatch"
 
 
-async def test_reconcile_folds_reported_facts_and_quarantines_untracked_instances(
+async def test_reconcile_only_diagnoses_reported_and_untracked_instances(
     settings: Settings,
 ) -> None:
     service, _, _ = _service()
@@ -265,6 +265,9 @@ async def test_reconcile_folds_reported_facts_and_quarantines_untracked_instance
     assert accepted.status_code == 200
     assert accepted.json()["quarantined_instance_ids"] == ["instance-untracked"]
     assert accepted.json()["node_id"] == _NODE
+    persisted = service.get_intent("intent-1")
+    assert persisted is not None
+    assert persisted.intent_state is RuntimeIntentState.RECONCILING
 
 
 @pytest.mark.parametrize(

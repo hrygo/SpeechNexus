@@ -4,8 +4,10 @@ import asyncio
 import ssl
 import threading
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from tests.fake.controller import IMAGE_DIGEST, SAMPLE_IMAGE_REFERENCE, ScriptedNodeRuntime
 from tests.fake.docker_api import FakeDockerEngine
@@ -182,6 +184,72 @@ async def test_local_observer_publishes_ready_over_tls_without_granting_budget_a
         assert node.methods[0] == "POST" and set(node.methods[1:]) == {"GET"}
 
 
+@pytest.mark.parametrize("claimed_state", ["ready", "absent", "stopped"])
+async def test_external_snapshot_cannot_change_pending_prepare_or_authoritative_peak(
+    tls_runtime: RuntimeDatabase,
+    controller_tls: TLSFiles,
+    tmp_path: Path,
+    claimed_state: str,
+) -> None:
+    runtime = tls_runtime
+    created = runtime.port.create_runtime_intent(COMMAND)
+    assert created.outcome == "committed" and created.fact is not None
+    original = created.fact.request
+    with controller_server(tmp_path / "diagnostic-node", controller_tls) as node:
+        async with HttpRuntimeController(
+            node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
+        ) as client:
+            loading = await client.submit(original)
+            assert observe(runtime, loading).outcome == "committed"
+            peak = held(runtime)
+            persisted = node.store.get(original.intent_id)
+            assert persisted is not None
+            state_before = runtime.snapshot()
+            fact: dict[str, object] = {
+                "instance_id": original.instance_id,
+                "instance_generation": original.instance_generation,
+                "approved_template_id": original.binding.approved_template_id,
+                "config_digest": original.binding.config_digest,
+                "observed_instance_state": claimed_state,
+            }
+            if claimed_state == "stopped":
+                fact["stop_evidence"] = {
+                    "process_or_container_exited": True,
+                    "resources_released_confirmed": True,
+                    "verified_at": "2099-01-01T00:00:00Z",
+                    "exit_code": 0,
+                    "runtime_container_id": "caller-invented-container",
+                }
+            async with httpx.AsyncClient(
+                base_url=node.endpoint.base_url,
+                verify=node.tls.client_context(),
+                trust_env=False,
+                timeout=2,
+                headers={"Authorization": "Bearer " + node.endpoint.bearer_token},
+            ) as diagnostic:
+                response = await diagnostic.post(
+                    f"/internal/v1/nodes/{node.endpoint.node_id}/reconcile",
+                    json={
+                        "controller_id": node.endpoint.node_id,
+                        "fencing_token": 10**12,
+                        "reported_at": "2099-01-01T00:00:00Z",
+                        "instances": [fact],
+                    },
+                )
+            assert response.status_code == 200, response.text
+            assert datetime.fromisoformat(response.json()["accepted_at"]).year != 2099
+            assert node.store.get(original.intent_id) == persisted
+            assert runtime.snapshot() == state_before
+            assert not node.runtime.inspections and not node.runtime.stopped
+            reread = await client.query(original)
+            assert reread.observation == loading.observation
+            assert observe(runtime, reread, qualified=True).outcome == "replayed"
+            assert runtime.snapshot() == state_before
+            assert held(runtime) == peak == HOST.held.add(PLAN.peak).values
+            assert node.service.submit_intent(persisted.request).idempotent_replay
+            assert len(node.runtime.prepared) == 1
+
+
 async def test_local_observer_absence_without_stop_proof_keeps_the_authoritative_peak(
     tls_runtime: RuntimeDatabase, controller_tls: TLSFiles, tmp_path: Path
 ) -> None:
@@ -265,6 +333,52 @@ async def test_persisted_stop_recovery_over_tls_releases_only_after_both_facts(
             checkpoint = node.store.get_stop_checkpoint(recorded.request)
             assert checkpoint is not None and checkpoint.stage == "exited"
             assert len(engine.containers) == 1 and not engine.created[0].running
+            before = runtime.snapshot()
+            calls = (len(engine.stopped), len(engine.removed))
+            # Even the exact pinned container identity and exit code cannot make
+            # a caller's claimed release authoritative while that container remains.
+            async with httpx.AsyncClient(
+                base_url=node.endpoint.base_url,
+                verify=node.tls.client_context(),
+                trust_env=False,
+                timeout=2,
+                headers={"Authorization": "Bearer " + node.endpoint.bearer_token},
+            ) as diagnostic:
+                response = await diagnostic.post(
+                    f"/internal/v1/nodes/{node.endpoint.node_id}/reconcile",
+                    json={
+                        "controller_id": node.endpoint.node_id,
+                        "fencing_token": 10**12,
+                        "reported_at": datetime.now(UTC).isoformat(),
+                        "instances": [
+                            {
+                                "instance_id": stop.instance_id,
+                                "instance_generation": stop.instance_generation,
+                                "approved_template_id": stop.binding.approved_template_id,
+                                "config_digest": stop.binding.config_digest,
+                                "observed_instance_state": "absent",
+                                "stop_evidence": {
+                                    "process_or_container_exited": True,
+                                    "resources_released_confirmed": True,
+                                    "verified_at": datetime.now(UTC).isoformat(),
+                                    "exit_code": checkpoint.exit_code,
+                                    "runtime_container_id": checkpoint.container_id,
+                                },
+                            }
+                        ],
+                    },
+                )
+            assert response.status_code == 200, response.text
+            assert response.json()["quarantined_instance_ids"] == [stop.instance_id]
+            assert node.store.get(stop.intent_id) == recorded
+            assert node.store.get_stop_checkpoint(recorded.request) == checkpoint
+            assert runtime.snapshot() == before
+            assert (len(engine.stopped), len(engine.removed)) == calls
+            unchanged = await client.query(stop)
+            assert unchanged.observation == incomplete.observation
+            assert observe(runtime, unchanged).outcome == "replayed"
+            assert runtime.snapshot() == before
+            assert charge() == baseline_charge
     # Restart the native app/SQLite, retaining the stopped daemon target and A's database.
     engine.fail_remove_and_keep = False
     with controller_server(

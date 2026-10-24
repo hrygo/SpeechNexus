@@ -116,18 +116,14 @@ def create_runtime_control_router(
     @router.post(
         "/internal/v1/nodes/{node_id}/reconcile",
         operation_id="reconcileNodeInstances",
-        summary=(
-            "Report observed local runtime instances and container exit facts for node "
-            "reconciliation"
-        ),
+        summary="Compare a diagnostic instance snapshot with persisted node facts",
         response_model=NodeReconcileResponse,
         dependencies=[Depends(credential)],
         responses={
             200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
             401: _error_response("The per-node component credential is missing or invalid."),
             409: _error_response(
-                "The snapshot controller identity or a reported generation does not match "
-                "this node controller's scope."
+                "The target node or snapshot controller identity does not match this node."
             ),
             422: _error_response("The reconciliation snapshot failed schema validation."),
         },

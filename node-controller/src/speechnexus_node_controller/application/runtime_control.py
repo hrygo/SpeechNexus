@@ -58,7 +58,7 @@ class IntentOutcome:
 
 @dataclass(frozen=True, slots=True)
 class ReconcileOutcome:
-    """Result of folding one node snapshot, mirroring the contract response."""
+    """Diagnostic discrepancies; neither quarantine nor caller facts are persisted."""
 
     node_id: str
     accepted_at: datetime
@@ -211,7 +211,7 @@ class NodeRuntimeControlService:
         return IntentOutcome(intent=intent, idempotent_replay=False)
 
     def reconcile(self, snapshot: NodeReconcileSnapshot) -> ReconcileOutcome:
-        """Fold a node snapshot; duplicate generations and missing evidence are refused."""
+        """Compare caller assertions without mutating facts or invoking the runtime."""
         with self._actions:
             return self._reconcile(snapshot)
 
@@ -224,24 +224,10 @@ class NodeRuntimeControlService:
 
         quarantined: list[str] = []
         for fact in snapshot.instances:
-            unresolved = [
-                intent
-                for intent in self._store.list_for_instance(fact.instance_id)
-                if intent.instance_generation == fact.instance_generation
-                and intent.intent_state.is_unresolved
-            ]
-            if not unresolved:
-                self._report_resolved_contradiction(fact, quarantined)
-                continue
-            for intent in unresolved:
-                version = intent.version
-                self._apply_observation(intent, self._observation_from(fact))
-                self._store.save(intent, expected_version=version)
-                if intent.intent_state is RuntimeIntentState.QUARANTINED:
-                    quarantined.append(intent.instance_id)
+            self._report_snapshot_discrepancy(fact, quarantined)
         return ReconcileOutcome(
             node_id=self._node_id,
-            accepted_at=snapshot.reported_at,
+            accepted_at=self._now(),
             quarantined_instance_ids=tuple(dict.fromkeys(quarantined)),
         )
 
@@ -290,19 +276,14 @@ class NodeRuntimeControlService:
             and intent.intent_state.is_unresolved
         ]
 
-    def _report_resolved_contradiction(
+    def _report_snapshot_discrepancy(
         self, fact: ReportedInstanceFact, quarantined: list[str]
     ) -> None:
-        """Report only a claimed generation whose observation contradicts its record.
+        """Report identity/presence discrepancies, never accept caller stop proof.
 
-        A generation with no unresolved intent is either already settled here or
-        was never claimed by this controller. A settled generation is normal, so
-        a healthy tracked instance must not be quarantined by a routine snapshot;
-        the two anomalies are a generation the controller still holds live that
-        has disappeared without verified stop evidence, and a container that is
-        present although no succeeded prepare still holds that generation live.
-        A generation with no recorded intent at all stays quarantined while it is
-        observed, and no path adopts it.
+        Unresolved claims still hold resources. Neither a caller's absence nor
+        its complete-looking proof can drain them. A verified local stop takes
+        precedence over an older unresolved prepare for the same generation.
         """
         recorded = [
             intent
@@ -317,6 +298,13 @@ class NodeRuntimeControlService:
             if not observed_gone:
                 quarantined.append(fact.instance_id)
             return
+        if any(
+            intent.request.approved_template_id != fact.approved_template_id
+            or intent.request.config_digest != fact.config_digest
+            for intent in recorded
+        ):
+            quarantined.append(fact.instance_id)
+            return
         verified_stopped = any(
             intent.action is RuntimeActionKind.STOP
             and intent.intent_state is RuntimeIntentState.SUCCEEDED
@@ -324,8 +312,11 @@ class NodeRuntimeControlService:
         )
         holds_live = (
             any(
-                intent.action is RuntimeActionKind.PREPARE
-                and intent.intent_state is RuntimeIntentState.SUCCEEDED
+                intent.intent_state.is_unresolved
+                or (
+                    intent.action is RuntimeActionKind.PREPARE
+                    and intent.intent_state is RuntimeIntentState.SUCCEEDED
+                )
                 for intent in recorded
             )
             and not verified_stopped
@@ -392,14 +383,3 @@ class NodeRuntimeControlService:
             intent.quarantine(RuntimeIntentErrorCode.OBSERVED_IDENTITY_MISMATCH, at=self._now())
             return
         intent.mark_observed(observation, at=self._now())
-
-    @staticmethod
-    def _observation_from(fact: ReportedInstanceFact) -> InstanceObservation:
-        return InstanceObservation(
-            instance_id=fact.instance_id,
-            instance_generation=fact.instance_generation,
-            approved_template_id=fact.approved_template_id,
-            config_digest=fact.config_digest,
-            observed_instance_state=fact.observed_instance_state,
-            stop_evidence=fact.stop_evidence,
-        )

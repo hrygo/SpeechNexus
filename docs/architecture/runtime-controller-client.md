@@ -72,7 +72,9 @@ A 的预算。`request_may_have_run=False` 只说明本次调用尚未发出，�
 
 当前 B 的 `get_intent` 只读已存事实，同键 `submit_intent` 也只返回精确重放。
 二者都不调用 daemon.inspect；实际 inspect 在节点内 `reconcile_instance`。
-现有 `reconcile` HTTP 接受外部快照，A 不能伪造节点事实来推进预热。
+`reconcile` HTTP 只对外部快照返回诊断差异，不持久化其中的 ready/stop 断言，也不触发容器动作。
+A 的生产客户端不调用该端点；只能消费原意图 GET 中由节点本地生产者写下的事实。
+快照 token 不代表各资源池 owner 任期，诊断响应不授予预算或代次变更资格。
 
 因此 GET 可能持续返回 loading/warming_up，直到节点本地生产者完成观察并持久化。
 B 的本地观察循环现已随控制器 lifespan 默认启用，有界轮转本节点未决回执并调用自己的 inspect。

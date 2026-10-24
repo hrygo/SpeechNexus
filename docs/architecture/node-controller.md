@@ -1,7 +1,7 @@
 ---
 title: "受限节点控制器：接口、规则与当前实现"
 status: active
-version: "0.4.0"
+version: "0.5.0"
 date: 2026-10-24
 ---
 
@@ -29,7 +29,8 @@ scheduler ──HTTP/组件凭据──▶ interfaces/http ──▶ NodeRuntime
                                                     │                          │
                                                     │                          └─ 幂等键 (node_id, intent_id)、版本
                                                     └──prepare/stop/inspect──▶ NodeRuntimePort ──▶ 容器 daemon
-scheduler ◀──observation/reconcile 快照─────────────┘
+scheduler ◀──GET 原意图的持久观察事实─────────────┘
+诊断调用方 ──POST reconcile──▶ 仅比较本地记录并返回差异，不写事实或调用 daemon
 ```
 
 | 端口 / 位置 | 职责 | 实现状态 |
@@ -38,7 +39,7 @@ scheduler ◀──observation/reconcile 快照───────────
 | `domain/templates.py` | 批准模板注册表：镜像摘要固定、允许池、内存架构与峰值上限 | 已实现；模板清单与部署绑定待接入 |
 | `domain/ports.py` | `IntentStore`、`StopCheckpointStore`、`NodeRuntimePort`、reconcile 快照 | 已有 SQLite 与 Docker 实现，真实联调范围见探针记录 |
 | `domain/stop_checkpoint.py` | 原 stop 固定目标、退出/释放检查点、严格私有记录投影 | 已实现；机器契约在节点包内 |
-| `application/runtime_control.py` | 认领意图、幂等重放、generation / fencing 门、drain 门、观察折叠与 reconcile | 已实现并有单元测试 |
+| `application/runtime_control.py` | 认领意图、幂等重放、generation / fencing 门、drain 门、本地观察折叠与快照诊断 | 已实现并有单元测试 |
 | `infrastructure/docker_api.py` | 本地 daemon 的最小 Engine API 客户端（固定操作集合，不接任意镜像/挂载/shell） | 已实现并有 double 测试 |
 | `infrastructure/docker_runtime.py` | 受控容器 adapter：镜像摘要核对、标签化实例身份、prepare/stop/inspect 与停止双证据 | 已实现；合成容器真实探针见下文 |
 | `infrastructure/template_config.py` | 批准模板配置文件加载（未知字段拒绝） | 已实现并有单元测试 |
@@ -167,16 +168,19 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 - **停止证据**：stop 意图只有在同时取得容器退出与资源释放确认时才能转 `succeeded`；
   观察到 `stopped` 却没有证据时进入 `quarantined` 并继续报告原留宿内存，不能凭超时或断连
   冒充停止。
-- **迟到观察隔离**：观察的实例身份、generation、模板与配置摘要必须与意图完全一致；不一致
-  或不属于任何已认领 generation 的实例进入 quarantine 名单，不修改当前 generation。已认领且
-  已终结的 generation 只在观察与其记录矛盾时进入名单：控制器仍把它持有为 live 却观察到
-  `absent`/`stopped`，或没有成功的 prepare 仍持有它却观察到容器存在。常规快照不会把健康的
-  运行实例列进名单，也不改写意图的版本、状态或留宿内存。
-- **外部快照边界**：`reconcile` 快照由持组件凭据的调用方给出，该路径折叠其中的观察但不调用
-  `daemon.inspect`；因此快照里的 `stop_evidence` 是调用方断言，不是本控制器的核验结果（自身
-  核验在节点 runtime adapter 与 `recover_stop`）。快照的 `fencing_token` 目前只有契约最小值校验，
-  尚未与节点已记录的最高 token 比较。是否收窄该入口、如何定义节点级 fencing 高位属待冻结的
-  窄协议；现状与差异见[B02 HTTP 外壳探针](../audits/2026-10-24-b02-controller-http-shell-probe.md)。
+- **迟到观察隔离**：节点本地观察的实例身份、generation、模板与配置摘要必须与原意图完全一致，
+  不一致时保留隔离和占用。外部快照只报告诊断名单：未认领而存在、模板/摘要不符、
+  本地仍持有却报告消失、或本地已停止/不再持有却报告存在。未决 prepare/stop 仍视作持有；
+  本地已验证停止优先于同代次更早的未决 prepare。诊断名单不写入隔离状态，不认领新代次，
+  不影响健康的已认领实例。
+- **外部快照边界**：`POST reconcile` 只比较调用方报告与本地持久记录。所有状态和
+  `stop_evidence` 都是诊断断言；即使包含正确容器 ID、退出码、双确认和时间，也不更新意图、
+  检查点、版本、留宿内存或 drain 资格，不触发 prepare/stop/inspect/recover_stop。
+  `accepted_at` 使用节点处理时间，`reported_at` 不成为证据时间。
+- **快照任期边界**：为兼容保留正整数 `fencing_token` 字段，但它没有诊断以外的权力。
+  各资源池 owner 任期独立，不能跨池取最大值后用来拒绝节点意图，也不能通过快照改变原意图
+  的 fencing 高位。prepare/stop 的既有原身份与实例准入规则仍生效。协议升级、消费边界与时序
+  见[停止恢复与证据来源](node-stop-recovery.md#外部快照与权威证据来源)。
 - **reconcile**：同一快照内同一 `(instance_id, instance_generation)` 出现两次即拒绝，
   不采用不确定的“最后一次观察”。
 

@@ -32,6 +32,13 @@ active bounded inspection before closing its store and Docker client.
 (1–500). Container absence without stop proof keeps authoritative capacity held;
 HTTP ready does not create the scheduler's qualification receipt.
 
+`POST reconcile` compares caller assertions with persisted node facts for
+diagnostics only. It never writes receipts/checkpoints or invokes the daemon,
+even with complete-looking stop evidence. Its compatibility fencing token does
+not fence resource-pool intents; the quarantine list is a diagnostic response,
+not a persisted state change. Upgrade every serving node before relying on this
+boundary, and query the original intent for authoritative observations.
+
 Production requires the same durable SQLite store for stop checkpoints. Schema 1
 upgrades atomically to 2 without rewriting existing receipts; older controllers
 reject schema 2. Restore a matching stopped-controller snapshot for code rollback,

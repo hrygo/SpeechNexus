@@ -1,0 +1,343 @@
+"""A missing test/result/shard cannot masquerade as a successful integration gate."""
+
+import ast
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts/dev-env/integration-shards.py"
+SPEC = importlib.util.spec_from_file_location("integration_shard_gate", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+GATE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = GATE
+SPEC.loader.exec_module(GATE)
+HEAD = "a" * 40
+NODEIDS = sorted(
+    [f"tests/integration/test_demo.py::test_{i}" for i in range(24)]
+    + [
+        "tests/integration/test_gateway_submit_ledger.py::test_pg_only[mysql]",
+    ]
+)
+
+
+def reports(directory: Path) -> list[Path]:
+    directory.mkdir(exist_ok=True)
+    result = []
+    for index in range(2):
+        selected = GATE.partition(NODEIDS, index, 2)
+        data = {
+            "version": 1,
+            "source_head": HEAD,
+            "shard_index": index,
+            "shard_count": 2,
+            "collection_digest": GATE.collection_digest(NODEIDS),
+            "collection": NODEIDS,
+            "selected": selected,
+            "outcomes": {
+                nodeid: "skipped" if nodeid.endswith("[mysql]") else "passed" for nodeid in selected
+            },
+            "exit_code": 0,
+            "executed": True,
+            "elapsed_seconds": 10,
+        }
+        path = directory / f"integration-shard-{index}.json"
+        path.write_text(json.dumps(data))
+        result.append(path)
+    return result
+
+
+def test_stable_assignment_does_not_depend_on_python_hash_randomization() -> None:
+    ids = [f"tests/integration/test_demo.py::test_{i}" for i in range(4)]
+    assert GATE.partition(ids, 0, 2) == [ids[0], ids[2], ids[3]]
+    assert GATE.partition(list(reversed(ids)), 1, 2) == [ids[1]]
+
+
+def test_complete_union_reports_skips_separately_from_passes(tmp_path: Path) -> None:
+    result = GATE.verify_reports(reports(tmp_path), source_head=HEAD, count=2)
+    assert result.collected == 25 and result.passed == 24
+    assert result.skipped == (NODEIDS[-1],)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-shard",
+        "duplicate-shard",
+        "wrong-head",
+        "different-collection",
+        "wrong-digest",
+        "missing-test",
+        "duplicate-test",
+        "missing-result",
+        "extra-result",
+        "failed",
+        "unexpected-skip",
+        "xfail",
+        "collect-only",
+        "failed-exit",
+        "boolean-exit",
+        "boolean-version",
+        "boolean-index",
+        "wrong-count",
+        "bad-duration",
+        "unknown-field",
+        "unsorted-collection",
+    ],
+)
+def test_incomplete_or_conflicting_evidence_is_rejected(tmp_path: Path, case: str) -> None:
+    paths = reports(tmp_path)
+    data = json.loads(paths[0].read_text())
+    nodeid = data["selected"][0]
+    if case == "missing-shard":
+        paths.pop()
+    elif case == "duplicate-shard":
+        paths = [paths[0], paths[0]]
+    elif case == "wrong-head":
+        data["source_head"] = "b" * 40
+    elif case == "different-collection":
+        data["collection"] = sorted([*NODEIDS, "tests/integration/test_new.py::test_extra"])
+        data["collection_digest"] = GATE.collection_digest(data["collection"])
+        data["selected"] = GATE.partition(data["collection"], 0, 2)
+        data["outcomes"] = dict.fromkeys(data["selected"], "passed")
+    elif case == "wrong-digest":
+        data["collection_digest"] = "sha256:" + "0" * 64
+    elif case == "missing-test":
+        data["selected"].pop()
+    elif case == "duplicate-test":
+        data["selected"].append(nodeid)
+    elif case == "missing-result":
+        data["outcomes"].pop(nodeid)
+    elif case == "extra-result":
+        data["outcomes"]["tests/integration/test_new.py::test_extra"] = "passed"
+    elif case in ("failed", "unexpected-skip", "xfail"):
+        data["outcomes"][nodeid] = {
+            "failed": "failed",
+            "unexpected-skip": "skipped",
+            "xfail": "xfailed",
+        }[case]
+    elif case == "collect-only":
+        data["executed"] = False
+    elif case == "failed-exit":
+        data["exit_code"] = 1
+    elif case == "boolean-exit":
+        data["exit_code"] = False
+    elif case == "boolean-version":
+        data["version"] = True
+    elif case == "boolean-index":
+        data["shard_index"] = False
+    elif case == "wrong-count":
+        data["shard_count"] = 3
+    elif case == "bad-duration":
+        data["elapsed_seconds"] = float("nan")
+    elif case == "unknown-field":
+        data["private_field"] = True
+    else:
+        data["collection"] = list(reversed(data["collection"]))
+    paths[0].write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        GATE.verify_reports(paths, source_head=HEAD, count=2)
+
+
+def test_duplicate_json_fields_and_oversized_reports_cannot_override_evidence(
+    tmp_path: Path,
+) -> None:
+    paths = reports(tmp_path)
+    original = paths[0].read_text()
+    paths[0].write_text(original[:-1] + ',"exit_code":0}')
+    with pytest.raises(ValueError, match="Duplicate"):
+        GATE.verify_reports(paths, source_head=HEAD, count=2)
+    paths[0].write_text(" " * (8 * 1024 * 1024 + 1))
+    with pytest.raises(ValueError, match="oversized"):
+        GATE.verify_reports(paths, source_head=HEAD, count=2)
+
+
+def test_checker_needs_no_site_packages_and_parses_on_runner_python(tmp_path: Path) -> None:
+    ast.parse(SCRIPT.read_text(), feature_version=(3, 12))
+    reports(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(SCRIPT),
+            "check",
+            "--count",
+            "2",
+            "--head",
+            HEAD,
+            "--reports-dir",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "25 collected, 24 passed, 1 existing PG-only" in result.stdout
+
+
+def temp_project(directory: Path) -> tuple[Path, Path, dict[str, str]]:
+    root = directory / "project"
+    target = root / "scripts/dev-env/integration-shards.py"
+    target.parent.mkdir(parents=True)
+    shutil.copyfile(SCRIPT, target)
+    tests = root / "tests/integration"
+    tests.mkdir(parents=True)
+    (root / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\nmarkers = ["integration: synthetic integration"]\n'
+    )
+    (tests / "test_primary.py").write_text("""import os
+import pytest
+pytestmark = pytest.mark.integration
+@pytest.mark.parametrize("index", range(24))
+def test_primary(index):
+    assert not (os.environ.get("SYNTHETIC_FAIL_CASE") and index == 0)
+""")
+    (tests / "test_gateway_submit_ledger.py").write_text("""import pytest
+pytestmark = pytest.mark.integration
+@pytest.mark.parametrize("database", ["postgresql", "mysql"])
+def test_pg_only(database):
+    if database == "mysql":
+        pytest.skip("synthetic PG-only adapter parameter")
+""")
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "add", "."],
+        [
+            "git",
+            "-c",
+            "user.name=Synthetic CI",
+            "-c",
+            "user.email=synthetic@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+    ):
+        subprocess.run(command, cwd=root, check=True, capture_output=True)
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
+    env["SPEECHNEXUS_TEST_DATABASE_URL"] = "synthetic-isolated-postgres"
+    env["SPEECHNEXUS_TEST_MYSQL_URL"] = "synthetic-isolated-mysql"
+    return root, target, env
+
+
+def test_real_runner_does_not_hide_failure_or_mistake_collection_for_execution(
+    tmp_path: Path,
+) -> None:
+    root, target, env = temp_project(tmp_path)
+    directory = tmp_path / "reports"
+    paths = [directory / f"integration-shard-{index}.json" for index in range(2)]
+
+    def run(
+        index: int, *, collect: bool = False, fail: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        flags = ["--collect-only"] if collect else []
+        actual = {**env, "SYNTHETIC_FAIL_CASE": "1"} if fail else env
+        return subprocess.run(
+            [
+                sys.executable,
+                str(target),
+                "run",
+                "--index",
+                str(index),
+                "--count",
+                "2",
+                "--report",
+                str(paths[index]),
+                *flags,
+            ],
+            cwd=root,
+            env=actual,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    for index in range(2):
+        result = run(index)
+        assert result.returncode == 0, result.stdout + result.stderr
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    evidence = GATE.verify_reports(paths, source_head=head, count=2)
+    assert evidence.collected == 26 and evidence.passed == 25 and len(evidence.skipped) == 1
+    assert run(0, collect=True).returncode == 0
+    with pytest.raises(ValueError, match="Collect-only"):
+        GATE.verify_reports(paths, source_head=head, count=2)
+    failed_id = "tests/integration/test_primary.py::test_primary[0]"
+    failed_index = next(index for index in range(2) if GATE.partition([failed_id], index, 2))
+    failed = run(failed_index, fail=True)
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    failed_report = json.loads(paths[failed_index].read_text())
+    assert failed_report["outcomes"][failed_id] == "failed"
+    assert failed_report["exit_code"] == 1
+
+
+@pytest.mark.parametrize("setting", ["PYTEST_ADDOPTS", "missing-database"])
+def test_environment_cannot_silently_select_a_partial_or_unconfigured_suite(
+    tmp_path: Path, setting: str
+) -> None:
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
+    env["SPEECHNEXUS_TEST_DATABASE_URL"] = "synthetic-isolated-postgres"
+    env["SPEECHNEXUS_TEST_MYSQL_URL"] = "synthetic-isolated-mysql"
+    if setting == "PYTEST_ADDOPTS":
+        env["PYTEST_ADDOPTS"] = "-k nonexistent"
+    else:
+        env.pop("SPEECHNEXUS_TEST_MYSQL_URL")
+    report = tmp_path / "integration-shard-0.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "run",
+            "--index",
+            "0",
+            "--count",
+            "2",
+            "--report",
+            str(report),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert not report.exists()
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(result: str) -> None:
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+    assert {
+        "Python static checks and unit tests",
+        "PostgreSQL and InnoDB integration",
+        "Python quality and tests",
+        "Web quality, tests, and build",
+        "Deployment configuration",
+    } <= {job["name"] for job in jobs.values()}
+    shards = jobs["integration_shards"]
+    assert shards["strategy"] == {
+        "fail-fast": False,
+        "max-parallel": 2,
+        "matrix": {"shard": [0, 1]},
+    }
+    assert set(shards["services"]) == {"postgres", "mysql"}
+    gate = jobs["coordination"]
+    assert gate["needs"] == ["integration_shards"] and "always()" in gate["if"]
+    condition = gate["steps"][0]["run"]
+    executed = subprocess.run(
+        ["bash", "-e", "-c", condition],
+        env={**os.environ, "SHARDS_RESULT": result},
+        capture_output=True,
+        check=False,
+    )
+    assert (executed.returncode == 0) == (result == "success")

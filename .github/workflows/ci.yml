@@ -105,6 +105,29 @@ jobs:
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov --cov-report=term-missing
 
+      - name: Report read-only sandbox startup context
+        if: failure()
+        run: |
+          bwrap --version
+          python3 - <<'PY'
+          import json
+          import os
+          import platform
+          from pathlib import Path
+          result = {"kernel": platform.release(), "uid": os.getuid()}
+          for label, path in {
+              "lsm_context": "/proc/self/attr/current",
+              "userns_limit": "/proc/sys/user/max_user_namespaces",
+              "unprivileged_userns": "/proc/sys/kernel/unprivileged_userns_clone",
+              "apparmor_userns_restriction": "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+          }.items():
+              try:
+                  result[label] = Path(path).read_text().strip()[:160]
+              except OSError as error:
+                  result[label] = f"unavailable(errno={error.errno})"
+          print(json.dumps(result, sort_keys=True))
+          PY
+
       - name: Verify media toolchain
         run: uv run python scripts/dev-env/media-smoke.py
 

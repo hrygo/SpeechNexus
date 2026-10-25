@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import _ctypes
 import io
 import json
 import os
 import platform
 import re
+import select
 import selectors
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -19,7 +22,7 @@ from collections.abc import Iterator
 from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryFile
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import pytest
 
@@ -27,10 +30,17 @@ from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
     AudioInspectionProcess,
     InspectionProcessLimits,
     InspectionProcessResult,
-    _single_process_filter,
 )
 
 LIMITS = InspectionProcessLimits(1024, 256 * 1024**2, 2, 5.0)
+_OWNED: list[AudioInspectionProcess] = []
+
+
+@pytest.fixture(autouse=True)
+def close_owned_processes() -> Iterator[None]:
+    yield
+    while _OWNED:
+        _OWNED.pop().close()
 
 
 @pytest.fixture(scope="module")
@@ -51,6 +61,16 @@ def image(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
             destination = root / source.relative_to("/")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+    extension = getattr(_ctypes, "__file__", None)
+    if isinstance(extension, str):
+        linked = subprocess.run(
+            ["ldd", extension], check=True, capture_output=True, text=True
+        ).stdout
+        for library in re.findall(r"/[^\s()]+", linked):
+            source = Path(library)
+            destination = root / source.relative_to("/")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
     stdlib = Path(sysconfig.get_path("stdlib"))
     shutil.copytree(
         stdlib,
@@ -58,33 +78,38 @@ def image(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
         ignore=shutil.ignore_patterns(
             "site-packages", "__pycache__", "test", "tests", "ensurepip", "idlelib", "tkinter"
         ),
+        dirs_exist_ok=True,
     )
-    for directory in ("tmp", "proc", "dev", "input"):
+    for directory in ("tmp", "proc", "dev", "input", "inspection"):
         (root / directory).mkdir(exist_ok=True)
     (root / "input/media").touch()
+    (root / "inspection/launch.py").touch()
     # Only this fixed synthetic probe captures startup diagnostics. Production
     # workers keep stderr closed and never expose vendor/input information.
     probe_runner = AudioInspectionProcess(
-        root, (str(executable), "-I", "-S", "-c", "print('inspection-probe')"), LIMITS
+        root,
+        (str(executable), "-I", "-S", "-c", "print('inspection-probe')"),
+        LIMITS,
+        launcher_python=str(executable),
     )
-    policy = _single_process_filter()
-    assert policy is not None, "The inspection test host has an unsupported syscall ABI"
-    with TemporaryFile() as data, TemporaryFile() as seccomp:
+    with TemporaryFile() as data, TemporaryFile() as diagnostics:
         data.write(b"synthetic-probe")
         data.seek(0)
-        seccomp.write(policy)
-        seccomp.seek(0)
-        probe = subprocess.run(
-            probe_runner._arguments(data.fileno(), seccomp.fileno()),
-            pass_fds=(data.fileno(), seccomp.fileno()),
-            capture_output=True,
-            env={},
-            timeout=10,
-            check=False,
+        original = subprocess.Popen
+
+        def diagnosed(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+            kwargs["stderr"] = diagnostics
+            return original(*args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(subprocess, "Popen", diagnosed)
+            probe = probe_runner.run(data, cancelled=lambda: False)
+        diagnostics.seek(0)
+        message = diagnostics.read(1024)
+        assert probe.status == "complete" and probe.output == b"inspection-probe\n", (
+            f"Synthetic sandbox startup rejected ({probe.status}): {message!r}"
         )
-        assert probe.returncode == 0 and probe.stdout == b"inspection-probe\n", (
-            f"Synthetic sandbox startup rejected ({probe.returncode}): {probe.stderr[:1024]!r}"
-        )
+        assert probe_runner.close()
     return root, str(executable)
 
 
@@ -100,7 +125,11 @@ def worker(
     image: tuple[Path, str], code: str, limits: InspectionProcessLimits = LIMITS
 ) -> AudioInspectionProcess:
     root, executable = image
-    return AudioInspectionProcess(root, (executable, "-I", "-S", "-c", code), limits)
+    runner = AudioInspectionProcess(
+        root, (executable, "-I", "-S", "-c", code), limits, launcher_python=executable
+    )
+    _OWNED.append(runner)
+    return runner
 
 
 def test_real_worker_sees_only_readonly_input_and_no_host_environment(
@@ -229,7 +258,9 @@ def test_cancel_and_busy_preserve_one_owned_process(
     )
     thread.start()
     deadline = time.monotonic() + 3
-    while runner._process is None and time.monotonic() < deadline:
+    while (
+        runner._worker_pidfd is None or runner._control is not None
+    ) and time.monotonic() < deadline:
         time.sleep(0.01)
     try:
         assert runner._process is not None
@@ -265,32 +296,45 @@ def test_unconfirmed_kill_keeps_original_slot_and_never_spawns_again(
 ) -> None:
     runner = worker(image, "import time; time.sleep(10)")
     cancelled = threading.Event()
+    completed, release_creator = threading.Event(), threading.Event()
     results: list[InspectionProcessResult] = []
-    thread = threading.Thread(
-        target=lambda: results.append(runner.run(body, cancelled=cancelled.is_set))
-    )
+
+    def invoke() -> None:
+        try:
+            results.append(runner.run(body, cancelled=cancelled.is_set))
+        finally:
+            completed.set()
+            release_creator.wait(timeout=10)
+
+    thread = threading.Thread(target=invoke)
     thread.start()
     deadline = time.monotonic() + 3
-    while runner._process is None and time.monotonic() < deadline:
+    while (
+        runner._worker_pidfd is None or runner._control is not None
+    ) and time.monotonic() < deadline:
         time.sleep(0.01)
     try:
         assert runner._process is not None
         original = runner._process
         with monkeypatch.context() as patch:
+            send_signal = signal.pidfd_send_signal
 
-            def denied(*args: object) -> None:
+            def denied(fd: int, number: int) -> None:
+                if number == 0:
+                    send_signal(fd, number)
+                    return
                 raise PermissionError("synthetic kill unavailable")
 
-            patch.setattr(os, "killpg", denied)
+            patch.setattr(signal, "pidfd_send_signal", denied)
             cancelled.set()
-            thread.join(timeout=3)
-            assert not thread.is_alive() and results[0].status == "stop_unknown"
+            assert completed.wait(timeout=3) and results[0].status == "stop_unknown"
             assert runner.run(body, cancelled=lambda: False).status == "stop_unknown"
             assert runner._process is original and original.poll() is None
             assert runner.close() is False
     finally:
         cancelled.set()
         runner.close()
+        release_creator.set()
         thread.join(timeout=3)
     assert original.poll() is not None
 
@@ -315,7 +359,7 @@ def test_base_exception_in_cancellation_still_kills_and_reaps(
     runner = worker(image, "import time; time.sleep(10)")
 
     def interrupted() -> bool:
-        if runner._process is not None:
+        if runner._worker_pidfd is not None:
             raise KeyboardInterrupt
         return False
 
@@ -332,6 +376,7 @@ def test_missing_sandbox_never_falls_back_to_host_execution(
         root,
         (executable, "-c", "print('must not run')"),
         LIMITS,
+        launcher_python=executable,
         bubblewrap=root / "no-such-bwrap",
     )
     assert runner.run(body, cancelled=lambda: False).status == "unavailable"
@@ -346,7 +391,9 @@ def test_invalid_deadlines_are_rejected(wall: float) -> None:
 
 def test_host_root_cannot_be_used_as_worker_image() -> None:
     with pytest.raises(ValueError, match="private inspection runtime"):
-        AudioInspectionProcess(Path("/"), ("/usr/bin/true",), LIMITS)
+        AudioInspectionProcess(
+            Path("/"), ("/usr/bin/true",), LIMITS, launcher_python="/usr/bin/python3"
+        )
 
 
 def test_shutdown_cannot_confirm_a_concurrent_creator_before_its_handle_exists(
@@ -391,22 +438,26 @@ from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
     AudioInspectionProcess, InspectionProcessLimits,
 )
 runner = AudioInspectionProcess(
-    Path(sys.argv[1]), (sys.argv[2], '-I', '-S', '-c', 'import time; time.sleep(20)'),
-    InspectionProcessLimits(1024, 256*1024**2, 10, 30),
+    Path(sys.argv[1]), (sys.argv[2], '-I', '-S', '-c',
+                       "import time; print('payload-started',flush=True); time.sleep(20)"),
+    InspectionProcessLimits(1024, 256*1024**2, 10, 30), launcher_python=sys.argv[2],
 )
 with TemporaryFile() as data, TemporaryFile() as info:
     original = subprocess.Popen
+    outputs = []
     def launch(args, **kwargs):
         index = args.index('--unshare-user')
         args = args[:index] + ['--info-fd', str(info.fileno())] + args[index:]
         kwargs['pass_fds'] += (info.fileno(),)
+        outputs.append(kwargs['stdout'])
         return original(args, **kwargs)
     subprocess.Popen = launch
     def observe():
         while True:
             try:
                 child = json.loads(os.pread(info.fileno(), 4096, 0))['child-pid']
-                if runner._process is not None:
+                if (runner._process is not None and outputs
+                        and b'payload-started' in os.pread(outputs[0].fileno(),128,0)):
                     print(runner._process.pid, child, flush=True)
                     return
             except (json.JSONDecodeError, KeyError):
@@ -457,3 +508,78 @@ with TemporaryFile() as data, TemporaryFile() as info:
         helper.wait(timeout=3)
         if helper.stdout is not None:
             helper.stdout.close()
+
+
+def test_detached_payload_cannot_clear_parent_death_and_has_actual_exit_proof(
+    image: tuple[Path, str], body: BinaryIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code = (
+        "import ctypes,os; c=ctypes.CDLL(None,use_errno=True); "
+        "assert c.prctl(1,0,0,0,0)==-1 and ctypes.get_errno()==1; "
+        "os.setsid(); assert os.read(0,1)==b''; print('guarded-detached',flush=True)\n"
+        "while True: pass"
+    )
+    runner = worker(image, code, InspectionProcessLimits(1024, 256 * 1024**2, 3, 0.7))
+    capture: list[int] = []
+    original = subprocess.Popen
+
+    def observe(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        capture.append(os.dup(kwargs["stdout"].fileno()))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", observe)
+    try:
+        result = runner.run(body, cancelled=lambda: False)
+        assert result.status == "timeout" and result.output == b""
+        assert os.pread(capture[0], 128, 0) == b"guarded-detached\n"
+        identity = runner._worker_pidfd
+        assert identity is not None
+        observer = select.poll()
+        observer.register(identity, select.POLLIN)
+        assert any(flags & select.POLLIN for _, flags in observer.poll(0))
+        assert runner._process is not None and runner._process.poll() is not None
+    finally:
+        runner.close()
+        for descriptor in capture:
+            os.close(descriptor)
+
+
+def test_reaped_outer_with_live_actual_identity_retains_slot(
+    image: tuple[Path, str], body: BinaryIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Controlled real OS identities model an already-dead wrapper and a live
+    # payload. No media, permissions or unrelated process is involved.
+    runner = worker(image, "print('must not be dispatched')")
+    outer = subprocess.Popen(["/usr/bin/true"])
+    runner._outer_pidfd = os.pidfd_open(outer.pid)
+    outer.wait(timeout=3)
+    actual = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(10)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    runner._process = outer
+    runner._worker_pidfd = os.pidfd_open(actual.pid)
+    runner._reaped = False
+    signal_identity = signal.pidfd_send_signal
+    try:
+        with monkeypatch.context() as patch:
+
+            def deny_actual(fd: int, number: int) -> None:
+                if fd == runner._worker_pidfd and number == signal.SIGKILL:
+                    raise PermissionError("Synthetic actual stop unavailable")
+                signal_identity(fd, number)
+
+            patch.setattr(signal, "pidfd_send_signal", deny_actual)
+            assert runner.run(body, cancelled=lambda: False).status == "stop_unknown"
+            assert outer.poll() == 0 and actual.poll() is None
+            assert runner.close() is False
+            assert actual.poll() is None
+        assert runner.close() is True
+        actual.wait(timeout=3)
+    finally:
+        if actual.poll() is None:
+            actual.kill()
+        actual.wait(timeout=3)
+        runner.close()

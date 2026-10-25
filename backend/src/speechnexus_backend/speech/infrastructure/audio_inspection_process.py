@@ -8,16 +8,20 @@ processes/threads so the address-space limit cannot be multiplied by forking.
 
 from __future__ import annotations
 
+import array
 import math
 import os
 import platform
+import select
 import signal
+import socket
 import stat
 import struct
 import subprocess
 import threading
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryFile
@@ -74,13 +78,13 @@ def _single_process_filter() -> bytes | None:
     # seccomp_data: nr at 0, audit architecture at 4. Fail closed for another
     # ABI; x32 cannot bypass the x86_64 syscall comparisons below.
     targets = {
-        "x86_64": (0xC000003E, (56, 57, 58, 435, 272, 308)),
-        "aarch64": (0xC00000B7, (220, 435, 97, 268)),
+        "x86_64": (0xC000003E, (56, 57, 58, 435, 272, 308), 157),
+        "aarch64": (0xC00000B7, (220, 435, 97, 268), 167),
     }
     target = targets.get(platform.machine())
     if target is None:
         return None
-    architecture, denied = target
+    architecture, denied, prctl = target
     instructions = [
         (0x20, 0, 0, 4),  # load architecture
         (0x15, 1, 0, architecture),
@@ -91,7 +95,15 @@ def _single_process_filter() -> bytes | None:
     ]
     for syscall in denied:
         instructions.extend(((0x15, 0, 1, syscall), (0x06, 0, 0, 0x00050001)))  # EPERM
-    instructions.append((0x06, 0, 0, 0x7FFF0000))  # SECCOMP_RET_ALLOW
+    instructions.extend(
+        (
+            (0x15, 0, 3, prctl),
+            (0x20, 0, 0, 16),  # seccomp_data.args[0], prctl option
+            (0x15, 0, 1, 1),  # PR_SET_PDEATHSIG cannot be cleared/replaced by payload
+            (0x06, 0, 0, 0x00050001),
+            (0x06, 0, 0, 0x7FFF0000),  # SECCOMP_RET_ALLOW
+        )
+    )
     return b"".join(struct.pack("=HBBI", *instruction) for instruction in instructions)
 
 
@@ -109,6 +121,7 @@ class AudioInspectionProcess:
         command: tuple[str, ...],
         limits: InspectionProcessLimits,
         *,
+        launcher_python: str,
         bubblewrap: Path = Path("/usr/bin/bwrap"),
         prlimit: Path = Path("/usr/bin/prlimit"),
     ) -> None:
@@ -120,11 +133,20 @@ class AudioInspectionProcess:
             raise ValueError("Configure an absolute image executable")
         if any(not isinstance(arg, str) or "\0" in arg or len(arg) > 8192 for arg in command):
             raise ValueError("Invalid inspection command")
+        interpreter = PurePosixPath(launcher_python)
+        if not interpreter.is_absolute() or ".." in interpreter.parts or "\0" in launcher_python:
+            raise ValueError("Configure an absolute inspection interpreter")
         self._root, self._command, self._limits = root, command, limits
+        self._python = launcher_python
         self._bubblewrap, self._prlimit = bubblewrap, prlimit
         self._slot = threading.Lock()
+        self._creation = threading.Lock()
         self._closed = threading.Event()
         self._process: subprocess.Popen[bytes] | None = None
+        self._outer_pidfd: int | None = None
+        self._worker_pidfd: int | None = None
+        self._control: socket.socket | None = None
+        self._reaped = True
 
     def run(self, source: BinaryIO, *, cancelled: Callable[[], bool]) -> InspectionProcessResult:
         if not self._slot.acquire(blocking=False):
@@ -133,19 +155,30 @@ class AudioInspectionProcess:
             if self._closed.is_set():
                 return InspectionProcessResult("unavailable")
             # A previous kill with no wait receipt retains this instance's slot.
-            if self._process is not None and self._process.poll() is None:
+            if not self._original_exited():
                 return InspectionProcessResult("stop_unknown")
+            self._close_identities()
             self._process = None
             policy = _single_process_filter() if platform.system() == "Linux" else None
             if policy is None or not self._bubblewrap.is_file() or not self._prlimit.is_file():
                 return InspectionProcessResult("unavailable")
             if cancelled():
                 return InspectionProcessResult("cancelled")
+            # Check kernel/API support without launching a worker. No PID-only
+            # fallback can establish actual payload exit.
+            probe = os.pidfd_open(os.getpid())
+            try:
+                signal.pidfd_send_signal(probe, 0)
+            finally:
+                os.close(probe)
             source.flush()
             facts = os.fstat(source.fileno())
             if not stat.S_ISREG(facts.st_mode) or not 0 < facts.st_size <= self._limits.input_bytes:
                 return InspectionProcessResult("unavailable")
+            control, child_control = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
             with (
+                control,
+                child_control,
                 os.fdopen(os.open(f"/proc/self/fd/{source.fileno()}", os.O_RDONLY), "rb") as data,
                 TemporaryFile() as seccomp,
                 TemporaryFile() as output,
@@ -160,17 +193,39 @@ class AudioInspectionProcess:
                 seccomp.write(policy)
                 seccomp.seek(0)
                 args = self._arguments(data.fileno(), seccomp.fileno())
-                self._process = subprocess.Popen(
-                    args,
-                    stdin=subprocess.DEVNULL,
-                    stdout=output,
-                    stderr=subprocess.DEVNULL,
-                    close_fds=True,
-                    pass_fds=(data.fileno(), seccomp.fileno()),
-                    start_new_session=True,
-                    env={},
-                )
-                status: InspectionProcessStatus = "complete"
+                self._control = control
+                control.setblocking(False)
+                self._reaped = False
+                with self._creation:
+                    self._process = subprocess.Popen(
+                        args,
+                        stdin=child_control.fileno(),
+                        stdout=output,
+                        stderr=subprocess.DEVNULL,
+                        close_fds=True,
+                        pass_fds=(data.fileno(), seccomp.fileno()),
+                        start_new_session=True,
+                        env={},
+                    )
+                    # No concurrent closer can reap/reuse the numeric PID
+                    # between child creation and opening its kernel identity.
+                    self._outer_pidfd = os.pidfd_open(self._process.pid)
+                child_control.close()
+                starting = self._await_identity(cancelled, deadline)
+                if starting is not None:
+                    stopped = self._stop_original()
+                    return InspectionProcessResult(starting if stopped else "stop_unknown")
+                if self._closed.is_set() or cancelled() or time.monotonic() >= deadline:
+                    status: InspectionProcessStatus = (
+                        "cancelled" if self._closed.is_set() or cancelled() else "timeout"
+                    )
+                    stopped = self._stop_original()
+                    return InspectionProcessResult(status if stopped else "stop_unknown")
+                if control.send(b"G") != 1:
+                    raise ValueError("Inspection start was not acknowledged")
+                control.close()
+                self._control = None
+                status = "complete"
                 while self._process.poll() is None:
                     if self._closed.is_set() or cancelled():
                         status = "cancelled"
@@ -183,6 +238,9 @@ class AudioInspectionProcess:
                     if not self._stop_original():
                         return InspectionProcessResult("stop_unknown")
                     return InspectionProcessResult(status)
+                if not self._original_exited():
+                    stopped = self._stop_original()
+                    return InspectionProcessResult("failed" if stopped else "stop_unknown")
                 output.seek(0)
                 body = output.read(self._limits.output_bytes + 1)
                 if len(body) > self._limits.output_bytes:
@@ -197,6 +255,8 @@ class AudioInspectionProcess:
                 return InspectionProcessResult("complete", body)
         except BaseException as error:
             # No vendor text, command, environment, filename or input in errors.
+            if self._process is None:
+                self._reaped = True  # Popen did not return an owned child.
             stopped = self._stop_original()
             if not isinstance(error, Exception):
                 raise
@@ -204,6 +264,7 @@ class AudioInspectionProcess:
                 return InspectionProcessResult("stop_unknown")
             return InspectionProcessResult("unavailable")
         finally:
+            self._control = None
             self._slot.release()
 
     def _arguments(self, data_fd: int, seccomp_fd: int) -> list[str]:
@@ -230,6 +291,9 @@ class AudioInspectionProcess:
             "--ro-bind",
             str(self._root),
             "/",
+            "--ro-bind",
+            str(Path(__file__).with_name("_audio_inspection_launcher.py")),
+            "/inspection/launch.py",
             "--ro-bind-data",
             str(data_fd),
             "/input/media",
@@ -260,24 +324,138 @@ class AudioInspectionProcess:
             "/usr/bin/prlimit",
             f"--fsize={limits.output_bytes + 1}:{limits.output_bytes + 1}",
             "--",
+            self._python,
+            "-I",
+            "-S",
+            "/inspection/launch.py",
             *self._command,
         ]
 
-    def _stop_original(self) -> bool:
-        process = self._process
-        if process is None or process.poll() is not None:
+    def _receive_identity(self) -> bool:
+        if self._worker_pidfd is not None:
             return True
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        except OSError:
+        if self._control is None:
             return False
+        try:
+            data, ancillary, flags, _ = self._control.recvmsg(
+                64,
+                socket.CMSG_SPACE(array.array("i").itemsize),
+                socket.MSG_DONTWAIT | socket.MSG_CMSG_CLOEXEC,
+            )
+        except BlockingIOError, InterruptedError:
+            return False
+        descriptors = array.array("i")
+        for level, kind, value in ancillary:
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                descriptors.frombytes(value[: len(value) - len(value) % descriptors.itemsize])
+        if not data and not descriptors:
+            return False
+        if (
+            data != b"speechnexus-inspection-v1"
+            or flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC)
+            or len(descriptors) != 1
+        ):
+            for descriptor in descriptors:
+                os.close(descriptor)
+            raise ValueError("Invalid private inspection identity")
+        descriptor = descriptors[0]
+        try:
+            signal.pidfd_send_signal(descriptor, 0)
+        except ProcessLookupError:
+            pass  # A pidfd for an already exited worker is still exit evidence.
+        except BaseException:
+            os.close(descriptor)
+            raise
+        self._worker_pidfd = descriptor
+        return True
+
+    def _await_identity(
+        self, cancelled: Callable[[], bool], deadline: float
+    ) -> InspectionProcessStatus | None:
+        assert self._process is not None
+        while not self._receive_identity():
+            if self._closed.is_set() or cancelled():
+                return "cancelled"
+            if time.monotonic() >= deadline:
+                return "timeout"
+            if self._process.poll() is not None:
+                return "failed"
+            time.sleep(0.01)
+        return None
+
+    def _original_exited(self) -> bool:
+        if self._reaped:
+            return True
+        if self._worker_pidfd is None or self._process is None:
+            return False
+        observer = select.poll()
+        observer.register(self._worker_pidfd, select.POLLIN)
+        exited = any(flags & select.POLLIN for _, flags in observer.poll(0))
+        if not exited or self._process.poll() is None:
+            return False
+        self._reaped = True
+        return True
+
+    def _stop_original(self) -> bool:
+        if not self._creation.acquire(blocking=False):
+            return False
+        try:
+            process = self._process
+        finally:
+            self._creation.release()
+        if process is None:
+            return self._reaped
+        if self._original_exited():
+            return True
+        # Startup may already have queued an identity before cancellation. If no
+        # actual identity can be recovered, outer exit alone never frees a slot.
+        with suppress(OSError, ValueError):
+            self._receive_identity()
+        # A trusted launcher may still be starting. It cannot execute a payload
+        # without our acknowledgement, so collect its identity before killing it.
+        identity_deadline = time.monotonic() + 1
+        while (
+            self._worker_pidfd is None
+            and process.poll() is None
+            and time.monotonic() < identity_deadline
+        ):
+            try:
+                if self._receive_identity():
+                    break
+            except OSError, ValueError:
+                break
+            time.sleep(0.01)
+        for descriptor in (self._worker_pidfd, self._outer_pidfd):
+            if descriptor is not None:
+                with suppress(OSError):
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+        if self._outer_pidfd is None:
+            # Best-effort cleanup of Python's still-owned child if pidfd_open
+            # itself failed; this cannot establish the payload's exit proof.
+            with suppress(OSError):
+                process.kill()
         try:
             process.wait(timeout=1)
         except subprocess.TimeoutExpired:
             return False
-        return True
+        with suppress(OSError, ValueError):
+            self._receive_identity()
+        if self._worker_pidfd is None:
+            return False
+        if not self._original_exited():
+            with suppress(OSError):
+                signal.pidfd_send_signal(self._worker_pidfd, signal.SIGKILL)
+            observer = select.poll()
+            observer.register(self._worker_pidfd, select.POLLIN)
+            observer.poll(1000)
+        return self._original_exited()
+
+    def _close_identities(self) -> None:
+        assert self._reaped
+        for descriptor in (self._worker_pidfd, self._outer_pidfd):
+            if descriptor is not None:
+                os.close(descriptor)
+        self._worker_pidfd = self._outer_pidfd = None
 
     def close(self) -> bool:
         self._closed.set()
@@ -288,6 +466,9 @@ class AudioInspectionProcess:
             self._stop_original()
             return False
         try:
-            return self._stop_original()
+            stopped = self._stop_original()
+            if stopped:
+                self._close_identities()
+            return stopped
         finally:
             self._slot.release()

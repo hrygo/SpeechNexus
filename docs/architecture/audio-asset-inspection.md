@@ -36,7 +36,9 @@ silently depend on the whole gateway wheel. The shared artifact does not exist
 in this unit; neither its source nor B's implementation is modified here.
 
 The inspection image must contain the pinned shared artifact, its native
-dependencies, the inspection command and `/usr/bin/prlimit`. Supply a minimal,
+dependencies, an explicitly configured Python interpreter, the inspection
+command and `/usr/bin/prlimit`. Its `/inspection/launch.py` placeholder is
+overmounted read-only from A's installed, fixed launcher source. Supply a minimal,
 read-only image without deployment credentials, host directories or network
 configuration. The supervisor accepts only server configuration, rejects `/`
 as an image, and does not accept a client command, path, URL or environment.
@@ -59,8 +61,9 @@ cluster admission or a shared compute-budget ledger.
 | Process multiplication | Seccomp rejects fork/vfork/clone/clone3, unshare and setns for the supported Linux x86_64/aarch64 syscall ABIs. The worker is PID 1 and cannot create child processes or threads. Another ABI is unavailable. |
 | Encoded input memory | The anonymous encoded copy is separately bounded by `input_bytes`; its pages are additional to the worker's address-space limit. Include both, plus bounded supervisor overhead, in deployment capacity sizing. No claim of a cgroup-wide memory limit. |
 | Output | Setup's file-size limit permits only the bounded encoded input. Inside the image, `prlimit` narrows it to `output_bytes + 1` before executing the worker. Read at most that many bytes; excess or failure exposes no partial result. |
-| Deadline / cancellation | The supervisor monitors namespace setup and worker execution, sends SIGKILL to its owned process group, and waits for the original supervisor. It never invokes a Python pre-exec callback from the API's threads. |
-| Unknown stop | Failed kill or missing wait evidence yields `stop_unknown`; the original process handle retains the local slot. Later calls poll that identity instead of starting another worker. |
+| Actual identity | Before exec, the trusted launcher transfers its self-pidfd over a private Unix socket. It waits for acknowledgement, closes that channel, restores stdin to `/dev/null`, then execs the payload in the same kernel process. No client PID or numeric PID replay identifies the payload. |
+| Deadline / cancellation | The supervisor monitors setup and execution, signals the actual pidfd and its separately owned outer pidfd, requires actual-pidfd `POLLIN` and outer wait/reap, and never uses a Python pre-exec callback. Outer exit or a changed process group alone is no stop proof. |
+| Unknown stop | Failed kill or missing actual identity/exit proof yields `stop_unknown`; the local slot remains held even when the outer wrapper has exited. Startup without a recoverable identity is not automatically retried. |
 | Parent crash | `--die-with-parent` kills the namespace worker; anonymous input, output and policy descriptors have no named private copy to retain. A fresh API must recover Asset metadata/object outcomes through the existing ledger. |
 
 The wall deadline starts before process creation. Process creation and kernel
@@ -69,6 +72,15 @@ not proof of release. The supervisor reports `stop_unknown` rather than claiming
 an absolute bound on physical termination. Confirmed kill/reap is only evidence
 about this local inspection process, never an ASR engine stop receipt, Job
 terminal state or permission to release gateway/instance budgets.
+
+The launcher is trusted setup code and executes no decoder before the parent
+owns its pidfd. The metadata socket carries only that identity/acknowledgement
+and is removed before payload execution. A required pidfd API missing from the
+host fails closed; there is no PID-only stop qualification. The syscall filter
+also prevents the payload from clearing/replacing `PR_SET_PDEATHSIG`. This is
+defence in depth, not a substitute for checking the actual pidfd. Parent-death
+signals are tied to the creating Linux thread; they are never treated as an
+acknowledged stop when a request thread finishes.
 
 The current decoder is configured for single-thread processing, but the actual
 native stack still needs qualification under this no-fork/no-thread policy.
@@ -139,6 +151,15 @@ unconfirmed kill, interrupt cleanup and parent crash. A real kill-denial scenari
 is injected to exercise unknown-stop bookkeeping; it is not evidence of an
 actual uninterruptible kernel task.
 
+P1 review reproduced the old bug on source `306bc2f`: a controlled payload could
+clear its parent-death signal and change session, after which the outer wait
+returned cancelled while an independent pidfd still showed it alive. The probe
+explicitly killed and observed that owned payload before finishing. Regressions
+now verify denied parent-death changes, detached execution with actual exit
+proof, and a reaped outer/live actual identity that cannot free the slot when
+the actual stop is unavailable. This is a lifecycle test, not evidence of a host
+filesystem/network escape or an uninterruptible kernel task.
+
 The parent-crash test uses bubblewrap's child-pid report, so it does not depend
 on the optional `/proc/.../children` kernel interface. The image fixture copies
 only the current interpreter/stdlib, prlimit and their linked libraries; it
@@ -152,3 +173,13 @@ was fixed in the supervisor. The crash probe initially depended on a missing
 kernel observation file and was corrected to observe the actual child identity.
 These process tests establish no media, HTTP/PG/MinIO, GPU, multi-host or Gate
 qualification. Those require the next slice above.
+
+The first CI failed 14 new cases; the diagnostic head then reported 18 fixture
+errors with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`.
+That locates failure at loopback address setup, not at decoding or dependency
+resolution. Ubuntu's installed tool was 0.9.0, versus local 0.12.0; both upstream
+versions perform this address operation, so version difference alone is not a
+root-cause finding or a packaging fix. The CI job only reads fixed namespace/LSM
+context after failure. No sysctl, AppArmor, capability, runner or network-isolation
+change is authorized or made to bypass this failure. CI and target qualification
+remain open until a supported execution path is established.

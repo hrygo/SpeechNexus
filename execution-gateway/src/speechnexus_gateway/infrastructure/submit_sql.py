@@ -460,6 +460,21 @@ def save_submit_intent(
         )
 
 
+def list_unfinished_intents(
+    cursor: SubmitCursor, *, gateway_id: str, host_node_id: str, limit: int
+) -> list[SubmissionIntent]:
+    """Startup enumerates old active work to quarantine it, never to execute it."""
+    if type(limit) is not int or not 1 <= limit <= 500:
+        raise ValueError("startup reads between 1 and 500 original executions")
+    cursor.execute(
+        _INTENT_SELECTION + "WHERE l.gateway_id = %s AND l.host_node_id = %s "
+        "AND s.execution_state IN ('submitting', 'executing', 'stopping') "
+        "ORDER BY s.submit_intent_id LIMIT %s",
+        (gateway_id, host_node_id, limit),
+    )
+    return [_intent_from_row(row) for row in cursor.fetchall()]
+
+
 def lock_result_registration(
     cursor: SubmitCursor, identity: SubmissionIdentity, *, clock: Callable[[], datetime]
 ) -> SubmissionIntent:
@@ -476,6 +491,37 @@ def lock_result_registration(
             sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
             now=clock(),
         )
+    return current
+
+
+def check_file_start_in_transaction(
+    cursor: SubmitCursor, intent: SubmissionIntent, *, clock: Callable[[], datetime]
+) -> SubmissionIntent:
+    """Verify a committed acceptance without issuing another execution or updating rows."""
+    identity = intent.identity
+    _lock_authority_rows(cursor, identity)
+    current = lock_submit_intent(cursor, identity.submit_intent_id)
+    if (
+        current.identity != identity
+        or current.request_digest != intent.request_digest
+        or current.version != intent.version
+        or current.engine_request_id != intent.engine_request_id
+        or current.dispatched_at != intent.dispatched_at
+    ):
+        raise StaleSubmissionVersionError("accepted file execution changed before starting")
+    if (
+        current.execution_state is not ExecutionState.EXECUTING
+        or current.cleanup_state is not CleanupState.PENDING
+        or current.staging_result is not None
+    ):
+        raise ExecutionCleanupPendingError("file execution is no longer eligible to start")
+    facts = _read_lease_facts(cursor, identity.lease_id)
+    verify_submit_identity(
+        identity,
+        facts,
+        sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
+    )
+    verify_submit_eligibility(identity, facts, now=clock())
     return current
 
 

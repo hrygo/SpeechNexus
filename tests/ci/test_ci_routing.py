@@ -35,6 +35,36 @@ class PathRoutingTests(unittest.TestCase):
             "web",
         )
 
+    def test_skill_documents_and_metadata_are_lightweight(self) -> None:
+        paths = [
+            ".agents/skills/delivery/SKILL.md",
+            ".agents/skills/delivery/references/evidence.md",
+            ".agents/skills/delivery/agents/openai.yaml",
+            ".agents/skills/delivery/agents/alternate.yml",
+            ".agents/skills/delivery/evals/evals.json",
+            ".agents/skills/delivery/evals/fixtures.md",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "docs")
+        self.assertEqual(ROUTER.classify([*paths, "README.md"]), "docs")
+        self.assertEqual(ROUTER.classify([*paths, "web/admin/src/App.tsx"]), "web")
+        self.assertEqual(ROUTER.classify([*paths, "backend/module.py"]), "full")
+
+    def test_skill_executables_unknown_files_and_other_agent_config_stay_full(self) -> None:
+        for path in (
+            ".agents/skills/delivery/scripts/check.py",
+            ".agents/skills/delivery/scripts/check.sh",
+            ".agents/skills/delivery/scripts/check.mjs",
+            ".agents/skills/delivery/data.bin",
+            ".agents/skills/SKILL.md",
+            ".agents/settings.json",
+            ".agents/skills-other/delivery/SKILL.md",
+            ".agents/skills/delivery/../settings.yaml",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(ROUTER.classify([path]), "full")
+
     def test_unknown_or_shared_inputs_require_every_lane(self) -> None:
         for path in (
             ".github/workflows/ci.yml",
@@ -118,6 +148,18 @@ class GitRoutingTests(unittest.TestCase):
 
     def test_rename_into_docs_does_not_hide_the_original_source(self) -> None:
         self.git("mv", "backend/module.py", "README.en.md")
+        self.commit()
+        mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
+        self.assertEqual(mode, "full")
+
+    def test_skill_diff_is_lightweight_but_source_renamed_into_skill_is_full(self) -> None:
+        self.write(".agents/skills/delivery/SKILL.md", "# Delivery\n")
+        self.write(".agents/skills/delivery/agents/openai.yaml", "interface: {}\n")
+        self.write(".agents/skills/delivery/evals/evals.json", '{"evals": []}\n')
+        self.commit()
+        mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
+        self.assertEqual(mode, "docs")
+        self.git("mv", "backend/module.py", ".agents/skills/delivery/references.md")
         self.commit()
         mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
         self.assertEqual(mode, "full")

@@ -199,7 +199,7 @@ def test_0005_failure_rolls_back_then_upgrade_preserves_legacy_rows_and_grants(
     sandbox.admin.execute("ALTER TABLE coordination_outbox DROP COLUMN event_kind")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0013_profile_lifecycle_intents"
+    assert sandbox.version() == "0014_pronunciation_drafts"
     assert (
         sandbox.admin.execute(
             "SELECT target_node_id, intent_id, request_document, intent_state, version "

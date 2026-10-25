@@ -14,7 +14,9 @@
     "Transcription",
     "Operation",
     "OperationCancellation",
-    "ErrorResponse"
+    "ErrorResponse",
+    "PronunciationCreateRequest",
+    "PronunciationRevision"
   ],
   "$defs": {
     "JobCreateRequest": {
@@ -3408,6 +3410,113 @@
         }
       },
       "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+    },
+    "PronunciationCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "dependentRequired": {
+        "id": ["expected_revision"],
+        "expected_revision": ["id"]
+      },
+      "required": ["encoding", "entries"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": ["pinyin", "ipa"]
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationEntry"
+          }
+        },
+        "publish": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "External_voice_resource_schema_json_PronunciationEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grapheme", "phonemes"],
+      "properties": {
+        "grapheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "phonemes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "language": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_LanguageTag"
+        }
+      }
+    },
+    "External_voice_resource_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_voice_resource_schema_json_PronunciationRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "id",
+        "revision",
+        "object",
+        "status",
+        "encoding",
+        "entries",
+        "created_at"
+      ],
+      "properties": {
+        "resource_type": {
+          "const": "pronunciation_revision"
+        },
+        "id": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_voice_resource_schema_json_Revision"
+        },
+        "object": {
+          "const": "nexus.pronunciation_revision"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "published", "retired"]
+        },
+        "encoding": {
+          "type": "string",
+          "enum": ["pinyin", "ipa"]
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationEntry"
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "PronunciationRevision": {
+      "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationRevision"
     }
   },
   "anyOf": [
@@ -3446,6 +3555,12 @@
     },
     {
       "$ref": "#/$defs/ErrorResponse"
+    },
+    {
+      "$ref": "#/$defs/PronunciationCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/PronunciationRevision"
     }
   ]
 }

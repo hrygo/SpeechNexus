@@ -1051,6 +1051,236 @@
         "text": "Synthetic",
         "private_endpoint": "synthetic-invalid"
       }
+    },
+    {
+      "id": "pronunciation-create-explicit-draft",
+      "schema": "PronunciationCreateRequest",
+      "valid": true,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": false
+      }
+    },
+    {
+      "id": "pronunciation-create-publish-default-omitted",
+      "schema": "PronunciationCreateRequest",
+      "valid": true,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pronunciation-create-explicit-published",
+      "schema": "PronunciationCreateRequest",
+      "valid": true,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": true
+      }
+    },
+    {
+      "id": "pronunciation-create-empty",
+      "schema": "PronunciationCreateRequest",
+      "valid": false,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [],
+        "publish": false
+      }
+    },
+    {
+      "id": "pronunciation-create-bool",
+      "schema": "PronunciationCreateRequest",
+      "valid": false,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": 0
+      }
+    },
+    {
+      "id": "pronunciation-create-missing-expected",
+      "schema": "PronunciationCreateRequest",
+      "valid": false,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": false,
+        "id": "pron-synthetic"
+      }
+    },
+    {
+      "id": "pronunciation-create-missing-id",
+      "schema": "PronunciationCreateRequest",
+      "valid": false,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": false,
+        "expected_revision": "1"
+      }
+    },
+    {
+      "id": "pronunciation-create-extra",
+      "schema": "PronunciationCreateRequest",
+      "valid": false,
+      "value": {
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "publish": false,
+        "private_key": "synthetic"
+      }
+    },
+    {
+      "id": "pronunciation-draft",
+      "schema": "PronunciationRevision",
+      "valid": true,
+      "value": {
+        "resource_type": "pronunciation_revision",
+        "id": "pron-synthetic",
+        "revision": "1",
+        "object": "nexus.pronunciation_revision",
+        "status": "draft",
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "created_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "pronunciation-published-source-unchanged",
+      "schema": "PronunciationRevision",
+      "valid": true,
+      "value": {
+        "resource_type": "pronunciation_revision",
+        "id": "pron-synthetic",
+        "revision": "1",
+        "object": "nexus.pronunciation_revision",
+        "status": "published",
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "created_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "pronunciation-revision-revision-zero",
+      "schema": "PronunciationRevision",
+      "valid": false,
+      "value": {
+        "resource_type": "pronunciation_revision",
+        "id": "pron-synthetic",
+        "revision": "0",
+        "object": "nexus.pronunciation_revision",
+        "status": "draft",
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "created_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "pronunciation-revision-private-field",
+      "schema": "PronunciationRevision",
+      "valid": false,
+      "value": {
+        "resource_type": "pronunciation_revision",
+        "id": "pron-synthetic",
+        "revision": "1",
+        "object": "nexus.pronunciation_revision",
+        "status": "draft",
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "created_at": "2026-10-25T00:00:00Z",
+        "key_digest": "synthetic"
+      }
+    },
+    {
+      "id": "pronunciation-revision-wrong-resource",
+      "schema": "PronunciationRevision",
+      "valid": false,
+      "value": {
+        "resource_type": "voice_revision",
+        "id": "pron-synthetic",
+        "revision": "1",
+        "object": "nexus.pronunciation_revision",
+        "status": "draft",
+        "encoding": "pinyin",
+        "entries": [
+          {
+            "grapheme": "SpeechNexus",
+            "phonemes": "si pi chi ne ke si",
+            "language": "zh-CN"
+          }
+        ],
+        "created_at": "2026-10-25T00:00:00Z"
+      }
     }
   ]
 }

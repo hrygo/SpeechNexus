@@ -13,7 +13,9 @@
     "Transcription",
     "Operation",
     "OperationCancellation",
-    "ErrorResponse"
+    "ErrorResponse",
+    "PronunciationCreateRequest",
+    "PronunciationRevision"
   ],
   "coordination": {
     "version": "1.0.0",
@@ -369,5 +371,8 @@
         "getModelBindingParameterDefaults"
       ]
     }
+  },
+  "schema_refs": {
+    "PronunciationRevision": "voice-resource.schema.json#/$defs/PronunciationRevision"
   }
 }

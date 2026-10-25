@@ -345,7 +345,7 @@ def test_additive_upgrade_and_empty_only_downgrade_preserve_all_other_history(
         migrate(journal, "downgrade", "0012_execution_results")
     assert journal.rows() == original and profile.snapshot() == before
     assert profile.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0013_profile_lifecycle_intents"}
+        {"version_num": "0014_pronunciation_drafts"}
     ]
 
 

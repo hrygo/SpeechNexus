@@ -10,7 +10,7 @@
 
 SpeechNexus is for teams that want to deploy speech capabilities in their own Linux environment. The product brings together a **speech API, an AdminUI, and a personal speech workbench**. Its goal is to connect speech recognition, synthesis, voice creation, and everyday speech tasks: developers integrate through APIs, users work in the browser, and maintainers manage services and resources.
 
-> **Early development.** You can currently launch AdminUI and workbench previews and call service health endpoints. Transcription, synthesis, voice creation, and workbench business workflows are not yet available. The features below describe the product roadmap; real models and production deployments remain unverified.
+> **Early development.** The AdminUI workspace reads and task center, and workbench file-transcription and text-synthesis pages now consume the public API. Service health and configured Asset endpoints are available; real speech execution, model quality, and complete workbench workflows still require integration. The features below describe the product roadmap; real models and production deployments remain unverified.
 
 ## Who it is for
 
@@ -49,7 +49,25 @@ The P0 contracts freeze an OpenAI Audio-compatible subset plus `nexus` interface
 
 Runtime endpoints include `/healthz`, `/readyz`, and configured Asset upload, metadata, content download and shared Workspace GET/keyset listing. The initial path validates actual UTF-8 text; audio inspection depends on B03, and other speech/workbench routes remain in development. An explicitly configured separate writer also enables [profile draft POST / fixed-revision GET](docs/architecture/profile-drafts.md), and a separate writer enables [ModelBinding draft POST / fixed GET](docs/architecture/model-binding-drafts.md), both with original-key replay and distinct unknown results. An explicit four-table writer also enables [binding default declarations and fixed snapshot GET](docs/architecture/binding-defaults-producer.md); publication, activation and default selection remain pending. New Assets default to seven days of retention, overridden by deployment configuration or an explicit upload TTL; changing defaults never changes an existing expiry. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
 
-Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not implemented as runtime routes.
+The [workbench C1 HTTP unit (Chinese)](docs/plans/2026-10-24-team-c-c1-management-handoff.md) provides an independently injected factory covering project/transcript versions, pagination, configuration status and versioned project/transcript deletion, verified over real loopback HTTP and isolated PostgreSQL. Shared production composition, migrations, workbench pages and complete speech workflows still require integration.
+
+The [project and manuscript workbench (Chinese)](docs/plans/2026-10-24-team-c-c1-editor-handoff.md) now provides the page consumer: project/manuscript creation and pagination, historical revision editing, tab-local drafts and original-key recovery, and explicit conflict handling. Web checks and production-bundle Chromium flows with synthetic HTTP pass; real production composition and complete speech workflows remain pending.
+
+[Meeting/Minutes HTTP (Chinese)](docs/plans/2026-10-24-team-c-meeting-http-handoff.md) adds five public operations to the C-owned factory: durable meeting records, atomic transcript sealing, source-pinned minutes enqueue/query and original-key recovery. Deletion preview and cleanup include meeting dependencies. Explicit configuration exposes 18 operations; the default factory retains 13. Real loopback HTTP and isolated PostgreSQL use synthetic content and an LLM fake. Realtime capture, audio storage, a real LLM and shared production composition remain pending.
+
+[Meeting and minutes workbench (Chinese)](docs/plans/2026-10-24-team-c-meeting-ui-handoff.md) adds the formal page: project/manuscript selection, creation and explicit ID lookup, exact transcript sealing, approved template/model discovery, minutes status and plain text, and tab-local draft/original-key recovery. Production-bundle Chromium connects to real C HTTP and isolated PostgreSQL, covering lost replies, replay after disabling the LLM, expired output hiding and retained drafts after deletion. The LLM is a fake; this does not qualify real models, devices or production deployment.
+
+The [deletion and recovery workbench (Chinese)](docs/plans/2026-10-24-team-c-deletion-ui-handoff.md) provides ordinary/cascade project and transcript previews, complete scope confirmation, original-key recovery and current cleanup status. Production-bundle Chromium with real C HTTP and isolated PostgreSQL verifies lost replies, storage barriers and physical cleanup. The complete independent-object graph, backup restoration and shared production composition remain pending; recovery does not undo deletion.
+
+The [realtime caption consumer (Chinese)](docs/plans/2026-10-24-team-c-realtime-asr-handoff.md) adds deployment references, explicit admission/microphone controls, credit-bounded input, separate previews/final text/overall execution, original-key and finalized-draft recovery, disconnect gaps and cleanup queries. Production-bundle Chromium uses synthetic HTTP/WS and a synthetic microphone. Public production realtime, real models/devices, duplex, durable meeting integration and complete qualification remain pending; PCM is not persisted in the browser.
+
+The [realtime TTS consumer (Chinese)](docs/plans/2026-10-24-team-c-realtime-tts-handoff.md) adds fixed references, append/commit/finish, bounded PCM playback and separate generation/network/render watermarks. Production-bundle Chromium uses synthetic REST/WS with a real AudioWorklet; production TTS, models/physical devices and duplex qualification remain pending.
+
+The [voice creation task entry (Chinese)](docs/plans/2026-10-24-team-c-voice-create-handoff.md) separates design and sample-clone inputs, confirms existing reference materials, and consumes durable Jobs with original-key recovery. Production-bundle Chromium uses synthetic public HTTP. Candidate previews, reuse validation, explicit publication and real voice creation remain pending; creating a Job does not publish a reusable voice.
+
+The [independent workbench service entry (Chinese)](docs/plans/2026-10-24-team-c-runtime-root-handoff.md) composes real PostgreSQL projects/manuscripts, versioned deletion and meeting save/seal. Explicit environment configuration and a non-owner runtime role must pass read-only startup checks before requests are accepted; the runtime executes no DDL, the LLM is disabled and no production fake is used. Team A still coordinates the owner-only fresh-schema baseline into the migration sequence. Object storage, cleanup/LLM/export workers, public speech imports and full production deployment remain pending.
+
+Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not yet fully connected to the shared production runtime.
 
 Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-cluster-coordination-and-storage-portability.md) excludes etcd and moves cross-table rules into controlled application transactions to reduce database coupling. PostgreSQL is the only database targeted for official product support; MySQL/InnoDB is limited to validating key coordination behavior. [Simplified DDL, application transaction design and contracts (Chinese)](docs/architecture/coordination-transactions.md) are delivered, with a shared test prototype on real PG/InnoDB. Production integration and full cluster fault qualification remain pending; see the [refactoring plan (Chinese)](docs/plans/2026-10-23-cluster-coordination-refactor.md).
 
@@ -118,11 +136,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -
 
 Once the services are running, open:
 
-| Entry                     | Address                         | Currently available                                 |
-| ------------------------- | ------------------------------- | --------------------------------------------------- |
-| AdminUI                   | <http://127.0.0.1:8080>         | Admin interface preview and capability status notes |
-| Personal speech workbench | <http://127.0.0.1:8081>         | Workbench preview and task scope notes              |
-| Speech service            | <http://127.0.0.1:8000/healthz> | Process liveness check                              |
+| Entry                     | Address                         | Currently available                                                                       |
+| ------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
+| AdminUI                   | <http://127.0.0.1:8080>         | Admin interface preview and capability status notes                                       |
+| Personal speech workbench | <http://127.0.0.1:8081>         | Transcription, text synthesis, recovery, and downloads (real service integration pending) |
+| Speech service            | <http://127.0.0.1:8000/healthz> | Process liveness check                                                                    |
 
 This startup does not load speech models. Check infrastructure readiness with:
 

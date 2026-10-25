@@ -14,10 +14,14 @@ describe("AdminUI shell", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "运行事实管理" })).toBeInTheDocument();
     expect(screen.getByLabelText("部署数据边界")).toHaveTextContent("没有登录与角色隔离");
-    expect(screen.getAllByText("契约已交付")).toHaveLength(1);
+    // Two cards are now honestly in the `contract` presentation state: the protocol card and
+    // the diagnostics card. Pin the specific claim instead of counting labels.
+    expect(screen.getByRole("article", { name: "部署诊断" })).toHaveTextContent("契约已交付");
+    expect(screen.getByRole("article", { name: "服务进程" })).toHaveTextContent("基础就绪");
     expect(screen.getByText("本地离线 · 音频不出网")).toBeInTheDocument();
     expect(screen.getByText("AdminUI")).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "服务进程" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "共享工作空间" })).toBeInTheDocument();
   });
 
   it("renders BrandMark with unique gradient IDs, CSS token stops, and decorative a11y support", () => {

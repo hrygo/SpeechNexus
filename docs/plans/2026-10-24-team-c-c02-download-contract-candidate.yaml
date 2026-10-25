@@ -1,0 +1,103 @@
+# Proposed additive input to A/C review; not the canonical or generated contract.
+status: proposed
+review_required: [A]
+canonical_contract: contracts/workbench-openapi.yaml
+base_sha: 3380a76c89998b42be29b0c25e9f49443d23e15b
+base_contract_sha256: 38b8f6776392f541c0be085b5fedd49937f3c16486934d55970d154309390068
+patch:
+  paths:
+    /v1/workbench/transcripts/{transcript_id}/revisions/{revision}/content:
+      get:
+        tags: [transcripts]
+        operationId: downloadTranscriptRevisionText
+        summary: Download one saved transcript revision as UTF-8 text
+        description: |
+          Reads the explicitly selected immutable revision, including draft or sealed
+          text. The response is the exact UTF-8 encoding of saved text: preserve BOM,
+          line endings, whitespace and Unicode. An empty corrected draft returns 200
+          with zero bytes and the SHA256 of the empty byte sequence. Limits are
+          1,000,000 Unicode scalar values and 4,000,000 bytes. No NUL or invalid UTF-8.
+          Content-Length and X-Content-SHA256 describe the full unencoded raw bytes;
+          Content-Encoding is absent. Consumers verify byte length and digest before
+          strict UTF-8 decoding; replacement decoding cannot prove integrity.
+          This is a full-body download. A Range header does not select a partial
+          representation: return 200 with the complete body, without Accept-Ranges.
+          No conditional 304 response or reusable cache representation is defined.
+          No Job, saved copy, export Artifact, idempotency key or speech request is
+          created. The saved revision remains readable after a source Artifact expires.
+          New reads after deletion acceptance return 404 before body cleanup completes.
+          Reads already in progress are not promised revocation or forced interruption.
+          All response bodies and errors remain within the deployment content boundary.
+          Safe error semantics proposed for A/C review: 400 invalid_request /
+          invalid_request_error, 401 authentication_required / authentication_error,
+          404 resource_not_found / not_found_error, 503 workbench_unavailable /
+          service_unavailable_error. Only 503 is retryable. Corrupt internal snapshots
+          map to 503 without their text, source exception, URL or database details.
+        x-nexus-error-semantics:
+          "400": {code: invalid_request, type: invalid_request_error, retryable: false}
+          "401": {code: authentication_required, type: authentication_error, retryable: false}
+          "404": {code: resource_not_found, type: not_found_error, retryable: false}
+          "503": {code: workbench_unavailable, type: service_unavailable_error, retryable: true}
+        parameters:
+          - $ref: "#/components/parameters/TranscriptIdPath"
+          - $ref: "#/components/parameters/RevisionPath"
+          - $ref: "#/components/parameters/XRequestId"
+        responses:
+          "200":
+            description: Full UTF-8 text from the fixed revision, including an empty draft.
+            headers:
+              Content-Length:
+                required: true
+                description: Exact raw UTF-8 byte count, not Unicode character count.
+                schema:
+                  type: integer
+                  minimum: 0
+                  maximum: 4000000
+              Content-Disposition:
+                required: true
+                schema:
+                  type: string
+                  const: 'attachment; filename="speech-transcript.txt"'
+              Cache-Control:
+                required: true
+                schema:
+                  type: string
+                  const: no-store
+              X-Content-Type-Options:
+                required: true
+                schema:
+                  type: string
+                  const: nosniff
+              X-Content-SHA256:
+                required: true
+                schema:
+                  $ref: "#/components/schemas/Sha256Digest"
+              X-Request-ID:
+                required: true
+                description: Validated client ID or a server-generated correlation ID.
+                schema:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+            content:
+              "text/plain; charset=utf-8":
+                schema:
+                  $ref: "#/components/schemas/TranscriptTextContent"
+          "400":
+            $ref: "#/components/responses/BadRequest"
+          "401":
+            $ref: "#/components/responses/Unauthorized"
+          "404":
+            $ref: "#/components/responses/NotFound"
+          "503":
+            $ref: "#/components/responses/ServiceUnavailable"
+  components:
+    schemas:
+      TranscriptTextContent:
+        type: string
+        maxLength: 1000000
+        pattern: '^[^\u0000]*$'
+        description: |
+          Decoded strict UTF-8 response text, not a JSON-encoded string or a binary
+          book ExportArtifact. Transport bytes must also match Content-Length and
+          X-Content-SHA256. Empty corrected drafts are valid and are not padded.

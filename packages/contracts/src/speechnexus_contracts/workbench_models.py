@@ -209,6 +209,29 @@ class WorkbenchJobError(TypedDict):
 
 
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
+type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
+
+
+class BookCreateRequest(TypedDict):
+    title: str
+    source_text: NotRequired[str | None]
+
+
+class ChapterCreateRequest(TypedDict):
+    title: str
+    ordinal: int
+    text: str
+
+
+class AssistantTurnCreateRequest(TypedDict):
+    input_text: str
+    voice: ResourceReference
+    model: NotRequired[str]
+    profile: NotRequired[ResourceReference]
+
+
+type Language = str
+type AudioFormat = str
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -366,6 +389,7 @@ class MeetingSealRequest(TypedDict):
 
 class MinutesCreateRequest(TypedDict):
     template_revision: Revision
+    expected_source_revision: NotRequired[Revision]
     llm_model: NotRequired[str]
 
 
@@ -389,6 +413,232 @@ class RenderUnitGenerationRequest(TypedDict):
 
 
 type RenderUnitVoice = ResourceReference
+
+
+class TeleprompterUpdateRequest(TypedDict):
+    script_revision: Revision
+    visible_position: int
+    manual_hold: bool
+
+
+class TeleprompterState(TypedDict):
+    object: Literal["nexus.teleprompter_state"]
+    project_id: Identifier
+    script_revision: Revision
+    visible_position: int
+    manual_hold: bool
+    updated_at: str
+
+
+class SavedAsset(TypedDict):
+    id: Identifier
+    object: Literal["nexus.saved_asset"]
+    project_id: Identifier
+    display_name: NotRequired[str | None]
+    media_type: str
+    bytes: int
+    sha256: Sha256Digest
+    source_artifact_id: Identifier
+    source_receipt_id: Identifier
+    created_at: str
+
+
+class SavedAssetCreateRequest(TypedDict):
+    source_artifact_id: Identifier
+    source_receipt_id: Identifier
+    display_name: NotRequired[str]
+
+
+class Book(TypedDict):
+    id: Identifier
+    object: Literal["nexus.book"]
+    project_id: Identifier
+    title: str
+    status: Literal["draft", "ready", "exporting"]
+    casting_revision: Revision
+    created_at: str
+    updated_at: str
+
+
+class Chapter(TypedDict):
+    id: Identifier
+    object: Literal["nexus.chapter"]
+    book_id: Identifier
+    title: str
+    ordinal: int
+    text_revision: Revision
+    created_at: str
+
+
+class RenderUnitCreateRequest(TypedDict):
+    ordinal: int
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice]
+    model: str
+    profile: NotRequired[RenderUnitVoice]
+
+
+class RenderUnitPatch(TypedDict):
+    expected_revision: Revision
+    text: NotRequired[str]
+    voice: NotRequired[RenderUnitVoice]
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: NotRequired[str]
+    profile: NotRequired[RenderUnitVoice | None]
+
+
+class AssistantTurn(TypedDict):
+    id: Identifier
+    object: Literal["nexus.assistant_turn"]
+    project_id: Identifier
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    input_text: str
+    output_text: NotRequired[str | None]
+    voice: ResourceReference
+    speech_job_id: NotRequired[Identifier | None]
+    playback_generation: int
+    error: NotRequired[WorkbenchJobError | None]
+    created_at: str
+    updated_at: str
+
+
+class ExportArtifact(TypedDict):
+    id: Identifier
+    object: Literal["nexus.export_artifact"]
+    export_id: Identifier
+    manifest_revision: Revision
+    media_type: str
+    bytes: int
+    sha256: Sha256Digest
+    created_at: str
+
+
+class ExportCreateRequest(TypedDict):
+    expected_casting_revision: Revision
+    format: Literal["wav", "mp3", "zip"]
+    unit_ids: NotRequired[list[Identifier]]
+
+
+class ExportJob(TypedDict):
+    id: Identifier
+    object: Literal["nexus.export_job"]
+    book_id: Identifier
+    status: Literal[
+        "queued", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"
+    ]
+    format: Literal["wav", "mp3", "zip"]
+    manifest_revision: Revision
+    progress_completed: int
+    progress_total: int
+    artifact: NotRequired[ExportArtifact | None]
+    error: NotRequired[WorkbenchJobError | None]
+    created_at: str
+    updated_at: str
+
+
+class BookList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[Book]
+    has_more: bool
+    next_cursor: str | None
+
+
+class ChapterList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[Chapter]
+    has_more: bool
+    next_cursor: str | None
+
+
+class VoiceSummary(TypedDict):
+    voice_id: Identifier
+    revision: Revision
+    display_name: str
+    source_type: Literal["designed", "cloned", "builtin"]
+    status: Literal["published", "retired", "disabled"]
+    languages: list[Language]
+    audio_formats: list[AudioFormat]
+
+
+class VoiceRevision(TypedDict):
+    voice_id: Identifier
+    revision: Revision
+    display_name: str
+    status: Literal["published", "retired", "disabled"]
+    languages: list[Language]
+    audio_formats: list[AudioFormat]
+    model_binding: ResourceReference
+    published_at: str
+    retired_at: str | None
+    disabled_reason: str | None
+
+
+class MinutesProfile(TypedDict):
+    template_revision: Revision
+    llm_model: str
+
+
+class WorkbenchStatusV2(TypedDict):
+    object: Literal["nexus.workbench_status"]
+    workbench_enabled: bool
+    llm_enabled: bool
+    minutes_profile: NotRequired[MinutesProfile | None]
+    shared_deployment_notice: Literal["shared_deployment"]
+    capabilities: list[Capability]
+
+
+class RenderUnitV2(TypedDict):
+    model_binding: ResourceReference
+    id: Identifier
+    object: Literal["nexus.render_unit"]
+    chapter_id: Identifier
+    ordinal: int
+    revision: Revision
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: str
+    profile: NotRequired[RenderUnitVoice | None]
+    status: Literal["pending", "generating", "ready", "stale", "failed"]
+    saved_asset_id: NotRequired[Identifier | None]
+    speech_job_id: NotRequired[Identifier | None]
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    updated_at: str
+
+
+class RenderUnitCreateRequestV2(TypedDict):
+    model_binding: ResourceReference
+    ordinal: int
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice]
+    model: str
+    profile: NotRequired[RenderUnitVoice]
+
+
+class RenderUnitPatchV2(TypedDict):
+    model_binding: NotRequired[ResourceReference]
+    expected_revision: Revision
+    text: NotRequired[str]
+    voice: NotRequired[RenderUnitVoice]
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: NotRequired[str]
+    profile: NotRequired[RenderUnitVoice | None]
+
+
+class RenderUnitListV2(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[RenderUnitV2]
+    has_more: bool
+    next_cursor: str | None
+
+
+class RenderUnitGenerationAcceptedV2(TypedDict):
+    render_unit: RenderUnitV2
+    speech_job_id: Identifier
+    accepted_at: str
 
 
 class ProjectCreateRequest(TypedDict):
@@ -488,6 +738,20 @@ class RenderUnit(TypedDict):
     updated_at: str
 
 
+class RenderUnitList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[RenderUnit]
+    has_more: bool
+    next_cursor: str | None
+
+
+class VoiceList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[VoiceSummary]
+    has_more: bool
+    next_cursor: str | None
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -565,4 +829,32 @@ type WorkbenchContracts = (
     | MinutesJob
     | RenderUnitGenerationRequest
     | RenderUnitGenerationAccepted
+    | TeleprompterUpdateRequest
+    | TeleprompterState
+    | SavedAsset
+    | SavedAssetCreateRequest
+    | Book
+    | BookCreateRequest
+    | Chapter
+    | ChapterCreateRequest
+    | RenderUnit
+    | RenderUnitCreateRequest
+    | RenderUnitPatch
+    | AssistantTurn
+    | AssistantTurnCreateRequest
+    | ExportArtifact
+    | ExportCreateRequest
+    | ExportJob
+    | BookList
+    | ChapterList
+    | RenderUnitList
+    | VoiceList
+    | VoiceSummary
+    | VoiceRevision
+    | WorkbenchStatusV2
+    | RenderUnitV2
+    | RenderUnitCreateRequestV2
+    | RenderUnitPatchV2
+    | RenderUnitListV2
+    | RenderUnitGenerationAcceptedV2
 )

@@ -1,0 +1,24 @@
+.prompter .file-task-actions {
+  margin-block: var(--nexus-space-4);
+}
+.prompter-reading {
+  max-height: 60vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--nexus-text-2xl);
+  line-height: 1.9;
+  padding: var(--nexus-space-4);
+  margin-top: var(--nexus-space-5);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+.prompter-reading [data-current="true"] {
+  background: var(--accent-soft);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.prompter-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

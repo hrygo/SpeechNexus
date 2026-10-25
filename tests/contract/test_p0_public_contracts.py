@@ -2906,12 +2906,13 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
             {"input_text": "Synthetic input.", "voice": voice, "model": ""}
         )
 
-    render_create_validator = _component_validator(workbench, "RenderUnitCreateRequest")
+    render_create_validator = _component_validator(workbench, "RenderUnitCreateRequestV2")
     render_create_validator.validate(
         {
             "ordinal": 0,
             "text": "Synthetic narration unit.",
             "voice": voice,
+            "model_binding": {"id": "binding_demo", "revision": "3"},
             "model": "tts-quality",
         }
     )
@@ -2921,6 +2922,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
                 "ordinal": 0,
                 "text": "Synthetic narration unit.",
                 "voice": voice,
+                "model_binding": {"id": "binding_demo", "revision": "3"},
                 "model": "",
             }
         )
@@ -2987,13 +2989,14 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         "revision": "2",
         "text": "Synthetic narration unit.",
         "voice": {"id": "voice_demo", "revision": "1"},
+        "model_binding": {"id": "binding_demo", "revision": "3"},
         "model": "tts-quality",
         "status": "generating",
         "speech_job_id": None,
         "source_artifact_id": None,
         "updated_at": "2026-10-23T00:00:00Z",
     }
-    render_validator = _component_validator(workbench, "RenderUnit")
+    render_validator = _component_validator(workbench, "RenderUnitV2")
     with pytest.raises(ValidationError):
         render_validator.validate(render_unit)
     render_unit["speech_job_id"] = "speech_job_demo"

@@ -264,7 +264,8 @@ test(
 );
 
 test("unknown operations and implicit/unbounded byte limits are rejected", () => {
-  assert.throws(() => validateRequest("createAssistantTurn", {}), /Unknown HTTP operation/);
+  // Downloads are contract-frozen but not part of the served surface yet.
+  assert.throws(() => validateRequest("downloadSavedAsset", {}), /Unknown HTTP operation/);
   for (const limit of [undefined, 0, -1, Infinity, 1.5]) {
     assert.throws(
       () => createValidatedClient("http://deployment.invalid", limit),

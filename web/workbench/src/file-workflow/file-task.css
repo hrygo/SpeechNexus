@@ -1,0 +1,116 @@
+.file-task {
+  margin-block: var(--nexus-space-8);
+}
+.file-task-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  border-block: 1px solid var(--line-strong);
+}
+.file-task-input,
+.file-task-detail {
+  min-width: 0;
+  padding: var(--nexus-space-6);
+}
+.file-task-input {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.file-task h2 {
+  font-size: var(--nexus-text-xl);
+  margin-block: 0 var(--nexus-space-4);
+}
+.file-task p {
+  max-width: 65ch;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.file-task form {
+  display: grid;
+  gap: var(--nexus-space-3);
+}
+.file-task dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--nexus-space-3) var(--nexus-space-5);
+}
+.file-task dt {
+  color: var(--text-secondary);
+}
+.file-task dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.file-task button,
+.file-task input,
+.file-task textarea,
+.file-task-nav button {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: var(--nexus-space-3);
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--nexus-radius-sm);
+}
+.file-task button:not(:disabled) {
+  cursor: pointer;
+  border-color: var(--accent);
+}
+.file-task button:disabled,
+.file-task input:disabled,
+.file-task textarea:disabled {
+  opacity: 0.6;
+}
+.file-task-actions {
+  display: flex;
+  gap: var(--nexus-space-3);
+  flex-wrap: wrap;
+}
+.file-task [role="alert"],
+.file-task [role="group"] {
+  padding: var(--nexus-space-4);
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+}
+.file-task-detail > section {
+  margin-block: var(--nexus-space-8);
+}
+@media (max-width: 760px) {
+  .file-task-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .file-task-input {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .file-task-input,
+  .file-task-detail {
+    padding: var(--nexus-space-4);
+  }
+}
+
+.file-task-field {
+  display: grid;
+  gap: var(--nexus-space-3);
+}
+.file-task textarea {
+  resize: vertical;
+  width: 100%;
+}
+.file-task audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-block: var(--nexus-space-4);
+}
+.file-task-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-3);
+}
+.file-task-nav button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

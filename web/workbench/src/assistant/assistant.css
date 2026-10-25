@@ -1,0 +1,43 @@
+.assistant {
+  margin-block: var(--nexus-space-8);
+}
+.assistant h2,
+.assistant h3 {
+  margin-block: 0 var(--nexus-space-4);
+}
+.assistant p {
+  max-width: 72ch;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.assistant-capability span[data-state] {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding-inline: var(--nexus-space-2);
+  margin-inline: var(--nexus-space-2);
+}
+.assistant form {
+  display: grid;
+  gap: var(--nexus-space-4);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: var(--nexus-space-6);
+}
+.assistant form label {
+  display: grid;
+  gap: var(--nexus-space-2);
+}
+.assistant form button {
+  justify-self: start;
+}
+.assistant [aria-label="当前回合"] {
+  margin-block-start: var(--nexus-space-6);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: var(--nexus-space-6);
+}
+@media (max-width: 30rem) {
+  .assistant form {
+    padding: var(--nexus-space-4);
+  }
+}

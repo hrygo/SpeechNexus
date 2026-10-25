@@ -1,0 +1,96 @@
+.books {
+  margin-block: var(--nexus-space-8);
+}
+.books h2,
+.books h3 {
+  margin-block: 0 var(--nexus-space-4);
+}
+.books p {
+  max-width: 72ch;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.books-panel {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: var(--nexus-space-6);
+}
+.books-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--nexus-space-4);
+}
+.books-panel label {
+  display: grid;
+  gap: var(--nexus-space-2);
+}
+.books-panel progress {
+  inline-size: 100%;
+  max-inline-size: 32rem;
+}
+.books-artifact {
+  border-top: 1px solid var(--line-strong);
+  margin-top: var(--nexus-space-4);
+  padding-top: var(--nexus-space-4);
+}
+.books-artifact code {
+  overflow-wrap: anywhere;
+}
+.books-problem {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.books-empty {
+  color: var(--muted);
+}
+
+.books-list,
+.books-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.books-list button,
+.books-chapters li {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.books-chapters li {
+  border-block-end: 1px solid var(--line);
+  padding-block: 0.25rem;
+}
+
+.books-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.books-units {
+  margin-block: var(--nexus-space-6);
+}
+
+.books-unit {
+  border: 1px solid var(--line);
+  padding: var(--nexus-space-4);
+  display: grid;
+  gap: var(--nexus-space-2);
+}
+
+.books-unit textarea {
+  inline-size: 100%;
+  min-block-size: 4rem;
+}
+
+.books-notice {
+  color: var(--muted);
+}

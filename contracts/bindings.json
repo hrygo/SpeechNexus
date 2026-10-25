@@ -82,7 +82,35 @@
         "MinutesCreateRequest",
         "MinutesJob",
         "RenderUnitGenerationRequest",
-        "RenderUnitGenerationAccepted"
+        "RenderUnitGenerationAccepted",
+        "TeleprompterUpdateRequest",
+        "TeleprompterState",
+        "SavedAsset",
+        "SavedAssetCreateRequest",
+        "Book",
+        "BookCreateRequest",
+        "Chapter",
+        "ChapterCreateRequest",
+        "RenderUnit",
+        "RenderUnitCreateRequest",
+        "RenderUnitPatch",
+        "AssistantTurn",
+        "AssistantTurnCreateRequest",
+        "ExportArtifact",
+        "ExportCreateRequest",
+        "ExportJob",
+        "BookList",
+        "ChapterList",
+        "RenderUnitList",
+        "VoiceList",
+        "VoiceSummary",
+        "VoiceRevision",
+        "WorkbenchStatusV2",
+        "RenderUnitV2",
+        "RenderUnitCreateRequestV2",
+        "RenderUnitPatchV2",
+        "RenderUnitListV2",
+        "RenderUnitGenerationAcceptedV2"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -118,7 +146,11 @@
     },
     "realtime": {
       "source": "speech-openapi.yaml",
-      "schemas": ["RealtimeSessionCreateRequest", "RealtimeSession", "PcmDescriptor"],
+      "schemas": [
+        "RealtimeSessionCreateRequest",
+        "RealtimeSession",
+        "PcmDescriptor"
+      ],
       "typescript_source": "speech",
       "client": false
     },
@@ -128,7 +160,11 @@
       "format": "json-schema",
       "client": false,
       "definitions_prefix": "/$defs/",
-      "schemas": ["RealtimeEvent", "TranscriptionEvent", "OpenAIPcmFormat"],
+      "schemas": [
+        "RealtimeEvent",
+        "TranscriptionEvent",
+        "OpenAIPcmFormat"
+      ],
       "schema_refs": {
         "RealtimeEvent": "#"
       },
@@ -204,8 +240,14 @@
     "admin": {
       "source": "admin-openapi.yaml",
       "validate": true,
-      "paths": ["/v1/nexus/workspaces", "/v1/nexus/workspaces/{workspace_id}"],
-      "operations": ["listWorkspaces", "getWorkspace"]
+      "paths": [
+        "/v1/nexus/workspaces",
+        "/v1/nexus/workspaces/{workspace_id}"
+      ],
+      "operations": [
+        "listWorkspaces",
+        "getWorkspace"
+      ]
     },
     "runtime": {
       "source": "internal/runtime-control.openapi.yaml",
@@ -243,7 +285,28 @@
         "/v1/workbench/meetings/{meeting_id}/seal",
         "/v1/workbench/meetings/{meeting_id}/minutes",
         "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}",
-        "/v1/workbench/render-units/{unit_id}/generations"
+        "/v1/workbench/render-units/{unit_id}/generations",
+        "/v1/workbench/projects/{project_id}/teleprompter",
+        "/v1/workbench/projects/{project_id}/saved-assets",
+        "/v1/workbench/saved-assets/{asset_id}",
+        "/v1/workbench/projects/{project_id}/books",
+        "/v1/workbench/books/{book_id}",
+        "/v1/workbench/books/{book_id}/chapters",
+        "/v1/workbench/chapters/{chapter_id}",
+        "/v1/workbench/chapters/{chapter_id}/render-units",
+        "/v1/workbench/render-units/{unit_id}",
+        "/v1/workbench/projects/{project_id}/assistant-turns",
+        "/v1/workbench/assistant-turns/{turn_id}",
+        "/v1/workbench/assistant-turns/{turn_id}/cancellations",
+        "/v1/workbench/books/{book_id}/exports",
+        "/v1/workbench/exports/{export_id}",
+        "/v1/workbench/exports/{export_id}/cancellations",
+        "/v1/workbench/voices",
+        "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+        "/v2/workbench/status",
+        "/v2/workbench/chapters/{chapter_id}/render-units",
+        "/v2/workbench/render-units/{unit_id}",
+        "/v2/workbench/render-units/{unit_id}/generations"
       ]
     },
     "profile": {

@@ -10,6 +10,52 @@ info:
     It calls the speech base through public Job/Artifact APIs and keeps its own
     records, staging, outbox, and export artifacts. Every workspace is shared in
     P0; no route establishes a user identity or personal private space.
+
+    The project/transcript HTTP boundary uses 400 malformed_request or
+    invalid_request for rejected syntax/parameters, 408 request_timeout for
+    body intake deadlines, 413 request_too_large for bounded request intake,
+    and 415 unsupported_media_type for non-UTF-8 JSON writes. Version and
+    idempotency conflicts are 409 revision_conflict / idempotency_conflict;
+    invalid_change is 422. Speech import failures retain source_invalid /
+    source_unsupported (422), source_too_large (413), source_expired (410),
+    and source_unavailable (503). Absent/deleted resources, including original
+    create-key replays after deletion, return 404 resource_not_found.
+    Disabled workbench/storage use 503 workbench_unavailable / store_unavailable.
+    Uncertain commits use 503 outcome_unknown; preserve the original key and
+    never automatically create a new intent. Unexpected application or output
+    validation failures use 500 internal_error.
+    Meeting routes use the same bounded intake and storage errors. Their
+    workspace is the server-configured default; clients cannot select it.
+    Unavailable meeting storage uses 503 meetings_unavailable. A source or
+    audio-save mode without an installed adapter returns 422
+    meeting_source_unsupported. Minutes creation uses 503 llm_disabled,
+    422 llm_profile_mismatch / llm_invalid_input, and 409
+    llm_source_not_sealed / llm_source_changed / minutes_conflict.
+    Provider/source failures use 503 llm_unavailable / llm_invalid_response /
+    llm_source_unavailable. Optional Idempotency-Key pins the original
+    accepted create/seal/202 snapshot; GET returns current state. Keep the
+    original key after uncertain outcomes; a request without a key creates
+    a new intent and must never be automatically retried.
+    Lists use descending (created_at, id) live keyset pagination. Cursors are
+    opaque and bound to deployment, resource kind and parent scope; malformed,
+    altered or mismatched tokens return 400 invalid_cursor, never silently
+    restart from page one. Changing limit is allowed; newer insertions require
+    a new first-page read. has_more is true exactly when next_cursor is non-null.
+    All three deletion operations accept optional workspace_id, defaulting to
+    the configured deployment workspace; this is query scope, not identity.
+    Only project/transcript deletion graphs are currently implemented; other
+    workbench kinds return 422 deletion_resource_unsupported. Foreign owners
+    return 422 deletion_owner_mismatch. Incomplete confirmations return 422
+    deletion_confirmation_mismatch; changed/expired plans or blocking dependencies
+    return 409 deletion_plan_changed / deletion_plan_expired /
+    deletion_dependency_conflict. Acceptance returns queued intent, not cleanup
+    completion; same-key replay preserves that original acceptance snapshot.
+    V2 status and render-unit paths expose approved Minutes configuration and
+    explicit fixed model bindings. V1 schemas remain strict; v1 render creation
+    is unavailable without a binding and returns 503 workbench_unavailable
+    without writing a partial unit. Clients must explicitly select v2.
+    Errors contain no request
+    content or internal diagnostics and never imply rollback or remote stop.
 servers:
   - url: /
 security:
@@ -24,6 +70,7 @@ tags:
   - name: teleprompter
   - name: audiobooks
   - name: saved-assets
+  - name: voices
   - name: exports
 paths:
   /v1/workbench/status:
@@ -45,10 +92,25 @@ paths:
                 $ref: "#/components/schemas/WorkbenchStatus"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects:
     get:
       tags: [projects]
       operationId: listProjects
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
       summary: List projects
       parameters:
         - $ref: "#/components/parameters/Cursor"
@@ -69,6 +131,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
     post:
       tags: [projects]
       operationId: createProject
@@ -96,10 +166,22 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}:
     get:
       tags: [projects]
@@ -122,6 +204,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     patch:
       tags: [projects]
       operationId: updateProject
@@ -156,10 +248,25 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}/transcripts:
     get:
       tags: [transcripts]
       operationId: listTranscripts
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
       summary: List project transcripts
       parameters:
         - $ref: "#/components/parameters/ProjectIdPath"
@@ -180,6 +287,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [transcripts]
       operationId: createTranscript
@@ -218,6 +335,18 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/transcripts/{transcript_id}:
     get:
       tags: [transcripts]
@@ -245,6 +374,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/transcripts/{transcript_id}/revisions:
     post:
       tags: [transcripts]
@@ -285,6 +424,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/transcripts/{transcript_id}/revisions/{revision}:
     get:
       tags: [transcripts]
@@ -308,6 +457,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}/meetings:
     post:
       tags: [meetings]
@@ -343,6 +502,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /v1/workbench/meetings/{meeting_id}:
     get:
       tags: [meetings]
@@ -365,6 +534,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/meetings/{meeting_id}/seal:
     post:
       tags: [meetings]
@@ -400,6 +579,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /v1/workbench/meetings/{meeting_id}/minutes:
     post:
       tags: [meetings]
@@ -441,6 +630,14 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}:
     get:
       tags: [meetings]
@@ -468,6 +665,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}/assistant-turns:
     post:
       tags: [assistant]
@@ -571,6 +778,10 @@ paths:
       tags: [teleprompter]
       operationId: getTeleprompterState
       summary: Get teleprompter state
+      description: |
+        The state is scoped to one project. A 404 means the project is unknown or no
+        state has been saved yet; a missing state is not position zero and must not
+        be reported as a successful empty state.
       parameters:
         - $ref: "#/components/parameters/ProjectIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -588,6 +799,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     put:
       tags: [teleprompter]
       operationId: updateTeleprompterState
@@ -623,7 +844,60 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}/books:
+    get:
+      tags: [audiobooks]
+      operationId: listBooks
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
+      summary: List project audiobooks
+      description: |
+        Audiobooks are listed newest first. Reading order inside a book is carried
+        by explicit ordinals, not by this listing order.
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Audiobooks.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [audiobooks]
       operationId: createBook
@@ -658,6 +932,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/books/{book_id}:
     get:
       tags: [audiobooks]
@@ -680,7 +964,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/books/{book_id}/chapters:
+    get:
+      tags: [audiobooks]
+      operationId: listChapters
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
+      summary: List book chapters
+      description: |
+        Chapters are listed newest first. Reading order is carried by the explicit
+        chapter ordinal, not by this listing order.
+      parameters:
+        - $ref: "#/components/parameters/BookIdPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Chapters.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChapterList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [audiobooks]
       operationId: createChapter
@@ -715,6 +1050,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/chapters/{chapter_id}:
     get:
       tags: [audiobooks]
@@ -737,7 +1082,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/chapters/{chapter_id}/render-units:
+    get:
+      tags: [audiobooks]
+      operationId: listRenderUnits
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
+      summary: List chapter render units
+      description: |
+        Render units are listed newest first; the explicit unit ordinal carries
+        the position inside the chapter's render plan.
+      parameters:
+        - $ref: "#/components/parameters/ChapterIdPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Render units.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [audiobooks]
       operationId: createRenderUnit
@@ -746,6 +1142,9 @@ paths:
         Pins text, voice, pronunciation, model, and profile revisions. The
         speech base only receives a bounded text unit Job; the workbench owns
         chapter and book composition.
+        This legacy version cannot express the required model binding. The
+        production boundary returns 503 workbench_unavailable without writes;
+        use createRenderUnitV2 with the caller-selected binding.
       parameters:
         - $ref: "#/components/parameters/ChapterIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -776,6 +1175,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /v1/workbench/render-units/{unit_id}:
     get:
       tags: [audiobooks]
@@ -798,6 +1207,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     patch:
       tags: [audiobooks]
       operationId: updateRenderUnit
@@ -836,6 +1255,16 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /v1/workbench/render-units/{unit_id}/generations:
     post:
       tags: [audiobooks]
@@ -895,6 +1324,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/projects/{project_id}/saved-assets:
     post:
       tags: [saved-assets]
@@ -939,6 +1378,16 @@ paths:
           $ref: "#/components/responses/Gone"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/saved-assets/{asset_id}/content:
     get:
       tags: [saved-assets]
@@ -1161,6 +1610,7 @@ paths:
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
       parameters:
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: Idempotency-Key
           in: header
           required: true
@@ -1199,6 +1649,18 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/deletions:
     post:
       operationId: workbenchCreateDeletion
@@ -1208,6 +1670,7 @@ paths:
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
       parameters:
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: Idempotency-Key
           in: header
           required: true
@@ -1246,6 +1709,18 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/workbench/deletions/{deletion_id}:
     get:
       operationId: workbenchGetDeletion
@@ -1255,6 +1730,7 @@ paths:
         422 deletion_owner_mismatch. Plans pin all dependencies and expire;
         execution rechecks the complete snapshot atomically. See data-deletion.md.
       parameters:
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
         - name: deletion_id
           in: path
           required: true
@@ -1285,6 +1761,325 @@ paths:
             application/json:
               schema:
                 $ref: "./shared/errors.schema.json#/$defs/ErrorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/workbench/voices:
+    get:
+      tags: [voices]
+      operationId: listVoices
+      summary: List published voices visible to the deployment
+      description: |
+        A read-through of the speech base's authoritative published voice catalogue.
+        Identity, revision number, status, source type and formats are the base's values
+        reported verbatim: the workbench neither renumbers a revision nor re-derives a
+        status, and it never designs, clones, validates, publishes or retires a voice on
+        the base's behalf. The cursor is the base's own opaque value and must be sent back
+        unchanged, so a workbench listing cursor is never accepted here.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceIdQuery"
+        - $ref: "#/components/parameters/LanguageQuery"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/VoiceCursor"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Published voice revisions.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/workbench/voices/{voice_id}/revisions/{revision}:
+    get:
+      tags: [voices]
+      operationId: getVoiceRevision
+      summary: Get one immutable published voice revision
+      description: |
+        Reports one published revision exactly as the base holds it, including the model
+        binding the base pinned for it. An unknown, unpublished or discarded revision is
+        not found; the workbench never serves a draft as if it were published.
+      parameters:
+        - $ref: "#/components/parameters/VoiceIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Immutable published voice revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceRevision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v2/workbench/status:
+    get:
+      tags: [status]
+      operationId: getWorkbenchStatusV2
+      summary: Report workbench feature availability
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Workbench status.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchStatusV2"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v2/workbench/chapters/{chapter_id}/render-units:
+    get:
+      tags: [audiobooks]
+      operationId: listRenderUnitsV2
+      x-nexus-pagination:
+        order: [created_at_desc, id_desc]
+        cursor_binding: [deployment, resource_kind, parent_scope]
+        cursor_opaque: true
+        consistency: live_keyset
+      summary: List chapter render units
+      description: |
+        Render units are listed newest first; the explicit unit ordinal carries
+        the position inside the chapter's render plan.
+      parameters:
+        - $ref: "#/components/parameters/ChapterIdPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Render units.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitListV2"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [audiobooks]
+      operationId: createRenderUnitV2
+      summary: Create a fixed render unit
+      description: |
+        Pins text, voice, pronunciation, model, and profile revisions. The
+        speech base only receives a bounded text unit Job; the workbench owns
+        chapter and book composition.
+      parameters:
+        - $ref: "#/components/parameters/ChapterIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitCreateRequestV2"
+      responses:
+        "201":
+          description: Render unit created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitV2"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+  /v2/workbench/render-units/{unit_id}:
+    get:
+      tags: [audiobooks]
+      operationId: getRenderUnitV2
+      summary: Get a render unit
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Render unit.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitV2"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [audiobooks]
+      operationId: updateRenderUnitV2
+      summary: Update render-unit text or casting
+      description: |
+        A changed text, voice, pronunciation, model, or profile creates a new
+        unit revision and marks dependent output stale. Unchanged units remain
+        reusable.
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitPatchV2"
+      responses:
+        "200":
+          description: Updated render unit.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitV2"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+  /v2/workbench/render-units/{unit_id}/generations:
+    post:
+      tags: [audiobooks]
+      operationId: generateRenderUnitV2
+      summary: Submit a speech Job for a render unit
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenderUnitGenerationRequest"
+      responses:
+        "202":
+          description: Speech Job submitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitGenerationAcceptedV2"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 components:
   securitySchemes:
     SharedServiceKey:
@@ -1398,6 +2193,29 @@ components:
       schema:
         type: string
         pattern: "^bytes=[0-9]*-[0-9]*$"
+    VoiceIdPath:
+      name: voice_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Identifier"
+    LanguageQuery:
+      name: language
+      in: query
+      required: false
+      description: Restricts the listing to voices carrying this language tag.
+      schema:
+        type: string
+        maxLength: 35
+    VoiceCursor:
+      name: after
+      in: query
+      required: false
+      description: The speech base's own opaque catalogue cursor, returned unchanged.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
   headers:
     XRequestId:
       description: Validated client request ID or a server-generated correlation ID.
@@ -1419,6 +2237,30 @@ components:
   responses:
     BadRequest:
       description: Malformed request or unknown field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RequestTimeout:
+      description: Request body receive deadline exceeded before application dispatch.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Request body or referenced source exceeds the configured bounded intake.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnsupportedMediaType:
+      description: This operation requires application/json with UTF-8 encoding.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: Unexpected application or response validation failure; no automatic mutation retry.
       content:
         application/json:
           schema:
@@ -1587,6 +2429,51 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Project"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    RenderUnitList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenderUnit"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ChapterList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    BookList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Book"
         has_more:
           type: boolean
         next_cursor:
@@ -2014,6 +2901,9 @@ components:
       properties:
         template_revision:
           $ref: "#/components/schemas/Revision"
+        expected_source_revision:
+          $ref: "#/components/schemas/Revision"
+          description: When supplied, a new intent requires this exact Meeting sealed revision; otherwise llm_source_changed. Accepted same-key same-body intents replay before current source/profile checks. Omission preserves legacy behavior.
         llm_model:
           type: string
           minLength: 1
@@ -2844,3 +3734,369 @@ components:
       properties:
         artifact:
           $ref: "#/components/schemas/ExportArtifact"
+    VoiceList:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceSummary"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    VoiceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - voice_id
+        - revision
+        - display_name
+        - source_type
+        - status
+        - languages
+        - audio_formats
+      properties:
+        voice_id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source_type:
+          type: string
+          enum: [designed, cloned, builtin]
+        status:
+          type: string
+          enum: [published, retired, disabled]
+        languages:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 35
+        audio_formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+    VoiceRevision:
+      type: object
+      additionalProperties: false
+      required:
+        - voice_id
+        - revision
+        - display_name
+        - status
+        - languages
+        - audio_formats
+        - model_binding
+        - published_at
+        - retired_at
+        - disabled_reason
+      properties:
+        voice_id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [published, retired, disabled]
+        languages:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 35
+        audio_formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        model_binding:
+          $ref: "#/components/schemas/ResourceReference"
+        published_at:
+          type: string
+          format: date-time
+        retired_at:
+          type: [string, "null"]
+          format: date-time
+        disabled_reason:
+          type: [string, "null"]
+          maxLength: 128
+    WorkbenchStatusV2:
+      type: object
+      additionalProperties: false
+      required: [object, workbench_enabled, llm_enabled, shared_deployment_notice, capabilities]
+      properties:
+        object:
+          const: nexus.workbench_status
+        workbench_enabled:
+          type: boolean
+        llm_enabled:
+          type: boolean
+          description: True only when a deployment-approved intranet LLM is configured.
+        minutes_profile:
+          description: Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [template_revision, llm_model]
+              properties:
+                template_revision:
+                  $ref: "#/components/schemas/Revision"
+                llm_model:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+            - type: "null"
+        shared_deployment_notice:
+          type: string
+          const: shared_deployment
+          description: UI must localize this code as "all workspaces are shared within this deployment; no personal isolation is implied".
+        capabilities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, status]
+            properties:
+              name:
+                type: string
+                enum: [transcription, meeting_minutes, assistant, teleprompter, audiobook_export]
+              status:
+                type: string
+                enum: [available, disabled, unavailable]
+      allOf:
+        - if:
+            properties:
+              llm_enabled:
+                const: false
+            required: [llm_enabled]
+          then:
+            properties:
+              minutes_profile:
+                type: "null"
+    RenderUnitV2:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - object
+        - chapter_id
+        - ordinal
+        - revision
+        - text
+        - voice
+        - model
+        - status
+        - updated_at
+        - model_binding
+      properties:
+        model_binding:
+          $ref: "#/components/schemas/ResourceReference"
+        id:
+          $ref: "#/components/schemas/Identifier"
+        object:
+          const: nexus.render_unit
+        chapter_id:
+          $ref: "#/components/schemas/Identifier"
+        ordinal:
+          type: integer
+          minimum: 0
+        revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        status:
+          type: string
+          enum: [pending, generating, ready, stale, failed]
+        saved_asset_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        speech_job_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        source_artifact_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        source_receipt_id:
+          oneOf:
+            - $ref: "#/components/schemas/Identifier"
+            - type: "null"
+        updated_at:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              source_artifact_id:
+                type: string
+            required: [source_artifact_id]
+          then:
+            required: [source_receipt_id]
+            properties:
+              source_receipt_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              source_receipt_id:
+                type: string
+            required: [source_receipt_id]
+          then:
+            required: [source_artifact_id]
+            properties:
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              saved_asset_id:
+                type: string
+            required: [saved_asset_id]
+          then:
+            required: [source_artifact_id, source_receipt_id]
+            properties:
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+              source_receipt_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              status:
+                const: generating
+            required: [status]
+          then:
+            required: [speech_job_id]
+            properties:
+              speech_job_id:
+                $ref: "#/components/schemas/Identifier"
+        - if:
+            properties:
+              status:
+                const: ready
+            required: [status]
+          then:
+            required: [speech_job_id, source_artifact_id, source_receipt_id]
+            properties:
+              speech_job_id:
+                $ref: "#/components/schemas/Identifier"
+              source_artifact_id:
+                $ref: "#/components/schemas/Identifier"
+              source_receipt_id:
+                $ref: "#/components/schemas/Identifier"
+    RenderUnitCreateRequestV2:
+      type: object
+      additionalProperties: false
+      required: [ordinal, text, voice, model, model_binding]
+      properties:
+        model_binding:
+          $ref: "#/components/schemas/ResourceReference"
+        ordinal:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          $ref: "#/components/schemas/RenderUnitVoice"
+    RenderUnitPatchV2:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [expected_revision]
+      properties:
+        model_binding:
+          $ref: "#/components/schemas/ResourceReference"
+        expected_revision:
+          $ref: "#/components/schemas/Revision"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 200000
+        voice:
+          $ref: "#/components/schemas/RenderUnitVoice"
+        pronunciation:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/RenderUnitVoice"
+            - type: "null"
+    RenderUnitListV2:
+      type: object
+      additionalProperties: false
+      required: [object, data, has_more, next_cursor]
+      properties:
+        object:
+          const: nexus.list
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenderUnitV2"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    RenderUnitGenerationAcceptedV2:
+      type: object
+      additionalProperties: false
+      required: [render_unit, speech_job_id, accepted_at]
+      properties:
+        render_unit:
+          $ref: "#/components/schemas/RenderUnitV2"
+        speech_job_id:
+          $ref: "#/components/schemas/Identifier"
+        accepted_at:
+          type: string
+          format: date-time

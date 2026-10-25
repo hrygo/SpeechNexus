@@ -72,8 +72,11 @@ SIGINT/SIGTERM 在原请求之间停止，当前有界调用完成后关闭自�
 `runtime_delivery_grants(schema, role)` 为独立部署/迁移身份生成最低授权：读取必要原意图、
 head/实例列，更新私有投递状态和 outbox 的 delivered 时间；无 INSERT/DDL/DELETE、
 原命令/摘要更新、预算/配额/拓扑修改权。core A create 角色仅增加新账本 INSERT，B 无账本
-读取或锁定权。实际权限须用非 owner 连接验证；启动检查拒绝 owner/schema CREATE，
-不宣称审计了所有继承和数据库全局权限。部署仍需独立核对授权。
+读取或锁定权。实际权限须用非 owner 连接验证；启动检查分别核对 SESSION_USER 与
+CURRENT_USER，拒绝 superuser、schema CREATE 及数据库/表 owner 的角色成员身份，
+包括 NOINHERIT 后仍可切换到 owner 的成员。受限启动 role 不能掩盖登录角色的权限；
+检查不执行 SET/RESET ROLE 或变更授权。它不宣称审计了所有数据库全局权限，部署仍需
+独立核对授权。
 
 ## 验证与剩余依赖
 
@@ -81,7 +84,9 @@ head/实例列，更新私有投递状态和 outbox 的 delivered 时间；无 I
 最小角色、真实提交后丢失回执；实际 PG 升级验证 DDL/版本回滚和旧记录/ACL 保留。
 原生 B/SQLite 与真实回环 TLS 验证正常 POST ACK、接受后丢失响应只 GET、旧事件404不补发，
 以及先接受 STOP 后拒绝迟到 prepare。PG 子进程用实际安装入口验证 ENV 装配、单次运行、
-SIGTERM 不发送 STOP 和 owner 连接在访问控制器前被拒绝。
+SIGTERM 不发送 STOP 和 owner 连接在访问控制器前被拒绝。真实 PG 启动 role 反例覆盖
+superuser/schema owner 登录被受限有效角色掩盖的情况；最小权限登录加 DML 启动 role
+仍可装配，拒绝时无控制器访问/账本或预算变更，连接池关闭且日志不含连接参数/凭据。
 
 上述 daemon、批准计划和 readiness 均为合成事实，不加载模型，不证明 GPU、网络资格、
 生产 TLS 或多主机故障资格。投递 ACK 不调用 `observe_runtime`，也不推进 peak→steady 或

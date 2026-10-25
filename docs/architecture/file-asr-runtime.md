@@ -1,7 +1,7 @@
 ---
 title: "文件 ASR 默认执行装配"
 status: active
-version: "0.1.0"
+version: "0.1.1"
 date: 2026-10-25
 ---
 
@@ -101,6 +101,8 @@ CA 上限为 262,144 bytes。
    真实 ledger 继续核验租约、屏障、资格和版本。私有配置不替代这些权威检查。
 4. 输入固定版本核验后才进入解码/VAD/ASR，结果先写私有 staging、版本化读回，再由原事务登记。
    重放查询原结果；重启将遗留活动执行隔离，不将旧 intent 当重试队列。
+   本地准备票据统一在任务完成回调清理；协程首次运行前取消也能归还本地槽位。
+   已开始的数据库操作仍须等待结束，不因取消提前腾出槽位；此清理不改变持久占用或签发停止事实。
 5. 关闭先停止并 join 文件工作，再停恢复驱动、关闭数据库池与释放 ownership。
    重复取消仍等待正在构造/启动的对象返回后清理；迟到活线程没有退出就不报告资源已关闭。
 
@@ -126,6 +128,9 @@ Memory/MemorySwap，显式使用 `--kv-cache-memory-bytes 1073741824`。
 
 - [配置和默认 lifecycle](../../tests/unit/gateway/test_file_asr_runtime.py)：拒绝缺省/未知字段、
   重复键、特殊文件、错误目标与上界；验证缺配置行为、默认装配、加载失败及重复取消。
+- [本地 worker 取消](../../tests/unit/gateway/test_file_execution_worker.py)：阻塞事件循环，
+  在首次协程执行前重复 abort；确认零识别/写对象、unknown 保留占用，后续请求可进入唯一槽位。
+  另阻塞数据库登记，验证重复取消不会在 writer 结束前释放本地槽位。
 - [默认入口集成](../../tests/integration/test_gateway_default_file_asr.py)：未注入工厂，
   使用正式 PG 角色、真实 MinIO/PyAV 与回环原生 HTTP；有语音和无语音分别验证，
   重放/重启不增加外发或结果版本，预算和停止证据不被改变。

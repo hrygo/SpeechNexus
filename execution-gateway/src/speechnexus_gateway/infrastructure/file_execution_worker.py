@@ -199,7 +199,16 @@ class FileExecutionWorker:
         task = asyncio.create_task(self._run(ticket, intent))
         ticket.task = task
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(lambda completed: self._finished(ticket, completed))
+
+    def _finished(self, ticket: _Preparation, task: asyncio.Task[None]) -> None:
+        # A task cancelled before its first step never enters _run at all.
+        # Completion also follows the join of any already-started DB writer.
+        key = ticket.request.identity.submit_intent_id
+        with self._lock:
+            if self._preparations.get(key) is ticket:
+                del self._preparations[key]
+        self._tasks.discard(task)
 
     def _check_start(self, intent: SubmissionIntent) -> None:
         # Only the new-commit callback reaches this point. This short read/check
@@ -254,10 +263,6 @@ class FileExecutionWorker:
                 # or private command/content is logged or reported as success.
                 with self._lock:
                     self._accepting = False
-        finally:
-            with self._lock:
-                if self._preparations.get(key) is ticket:
-                    del self._preparations[key]
 
     def _register(
         self, accepted: SubmissionIntent, receipt: StagedAsrResult, cancelled: threading.Event

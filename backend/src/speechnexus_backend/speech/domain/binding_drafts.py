@@ -24,6 +24,7 @@ class CreateBindingDraft:
     intent: bytes
     definition: bytes
     document_version: int = DOCUMENT_VERSION
+    parameter_defaults: bytes | None = None
 
     def __post_init__(self) -> None:
         identifier(self.binding_id)
@@ -33,6 +34,8 @@ class CreateBindingDraft:
             raise ValueError("Unsupported binding document version")
         document_digest(self.intent)
         document_digest(self.definition)
+        if self.parameter_defaults is not None:
+            document_digest(self.parameter_defaults)
 
     @property
     def request_digest(self) -> str:

@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from speechnexus_backend.speech.application.binding_documents import check_command, decode_document
+from speechnexus_backend.speech.application.binding_documents import (
+    check_command,
+    command_defaults,
+    decode_document,
+)
 from speechnexus_backend.speech.domain.binding_drafts import (
     DOCUMENT_VERSION,
     BindingDraft,
@@ -72,6 +76,7 @@ def read_draft(cursor: BindingCursor, binding_id: str, revision: str) -> Binding
         original["intent_json"].encode("utf-8"),
         raw,
         row["document_version"],
+        command_defaults(decode_document(original["intent_json"].encode("utf-8"))),
     )
     check_command(prepared)
     if (
@@ -145,19 +150,28 @@ def create_draft(
     command: CreateBindingDraft,
     clock: Callable[[], int],
     new_identity: Callable[[], str],
+    *,
+    include_defaults: bool = False,
 ) -> BindingDraftResult:
     check_command(command)
+    if command.parameter_defaults is not None and not include_defaults:
+        raise ValueError("Default declarations require the atomic snapshot port")
+    fields = "key_digest,binding_id,document_version,intent_json,request_digest"
+    arguments: tuple[object, ...] = (
+        command.key_digest,
+        command.binding_id,
+        command.document_version,
+        command.intent.decode(),
+        command.request_digest,
+    )
+    if include_defaults:
+        fields += ",defaults_declared"
+        arguments += (command.parameter_defaults is not None,)
+    placeholders = ",".join("%s" for _ in arguments)
     cursor.execute(
-        "INSERT INTO speech_binding_commands "
-        "(key_digest,binding_id,document_version,intent_json,request_digest) "
-        "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (key_digest) DO NOTHING",
-        (
-            command.key_digest,
-            command.binding_id,
-            command.document_version,
-            command.intent.decode(),
-            command.request_digest,
-        ),
+        f"INSERT INTO speech_binding_commands ({fields}) VALUES ({placeholders}) "
+        "ON CONFLICT (key_digest) DO NOTHING",
+        arguments,
     )
     # The unique-key INSERT waits for the original transaction. Journal and
     # result rows are immutable, so no UPDATE privilege/explicit row lock is

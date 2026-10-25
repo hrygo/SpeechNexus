@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable
-from contextlib import AbstractContextManager
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import BinaryIO, Protocol
 
@@ -93,4 +93,4 @@ class ExecutionObjectInputs(Protocol):
         *,
         limits: ExecutionInputLimits,
         cancelled: Callable[[], bool],
-    ) -> AbstractContextManager[VerifiedExecutionObject]: ...
+    ) -> AbstractAsyncContextManager[VerifiedExecutionObject]: ...

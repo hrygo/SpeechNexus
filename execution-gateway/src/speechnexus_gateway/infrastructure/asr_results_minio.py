@@ -6,13 +6,11 @@ import asyncio
 import hashlib
 import ssl
 from collections.abc import Callable
-from datetime import UTC, datetime
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import httpx
 from minio.credentials.credentials import Credentials
-from minio.helpers import DictType, check_bucket_name
-from minio.signer import sign_v4_s3
+from minio.helpers import check_bucket_name
 
 from speechnexus_gateway.domain.asr import AsrCallError
 from speechnexus_gateway.domain.asr_results import (
@@ -26,30 +24,22 @@ from speechnexus_gateway.domain.execution_inputs import (
     ExecutionInputLimits,
     ExecutionObjectReference,
 )
-from speechnexus_gateway.infrastructure.execution_objects_minio import _endpoint
+from speechnexus_gateway.infrastructure.bounded_io import run_bounded_io
+from speechnexus_gateway.infrastructure.private_s3 import (
+    FixedS3Transport,
+    private_endpoint,
+    signed_headers,
+)
 
 
-def _origin(url: httpx.URL) -> tuple[str, str, int]:
-    return url.scheme, url.host, url.port or (443 if url.scheme == "https" else 80)
-
-
-class _FixedS3Transport(httpx.AsyncBaseTransport):
+class _FixedS3Transport(FixedS3Transport):
     def __init__(self, endpoint: str, context: ssl.SSLContext | None) -> None:
-        self._origin = _origin(httpx.URL(endpoint))
-        self._transport = httpx.AsyncHTTPTransport(
-            verify=context or True,
-            trust_env=False,
-            retries=0,
-            limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
+        super().__init__(
+            endpoint,
+            context,
+            methods=frozenset({"PUT", "HEAD", "GET"}),
+            scope_error=lambda: AsrResultError("asr_result_storage_unknown"),
         )
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        if _origin(request.url) != self._origin or request.method not in {"PUT", "HEAD", "GET"}:
-            raise AsrResultError("asr_result_storage_unknown")
-        return await self._transport.handle_async_request(request)
-
-    async def aclose(self) -> None:
-        await self._transport.aclose()
 
 
 class MinioAsrResults:
@@ -67,7 +57,7 @@ class MinioAsrResults:
     ) -> None:
         self._limits = ExecutionInputLimits(MAX_ASR_RESULT_BYTES, 64 * 1024, timeout_seconds)
         try:
-            self._netloc = _endpoint(endpoint, ssl_context)
+            self._netloc = private_endpoint(endpoint, ssl_context)
             check_bucket_name(bucket, strict=True)
             self._credentials = Credentials(access_key, secret_key)
         except Exception:
@@ -94,34 +84,14 @@ class MinioAsrResults:
         return url if version is None else url + "?versionId=" + quote(version, safe="")
 
     def _headers(self, method: str, url: str, body: bytes = b"") -> dict[str, str]:
-        date = datetime.now(UTC)
-        digest = hashlib.sha256(body).hexdigest()
-        headers: DictType = {
-            "Host": self._netloc,
-            "X-Amz-Date": date.strftime("%Y%m%dT%H%M%SZ"),
-            "X-Amz-Content-Sha256": digest,
-            "Accept-Encoding": "identity",
-        }
-        if method == "PUT":
-            headers.update(
-                {"Content-Type": ASR_RESULT_MEDIA_TYPE, "Content-Length": str(len(body))}
-            )
-        # Reuse the pinned SDK's SigV4 signer; no independent signing implementation.
-        sign_v4_s3(
-            method=method,
-            url=urlsplit(url),
-            region="us-east-1",
-            headers=headers,
+        return signed_headers(
+            method,
+            url,
+            netloc=self._netloc,
             credentials=self._credentials,
-            content_sha256=digest,
-            date=date,
+            body=body,
+            media_type=ASR_RESULT_MEDIA_TYPE,
         )
-        signed: dict[str, str] = {}
-        for name, value in headers.items():
-            if not isinstance(value, str):
-                raise AsrResultError("asr_result_storage_unknown")
-            signed[name] = value
-        return signed
 
     async def stage(
         self, result: PreparedAsrResult, *, cancelled: Callable[[], bool]
@@ -135,41 +105,12 @@ class MinioAsrResults:
             if loop.time() >= deadline:
                 raise AsrResultError("asr_result_deadline_exceeded")
 
-        async def watch() -> None:
-            while True:
-                check()
-                await asyncio.sleep(0.01)
-
-        check()
-        operation = asyncio.create_task(self._stage(result, check))
-        guard = asyncio.create_task(watch())
         try:
-            async with asyncio.timeout_at(deadline):
-                done, _ = await asyncio.wait(
-                    {operation, guard}, return_when=asyncio.FIRST_COMPLETED
-                )
-                if guard in done:
-                    guard.result()
-                receipt = operation.result()
-                check()
-                return receipt
+            return await run_bounded_io(
+                lambda: self._stage(result, check), deadline=deadline, check=check
+            )
         except TimeoutError:
             raise AsrResultError("asr_result_deadline_exceeded") from None
-        finally:
-            # Cancel the async socket operation first. Shield only the resulting
-            # client/socket cleanup, never a still-running blocking network call.
-            operation.cancel()
-            guard.cancel()
-            cleanup = asyncio.gather(operation, guard, return_exceptions=True)
-            interrupted = False
-            while not cleanup.done():
-                try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    interrupted = True
-            cleanup.result()
-            if interrupted:
-                raise asyncio.CancelledError
 
     async def _stage(self, result: PreparedAsrResult, check: Callable[[], None]) -> StagedAsrResult:
         reference = result.reference(self._bucket)

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev3
+  version: 0.1.0.dev4
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -315,6 +315,28 @@ paths:
         A changed pointer returns 409 `configuration_changed`. An identical
         Idempotency-Key replay returns the original publication; a changed
         intent under the same key returns 409 `idempotency_conflict`.
+
+        The submitted validation identifies evidence to verify, not authority
+        to publish. The server must resolve trusted evidence for this fixed
+        profile revision and recheck its current applicability; a schema-valid
+        report or caller-supplied digest alone cannot establish qualification.
+
+        An unreadable original result or uncertain commit returns 503
+        `profile_result_unknown`, with `retryable: false`. This does not prove
+        that publication or pointer activation failed. Only a caller retaining
+        the original Idempotency-Key may explicitly replay this same POST with
+        the complete original path, body and key to recover its original result,
+        before re-evaluating a new mutation or current-pointer CAS. There is no
+        automatic retry, new key, Operation or HTTP query-by-key resource.
+        Keyless unknown results have no promised automatic recovery. A fixed
+        revision GET describes that resource, not the outcome of this command;
+        unreadable metadata cannot be reported as confirmed absence.
+
+        Malformed path/header/body input returns 400. Bounded ingress may refuse
+        Host/Origin (403), method (405 with Allow: POST), receive timeout (408),
+        size (413), non-JSON media (415), or local receive capacity (429).
+        These refusals describe this HTTP attempt and do not settle an earlier
+        original-key result or authorize a different key or automatic mutation.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -328,24 +350,38 @@ paths:
               $ref: "#/components/schemas/ProfilePublicationRequest"
       responses:
         "200":
-          description: Profile revision published and activated.
+          description: Profile revision published and activated, or the original publication replayed.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "./scenario-profile.schema.json"
+                $ref: "#/components/schemas/ProfilePublishedRevision"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/ProfileCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/ProfileReceiveTimeout"
         "409":
           $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ProfileRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/ProfileMediaUnsupported"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/ProfileReceiveFull"
+        "503":
+          $ref: "#/components/responses/ProfileLifecycleUnknown"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations:
     post:
       tags: [profiles]
@@ -359,6 +395,25 @@ paths:
         activated. An identical Idempotency-Key replay returns the original
         activation; a changed intent under the same key returns 409
         `idempotency_conflict`.
+
+        An unreadable original result or uncertain commit returns 503
+        `profile_result_unknown`, with `retryable: false`; it is not evidence
+        that the pointer stayed unchanged. Only a caller retaining the original
+        Idempotency-Key may explicitly replay this same POST with its complete
+        original path, body and key to recover its original result, before
+        evaluating a new mutation or the current-pointer CAS. No automatic
+        retry, new key, Operation or HTTP query-by-key resource is provided.
+        Keyless unknown results have no promised automatic recovery. A fixed
+        revision GET does not prove the outcome or identity of this command;
+        unreadable metadata cannot be reported as confirmed absence.
+
+        Malformed path/header/body input returns 400. Bounded ingress may refuse
+        Host/Origin (403), method (405 with Allow: POST), receive timeout (408),
+        size (413), non-JSON media (415), or local receive capacity (429).
+        These refusals do not settle an earlier original-key result or permit
+        a different key or an automatic mutation. Lifecycle/CAS conflicts retain
+        the existing 409 response; activation never changes revision contents
+        or treats a draft/retired/disabled revision as published.
       parameters:
         - $ref: "#/components/parameters/ProfileIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -372,22 +427,36 @@ paths:
               $ref: "#/components/schemas/ProfileActivationRequest"
       responses:
         "200":
-          description: Published profile revision activated.
+          description: Published profile revision activated, or the original activation replayed.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "./scenario-profile.schema.json"
+                $ref: "#/components/schemas/ProfilePublishedRevision"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/ProfileCreateMethodNotAllowed"
+        "408":
+          $ref: "#/components/responses/ProfileReceiveTimeout"
         "409":
           $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ProfileRequestTooLarge"
+        "415":
+          $ref: "#/components/responses/ProfileMediaUnsupported"
+        "429":
+          $ref: "#/components/responses/ProfileReceiveFull"
+        "503":
+          $ref: "#/components/responses/ProfileLifecycleUnknown"
   /v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/retirements:
     post:
       tags: [profiles]
@@ -1154,7 +1223,7 @@ components:
           schema:
             $ref: "#/components/schemas/ProfileDraftConflictError"
     ProfileCreateMethodNotAllowed:
-      description: The selected draft creation path accepts POST only.
+      description: The selected profile mutation path accepts POST only.
       headers:
         Allow:
           required: true
@@ -1190,7 +1259,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     ProfileMediaUnsupported:
-      description: Draft creation requires application/json encoded as UTF-8.
+      description: Profile mutations require application/json encoded as UTF-8.
       content:
         application/json:
           schema:
@@ -1203,6 +1272,15 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     ProfileCreationUnknown:
       description: Original creation result unreadable or commit uncertain; retain original intent/key.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProfileCreationUnknownError"
+    ProfileLifecycleUnknown:
+      description: Original lifecycle result unreadable or commit uncertain; retain original path/intent/key.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/XRequestId"
@@ -1439,6 +1517,19 @@ components:
             - type: "null"
         validation:
           $ref: "./scenario-profile.schema.json#/$defs/ProfileValidation"
+    ProfilePublishedRevision:
+      allOf:
+        - $ref: "./scenario-profile.schema.json"
+        - type: object
+          required: [validation]
+          properties:
+            validation:
+              $ref: "./scenario-profile.schema.json#/$defs/ProfileValidation"
+            publication:
+              type: object
+              properties:
+                status:
+                  const: published
     ProfileActivationRequest:
       type: object
       additionalProperties: false

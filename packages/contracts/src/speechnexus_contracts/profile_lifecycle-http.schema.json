@@ -1,0 +1,2790 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-nexus-http-operations": {
+    "publishProfileRevision": {
+      "path": "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
+      "method": "post",
+      "request": "HttpRequest_publishProfileRevision",
+      "parameters": {
+        "path": {
+          "profile_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_publishProfileRevision_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_publishProfileRevision_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_publishProfileRevision_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_publishProfileRevision_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_publishProfileRevision_404",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_publishProfileRevision_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_publishProfileRevision_408",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_publishProfileRevision_409",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_publishProfileRevision_413",
+          "headers": {},
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_publishProfileRevision_415",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_publishProfileRevision_422",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_publishProfileRevision_429",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_publishProfileRevision_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
+    },
+    "activatePublishedProfileRevision": {
+      "path": "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations",
+      "method": "post",
+      "request": "HttpRequest_activatePublishedProfileRevision",
+      "parameters": {
+        "path": {
+          "profile_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_401",
+          "headers": {},
+          "json": true
+        },
+        "403": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_403",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_404",
+          "headers": {},
+          "json": true
+        },
+        "405": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_405",
+          "headers": {
+            "allow": "string"
+          },
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_408",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_409",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_413",
+          "headers": {},
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_415",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_429",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_activatePublishedProfileRevision_503",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        }
+      }
+    }
+  },
+  "x-nexus-entrypoints": [
+    "HttpRequest_publishProfileRevision",
+    "HttpResponse_publishProfileRevision_200",
+    "HttpResponse_publishProfileRevision_400",
+    "HttpResponse_publishProfileRevision_401",
+    "HttpResponse_publishProfileRevision_403",
+    "HttpResponse_publishProfileRevision_404",
+    "HttpResponse_publishProfileRevision_405",
+    "HttpResponse_publishProfileRevision_408",
+    "HttpResponse_publishProfileRevision_409",
+    "HttpResponse_publishProfileRevision_413",
+    "HttpResponse_publishProfileRevision_415",
+    "HttpResponse_publishProfileRevision_422",
+    "HttpResponse_publishProfileRevision_429",
+    "HttpResponse_publishProfileRevision_503",
+    "HttpRequest_activatePublishedProfileRevision",
+    "HttpResponse_activatePublishedProfileRevision_200",
+    "HttpResponse_activatePublishedProfileRevision_400",
+    "HttpResponse_activatePublishedProfileRevision_401",
+    "HttpResponse_activatePublishedProfileRevision_403",
+    "HttpResponse_activatePublishedProfileRevision_404",
+    "HttpResponse_activatePublishedProfileRevision_405",
+    "HttpResponse_activatePublishedProfileRevision_408",
+    "HttpResponse_activatePublishedProfileRevision_409",
+    "HttpResponse_activatePublishedProfileRevision_413",
+    "HttpResponse_activatePublishedProfileRevision_415",
+    "HttpResponse_activatePublishedProfileRevision_429",
+    "HttpResponse_activatePublishedProfileRevision_503"
+  ],
+  "$defs": {
+    "Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "ProfilePublicationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_revision", "expected_current_revision", "validation"],
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validation": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_ProfileValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "revision",
+        "validation_report_id",
+        "validated_at",
+        "status",
+        "evidence_digest"
+      ],
+      "properties": {
+        "profile_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+        },
+        "validation_report_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+        },
+        "validated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["experimental", "production"]
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Sha256Digest"
+        },
+        "corpus_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_scenario_profile_schema_json_Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_scenario_profile_schema_json_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ProfilePublishedRevision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Root"
+        },
+        {
+          "type": "object",
+          "required": ["validation"],
+          "properties": {
+            "validation": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+            },
+            "publication": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "published"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_scenario_profile_schema_json_Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ScenarioProfileRevision",
+      "description": "Immutable scenario preset revision. A profile composes explicit ASR/TTS policy parameters with capability requirements, validation evidence, and publication lifecycle metadata. It never carries scheduling priority, engine endpoints, model paths, credentials, or user identity.",
+      "type": "object",
+      "required": ["schema_version", "profile_id", "revision", "publication"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier",
+          "description": "Stable profile family identifier. The pair (profile_id, revision) is immutable."
+        },
+        "revision": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+        },
+        "publication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "published_at", "retired_at", "disabled_reason"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["draft", "published", "retired", "disabled"]
+            },
+            "published_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "retired_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled_reason": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "validation": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+        },
+        "supersedes_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileDefinition"
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "draft"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "published_at": {
+                    "type": "null"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "published"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "retired"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at", "retired_at"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "disabled"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at", "disabled_reason"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "not": {
+                      "const": "draft"
+                    }
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "required": ["validation"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "asr"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["asr"],
+                "not": {
+                  "required": ["tts"]
+                },
+                "properties": {
+                  "output": {
+                    "not": {
+                      "required": ["audio_format"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "tts"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["tts"],
+                "not": {
+                  "required": ["asr"]
+                },
+                "properties": {
+                  "output": {
+                    "not": {
+                      "required": ["transcript_format"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "duplex"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["asr", "tts"]
+              },
+              "execution_classes": {
+                "contains": {
+                  "const": "realtime"
+                },
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "release_tier": {
+                "const": "production"
+              }
+            },
+            "required": ["release_tier"]
+          },
+          "then": {
+            "properties": {
+              "validation": {
+                "properties": {
+                  "status": {
+                    "const": "production"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "$defs": {
+        "ProfileDefinition": {
+          "type": "object",
+          "properties": {
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["asr", "tts", "duplex"],
+              "description": "duplex profiles are valid only for realtime sessions that reserve both ASR and TTS resources atomically."
+            },
+            "release_tier": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileReleaseTier"
+            },
+            "execution_classes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/External_scenario_profile_schema_json_ExecutionClass"
+              }
+            },
+            "parameters": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileParameters"
+            },
+            "required_capabilities": {
+              "type": "array",
+              "uniqueItems": true,
+              "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
+              "items": {
+                "$ref": "#/$defs/External_scenario_profile_schema_json_CapabilityRequirement"
+              }
+            },
+            "override_allowlist": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+              },
+              "description": "Only these paths may be overridden by a request. Omitted paths are not overridable even when the value is within a declared range."
+            },
+            "override_ranges": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/External_scenario_profile_schema_json_OverrideRange"
+              },
+              "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
+            },
+            "slo_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Reference to the deployment SLO document or qualification report scenario. It is not a numeric promise in this schema."
+            }
+          },
+          "required": [
+            "display_name",
+            "kind",
+            "release_tier",
+            "execution_classes",
+            "parameters",
+            "required_capabilities",
+            "override_allowlist",
+            "override_ranges",
+            "slo_ref"
+          ]
+        },
+        "Identifier": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "Revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "Sha256Digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "ProfileReleaseTier": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_ProfileReleaseTier"
+        },
+        "ExecutionClass": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+        },
+        "ParameterPath": {
+          "type": "string",
+          "enum": [
+            "asr.language",
+            "asr.preview_interval_ms",
+            "asr.max_segment_ms",
+            "asr.finalization",
+            "asr.final_deadline_ms",
+            "asr.auxiliary_deadline_ms",
+            "asr.rollback_tokens",
+            "asr.turn_detection.mode",
+            "asr.turn_detection.silence_duration_ms",
+            "asr.vocabulary_set_revision",
+            "asr.alignment",
+            "asr.diarization",
+            "tts.language",
+            "tts.text_commit_mode",
+            "tts.audio_delivery",
+            "tts.speed",
+            "tts.instructions",
+            "tts.pronunciation_revision",
+            "tts.seed",
+            "tts.planner.max_chars",
+            "tts.planner.max_wait_ms",
+            "output.transcript_format",
+            "output.audio_format",
+            "output.save_artifacts"
+          ]
+        },
+        "OverrideRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "enum": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": ["string", "number", "boolean", "null"]
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": ["minimum"]
+            },
+            {
+              "required": ["maximum"]
+            },
+            {
+              "required": ["enum"]
+            }
+          ]
+        },
+        "AsrParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "language",
+            "preview_interval_ms",
+            "max_segment_ms",
+            "finalization",
+            "final_deadline_ms",
+            "auxiliary_deadline_ms",
+            "rollback_tokens",
+            "turn_detection",
+            "alignment",
+            "diarization"
+          ],
+          "properties": {
+            "language": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+            },
+            "preview_interval_ms": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"
+            },
+            "max_segment_ms": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"
+            },
+            "finalization": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalization"
+            },
+            "final_deadline_ms": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"
+            },
+            "auxiliary_deadline_ms": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"
+            },
+            "rollback_tokens": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"
+            },
+            "turn_detection": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrTurnDetection"
+            },
+            "vocabulary_set_revision": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "alignment": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAlignment"
+            },
+            "diarization": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrDiarization"
+            }
+          }
+        },
+        "TtsParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["language", "text_commit_mode", "audio_delivery", "speed", "planner"],
+          "properties": {
+            "language": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+            },
+            "text_commit_mode": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"
+            },
+            "audio_delivery": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"
+            },
+            "speed": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSpeed"
+            },
+            "instructions": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsInstructions"
+            },
+            "pronunciation_revision": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "seed": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSeed"
+            },
+            "planner": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPlanner"
+            }
+          }
+        },
+        "OutputParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transcript_format": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat"
+            },
+            "audio_format": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputAudioFormat"
+            },
+            "save_artifacts": {
+              "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts"
+            }
+          }
+        },
+        "ProfileParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "asr": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_AsrParameters"
+            },
+            "tts": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_TtsParameters"
+            },
+            "output": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_OutputParameters"
+            }
+          }
+        },
+        "CapabilityRequirement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capability", "required"],
+          "properties": {
+            "capability": {
+              "type": "string",
+              "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "constraint": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "minimum": {
+                  "type": "number"
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "enum": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": ["string", "number", "boolean"]
+                  }
+                }
+              },
+              "anyOf": [
+                {
+                  "required": ["minimum"]
+                },
+                {
+                  "required": ["maximum"]
+                },
+                {
+                  "required": ["enum"]
+                }
+              ]
+            }
+          }
+        },
+        "ProfileValidation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile_id",
+            "revision",
+            "validation_report_id",
+            "validated_at",
+            "status",
+            "evidence_digest"
+          ],
+          "properties": {
+            "profile_id": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+            },
+            "validation_report_id": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+            },
+            "validated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["experimental", "production"]
+            },
+            "evidence_digest": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Sha256Digest"
+            },
+            "corpus_revision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "notes": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          }
+        },
+        "LanguageTag": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "ResourceReference": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        }
+      },
+      "examples": [
+        {
+          "schema_version": "1.0.0",
+          "profile_id": "caption-live",
+          "revision": "1",
+          "display_name": "Live captions",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "validation": {
+            "profile_id": "caption-live",
+            "revision": "1",
+            "validation_report_id": "profileval-caption-live-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        },
+        {
+          "schema_version": "1.0.0",
+          "profile_id": "audiobook-consistent",
+          "revision": "1",
+          "display_name": "Audiobook consistent narration",
+          "kind": "tts",
+          "release_tier": "experimental",
+          "execution_classes": ["batch"],
+          "parameters": {
+            "tts": {
+              "language": "zh",
+              "text_commit_mode": "explicit",
+              "audio_delivery": "complete",
+              "speed": 1.0,
+              "instructions": null,
+              "pronunciation_revision": null,
+              "seed": null,
+              "planner": {
+                "max_chars": 400,
+                "max_wait_ms": 3000
+              }
+            },
+            "output": {
+              "audio_format": "wav",
+              "save_artifacts": true
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "tts.reusable_voice",
+              "required": true
+            },
+            {
+              "capability": "audio.wav_encode",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["tts.speed", "tts.pronunciation_revision"],
+          "override_ranges": {
+            "tts.speed": {
+              "minimum": 0.8,
+              "maximum": 1.2
+            }
+          },
+          "slo_ref": "slo/batch-audiobook-v1",
+          "validation": {
+            "profile_id": "audiobook-consistent",
+            "revision": "1",
+            "validation_report_id": "profileval-audiobook-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        },
+        {
+          "schema_version": "1.0.0",
+          "profile_id": "assistant-duplex",
+          "revision": "1",
+          "display_name": "Assistant duplex",
+          "kind": "duplex",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 600,
+              "max_segment_ms": 20000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 900
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "tts": {
+              "language": "zh",
+              "text_commit_mode": "explicit",
+              "audio_delivery": "chunked",
+              "speed": 1.0,
+              "instructions": null,
+              "pronunciation_revision": null,
+              "seed": null,
+              "planner": {
+                "max_chars": 120,
+                "max_wait_ms": 800
+              }
+            },
+            "output": {
+              "audio_format": "pcm",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "tts.streaming_text",
+              "required": true
+            },
+            {
+              "capability": "audio.pcm_stream",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "tts.speed"],
+          "override_ranges": {
+            "tts.speed": {
+              "minimum": 0.9,
+              "maximum": 1.1
+            }
+          },
+          "slo_ref": "slo/realtime-duplex-v1",
+          "validation": {
+            "profile_id": "assistant-duplex",
+            "revision": "1",
+            "validation_report_id": "profileval-assistant-duplex-1",
+            "validated_at": "2026-10-22T09:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        },
+        {
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "2",
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": ["realtime"],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "supersedes_revision": "1"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "External_scenario_profile_schema_json_ProfileDefinition": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["asr", "tts", "duplex"],
+          "description": "duplex profiles are valid only for realtime sessions that reserve both ASR and TTS resources atomically."
+        },
+        "release_tier": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileReleaseTier"
+        },
+        "execution_classes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ExecutionClass"
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileParameters"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Capability requirements. Capability names are unique within a profile revision; producer validation rejects the same capability appearing twice with different constraints.",
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_CapabilityRequirement"
+          }
+        },
+        "override_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+          },
+          "description": "Only these paths may be overridden by a request. Omitted paths are not overridable even when the value is within a declared range."
+        },
+        "override_ranges": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_ParameterPath"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/External_scenario_profile_schema_json_OverrideRange"
+          },
+          "description": "Allowed override ranges or enum domains. Keys must be a subset of override_allowlist; a range for a non-overridable path is a configuration error. An allowlisted path without an entry is bounded only by ProfileParameters and the binding domain. Producer validation requires minimum <= maximum when both are present."
+        },
+        "slo_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Reference to the deployment SLO document or qualification report scenario. It is not a numeric promise in this schema."
+        }
+      },
+      "required": [
+        "display_name",
+        "kind",
+        "release_tier",
+        "execution_classes",
+        "parameters",
+        "required_capabilities",
+        "override_allowlist",
+        "override_ranges",
+        "slo_ref"
+      ]
+    },
+    "External_scenario_profile_schema_json_ProfileReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ProfileReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ProfileReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "production"],
+      "description": "Scenario profiles do not claim the model-binding-only best_effort tier."
+    },
+    "External_scenario_profile_schema_json_ExecutionClass": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ServiceClass"
+    },
+    "External_shared_capability_domains_schema_json_ServiceClass": {
+      "type": "string",
+      "enum": ["realtime", "interactive", "batch"]
+    },
+    "External_scenario_profile_schema_json_ProfileParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_AsrParameters"
+        },
+        "tts": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_TtsParameters"
+        },
+        "output": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_OutputParameters"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_AsrParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "preview_interval_ms",
+        "max_segment_ms",
+        "finalization",
+        "final_deadline_ms",
+        "auxiliary_deadline_ms",
+        "rollback_tokens",
+        "turn_detection",
+        "alignment",
+        "diarization"
+      ],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs"
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalization"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrRollbackTokens"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrTurnDetection"
+        },
+        "vocabulary_set_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrAlignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_AsrDiarization"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_LanguageTag": {
+      "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+    },
+    "External_shared_language_schema_json_LanguageTag": {
+      "type": "string",
+      "pattern": "^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$",
+      "maxLength": 35
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrPreviewIntervalMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrMaxSegmentMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000,
+      "description": "Must be greater than or equal to preview_interval_ms and is further bounded by the binding, auxiliary capabilities, and workspace policy at admission. JSON Schema cannot express the cross-field comparison; contract tests and runtime validation enforce it."
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrFinalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_capability_domains_schema_json_FinalizationMode": {
+      "type": "string",
+      "enum": ["full_segment", "streaming_finalize"]
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrFinalDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrAuxiliaryDeadlineMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000,
+      "default": 5000
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrRollbackTokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32,
+      "default": 5
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrTurnDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "silence_duration_ms"],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_capability_domains_schema_json_VadMode": {
+      "type": "string",
+      "enum": ["server_vad", "manual"]
+    },
+    "External_scenario_profile_schema_json_ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
+    "External_shared_references_schema_json_ResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrAlignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_capability_domains_schema_json_AuxiliaryMode": {
+      "type": "string",
+      "enum": ["off", "required", "best_effort"]
+    },
+    "External_shared_profile_parameter_values_schema_json_AsrDiarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_scenario_profile_schema_json_TtsParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "text_commit_mode", "audio_delivery", "speed", "planner"],
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_LanguageTag"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsTextCommitMode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsAudioDelivery"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSpeed"
+        },
+        "instructions": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsInstructions"
+        },
+        "pronunciation_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ResourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsSeed"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_TtsPlanner"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsTextCommitMode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_capability_domains_schema_json_TextCommitMode": {
+      "type": "string",
+      "enum": ["explicit", "sentence"]
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsAudioDelivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_capability_domains_schema_json_AudioDeliveryMode": {
+      "type": "string",
+      "enum": ["complete", "chunked"]
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsSpeed": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2.0,
+      "default": 1.0
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsInstructions": {
+      "type": ["string", "null"],
+      "maxLength": 2000
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsSeed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_profile_parameter_values_schema_json_TtsPlanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_chars", "max_wait_ms"],
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_OutputParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "transcript_format": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat"
+        },
+        "audio_format": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputAudioFormat"
+        },
+        "save_artifacts": {
+          "$ref": "#/$defs/External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts"
+        }
+      }
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputTranscriptFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+    },
+    "External_shared_capability_domains_schema_json_TranscriptFormat": {
+      "type": "string",
+      "enum": ["json", "text", "verbose_json", "srt", "vtt"]
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputAudioFormat": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+    },
+    "External_shared_capability_domains_schema_json_AudioFormat": {
+      "type": "string",
+      "enum": ["mp3", "wav", "pcm"]
+    },
+    "External_shared_profile_parameter_values_schema_json_OutputSaveArtifacts": {
+      "type": "boolean"
+    },
+    "External_scenario_profile_schema_json_CapabilityRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "required"],
+      "properties": {
+        "capability": {
+          "type": "string",
+          "pattern": "^(asr|tts|voice|audio)\\.[a-z0-9_.-]{2,64}$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "constraint": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "enum": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": ["string", "number", "boolean"]
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": ["minimum"]
+            },
+            {
+              "required": ["maximum"]
+            },
+            {
+              "required": ["enum"]
+            }
+          ]
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_ParameterPath": {
+      "type": "string",
+      "enum": [
+        "asr.language",
+        "asr.preview_interval_ms",
+        "asr.max_segment_ms",
+        "asr.finalization",
+        "asr.final_deadline_ms",
+        "asr.auxiliary_deadline_ms",
+        "asr.rollback_tokens",
+        "asr.turn_detection.mode",
+        "asr.turn_detection.silence_duration_ms",
+        "asr.vocabulary_set_revision",
+        "asr.alignment",
+        "asr.diarization",
+        "tts.language",
+        "tts.text_commit_mode",
+        "tts.audio_delivery",
+        "tts.speed",
+        "tts.instructions",
+        "tts.pronunciation_revision",
+        "tts.seed",
+        "tts.planner.max_chars",
+        "tts.planner.max_wait_ms",
+        "output.transcript_format",
+        "output.audio_format",
+        "output.save_artifacts"
+      ]
+    },
+    "External_scenario_profile_schema_json_OverrideRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["minimum"]
+        },
+        {
+          "required": ["maximum"]
+        },
+        {
+          "required": ["enum"]
+        }
+      ]
+    },
+    "ErrorResponse": {
+      "$ref": "#/$defs/External_shared_errors_schema_json_ErrorResponse"
+    },
+    "External_shared_errors_schema_json_ErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorBody"
+        }
+      }
+    },
+    "External_shared_errors_schema_json_ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "type", "message", "param", "request_id", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{2,63}$",
+          "description": "Stable machine-readable error code."
+        },
+        "type": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_ErrorType"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "param": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "nexus": {
+          "$ref": "#/$defs/External_shared_errors_schema_json_OperationRecovery"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": ["operation_in_progress", "response_not_replayable"]
+              }
+            }
+          },
+          "then": {
+            "required": ["nexus"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "response_not_replayable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nexus": {
+                "required": ["receipt"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_shared_errors_schema_json_ErrorType": {
+      "type": "string",
+      "enum": [
+        "invalid_request_error",
+        "authentication_error",
+        "permission_error",
+        "not_found_error",
+        "rate_limit_error",
+        "api_error",
+        "service_unavailable_error"
+      ]
+    },
+    "External_shared_errors_schema_json_OperationRecovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "receipt": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_ExecutionReceipt"
+        }
+      },
+      "description": "Query GET /v1/nexus/operations/{operation_id}. This identity is the original execution; retrying never creates a second execution."
+    },
+    "External_shared_receipts_schema_json_ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "requested", "effective", "observed", "missing", "unknown"],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "request_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "requested": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "effective": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "observed": {
+          "$ref": "#/$defs/External_shared_receipts_schema_json_PublicExecutionFacts"
+        },
+        "missing": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/External_shared_receipts_schema_json_ReceiptFactPath"
+          }
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_PublicExecutionFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/External_shared_language_schema_json_LanguageTag"
+        },
+        "seed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_seed"
+        },
+        "speed": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_speed"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 384000
+        },
+        "response_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioFormat"
+            },
+            {
+              "$ref": "#/$defs/External_shared_capability_domains_schema_json_TranscriptFormat"
+            }
+          ]
+        },
+        "max_segment_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_max_segment_ms"
+        },
+        "model_binding": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "profile": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "voice": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "pronunciation": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "turn_detection": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_turn_detection"
+        },
+        "finalization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_finalization"
+        },
+        "preview_interval_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_preview_interval_ms"
+        },
+        "rollback_tokens": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_rollback_tokens"
+        },
+        "final_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_final_deadline_ms"
+        },
+        "auxiliary_deadline_ms": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_auxiliary_deadline_ms"
+        },
+        "alignment": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_alignment"
+        },
+        "diarization": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_diarization"
+        },
+        "vocabulary_set_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_vocabulary_set_revision"
+        },
+        "text_commit_mode": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_text_commit_mode"
+        },
+        "audio_delivery": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_audio_delivery"
+        },
+        "pronunciation_revision": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_pronunciation_revision"
+        },
+        "planner": {
+          "$ref": "#/$defs/External_shared_speech_overrides_schema_json_planner"
+        },
+        "instructions_present": {
+          "type": "boolean"
+        },
+        "prompt_present": {
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+        }
+      },
+      "description": "Allowlisted public projection only. Omit content, prompt, instructions, vendor payloads and private runtime identities. Unknown facts go into stable missing/unknown paths, never arbitrary dictionaries."
+    },
+    "External_shared_speech_overrides_schema_json_seed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "External_shared_speech_overrides_schema_json_speed": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 4.0
+    },
+    "External_shared_speech_overrides_schema_json_max_segment_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "External_shared_speech_overrides_schema_json_turn_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/External_shared_capability_domains_schema_json_VadMode"
+        },
+        "silence_duration_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_speech_overrides_schema_json_finalization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_FinalizationMode"
+    },
+    "External_shared_speech_overrides_schema_json_preview_interval_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 5000
+    },
+    "External_shared_speech_overrides_schema_json_rollback_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "External_shared_speech_overrides_schema_json_final_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_auxiliary_deadline_ms": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "External_shared_speech_overrides_schema_json_alignment": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_diarization": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AuxiliaryMode"
+    },
+    "External_shared_speech_overrides_schema_json_vocabulary_set_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_text_commit_mode": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_TextCommitMode"
+    },
+    "External_shared_speech_overrides_schema_json_audio_delivery": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_AudioDeliveryMode"
+    },
+    "External_shared_speech_overrides_schema_json_pronunciation_revision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_shared_speech_overrides_schema_json_planner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 400
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3000
+        }
+      }
+    },
+    "External_shared_receipts_schema_json_ReceiptFactPath": {
+      "type": "string",
+      "enum": [
+        "requested.language",
+        "requested.seed",
+        "requested.speed",
+        "requested.sample_rate_hz",
+        "requested.response_format",
+        "requested.max_segment_ms",
+        "requested.model_binding",
+        "requested.profile",
+        "requested.voice",
+        "requested.pronunciation",
+        "requested.turn_detection",
+        "requested.finalization",
+        "requested.preview_interval_ms",
+        "requested.rollback_tokens",
+        "requested.final_deadline_ms",
+        "requested.auxiliary_deadline_ms",
+        "requested.alignment",
+        "requested.diarization",
+        "requested.vocabulary_set_revision",
+        "requested.text_commit_mode",
+        "requested.audio_delivery",
+        "requested.pronunciation_revision",
+        "requested.planner",
+        "requested.instructions_present",
+        "requested.prompt_present",
+        "requested.policy",
+        "requested.vocabulary",
+        "effective.language",
+        "effective.seed",
+        "effective.speed",
+        "effective.sample_rate_hz",
+        "effective.response_format",
+        "effective.max_segment_ms",
+        "effective.model_binding",
+        "effective.profile",
+        "effective.voice",
+        "effective.pronunciation",
+        "effective.turn_detection",
+        "effective.finalization",
+        "effective.preview_interval_ms",
+        "effective.rollback_tokens",
+        "effective.final_deadline_ms",
+        "effective.auxiliary_deadline_ms",
+        "effective.alignment",
+        "effective.diarization",
+        "effective.vocabulary_set_revision",
+        "effective.text_commit_mode",
+        "effective.audio_delivery",
+        "effective.pronunciation_revision",
+        "effective.planner",
+        "effective.instructions_present",
+        "effective.prompt_present",
+        "effective.policy",
+        "effective.vocabulary",
+        "observed.language",
+        "observed.seed",
+        "observed.speed",
+        "observed.sample_rate_hz",
+        "observed.response_format",
+        "observed.max_segment_ms",
+        "observed.model_binding",
+        "observed.profile",
+        "observed.voice",
+        "observed.pronunciation",
+        "observed.turn_detection",
+        "observed.finalization",
+        "observed.preview_interval_ms",
+        "observed.rollback_tokens",
+        "observed.final_deadline_ms",
+        "observed.auxiliary_deadline_ms",
+        "observed.alignment",
+        "observed.diarization",
+        "observed.vocabulary_set_revision",
+        "observed.text_commit_mode",
+        "observed.audio_delivery",
+        "observed.pronunciation_revision",
+        "observed.planner",
+        "observed.instructions_present",
+        "observed.prompt_present",
+        "observed.policy",
+        "observed.vocabulary",
+        "requested.planner.max_chars",
+        "requested.planner.max_wait_ms",
+        "requested.turn_detection.mode",
+        "requested.turn_detection.silence_duration_ms",
+        "effective.planner.max_chars",
+        "effective.planner.max_wait_ms",
+        "effective.turn_detection.mode",
+        "effective.turn_detection.silence_duration_ms",
+        "observed.planner.max_chars",
+        "observed.planner.max_wait_ms",
+        "observed.turn_detection.mode",
+        "observed.turn_detection.silence_duration_ms"
+      ]
+    },
+    "ProfileCreationUnknownError": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ErrorResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "const": "profile_result_unknown"
+                },
+                "type": {
+                  "const": "service_unavailable_error"
+                },
+                "retryable": {
+                  "const": false
+                },
+                "retry_after_ms": {
+                  "type": "null"
+                },
+                "param": {
+                  "type": "null"
+                },
+                "nexus": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ProfileActivationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_current_revision"],
+      "properties": {
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "HttpRequest_publishProfileRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "profile_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["profile_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfilePublicationRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_publishProfileRevision_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfilePublishedRevision"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string",
+              "const": "POST"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_publishProfileRevision_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_publishProfileRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfileCreationUnknownError"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_activatePublishedProfileRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "profile_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["profile_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfileActivationRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfilePublishedRevision"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_403": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_405": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "string",
+              "const": "POST"
+            }
+          },
+          "required": ["allow"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_429": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_activatePublishedProfileRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ProfileCreationUnknownError"
+        }
+      },
+      "required": ["body"]
+    }
+  }
+}

@@ -155,7 +155,11 @@ export class FileTaskSession {
     this.#listeners.forEach((listener) => listener());
   }
 
-  #persist(update: Partial<Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor">>) {
+  #persist(
+    update: Partial<Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor">> & {
+      effectiveModelKey?: string;
+    },
+  ) {
     this.#lifetime.signal.throwIfAborted();
     if (!this.#record) return;
     const record = { ...this.#record, ...update };
@@ -172,6 +176,39 @@ export class FileTaskSession {
         (this.#record.jobId !== null && job.id !== this.#record.jobId))
     )
       throw new Error("Speech resource mismatch");
+    if (this.#record?.version !== 2) return;
+    const record = this.#record;
+    const effective = job.effective_configuration;
+    const model = effective.models.tts;
+    if (
+      effective.voice?.id !== record.voiceId ||
+      effective.voice.revision !== record.voiceRevision ||
+      effective.profile?.id !== record.profileId ||
+      effective.profile.revision !== record.profileRevision ||
+      !model
+    )
+      throw new Error("Speech resource mismatch");
+    // The request model can be an alias. Pin its resolved identity and revision,
+    // validated by the generated Job parser, rather than comparing it to the alias.
+    const key = JSON.stringify([model.id, model.revision]);
+    if (record.effectiveModelKey !== undefined && record.effectiveModelKey !== key)
+      throw new Error("Speech resource mismatch");
+    return key;
+  }
+
+  #acceptJob(
+    job: FileContracts["Job"],
+    update: Partial<Pick<TaskRecord, "jobId" | "pending" | "operationId" | "cursor">> = {},
+  ) {
+    const effectiveModelKey = this.#checkJob(job);
+    // Persist confirmation before exposing it; a failed write leaves the original
+    // request pending. Legacy v2 records learn a pin only from a valid full Job.
+    const newPin =
+      effectiveModelKey !== undefined &&
+      this.#record?.version === 2 &&
+      this.#record.effectiveModelKey === undefined;
+    if (newPin || Object.keys(update).length > 0)
+      this.#persist({ ...update, ...(newPin ? { effectiveModelKey } : {}) });
   }
 
   #checkAsset(asset: FileContracts["Asset"]) {
@@ -400,8 +437,7 @@ export class FileTaskSession {
     if (this.#command) {
       this.#persist({ pending: "create" });
       const job = await this.#client.create(this.#command, this.#createKey, signal);
-      this.#checkJob(job);
-      this.#persist({ jobId: job.id, pending: null, operationId: null });
+      this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
       this.#update({ job, notice: "任务已接收。读取当前状态或连接任务事件。" });
       return;
     }
@@ -516,9 +552,9 @@ export class FileTaskSession {
         this.#update({ operation, notice: "已读取原执行；不会创建替代执行。" });
         if (operation.job_id) {
           const job = await this.#client.getJob(operation.job_id, this.#lifetime.signal);
-          this.#checkJob(job);
           if (this.#record?.pending === "cancel") {
             // Finding the original job does not acknowledge its cancellation request.
+            this.#acceptJob(job);
             this.#update({
               job,
               unknown: true,
@@ -527,7 +563,7 @@ export class FileTaskSession {
             });
             return;
           }
-          this.#persist({ jobId: job.id, pending: null, operationId: null });
+          this.#acceptJob(job, { jobId: job.id, pending: null, operationId: null });
           this.#replay = undefined;
           this.#update({ job, unknown: false, canReplay: false, recovery: undefined });
         }
@@ -536,7 +572,7 @@ export class FileTaskSession {
           this.#view.job?.id ?? this.#record!.jobId!,
           this.#lifetime.signal,
         );
-        this.#checkJob(job);
+        this.#acceptJob(job);
         this.#update({
           job,
           notice: "已重新读取当前任务。",
@@ -571,8 +607,7 @@ export class FileTaskSession {
     this.#persist({ pending: "cancel", operationId: null });
     const cancellation = await this.#client.cancel(jobId, this.#cancelKey, this.#lifetime.signal);
     const job = await this.#client.getJob(jobId, this.#lifetime.signal);
-    this.#checkJob(job);
-    this.#persist({ pending: null, operationId: null });
+    this.#acceptJob(job, { pending: null, operationId: null });
     this.#update({ cancellation, notice: "已收到取消响应；资源释放以 cleanup_state 为准。" });
     this.#update({ job });
   }
@@ -596,9 +631,8 @@ export class FileTaskSession {
         if (this.#view.cursor && BigInt(event.id) <= BigInt(this.#view.cursor)) continue;
         // Events invalidate a snapshot. Never fabricate a complete Job from partial event data.
         const job = await this.#client.getJob(jobId, watch.signal);
-        this.#checkJob(job);
         if (!watch.signal.aborted) {
-          this.#persist({ cursor: event.id });
+          this.#acceptJob(job, { cursor: event.id });
           this.#update({ job, cursor: event.id });
         }
       }
@@ -615,13 +649,14 @@ export class FileTaskSession {
           this.#persist({ cursor: null });
           this.#update({ cursor: undefined });
           const job = await this.#client.getJob(jobId, watch.signal);
-          this.#checkJob(job);
-          if (!watch.signal.aborted)
+          if (!watch.signal.aborted) {
+            this.#acceptJob(job);
             this.#update({
               job,
               stream: "history-expired",
               notice: "事件历史已过期，已重新读取当前任务；下次从当前事件流连接。",
             });
+          }
         } catch {
           if (!watch.signal.aborted)
             this.#update({

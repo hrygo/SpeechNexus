@@ -359,7 +359,7 @@ def test_0007_failure_rolls_back_and_upgrade_preserves_legacy_commands_and_acl(
     sandbox.admin.execute("DROP TABLE admission_requests")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0012_execution_results"
+    assert sandbox.version() == "0013_profile_lifecycle_intents"
     assert sandbox.admin.execute("SELECT * FROM admission_attempts").fetchall() == original
     assert sandbox.admin.execute("SELECT * FROM submit_intents").fetchall() == [
         row | {"staging_result_document": None} for row in submits

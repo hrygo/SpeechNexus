@@ -1,6 +1,6 @@
 import { unitJournal, type UnitCommand } from "./book-journal";
 import type { CommandJournal } from "../recovery/command-journal";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -161,7 +161,10 @@ function ChapterUnits({
   // A successful create clears the fields, which disables the submit button and would drop
   // keyboard focus to the document; it goes back to the first field instead.
   const firstField = useRef<HTMLInputElement>(null);
-  useEffect(() => {
+  // Focus must move in the same commit that re-enables the fieldset: the success path calls
+  // focus() while the form is still disabled, so deferring to a passive effect can leave focus
+  // on the document until a later task and lose the keyboard position.
+  useLayoutEffect(() => {
     if (!busy && notice?.includes("已创建为修订")) firstField.current?.focus();
   }, [busy, notice]);
   const [check, setCheck] = useState<{

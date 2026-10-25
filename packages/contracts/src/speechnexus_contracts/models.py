@@ -311,6 +311,7 @@ type ExternalSharedErrorsSchemaJsonErrorType = Literal[
     "api_error",
     "service_unavailable_error",
 ]
+type ExternalVoiceResourceSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -525,6 +526,24 @@ class OperationCancellation(TypedDict):
     cancellation_requested_at: str
 
 
+class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
+    grapheme: str
+    phonemes: str
+    language: NotRequired[ExternalVoiceResourceSchemaJsonLanguageTag]
+
+
+class ExternalVoiceResourceSchemaJsonPronunciationRevision(TypedDict):
+    resource_type: Literal["pronunciation_revision"]
+    id: ExternalVoiceResourceSchemaJsonIdentifier
+    revision: ExternalVoiceResourceSchemaJsonRevision
+    object: Literal["nexus.pronunciation_revision"]
+    status: Literal["draft", "published", "retired"]
+    encoding: Literal["pinyin", "ipa"]
+    entries: list[ExternalVoiceResourceSchemaJsonPronunciationEntry]
+    created_at: str
+
+
+type PronunciationRevision = ExternalVoiceResourceSchemaJsonPronunciationRevision
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 type AsrOverrides = ExternalSharedSpeechOverridesSchemaJsonAsrOverrides
 type TtsOverrides = ExternalSharedSpeechOverridesSchemaJsonTtsOverrides
@@ -706,6 +725,14 @@ class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
     operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+class PronunciationCreateRequest(TypedDict):
+    id: NotRequired[Identifier]
+    expected_revision: NotRequired[Revision]
+    encoding: Literal["pinyin", "ipa"]
+    entries: list[ExternalVoiceResourceSchemaJsonPronunciationEntry]
+    publish: NotRequired[bool]
 
 
 class JobOverrides(TypedDict):
@@ -958,4 +985,6 @@ type FileContract = (
     | Operation
     | OperationCancellation
     | ErrorResponse
+    | PronunciationCreateRequest
+    | PronunciationRevision
 )

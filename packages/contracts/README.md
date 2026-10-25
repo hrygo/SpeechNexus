@@ -614,3 +614,14 @@ paths. V1 keeps its strict original schemas; the production boundary refuses v1
 render creation with `503 workbench_unavailable` and performs no write.
 `generateRenderUnit` / `generateRenderUnitV2` are validated contract declarations,
 not registered production operations. See [ADR 0009](../../docs/decisions/0009-workbench-explicit-binding-http-version.md).
+
+### Pronunciation draft inputs and immutable revisions
+
+The root Python/TypeScript `parse` exports include `PronunciationCreateRequest`
+and `PronunciationRevision`. The latter follows the canonical external
+`voice-resource.schema.json` definition through `bindings.schema_refs`; no wire
+copy or independent default is added. Shared `file-workflow.json` examples cover
+explicit draft/published values, omitted defaults and negative identity/type
+cases. Parser support does not mean the public pronunciation routes or TTS
+consumption are implemented; the [private draft component](../../docs/architecture/pronunciation-drafts.md)
+selects explicit `publish: false` only.

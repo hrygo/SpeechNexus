@@ -425,6 +425,6 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     finally:
         engine.dispose()
     assert database.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0013_profile_lifecycle_intents"}
+        {"version_num": "0014_pronunciation_drafts"}
     ]
     assert database.counts() == (1, 1)

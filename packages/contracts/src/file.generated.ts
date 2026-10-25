@@ -14,4 +14,6 @@ export type FileContracts = Pick<
   | "Operation"
   | "OperationCancellation"
   | "ErrorResponse"
+  | "PronunciationCreateRequest"
+  | "PronunciationRevision"
 >;

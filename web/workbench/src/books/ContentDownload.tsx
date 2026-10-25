@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /** The browser exposes a save only after its own full byte/digest verification. */
 type Props = {
@@ -26,7 +26,7 @@ function DownloadAction({ filename, label, load }: Omit<Props, "identity">) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(false);
   const [saved, setSaved] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!busy && restoreFocus.current) {
       restoreFocus.current = false;
       action.current?.focus();

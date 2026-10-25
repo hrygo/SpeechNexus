@@ -27,6 +27,7 @@ from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
     AudioInspectionProcess,
     InspectionProcessLimits,
     InspectionProcessResult,
+    _single_process_filter,
 )
 
 LIMITS = InspectionProcessLimits(1024, 256 * 1024**2, 2, 5.0)
@@ -61,6 +62,29 @@ def image(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
     for directory in ("tmp", "proc", "dev", "input"):
         (root / directory).mkdir(exist_ok=True)
     (root / "input/media").touch()
+    # Only this fixed synthetic probe captures startup diagnostics. Production
+    # workers keep stderr closed and never expose vendor/input information.
+    probe_runner = AudioInspectionProcess(
+        root, (str(executable), "-I", "-S", "-c", "print('inspection-probe')"), LIMITS
+    )
+    policy = _single_process_filter()
+    assert policy is not None, "The inspection test host has an unsupported syscall ABI"
+    with TemporaryFile() as data, TemporaryFile() as seccomp:
+        data.write(b"synthetic-probe")
+        data.seek(0)
+        seccomp.write(policy)
+        seccomp.seek(0)
+        probe = subprocess.run(
+            probe_runner._arguments(data.fileno(), seccomp.fileno()),
+            pass_fds=(data.fileno(), seccomp.fileno()),
+            capture_output=True,
+            env={},
+            timeout=10,
+            check=False,
+        )
+        assert probe.returncode == 0 and probe.stdout == b"inspection-probe\n", (
+            f"Synthetic sandbox startup rejected ({probe.returncode}): {probe.stderr[:1024]!r}"
+        )
     return root, str(executable)
 
 

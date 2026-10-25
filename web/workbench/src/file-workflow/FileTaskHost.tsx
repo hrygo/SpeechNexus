@@ -6,7 +6,7 @@ import { FileTaskInput } from "./FileTaskInput";
 import { TtsTaskInput } from "./TtsTaskInput";
 import { TtsTaskResult, type WorkbenchSaveClient } from "./TtsTaskResult";
 import { SessionTaskJournal } from "./task-journal";
-import { FileTaskPanel } from "./FileTaskPanel";
+import { FileTaskPanel, type ImportTranscript } from "./FileTaskPanel";
 import { canFinishTask } from "./file-task-policy";
 import "./file-task.css";
 
@@ -72,11 +72,13 @@ function ActiveTask({
   onNew,
   focusNew,
   workbench,
+  onImportTranscript,
 }: {
   host: NonNullable<ReturnType<typeof initialize>>;
   onNew: () => void;
   focusNew: boolean;
   workbench?: WorkbenchSaveClient | undefined;
+  onImportTranscript?: ImportTranscript | undefined;
 }) {
   const { session } = host;
   const mount = useRef({ generation: 0 });
@@ -105,6 +107,7 @@ function ActiveTask({
         <TtsTaskInput session={session} initialSelection={host.selection} focusNew={focusNew} />
       )}
       <FileTaskPanel
+        onImportTranscript={onImportTranscript}
         session={session}
         onNew={onNew}
         savedAssetId={host.savedAssetId}
@@ -124,11 +127,13 @@ export function FileTaskHost({
   client,
   storage,
   workbench,
+  onImportTranscript,
 }: {
   kind?: TaskKind;
   client?: SpeechFileClient;
   storage?: TaskStorage;
   workbench?: WorkbenchSaveClient | undefined;
+  onImportTranscript?: ImportTranscript | undefined;
 }) {
   const [api] = useState(() => client ?? new SpeechFileClient(location.origin));
   const [host, setHost] = useState(() => initialize(api, kind, storage));
@@ -149,6 +154,7 @@ export function FileTaskHost({
     >
       {notice && <p role="alert">{notice}</p>}
       <ActiveTask
+        onImportTranscript={onImportTranscript}
         key={generation}
         focusNew={generation > 0}
         host={host}

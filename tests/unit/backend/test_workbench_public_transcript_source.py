@@ -100,6 +100,55 @@ async def test_generated_metadata_and_raw_text_do_not_trust_content_length() -> 
     )
 
 
+@pytest.mark.parametrize("media_type", ["application/json", "application/json; charset=utf-8"])
+async def test_imports_the_generated_transcription_shape_without_changing_text(
+    media_type: str,
+) -> None:
+    service = Service()
+    text = "  合成 e\u0301 😀\n "
+    content = json.dumps({"text": text}, ensure_ascii=False).encode()
+    service.metadata.update(
+        media_type=media_type,
+        bytes=len(content),
+        sha256="sha256:" + hashlib.sha256(content).hexdigest(),
+    )
+    service.content = Stream([content[:7], content[7:]])
+    async with httpx.AsyncClient(
+        base_url="https://speech.invalid", transport=httpx.MockTransport(service.handle)
+    ) as client:
+        assert await read(PublicTranscriptSource(client, now=lambda: NOW)) == text
+    assert service.content.closed
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"[]",
+        b"{}",
+        b'{"text":1}',
+        b'{"text":"x","extra":true}',
+        b'{"text":"a","text":"b"}',
+        b'{"text":"\\u0000"}',
+        b'{"text":"\\ud800"}',
+        b'{"text":"unfinished}',
+        b"[" * 2000 + b"]" * 2000,
+    ],
+)
+async def test_rejects_invalid_json_transcription_before_import(content: bytes) -> None:
+    service = Service()
+    service.metadata.update(
+        media_type="application/json",
+        bytes=len(content),
+        sha256="sha256:" + hashlib.sha256(content).hexdigest(),
+    )
+    service.content = Stream([content])
+    async with httpx.AsyncClient(
+        base_url="https://speech.invalid", transport=httpx.MockTransport(service.handle)
+    ) as client:
+        with pytest.raises(TranscriptSourceError, match=r"^source_invalid$"):
+            await read(PublicTranscriptSource(client, now=lambda: NOW))
+
+
 @pytest.mark.parametrize(
     "field,value,code",
     [
@@ -113,7 +162,7 @@ async def test_generated_metadata_and_raw_text_do_not_trust_content_length() -> 
         ("expires_at", "2026-10-23T00:00:00Z", "source_expired"),
         ("bytes", -1, "source_invalid"),
         ("bytes", 4_000_001, "source_too_large"),
-        ("media_type", "application/json", "source_unsupported"),
+        ("media_type", "application/xml", "source_unsupported"),
         ("media_type", "text/plain; charset=latin1", "source_unsupported"),
         ("unexpected", "synthetic-private-content", "source_invalid"),
     ],

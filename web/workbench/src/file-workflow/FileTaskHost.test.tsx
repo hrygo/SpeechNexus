@@ -72,6 +72,29 @@ afterEach(() => {
 });
 
 describe("production Workbench file host", () => {
+  it.each([false, true])(
+    "offers only the matching committed ASR result for import (wrong receipt: %s)",
+    async (wrongReceipt) => {
+      const f = fixture();
+      const job = parse("Job", example("succeeded-job"));
+      if (wrongReceipt) job.artifacts[0]!.receipt_id = "different-receipt";
+      f.getJob.mockResolvedValue(job);
+      f.data.set(key, JSON.stringify(stored()));
+      const importResult = vi.fn();
+      render(
+        <FileTaskHost client={f.client} storage={f.storage} onImportTranscript={importResult} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "读取原状态" }));
+      const button = await screen.findByRole("button", { name: "导入到项目稿件" });
+      expect(importResult).not.toHaveBeenCalled();
+      if (wrongReceipt) expect(button).toBeDisabled();
+      else {
+        expect(button).toBeEnabled();
+        fireEvent.click(button);
+        expect(importResult).toHaveBeenCalledExactlyOnceWith(job.result);
+      }
+    },
+  );
   it("permits correction after a local save failure followed by the first actual rejected upload", async () => {
     const f = fixture();
     vi.spyOn(f.storage, "setItem").mockImplementationOnce(() => {

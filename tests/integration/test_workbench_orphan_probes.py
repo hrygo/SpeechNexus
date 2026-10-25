@@ -378,8 +378,11 @@ async def test_the_manuscripts_probe_creates_a_draft_and_keeps_original_recovery
     payload = await run_probe("manuscripts")
     assert payload["production_ui"] is True
     assert payload["synthetic_loopback"] is True
-    assert payload["monitored_contexts"] == 4
-    assert payload["mutation_requests"] == 7
+    assert payload["monitored_contexts"] == 5
+    assert payload["mutation_requests"] == 10
+    assert payload["asr_result_import_and_original_key_recovery"] is True
+    assert payload["sealed_original_and_independent_correction"] is True
+    assert payload["fixed_revision_txt_native_download"] is True
     assert payload["manual_create_status"] == "draft"
     assert payload["manual_create_source_revision"] is None
     for key in (

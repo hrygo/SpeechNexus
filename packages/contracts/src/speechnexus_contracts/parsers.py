@@ -14,6 +14,7 @@ from .models import (
     JobList,
     Operation,
     OperationCancellation,
+    Transcription,
 )
 
 
@@ -47,6 +48,10 @@ def parse(name: Literal["Asset"], value: Any) -> Asset: ...
 
 @overload
 def parse(name: Literal["Artifact"], value: Any) -> Artifact: ...
+
+
+@overload
+def parse(name: Literal["Transcription"], value: Any) -> Transcription: ...
 
 
 @overload

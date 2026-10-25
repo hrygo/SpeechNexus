@@ -10,6 +10,7 @@ export type FileContracts = Pick<
   | "AssetUploadRequest"
   | "Asset"
   | "Artifact"
+  | "Transcription"
   | "Operation"
   | "OperationCancellation"
   | "ErrorResponse"

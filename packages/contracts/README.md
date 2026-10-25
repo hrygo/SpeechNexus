@@ -6,6 +6,11 @@ It contains no business rules, database adapter, server route, or engine.
 Do not import it from any domain package. Interfaces translate validated DTOs
 into their own application/domain values.
 
+The file boundary also exposes the existing public `Transcription` schema for
+consumers of staged file-ASR JSON. This generates validation/types from the
+speech source without changing its wire format. See
+[transcript import and text export](../../docs/architecture/transcript-import-and-text-export.md).
+
 Profile draft consumers can parse `ProfileRevisionCreateRequest` through the
 `admin` namespace and the complete `ScenarioProfileRevision` through Python
 `speechnexus_contracts.scenario_profiles` / TypeScript

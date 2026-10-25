@@ -11,6 +11,7 @@
     "AssetUploadRequest",
     "Asset",
     "Artifact",
+    "Transcription",
     "Operation",
     "OperationCancellation",
     "ErrorResponse"
@@ -2633,6 +2634,110 @@
       "type": "string",
       "enum": ["ready", "expired", "deleted"]
     },
+    "Transcription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "maxLength": 35
+              }
+            }
+          }
+        },
+        "logprobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranscriptionLogprob"
+          }
+        },
+        "usage": {
+          "$ref": "#/$defs/TranscriptionUsage"
+        }
+      }
+    },
+    "TranscriptionLogprob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": ["string", "null"]
+        },
+        "bytes": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "number"
+          }
+        },
+        "logprob": {
+          "type": ["number", "null"]
+        }
+      },
+      "description": "OpenAI SDK-compatible token log-probability shape. SpeechNexus returns\nthis only when a binding supplies genuine log-probability evidence.\n"
+    },
+    "TranscriptionUsage": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UsageDuration"
+        },
+        {
+          "$ref": "#/$defs/UsageTokens"
+        }
+      ]
+    },
+    "UsageDuration": {
+      "$ref": "#/$defs/External_shared_public_audio_schema_json_UsageDuration"
+    },
+    "External_shared_public_audio_schema_json_UsageDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seconds"],
+      "properties": {
+        "type": {
+          "const": "duration"
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "UsageTokens": {
+      "$ref": "#/$defs/External_shared_public_audio_schema_json_UsageTokens"
+    },
+    "External_shared_public_audio_schema_json_UsageTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "input_tokens", "output_tokens", "total_tokens"],
+      "properties": {
+        "type": {
+          "const": "tokens"
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "Operation": {
       "type": "object",
       "additionalProperties": false,
@@ -3329,6 +3434,9 @@
     },
     {
       "$ref": "#/$defs/Artifact"
+    },
+    {
+      "$ref": "#/$defs/Transcription"
     },
     {
       "$ref": "#/$defs/Operation"

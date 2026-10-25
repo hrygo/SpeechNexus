@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { AppShell } from "@speechnexus/shared";
 import { FileTaskHost } from "./file-workflow/FileTaskHost";
 import { TeleprompterPanel } from "./teleprompter/TeleprompterPanel";
-import { WorkbenchClient } from "./manuscripts/workbench-client";
+import { WorkbenchClient, type Contracts } from "./manuscripts/workbench-client";
 
 const ManuscriptHost = lazy(() => import("./manuscripts/ManuscriptHost"));
 const MeetingHost = lazy(() => import("./meetings/MeetingHost"));
@@ -14,6 +14,9 @@ const BooksHost = lazy(() => import("./books/BooksHost"));
 const AssistantHost = lazy(() => import("./assistant/AssistantHost"));
 
 export function App() {
+  const [speechSource, setSpeechSource] = useState<
+    Extract<Contracts["TranscriptCreateRequest"]["source"], { kind: "speech_artifact" }> | undefined
+  >();
   const [kind, setKind] = useState<
     | "asr"
     | "tts"
@@ -229,12 +232,24 @@ export function App() {
       kind === "meetings" ||
       kind === "deletions" ? null : kind === "manuscripts" ? (
         <Suspense fallback={<p role="status">正在加载稿件工作台…</p>}>
-          <ManuscriptHost />
+          <ManuscriptHost speechSource={speechSource} />
         </Suspense>
       ) : kind === "prompter" ? (
         <TeleprompterPanel />
       ) : (
-        <FileTaskHost key={kind} kind={kind} workbench={workbench} />
+        <FileTaskHost
+          key={kind}
+          kind={kind}
+          workbench={workbench}
+          onImportTranscript={(result) => {
+            setSpeechSource({
+              kind: "speech_artifact",
+              artifact_id: result.transcript_artifact_id,
+              receipt_id: result.receipt_id,
+            });
+            setKind("manuscripts");
+          }}
+        />
       )}
     </AppShell>
   );

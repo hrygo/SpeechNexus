@@ -359,7 +359,8 @@ async def _sweep_deletions(recovery: WorkbenchRecovery, interval: float) -> None
         try:
             await recovery.run()
         except Exception:
-            _log.exception("deletion sweep failed; the ledger still records what is owed")
+            # Adapter exceptions can contain content, SQL or private endpoints.
+            _log.error("deletion sweep failed; the ledger still records what is owed")
 
 
 async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> None:
@@ -367,7 +368,7 @@ async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> No
     try:
         queued = await minutes.queued_ids(workspace_id, limit=_MINUTES_BATCH)
     except Exception:
-        _log.exception("minutes queue could not be read; the next pass retries")
+        _log.error("minutes queue could not be read; the next pass retries")
         return
     for task_id in queued:
         try:
@@ -378,7 +379,7 @@ async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> No
             # Another instance holds the claim; the queue still records one outcome.
             _log.info("minutes task %s is claimed elsewhere", task_id)
         except Exception:
-            _log.exception("minutes task %s did not finish in this pass", task_id)
+            _log.error("minutes task %s did not finish in this pass", task_id)
 
 
 async def _dispatch_minutes(minutes: MinutesTasks, workspace_id: str, interval: float) -> None:

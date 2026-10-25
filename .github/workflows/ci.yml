@@ -276,6 +276,14 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --all-packages --all-groups
 
+      - name: Ensure PostgreSQL 16 tools for the private integration cluster
+        run: |
+          if [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes postgresql-16
+          fi
+          test -x /usr/lib/postgresql/16/bin/initdb
+
       - name: Select external tools for this integration partition
         id: integration_tools
         run: |
@@ -323,9 +331,11 @@ jobs:
         run: |
           test -n "$SPEECHNEXUS_TEST_DATABASE_URL"
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
-          uv run python scripts/dev-env/integration-shards.py run \
-            --index "${{ matrix.shard }}" --count 6 \
-            --report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"
+          uv run python scripts/dev-env/workbench-pg-probe.py \
+            --pg-bin /usr/lib/postgresql/16/bin \
+            --integration-shard "${{ matrix.shard }}" --shard-count 6 \
+            --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
+            --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
 
       - name: Preserve integration partition evidence
         if: ${{ always() }}
@@ -333,7 +343,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: integration-shard-${{ matrix.shard }}
-          path: ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
+          path: |
+            ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
+            ${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json
           if-no-files-found: error
           retention-days: 7
           overwrite: true

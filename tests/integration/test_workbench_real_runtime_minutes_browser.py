@@ -27,7 +27,7 @@ ENDPOINT = os.environ.get("SPEECHNEXUS_TEST_LLM_ENDPOINT", "")
 MODEL = os.environ.get("SPEECHNEXUS_TEST_LLM_MODEL", "")
 
 pytestmark = [
-    pytest.mark.integration,
+    pytest.mark.qualification,
     pytest.mark.skipif(
         not (ENDPOINT and MODEL),
         reason="needs SPEECHNEXUS_TEST_LLM_ENDPOINT and SPEECHNEXUS_TEST_LLM_MODEL",

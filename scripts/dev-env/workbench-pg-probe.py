@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,6 +113,40 @@ def build_pytest_command(
     return command
 
 
+def build_integration_shard_command(*, index: int, count: int, report: Path) -> list[str]:
+    """Delegate inventory, partitioning and same-head evidence to the canonical runner."""
+    if type(count) is not int or not 1 <= count <= 16:
+        raise ValueError("shard count must be within 1..16")
+    if type(index) is not int or not 0 <= index < count:
+        raise ValueError("shard index is outside the partition")
+    return [
+        sys.executable,
+        "scripts/dev-env/integration-shards.py",
+        "run",
+        "--index",
+        str(index),
+        "--count",
+        str(count),
+        "--report",
+        str(report),
+    ]
+
+
+def private_pg_environment(inherited: Mapping[str, str], *, sockets: Path) -> dict[str, str]:
+    """Pin only Workbench to this private cluster; retain explicit dual-DB/MinIO inputs."""
+    # libpq also reads PGHOSTADDR/PGSERVICE/PGOPTIONS. Inherited connection defaults
+    # must not redirect the disposable socket cluster, even if other tests use DSNs.
+    env = {key: value for key, value in inherited.items() if not key.startswith("PG")}
+    env.update(PGHOST=str(sockets), PGPORT="55439", PGUSER="workbench_test_owner")
+    env["SPEECHNEXUS_WORKBENCH_TEST_DSN"] = make_conninfo(
+        host=str(sockets),
+        port=55439,
+        dbname="speechnexus_workbench_test",
+        user="workbench_test_owner",
+    )
+    return env
+
+
 def require_object_storage(env: Mapping[str, str]) -> None:
     """The caller provides a project-isolated MinIO; never discover a shared service."""
     if not all(
@@ -123,7 +157,7 @@ def require_object_storage(env: Mapping[str, str]) -> None:
             "SPEECHNEXUS_TEST_MINIO_SECRET_KEY",
         )
     ):
-        raise ValueError("full coverage requires explicit isolated MinIO endpoint and test keys")
+        raise ValueError("probe requires explicit isolated MinIO endpoint and test keys")
 
 
 def run(
@@ -144,6 +178,14 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the complete Python gate and Workbench PG/runtime tests with global coverage",
     )
+    modes.add_argument(
+        "--integration-shard",
+        type=int,
+        metavar="INDEX",
+        help="run the canonical complete integration partition with private Workbench PG",
+    )
+    parser.add_argument("--shard-count", type=int, metavar="COUNT")
+    parser.add_argument("--shard-report", type=Path, metavar="PATH")
     parser.add_argument(
         "--workbench-runtime",
         action="store_true",
@@ -159,14 +201,44 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also require production-bundle Chromium qualification",
     )
-    parser.add_argument("--output", type=Path, default=ROOT / ".runtime/team-c/c00-pg-probe.json")
+    parser.add_argument("--output", type=Path, help="independent PG lifecycle evidence JSON")
     return parser
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argument_parser()
-    args = parser.parse_args()
-    if args.full_coverage:
+    args = parser.parse_args(argv)
+    shard = args.integration_shard is not None
+    if shard:
+        if args.shard_count is None or args.shard_report is None:
+            parser.error("--integration-shard requires --shard-count and --shard-report")
+        if args.workbench_runtime or args.browser or args.admin_workspaces:
+            parser.error("integration shard mode cannot use runtime or browser probe selection")
+        try:
+            build_integration_shard_command(
+                index=args.integration_shard,
+                count=args.shard_count,
+                report=args.shard_report,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        if args.output is None:
+            args.output = (
+                args.shard_report.parent / f"workbench-pg-shard-{args.integration_shard}.json"
+            )
+        if args.output.resolve() == args.shard_report.resolve():
+            parser.error("PG lifecycle --output must differ from --shard-report")
+    elif args.shard_count is not None or args.shard_report is not None:
+        parser.error("--shard-count and --shard-report require --integration-shard")
+    elif args.output is None:
+        args.output = ROOT / ".runtime/team-c/c00-pg-probe.json"
+    return args
+
+
+def main() -> int:
+    args = parse_arguments()
+    parser = argument_parser()
+    if args.full_coverage or args.integration_shard is not None:
         try:
             require_object_storage(os.environ)
         except ValueError as error:
@@ -232,23 +304,24 @@ def main() -> int:
                 "start",
             ]
         )
-        # libpq also reads PGHOSTADDR/PGSERVICE/PGOPTIONS. Do not let inherited
-        # connection defaults redirect this socket-only disposable probe.
-        env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
-        env.update(PGHOST=str(sockets), PGPORT="55439", PGUSER="workbench_test_owner")
+        env = private_pg_environment(os.environ, sockets=sockets)
         run([str(pg_bin / "createdb"), "speechnexus_workbench_test"], env=env)
-        env["SPEECHNEXUS_WORKBENCH_TEST_DSN"] = make_conninfo(
-            host=str(sockets),
-            port=55439,
-            dbname="speechnexus_workbench_test",
-            user="workbench_test_owner",
-        )
-        command = build_pytest_command(
-            coverage=args.coverage,
-            full_coverage=args.full_coverage,
-            workbench_runtime=args.workbench_runtime,
-            coverage_output=cluster / "coverage.json",
-        )
+        if args.integration_shard is not None:
+            command = build_integration_shard_command(
+                index=args.integration_shard,
+                count=args.shard_count,
+                report=args.shard_report.resolve(),
+            )
+            result["integration_shard"] = args.integration_shard
+            result["shard_count"] = args.shard_count
+            result["shard_report"] = str(args.shard_report.resolve())
+        else:
+            command = build_pytest_command(
+                coverage=args.coverage,
+                full_coverage=args.full_coverage,
+                workbench_runtime=args.workbench_runtime,
+                coverage_output=cluster / "coverage.json",
+            )
         if args.browser:
             command.append("tests/integration/test_workbench_meeting_browser.py")
             command.append("tests/integration/test_workbench_deletion_browser.py")
@@ -303,7 +376,7 @@ def main() -> int:
             env=env,
             capture_output=True,
             text=True,
-            timeout=600 if args.full_coverage else 180,
+            timeout=600 if args.full_coverage or args.integration_shard is not None else 180,
             check=False,
         )
         (cluster / "pytest.log").write_text(tests.stdout + tests.stderr)

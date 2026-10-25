@@ -505,3 +505,39 @@ def test_requirement_collection_cannot_claim_missing_dependencies_are_unneeded(
     )
     assert result.returncode == 1
     assert result.stdout == ""
+
+
+def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_database_env() -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
+        "integration_shards"
+    ]["steps"]
+    run = next(step for step in steps if "Run a complete integration partition" in step["name"])
+    assert "uv run python scripts/dev-env/workbench-pg-probe.py" in run["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin" in run["run"]
+    assert '--integration-shard "${{ matrix.shard }}" --shard-count 6' in run["run"]
+    assert '--shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"' in run["run"]
+    assert '--output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"' in run["run"]
+    assert "--collect-only" not in run["run"]
+    assert "if" not in run and "continue-on-error" not in run
+    assert run["env"] == {
+        "SPEECHNEXUS_TEST_DATABASE_URL": (
+            "postgresql://speechnexus:speechnexus_test@127.0.0.1:5432/speechnexus_test"
+        ),
+        "SPEECHNEXUS_TEST_MYSQL_URL": "mysql://root:speechnexus_test@127.0.0.1:3306/",
+        "SPEECHNEXUS_TEST_MINIO_ENDPOINT": "http://127.0.0.1:59000",
+        "SPEECHNEXUS_TEST_MINIO_ACCESS_KEY": "speechnexus_test",
+        "SPEECHNEXUS_TEST_MINIO_SECRET_KEY": "synthetic_asset_test_secret",
+    }
+    pg = next(step for step in steps if "private integration cluster" in step["name"])
+    assert "if" not in pg and "continue-on-error" not in pg
+    assert "test -x /usr/lib/postgresql/16/bin/initdb" in pg["run"]
+    assert "--no-install-recommends --yes postgresql-16" in pg["run"]
+    assert steps.index(pg) < steps.index(run)
+    evidence = next(
+        step for step in steps if step["name"] == "Preserve integration partition evidence"
+    )
+    assert evidence["with"]["path"].splitlines() == [
+        "${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json",
+        "${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json",
+    ]
+    assert evidence["with"]["if-no-files-found"] == "error"

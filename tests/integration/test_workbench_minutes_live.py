@@ -37,7 +37,7 @@ ENDPOINT = os.environ.get("SPEECHNEXUS_TEST_LLM_ENDPOINT", "")
 MODEL = os.environ.get("SPEECHNEXUS_TEST_LLM_MODEL", "")
 
 pytestmark = [
-    pytest.mark.integration,
+    pytest.mark.qualification,
     pytest.mark.skipif(
         not (ENDPOINT and MODEL),
         reason="no approved local text LLM endpoint is exported for this run",

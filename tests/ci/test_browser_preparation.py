@@ -246,6 +246,51 @@ class PreparationTests(unittest.TestCase):
             self.assertNotIn("private-host", out.getvalue())
             self.assertEqual(run.call_count, 2)
 
+    def test_safe_direct_identifier_is_visible_without_changing_eligibility(self) -> None:
+        with (
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess(
+                [], 0, "Acquire::http::CaseProbe_1\n", ""
+            )
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            self.assertIn('"http": ["CaseProbe_1"]', out.getvalue())
+            self.assertIn("unsupported-transport-key", out.getvalue())
+            self.assertEqual(run.call_count, 2)
+
+    def test_non_identifier_direct_fields_are_counted_without_revealing_text(self) -> None:
+        for suffix in (
+            "private.host",
+            "private/host",
+            "private@host",
+            "private host",
+            "private\\host",
+            "http://private-host",
+            "X" * 65,
+            "非ASCII",
+        ):
+            with (
+                self.subTest(kind=suffix),
+                patch.object(HELPER.subprocess, "run") as run,
+                patch("sys.stdout", new_callable=io.StringIO) as out,
+            ):
+                run.return_value = subprocess.CompletedProcess(
+                    [], 0, f"Acquire::http::{suffix}\n", ""
+                )
+                HELPER.prepare(Path("/unused"), Path("/unused"))
+                self.assertNotIn(suffix, out.getvalue())
+                self.assertIn('"hidden_unsupported_key_count": 1', out.getvalue())
+                self.assertEqual(run.call_count, 2)
+        with (
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess([], 0, "Acquire::http::\n", "")
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            self.assertIn('"empty_direct_key_count": 1', out.getvalue())
+            self.assertEqual(run.call_count, 2)
+
     def test_other_guard_reasons_are_classified_without_raw_keys_or_configuration(self) -> None:
         for key, reason in (
             ("Acquire::Queue-Mode", "queue-control"),

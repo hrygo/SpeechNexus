@@ -254,9 +254,30 @@ def prepare(cache: Path, temporary_root: Path) -> None:
                 break
         else:
             scopes.add("other-namespace")
+    safe_direct: dict[str, list[str]] = {"http": [], "https": []}
+    empty_direct = 0
+    hidden_unsupported = 0
+    for key in unsupported:
+        direct = re.fullmatch(r"Acquire::(http|https)::([A-Za-z][A-Za-z0-9_-]{0,63})", key, re.I)
+        if direct:
+            safe_direct[direct[1].lower()].append(direct[2])
+        elif re.fullmatch(r"Acquire::(?:http|https)::", key, re.I):
+            empty_direct += 1
+        else:
+            hidden_unsupported += 1
     print(
         "APT prefetch guard: "
-        + json.dumps({"reasons": reasons, "unsupported_scopes": sorted(scopes)}),
+        + json.dumps(
+            {
+                "reasons": reasons,
+                "unsupported_scopes": sorted(scopes),
+                "safe_direct_fields": {
+                    protocol: sorted(set(names)) for protocol, names in safe_direct.items()
+                },
+                "empty_direct_key_count": empty_direct,
+                "hidden_unsupported_key_count": hidden_unsupported,
+            }
+        ),
         flush=True,
     )
     if reasons:

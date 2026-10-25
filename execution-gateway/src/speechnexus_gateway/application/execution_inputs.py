@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -42,14 +42,14 @@ class FileExecutionInputs:
     def __init__(self, objects: ExecutionObjectInputs) -> None:
         self._objects = objects
 
-    @contextmanager
-    def open_asr(
+    @asynccontextmanager
+    async def open_asr(
         self,
         request: SubmitRequest,
         *,
         limits: ExecutionInputLimits,
         cancelled: Callable[[], bool],
-    ) -> Iterator[VerifiedFileAsrInput]:
+    ) -> AsyncIterator[VerifiedFileAsrInput]:
         """No inference, result publishing, defaults or execution/stop facts are produced."""
         try:
             command = cast(dict[str, Any], request.command)
@@ -72,7 +72,9 @@ class FileExecutionInputs:
             raise
         except ValueError, TypeError, KeyError:
             raise ExecutionInputError("execution_input_invalid") from None
-        with self._objects.open_verified(reference, limits=limits, cancelled=cancelled) as obj:
+        async with self._objects.open_verified(
+            reference, limits=limits, cancelled=cancelled
+        ) as obj:
             if obj.reference != reference:
                 raise ExecutionInputError("execution_input_identity_mismatch")
             yield VerifiedFileAsrInput(request, source_format, obj)

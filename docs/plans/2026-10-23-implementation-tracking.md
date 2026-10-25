@@ -28,12 +28,15 @@ A范围与下一最小单元见[团队A目标](2026-10-23-team-a-goal.md)，不�
 | 团队 | 当前可证事实 | 下一交接与真实缺口 |
 | --- | --- | --- |
 | A | 协调原事务/未知恢复、文本Asset/Workspace、Profile/Binding草稿与默认快照HTTP已合入；#139仅P1a原意图/只读证据边界 | 下一最小单元建议为真实音频AssetInspector接线；与B冻结权威Binding/参数，接完整业务Job/准入、制品/Operation/receipt与公开下载。Profile可信生产者/持久发布/CAS/最终参数仍待 |
-| B | #140/#147 原命令消费与私有 ASR 结果核验已合入；#142 回执登记/查询候选已同步 `33233c8`，本地契约/兼容/静态/Web 检查通过，4028 非集成/81.83%、54 隔离存储/迁移回归通过；候选待评审集成，完整分片另行核验 | 当前先完成回执候选的完整验证、迁移/权限串行评审与交付，再接真实持久 ASR、可信停止/释放、A 发布与 SDK/C 下载，随后 CustomVoice；输入 HEAD 总期限仍须处理，替身不增加 GPU 或集群资格 |
+| B | #140/#147 原命令消费与私有 ASR 结果核验已合入；#152 回执登记/查询候选 head `cc49865`、base `33233c8`，CI40170163645 全 14 项成功，六报告/同树与本地结果已核验；仍待评审合入 | 输入异步总期限单元在独立分支候选，覆盖慢 HEAD/GET 响应头、慢正文、取消/并发和真实 MinIO 不透明键；最终适用验证以该候选 PR 为准。接着推进真实持久 ASR、可信停止/释放、A 发布与 SDK/C 下载，再接 CustomVoice；替身不增加 GPU 或集群资格 |
 | C | #35–43作者报告真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放和章节/单元登记；导出worker默认关闭预接线 | base4b08c396的改动未提交/推送/集成；需可获取版本、迁移owner片段、组合根与method+path生产消费者清单。真实助手/公开SpeechJob/已发布音色和目标资格仍待；A不改C issue |
 
 B组件边界见[私有结果交接](../architecture/file-asr-results.md)与[团队B目标](2026-10-23-team-b-goal.md)。
-当前候选分支 `codex/b03-durable-result-receipt` 已同步 main `33233c8`；
-[原身份回执登记/查询](../architecture/execution-staging-results.md)待 PR 评审与主线集成，
+回执分支 `codex/b03-durable-result-receipt` 的 [PR #152](https://github.com/hrygo/SpeechNexus/pull/152)
+已完成精确 head CI，待 A 迁移/权限评审、管理集成与合后核验；
+[原身份回执登记/查询](../architecture/execution-staging-results.md)不证明真实执行或预算释放。
+下一分支 `codex/b03-input-io-deadline` 从该 head 单独交付
+[可取消的有界输入](../architecture/frozen-execution-inputs.md#对象输入)，不改变 #152 受检版本。
 真实执行、终态/预算与 A 发布仍分别验收。B00/B01/B02/B03/B04/B06 保持 in-progress，B05/B07 保持 planned。
 C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再沿用“只剩三个”的旧统计。
 作者后续已补项目name改名和音色单修订调用，称已绑定直接消费者缺口归零；name外字段、声音真实成功/表单联动仍缺。

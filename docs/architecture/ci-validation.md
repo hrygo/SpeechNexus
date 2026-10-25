@@ -24,6 +24,12 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。
 
+Python 测试作业通过 `workbench-pg-probe.py --full-coverage` 在同一次 pytest 中运行完整非集成测试和 Workbench PG／Runtime 用例，使用仓库默认全项目覆盖率与 80% 门槛；不通过收窄统计范围或降低门槛放行。作业检查 PostgreSQL 16 工具并启动已有隔离 MinIO，驱动器创建私有 Unix socket 数据库，不连接 runner 的系统数据库。原 `--coverage` 仍是独立的 C 层 90% 检查，两个模式互斥。完整模式的执行报告以 `workbench-pg-full-coverage` 上传，覆盖率不足仍使作业失败。
+
+集成分片在安装 Python 依赖后，使用 `uv run python integration-shards.py requirements` 实际收集完整 integration nodeid（包括参数化身份），以执行时相同的 SHA-256 分片算法输出 `node_contracts` 与 `browser` 需求。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或外部 `PYTEST_ADDOPTS` 缩窄选择会失败，不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。
+
+有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
+
 不在整个 workflow 的 `on` 中设置 `paths` / `paths-ignore`：被整体过滤的必需检查可能长期 Pending。[GitHub 路径过滤说明](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)、[作业条件与 skipped 语义](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)是维护入口；核验日期为 2026-10-25。
 
 ## 路由维护

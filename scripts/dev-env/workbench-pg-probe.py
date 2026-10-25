@@ -13,12 +13,117 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 from psycopg.conninfo import make_conninfo
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+NON_INTEGRATION_TEST_PATHS = (
+    "tests/unit",
+    "tests/contract",
+    "tests/ci",
+    # This module has no integration marker and ran in the original Python gate.
+    "tests/integration/test_probe_inventory.py",
+)
+
+WORKBENCH_PG_TESTS = (
+    "tests/integration/test_workbench_versions_postgres.py",
+    "tests/integration/test_workbench_http_postgres.py",
+    "tests/integration/test_workbench_http_management.py",
+    "tests/integration/test_workbench_http_meetings.py",
+    "tests/integration/test_workbench_sealing_postgres.py",
+    "tests/integration/test_workbench_listings_postgres.py",
+    "tests/integration/test_workbench_transcript_import_postgres.py",
+    "tests/integration/test_workbench_transcript_exports_postgres.py",
+    "tests/integration/test_workbench_minutes_postgres.py",
+    "tests/integration/test_workbench_minutes_tasks_postgres.py",
+    "tests/integration/test_workbench_meetings_postgres.py",
+    "tests/integration/test_workbench_deletions_postgres.py",
+    "tests/integration/test_workbench_deletion_cleanup.py",
+    "tests/integration/test_workbench_content_writes.py",
+    "tests/integration/test_workbench_owned_deletions.py",
+    "tests/integration/test_workbench_runtime_export_dispatch.py",
+    "tests/integration/test_workbench_books_postgres.py",
+    "tests/integration/test_workbench_render_units_postgres.py",
+    "tests/integration/test_workbench_render_units_http.py",
+    "tests/integration/test_workbench_assistant_postgres.py",
+    "tests/integration/test_workbench_assistant_http.py",
+    "tests/integration/test_workbench_exports_postgres.py",
+    "tests/integration/test_workbench_exports_http.py",
+    "tests/integration/test_workbench_export_worker_postgres.py",
+    "tests/integration/test_workbench_recovery_postgres.py",
+    "tests/integration/test_workbench_saved_assets_cleanup.py",
+    "tests/integration/test_workbench_saved_assets_postgres.py",
+)
+
+DEFAULT_EXTRA_TESTS = (
+    "tests/unit/backend/test_workbench_postgres_cleanup.py",
+    "tests/unit/backend/test_workbench_public_transcript_source.py",
+    "tests/unit/backend/test_workbench_llm.py",
+    "tests/unit/backend/test_workbench_minutes_tasks.py",
+)
+
+WORKBENCH_RUNTIME_TESTS = (
+    "tests/integration/test_workbench_runtime.py",
+    "tests/integration/test_workbench_runtime_export_dispatch.py",
+    "tests/integration/test_workbench_runtime_capabilities.py",
+    "tests/integration/test_workbench_runtime_saved_assets_http.py",
+)
+
+
+def build_pytest_command(
+    *,
+    coverage: bool = False,
+    full_coverage: bool = False,
+    workbench_runtime: bool = False,
+    coverage_output: Path | None = None,
+) -> list[str]:
+    """One pytest process; the full gate uses the repository's global source/80% policy."""
+    if coverage and full_coverage:
+        raise ValueError("coverage modes are mutually exclusive")
+    paths = list(WORKBENCH_PG_TESTS)
+    if full_coverage:
+        paths = list(NON_INTEGRATION_TEST_PATHS) + paths
+    else:
+        paths.extend(DEFAULT_EXTRA_TESTS)
+    if workbench_runtime or full_coverage:
+        paths.extend(WORKBENCH_RUNTIME_TESTS)
+    command = [sys.executable, "-m", "pytest", *dict.fromkeys(paths), "-q"]
+    if coverage:
+        # Retain the existing opt-in C storage qualification without weakening its gate.
+        command.extend(
+            [
+                "--cov=speechnexus_backend.workbench.infrastructure",
+                "--cov=speechnexus_backend.workbench.application.minutes_tasks",
+                "--cov=speechnexus_backend.workbench.domain.minutes_tasks",
+                "--cov-report=term-missing",
+                "--cov-fail-under=90",
+            ]
+        )
+    elif full_coverage:
+        # No -m filter: the explicitly named PostgreSQL modules carry integration markers.
+        # Bare --cov keeps every configured source and the default global fail_under=80.
+        command.extend(["--cov", "--cov-report=term-missing"])
+    if (coverage or full_coverage) and coverage_output is not None:
+        command.append(f"--cov-report=json:{coverage_output}")
+    return command
+
+
+def require_object_storage(env: Mapping[str, str]) -> None:
+    """The caller provides a project-isolated MinIO; never discover a shared service."""
+    if not all(
+        env.get(name)
+        for name in (
+            "SPEECHNEXUS_TEST_MINIO_ENDPOINT",
+            "SPEECHNEXUS_TEST_MINIO_ACCESS_KEY",
+            "SPEECHNEXUS_TEST_MINIO_SECRET_KEY",
+        )
+    ):
+        raise ValueError("full coverage requires explicit isolated MinIO endpoint and test keys")
 
 
 def run(
@@ -29,10 +134,16 @@ def run(
     )
 
 
-def main() -> int:
+def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pg-bin", type=Path, required=True)
-    parser.add_argument("--coverage", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--coverage", action="store_true", help="qualify scoped C storage at 90%")
+    modes.add_argument(
+        "--full-coverage",
+        action="store_true",
+        help="run the complete Python gate and Workbench PG/runtime tests with global coverage",
+    )
     parser.add_argument(
         "--workbench-runtime",
         action="store_true",
@@ -49,7 +160,17 @@ def main() -> int:
         help="also require production-bundle Chromium qualification",
     )
     parser.add_argument("--output", type=Path, default=ROOT / ".runtime/team-c/c00-pg-probe.json")
+    return parser
+
+
+def main() -> int:
+    parser = argument_parser()
     args = parser.parse_args()
+    if args.full_coverage:
+        try:
+            require_object_storage(os.environ)
+        except ValueError as error:
+            parser.error(str(error))
     pg_bin: Path = args.pg_bin.resolve()
     output: Path = args.output.resolve()
     for binary in ("initdb", "pg_ctl", "createdb", "postgres"):
@@ -122,43 +243,12 @@ def main() -> int:
             dbname="speechnexus_workbench_test",
             user="workbench_test_owner",
         )
-        command = [
-            sys.executable,
-            "-m",
-            "pytest",
-            "tests/integration/test_workbench_versions_postgres.py",
-            "tests/integration/test_workbench_http_postgres.py",
-            "tests/integration/test_workbench_http_management.py",
-            "tests/integration/test_workbench_http_meetings.py",
-            "tests/integration/test_workbench_sealing_postgres.py",
-            "tests/integration/test_workbench_listings_postgres.py",
-            "tests/integration/test_workbench_transcript_import_postgres.py",
-            "tests/integration/test_workbench_transcript_exports_postgres.py",
-            "tests/integration/test_workbench_minutes_postgres.py",
-            "tests/integration/test_workbench_minutes_tasks_postgres.py",
-            "tests/integration/test_workbench_meetings_postgres.py",
-            "tests/integration/test_workbench_deletions_postgres.py",
-            "tests/integration/test_workbench_deletion_cleanup.py",
-            "tests/integration/test_workbench_content_writes.py",
-            "tests/integration/test_workbench_owned_deletions.py",
-            "tests/integration/test_workbench_runtime_export_dispatch.py",
-            "tests/integration/test_workbench_books_postgres.py",
-            "tests/integration/test_workbench_render_units_postgres.py",
-            "tests/integration/test_workbench_render_units_http.py",
-            "tests/integration/test_workbench_assistant_postgres.py",
-            "tests/integration/test_workbench_assistant_http.py",
-            "tests/integration/test_workbench_exports_postgres.py",
-            "tests/integration/test_workbench_exports_http.py",
-            "tests/integration/test_workbench_export_worker_postgres.py",
-            "tests/integration/test_workbench_recovery_postgres.py",
-            "tests/integration/test_workbench_saved_assets_cleanup.py",
-            "tests/integration/test_workbench_saved_assets_postgres.py",
-            "tests/unit/backend/test_workbench_postgres_cleanup.py",
-            "tests/unit/backend/test_workbench_public_transcript_source.py",
-            "tests/unit/backend/test_workbench_llm.py",
-            "tests/unit/backend/test_workbench_minutes_tasks.py",
-            "-q",
-        ]
+        command = build_pytest_command(
+            coverage=args.coverage,
+            full_coverage=args.full_coverage,
+            workbench_runtime=args.workbench_runtime,
+            coverage_output=cluster / "coverage.json",
+        )
         if args.browser:
             command.append("tests/integration/test_workbench_meeting_browser.py")
             command.append("tests/integration/test_workbench_deletion_browser.py")
@@ -199,26 +289,12 @@ def main() -> int:
                 args.output.resolve().parent / (args.output.stem + "-admin-workspaces")
             )
             result["admin_workspaces"] = "production-admin-real-a-http-private-pg-explicit-service"
-        if args.workbench_runtime:
-            command.append("tests/integration/test_workbench_runtime.py")
-            # The runtime owns export production; the gate must cover that loop too.
-            command.append("tests/integration/test_workbench_runtime_export_dispatch.py")
-            # Consumers read capability states from the status document, so the gate pins them.
-            command.append("tests/integration/test_workbench_runtime_capabilities.py")
-            # The saved-copy read path over real HTTP (write from the base, read back by id).
-            command.append("tests/integration/test_workbench_runtime_saved_assets_http.py")
+        if args.workbench_runtime or args.full_coverage:
             result["workbench_runtime"] = "real-c-runtime-private-pg"
-        if args.coverage:
+        if args.coverage or args.full_coverage:
             env["COVERAGE_FILE"] = str(cluster / ".coverage")
-            command.extend(
-                [
-                    "--cov=speechnexus_backend.workbench.infrastructure",
-                    "--cov=speechnexus_backend.workbench.application.minutes_tasks",
-                    "--cov=speechnexus_backend.workbench.domain.minutes_tasks",
-                    "--cov-report=term-missing",
-                    "--cov-fail-under=90",
-                    f"--cov-report=json:{cluster / 'coverage.json'}",
-                ]
+            result["coverage_mode"] = (
+                "full-python-and-workbench-pg" if args.full_coverage else "scoped-c"
             )
             result["coverage_log"] = str((cluster / "coverage.json").relative_to(ROOT))
         tests = subprocess.run(
@@ -227,7 +303,7 @@ def main() -> int:
             env=env,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=600 if args.full_coverage else 180,
             check=False,
         )
         (cluster / "pytest.log").write_text(tests.stdout + tests.stderr)

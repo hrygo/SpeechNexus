@@ -1,0 +1,23 @@
+{
+  "skill_name": "speechnexus-recovery-design",
+  "evals": [
+    {
+      "id": "R1",
+      "prompt": "按 fixtures.md 的 R1 提出恢复决定和验证断言。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "拒绝 GET 结算命令及换键重试；保留原身份/body/key，403 不结算先前 unknown；入口恢复后按契约显式原键恢复或查询原身份。验证必须真实提交再丢回复，观察业务效果一次和原结果，而非只在提交前抛错。"
+    },
+    {
+      "id": "R2",
+      "prompt": "按 fixtures.md 的 R2 审查恢复方案并给必要验证。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "取消回执/TTL/旧 generation 不允许释放当前预算，需匹配停止与释放事实；完成事务 unknown 不能被失败补偿改写，应查原结果并保留 O；恢复先重放删除账本再开放内容，Y 独立副本保留。验证针对这些持久结果与禁止副作用，不实际操作服务。"
+    },
+    {
+      "id": "R3",
+      "prompt": "按 fixtures.md 的 R3 给出检查范围。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "只核对文案、diff 及适用静态/现有局部测试；不发起全系统恢复设计、迁移、模型/服务操作或新增确认流程，不改变既有重试语义。"
+    }
+  ]
+}

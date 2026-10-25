@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from speechnexus_node_controller.domain.intents import (
     InvalidRuntimeRequestError,
     MemoryArchitecture,
 )
-from speechnexus_node_controller.domain.templates import ReadinessKind
+from speechnexus_node_controller.domain.templates import EngineAuthKind, ReadinessKind
 from speechnexus_node_controller.infrastructure.template_config import (
     load_approved_templates,
 )
@@ -175,6 +175,49 @@ def test_a_warmup_template_loads_its_bounded_request(tmp_path: Path) -> None:
     assert readiness.warmup.attempts == 2
     assert readiness.warmup.timeout_seconds == 90
     assert readiness.warmup.max_response_bytes == 65536
+
+
+def test_deployed_template_file_preserves_native_auth_opt_in(tmp_path: Path) -> None:
+    templates = load_approved_templates(
+        _write(
+            tmp_path,
+            {
+                "templates": [
+                    _template(readiness=_warmup_readiness(), engine_auth="vllm_api_key_v1")
+                ]
+            },
+        )
+    )
+    assert templates[0].engine_auth is EngineAuthKind.VLLM_API_KEY_V1
+
+
+@pytest.mark.parametrize("key", [None, "synthetic-invalid-root-key"])
+def test_default_controller_refuses_native_template_without_valid_key_before_daemon_or_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str | None,
+) -> None:
+    from speechnexus_node_controller import app as controller_app
+    from speechnexus_node_controller.settings import Settings
+
+    path = _write(
+        tmp_path,
+        {"templates": [_template(readiness=_warmup_readiness(), engine_auth="vllm_api_key_v1")]},
+    )
+
+    def unexpected(**kwargs: Any) -> None:
+        pytest.fail("invalid authentication config must fail before constructing the daemon client")
+
+    monkeypatch.setattr(controller_app, "DockerApi", unexpected)
+    settings = Settings(
+        component_token=SecretStr("synthetic-component-token"),
+        engine_auth_root_key=SecretStr(key) if key is not None else None,
+        approved_templates_file=path,
+        intent_store_path=tmp_path / "must-not-create.sqlite",
+    )
+    with pytest.raises(ValueError, match="authentication"):
+        controller_app.create_app(settings=settings)
+    assert not settings.intent_store_path.exists()
 
 
 @pytest.mark.parametrize(

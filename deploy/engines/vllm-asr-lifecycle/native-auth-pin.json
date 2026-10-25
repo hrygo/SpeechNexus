@@ -1,0 +1,6 @@
+{
+  "protocol": "vllm_api_key_v1",
+  "runtime_pin": "src/speechnexus_vllm_asr/runtime-pin.json",
+  "middleware_source": "entrypoints/serve/utils/server_utils.py",
+  "middleware_sha256": "24eaba10cdf625867136a89b9fae1a1da64a8ef9f186faa3afb426fbab071153"
+}

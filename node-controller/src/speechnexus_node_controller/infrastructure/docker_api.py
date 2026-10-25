@@ -10,7 +10,7 @@ that can start and remove the approved engine containers.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
@@ -50,6 +50,9 @@ class ContainerState:
     memory_limit_bytes: int | None = None
     memory_swap_limit_bytes: int | None = None
     network_mode: str | None = None
+    command: tuple[str, ...] | None = field(default=None, repr=False)
+    environment: tuple[str, ...] = field(default=(), repr=False)
+    image_id: str | None = None
 
 
 class DockerEngineApi(Protocol):
@@ -69,6 +72,7 @@ class DockerEngineApi(Protocol):
         command: tuple[str, ...] | None,
         labels: dict[str, str],
         host_config: dict[str, Any],
+        environment: tuple[str, ...] = (),
     ) -> str: ...
 
     def start_container(self, container_id: str) -> None: ...
@@ -154,6 +158,7 @@ class DockerApi:
         command: tuple[str, ...] | None,
         labels: dict[str, str],
         host_config: dict[str, Any],
+        environment: tuple[str, ...] = (),
     ) -> str:
         body: dict[str, Any] = {
             "Image": image_reference,
@@ -163,6 +168,8 @@ class DockerApi:
         }
         if command is not None:
             body["Cmd"] = list(command)
+        if environment:
+            body["Env"] = list(environment)
         payload = self._send_json("POST", "/containers/create", params={"name": name}, json=body)
         if not isinstance(payload, dict):
             raise DockerApiError(201, "container create returned no object")
@@ -196,6 +203,19 @@ class DockerApi:
             memory_limit_bytes=host_config.get("Memory"),
             memory_swap_limit_bytes=host_config.get("MemorySwap"),
             network_mode=host_config.get("NetworkMode"),
+            command=(
+                tuple(config["Cmd"])
+                if isinstance(config.get("Cmd"), list)
+                and all(isinstance(item, str) for item in config["Cmd"])
+                else None
+            ),
+            environment=(
+                tuple(config["Env"])
+                if isinstance(config.get("Env"), list)
+                and all(isinstance(item, str) for item in config["Env"])
+                else ()
+            ),
+            image_id=payload.get("Image"),
         )
 
     def wait_container(self, container_id: str, *, timeout_seconds: float) -> int:

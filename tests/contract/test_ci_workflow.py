@@ -184,9 +184,32 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     contract_commands = {step.get("run") for step in contracts["steps"]}
     assert expected <= contract_commands
     assert not expected.intersection(execution_commands)
-    coverage = 'uv run pytest -m "not integration" --cov --cov-report=term-missing'
-    assert coverage in execution_commands
-    assert coverage not in contract_commands
+    coverage = next(step for step in execution["steps"] if step.get("id") == "coverage")
+    assert "uv run python scripts/dev-env/workbench-pg-probe.py" in coverage["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin --full-coverage" in coverage["run"]
+    assert '--output "$RUNNER_TEMP/workbench-pg-coverage.json"' in coverage["run"]
+    assert coverage["run"] not in contract_commands
+    assert "--cov-fail-under" not in coverage["run"]
+    assert "continue-on-error" not in coverage and "if" not in coverage
+    assert coverage["env"] == {
+        "SPEECHNEXUS_TEST_MINIO_ENDPOINT": "http://127.0.0.1:59000",
+        "SPEECHNEXUS_TEST_MINIO_ACCESS_KEY": "speechnexus_test",
+        "SPEECHNEXUS_TEST_MINIO_SECRET_KEY": "synthetic_asset_test_secret",
+    }
+    steps = execution["steps"]
+    pg = next(step for step in steps if "private coverage cluster" in step["name"])
+    storage = next(step for step in steps if "object storage for coverage" in step["name"])
+    assert "test -x /usr/lib/postgresql/16/bin/initdb" in pg["run"]
+    assert "--no-install-recommends --yes postgresql-16" in pg["run"]
+    assert storage["run"] == "./scripts/dev-env/minio-test-service.sh"
+    assert steps.index(pg) < steps.index(storage) < steps.index(coverage)
+    artifact = next(
+        step for step in steps if step.get("with", {}).get("name") == "workbench-pg-full-coverage"
+    )
+    assert "steps.coverage.outcome == 'success'" in artifact["if"]
+    assert "steps.coverage.outcome == 'failure'" in artifact["if"]
+    assert artifact["with"]["path"] == "${{ runner.temp }}/workbench-pg-coverage.json"
+    assert artifact["with"]["if-no-files-found"] == "error"
     # The full single-suite coverage requirement remains in the original config.
     import tomllib
 

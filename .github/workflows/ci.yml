@@ -94,8 +94,36 @@ jobs:
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
           pnpm install --frozen-lockfile
 
-      - name: Run tests with coverage
-        run: uv run pytest -m "not integration" --cov --cov-report=term-missing
+      - name: Ensure PostgreSQL 16 tools for the private coverage cluster
+        run: |
+          if [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes postgresql-16
+          fi
+          test -x /usr/lib/postgresql/16/bin/initdb
+
+      - name: Start isolated versioned object storage for coverage
+        run: ./scripts/dev-env/minio-test-service.sh
+
+      - name: Run all unit, contract and CI tests with real Workbench PG coverage
+        id: coverage
+        env:
+          SPEECHNEXUS_TEST_MINIO_ENDPOINT: http://127.0.0.1:59000
+          SPEECHNEXUS_TEST_MINIO_ACCESS_KEY: speechnexus_test
+          SPEECHNEXUS_TEST_MINIO_SECRET_KEY: synthetic_asset_test_secret
+        run: |
+          uv run python scripts/dev-env/workbench-pg-probe.py \
+            --pg-bin /usr/lib/postgresql/16/bin --full-coverage \
+            --output "$RUNNER_TEMP/workbench-pg-coverage.json"
+
+      - name: Preserve full coverage execution evidence
+        if: ${{ !cancelled() && (steps.coverage.outcome == 'success' || steps.coverage.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: workbench-pg-full-coverage
+          path: ${{ runner.temp }}/workbench-pg-coverage.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verify media toolchain
         run: uv run python scripts/dev-env/media-smoke.py
@@ -248,23 +276,47 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --all-packages --all-groups
 
+      - name: Ensure PostgreSQL 16 tools for the private integration cluster
+        run: |
+          if [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes postgresql-16
+          fi
+          test -x /usr/lib/postgresql/16/bin/initdb
+
       - name: Select external tools for this integration partition
         id: integration_tools
         run: |
-          python3 scripts/dev-env/integration-shards.py requirements \
+          uv run python scripts/dev-env/integration-shards.py requirements \
             --index "${{ matrix.shard }}" --count 6 >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js for actual contract HTTP consumption
-        if: steps.integration_tools.outputs.node_contracts == 'true'
+        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
 
-      - name: Install locked contract runtime dependencies
-        if: steps.integration_tools.outputs.node_contracts == 'true'
+      - name: Activate pnpm for integration consumers
+        if: steps.integration_tools.outputs.node_contracts == 'true' || steps.integration_tools.outputs.browser == 'true'
         run: |
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
+
+      - name: Install locked contract runtime dependencies
+        if: steps.integration_tools.outputs.node_contracts == 'true' && steps.integration_tools.outputs.browser != 'true'
+        run: |
           pnpm --filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts
+
+      - name: Install locked Web dependencies for browser consumers
+        if: steps.integration_tools.outputs.browser == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build actual Web bundles for browser consumers
+        if: steps.integration_tools.outputs.browser == 'true'
+        run: pnpm build
+
+      - name: Install Chromium for browser consumers
+        if: steps.integration_tools.outputs.browser == 'true'
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Start isolated versioned object storage
         run: ./scripts/dev-env/minio-test-service.sh
@@ -279,9 +331,11 @@ jobs:
         run: |
           test -n "$SPEECHNEXUS_TEST_DATABASE_URL"
           test -n "$SPEECHNEXUS_TEST_MYSQL_URL"
-          uv run python scripts/dev-env/integration-shards.py run \
-            --index "${{ matrix.shard }}" --count 6 \
-            --report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"
+          uv run python scripts/dev-env/workbench-pg-probe.py \
+            --pg-bin /usr/lib/postgresql/16/bin \
+            --integration-shard "${{ matrix.shard }}" --shard-count 6 \
+            --shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json" \
+            --output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"
 
       - name: Preserve integration partition evidence
         if: ${{ always() }}
@@ -289,7 +343,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: integration-shard-${{ matrix.shard }}
-          path: ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
+          path: |
+            ${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json
+            ${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json
           if-no-files-found: error
           retention-days: 7
           overwrite: true

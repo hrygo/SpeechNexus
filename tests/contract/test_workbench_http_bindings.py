@@ -141,18 +141,26 @@ def test_http_document_is_closed_isolated_and_only_declares_selected_paths() -> 
     validate(actual)
     manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
     assert set(actual["paths"]) == set(manifest["http_surfaces"]["workbench"]["paths"])
-    assert len(actual["paths"]) == 17
+    assert len(actual["paths"]) == 38
     names: set[str] = set()
     for item in actual["paths"].values():
         for operation in item.values():
             names.add(operation["operationId"])
     for name in names:
-        assert any(
-            e["operation"] == name and e["kind"] == "request" and e["valid"] for e in EXAMPLES
-        )
-        assert any(e["operation"] == name and not e["valid"] for e in EXAMPLES)
+        assert any(e["operation"] == name and e["valid"] for e in EXAMPLES), name
+        assert any(e["operation"] == name and not e["valid"] for e in EXAMPLES), name
+    # A bodyless read has no request example to give; every operation that accepts a
+    # request body must still show one accepted request.
+    for item in actual["paths"].values():
+        for operation in item.values():
+            if "requestBody" not in operation:
+                continue
+            name = operation["operationId"]
+            assert any(
+                e["operation"] == name and e["kind"] == "request" and e["valid"] for e in EXAMPLES
+            ), name
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 17
+    assert len(contract()["paths"]) == 38
 
 
 def test_unknown_profile_or_operation_never_selects_user_supplied_files() -> None:
@@ -161,7 +169,7 @@ def test_unknown_profile_or_operation_never_selects_user_supplied_files() -> Non
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
         validate_request("RuntimeInstanceIntentRequest", {})
     with pytest.raises(ValueError, match="Unknown HTTP operation"):
-        validate_response("createAssistantTurn", 200, {})
+        validate_response("createAssistantTurnV2", 200, {})
 
 
 def test_optional_request_body_and_no_content_response_follow_openapi_defaults() -> None:

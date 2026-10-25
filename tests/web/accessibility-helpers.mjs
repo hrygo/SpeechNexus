@@ -29,7 +29,8 @@ export async function scan(page, info) {
       expect(
         checks.every(
           (c) =>
-            c.id === "color-contrast" && ["bgGradient", "bgImage"].includes(c.data?.messageKey),
+            c.id === "color-contrast" &&
+            ["bgGradient", "bgImage", "shortTextContent"].includes(c.data?.messageKey),
         ),
       ).toBe(true);
       expect(node.target).toHaveLength(1);

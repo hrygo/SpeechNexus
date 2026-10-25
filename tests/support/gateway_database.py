@@ -44,9 +44,11 @@ from speechnexus_gateway.infrastructure.recovery_sql import mark_execution_unkno
 from speechnexus_gateway.infrastructure.stop_sql import record_stop_in_transaction
 from speechnexus_gateway.infrastructure.submit_sql import (
     SubmitCursor,
+    check_file_start_in_transaction,
     create_submit_in_transaction,
     from_unix_micros,
     list_quarantined_intents,
+    list_unfinished_intents,
     read_submit_intent,
 )
 from tests.integration.test_coordination_foundation import Foundation
@@ -105,6 +107,23 @@ class MySQLSubmissionLedger:
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
         intent = self.get(submit_intent_id)
         return None if intent is None else ExecutionSnapshot(intent)
+
+    def list_unfinished(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[SubmissionIntent]:
+        return self._run(
+            lambda cursor: list_unfinished_intents(
+                cursor, gateway_id=gateway_id, host_node_id=host_node_id, limit=limit
+            ),
+            read_only=True,
+        )
+
+    def check_file_start(self, intent: SubmissionIntent) -> SubmissionIntent:
+        return self._run(
+            lambda cursor: check_file_start_in_transaction(
+                cursor, intent, clock=lambda: self._clock(cursor)
+            )
+        )
 
     def list_quarantined(
         self,

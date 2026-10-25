@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""Start one disposable Unix-socket-only PG cluster, test it, and stop it.
+
+Uses existing PostgreSQL binaries. Never discovers or contacts a running service,
+installs software, modifies shared databases, or creates a persistent service.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+
+from psycopg.conninfo import make_conninfo
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+NON_INTEGRATION_TEST_PATHS = (
+    "tests/unit",
+    "tests/contract",
+    "tests/ci",
+    # This module has no integration marker and ran in the original Python gate.
+    "tests/integration/test_probe_inventory.py",
+)
+
+WORKBENCH_PG_TESTS = (
+    "tests/integration/test_workbench_versions_postgres.py",
+    "tests/integration/test_workbench_http_postgres.py",
+    "tests/integration/test_workbench_http_management.py",
+    "tests/integration/test_workbench_http_meetings.py",
+    "tests/integration/test_workbench_sealing_postgres.py",
+    "tests/integration/test_workbench_listings_postgres.py",
+    "tests/integration/test_workbench_transcript_import_postgres.py",
+    "tests/integration/test_workbench_transcript_exports_postgres.py",
+    "tests/integration/test_workbench_minutes_postgres.py",
+    "tests/integration/test_workbench_minutes_tasks_postgres.py",
+    "tests/integration/test_workbench_meetings_postgres.py",
+    "tests/integration/test_workbench_deletions_postgres.py",
+    "tests/integration/test_workbench_deletion_cleanup.py",
+    "tests/integration/test_workbench_content_writes.py",
+    "tests/integration/test_workbench_owned_deletions.py",
+    "tests/integration/test_workbench_runtime_export_dispatch.py",
+    "tests/integration/test_workbench_books_postgres.py",
+    "tests/integration/test_workbench_render_units_postgres.py",
+    "tests/integration/test_workbench_render_units_http.py",
+    "tests/integration/test_workbench_assistant_postgres.py",
+    "tests/integration/test_workbench_assistant_http.py",
+    "tests/integration/test_workbench_exports_postgres.py",
+    "tests/integration/test_workbench_exports_http.py",
+    "tests/integration/test_workbench_export_worker_postgres.py",
+    "tests/integration/test_workbench_recovery_postgres.py",
+    "tests/integration/test_workbench_saved_assets_cleanup.py",
+    "tests/integration/test_workbench_saved_assets_postgres.py",
+)
+
+DEFAULT_EXTRA_TESTS = (
+    "tests/unit/backend/test_workbench_postgres_cleanup.py",
+    "tests/unit/backend/test_workbench_public_transcript_source.py",
+    "tests/unit/backend/test_workbench_llm.py",
+    "tests/unit/backend/test_workbench_minutes_tasks.py",
+)
+
+WORKBENCH_RUNTIME_TESTS = (
+    "tests/integration/test_workbench_runtime.py",
+    "tests/integration/test_workbench_runtime_export_dispatch.py",
+    "tests/integration/test_workbench_runtime_capabilities.py",
+    "tests/integration/test_workbench_runtime_saved_assets_http.py",
+)
+
+
+def build_pytest_command(
+    *,
+    coverage: bool = False,
+    full_coverage: bool = False,
+    workbench_runtime: bool = False,
+    coverage_output: Path | None = None,
+) -> list[str]:
+    """One pytest process; the full gate uses the repository's global source/80% policy."""
+    if coverage and full_coverage:
+        raise ValueError("coverage modes are mutually exclusive")
+    paths = list(WORKBENCH_PG_TESTS)
+    if full_coverage:
+        paths = list(NON_INTEGRATION_TEST_PATHS) + paths
+    else:
+        paths.extend(DEFAULT_EXTRA_TESTS)
+    if workbench_runtime or full_coverage:
+        paths.extend(WORKBENCH_RUNTIME_TESTS)
+    command = [sys.executable, "-m", "pytest", *dict.fromkeys(paths), "-q"]
+    if coverage:
+        # Retain the existing opt-in C storage qualification without weakening its gate.
+        command.extend(
+            [
+                "--cov=speechnexus_backend.workbench.infrastructure",
+                "--cov=speechnexus_backend.workbench.application.minutes_tasks",
+                "--cov=speechnexus_backend.workbench.domain.minutes_tasks",
+                "--cov-report=term-missing",
+                "--cov-fail-under=90",
+            ]
+        )
+    elif full_coverage:
+        # No -m filter: the explicitly named PostgreSQL modules carry integration markers.
+        # Bare --cov keeps every configured source and the default global fail_under=80.
+        command.extend(["--cov", "--cov-report=term-missing"])
+    if (coverage or full_coverage) and coverage_output is not None:
+        command.append(f"--cov-report=json:{coverage_output}")
+    return command
+
+
+def build_integration_shard_command(*, index: int, count: int, report: Path) -> list[str]:
+    """Delegate inventory, partitioning and same-head evidence to the canonical runner."""
+    if type(count) is not int or not 1 <= count <= 16:
+        raise ValueError("shard count must be within 1..16")
+    if type(index) is not int or not 0 <= index < count:
+        raise ValueError("shard index is outside the partition")
+    return [
+        sys.executable,
+        "scripts/dev-env/integration-shards.py",
+        "run",
+        "--index",
+        str(index),
+        "--count",
+        str(count),
+        "--report",
+        str(report),
+    ]
+
+
+def private_pg_environment(inherited: Mapping[str, str], *, sockets: Path) -> dict[str, str]:
+    """Pin only Workbench to this private cluster; retain explicit dual-DB/MinIO inputs."""
+    # libpq also reads PGHOSTADDR/PGSERVICE/PGOPTIONS. Inherited connection defaults
+    # must not redirect the disposable socket cluster, even if other tests use DSNs.
+    env = {key: value for key, value in inherited.items() if not key.startswith("PG")}
+    env.update(PGHOST=str(sockets), PGPORT="55439", PGUSER="workbench_test_owner")
+    env["SPEECHNEXUS_WORKBENCH_TEST_DSN"] = make_conninfo(
+        host=str(sockets),
+        port=55439,
+        dbname="speechnexus_workbench_test",
+        user="workbench_test_owner",
+    )
+    return env
+
+
+def require_object_storage(env: Mapping[str, str]) -> None:
+    """The caller provides a project-isolated MinIO; never discover a shared service."""
+    if not all(
+        env.get(name)
+        for name in (
+            "SPEECHNEXUS_TEST_MINIO_ENDPOINT",
+            "SPEECHNEXUS_TEST_MINIO_ACCESS_KEY",
+            "SPEECHNEXUS_TEST_MINIO_SECRET_KEY",
+        )
+    ):
+        raise ValueError("probe requires explicit isolated MinIO endpoint and test keys")
+
+
+def run(
+    command: list[str], *, env: dict[str, str] | None = None, timeout: int = 30
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command, cwd=ROOT, env=env, check=True, capture_output=True, text=True, timeout=timeout
+    )
+
+
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pg-bin", type=Path, required=True)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--coverage", action="store_true", help="qualify scoped C storage at 90%")
+    modes.add_argument(
+        "--full-coverage",
+        action="store_true",
+        help="run the complete Python gate and Workbench PG/runtime tests with global coverage",
+    )
+    modes.add_argument(
+        "--integration-shard",
+        type=int,
+        metavar="INDEX",
+        help="run the canonical complete integration partition with private Workbench PG",
+    )
+    parser.add_argument("--shard-count", type=int, metavar="COUNT")
+    parser.add_argument("--shard-report", type=Path, metavar="PATH")
+    parser.add_argument(
+        "--workbench-runtime",
+        action="store_true",
+        help="also qualify independent workbench bootstrap/lifespan on private PG",
+    )
+    parser.add_argument(
+        "--admin-workspaces",
+        action="store_true",
+        help="also require production Admin + actual A Workspace HTTP/SQL reads",
+    )
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="also require production-bundle Chromium qualification",
+    )
+    parser.add_argument("--output", type=Path, help="independent PG lifecycle evidence JSON")
+    return parser
+
+
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argument_parser()
+    args = parser.parse_args(argv)
+    shard = args.integration_shard is not None
+    if shard:
+        if args.shard_count is None or args.shard_report is None:
+            parser.error("--integration-shard requires --shard-count and --shard-report")
+        if args.workbench_runtime or args.browser or args.admin_workspaces:
+            parser.error("integration shard mode cannot use runtime or browser probe selection")
+        try:
+            build_integration_shard_command(
+                index=args.integration_shard,
+                count=args.shard_count,
+                report=args.shard_report,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        if args.output is None:
+            args.output = (
+                args.shard_report.parent / f"workbench-pg-shard-{args.integration_shard}.json"
+            )
+        if args.output.resolve() == args.shard_report.resolve():
+            parser.error("PG lifecycle --output must differ from --shard-report")
+    elif args.shard_count is not None or args.shard_report is not None:
+        parser.error("--shard-count and --shard-report require --integration-shard")
+    elif args.output is None:
+        args.output = ROOT / ".runtime/team-c/c00-pg-probe.json"
+    return args
+
+
+def main() -> int:
+    args = parse_arguments()
+    parser = argument_parser()
+    if args.full_coverage or args.integration_shard is not None:
+        try:
+            require_object_storage(os.environ)
+        except ValueError as error:
+            parser.error(str(error))
+    pg_bin: Path = args.pg_bin.resolve()
+    output: Path = args.output.resolve()
+    for binary in ("initdb", "pg_ctl", "createdb", "postgres"):
+        if not (pg_bin / binary).is_file():
+            parser.error(f"missing PostgreSQL binary: {binary}")
+    runtime = ROOT / ".runtime/team-c"
+    runtime.mkdir(parents=True, exist_ok=True)
+    cluster = Path(tempfile.mkdtemp(prefix="pg-", dir=runtime))
+    data, sockets = cluster / "data", cluster / "socket"
+    sockets.mkdir(mode=0o700)
+    if len(str(sockets).encode()) > 80:
+        parser.error("workspace path is too long for a private PostgreSQL Unix socket")
+    pg_ctl = str(pg_bin / "pg_ctl")
+    started = False
+    stopped = False
+    result: dict[str, object] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "kind": "disposable-workbench-postgres",
+        "cluster": str(cluster.relative_to(ROOT)),
+        "tcp": False,
+        "postgres": run([str(pg_bin / "postgres"), "--version"]).stdout.strip(),
+        "tests_passed": False,
+        "stopped": False,
+    }
+    code = 1
+    try:
+        run(
+            [
+                str(pg_bin / "initdb"),
+                "-D",
+                str(data),
+                "-U",
+                "workbench_test_owner",
+                "--auth-local=trust",
+                "--auth-host=reject",
+                "--no-locale",
+                "--encoding=UTF8",
+            ]
+        )
+        with (data / "postgresql.conf").open("a") as config:
+            socket_literal = str(sockets).replace("'", "''")
+            config.write(
+                f"\nlisten_addresses = ''\nunix_socket_directories = '{socket_literal}'\n"
+                "unix_socket_permissions = 0700\nport = 55439\nshared_buffers = '32MB'\n"
+                "max_connections = 20\nspeechnexus.disposable_workbench_probe = 'on'\n"
+            )
+        # A failed start may still leave a process: always inspect and stop below.
+        started = True
+        run(
+            [
+                pg_ctl,
+                "-D",
+                str(data),
+                "-l",
+                str(cluster / "postgres.log"),
+                "-w",
+                "-t",
+                "20",
+                "start",
+            ]
+        )
+        env = private_pg_environment(os.environ, sockets=sockets)
+        run([str(pg_bin / "createdb"), "speechnexus_workbench_test"], env=env)
+        if args.integration_shard is not None:
+            command = build_integration_shard_command(
+                index=args.integration_shard,
+                count=args.shard_count,
+                report=args.shard_report.resolve(),
+            )
+            result["integration_shard"] = args.integration_shard
+            result["shard_count"] = args.shard_count
+            result["shard_report"] = str(args.shard_report.resolve())
+        else:
+            command = build_pytest_command(
+                coverage=args.coverage,
+                full_coverage=args.full_coverage,
+                workbench_runtime=args.workbench_runtime,
+                coverage_output=cluster / "coverage.json",
+            )
+        if args.browser:
+            command.append("tests/integration/test_workbench_meeting_browser.py")
+            command.append("tests/integration/test_workbench_deletion_browser.py")
+            # The bundle against the deployment's own composition root, not a hand-built app.
+            command.append("tests/integration/test_workbench_real_runtime_browser.py")
+            # The authoring/proofreading page against the same real composition root.
+            command.append("tests/integration/test_workbench_real_runtime_manuscripts_browser.py")
+            # The assistant surface must stay closed unless the deployment itself says so.
+            command.append("tests/integration/test_workbench_real_runtime_assistant_browser.py")
+            # The AdminUI diagnostics page against the same real runtime.
+            command.append("tests/integration/test_admin_diagnostics_browser.py")
+            # Profile drafts use the real A-owned composition/SQL with transport fault injection.
+            command.append("tests/integration/test_admin_profiles_browser.py")
+            env["SPEECHNEXUS_ADMIN_PROFILES_OUTPUT"] = str(
+                args.output.resolve().parent / (args.output.stem + "-admin-profiles")
+            )
+            # The deployment teleprompter state consumed by the production bundle.
+            command.append(
+                "tests/integration/test_workbench_real_runtime_prompter_state_browser.py"
+            )
+            # The audiobook flow: a chapter created in the production bundle, verified over HTTP.
+            command.append(
+                "tests/integration/test_workbench_real_runtime_chapter_create_browser.py"
+            )
+            # The realtime tab must not open the microphone before a session is connected.
+            command.append(
+                "tests/integration/test_workbench_real_runtime_realtime_consent_browser.py"
+            )
+            # Guards the probe inventory: no C-side probe may be wrapped by nothing.
+            command.append("tests/integration/test_probe_inventory.py")
+            # Two self-contained synthetic realtime producers (ASR sessions, TTS rendering).
+            command.append("tests/integration/test_workbench_realtime_synthetic_probes.py")
+            # Five self-contained probes that existed but ran in no gate: capture graph, media
+            # worklet, voice creation, the Admin task centre and the file workflow demo.
+            command.append("tests/integration/test_workbench_orphan_probes.py")
+            env["SPEECHNEXUS_WORKBENCH_BROWSER_OUTPUT"] = str(
+                args.output.resolve().parent / (args.output.stem + "-browser")
+            )
+            result["browser"] = "production-bundle-real-c-http-private-pg-fake-llm-and-real-runtime"
+        if args.admin_workspaces:
+            command.append("tests/integration/test_admin_workspaces_browser.py")
+            env["SPEECHNEXUS_ADMIN_WORKSPACES_OUTPUT"] = str(
+                args.output.resolve().parent / (args.output.stem + "-admin-workspaces")
+            )
+            result["admin_workspaces"] = "production-admin-real-a-http-private-pg-explicit-service"
+        if args.workbench_runtime or args.full_coverage:
+            result["workbench_runtime"] = "real-c-runtime-private-pg"
+        if args.coverage or args.full_coverage:
+            env["COVERAGE_FILE"] = str(cluster / ".coverage")
+            result["coverage_mode"] = (
+                "full-python-and-workbench-pg" if args.full_coverage else "scoped-c"
+            )
+            result["coverage_log"] = str((cluster / "coverage.json").relative_to(ROOT))
+        tests = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=600 if args.full_coverage or args.integration_shard is not None else 180,
+            check=False,
+        )
+        (cluster / "pytest.log").write_text(tests.stdout + tests.stderr)
+        print(tests.stdout + tests.stderr, end="")
+        result["tests_passed"] = tests.returncode == 0
+        result["pytest_log"] = str((cluster / "pytest.log").relative_to(ROOT))
+        code = tests.returncode
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        # All child inputs are this probe's own synthetic identities, never a shared DSN.
+        print(f"probe subprocess failed: {type(error).__name__}", file=sys.stderr)
+        result["failure"] = type(error).__name__
+    finally:
+        if started:
+            status = subprocess.run(
+                [pg_ctl, "-D", str(data), "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if status.returncode == 0:
+                stop = subprocess.run(
+                    [pg_ctl, "-D", str(data), "-m", "fast", "-w", "-t", "20", "stop"],
+                    capture_output=True,
+                    text=True,
+                    timeout=25,
+                    check=False,
+                )
+                stopped = stop.returncode == 0
+            else:
+                stopped = not (data / "postmaster.pid").exists()
+            status = subprocess.run(
+                [pg_ctl, "-D", str(data), "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            stopped = stopped and status.returncode != 0 and not (data / "postmaster.pid").exists()
+        result["stopped"] = stopped
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+        print(f"evidence: {output.relative_to(ROOT) if output.is_relative_to(ROOT) else output}")
+        if started and not stopped:
+            print(
+                f"probe shutdown unconfirmed; inspect retained cluster: {cluster}", file=sys.stderr
+            )
+            code = 1
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,8 @@
+--- a/tests/unit/gateway/test_ingress.py
++++ b/tests/unit/gateway/test_ingress.py
+@@ -42 +42 @@
+-    engine = ScriptedEngine(before_dispatch=pause)
++    engine = ScriptedEngine(before_dispatch=pause, now=lambda: NOW)
+@@ -45 +45 @@
+-        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine
++        ledger=ledger, ingress=ingress, dispatch=engine, observation=engine, now=lambda: NOW

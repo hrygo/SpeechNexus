@@ -9,18 +9,30 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改根 README / AGENTS、`docs/` 内 Markdown | 路由回归、Design Token 静态门禁、差异检查与最终门禁；不安装项目依赖、不启动业务测试服务 |
+| PR 仅修改根 README / AGENTS、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、Design Token 静态门禁、差异检查与最终门禁；不安装项目依赖、不启动业务测试服务 |
 | PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/单元及完整 Web 检查；双数据库与部署检查不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |
 | `main` push、手动运行及未知事件 | 始终全量 |
 
 精确白名单以路由脚本为准。新增应用、资源类型或目录默认全量；缩窄范围前先证明其不依赖被省略的验证，并添加回归。
 
+Skill 的说明、参考、合成评测数据及展示元数据不参与产品构建，复用文档轻量路径。技能内的 Python、Shell、JavaScript 等脚本和未知文件仍走全量；混合业务代码时按业务范围选择，其他 `.agents/` 配置不在白名单内。轻量路径不执行 skill 行为评测，也不证明 JSON/YAML 内容或引用有效，维护者须按变更核对。`main` push 仍按既有约定全量验证。
+
 ## 必需检查与证据
 
 保留 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration` 三个受保护检查名。作业级条件让不适用项明确显示 skipped；最终 Python 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。
+
+Python 测试作业通过 `workbench-pg-probe.py --full-coverage` 在同一次 pytest 中运行完整非集成测试和 Workbench PG／Runtime 用例，使用仓库默认全项目覆盖率与 80% 门槛；不通过收窄统计范围或降低门槛放行。作业检查 PostgreSQL 16 工具并启动已有隔离 MinIO，驱动器创建私有 Unix socket 数据库，不连接 runner 的系统数据库。原 `--coverage` 仍是独立的 C 层 90% 检查，两个模式互斥。完整模式的执行报告以 `workbench-pg-full-coverage` 上传，覆盖率不足仍使作业失败。
+
+集成分片在安装 Python 依赖后，使用 `uv run python integration-shards.py requirements` 实际收集完整 integration nodeid（包括参数化身份），以执行时相同的 SHA-256 分片算法输出 `node_contracts` 与 `browser` 需求。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或外部 `PYTEST_ADDOPTS` 缩窄选择会失败，不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。
+
+有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
+
+每个集成分片还检查 PostgreSQL 16 工具，通过 `workbench-pg-probe.py --integration-shard` 启动独立的私有 Unix socket PG，再把 Workbench DSN 传给原 `integration-shards.py run`。双数据库与 MinIO 环境仍指向该作业既有隔离测试服务，不用私有 Workbench DSN 替换协调数据库地址。原分片报告路径、完整 collection、实际执行与意外跳过拒绝规则保持不变；驱动器的生命周期报告与分片报告一并上传，分别保存，不替代分片执行报告。仅有单个分片作业成功不能替代汇总验收。
+
+真实内网模型资格与可复现集成分别验收。`qualification` 标记的三条纪要真实模型用例保留原部署调用与结果断言，不进入普通 `integration` 分片，也不计作 CI 通过；它们验证实际部署资格，不能替代协调事务的确定性门禁。`make workbench-llm-qualification` 要求显式的私有 Workbench PG DSN、获准内网 LLM endpoint/model，并构建真实 Web 入口后执行全部三项。缺少配置时入口直接失败，不以跳过取得资格。普通 CI 的分片完整性仍拒绝任何必需用例跳过，阶段 AC 仍须另附这三项真实模型与版本证据。
 
 不在整个 workflow 的 `on` 中设置 `paths` / `paths-ignore`：被整体过滤的必需检查可能长期 Pending。[GitHub 路径过滤说明](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)、[作业条件与 skipped 语义](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)是维护入口；核验日期为 2026-10-25。
 

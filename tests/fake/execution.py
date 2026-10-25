@@ -31,8 +31,10 @@ from speechnexus_gateway.domain.submission import (
     LeaseState,
     RecordStop,
     StaleFencingTokenError,
+    StaleSubmissionVersionError,
     StopEvidenceConflictError,
     SubmissionIntent,
+    SubmitRequest,
     VerifiedStopEvidence,
 )
 
@@ -59,6 +61,27 @@ class InMemorySubmissionLedger:
     def query_outcome(self, submit_intent_id: str) -> ExecutionSnapshot | None:
         intent = self.get(submit_intent_id)
         return None if intent is None else ExecutionSnapshot(intent)
+
+    def read_request(self, intent: SubmissionIntent, *, max_document_bytes: int) -> SubmitRequest:
+        current = self.get(intent.identity.submit_intent_id)
+        document = self._request_documents.get(intent.identity.submit_intent_id)
+        if current is None or current.version != intent.version:
+            raise StaleSubmissionVersionError("fake original execution changed")
+        if document is None or len(document.encode()) > max_document_bytes:
+            raise ValueError("fake original request is not readable")
+        request = SubmitRequest(
+            intent.identity,
+            json.loads(document)["execution_request"]["command"],
+            intent.output_stream_id,
+        )
+        assert request.request_document == document
+        return request
+
+    def check_file_start(self, intent: SubmissionIntent) -> SubmissionIntent:
+        current = self.get(intent.identity.submit_intent_id)
+        if current != intent or current.execution_state is not ExecutionState.EXECUTING:
+            raise StaleSubmissionVersionError("fake file acceptance changed")
+        return current
 
     def list_quarantined(
         self,
@@ -97,6 +120,23 @@ class InMemorySubmissionLedger:
         updated = request.apply(current, at=self._now())
         self._intents[request.submit_intent_id] = copy.deepcopy(updated)
         return updated
+
+    def list_unfinished(
+        self, *, gateway_id: str, host_node_id: str, limit: int
+    ) -> list[SubmissionIntent]:
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("startup reads between 1 and 500 executions")
+        return sorted(
+            (
+                copy.deepcopy(intent)
+                for intent in self._intents.values()
+                if intent.execution_state
+                in {ExecutionState.SUBMITTING, ExecutionState.EXECUTING, ExecutionState.STOPPING}
+                and (intent.identity.gateway_id, intent.identity.host_node_id)
+                == (gateway_id, host_node_id)
+            ),
+            key=lambda intent: intent.identity.submit_intent_id,
+        )[:limit]
 
     def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
         intent.validate_new()

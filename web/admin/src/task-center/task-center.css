@@ -1,0 +1,108 @@
+.task-center {
+  margin-top: var(--nexus-space-6);
+  font-size: var(--nexus-text-base);
+}
+.task-center-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--nexus-space-6);
+}
+.task-center-list,
+.task-center-detail,
+.task-center-cancellation {
+  min-width: 0;
+  padding: var(--nexus-space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--nexus-radius-md);
+  background: var(--surface-strong);
+  overflow-wrap: anywhere;
+}
+.task-center h2 {
+  font-size: var(--nexus-text-lg);
+  margin-top: 0;
+}
+.task-center p {
+  line-height: 1.6;
+}
+.task-center button,
+.task-center-demo select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--nexus-radius-sm);
+  padding: var(--nexus-space-2) var(--nexus-space-3);
+  min-height: 44px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.task-center button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.task-center button:focus-visible,
+.task-center-demo select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.task-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-2);
+}
+.task-center dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--nexus-space-3);
+}
+.task-center dt {
+  color: var(--muted);
+}
+.task-center dd {
+  margin: 0;
+}
+.task-center-cancellation {
+  margin-bottom: var(--nexus-space-6);
+  border-color: var(--warning-border);
+}
+.task-center-confirm {
+  margin-top: var(--nexus-space-4);
+  border-top: 1px solid var(--line);
+  padding-top: var(--nexus-space-3);
+}
+.task-center-confirm button {
+  margin-right: var(--nexus-space-2);
+}
+.task-center-table-wrap {
+  overflow-x: auto;
+}
+.task-center table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.task-center caption {
+  text-align: left;
+  color: var(--muted);
+  margin: var(--nexus-space-3) 0;
+}
+.task-center th,
+.task-center td {
+  padding: var(--nexus-space-2);
+  border-bottom: 1px solid var(--line);
+}
+.task-center tr[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+.task-center-demo label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-3);
+  margin-bottom: var(--nexus-space-5);
+}
+@media (max-width: 760px) {
+  .task-center-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

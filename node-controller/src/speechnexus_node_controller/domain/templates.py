@@ -39,6 +39,11 @@ class ReadinessKind(StrEnum):
     HTTP_WARMUP_OK = "http_warmup_ok"
 
 
+class EngineAuthKind(StrEnum):
+    NONE = "none"
+    VLLM_API_KEY_V1 = "vllm_api_key_v1"
+
+
 @dataclass(frozen=True, slots=True)
 class WarmupRequest:
     """One approved warmup call that must succeed before an instance may serve.
@@ -157,6 +162,7 @@ class ApprovedRuntimeTemplate:
     gpu_device_count: int = 0
     read_only_binds: tuple[ReadOnlyBind, ...] = ()
     network_name: str | None = None
+    engine_auth: EngineAuthKind = EngineAuthKind.NONE
 
     def __post_init__(self) -> None:
         require_identifier(self.template_id, "template_id")
@@ -167,6 +173,26 @@ class ApprovedRuntimeTemplate:
             raise ValueError("image_reference must be a single container image reference")
         if self.command is not None and not self.command:
             raise ValueError("a declared command must not be empty")
+        if not isinstance(self.engine_auth, EngineAuthKind):
+            raise ValueError("engine_auth must select an approved native authentication mode")
+        if self.engine_auth is EngineAuthKind.VLLM_API_KEY_V1:
+            if (
+                self.command is None
+                or self.readiness.kind is not ReadinessKind.HTTP_WARMUP_OK
+                or self.readiness.warmup is None
+                or self.readiness.warmup.path != "/v1/audio/transcriptions"
+            ):
+                raise ValueError("native ASR authentication requires explicit argv and ASR warmup")
+            # CLI api-key overrides VLLM_API_KEY. Refuse abbreviations,
+            # underscore spellings and config/root/middleware overrides too.
+            forbidden = ("--api-key", "--config", "--root-path", "--middleware")
+            options = (argument.replace("_", "-").split("=", 1)[0] for argument in self.command)
+            if any(
+                option.startswith("--")
+                and any(option.startswith(flag) or flag.startswith(option) for flag in forbidden)
+                for option in options
+            ):
+                raise ValueError("approved argv cannot override native engine authentication")
         if self.gpu_device_count < 0:
             raise ValueError("gpu_device_count must not be negative")
         if self.network_name is not None and (

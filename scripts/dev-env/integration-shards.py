@@ -1,7 +1,7 @@
 """Run complete integration partitions; verify their union using only the stdlib.
 
 The check subcommand also runs on the GitHub runner's system Python (3.12).
-Only run imports pytest. Reports contain synthetic test identities, not DSNs,
+The requirements and run commands import pytest. Reports contain test identities, not DSNs,
 credentials, request bodies, or captured test output.
 """
 
@@ -17,7 +17,9 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,15 @@ NODE_CONTRACT_TESTS = (
     ),
 )
 
+# Other browser consumers use the *_browser.py convention. These two modules
+# additionally run self-contained Chromium probes against the production bundle.
+BROWSER_PROBE_MODULES = frozenset(
+    {
+        "tests/integration/test_workbench_orphan_probes.py",
+        "tests/integration/test_workbench_realtime_synthetic_probes.py",
+    }
+)
+
 
 def check_count(count: int) -> None:
     if type(count) is not int or not 1 <= count <= 16:
@@ -73,6 +84,46 @@ def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
         for nodeid in nodeids
         if int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % count == index
     )
+
+
+def tool_requirements(nodeids: Sequence[str], index: int, count: int) -> dict[str, bool]:
+    selected = partition(nodeids, index, count)
+    return {
+        "node_contracts": bool(set(selected).intersection(NODE_CONTRACT_TESTS)),
+        "browser": any(
+            nodeid.split("::", 1)[0].endswith("_browser.py")
+            or nodeid.split("::", 1)[0] in BROWSER_PROBE_MODULES
+            for nodeid in selected
+        ),
+    }
+
+
+def collect_integration_nodeids() -> list[str]:
+    """Resolve fixture/parameter IDs using the same collection as execution."""
+    import pytest
+
+    if os.environ.get("PYTEST_ADDOPTS"):
+        raise ValueError("PYTEST_ADDOPTS cannot narrow integration tool requirements")
+
+    class Collection:
+        def __init__(self) -> None:
+            self.nodeids: list[str] = []
+
+        def pytest_collection_finish(self, session: pytest.Session) -> None:
+            self.nodeids = sorted(item.nodeid for item in session.items)
+
+    os.chdir(ROOT)
+    plugin = Collection()
+    # GITHUB_OUTPUT must contain only key=value records, never pytest's output.
+    output = StringIO()
+    with redirect_stdout(output), redirect_stderr(output):
+        result = pytest.main(
+            ["-m", "integration", "tests/integration", "--collect-only", "-q"], plugins=[plugin]
+        )
+    if result != 0 or not plugin.nodeids:
+        print(output.getvalue(), file=sys.stderr)
+        raise ValueError("Complete integration collection failed while selecting tools")
+    return _nodeids(plugin.nodeids)
 
 
 def collection_digest(nodeids: list[str]) -> str:
@@ -292,8 +343,12 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "requirements":
-            needed = bool(partition(NODE_CONTRACT_TESTS, args.index, args.count))
-            print("node_contracts=" + str(needed).lower())
+            check_count(args.count)
+            partition([], args.index, args.count)
+            for name, needed in tool_requirements(
+                collect_integration_nodeids(), args.index, args.count
+            ).items():
+                print(name + "=" + str(needed).lower())
             return 0
         if args.command == "run":
             return run_shard(args)

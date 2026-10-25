@@ -17,6 +17,7 @@ from speechnexus_node_controller.domain.intents import MemoryArchitecture
 from speechnexus_node_controller.domain.templates import (
     MIN_CONTAINER_MEMORY_BYTES,
     ApprovedRuntimeTemplate,
+    EngineAuthKind,
     ReadinessKind,
     ReadinessRule,
     ReadOnlyBind,
@@ -67,6 +68,7 @@ class _TemplateModel(BaseModel):
     gpu_device_count: int = Field(default=0, ge=0)
     read_only_binds: list[_ReadOnlyBindModel] = Field(default_factory=list)
     network_name: str | None = None
+    engine_auth: EngineAuthKind = EngineAuthKind.NONE
 
 
 class _TemplateFileModel(BaseModel):
@@ -114,4 +116,5 @@ def _to_template(model: _TemplateModel) -> ApprovedRuntimeTemplate:
             ReadOnlyBind(source=bind.source, target=bind.target) for bind in model.read_only_binds
         ),
         network_name=model.network_name,
+        engine_auth=model.engine_auth,
     )

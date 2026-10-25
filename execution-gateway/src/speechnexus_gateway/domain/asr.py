@@ -15,7 +15,37 @@ ASR_RECIPE_VERSION = "file-asr-1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 # Opaque configuration identities also admit colons; engine request IDs do not.
 _CONFIG_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
+_TARGET_IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
 _LANGUAGE = re.compile(r"(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)")
+
+
+@dataclass(frozen=True, slots=True)
+class AsrExecutionTarget:
+    """The admitted engine target, independent of transport and vendor types."""
+
+    host_node_id: str
+    gateway_id: str
+    pool_id: str
+    instance_id: str
+    instance_generation: int
+    binding_revision_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            any(
+                type(value) is not str or _TARGET_IDENTIFIER.fullmatch(value) is None
+                for value in (
+                    self.host_node_id,
+                    self.gateway_id,
+                    self.instance_id,
+                    self.binding_revision_id,
+                )
+            )
+            or self.pool_id != "asr-batch"
+            or type(self.instance_generation) is not int
+            or not 1 <= self.instance_generation <= 2**63 - 1
+        ):
+            raise ValueError("invalid configured file ASR execution target")
 
 
 class AsrFailure(StrEnum):
@@ -120,6 +150,10 @@ class AsrRecognizer(Protocol):
 
     @property
     def binding_revision_id(self) -> str: ...
+
+    def validate_execution_target(self, target: AsrExecutionTarget) -> None:
+        """Reject an unmatched generation before object/media I/O; no external I/O."""
+        ...
 
     async def transcribe(
         self, audio: AsrAudio, policy: AsrPolicy, *, cancelled: Callable[[], bool]

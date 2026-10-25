@@ -1,0 +1,517 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  WorkbenchClient,
+  WorkbenchResponseError,
+  type Contracts,
+  parse,
+} from "../manuscripts/workbench-client";
+import { RenderUnitPanel } from "./RenderUnitPanel";
+
+function unit(changes: Partial<Contracts["RenderUnitV2"]> = {}) {
+  return parse("RenderUnitV2", {
+    object: "nexus.render_unit",
+    id: "unit_demo",
+    chapter_id: "chapter_demo",
+    ordinal: 0,
+    revision: "1",
+    text: "合成旁白单元",
+    voice: { id: "voice_demo", revision: "1" },
+    model: "tts-quality",
+    model_binding: { id: "binding_demo", revision: "3" },
+    status: "pending",
+    updated_at: "2026-10-24T12:00:00Z",
+    ...changes,
+  });
+}
+
+const chapter = parse("Chapter", {
+  object: "nexus.chapter",
+  id: "chapter_demo",
+  book_id: "book_demo",
+  title: "第一章",
+  ordinal: 0,
+  text_revision: "1",
+  created_at: "2026-10-24T12:00:00Z",
+});
+
+function emptyCatalogue() {
+  return parse("VoiceList", {
+    object: "nexus.list",
+    data: [],
+    has_more: false,
+    next_cursor: null,
+  });
+}
+
+function setup(
+  units: Contracts["RenderUnitV2"][] = [unit()],
+  catalogue: () => Promise<Contracts["VoiceList"]> = () => Promise.resolve(emptyCatalogue()),
+) {
+  const client = new WorkbenchClient(vi.fn());
+  const list = vi.spyOn(client, "renderUnits").mockResolvedValue(
+    parse("RenderUnitListV2", {
+      object: "nexus.list",
+      data: units,
+      has_more: false,
+      next_cursor: null,
+    }),
+  );
+  const voices = vi.spyOn(client, "voices").mockImplementation(catalogue);
+  const update = vi.spyOn(client, "updateRenderUnit").mockImplementation((id, body) =>
+    Promise.resolve(
+      unit({
+        id,
+        revision: "2",
+        status: "stale",
+        text: body.text ?? "合成旁白单元",
+        voice: body.voice ?? { id: "voice_demo", revision: "1" },
+      }),
+    ),
+  );
+  const view = render(<RenderUnitPanel client={client} chapter={chapter} />);
+  return { client, list, update, voices, ...view };
+}
+
+describe("render unit panel", () => {
+  it("lists the chapter's units in reading order and says when there are none", async () => {
+    const { list } = setup([unit({ id: "unit_two", ordinal: 1 }), unit({ id: "unit_one" })]);
+    await screen.findByRole("list", { name: "单元列表" });
+    expect(list).toHaveBeenCalledWith("chapter_demo");
+    const items = within(screen.getByRole("list", { name: "单元列表" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent ?? "");
+    expect(items[0]).toContain("单元 1");
+    expect(items[1]).toContain("单元 2");
+
+    const empty = new WorkbenchClient(vi.fn());
+    vi.spyOn(empty, "renderUnits").mockResolvedValue(
+      parse("RenderUnitListV2", {
+        object: "nexus.list",
+        data: [],
+        has_more: false,
+        next_cursor: null,
+      }),
+    );
+    render(<RenderUnitPanel client={empty} chapter={chapter} />);
+    expect(await screen.findByText("该章节还没有渲染单元。")).toBeTruthy();
+  });
+
+  it("sends the changed pins with the revision the user saw", async () => {
+    const { update } = setup();
+    const textarea = await screen.findByLabelText("单元 1 文本");
+    fireEvent.change(textarea, { target: { value: "改写后的旁白" } });
+    fireEvent.change(screen.getByLabelText("单元 1 声音修订"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    const [id, body, key] = update.mock.calls[0]!;
+    expect(id).toBe("unit_demo");
+    expect(body).toEqual({
+      expected_revision: "1",
+      text: "改写后的旁白",
+      voice: { id: "voice_demo", revision: "2" },
+    });
+    expect(typeof key).toBe("string");
+    expect((await screen.findByText(/修订 1 → 2/)).textContent).toContain("stale");
+  });
+
+  it("reports a revision conflict instead of retrying it", async () => {
+    const { list, update } = setup();
+    update.mockRejectedValue(
+      new WorkbenchResponseError(409, {
+        error: {
+          code: "revision_conflict",
+          type: "invalid_request_error",
+          message: "private-synthetic",
+          param: null,
+          request_id: "request-demo",
+          retryable: false,
+        },
+      }),
+    );
+    fireEvent.change(await screen.findByLabelText("单元 1 文本"), {
+      target: { value: "改写后的旁白" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("修订冲突");
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "刷新单元" }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  });
+
+  it("refuses to submit a unit the user did not change", async () => {
+    const { update } = setup();
+    await screen.findByRole("list", { name: "单元列表" });
+    fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+    expect((await screen.findByText(/没有变化/)).textContent).toContain("未提交");
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+it("pins the published revision the user picked from the catalogue", async () => {
+  const { update } = setup([unit()], () =>
+    Promise.resolve(
+      parse("VoiceList", {
+        object: "nexus.list",
+        data: [
+          parse("VoiceSummary", {
+            voice_id: "voice_published",
+            revision: "4",
+            display_name: "已发布旁白",
+            source_type: "designed",
+            status: "published",
+            languages: ["zh-CN"],
+            audio_formats: ["wav"],
+          }),
+        ],
+        has_more: false,
+        next_cursor: null,
+      }),
+    ),
+  );
+  const select = await screen.findByLabelText("单元 1 已发布音色");
+  await waitFor(() =>
+    expect(within(select).getByRole("option", { name: /已发布旁白/ })).toBeVisible(),
+  );
+  fireEvent.change(select, { target: { value: "voice_published@4" } });
+  expect(select).toHaveValue("voice_published@4");
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  await waitFor(() =>
+    expect(update).toHaveBeenCalledWith(
+      "unit_demo",
+      { expected_revision: "1", voice: { id: "voice_published", revision: "4" } },
+      expect.any(String),
+    ),
+  );
+});
+
+it("reports an absent catalogue instead of offering invented voices", async () => {
+  setup([unit()], () =>
+    Promise.reject(
+      new WorkbenchResponseError(
+        503,
+        parse("ErrorResponse", {
+          error: {
+            code: "voice_catalogue_unavailable",
+            type: "service_unavailable_error",
+            message: "Voice catalogue is unavailable.",
+            request_id: "request-demo",
+            param: null,
+            retryable: true,
+          },
+        }),
+      ),
+    ),
+  );
+  const select = await screen.findByLabelText("单元 1 已发布音色");
+  await waitFor(() => expect(screen.getByText(/音色目录不可用/)).toBeVisible());
+  // Only the unit's current pin remains: the picker shows no catalogue it does not have.
+  expect(within(select).getAllByRole("option")).toHaveLength(1);
+  expect(within(select).getByRole("option")).toHaveTextContent("当前固定：voice_demo@1");
+});
+
+it("shows the retained saved copy of a unit", async () => {
+  // The contract couples a saved copy to the source pair it was made from.
+  setup([
+    unit({
+      saved_asset_id: "asset-copy",
+      source_artifact_id: "artifact-audio",
+      source_receipt_id: "receipt-demo",
+    }),
+  ]);
+  expect(await screen.findByText("已保存副本 asset-copy")).toBeVisible();
+});
+
+it("says a unit has no saved copy instead of implying one exists", async () => {
+  setup([unit()]);
+  expect(await screen.findByText("尚无已保存副本")).toBeVisible();
+});
+
+it("reads a voice revision with its retirement and disable facts", async () => {
+  const { client } = setup([unit()]);
+  const read = vi.spyOn(client, "voiceRevision").mockResolvedValue(
+    parse("VoiceRevision", {
+      voice_id: "voice_demo",
+      revision: "2",
+      display_name: "合成音色",
+      status: "disabled",
+      languages: ["zh"],
+      audio_formats: ["wav"],
+      model_binding: { id: "binding_demo", revision: "3" },
+      published_at: "2026-10-25T00:00:00Z",
+      retired_at: null,
+      disabled_reason: "合成停用原因",
+    }),
+  );
+  await screen.findByLabelText("核对音色 id");
+  expect(read).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("核对音色 id"), { target: { value: "voice_demo" } });
+  fireEvent.change(screen.getByLabelText("核对音色修订"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "读取该音色修订" }));
+  const info = await screen.findByRole("status", { name: "音色修订信息" });
+  expect(info).toHaveTextContent("合成音色");
+  expect(info).toHaveTextContent("disabled");
+  expect(info).toHaveTextContent("合成停用原因");
+  expect(info).toHaveTextContent("未退役");
+  expect(info).toHaveTextContent("binding_demo@3");
+  expect(read).toHaveBeenCalledWith("voice_demo", "2");
+});
+
+it("reports an unavailable voice revision instead of showing a stale one", async () => {
+  const { client } = setup([unit()]);
+  vi.spyOn(client, "voiceRevision").mockRejectedValue(
+    new WorkbenchResponseError(503, {
+      error: {
+        code: "voice_catalogue_unavailable",
+        type: "service_unavailable_error",
+        message: "合成不可用",
+        param: null,
+        request_id: "request_demo",
+        retryable: true,
+      },
+    }),
+  );
+  await screen.findByLabelText("核对音色 id");
+  fireEvent.change(screen.getByLabelText("核对音色 id"), { target: { value: "voice_demo" } });
+  fireEvent.change(screen.getByLabelText("核对音色修订"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "读取该音色修订" }));
+  const alert = await screen.findByRole("alert", { name: "音色修订错误" });
+  expect(alert).toHaveTextContent("音色目录不可用");
+  expect(screen.queryByRole("status", { name: "音色修订信息" })).toBeNull();
+});
+
+it("adds a render unit with the pin, model and binding the operator entered", async () => {
+  const { client } = setup([]);
+  const create = vi
+    .spyOn(client, "createRenderUnit")
+    .mockResolvedValue(
+      unit({ id: "unit_new", text: "新增旁白", voice: { id: "voice_new", revision: "4" } }),
+    );
+  await screen.findByText("该章节还没有渲染单元。");
+  fireEvent.change(screen.getByLabelText("新单元序号"), { target: { value: "0" } });
+  fireEvent.change(screen.getByLabelText("新单元文本"), { target: { value: "新增旁白" } });
+  fireEvent.change(screen.getByLabelText("新单元音色 id"), { target: { value: "voice_new" } });
+  fireEvent.change(screen.getByLabelText("新单元音色修订"), { target: { value: "4" } });
+  fireEvent.change(screen.getByLabelText("新单元模型"), { target: { value: "tts-quality" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定 id"), { target: { value: "binding_new" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定修订"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  expect(await screen.findByText("新增旁白")).toBeTruthy();
+  expect(create).toHaveBeenCalledWith(
+    "chapter_demo",
+    {
+      ordinal: 0,
+      text: "新增旁白",
+      voice: { id: "voice_new", revision: "4" },
+      model: "tts-quality",
+      model_binding: { id: "binding_new", revision: "2" },
+    },
+    expect.any(String),
+  );
+});
+
+it("returns focus to the first field after a created unit clears the form", async () => {
+  const { client } = setup([]);
+  vi.spyOn(client, "createRenderUnit").mockResolvedValue(unit({ id: "unit_new" }));
+  await screen.findByText("该章节还没有渲染单元。");
+  fireEvent.change(screen.getByLabelText("新单元序号"), { target: { value: "0" } });
+  fireEvent.change(screen.getByLabelText("新单元文本"), { target: { value: "新增旁白" } });
+  fireEvent.change(screen.getByLabelText("新单元音色 id"), { target: { value: "voice_new" } });
+  fireEvent.change(screen.getByLabelText("新单元音色修订"), { target: { value: "4" } });
+  fireEvent.change(screen.getByLabelText("新单元模型"), { target: { value: "tts-quality" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定 id"), { target: { value: "binding_new" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定修订"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  await screen.findByText("合成旁白单元");
+  // The cleared form disables the button; the keyboard user keeps a focus target.
+  expect(document.activeElement).toBe(screen.getByLabelText("新单元序号"));
+});
+
+it("keeps the new-unit key after a rejected creation so it can be replayed", async () => {
+  const { client } = setup([]);
+  const create = vi
+    .spyOn(client, "createRenderUnit")
+    .mockRejectedValueOnce(new TypeError("合成连接失败"))
+    .mockResolvedValue(unit({ id: "unit_new" }));
+  await screen.findByText("该章节还没有渲染单元。");
+  fireEvent.change(screen.getByLabelText("新单元序号"), { target: { value: "0" } });
+  fireEvent.change(screen.getByLabelText("新单元文本"), { target: { value: "新增旁白" } });
+  fireEvent.change(screen.getByLabelText("新单元音色 id"), { target: { value: "voice_new" } });
+  fireEvent.change(screen.getByLabelText("新单元音色修订"), { target: { value: "4" } });
+  fireEvent.change(screen.getByLabelText("新单元模型"), { target: { value: "tts-quality" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定 id"), { target: { value: "binding_new" } });
+  fireEvent.change(screen.getByLabelText("新单元绑定修订"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  expect(await screen.findByRole("alert", { name: "新增单元错误" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "按原键重放单元请求" }));
+  await screen.findByText("合成旁白单元");
+  const keys = create.mock.calls.map((call) => call[2]);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});
+
+it("reads a saved copy back by id only when asked, and shows its own record", async () => {
+  const { client } = setup([
+    unit({
+      saved_asset_id: "asset_saved_one",
+      source_artifact_id: "artifact_one",
+      source_receipt_id: "receipt_one",
+    }),
+  ]);
+  const read = vi.spyOn(client, "savedAsset").mockResolvedValue(
+    parse("SavedAsset", {
+      object: "nexus.saved_asset",
+      id: "asset_saved_one",
+      project_id: "project_demo",
+      display_name: null,
+      media_type: "audio/wav",
+      bytes: 1024,
+      sha256: `sha256:${"a".repeat(64)}`,
+      source_artifact_id: "artifact_one",
+      source_receipt_id: "receipt_one",
+      created_at: "2026-10-25T00:00:00Z",
+    }),
+  );
+  await screen.findByText("已保存副本 asset_saved_one");
+  // Nothing is fetched until the operator asks.
+  expect(read).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 读取副本" }));
+  const info = await screen.findByRole("status", { name: "单元 1 副本信息" });
+  expect(info).toHaveTextContent("audio/wav");
+  expect(info).toHaveTextContent("1024 字节");
+  expect(info).toHaveTextContent(`sha256:${"a".repeat(64)}`);
+  expect(read).toHaveBeenCalledWith("asset_saved_one");
+});
+
+it("reports an unreadable saved copy instead of inventing its record", async () => {
+  const { client } = setup([
+    unit({
+      saved_asset_id: "asset_saved_gone",
+      source_artifact_id: "artifact_one",
+      source_receipt_id: "receipt_one",
+    }),
+  ]);
+  vi.spyOn(client, "savedAsset").mockRejectedValue(
+    new WorkbenchResponseError(404, {
+      error: {
+        code: "resource_not_found",
+        type: "invalid_request_error",
+        message: "合成缺失",
+        param: null,
+        request_id: "request_demo",
+        retryable: false,
+      },
+    }),
+  );
+  await screen.findByText("已保存副本 asset_saved_gone");
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 读取副本" }));
+  const alert = await screen.findByRole("alert", { name: "单元 1 副本错误" });
+  expect(alert).toHaveTextContent("已不可读取");
+  expect(screen.queryByRole("status", { name: "单元 1 副本信息" })).toBeNull();
+});
+
+beforeEach(() => sessionStorage.clear());
+
+it("replays the original unit patch and key after a committed reply is lost and the panel remounts", async () => {
+  const view = setup();
+  const accepted = unit({ text: "合成改写", revision: "2", status: "stale" });
+  const committed = new Map<string, typeof accepted>();
+  view.update.mockImplementation((_id, _patch, key) => {
+    if (!committed.has(key)) {
+      committed.set(key, accepted);
+      return Promise.reject(new TypeError("synthetic lost reply"));
+    }
+    return Promise.resolve(committed.get(key)!);
+  });
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成改写" } });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  await screen.findByRole("alert");
+  view.unmount();
+  view.list.mockResolvedValue(
+    parse("RenderUnitListV2", {
+      object: "nexus.list",
+      data: [accepted],
+      has_more: false,
+      next_cursor: null,
+    }),
+  );
+  render(<RenderUnitPanel client={view.client} chapter={chapter} />);
+  const replay = await screen.findByRole("button", { name: "按原键重放单元请求" });
+  expect(view.update).toHaveBeenCalledTimes(1);
+  fireEvent.click(replay);
+  await waitFor(() => expect(view.update).toHaveBeenCalledTimes(2));
+  expect(view.update.mock.calls[1]).toEqual(view.update.mock.calls[0]);
+  expect(committed.size).toBe(1);
+});
+it("does not append a late unit creation to the chapter opened afterwards", async () => {
+  const view = setup([]);
+  let finish!: (result: Contracts["RenderUnitV2"]) => void;
+  vi.spyOn(view.client, "createRenderUnit").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await screen.findByText("该章节还没有渲染单元。");
+  for (const [label, value] of [
+    ["新单元序号", "0"],
+    ["新单元文本", "A章合成正文"],
+    ["新单元音色 id", "voice_demo"],
+    ["新单元音色修订", "1"],
+    ["新单元模型", "tts-quality"],
+    ["新单元绑定 id", "binding_demo"],
+    ["新单元绑定修订", "3"],
+  ]) {
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  view.rerender(
+    <RenderUnitPanel
+      client={view.client}
+      chapter={{ ...chapter, id: "chapter_other", title: "第二章" }}
+    />,
+  );
+  await waitFor(() => expect(view.list).toHaveBeenCalledWith("chapter_other"));
+  await act(async () => {
+    finish(unit({ id: "late_unit", text: "A章合成正文" }));
+    await Promise.resolve();
+  });
+  expect(screen.queryByRole("list", { name: "单元列表" })).toBeNull();
+});
+
+it("blocks a unit patch before external effects if its private storage fails", async () => {
+  const { update } = setup();
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成修改" } });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("synthetic quota");
+  });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  await screen.findByRole("alert");
+  expect(update).not.toHaveBeenCalled();
+});
+it("keeps the original unit patch after an unknown outcome followed by a 409", async () => {
+  const { update } = setup();
+  update.mockRejectedValueOnce(new TypeError("synthetic lost reply")).mockRejectedValueOnce(
+    new WorkbenchResponseError(409, {
+      error: {
+        code: "revision_conflict",
+        type: "invalid_request_error",
+        message: "synthetic ingress refusal",
+        param: null,
+        request_id: "request_demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成修改" } });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  const replay = await screen.findByRole("button", { name: "按原键重放单元请求" });
+  await waitFor(() => expect(replay).not.toBeDisabled());
+  fireEvent.click(replay);
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+  expect(update.mock.calls[1]).toEqual(update.mock.calls[0]);
+  expect(screen.queryByRole("button", { name: "结束已拒绝单元请求" })).toBeNull();
+  expect(screen.getByRole("button", { name: "重做单元 1" })).toBeDisabled();
+});

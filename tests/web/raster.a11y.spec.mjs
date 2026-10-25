@@ -101,6 +101,35 @@ for (const css of [
   });
 }
 
+test("nested axe targets measure each text node once in either order", async ({ page }, info) => {
+  await scene(page, "", '<p id="text">Readable <code id="nested">nested text</code></p>');
+  for (const targets of [
+    ["#text", "#nested"],
+    ["#nested", "#text"],
+  ]) {
+    const result = await rasterContrast(page, targets, info);
+    expect(result).toHaveLength(2);
+    await page.addStyleTag({ content: "#nested {color:#aaa}" });
+    await expect(rasterContrast(page, targets, info)).rejects.toThrow(/has .*requires/);
+    await page.addStyleTag({ content: "#nested {color:#111}" });
+  }
+});
+
+test("short text incomplete results require passing raster evidence", async ({ page }, info) => {
+  await scene(page, "", '<h1>Raster regression</h1><p id="text">无</p>');
+  const result = await scan(page, info);
+  expect(
+    result.incomplete.some((r) =>
+      r.nodes.some((n) =>
+        [...n.any, ...n.all, ...n.none].some((c) => c.data?.messageKey === "shortTextContent"),
+      ),
+    ),
+  ).toBe(true);
+  expect(result.raster.some((r) => r.target === "#text" && r.samples > 0)).toBe(true);
+  await page.addStyleTag({ content: "#text {color:#aaa}" });
+  await expect(scan(page, info)).rejects.toThrow(/Raster contrast: .*has .*requires/);
+});
+
 test("no text cannot be treated as contrast evidence", async ({ page }, info) => {
   await scene(page, "", '<p id="text"></p>');
   await expect(rasterContrast(page, ["#text"], info)).rejects.toThrow(/no text/);

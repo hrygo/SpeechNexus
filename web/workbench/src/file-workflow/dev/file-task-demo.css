@@ -1,0 +1,120 @@
+.file-demo .hero {
+  padding-block: var(--nexus-space-8);
+}
+
+.file-demo h1 {
+  font-size: var(--nexus-text-2xl);
+}
+
+.file-demo-scenario {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-3);
+  margin-block: var(--nexus-space-6);
+  font-weight: 600;
+}
+
+.file-demo-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  border-block: 1px solid var(--line-strong);
+}
+
+.file-demo-input,
+.file-demo-task {
+  min-width: 0;
+  padding: var(--nexus-space-6);
+}
+
+.file-demo-input {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+
+.file-demo h2 {
+  font-size: var(--nexus-text-xl);
+  margin-block: 0 var(--nexus-space-4);
+}
+
+.file-demo p {
+  max-width: 65ch;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.file-demo dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--nexus-space-3) var(--nexus-space-6);
+  margin-block: var(--nexus-space-6);
+}
+
+.file-demo dt {
+  color: var(--text-secondary);
+}
+
+.file-demo dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-demo button,
+.file-demo select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--nexus-radius-sm);
+  padding: var(--nexus-space-3) var(--nexus-space-4);
+  min-height: 44px;
+}
+
+.file-demo button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.file-demo button:not(:disabled) {
+  cursor: pointer;
+  border-color: var(--accent);
+}
+
+.file-demo button:focus-visible,
+.file-demo select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.file-demo-actions {
+  display: flex;
+  gap: var(--nexus-space-3);
+  flex-wrap: wrap;
+}
+
+.file-demo .file-demo-notice,
+.file-demo [role="alert"] {
+  padding: var(--nexus-space-3) var(--nexus-space-4);
+  background: var(--status-contract-bg);
+  color: var(--status-contract-text);
+  border-left: 3px solid var(--status-contract-border);
+}
+
+.file-demo-support,
+.file-demo-results {
+  margin-top: var(--nexus-space-8);
+}
+
+@media (max-width: 760px) {
+  .file-demo-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .file-demo-input {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .file-demo-input,
+  .file-demo-task {
+    padding: var(--nexus-space-4);
+  }
+}

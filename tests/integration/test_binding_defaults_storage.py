@@ -117,8 +117,9 @@ def test_atomic_parent_snapshot_original_replay_restart_and_fixed_projection(
         capture_output=True,
         cwd=ROOT,
         timeout=10,
-        check=True,
+        check=False,
     )
+    assert consumed.returncode == 0, consumed.stderr
     assert json.loads(consumed.stdout) == defaults_to_wire(first.snapshot)
     assert first.snapshot.revision_id == first.draft.revision_id
     assert first.snapshot.created_at_us == first.draft.created_at_us

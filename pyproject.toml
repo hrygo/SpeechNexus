@@ -58,6 +58,7 @@ source = [
   "execution-gateway/src/speechnexus_gateway",
   "node-controller/src/speechnexus_node_controller",
   "packages/contracts/src/speechnexus_contracts",
+  "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr",
 ]
 
 [tool.coverage.report]
@@ -92,6 +93,7 @@ files = [
   "tests",
   "scripts/dev-env",
   "packages/contracts/src",
+  "deploy/engines/vllm-asr-lifecycle/src",
 ]
 exclude = ["(?x)(^|/)(\\.venv|node_modules)/"]
 plugins = ["pydantic.mypy"]

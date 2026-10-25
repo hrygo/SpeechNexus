@@ -1,0 +1,18 @@
+{
+  "version": "0.28.0",
+  "commit": "g2cf0a6915",
+  "image": "sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765",
+  "source_sha256": {
+    "v1/engine/async_llm.py": "bceed0b3f5f0c834fef79525f2462a092f082390f0070526280abc95945837dd",
+    "v1/engine/input_processor.py": "f9a7946a16acc2374ff2bdfc22f212cb43461d9ef4d99c5e19a536339f11212f",
+    "v1/engine/output_processor.py": "c310a768931ab46ec9ac14ccbb433f07253b65553b7c859d1ca10f453efcb37c",
+    "v1/engine/core_client.py": "afb2b627cf9ef861f05b411494156cc6ad5076ea770c6f2a4c8a941ca82103ec",
+    "entrypoints/speech_to_text/base/serving.py": "21d0a886dc4c61ed0bfb176affd557e56ace6ffcbc51ffbd1fe94dae997075a5",
+    "entrypoints/speech_to_text/transcription/serving.py": "bc1984fb46ae3a87dbe15c429229c9547ea43fe97904f2fe26b059959659b197",
+    "entrypoints/speech_to_text/transcription/api_router.py": "7e7d03b20db4985681f87b2d99ceec0d09da4ee9c60aaef9477d160f56f3ea48",
+    "plugins/endpoint_plugins/interface.py": "920c410803f18c9a77ee2389a3f006b40fdbefef2da465c3579e2bb56798b03e",
+    "plugins/__init__.py": "fb6e6ee432c5a4ae207aaffe4b546aca9381f56ee8498b0a3e0d9af2d289d023",
+    "entrypoints/openai/api_server.py": "b59e59012452aaad47073d5ddc55ddc0236103b46f2dad6c7869b18259119e05",
+    "v1/engine/parallel_sampling.py": "bf3f0a3c6640aaf706d1b6f7ec3a8e09a970f3dd9e7e96fa6a901779ea84f61d"
+  }
+}

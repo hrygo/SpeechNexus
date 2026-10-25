@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 团队 B 执行目标"
 status: active
-version: "0.6.0"
+version: "0.7.0"
 date: 2026-10-24
 ---
 
@@ -17,8 +17,9 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-已交付基线为 main `08c77de`；[PR #127](https://github.com/hrygo/SpeechNexus/pull/127)
-已交付默认周期恢复与正常/异常/重复取消安全退出，PR/合后主干均 11 项 CI 成功，耗时 203/214 秒。
+已交付基线为 main `a56a2d5`（保留 A #131/#133）；[PR #130](https://github.com/hrygo/SpeechNexus/pull/130)
+已交付原持久命令与固定版本文件输入核验，PR/合后主干均 11 项 CI 成功，耗时 295/216 秒。
+#127 的默认周期恢复与正常/异常/重复取消安全退出已经交付，不重复该单元。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和
 唯一状态标签已统一，分轮实测保留在折叠历史中。
 
@@ -27,7 +28,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | B00 #27 | in-progress | 环境、ASR/TTS/VAD 分段探针已有；完整许可、请求级停止与拓扑资格待补 |
 | B01 #28 | in-progress | 7 个事务、HTTP/drain、有界恢复及可信节点停止来源已有；默认周期驱动及真实进程消费者已有；真实引擎与完整闭环待补 |
 | B02 #29 | in-progress | 本地观察/检查点恢复、真实 ASR 预热及可信停止查询已有；真实引擎故障、ready监控与 A 完整闭环待补 |
-| B03 #30 | in-progress | 有界媒体、文件 ASR、CustomVoice TTS 已有；公开入口、持久执行、对象发布及 Base 待补 |
+| B03 #30 | in-progress | 有界媒体、文件 ASR、CustomVoice TTS 与原命令/核验输入已有；公开入口、真实持久执行、对象发布及 Base 待补 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM 背压、完整配方与计量待补 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、声音材料恢复和发布完整路径未开工 |
 | B06 #33 | in-progress | CPU VAD 与文件消费者已有；流式接入、词级对齐、匿名分人和质量资格待补 |
@@ -46,11 +47,16 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 真实引擎适配由 B 主责，A 配合协议消费者与预算/发布边界，不能把 B 自有适配缺口一概标为
 等待 A 提供引擎协议。实施选择由团队处理，不要求用户判断这些技术细节。
 
-当前分支 `codex/b03-frozen-inputs` 继续接原持久命令与对象输入，见
+原持久命令与对象输入已由 #130 合并，输入分支已清理，见
 [实施边界](2026-10-24-b03-frozen-inputs.md)和[接口说明](../architecture/frozen-execution-inputs.md)。
-原命令只读核验、一次提交桥、固定版本 MinIO 与既有媒体/识别消费者已有合成集成证据；
+原命令只读核验、一次提交桥、固定版本 MinIO 与既有媒体/识别消费者已有隔离双库/对象存储集成证据；
 不改 A 预算、DDL、授权或公共 wire。完整有效参数、真实引擎 status/abort/停止、最终发布
 与 A/C 端到端消费仍待，不以本输入单元替代 B01/B03 整包或物理集群资格。
+
+当前分支 `codex/b03-native-asr-scope` 实施[原生 ASR 请求作用域](2026-10-24-b03-native-asr-scope.md)：
+正式插件接入原生 serving，外发前登记内部/子请求、保护在途 add，并在响应断开后清理；
+不新增路由、默认业务执行或预算权威。源码/无模型探针不构成 GPU 停止或释放证明，后续仍须
+核心执行屏障、受限事实协议与网关消费者、真实模型取消/故障及最终制品联合验收。
 
 ## 首个里程碑：B00 与 B01/B02 的最小准备
 

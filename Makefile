@@ -138,6 +138,7 @@ coordination-test:
 
 python-build:
 	uv build --all-packages --out-dir dist/python
+	uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
 
 build: python-build
 	pnpm build

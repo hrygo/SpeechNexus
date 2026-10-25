@@ -331,12 +331,18 @@ export class EditorSession {
       this.#publish({ problem: "invalid" });
     }
   }
-  async createTranscript() {
+  async createTranscript(
+    speechSource?: Extract<
+      Contracts["TranscriptCreateRequest"]["source"],
+      { kind: "speech_artifact" }
+    >,
+  ) {
     const project = this.#state.record.project;
     if (!project || !this.#newCommand()) return;
     if (
-      this.#state.record.draft &&
-      this.#state.record.draft.text !== this.#state.record.view?.revision.text
+      (this.#state.record.draft &&
+        this.#state.record.draft.text !== this.#state.record.view?.revision.text) ||
+      (speechSource && this.#state.record.forms.newText !== "")
     ) {
       this.#publish({ problem: "unsaved" });
       return;
@@ -344,7 +350,7 @@ export class EditorSession {
     try {
       const body = parse("TranscriptCreateRequest", {
         display_name: this.#state.record.forms.transcriptName,
-        source: { kind: "manual", text: this.#state.record.forms.newText },
+        source: speechSource ?? { kind: "manual", text: this.#state.record.forms.newText },
       });
       await this.#submit({
         kind: "transcript",

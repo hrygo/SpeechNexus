@@ -57,6 +57,61 @@ async function choose() {
 }
 
 describe("production manuscript host", () => {
+  it("exposes a new speech import while preserving an existing editor", async () => {
+    const f = setup();
+    const host = render(<ManuscriptHost client={f.client} storage={f.storage} />);
+    await choose();
+    host.rerender(
+      <ManuscriptHost
+        client={f.client}
+        storage={f.storage}
+        speechSource={{
+          kind: "speech_artifact",
+          artifact_id: "artifact-new",
+          receipt_id: "receipt-new",
+        }}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "待导入语音原稿" })).toBeVisible();
+    expect(screen.getByLabelText("校对草稿")).toHaveValue("合成原文");
+  });
+  it("explicitly imports the fixed speech artifact and receipt into the selected project", async () => {
+    const f = setup();
+    const source = {
+      kind: "speech_artifact",
+      artifact_id: "artifact-source",
+      receipt_id: "receipt-source",
+    } as const;
+    const imported = view();
+    imported.revision.status = "sealed";
+    imported.transcript.source_artifact_id = source.artifact_id;
+    imported.transcript.source_receipt_id = source.receipt_id;
+    const create = vi.spyOn(f.client, "createTranscript").mockResolvedValue(imported);
+    render(<ManuscriptHost client={f.client} storage={f.storage} speechSource={source} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Synthetic project" }));
+    expect(create).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "导入语音原稿" })).toBeEnabled());
+    fireEvent.change(await screen.findByLabelText("稿件名称"), { target: { value: "语音原稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "导入语音原稿" }));
+    await screen.findByText("原稿已保存至当前部署。");
+    expect(create).toHaveBeenCalledWith(
+      "project-demo",
+      { display_name: "语音原稿", source },
+      expect.any(String),
+    );
+    expect(screen.getByLabelText("校对草稿")).toHaveValue("合成原文");
+  });
+
+  it("offers a fixed revision text download after an authoritative read", async () => {
+    const f = setup();
+    render(<ManuscriptHost client={f.client} storage={f.storage} />);
+    await choose();
+    fireEvent.change(screen.getByLabelText("校对草稿"), { target: { value: "未保存的新草稿" } });
+    expect(screen.getByRole("button", { name: "下载固定版本 TXT" })).toBeEnabled();
+    expect(
+      screen.getByText("下载服务端已读取的版本 1，不包含未保存草稿。", { exact: true }),
+    ).toBeVisible();
+  });
   it("reads live lists under StrictMode and appends an exact correction", async () => {
     const f = setup();
     render(

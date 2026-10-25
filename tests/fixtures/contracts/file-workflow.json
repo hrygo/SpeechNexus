@@ -1026,6 +1026,31 @@
         "purpose": "asr_input",
         "unexpected": true
       }
+    },
+    {
+      "id": "asr-transcription-json",
+      "schema": "Transcription",
+      "valid": true,
+      "value": {
+        "text": "Synthetic transcription.\n"
+      }
+    },
+    {
+      "id": "asr-transcription-wrong-text",
+      "schema": "Transcription",
+      "valid": false,
+      "value": {
+        "text": 3
+      }
+    },
+    {
+      "id": "asr-transcription-unknown-field",
+      "schema": "Transcription",
+      "valid": false,
+      "value": {
+        "text": "Synthetic",
+        "private_endpoint": "synthetic-invalid"
+      }
     }
   ]
 }

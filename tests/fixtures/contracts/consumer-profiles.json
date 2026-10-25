@@ -8304,6 +8304,75 @@
         "storage_version": "synthetic-version",
         "media_type": "audio/wav"
       }
+    },
+    {
+      "id": "workbench-RenderUnitGenerationRequest-valid",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationRequest",
+      "valid": true,
+      "value": {
+        "expected_unit_revision": "7"
+      }
+    },
+    {
+      "id": "workbench-RenderUnitGenerationRequest-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationRequest",
+      "valid": false,
+      "value": {
+        "expected_unit_revision": 7
+      }
+    },
+    {
+      "id": "workbench-RenderUnitGenerationAccepted-valid",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationAccepted",
+      "valid": true,
+      "value": {
+        "render_unit": {
+          "id": "unit-demo",
+          "object": "nexus.render_unit",
+          "chapter_id": "chapter-demo",
+          "ordinal": 0,
+          "revision": "8",
+          "text": "Synthetic render text.",
+          "voice": {
+            "id": "voice-demo",
+            "revision": "3"
+          },
+          "model": "synthetic-tts",
+          "status": "generating",
+          "speech_job_id": "job-demo",
+          "updated_at": "2026-10-25T00:00:00Z"
+        },
+        "speech_job_id": "job-demo",
+        "accepted_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-RenderUnitGenerationAccepted-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationAccepted",
+      "valid": false,
+      "value": {
+        "render_unit": {
+          "id": "unit-demo",
+          "object": "nexus.render_unit",
+          "chapter_id": "chapter-demo",
+          "ordinal": 0,
+          "revision": "8",
+          "text": "Synthetic render text.",
+          "voice": {
+            "id": "voice-demo",
+            "revision": "3"
+          },
+          "model": "synthetic-tts",
+          "status": "generating",
+          "speech_job_id": "job-demo",
+          "updated_at": "2026-10-25T00:00:00Z"
+        },
+        "accepted_at": "2026-10-25T00:00:00Z"
+      }
     }
   ]
 }

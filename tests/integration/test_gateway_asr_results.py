@@ -63,18 +63,15 @@ async def test_command_to_private_result_and_pinned_readback(
             request, store=store, max_result_bytes=1024, cancelled=lambda: False
         )
 
-        def read() -> bytes:
-            with inputs.open_verified(
-                receipt.reference,
-                limits=ExecutionInputLimits(1024, 64, 10),
-                cancelled=lambda: False,
-            ) as verified:
-                assert verified.storage_version == receipt.storage_version
-                return verified.stream.read()
-
-        assert json.loads(await asyncio.to_thread(read)) == {
-            "text": "Synthetic.\nSynthetic." if speech else ""
-        }
+        async with inputs.open_verified(
+            receipt.reference,
+            limits=ExecutionInputLimits(1024, 64, 10),
+            cancelled=lambda: False,
+        ) as verified:
+            assert verified.storage_version == receipt.storage_version
+            assert json.loads(verified.stream.read()) == {
+                "text": "Synthetic.\nSynthetic." if speech else ""
+            }
         assert len(recognizer.requests) == (2 if speech else 0)
         assert receipt.reference.object_key.startswith("private/execution-results/")
         assert receipt.request_digest == request.request_digest

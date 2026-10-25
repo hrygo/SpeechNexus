@@ -955,6 +955,69 @@
           }
         }
       }
+    },
+    "/v1/workbench/render-units/{unit_id}/generations": {
+      "post": {
+        "tags": ["audiobooks"],
+        "operationId": "generateRenderUnit",
+        "summary": "Submit a speech Job for a render unit",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RenderUnitIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderUnitGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Speech Job submitted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitGenerationAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1034,6 +1097,14 @@
       },
       "MeetingIdPath": {
         "name": "meeting_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "RenderUnitIdPath": {
+        "name": "unit_id",
         "in": "path",
         "required": true,
         "schema": {
@@ -2859,6 +2930,255 @@
             }
           }
         ]
+      },
+      "RenderUnitGenerationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_unit_revision"],
+        "properties": {
+          "expected_unit_revision": {
+            "$ref": "#/components/schemas/Revision"
+          }
+        }
+      },
+      "RenderUnitGenerationAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["render_unit", "speech_job_id", "accepted_at"],
+        "properties": {
+          "render_unit": {
+            "$ref": "#/components/schemas/RenderUnit"
+          },
+          "speech_job_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RenderUnit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "chapter_id",
+          "ordinal",
+          "revision",
+          "text",
+          "voice",
+          "model",
+          "status",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.render_unit"
+          },
+          "chapter_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "voice": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          },
+          "pronunciation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "generating", "ready", "stale", "failed"]
+          },
+          "saved_asset_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speech_job_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_artifact_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_receipt_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "source_artifact_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["source_artifact_id"]
+            },
+            "then": {
+              "required": ["source_receipt_id"],
+              "properties": {
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "source_receipt_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["source_receipt_id"]
+            },
+            "then": {
+              "required": ["source_artifact_id"],
+              "properties": {
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "saved_asset_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["saved_asset_id"]
+            },
+            "then": {
+              "required": ["source_artifact_id", "source_receipt_id"],
+              "properties": {
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "generating"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["speech_job_id"],
+              "properties": {
+                "speech_job_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ready"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["speech_job_id", "source_artifact_id", "source_receipt_id"],
+              "properties": {
+                "speech_job_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RenderUnitVoice": {
+        "$ref": "#/components/schemas/ResourceReference"
+      },
+      "ResourceReference": {
+        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
       }
     },
     "responses": {
@@ -2919,6 +3239,21 @@
       },
       "NotFound": {
         "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Queue or quota limit exceeded; follow Retry-After.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
         "content": {
           "application/json": {
             "schema": {

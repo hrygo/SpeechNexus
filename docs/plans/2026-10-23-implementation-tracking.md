@@ -2,8 +2,7 @@
 # SpeechNexus 三团队整体实施跟踪
 
 总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本次深度复盘：2026-10-25（Asia/Shanghai）。
-深度复盘证据快照：360bb81fa173e9c235abafcb2c10cb2ecc47380b；本单元集成基线：33233c8a42b284b627e891b32b1b28faeafb30e7。
-issue正文、唯一状态标签和实际AC证据为事实来源；旧快照测试不重新归因至新提交。
+冻结主干：360bb81fa173e9c235abafcb2c10cb2ecc47380b；issue正文、唯一状态标签和实际AC证据为事实来源。
 原规划38条；新增#142阶段任务、#149交接项单列，合计40条非PR issue，不改变25主包/6 Gate分母。
 
 **工作包完整验收：0/25；Gate放行：0/6。** 21个主包in-progress，4个planned（A05/A06/B05/B07）。
@@ -29,28 +28,32 @@ A范围与下一最小单元见[团队A目标](2026-10-23-team-a-goal.md)，不�
 | 团队 | 当前可证事实 | 下一交接与真实缺口 |
 | --- | --- | --- |
 | A | 协调原事务/未知恢复、文本Asset/Workspace、Profile/Binding草稿与默认快照HTTP已合入；#139仅P1a原意图/只读证据边界 | 下一最小单元建议为真实音频AssetInspector接线；与B冻结权威Binding/参数，接完整业务Job/准入、制品/Operation/receipt与公开下载。Profile可信生产者/持久发布/CAS/最终参数仍待 |
-| B | #140/#147 原命令消费与私有 ASR 结果核验已合入；#142 回执登记/查询候选已同步 `33233c8`，本地契约/兼容/静态/Web 检查通过，4028 非集成/81.83%、54 隔离存储/迁移回归通过；候选待评审集成，完整分片另行核验 | 当前先完成回执候选的完整验证、迁移/权限串行评审与交付，再接真实持久 ASR、可信停止/释放、A 发布与 SDK/C 下载，随后 CustomVoice；输入 HEAD 总期限仍须处理，替身不增加 GPU 或集群资格 |
+| B | #140/#147 原命令消费与私有 ASR 结果核验已合入；#152 回执登记/查询候选 head `cc49865`、base `33233c8`，CI40170163645 全 14 项成功，六报告/同树与本地结果已核验；仍待评审合入 | 输入异步总期限单元在独立分支候选，覆盖慢 HEAD/GET 响应头、慢正文、取消/并发和真实 MinIO 不透明键；最终适用验证以该候选 PR 为准。接着推进真实持久 ASR、可信停止/释放、A 发布与 SDK/C 下载，再接 CustomVoice；替身不增加 GPU 或集群资格 |
 | C | #35–43作者报告真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放和章节/单元登记；导出worker默认关闭预接线 | base4b08c396的改动未提交/推送/集成；需可获取版本、迁移owner片段、组合根与method+path生产消费者清单。真实助手/公开SpeechJob/已发布音色和目标资格仍待；A不改C issue |
 
 B组件边界见[私有结果交接](../architecture/file-asr-results.md)与[团队B目标](2026-10-23-team-b-goal.md)。
-当前候选分支 `codex/b03-durable-result-receipt` 已同步 main `33233c8`；
-[原身份回执登记/查询](../architecture/execution-staging-results.md)待 PR 评审与主线集成，
+回执分支 `codex/b03-durable-result-receipt` 的 [PR #152](https://github.com/hrygo/SpeechNexus/pull/152)
+已完成精确 head CI，待 A 迁移/权限评审、管理集成与合后核验；
+[原身份回执登记/查询](../architecture/execution-staging-results.md)不证明真实执行或预算释放。
+下一分支 `codex/b03-input-io-deadline` 从该 head 单独交付
+[可取消的有界输入](../architecture/frozen-execution-inputs.md#对象输入)，不改变 #152 受检版本。
 真实执行、终态/预算与 A 发布仍分别验收。B00/B01/B02/B03/B04/B06 保持 in-progress，B05/B07 保持 planned。
 C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再沿用“只剩三个”的旧统计。
 作者后续已补项目name改名和音色单修订调用，称已绑定直接消费者缺口归零；name外字段、声音真实成功/表单联动仍缺。
 仅书籍页表单另有本机键盘/360px证据，不扩大为全站/读屏/Linux资格；逐项链接与验证方式见深度复盘。
-A00在当前main仍缺四项runtime绑定：generateRenderUnit仅#141候选；
+A00的generateRenderUnit JSON/runtime绑定已由#141合入main a7f4d46；
 downloadSavedAsset/downloadBookExport二进制与streamExportEvents SSE仍待，不据静态类型或单条样例消项。
 
-A02-INSPECT-01正在独立分支交付[私有音频检查执行边界](../architecture/audio-asset-inspection.md)：
-真实Linux隔离/资源上限、禁止派生、取消/超时kill与reap、未知停止保留原槽位；尚未装配公开上传或真实媒体。
-共享媒体制品/最小镜像及实际HTTP/PG/MinIO验收仍待，7天TTL/原键/固定版本不变，不据进程测试勾选A02音频AC。
-B的#152是未合入的结果回执候选，其A迁移/权限方案接收复核另待确认；本单元不执行其迁移或改变权限。
+#141已合入a7f4d46；合前CI40183282718与合后CI40183620450均为full模式、14项成功。
+仅两个runtime DTO与JSON入口可同版消费；三个binary/SSE、实际C路由、公开SpeechJob与音色资格仍待。
 
-#141保持未合并，head b840ea2d2f6f4b538cafbfe2355ac464a5cc7808，受检base7b042d5。
-CI40159242336的14项成功/3972单元/81.64%/1243集成通过+22既有跳过，仅适用于该旧组合。
-精确head复审通过，但管理端合并被自动安全审核拒绝，等待用户明确确认；本轮不重试、不改变其head或夹带实现。
-当前main33233c8的组合尚未验证；若批准，仍须正常同步、审查新增量、取得新head必需检查，再由管理端处理。
+A02-INSPECT-01候选#155提供[私有音频检查执行边界](../architecture/audio-asset-inspection.md)：
+实际payload pidfd与外层回收、并发引用保护及未知停止保留槽位已有本地证据，未装配公开上传或真实媒体。
+远端6e7a39a的CI40183062936仍因RTM_NEWADDR EPERM失败；同秒同bwrap PID的内核记录显示
+unprivileged_userns拒绝net_admin/setpcap。一次、单台临时CI虚机的官方双规则实验待用户专项批准；
+未加载规则，不授权长期自动加载。当前只做本地主干冲突收敛，不重复触发已知失败探针。
+B的#152/#154已由外部合入；本单元保留其制品，不执行生产迁移/授权。共享媒体/镜像与真实
+HTTP/PG/MinIO、跨generation停止仍待；7天TTL/原键/固定版本不变，不据进程测试勾选音频AC。
 
 文件ASR路线：真实ready音频 + 固定权威配置 → 完整业务Job/原子准入 → 唯一真实外发 →
 B持久结果回执与可信停止 → A发布/下载 → SDK/C消费。

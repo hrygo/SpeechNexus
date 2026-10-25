@@ -1,25 +1,24 @@
-"""Fixed-origin, complete-before-expose object reads and private spool lifetime."""
+"""Fixed-origin complete-before-expose async input and private spool lifetime."""
 
+import asyncio
 import hashlib
 import io
 import ssl
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
 
+import httpx
 import pytest
-import urllib3
-from urllib3 import HTTPResponse
-from urllib3._collections import HTTPHeaderDict
 
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
+from speechnexus_gateway.domain.asr import AsrCallError, AsrFailure
 from speechnexus_gateway.domain.execution_inputs import (
     ExecutionInputError,
     ExecutionInputLimits,
     ExecutionObjectReference,
 )
-from speechnexus_gateway.infrastructure import execution_objects_minio as objects
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
 from tests.fake.execution_command import command_example, original_request
 
@@ -38,32 +37,72 @@ def reference(body: bytes = BODY) -> ExecutionObjectReference:
     )
 
 
-class Response:
+class Stream(httpx.AsyncByteStream):
     def __init__(self, body: bytes = BODY) -> None:
-        self.status = 200
-        self.headers = HTTPHeaderDict({"Content-Length": str(len(body)), "x-amz-version-id": "v1"})
-        self.stream = io.BytesIO(body)
-        self.closed = self.released = False
+        self.buffer = io.BytesIO(body)
+        self.closed = False
         self.fail_close = False
+        self.reads = 0
+        self.after_read: Callable[[], None] = lambda: None
+        self.after_close: Callable[[], None] = lambda: None
+        self.partial_then_wait = False
 
-    def read1(self, amount: int, *, decode_content: bool) -> bytes:
-        assert not decode_content
-        return self.stream.read(amount)
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        while chunk := self.buffer.read(1 if self.partial_then_wait else 65536):
+            self.reads += 1
+            self.after_read()
+            yield chunk
+            if self.partial_then_wait:
+                await asyncio.Event().wait()
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         self.closed = True
-        self.stream.close()
+        self.buffer.close()
+        self.after_close()
         if self.fail_close:
             raise OSError("private-path-must-not-leak")
 
-    def release_conn(self) -> None:
-        self.released = True
+
+class HeadStream(Stream):
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        self.reads += 1
+        raise AssertionError("HEAD body must not be read")
+
+
+class Harness:
+    def __init__(self, value: MinioExecutionInputs) -> None:
+        self.value = value
+        self.calls: list[httpx.Request] = []
+        self.clients: list[httpx.AsyncClient] = []
+        self.head = HeadStream(b"synthetic-unread-body")
+        self.body = Stream()
+        self.head_headers = httpx.Headers(
+            {"Content-Length": str(len(BODY)), "x-amz-version-id": "v1"}
+        )
+        self.get_headers = httpx.Headers(self.head_headers)
+        self.head_status = self.get_status = 200
+        self.error: Exception | None = None
+        self.cancelled = False
+
+    def client(self) -> httpx.AsyncClient:
+        async def respond(request: httpx.Request) -> httpx.Response:
+            self.calls.append(request)
+            if self.error is not None:
+                raise self.error
+            if request.method == "HEAD":
+                return httpx.Response(self.head_status, headers=self.head_headers, stream=self.head)
+            assert request.method == "GET" and request.url.params["versionId"] == "v1"
+            return httpx.Response(self.get_status, headers=self.get_headers, stream=self.body)
+
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(respond), trust_env=False, follow_redirects=False
+        )
+        self.clients.append(client)
+        return client
 
 
 @pytest.fixture
-def adapter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[MinioExecutionInputs, Mock, Response]:
+def adapter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Harness]:
     tmp_path.chmod(0o700)
     value = MinioExecutionInputs(
         endpoint="http://127.0.0.1:59000",
@@ -72,100 +111,123 @@ def adapter(
         secret_key="synthetic-secret",
         spool_directory=tmp_path,
     )
-    response = Response()
-    client = Mock()
-    client.stat_object.return_value = Mock(version_id="v1", size=len(BODY))
-    client.get_object.return_value = response
-    monkeypatch.setattr(value, "_client", client)
-    return value, client, response
+    harness = Harness(value)
+    monkeypatch.setattr(value, "_new_client", harness.client)
+    yield harness
+    assert all(client.is_closed for client in harness.clients)
+    value.close()
 
 
-def test_fixed_version_full_digest_eof_and_spool_lifetime(adapter: Any, tmp_path: Path) -> None:
-    value, client, response = adapter
-    with value.open_verified(reference(), limits=LIMITS, cancelled=lambda: False) as result:
-        stream = result.stream
-        assert stream.read() == BODY and stream.seek(0) == 0
-        assert result.storage_version == "v1"
-        assert response.closed and response.released and not stream.closed
-        assert "private/assets" not in repr(result) and "v1" not in repr(result)
-    assert stream.closed and not list(tmp_path.iterdir())
-    client.get_object.assert_called_once_with(
-        "sn-input-test",
-        reference().object_key,
-        version_id="v1",
-        request_headers={"Accept-Encoding": "identity"},
-    )
-
-
-def test_partial_body_returns_to_cancellation_check_without_filling_a_chunk(
-    adapter: Any, monkeypatch: pytest.MonkeyPatch
+async def test_fixed_version_full_digest_eof_and_spool_lifetime(
+    adapter: Harness, tmp_path: Path
 ) -> None:
-    value, _, response = adapter
-    stopped = False
-    reads = 0
+    async with adapter.value.open_verified(
+        reference(), limits=LIMITS, cancelled=lambda: False
+    ) as obj:
+        stream = obj.stream
+        assert stream.read() == BODY and stream.seek(0) == 0
+        assert obj.storage_version == "v1"
+        assert adapter.head.closed and adapter.body.closed
+        assert "private/assets" not in repr(obj) and "v1" not in repr(obj)
+        assert all(client.is_closed for client in adapter.clients)
+    assert stream.closed
+    assert not await asyncio.to_thread(lambda: list(tmp_path.iterdir()))
+    assert [request.method for request in adapter.calls] == ["HEAD", "GET"]
+    assert adapter.calls[1].url.params["versionId"] == "v1"
+    assert all(request.headers["Accept-Encoding"] == "identity" for request in adapter.calls)
+    assert all(
+        request.headers["Authorization"].startswith("AWS4-HMAC-SHA256 ")
+        for request in adapter.calls
+    )
+    assert adapter.head.reads == 0
 
-    def read1(amount: int, *, decode_content: bool) -> bytes:
-        nonlocal stopped, reads
-        assert not decode_content and amount > 0
-        reads += 1
-        stopped = True
-        return BODY[:1]
 
-    monkeypatch.setattr(response, "read1", read1)
-    with (
-        pytest.raises(ExecutionInputError, match="execution_input_cancelled"),
-        value.open_verified(reference(), limits=LIMITS, cancelled=lambda: stopped),
-    ):
-        pytest.fail("partial cancelled input must not reach the consumer")
-    assert reads == 1 and response.closed and response.released
+async def test_partial_body_can_be_cancelled_before_a_full_chunk_arrives(adapter: Harness) -> None:
+    adapter.body.partial_then_wait = True
+    adapter.body.after_read = lambda: setattr(adapter, "cancelled", True)
+    with pytest.raises(ExecutionInputError, match="execution_input_cancelled"):
+        async with adapter.value.open_verified(
+            reference(), limits=LIMITS, cancelled=lambda: adapter.cancelled
+        ):
+            pytest.fail("partial cancelled input reached consumer")
+    assert adapter.body.reads == 1 and adapter.body.closed
 
 
-def test_downstream_failure_keeps_its_identity_and_closes_spool(adapter: Any) -> None:
-    value, _, response = adapter
+async def test_downstream_failure_keeps_identity_and_closes_spool(adapter: Harness) -> None:
     failure = RuntimeError("synthetic consumer failure")
-    with (
-        pytest.raises(RuntimeError) as caught,
-        value.open_verified(reference(), limits=LIMITS, cancelled=lambda: False) as result,
-    ):
-        stream = result.stream
-        assert response.closed and response.released
-        raise failure
+    with pytest.raises(RuntimeError) as caught:
+        async with adapter.value.open_verified(
+            reference(), limits=LIMITS, cancelled=lambda: False
+        ) as obj:
+            stream = obj.stream
+            assert adapter.body.closed
+            raise failure
     assert caught.value is failure and stream.closed
 
 
 @pytest.mark.parametrize(
     "failure",
-    ["sha", "short", "long", "version", "length", "encoding", "status", "stat-size", "stat-null"],
+    [
+        "sha",
+        "short",
+        "long",
+        "version",
+        "length",
+        "encoding",
+        "stat-size",
+        "stat-null",
+        "stat-control",
+        "duplicate-version",
+        "duplicate-length",
+    ],
 )
-def test_incomplete_or_wrong_object_never_reaches_consumer(adapter: Any, failure: str) -> None:
-    value, client, response = adapter
+async def test_incomplete_or_wrong_object_never_reaches_consumer(
+    adapter: Harness, failure: str
+) -> None:
     ref = reference()
     if failure == "sha":
         ref = replace(ref, content_sha256="sha256:" + "0" * 64)
-    if failure == "short":
-        response.stream = io.BytesIO(BODY[:-1])
-    if failure == "long":
-        response.stream = io.BytesIO(BODY + b"x")
+    if failure in {"short", "long"}:
+        adapter.body = Stream(BODY[:-1] if failure == "short" else BODY + b"x")
     if failure in {"version", "length", "encoding"}:
-        header = {
-            "version": "x-amz-version-id",
-            "length": "Content-Length",
-            "encoding": "Content-Encoding",
-        }[failure]
-        response.headers[header] = "invalid"
-    if failure == "status":
-        response.status = 206
+        adapter.get_headers[
+            {
+                "version": "x-amz-version-id",
+                "length": "Content-Length",
+                "encoding": "Content-Encoding",
+            }[failure]
+        ] = "invalid"
     if failure == "stat-size":
-        client.stat_object.return_value.size += 1
-    if failure == "stat-null":
-        client.stat_object.return_value.version_id = "null"
-    with (
-        pytest.raises(ExecutionInputError, match="execution_input_identity_mismatch"),
-        value.open_verified(ref, limits=LIMITS, cancelled=lambda: False),
-    ):
-        pytest.fail("unverified object was exposed")
-    if client.get_object.called:
-        assert response.closed and response.released
+        adapter.head_headers["Content-Length"] = str(len(BODY) + 1)
+    if failure in {"stat-null", "stat-control"}:
+        adapter.head_headers["x-amz-version-id"] = "null" if failure == "stat-null" else "v1\x7f"
+    if failure in {"duplicate-version", "duplicate-length"}:
+        key = "x-amz-version-id" if failure == "duplicate-version" else "Content-Length"
+        adapter.head_headers = httpx.Headers(
+            [*adapter.head_headers.multi_items(), (key, adapter.head_headers[key])]
+        )
+    with pytest.raises(ExecutionInputError, match="execution_input_identity_mismatch"):
+        async with adapter.value.open_verified(ref, limits=LIMITS, cancelled=lambda: False):
+            pytest.fail("unverified object exposed")
+    assert adapter.head.closed
+    if len(adapter.calls) == 2:
+        assert adapter.body.closed
+
+
+@pytest.mark.parametrize("method", ["HEAD", "GET"])
+@pytest.mark.parametrize("status", [204, 206, 302, 307, 403, 500])
+async def test_status_is_rejected_before_any_body_read(
+    adapter: Harness, method: str, status: int
+) -> None:
+    if method == "HEAD":
+        adapter.head_status = status
+    else:
+        adapter.get_status = status
+    with pytest.raises(ExecutionInputError, match="execution_input_unavailable"):
+        async with adapter.value.open_verified(reference(), limits=LIMITS, cancelled=lambda: False):
+            pytest.fail("error body exposed")
+    assert adapter.head.reads == adapter.body.reads == 0
+    assert len(adapter.calls) == (1 if method == "HEAD" else 2)
 
 
 @pytest.mark.parametrize(
@@ -181,68 +243,76 @@ def test_incomplete_or_wrong_object_never_reaches_consumer(adapter: Any, failure
         "private/a\x7f",
     ],
 )
-def test_ambiguous_key_is_rejected_before_network(adapter: Any, key: str) -> None:
-    value, client, _ = adapter
-    with (
-        pytest.raises(ExecutionInputError),
-        value.open_verified(
+async def test_ambiguous_key_is_rejected_before_network(adapter: Harness, key: str) -> None:
+    with pytest.raises(ExecutionInputError):
+        async with adapter.value.open_verified(
             replace(reference(), object_key=key), limits=LIMITS, cancelled=lambda: False
-        ),
-    ):
-        pytest.fail("bad key exposed")
-    client.stat_object.assert_not_called()
+        ):
+            pytest.fail("bad key exposed")
+    assert not adapter.calls and not adapter.clients
 
 
 @pytest.mark.parametrize("failure", ["scope", "limit", "cancel", "deadline", "transport", "close"])
-def test_scope_budget_cancel_deadline_and_cleanup_are_safe(
-    adapter: Any, monkeypatch: pytest.MonkeyPatch, failure: str
+async def test_scope_budget_cancel_deadline_and_cleanup_are_safe(
+    adapter: Harness, failure: str
 ) -> None:
-    value, client, response = adapter
     ref, limits = reference(), LIMITS
     if failure == "scope":
         ref = replace(ref, storage_bucket="another-bucket")
     if failure == "limit":
-        limits = replace(LIMITS, max_bytes=len(BODY) - 1)
+        limits = replace(limits, max_bytes=len(BODY) - 1)
     if failure == "deadline":
-        instants = iter([0.0, 11.0])
-        monkeypatch.setattr(objects, "monotonic", lambda: next(instants))
+        limits = replace(limits, timeout_seconds=1e-12)
     if failure == "transport":
-        client.stat_object.side_effect = OSError("private-path-must-not-leak")
+        adapter.error = OSError("private-path-must-not-leak")
     if failure == "close":
-        response.fail_close = True
-    with (
-        pytest.raises(ExecutionInputError) as caught,
-        value.open_verified(ref, limits=limits, cancelled=lambda: failure == "cancel"),
-    ):
-        pytest.fail("failed input exposed")
+        adapter.body.fail_close = True
+    with pytest.raises(ExecutionInputError) as caught:
+        async with adapter.value.open_verified(
+            ref, limits=limits, cancelled=lambda: failure == "cancel"
+        ):
+            pytest.fail("failed input exposed")
     assert "private-path" not in str(caught.value)
     if failure in {"scope", "limit", "cancel", "deadline"}:
-        client.stat_object.assert_not_called()
+        assert not adapter.calls
     if failure == "close":
-        assert response.closed and response.released
+        assert adapter.body.closed
 
 
-def test_cancel_mid_read_survives_remote_cleanup_error(adapter: Any) -> None:
-    value, _, response = adapter
-    response.fail_close = True
-    with (
-        pytest.raises(ExecutionInputError, match="execution_input_cancelled"),
-        value.open_verified(
-            reference(), limits=LIMITS, cancelled=lambda: response.stream.tell() > 0
-        ),
-    ):
-        pytest.fail("cancelled input exposed")
-    assert response.closed and response.released
+async def test_cancel_mid_read_survives_remote_cleanup_error(adapter: Harness) -> None:
+    adapter.body.fail_close = True
+    adapter.body.partial_then_wait = True
+    adapter.body.after_read = lambda: setattr(adapter, "cancelled", True)
+    with pytest.raises(ExecutionInputError, match="execution_input_cancelled"):
+        async with adapter.value.open_verified(
+            reference(), limits=LIMITS, cancelled=lambda: adapter.cancelled
+        ):
+            pytest.fail("cancelled input exposed")
+    assert adapter.body.closed
 
 
-def test_cancel_during_remote_close_never_exposes_prepared_content(adapter: Any) -> None:
-    value, _, response = adapter
-    with (
-        pytest.raises(ExecutionInputError, match="execution_input_cancelled"),
-        value.open_verified(reference(), limits=LIMITS, cancelled=lambda: response.closed),
-    ):
-        pytest.fail("cancelled input exposed after close")
-    assert response.closed and response.released
+async def test_cancel_during_remote_close_never_exposes_prepared_content(adapter: Harness) -> None:
+    adapter.body.after_close = lambda: setattr(adapter, "cancelled", True)
+    with pytest.raises(ExecutionInputError, match="execution_input_cancelled"):
+        async with adapter.value.open_verified(
+            reference(), limits=LIMITS, cancelled=lambda: adapter.cancelled
+        ):
+            pytest.fail("cancelled input exposed after close")
+    assert adapter.body.closed
+
+
+async def test_execution_deadline_error_keeps_its_domain_identity(adapter: Harness) -> None:
+    failure = AsrCallError(AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=False)
+
+    def check() -> bool:
+        if adapter.calls:
+            raise failure
+        return False
+
+    with pytest.raises(AsrCallError) as caught:
+        async with adapter.value.open_verified(reference(), limits=LIMITS, cancelled=check):
+            pytest.fail("expired execution exposed input")
+    assert caught.value is failure and not failure.request_may_have_run
 
 
 @pytest.mark.parametrize(
@@ -287,40 +357,13 @@ def test_bad_bucket_directory_and_unverified_tls_fail_startup(tmp_path: Path, fa
         )
 
 
-@pytest.mark.parametrize(
-    "url,method", [("http://127.0.0.2:59000/x", "GET"), ("http://127.0.0.1:59000/x", "POST")]
-)
-def test_fixed_http_blocks_alternate_origin_and_mutations(url: str, method: str) -> None:
-    http = objects._FixedObjectHTTP("http://127.0.0.1:59000", None)
-    with pytest.raises(ExecutionInputError, match="origin_rejected"):
-        http.urlopen(method, url)
-
-
-def test_transport_explicitly_disables_redirects_and_retries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, Any] = {}
-
-    def urlopen(self: Any, method: str, url: str, *args: Any, **kwargs: Any) -> HTTPResponse:
-        captured.update(kwargs)
-        return HTTPResponse(body=b"", status=307)
-
-    monkeypatch.setattr(urllib3.PoolManager, "urlopen", urlopen)
-    http = objects._FixedObjectHTTP("http://127.0.0.1:59000", None)
-    with pytest.raises(ExecutionInputError, match="execution_input_unavailable"):
-        http.urlopen("GET", "http://127.0.0.1:59000/x")
-    assert captured["redirect"] is False and captured["pool_timeout"] == 3
-    assert http.connection_pool_kw["retries"].total == 0
-
-
-def test_file_input_keeps_same_command_and_format_and_scope(adapter: Any) -> None:
-    value, _, _ = adapter
+async def test_file_input_keeps_same_command_and_format_and_scope(adapter: Harness) -> None:
     command = command_example()
     command["audio"]["storage"] = {
         field: getattr(reference(), field) for field in reference().__dataclass_fields__
     }
     request = original_request(command)
-    with FileExecutionInputs(value).open_asr(
+    async with FileExecutionInputs(adapter.value).open_asr(
         request, limits=LIMITS, cancelled=lambda: False
     ) as prepared:
         assert prepared.request is request
@@ -329,15 +372,12 @@ def test_file_input_keeps_same_command_and_format_and_scope(adapter: Any) -> Non
     assert prepared.object_input.stream.closed
 
 
-def test_workspace_mismatch_prevents_network(adapter: Any) -> None:
-    value, client, _ = adapter
+async def test_workspace_mismatch_prevents_network(adapter: Harness) -> None:
     command = command_example()
     command["audio"]["storage"]["workspace_id"] = "another-workspace"
-    with (
-        pytest.raises(ExecutionInputError, match="scope_mismatch"),
-        FileExecutionInputs(value).open_asr(
+    with pytest.raises(ExecutionInputError, match="scope_mismatch"):
+        async with FileExecutionInputs(adapter.value).open_asr(
             original_request(command), limits=LIMITS, cancelled=lambda: False
-        ),
-    ):
-        pytest.fail("wrong workspace")
-    client.stat_object.assert_not_called()
+        ):
+            pytest.fail("wrong workspace")
+    assert not adapter.calls

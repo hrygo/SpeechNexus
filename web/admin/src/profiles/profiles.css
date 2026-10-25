@@ -1,0 +1,24 @@
+.profile-drafts {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.profile-drafts fieldset {
+  display: grid;
+  gap: var(--nexus-space-3);
+  min-width: 0;
+  margin-block: var(--nexus-space-3);
+}
+.profile-drafts label {
+  display: grid;
+  gap: var(--nexus-space-2);
+  min-width: 0;
+}
+.profile-drafts input,
+.profile-drafts textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+.profile-drafts pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

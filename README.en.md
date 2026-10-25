@@ -63,6 +63,7 @@ Repository delivery summary as of **2026-10-25**. Independently verified modules
 | Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |
 | File transcription, narration, and task pages | Public API consumer flows connected | Real speech execution, result generation, and complete deployment still need integration |
 | Projects, manuscripts, and meeting records | Pages and an independent workbench service have verification evidence | Separate configuration and database preparation required; not fully assembled in default Compose |
+| Scenario preset drafts | Admin supports complete draft creation, fixed revision reads, explicit confirmation, and original-key recovery, verified through HTTP/PostgreSQL/browser tests | Explicit profile writer configuration required; publication, activation, and retirement are not connected |
 | Live captions, live speech, and voice creation | Page consumers tested with synthetic services | Real services and models pending; creating a task does not publish a reusable voice |
 | Asset upload and download | Available with explicit configuration; UTF-8 text handling verified | Object credentials disabled by default; audio inspection integration pending |
 | Real models and production operation | Partial ASR, VAD, and CustomVoice TTS probes and modules verified | Complete recognition/synthesis, quality, capacity, recovery, and cluster operation still need acceptance |

@@ -2,6 +2,7 @@ import { AppShell, CapabilityCard } from "@speechnexus/shared";
 import { TaskCenterHost } from "./task-center/TaskCenterHost";
 import { WorkspaceHost } from "./workspaces/WorkspaceHost";
 import { DiagnosticsHost } from "./diagnostics/DiagnosticsHost";
+import { ProfileHost } from "./profiles/ProfileHost";
 
 export function App() {
   return (
@@ -38,6 +39,7 @@ export function App() {
       </section>
       <DiagnosticsHost />
       <WorkspaceHost />
+      <ProfileHost />
       <TaskCenterHost />
     </AppShell>
   );

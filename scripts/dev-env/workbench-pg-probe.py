@@ -333,6 +333,11 @@ def main() -> int:
             command.append("tests/integration/test_workbench_real_runtime_assistant_browser.py")
             # The AdminUI diagnostics page against the same real runtime.
             command.append("tests/integration/test_admin_diagnostics_browser.py")
+            # Profile drafts use the real A-owned composition/SQL with transport fault injection.
+            command.append("tests/integration/test_admin_profiles_browser.py")
+            env["SPEECHNEXUS_ADMIN_PROFILES_OUTPUT"] = str(
+                args.output.resolve().parent / (args.output.stem + "-admin-profiles")
+            )
             # The deployment teleprompter state consumed by the production bundle.
             command.append(
                 "tests/integration/test_workbench_real_runtime_prompter_state_browser.py"

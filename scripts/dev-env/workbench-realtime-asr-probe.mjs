@@ -432,6 +432,42 @@ page.on("console", (m) => {
   if (m.type() === "error" && !m.text().startsWith("Failed to load resource:"))
     errors.push("console");
 });
+const focusChecks = [];
+const usableFocus = async (checkpoint) => {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((name) => {
+          const host = document.querySelector(`[aria-label="${name}"]`),
+            focused = document.activeElement;
+          return (
+            !!host?.contains(focused) &&
+            focused instanceof HTMLElement &&
+            focused.matches("button, input, textarea, select, a[href], [tabindex]") &&
+            !focused.matches(":disabled, [aria-disabled='true']") &&
+            focused.getClientRects().length > 0 &&
+            getComputedStyle(focused).visibility !== "hidden"
+          );
+        }, "实时字幕工作台"),
+      { message: `usable keyboard focus after ${checkpoint}` },
+    )
+    .toBe(true);
+  focusChecks.push({
+    checkpoint,
+    ...(await page.evaluate(() => ({
+      tag: document.activeElement.tagName,
+      disabled: document.activeElement.matches(":disabled"),
+    }))),
+  });
+};
+const activate = async (name) => {
+  const button = page.getByRole("button", { name, exact: true });
+  await expect(button).toBeEnabled();
+  await button.focus();
+  await expect(button).toBeFocused();
+  await page.keyboard.press("Enter");
+  await usableFocus(name);
+};
 const enter = async () => {
   await page.getByRole("button", { name: "实时字幕", exact: true }).click();
   await expect(page.getByRole("region", { name: "实时字幕工作台" })).toBeVisible();
@@ -444,10 +480,10 @@ const create = async () => {
     ["模型版本", "1"],
   ])
     await page.getByLabel(label, { exact: true }).fill(value);
-  await page.getByRole("button", { name: "创建实时会话", exact: true }).click();
+  await activate("创建实时会话");
 };
 const connect = async (s) => {
-  await page.getByRole("button", { name: "连接此会话" }).click();
+  await activate("连接此会话");
   await expect.poll(() => s.ws?.readyState).toBe(1);
   await expect(page.getByRole("button", { name: "开始麦克风采集" })).toBeDisabled();
   admit(s);
@@ -482,13 +518,13 @@ try {
   await page.reload();
   await enter();
   assert.equal(writes.length, 1);
-  await page.getByRole("button", { name: "按原键重放" }).click();
+  await activate("按原键重放");
   await expect(page.getByText("session-1", { exact: true })).toBeVisible();
   assert.equal(writes[0].key, writes[1].key);
   assert.deepEqual(writes[0].body, writes[1].body);
   const first = sessions.get("session-1");
   await connect(first);
-  await page.getByRole("button", { name: "开始麦克风采集" }).click();
+  await activate("开始麦克风采集");
   await expect(page.getByText("<b>合成预览</b>", { exact: true })).toBeVisible();
   if (deviceSwitch) {
     send(first, {
@@ -528,12 +564,12 @@ try {
     assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 1);
     const stoppedAt = first.sent;
     await expect(page.getByRole("button", { name: "创建实时会话", exact: true })).toBeDisabled();
-    await page.getByRole("button", { name: "按原键重放" }).click();
+    await activate("按原键重放");
     await expect(page.getByText(/正在结束.*接受时快照/)).toBeVisible();
     assert.equal(writes.at(-1).key, writes.at(-2).key);
     assert.deepEqual(writes.at(-1).body, writes.at(-2).body);
     complete(first);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
     await create();
     await expect(page.getByText("session-2", { exact: true })).toBeVisible();
@@ -558,11 +594,11 @@ try {
     assert(!journal.includes(selected));
     assert(!JSON.stringify(writes).includes(selected));
     await expect(page.getByLabel("本标签页最终正文草稿")).toHaveValue("合成切换前正文");
-    await page.getByRole("button", { name: "停止采集并中止" }).click();
+    await activate("停止采集并中止");
     await mediaStopped();
     assert.equal(first.sent, stoppedAt);
     complete(second);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 360, height: 960 });
     assert.equal(
@@ -601,7 +637,7 @@ try {
   } else if (cleanupMode) {
     if (stopKind === "interruption")
       await page.evaluate(() => window.__realtimeMedia.contexts[0].suspend());
-    else await page.getByRole("button", { name: "停止采集并中止" }).click();
+    else await activate("停止采集并中止");
     await expect(page.getByRole("alert")).toContainText("提交结果尚未确认");
     await expect(page.getByTestId("asr-microphone-state")).toContainText("正在停止");
     await expect
@@ -618,12 +654,12 @@ try {
       stopKind === "interruption" ? "suspended" : "running",
     );
     assert.equal(await page.evaluate(() => window.__captureCloseCalls), 1);
-    await page.getByRole("button", { name: "按原键重放" }).click();
+    await activate("按原键重放");
     await expect(page.getByText(/正在结束.*接受时快照/)).toBeVisible();
     assert.equal(writes.at(-1).key, writes.at(-2).key);
     assert.deepEqual(writes.at(-1).body, writes.at(-2).body);
     complete(first);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
     await expect(page.getByTestId("asr-microphone-state")).toContainText("正在停止");
     await expect(page.getByRole("button", { name: "创建实时会话", exact: true })).toBeDisabled();
@@ -636,7 +672,7 @@ try {
       await mediaStopped();
     } else {
       await expect(page.getByRole("alert")).toContainText("释放未确认");
-      await page.getByRole("button", { name: "读取当前会话状态" }).click();
+      await activate("读取当前会话状态");
       await expect(page.getByRole("alert")).toContainText("释放未确认");
       await expect(page.getByRole("button", { name: "创建实时会话", exact: true })).toBeDisabled();
       assert.equal(
@@ -680,7 +716,7 @@ try {
     await expect.poll(() => first.commits).toBe(1);
     assert(!writes.some((w) => w.path.endsWith("/cancellations")));
     await expect.poll(() => first.sent > first.segmentStart).toBe(true);
-    await page.getByRole("button", { name: "提交当前语音段" }).click();
+    await activate("提交当前语音段");
     await expect(page.getByText(/整体执行失败/)).toBeVisible();
     await expect(page.getByText(/辅助结果正文版本待核验/)).toBeVisible();
     await expect(page.getByLabel("本标签页最终正文草稿")).toHaveValue(
@@ -688,7 +724,7 @@ try {
     );
     assert.equal(await page.locator(".realtime-segment script").count(), 0);
     await expect(page.getByText("正文已完成（空文本）")).toBeVisible();
-    await page.getByRole("button", { name: "停止采集并排空" }).click();
+    await activate("停止采集并排空");
     await expect(page.getByRole("alert")).toContainText("提交结果尚未确认");
     await mediaStopped();
     assert.equal(first.ws.readyState, 1);
@@ -697,31 +733,31 @@ try {
       window.__realtimeOriginal = sessionStorage.getItem("speechnexus.workbench.realtime-asr.v1");
       sessionStorage.setItem("speechnexus.workbench.realtime-asr.v1", "corrupt");
     });
-    await page.getByRole("button", { name: "按原键重放" }).click();
+    await activate("按原键重放");
     await expect(page.getByRole("alert")).toContainText("恢复信息未能保存");
     assert.equal(writes.length, before);
     await page.evaluate(() =>
       sessionStorage.setItem("speechnexus.workbench.realtime-asr.v1", window.__realtimeOriginal),
     );
-    await page.getByRole("button", { name: "重试保存恢复信息" }).click();
-    await page.getByRole("button", { name: "按原键重放" }).click();
+    await activate("重试保存恢复信息");
+    await activate("按原键重放");
     await expect(page.getByText(/正在结束.*接受时快照/)).toBeVisible();
     assert.equal(writes.at(-1).key, writes.at(-2).key);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("正在结束 · 清理待确认", { exact: true })).toBeVisible();
     const drainKey = writes.at(-1).key;
-    await page.getByRole("button", { name: "停止采集并中止" }).click();
+    await activate("停止采集并中止");
     await expect(page.getByRole("alert")).toContainText("提交结果尚未确认");
     const abortKey = writes.at(-1).key;
     assert.notEqual(abortKey, drainKey);
     assert.deepEqual(writes.at(-1).body, { mode: "abort" });
     await page.reload();
     await enter();
-    await page.getByRole("button", { name: "按原键重放" }).click();
+    await activate("按原键重放");
     await expect(page.getByText(/正在结束.*接受时快照/)).toBeVisible();
     assert.equal(writes.at(-1).key, abortKey);
     complete(first);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "下载最终正文草稿" }).click();
@@ -735,19 +771,19 @@ try {
     await expect(page.getByText("session-2", { exact: true })).toBeVisible();
     const second = sessions.get("session-2");
     await connect(second);
-    await page.getByRole("button", { name: "开始麦克风采集" }).click();
+    await activate("开始麦克风采集");
     await expect(page.getByRole("alert")).toContainText("麦克风采集已中断", { timeout: 10000 });
     await mediaStopped();
     assert.equal(second.sent, 2400);
     await expect(page.getByText("存在输入或连接缺口")).toBeVisible();
     complete(second);
-    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await activate("读取当前会话状态");
     await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
     await create();
     await expect(page.getByText("session-3", { exact: true })).toBeVisible();
     const third = sessions.get("session-3");
     await connect(third);
-    await page.getByRole("button", { name: "开始麦克风采集" }).click();
+    await activate("开始麦克风采集");
     await expect.poll(() => third.sent).toBeGreaterThan(0);
     await page.getByRole("button", { name: "文件转写", exact: true }).click();
     await mediaStopped();
@@ -840,6 +876,7 @@ try {
   );
   throw error;
 } finally {
+  await writeFile(resolve(output, "keyboard-focus.json"), JSON.stringify(focusChecks, null, 2));
   await context.close();
   await browser.close();
   for (const ws of sockets) ws.terminate();

@@ -13,12 +13,13 @@ from speechnexus_node_controller.application.readiness import ReadinessService
 from speechnexus_node_controller.application.runtime_control import (
     NodeRuntimeControlService,
 )
-from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry
+from speechnexus_node_controller.domain.templates import ApprovedTemplateRegistry, EngineAuthKind
 from speechnexus_node_controller.infrastructure.docker_api import DockerApi
 from speechnexus_node_controller.infrastructure.docker_runtime import (
     DockerNodeRuntime,
     DockerRuntimeSettings,
 )
+from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
 from speechnexus_node_controller.infrastructure.local_observer import LocalObservationLoop
 from speechnexus_node_controller.infrastructure.readiness import (
     DockerDaemonReadinessProbe,
@@ -44,7 +45,19 @@ def _build_dependencies(
     settings: Settings,
 ) -> tuple[NodeRuntimeControlService, ReadinessService, SqliteIntentStore, DockerApi]:
     """Wire the approved templates, durable intent facts, and the local daemon."""
-    templates = ApprovedTemplateRegistry(load_approved_templates(settings.approved_templates_file))
+    approved = load_approved_templates(settings.approved_templates_file)
+    templates = ApprovedTemplateRegistry(approved)
+    credentials = (
+        EngineCredentials(settings.engine_auth_root_key.get_secret_value())
+        if settings.engine_auth_root_key is not None
+        else None
+    )
+    if credentials is None and any(
+        template.engine_auth is not EngineAuthKind.NONE for template in approved
+    ):
+        raise ValueError(
+            "approved native engine templates require an engine authentication root key"
+        )
     api = DockerApi(
         socket_path=str(settings.docker_socket_path),
         timeout_seconds=settings.docker_request_timeout_seconds,
@@ -63,6 +76,7 @@ def _build_dependencies(
             api=api,
             node_id=settings.node_id,
             stop_checkpoints=store,
+            engine_credentials=credentials,
             settings=DockerRuntimeSettings(
                 stop_timeout_seconds=settings.stop_timeout_seconds,
                 exit_wait_seconds=settings.exit_wait_seconds,

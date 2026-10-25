@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import secrets
 import socket
 import time
 from collections.abc import Callable
@@ -41,6 +42,7 @@ from speechnexus_node_controller.domain.ports import StopCheckpointStore
 from speechnexus_node_controller.domain.stop_checkpoint import StopCheckpoint
 from speechnexus_node_controller.domain.templates import (
     ApprovedRuntimeTemplate,
+    EngineAuthKind,
     ReadinessKind,
     WarmupRequest,
 )
@@ -50,6 +52,7 @@ from speechnexus_node_controller.infrastructure.docker_api import (
     DockerEngineApi,
     DockerUnavailableError,
 )
+from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -116,18 +119,21 @@ class DockerNodeRuntime:
         node_id: str,
         stop_checkpoints: StopCheckpointStore,
         settings: DockerRuntimeSettings | None = None,
+        engine_credentials: EngineCredentials | None = None,
     ) -> None:
         self._api = api
         self._node_id = node_id
         self._stop_checkpoints = stop_checkpoints
         self._settings = settings or DockerRuntimeSettings()
         self._warmup_attempts: dict[tuple[str, int], int] = {}
+        self._engine_credentials = engine_credentials
 
     @_runtime_action("prepare")
     def prepare(
         self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
     ) -> InstanceObservation:
         """Reuse a matching container or create exactly one for this generation."""
+        environment = self._engine_environment(request, template)
         self._require_approved_image(template)
         existing = self._find(request.instance_id, request.instance_generation)
         if existing is not None:
@@ -140,6 +146,7 @@ class DockerNodeRuntime:
             command=template.command,
             labels=self._labels(request),
             host_config=self._host_config(template),
+            environment=environment,
         )
         self._api.start_container(container_id)
         state = self._api.inspect_container(container_id)
@@ -462,6 +469,17 @@ class DockerNodeRuntime:
         template: ApprovedRuntimeTemplate,
         state: ContainerState,
     ) -> InstanceObservation:
+        if not self._engine_auth_matches(request, template, state):
+            self._warmup_attempts.pop((state.container_id, request.instance_generation), None)
+            return InstanceObservation(
+                instance_id=request.instance_id,
+                instance_generation=request.instance_generation,
+                approved_template_id=template.template_id,
+                config_digest=request.config_digest,
+                observed_instance_state=ObservedInstanceState.QUARANTINED,
+                observed_peak_memory=self._observed_memory(request, state),
+                quarantine_reason="container native authentication configuration is not approved",
+            )
         if state.running and (
             state.memory_limit_bytes != template.container_memory_limit_bytes
             or state.memory_swap_limit_bytes != template.container_memory_limit_bytes
@@ -545,7 +563,12 @@ class DockerNodeRuntime:
             return ObservedInstanceState.WARMING_UP
         body = self._warmup_body(warmup)
         if body is not None and self._run_warmup(
-            address, port, warmup, body, attempt=completed + 1
+            address,
+            port,
+            warmup,
+            body,
+            attempt=completed + 1,
+            headers=self._engine_auth_headers(request, template),
         ):
             completed += 1
             self._warmup_attempts[key] = completed
@@ -553,6 +576,53 @@ class DockerNodeRuntime:
             self._warmup_attempts[key] = completed
             return ObservedInstanceState.READY
         return ObservedInstanceState.WARMING_UP
+
+    def _engine_environment(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> tuple[str, ...]:
+        if template.engine_auth is EngineAuthKind.NONE:
+            return ()
+        if request.target_node_id != self._node_id or self._engine_credentials is None:
+            raise UnapprovedRuntimeTemplateError(
+                "native engine authentication is not configured for this node"
+            )
+        return ("VLLM_API_KEY=" + self._engine_credentials.for_instance(request),)
+
+    def _engine_auth_headers(
+        self, request: RuntimeInstanceIntentRequest, template: ApprovedRuntimeTemplate
+    ) -> dict[str, str]:
+        environment = self._engine_environment(request, template)
+        if not environment:
+            return {}
+        return {"Authorization": "Bearer " + environment[0].partition("=")[2]}
+
+    def _engine_auth_matches(
+        self,
+        request: RuntimeInstanceIntentRequest,
+        template: ApprovedRuntimeTemplate,
+        state: ContainerState,
+    ) -> bool:
+        if template.engine_auth is EngineAuthKind.NONE:
+            return True
+        if self._engine_credentials is None or request.target_node_id != self._node_id:
+            return False
+        expected_labels = self._labels(request)
+        if any(
+            state.labels.get(name) != value
+            for name, value in expected_labels.items()
+            if name not in {INTENT_ID_LABEL, FENCING_TOKEN_LABEL}
+        ):
+            return False
+        actual_keys = [
+            item for item in state.environment if item.partition("=")[0] == "VLLM_API_KEY"
+        ]
+        expected = self._engine_environment(request, template)
+        return (
+            state.image_id == template.image_digest
+            and state.command == template.command
+            and len(actual_keys) == 1
+            and secrets.compare_digest(actual_keys[0], expected[0])
+        )
 
     @staticmethod
     def _literal_addresses(state: ContainerState) -> tuple[str, ...]:
@@ -603,6 +673,7 @@ class DockerNodeRuntime:
         body: bytes,
         *,
         attempt: int,
+        headers: dict[str, str] | None = None,
     ) -> bool:
         """Send one fixed request and require a complete 200 response within budget."""
         literal = ip_address(address)
@@ -631,6 +702,7 @@ class DockerNodeRuntime:
                             "Content-Type": warmup.content_type,
                             "Accept": "*/*",
                             "Accept-Encoding": "identity",
+                            **(headers or {}),
                         },
                     ) as response,
                 ):

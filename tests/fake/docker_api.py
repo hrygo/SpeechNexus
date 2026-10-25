@@ -23,6 +23,8 @@ class FakeContainer:
     command: tuple[str, ...] | None
     labels: dict[str, str]
     host_config: dict[str, Any]
+    environment: tuple[str, ...] = field(default=(), repr=False)
+    image_id: str | None = None
     status: str = "created"
     running: bool = False
     exit_code: int | None = None
@@ -76,6 +78,7 @@ class FakeDockerEngine:
         command: tuple[str, ...] | None,
         labels: dict[str, str],
         host_config: dict[str, Any],
+        environment: tuple[str, ...] = (),
     ) -> str:
         self._require_available()
         if image_reference not in self.images:
@@ -89,6 +92,8 @@ class FakeDockerEngine:
             command=command,
             labels=dict(labels),
             host_config=host_config,
+            environment=environment,
+            image_id=self.images[image_reference],
             addresses=self.addresses,
             memory_peak_bytes=self.memory_peak_bytes,
         )
@@ -161,4 +166,7 @@ class FakeDockerEngine:
             memory_limit_bytes=container.host_config.get("Memory"),
             memory_swap_limit_bytes=container.host_config.get("MemorySwap"),
             network_mode=container.host_config.get("NetworkMode"),
+            command=container.command,
+            environment=container.environment,
+            image_id=container.image_id,
         )

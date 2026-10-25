@@ -76,6 +76,13 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 
 ## 已集成的持久执行单元与本轮缺口
 
+本轮从 `70ab43d` 复用 #161 的已验证预热修复，继续交付
+[受控 ASR 原生鉴权与代次检查](../architecture/controlled-asr-generation.md)。
+控制器为固定目标派生原生 key，检查实际镜像/argv/环境和身份；网关在读取对象前拒绝
+不匹配或未绑定代次的真实 endpoint。固定镜像的无 GPU/无网络中间件检查覆盖缺 key、
+旧 key、新 key 和未鉴权 health；不加载模型，不替代默认真实装配或停止/预算联验。
+该候选的精确版本验证与集成以对应 PR 为准，#29/#142 及完整 Goal 仍未完成。
+
 [持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
 重放不触发启动；重启先把遗留活动执行隔离为 unknown，保留结果，不把旧记录当重试队列。

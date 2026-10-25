@@ -47,7 +47,7 @@ export function AppShell({
         </div>
       </header>
 
-      <main id="main-content">
+      <main id="main-content" tabIndex={-1}>
         <section className="hero" aria-labelledby="page-title">
           <div className="hero-copy">
             <p className="eyebrow">{eyebrow}</p>

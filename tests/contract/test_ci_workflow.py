@@ -47,6 +47,25 @@ def test_design_token_guard_runs_before_routing_without_dependency_install() -> 
     assert not any("install" in s.get("run", "") for s in steps)
 
 
+def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
+    steps = _WORKFLOW["jobs"]["web"]["steps"]
+    build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
+    install = next(i for i, s in enumerate(steps) if "playwright install" in s.get("run", ""))
+    check = next(i for i, s in enumerate(steps) if s.get("id") == "a11y")
+    assert build < install < check
+    assert steps[install]["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    assert steps[check]["run"] == "pnpm test:a11y"
+    assert "continue-on-error" not in steps[check] and "if" not in steps[check]
+    artifact = next(
+        s for s in steps if s.get("with", {}).get("name") == "web-accessibility-evidence"
+    )
+    assert "steps.a11y.outcome == 'success'" in artifact["if"]
+    assert "steps.a11y.outcome == 'failure'" in artifact["if"]
+    assert artifact["with"]["if-no-files-found"] == "error"
+    assert "test-results/" in artifact["with"]["path"]
+    assert not any("playwright" in s.get("run", "") for s in _WORKFLOW["jobs"]["changes"]["steps"])
+
+
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],

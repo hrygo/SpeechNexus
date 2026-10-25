@@ -58,7 +58,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/dev-env/*.mjs", "packages/contracts/**/*.mjs"],
+    files: [
+      "scripts/dev-env/*.mjs",
+      "packages/contracts/**/*.mjs",
+      "tests/web/*.mjs",
+      "playwright.a11y.config.mjs",
+    ],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       globals: {

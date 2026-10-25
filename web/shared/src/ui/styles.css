@@ -121,7 +121,7 @@
 
   --ink: var(--nexus-color-sand-900);
   --muted: var(--nexus-color-sand-700);
-  --muted-subtle: oklch(0.55 0.02 85);
+  --muted-subtle: oklch(0.48 0.02 85);
   --text-primary: var(--ink);
   --text-secondary: var(--muted);
   --text-muted: var(--muted-subtle);
@@ -136,10 +136,11 @@
 
   --accent: var(--nexus-color-emerald-500);
   --accent-primary: var(--accent);
+  --accent-text: var(--nexus-color-emerald-600);
   --accent-soft: oklch(0.94 0.04 165);
   --accent-glow: color-mix(in oklch, var(--accent) 24%, transparent);
 
-  --warning: oklch(0.58 0.16 75);
+  --warning: oklch(0.5 0.14 75);
   --warning-soft: oklch(0.96 0.04 75);
   --warning-border: color-mix(in oklch, var(--warning) 28%, transparent);
 
@@ -207,7 +208,7 @@
 
     --ink: var(--nexus-color-obsidian-50);
     --muted: var(--nexus-color-obsidian-300);
-    --muted-subtle: var(--nexus-color-obsidian-500);
+    --muted-subtle: var(--nexus-color-obsidian-300);
     --text-inverse: var(--nexus-color-obsidian-950);
 
     --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
@@ -244,7 +245,7 @@
 
   --ink: var(--nexus-color-obsidian-50);
   --muted: var(--nexus-color-obsidian-300);
-  --muted-subtle: var(--nexus-color-obsidian-500);
+  --muted-subtle: var(--nexus-color-obsidian-300);
   --text-inverse: var(--nexus-color-obsidian-950);
 
   --line: color-mix(in oklch, var(--nexus-color-obsidian-50) 8%, transparent);
@@ -397,6 +398,10 @@ a {
    App Shell & Masthead
    ========================================================================== */
 .app-shell {
+  /* Resolve tone aliases here so child overrides do not retain root values. */
+  --accent-text: var(--status-pill-ready-text);
+  --status-ready-text: var(--status-pill-ready-text);
+  --status-ready-bg: var(--status-pill-ready-bg);
   width: min(100% - var(--nexus-space-12), var(--page-width));
   margin-inline: auto;
   padding-bottom: var(--nexus-space-12);
@@ -480,7 +485,7 @@ a {
   align-items: center;
   gap: var(--nexus-space-2);
   padding: var(--nexus-space-1) var(--nexus-space-3);
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
   border-radius: var(--radius-full);
@@ -508,7 +513,7 @@ main {
 
 .eyebrow {
   margin: 0 0 var(--nexus-space-4);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -577,7 +582,7 @@ h1 {
     0 0 0 4px var(--accent-soft),
     0 0 12px var(--accent-glow);
   flex: 0 0 auto;
-  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) 1;
 }
 
 .status-dot[data-state="contract"] {
@@ -742,7 +747,7 @@ footer {
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline: 3px solid var(--accent-text);
   outline-offset: 3px;
 }
 
@@ -825,7 +830,7 @@ footer {
   }
 
   :focus-visible {
-    outline: 3px solid var(--accent);
+    outline: 3px solid var(--accent-text);
     outline-offset: 3px;
   }
 }

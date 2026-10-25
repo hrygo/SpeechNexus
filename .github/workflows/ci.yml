@@ -432,6 +432,24 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Install Chromium headless shell for accessibility checks
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      - name: Check rendered accessibility and contrast
+        id: a11y
+        run: pnpm test:a11y
+
+      - name: Preserve accessibility evidence
+        if: ${{ !cancelled() && (steps.a11y.outcome == 'success' || steps.a11y.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: web-accessibility-evidence
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
+
   deployment:
     name: Deployment configuration
     needs: [changes]

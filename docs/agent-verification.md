@@ -23,6 +23,7 @@ pnpm install --frozen-lockfile
 | Web | `pnpm format:check`、`pnpm lint`（含设计 Token 门禁）、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm test:a11y`；真实浏览器前置与证据范围见 [CI 规则](architecture/ci-validation.md) |
 | 机器契约 | `make contracts-check`、`uv run pytest tests/contract`；生成类型受影响时先 `make contracts-generate`，再 `make contracts-drift` 并核对消费者 |
 | 版本化 HTTP 源 | 设置已核实的 `CONTRACT_BASE_REF`，按[结构检查范围](architecture/http-contract-change-checks.md)运行 `make contracts-http-changes`；完整 speech HTTP 表面另用 `make contracts-speech-changes`，不以结构检查替代语义和消费者验收 |
+| 公开实时 runtime 声明 | 设置已核实的 `CONTRACT_BASE_REF`，运行 `make contracts-realtime-changes`；[实时结构检查](architecture/realtime-contract-change-checks.md)保守拒绝约束变化，不替代时序与真实消费者验收 |
 | OpenAI 兼容子集 | 在机器契约检查上增加 `make contracts-sdk-test`；将 `CONTRACT_BASE_REF` 设为已核实的目标分支基线后运行 `make contracts-compat`，不从当前本地分支猜主干 |
 | 持久化、调度或恢复 | 相关 fake 与隔离 PostgreSQL / MinIO 集成测试，覆盖受影响的事务和故障路径 |
 | 协调事务、DDL 或权限 | `make coordination-test` 与 `make integration-test`；先读[目录规则](../tests/integration/AGENTS.md)及[隔离说明](../tests/integration/README.md)，保留双库行为与并发证据 |

@@ -314,9 +314,15 @@ The explicit workbench JSON profile now includes projects, transcripts,
 status/errors and the four shared deletion entrypoints. `schema_refs` in the
 binding manifest selects external definitions without copying their wire
 contracts. An opt-in `workbench-http` profile adds derived path/query/header,
-per-status response/error validation and a bounded client for fifteen selected
-paths, including Meeting/create/seal and Minutes/create projections. Separate
-public realtime profiles expose session/PCM DTOs and the original public event
+per-status response/error validation and a bounded client for sixteen selected
+paths, including Meeting/create/seal, Minutes/create and `generateRenderUnit`.
+The latter also exposes `RenderUnitGenerationRequest` and
+`RenderUnitGenerationAccepted` through the Python/TypeScript runtime profile.
+It preserves string revisions and the submitted key, and validates the declared
+202/error responses. Its synthetic HTTP consumer checks transport only: it does
+not implement a Workbench route, create a public speech Job or establish voice
+publication. Binary downloads and export SSE remain outside this JSON surface.
+Separate public realtime profiles expose session/PCM DTOs and the original public event
 union plus a fourteen-member transcription selection. They reuse canonical
 sources without enabling routes or a socket. Shared trace inputs distinguish
 shape validation from C4/A05 state-machine/real-engine acceptance; see the package

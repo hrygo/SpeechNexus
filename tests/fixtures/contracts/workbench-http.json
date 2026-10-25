@@ -3538,6 +3538,607 @@
       },
       "valid": true,
       "status": 200
+    },
+    {
+      "id": "generateRenderUnit-request-valid",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "7"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "generateRenderUnit-request-keyless",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "body": {
+          "expected_unit_revision": "7"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "generateRenderUnit-request-wide-revision",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "9999999999999999999"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "generateRenderUnit-request-revision-7",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": 7
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-revision-True",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-revision-0",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-revision-07",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "07"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-revision-20-digits",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "10000000000000000000"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-revision-None",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-missing-revision",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-extra-body",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "7",
+          "model": "client-model"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-bad-path",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "../private"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "7"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-short-key",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "x"
+        },
+        "body": {
+          "expected_unit_revision": "7"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-request-extra-query",
+      "kind": "request",
+      "operation": "generateRenderUnit",
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "headers": {
+          "Idempotency-Key": "original-render-key"
+        },
+        "body": {
+          "expected_unit_revision": "7"
+        },
+        "query": {
+          "force": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnit-response-accepted",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": true,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-missing-public-job",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-missing-inner-job",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-extra-private-field",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z",
+          "engine_request_id": "private-demo"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-numeric-revision",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": 8,
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-invalid-date",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "yesterday"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-ready-without-receipt",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "ready",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 202
+    },
+    {
+      "id": "generateRenderUnit-response-declared-400",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "generateRenderUnit-response-declared-401",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "generateRenderUnit-response-declared-404",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "generateRenderUnit-response-declared-409",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "generateRenderUnit-response-declared-422",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "generateRenderUnit-response-declared-429",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 429
+    },
+    {
+      "id": "generateRenderUnit-response-undeclared-200",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "8",
+            "text": "Synthetic render text.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "3"
+            },
+            "model": "synthetic-tts",
+            "status": "generating",
+            "speech_job_id": "job-demo",
+            "updated_at": "2026-10-25T00:00:00Z"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "generateRenderUnit-response-undeclared-503",
+      "kind": "response",
+      "operation": "generateRenderUnit",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
     }
   ]
 }

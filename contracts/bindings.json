@@ -80,7 +80,9 @@
         "MeetingCreateRequest",
         "MeetingSealRequest",
         "MinutesCreateRequest",
-        "MinutesJob"
+        "MinutesJob",
+        "RenderUnitGenerationRequest",
+        "RenderUnitGenerationAccepted"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -238,7 +240,8 @@
         "/v1/workbench/meetings/{meeting_id}",
         "/v1/workbench/meetings/{meeting_id}/seal",
         "/v1/workbench/meetings/{meeting_id}/minutes",
-        "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}"
+        "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}",
+        "/v1/workbench/render-units/{unit_id}/generations"
       ]
     },
     "profile": {

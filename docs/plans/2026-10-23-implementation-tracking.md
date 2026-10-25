@@ -43,12 +43,16 @@ issue修订和本地快照追溯，不混入当前待办。整理时保留B并�
 AsrJobCreate 的 profile 可省略，不能把预设发布当全部请求的强制前置；无profile也必须固定
 权威Binding与显式默认。当前只实现文本Asset检查，音频AssetInspector是明确前置交接。
 
-A00后续队列另有C四项runtime入口缺口：downloadBookExport、downloadSavedAsset、
-streamExportEvents、generateRenderUnit。共同源已声明，bindings未选择，现HTTP投影JSON-only；
-需串行核对binary/SSE/JSON真实消费者。本轮只核对，不立即改共享生成器或扩大#136。
+A00按C反馈核对四项runtime入口：本单元补`generateRenderUnit`的JSON入口；
+downloadBookExport、downloadSavedAsset、streamExportEvents仍未选择，现HTTP投影JSON-only。
+三个binary/SSE入口的真实消费者需独立串行推进，不扩大#136的历史交付范围。
 
 P1a只准备私有原意图、固定目标和证据观察，不写数据库或注册新路由；观察快照不授予提交权限。
 源/生成器/双锁/迁移保持，测试provider不作为真实资格；原结果优先与事务内重检留在P2。
+
+A00独立补齐`generateRenderUnit`的两个runtime DTO及JSON HTTP入口，沿用原Workbench源契约。
+同源正负例和原键HTTP消费者只证明协议消费；实际C路由/公开speech Job/已发布音色仍需各自证据。
+其余三个binary/SSE入口继续排队，不能据该JSON入口消项。
 
 ## 六阶段 Epic 与独立关口
 

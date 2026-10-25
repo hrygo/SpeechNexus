@@ -208,6 +208,7 @@ class WorkbenchJobError(TypedDict):
     param: NotRequired[str | None]
 
 
+type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -383,6 +384,13 @@ class MinutesJob(TypedDict):
     updated_at: str
 
 
+class RenderUnitGenerationRequest(TypedDict):
+    expected_unit_revision: Revision
+
+
+type RenderUnitVoice = ResourceReference
+
+
 class ProjectCreateRequest(TypedDict):
     workspace_id: NotRequired[Identifier]
     name: str
@@ -461,6 +469,25 @@ class ExternalSharedDeletionSchemaJsonDeletionPlan(TypedDict):
 type DeletionPlan = ExternalSharedDeletionSchemaJsonDeletionPlan
 
 
+class RenderUnit(TypedDict):
+    id: Identifier
+    object: Literal["nexus.render_unit"]
+    chapter_id: Identifier
+    ordinal: int
+    revision: Revision
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: str
+    profile: NotRequired[RenderUnitVoice | None]
+    status: Literal["pending", "generating", "ready", "stale", "failed"]
+    saved_asset_id: NotRequired[Identifier | None]
+    speech_job_id: NotRequired[Identifier | None]
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    updated_at: str
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -469,6 +496,12 @@ class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     observed: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
     missing: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
     unknown: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+
+
+class RenderUnitGenerationAccepted(TypedDict):
+    render_unit: RenderUnit
+    speech_job_id: Identifier
+    accepted_at: str
 
 
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
@@ -530,4 +563,6 @@ type WorkbenchContracts = (
     | MeetingSealRequest
     | MinutesCreateRequest
     | MinutesJob
+    | RenderUnitGenerationRequest
+    | RenderUnitGenerationAccepted
 )

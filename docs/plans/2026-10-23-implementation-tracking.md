@@ -24,7 +24,7 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 
 | 团队 | 当前可证事实 | 下一交接与真实缺口 |
 | --- | --- | --- |
-| A | 共同 main `a8ea85b`；文本 Asset/Workspace、协调窄事务、资源草稿与默认快照存储/HTTP、同源契约与有限门禁已分段交付 | **A-CONFIG-01：可信校验 → 持久发布/CAS → 真实受控 HTTP/固定查询 → 最终参数解析**；首个写入单元 P1。音频检查、完整业务 Job/调度、Artifact/Operation 和公开文件链路仍待 |
+| A | 共同 main `a2f8400`；#137复盘/阶段目标已管理合入，既有文本 Asset/Workspace、协调窄事务、草稿/默认快照与同源门禁已分段交付 | **A-CONFIG-01/P1a** 正在实现完整生命周期意图与只读可信证据消费边界；未配置/错配事实保持不可用。真实权威生产者、持久发布/CAS、实际HTTP、最终参数与完整文件链路仍待 |
 | B | B00/B01/B02/B03/B04/B06 in-progress，B05/B07 planned；#130 固定输入与 #132 原生 ASR 取消/CI 分流已交付 | 主线 #28/#30：真实请求正常/取消/异常、停止/释放、完整参数与最终制品；本地 worker 扩展未提交/未交付不能算完成。A 不操作 B 硬件 |
 | C | #40/#41 作者报告真实 runtime/PG/本机模型/浏览器纪要；#43 真实 sweeper/重启账本重放 | base `4b08c396…` 的本地制品仍未提交/推送，尚未入共同 main；助手需要公开 `speech_job_id` 和已发布音色，目标环境与联合验收仍待。A 仅分析，不代改 C issue |
 
@@ -46,6 +46,9 @@ AsrJobCreate 的 profile 可省略，不能把预设发布当全部请求的强�
 A00后续队列另有C四项runtime入口缺口：downloadBookExport、downloadSavedAsset、
 streamExportEvents、generateRenderUnit。共同源已声明，bindings未选择，现HTTP投影JSON-only；
 需串行核对binary/SSE/JSON真实消费者。本轮只核对，不立即改共享生成器或扩大#136。
+
+P1a只准备私有原意图、固定目标和证据观察，不写数据库或注册新路由；观察快照不授予提交权限。
+源/生成器/双锁/迁移保持，测试provider不作为真实资格；原结果优先与事务内重检留在P2。
 
 ## 六阶段 Epic 与独立关口
 

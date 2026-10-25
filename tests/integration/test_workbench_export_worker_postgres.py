@@ -224,6 +224,16 @@ async def test_without_a_producer_the_queue_is_left_alone(export_store: Store, z
         (CONTENT, "application/zip", 0),
         (CONTENT, "application/zip", 1),
     ],
+    ids=[
+        "empty",
+        "missing-type",
+        "invalid-zip",
+        "missing-member",
+        "extra-member",
+        "wrong-type",
+        "zero-progress",
+        "partial-progress",
+    ],
 )
 async def test_invalid_output_is_durably_failed_without_an_object(
     export_store: Store, zone: _Zone, content: bytes, media_type: str, items: int

@@ -207,6 +207,7 @@ async def test_an_empty_queue_claims_nothing() -> None:
 @pytest.mark.parametrize(
     ("content", "media_type"),
     [(b"", "application/zip"), (CONTENT, ""), (CONTENT, "x" * 129)],
+    ids=["empty", "missing-type", "oversized-type"],
 )
 async def test_invalid_produced_metadata_fails_before_writing_any_object(
     content: bytes, media_type: str

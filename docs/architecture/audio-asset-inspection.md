@@ -261,3 +261,24 @@ controlled exec-clear regression reproduced the old actual-worker survival.
 The non-exec guardian and original API pidfd remove reliance on this signal;
 local RED→GREEN and ordinary namespace tests remain separate from validation
 under the CI AppArmor rules. That CI validation is still pending.
+
+### Proposed repeatable CI policy — approval required before implementation
+
+The remaining reproducibility decision is limited to this repository's
+temporary GitHub-hosted `python_checks` job VM. A repeatable implementation
+would use the exact package/rule hashes above, the existing parser and runner,
+and only the two official rules. It would reject existing same-name rules,
+profile files or local overrides instead of replacing them. The whole profile
+package would not be installed; host sysctls, capabilities, network isolation,
+seccomp and application assertions would remain unchanged.
+
+Each job would bind its receipt to run/attempt/job/runner/source identities,
+verify loading, preserve diagnostics and run the complete current Python gate
+(including real Workbench PG coverage), media smoke and wheel build. Cleanup
+would remove only its newly loaded rules after owned-process stop is proved;
+an uncertain load/stop would fail and rely on VM teardown, never retry loading
+or unload around an unknown live worker. Receipts would remain artifacts.
+This affects every bwrap invocation on that temporary VM and grants namespace
+setup access under the official rules. It does not affect production or grant
+application deployment/Gate approval. This proposal is not implemented or
+activated; the consumed one-time approval does not authorize it.

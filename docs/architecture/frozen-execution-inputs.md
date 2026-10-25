@@ -1,7 +1,7 @@
 ---
 title: "原执行命令与核验文件输入"
 status: active
-version: "0.2.0"
+version: "0.3.0"
 date: 2026-10-25
 ---
 
@@ -40,23 +40,27 @@ A 的预算仅由原准入/释放事务裁决。
 
 ## 对象输入
 
-`ExecutionObjectInputs.open_verified` 只在长度、摘要与完整响应 EOF 校验后给出可 seek 的流。
+`ExecutionObjectInputs.open_verified` 是异步上下文端口，调用方使用 `async with`；
+只在长度、摘要与完整响应 EOF 校验后给出可 seek 的流。
 `MinioExecutionInputs` 由服务端显式配置固定私网 IP 字面量 origin、bucket、独立凭据及
 当前用户拥有、绝对路径、权限不含 group/other 的临时目录。只允许 HEAD/GET，不使用
 DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须启用证书/主机名校验，
 最低 TLS 1.2。地址校验本身不证明部署网络已实施出站隔离。
 
-固定传输层对 HEAD/GET 都禁用预读和自动解压，只有 HTTP 200 进入后续处理。
-其他状态在 SDK 解析前关闭并释放响应，不读取错误正文；这也封闭 MinIO SDK 错误分支
-自行完整缓冲正文的路径。正常 HEAD 只保留响应头并立即释放连接，正常 GET 保持未读，
-由下述有界对象消费者接管。关闭或释放失败也不能把响应交给 SDK。
+每次读取使用独立的异步 HTTPX 客户端和连接池，只复用锁定 MinIO SDK 的 SigV4 签名器，
+不调用 SDK 的同步网络入口。输入与结果写入复用固定来源、签名和 I/O 总期限工具，
+各自保留方法白名单与错误语义；不自动重试。HEAD/GET 都采用流式响应、禁用自动解压，
+只有 HTTP 200 进入后续处理。其他状态在读取正文前关闭响应，不解析供应商错误正文。
+正常 HEAD 只检查响应头并立即关闭，正常 GET 由有界对象消费者核验；响应或客户端清理失败
+同样不暴露输入。对象键和版本作为不透明值分别转义，空格、Unicode 和字面量 `%` 不改写成另一键。
 
 引用沿用机器契约的六个字段：资产或制品 ID、workspace、bucket、key、SHA-256、长度。
-`FileExecutionInputs.open_asr` 要求文件 ASR 的原命令，检查引用 workspace 与执行身份相同。
+`FileExecutionInputs.open_asr` 同样使用 `async with`，要求文件 ASR 的原命令，
+检查引用 workspace 与执行身份相同。
 对象路径采用 A 既有 `private/assets/...` 形态，不发明 workspace 路径前缀，不读取 A 业务表
 建立另一份所有权判断；引用的所有者许可须在命令生产/准入边界完成。
 
-原引用没有 S3 version ID。适配器先 stat 取得真实非 null 版本及长度，再固定该版本 GET；
+原引用没有 S3 version ID。适配器先 HEAD 取得真实非 null 版本及长度，再固定该版本 GET；
 覆盖当前对象不能让本次读取漂移到新版本。响应版本、Content-Length、编码、实际长度及
 逐字节 SHA-256 必须全部匹配原引用，不信任 metadata 中的摘要。禁用版本化、找不到对象、
 错 bucket、路径歧义、损坏、超限、取消或期限耗尽都不向媒体消费者暴露输入。
@@ -65,7 +69,11 @@ DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须�
 远端连接在 yield 之前关闭，消费者退出后临时流关闭；下游异常不被翻译成文件读取错误。
 这不是跨容器共享目录。`ExecutionInputLimits` 限定总输入、spool 阈值与消费期限；
 单次读取另有至多 64 KiB 缓冲，阈值不等于进程 RSS 硬上限。网络连接/读/pool wait 各有
-3 秒界限，整体期限与取消按阶段和块合作检查，不承诺瞬时中断底层网络调用。
+3 秒无活动界限。另有 monotonic 总期限，覆盖 HEAD/GET 的连接、状态行、响应头、正文与
+网络清理；持续缓慢发送数据不能延长总期限。取消标志在同一事件循环内每 10ms 检查，
+协程取消或期限到达先取消本次异步网络任务，再等待其专属连接清理；不会遗弃活动同步网络线程，
+也不关闭其他并发读取的客户端。输入完整核验且网络清理结束后才 yield。
+这仍不是磁盘、媒体解码或 GPU 的硬停止证明；私有 spool 写入及后续解码各遵守自身边界。
 
 `VerifiedFileAsrInput` 返回同一完整请求、原媒体格式与已核验流，供既有
 `FileAsrAudio` / `FileAsrTranscription` 消费。输入端口本身不选择 ASR/VAD 配方或发布结果。
@@ -109,12 +117,16 @@ DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须�
 
 单元入口：`tests/unit/gateway/test_original_command.py`、`test_execution_objects.py`、
 `test_file_asr_command.py`。
-`test_execution_object_sdk.py` 使用真实 SDK 的 get/stat 与受控底层 HTTP 响应，
-以正文读取即失败的 guard 验证巨型、分块、压缩和其他错误状态零正文读取及清理。
+`test_execution_object_transport.py` 使用实际 HTTPX 客户端与固定来源传输层，只控制底层网络响应，
+以正文读取即失败的 guard 验证巨型、分块、压缩和其他错误状态零正文读取及清理，
+并覆盖来源/方法拒绝、环境代理隔离及固定版本读取。原同步 SDK 回归迁到这一实际消费边界。
+`test_execution_object_deadline.py` 使用真实 loopback TCP 的慢 HEAD/GET 响应头和慢正文，
+验证总期限、重复协程取消、取消标志、socket 关闭以及慢请求不阻塞另一读取。
 实际隔离服务入口：`tests/integration/test_gateway_frozen_inputs.py`，使用集成门禁规定的
 PG/InnoDB/MinIO 环境变量，缺服务不算通过，配置见[集成测试说明](../../tests/integration/README.md)。
 
-集成覆盖原网关角色、原命令往返与篡改/清理/版本拒绝，stat/GET 之间覆盖时的版本固定，
+集成覆盖原网关角色、原命令往返与篡改/清理/版本拒绝，HEAD/GET 之间覆盖时的版本固定，
+以及空格、Unicode、百分号转义等不透明对象键的真实签名与回读，
 以及持久原请求→同源命令参数转换→真实 MinIO→真实媒体解码→现有 VAD/文件识别消费者，
 核对原语言、提示词、温度、期限、切段与策略摘要，不再手工另填识别策略。
 VAD/识别端口使用合成测试替身，不加载模型，不使用私人语料；无预算、停止或发布写入。

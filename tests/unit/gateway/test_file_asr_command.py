@@ -2,8 +2,8 @@
 
 import hashlib
 import io
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
 from typing import Any
@@ -37,14 +37,14 @@ class Objects:
         self.streams: list[io.BytesIO] = []
         self.on_open: Callable[[], None] = lambda: None
 
-    @contextmanager
-    def open_verified(
+    @asynccontextmanager
+    async def open_verified(
         self,
         reference: ExecutionObjectReference,
         *,
         limits: ExecutionInputLimits,
         cancelled: Callable[[], bool],
-    ) -> Iterator[VerifiedExecutionObject]:
+    ) -> AsyncIterator[VerifiedExecutionObject]:
         assert not cancelled()
         self.reads.append(reference)
         with io.BytesIO(self.payload) as stream:

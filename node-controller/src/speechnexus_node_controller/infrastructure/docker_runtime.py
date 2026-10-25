@@ -11,6 +11,7 @@ needs before releasing reserved capacity.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import socket
@@ -532,8 +533,8 @@ class DockerNodeRuntime:
         warmup = template.readiness.warmup
         if port is None or warmup is None:
             return ObservedInstanceState.LOADING
-        addresses = self._literal_addresses(state)
-        if not self._port_accepts(addresses, port):
+        address = self._warmup_address(self._literal_addresses(state), port)
+        if address is None:
             return ObservedInstanceState.LOADING
         key = (state.container_id, request.instance_generation)
         completed = self._warmup_attempts.get(key, 0)
@@ -543,12 +544,11 @@ class DockerNodeRuntime:
             # A stop or drain observation never spends model time on warmup.
             return ObservedInstanceState.WARMING_UP
         body = self._warmup_body(warmup)
-        if body is not None:
-            for address in addresses:
-                if self._run_warmup(address, port, warmup, body, attempt=completed + 1):
-                    completed += 1
-                    self._warmup_attempts[key] = completed
-                    break
+        if body is not None and self._run_warmup(
+            address, port, warmup, body, attempt=completed + 1
+        ):
+            completed += 1
+            self._warmup_attempts[key] = completed
         if completed >= warmup.attempts:
             self._warmup_attempts[key] = completed
             return ObservedInstanceState.READY
@@ -564,16 +564,19 @@ class DockerNodeRuntime:
                 continue
         return tuple(literals)
 
-    def _port_accepts(self, addresses: tuple[str, ...], port: int) -> bool:
+    def _warmup_address(self, addresses: tuple[str, ...], port: int) -> str | None:
+        """Select before POST; an uncertain warmup is never retried at another IP."""
+        deadline = time.monotonic() + self._settings.readiness_timeout_seconds
         for address in addresses:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
-                with socket.create_connection(
-                    (address, port), timeout=self._settings.readiness_timeout_seconds
-                ):
-                    return True
+                with socket.create_connection((address, port), timeout=remaining):
+                    return address if time.monotonic() < deadline else None
             except OSError:
                 continue
-        return False
+        return None
 
     @staticmethod
     def _warmup_body(warmup: WarmupRequest) -> bytes | None:
@@ -605,35 +608,51 @@ class DockerNodeRuntime:
         literal = ip_address(address)
         host = f"[{literal}]" if literal.version == 6 else str(literal)
         started = time.monotonic()
-        try:
-            with (
-                httpx.Client(
-                    trust_env=False,
-                    follow_redirects=False,
-                    timeout=warmup.timeout_seconds,
-                ) as client,
-                client.stream(
-                    "POST",
-                    f"http://{host}:{port}{warmup.path}",
-                    content=body,
-                    headers={
-                        "Content-Type": warmup.content_type,
-                        "Accept": "*/*",
-                        "Accept-Encoding": "identity",
-                    },
-                ) as response,
-            ):
-                if (
-                    response.status_code != 200
-                    or response.headers.get("content-encoding", "identity") != "identity"
+        deadline = started + warmup.timeout_seconds
+
+        async def request() -> int | None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            # One timer covers connect, response headers and the entire body.
+            # Per-read inactivity timeouts cannot stop a peer that keeps trickling.
+            async with asyncio.timeout(remaining):
+                async with (
+                    httpx.AsyncClient(
+                        trust_env=False,
+                        follow_redirects=False,
+                        timeout=remaining,
+                    ) as client,
+                    client.stream(
+                        "POST",
+                        f"http://{host}:{port}{warmup.path}",
+                        content=body,
+                        headers={
+                            "Content-Type": warmup.content_type,
+                            "Accept": "*/*",
+                            "Accept-Encoding": "identity",
+                        },
+                    ) as response,
                 ):
-                    return False
-                total = 0
-                for chunk in response.iter_bytes(4096):
-                    total += len(chunk)
-                    if total > warmup.max_response_bytes:
-                        return False
-        except httpx.HTTPError:
+                    if (
+                        response.status_code != 200
+                        or response.headers.get("content-encoding", "identity") != "identity"
+                    ):
+                        return None
+                    total = 0
+                    async for chunk in response.aiter_bytes(4096):
+                        total += len(chunk)
+                        if total > warmup.max_response_bytes:
+                            return None
+                    return total
+
+        try:
+            # The synchronous runtime port is called by the controller's worker
+            # thread. Closing this loop joins transport cleanup before returning.
+            total = asyncio.run(request())
+        except TimeoutError, httpx.HTTPError:
+            return False
+        if total is None or time.monotonic() >= deadline:
             return False
         logger.info(
             "warmup attempt completed",

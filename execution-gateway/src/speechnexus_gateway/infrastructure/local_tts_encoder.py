@@ -17,11 +17,6 @@ from speechnexus_gateway.domain.tts import (
     TtsDeliveryFormat,
 )
 
-_MEDIA_TYPES = {
-    TtsDeliveryFormat.WAV: "audio/wav",
-    TtsDeliveryFormat.MP3: "audio/mpeg",
-    TtsDeliveryFormat.PCM: "audio/pcm",
-}
 _MP3_BIT_RATE = 64_000
 _MP3_CHUNK_SAMPLES = 24000
 
@@ -53,7 +48,7 @@ class LocalTtsEncoder:
             raise TtsDeliveryError(TtsDeliveryFailure.CANCELLED)
         return TtsDelivery(
             target,
-            _MEDIA_TYPES[target],
+            target.media_type,
             payload,
             audio.sample_rate_hz,
             audio.channels,

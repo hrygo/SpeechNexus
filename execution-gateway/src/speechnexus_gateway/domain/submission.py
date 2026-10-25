@@ -24,7 +24,12 @@ from enum import StrEnum
 from typing import Final
 
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
-from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.execution_results import (
+    ExecutionAudioStagingResult,
+    ExecutionStagingResult,
+    StagingResult,
+    result_matches_output,
+)
 
 _DIGEST_PATTERN: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IDENTIFIER_PATTERN: Final = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
@@ -602,7 +607,7 @@ class SubmissionIntent:
     has_staging_output: bool = False
     version: int = field(default=1)
     has_output_intervals: bool = False
-    staging_result: ExecutionStagingResult | None = field(default=None, repr=False)
+    staging_result: StagingResult | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.validate()
@@ -649,10 +654,19 @@ class SubmissionIntent:
         if type(self.has_staging_output) is not bool:
             raise ValueError("staging presence must be a boolean fact")
         if self.staging_result is not None and (
-            not isinstance(self.staging_result, ExecutionStagingResult)
+            not isinstance(
+                self.staging_result, ExecutionStagingResult | ExecutionAudioStagingResult
+            )
             or not self.has_staging_output
             or self.staging_result.request_digest != self.request_digest
             or self.staging_result.reference.workspace_id != self.identity.workspace_id
+            or not result_matches_output(
+                self.staging_result,
+                output_stream_id=self.output_stream_id,
+                sample_rate_hz=self.identity.sample_rate_hz,
+                generated_pcm_samples=self.generated_pcm_samples,
+                has_output_intervals=self.has_output_intervals,
+            )
         ):
             raise ValueError("staging receipt contradicts the original execution")
         if type(self.has_output_intervals) is not bool:

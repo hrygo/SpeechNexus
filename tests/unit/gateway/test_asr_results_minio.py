@@ -10,7 +10,8 @@ import pytest
 from speechnexus_gateway.domain.asr import AsrCallError, AsrFailure
 from speechnexus_gateway.domain.asr_results import AsrResultError, PreparedAsrResult
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputError
-from speechnexus_gateway.infrastructure.asr_results_minio import MinioAsrResults, _FixedS3Transport
+from speechnexus_gateway.infrastructure.asr_results_minio import MinioAsrResults
+from speechnexus_gateway.infrastructure.private_s3 import FixedS3Transport
 
 RESULT = PreparedAsrResult("workspace-one", "sha256:" + "a" * 64, b'{"text":"synthetic"}')
 
@@ -199,7 +200,12 @@ async def test_original_deadline_guard_is_not_replaced_with_a_storage_error(adap
 
 
 async def test_transport_has_no_cross_origin_or_extra_methods() -> None:
-    transport = _FixedS3Transport("http://127.0.0.1:59000", None)
+    transport = FixedS3Transport(
+        "http://127.0.0.1:59000",
+        None,
+        methods=frozenset({"PUT", "HEAD", "GET"}),
+        scope_error=lambda: AsrResultError("asr_result_storage_unknown"),
+    )
     inner = Mock()
     transport._transport = inner
     for method, url in [

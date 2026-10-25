@@ -79,3 +79,8 @@ ExecutionStagingResultResponse = Annotated[
     BeforeValidator(lambda value: parse("ExecutionStagingResultResponse", value)),
     WithJsonSchema(wire_schema("ExecutionStagingResultResponse")),
 ]
+ExecutionAudioStagingResultResponse = Annotated[
+    models.ExecutionAudioStagingResultResponse,
+    BeforeValidator(lambda value: parse("ExecutionAudioStagingResultResponse", value)),
+    WithJsonSchema(wire_schema("ExecutionAudioStagingResultResponse")),
+]

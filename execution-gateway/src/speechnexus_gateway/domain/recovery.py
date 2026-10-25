@@ -7,6 +7,10 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from speechnexus_gateway.domain.canonical import canonical_json
+from speechnexus_gateway.domain.execution_results import (
+    ExecutionAudioStagingResult,
+    ExecutionStagingResult,
+)
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     ExecutionCleanupPendingError,
@@ -176,7 +180,21 @@ class ExecutionSnapshot:
             "submit_intent_id": self.intent.identity.submit_intent_id,
             "request_digest": self.intent.request_digest,
             "staging_result": (
-                None if self.intent.staging_result is None else self.intent.staging_result.value()
+                self.intent.staging_result.value()
+                if isinstance(self.intent.staging_result, ExecutionStagingResult)
+                else None
+            ),
+        }
+
+    def audio_staging_response(self) -> dict[str, object]:
+        """Audio has a separate view; the old JSON schema never sees audio fields."""
+        return {
+            "submit_intent_id": self.intent.identity.submit_intent_id,
+            "request_digest": self.intent.request_digest,
+            "staging_result": (
+                self.intent.staging_result.value()
+                if isinstance(self.intent.staging_result, ExecutionAudioStagingResult)
+                else None
             ),
         }
 

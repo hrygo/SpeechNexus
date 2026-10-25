@@ -25,6 +25,7 @@ DOCUMENT = _resolved_yaml(_CONTRACTS / "internal" / "execution-control.openapi.y
 PATH_TEMPLATE = "/internal/v1/gateways/{gateway_id}/fencing-barrier"
 QUERY_PATH = "/internal/v1/executions/{submit_intent_id}"
 RESULT_PATH = "/internal/v1/executions/{submit_intent_id}/staging-result"
+AUDIO_RESULT_PATH = "/internal/v1/executions/{submit_intent_id}/audio-staging-result"
 SUBMIT_PATH = "/internal/v1/executions/submit"
 ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
 DRAIN_PATH = "/internal/v1/instances/{instance_id}/drain"
@@ -57,6 +58,7 @@ def frozen_schema(node: Any) -> Any:
         (PATH_TEMPLATE, "post"),
         (QUERY_PATH, "get"),
         (RESULT_PATH, "get"),
+        (AUDIO_RESULT_PATH, "get"),
         (SUBMIT_PATH, "post"),
         (ABORT_PATH, "post"),
         (DRAIN_PATH, "post"),
@@ -110,6 +112,7 @@ def test_served_control_declares_the_frozen_security_statuses_and_full_constrain
         PATH_TEMPLATE,
         QUERY_PATH,
         RESULT_PATH,
+        AUDIO_RESULT_PATH,
         SUBMIT_PATH,
         ABORT_PATH,
         DRAIN_PATH,

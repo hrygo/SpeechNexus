@@ -22,12 +22,18 @@ date: 2026-10-25
 | 预算与租约归还 | A 原事务；回执、EOF 或 HTTP 成功均不是释放许可 |
 
 机器源为 `execution-control.openapi.yaml` 的 `ExecutionStagingResult`、
-`ExecutionStagingResultResponse`，以及协调观察请求的可选 `staging_result`。
+`ExecutionStagingResultResponse`、独立的 `ExecutionAudioMetadata` /
+`ExecutionAudioStagingResult` / `ExecutionAudioStagingResultResponse`，
+以及协调观察请求里两个互斥的可选属性 `staging_result`（JSON）与
+`audio_staging_result`（音频）。音频是新增属性而不是把旧属性改成 `oneOf`，
+旧属性的形状和约束因此逐字不变。
 Python/TS 从原生成器生成，不维护独立 wire 类型。
 
 回执固定原 `request_digest`、现有六字段对象引用、非空且非 `"null"` 的 `storage_version`
-和 `media_type`。当前只接 ASR 的 `application/json` 容器，正文为 11–4,194,304 字节；
-CustomVoice 音频的媒体/上界资格尚未在本单元启用。引用不携带凭据、下载地址或转写正文。
+和 `media_type`。旧 JSON 类型继续只接 ASR 的 `application/json`，正文为
+11–4,194,304 字节；新音频类型接 WAV/PCM/MP3、24 kHz mono，源 PCM 与交付
+各最多 64 MiB。源样本时钟、摘要与派生时长必须一致，不能用 MP3 padding 计量。
+引用不携带凭据、下载地址或业务正文；这些协议/组件不等于真实音频或完整链资格。
 
 现有状态响应只投影已登记回执的六字段引用；历史 staging key 不能投影为完整引用。
 固定存储版本通过新查询返回，没有给旧状态响应增加未知字段。
@@ -44,6 +50,9 @@ CustomVoice 音频的媒体/上界资格尚未在本单元启用。引用不携�
 3. 首次登记只接受已经 `executing/pending` 的执行；实例须仍为原代次的 ready 或 draining，
    租约和两层期限仍有效。停止、quarantine、取消或旧任期不能新登记结果。
    draining 只允许已有执行收尾，不改变新提交仍要求 ready 的规则。
+   音频还须匹配原 PCM 流与水位，并在同一 submit 锁内核对生成区间完整覆盖
+   `[0, source_pcm_samples)`；只有 max-end 水位或非生成诊断区间不能补齐缺口。
+   登记不追加区间、不修改水位；已登记完整文件后也不能追加超出该结果的生成样本。
 4. 一次短事务同时推进原执行版本、保存规范化回执文档和既有 staging 指针。
    事务内没有 HTTP、对象写入、推理或编码；中途失败全部回滚。
 5. 相同回执在查询所得当前版本重放是只读操作，即使已有取消/停止，也不倒退状态。
@@ -76,6 +85,13 @@ attempt、取消状态和发布权限。回执不是公开发布资格。
 旧网关拒绝新字段或不提供新路径时保持不可用，不回退为直接访问引擎。
 此处没有改变公共 REST、SDK 或工作台协议。
 
+音频消费者使用独立的
+`GET /internal/v1/executions/{submit_intent_id}/audio-staging-result`，
+认证、所有权、错误及只读语义相同。旧 JSON view 对音频返回 null，音频 view 对
+JSON 返回 null；已有引用仍可经通用状态读取。任何 null 都不授予重新外发资格。
+严格旧 HTTP schema 不增加音频字段或枚举；迁移详见
+[ADR 0010](../decisions/0010-private-audio-receipt-compatibility.md)。
+
 ## 存储、权限与迁移
 
 `0012_execution_results` 只新增 nullable `staging_result_document TEXT` 与基础形状约束。
@@ -85,6 +101,9 @@ attempt、取消状态和发布权限。回执不是公开发布资格。
 
 部署顺序为 owner 升级 → 重发网关列级 UPDATE 权限 → 部署新读写进程；
 运行角色不执行 DDL。只有 B 角色新增该列写权限，A 数据库角色仍不能直接读取私有回执。
+
+音频复用该列，无新增迁移或权限。所有相关读取者先升级，再启用音频生产者；
+已有音频历史时回退须保留音频解析器，不能通过丢弃回执恢复旧二进制。
 
 回退至 0011 仅在无回执历史时允许。回退使用 READ COMMITTED，
 取得 submit 表排他锁后重新计数；有记录、损坏记录或并发刚提交的回执均拒绝删除。

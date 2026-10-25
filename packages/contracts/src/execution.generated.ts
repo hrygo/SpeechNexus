@@ -88,6 +88,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/executions/{submit_intent_id}/audio-staging-result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read a private audio receipt without publishing or executing */
+    get: operations["getExecutionAudioStagingResult"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/instances/{instance_id}/drain": {
     parameters: {
       query?: never;
@@ -183,11 +200,64 @@ export interface components {
      * @description A null result means no complete receipt has been registered, never proof of
      *     no object or no running computation. Read only; cannot authorize redispatch.
      *     Publishing consumers must independently check current cancellation/terminal authority.
+     *     This legacy JSON view returns null for an audio receipt; use the independent
+     *     audio-staging-result route for audio. Null never authorizes a new execution.
      */
     ExecutionStagingResultResponse: {
       submit_intent_id: components["schemas"]["Identifier"];
       request_digest: components["schemas"]["Sha256Digest"];
       staging_result: components["schemas"]["ExecutionStagingResult"] | null;
+    };
+    /**
+     * @description Source mono PCM16LE clock, before delivery encoding; not MP3 decoded-frame
+     *     length (which may include codec padding). duration_ms is exactly
+     *     floor(source_pcm_samples * 1000 / sample_rate_hz).
+     *     Initial persistent file-TTS scope is 24 kHz mono, at most 64 MiB source PCM.
+     */
+    ExecutionAudioMetadata: {
+      /** @constant */
+      sample_rate_hz: 24000;
+      /** @constant */
+      channels: 1;
+      source_pcm_samples: number;
+      duration_ms: number;
+      source_pcm_digest: components["schemas"]["Sha256Digest"];
+    };
+    /**
+     * @description Trusted private version-pinned audio receipt. The producer verifies the
+     *     encoded payload and its source PCM clock. Registration requires the original
+     *     output stream, sample rate and authoritative generated_pcm_samples to match
+     *     audio.source_pcm_samples, with real recorded output intervals and the frozen
+     *     ceiling respected. Generated intervals for this file execution must cover
+     *     [0, source_pcm_samples) without gaps, not just reach its max-end watermark.
+     *     Registration never appends samples or proves stopping.
+     *     PCM delivery length is source_pcm_samples * 2; WAV contains that PCM; MP3
+     *     uses the source clock rather than decoder padding. At most 64 MiB delivery.
+     *     Old ledger readers must be upgraded before any audio producer is enabled.
+     */
+    ExecutionAudioStagingResult: {
+      request_digest: components["schemas"]["Sha256Digest"];
+      reference: components["schemas"]["ArtifactStorageReference"];
+      storage_version: string;
+      /** @enum {unknown} */
+      media_type: "audio/wav" | "audio/pcm" | "audio/mpeg";
+      audio: components["schemas"]["ExecutionAudioMetadata"];
+    } & {
+      reference: {
+        byte_length?: number;
+      };
+    };
+    /**
+     * @description Independent audio view of the original receipt ledger. Null means no
+     *     complete audio receipt is registered (including a JSON-only result).
+     *     It proves neither absent objects nor stopped computation, and never
+     *     authorizes redispatch. Consumers independently check cancellation,
+     *     terminal authority and the fixed object version before publication.
+     */
+    ExecutionAudioStagingResultResponse: {
+      submit_intent_id: components["schemas"]["Identifier"];
+      request_digest: components["schemas"]["Sha256Digest"];
+      staging_result: components["schemas"]["ExecutionAudioStagingResult"] | null;
     };
     /**
      * @description Monotonic high-water summary over the authoritative interval ledger.
@@ -983,6 +1053,53 @@ export interface operations {
       422: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      503: components["responses"]["ControlUnavailable"];
+    };
+  };
+  getExecutionAudioStagingResult: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        submit_intent_id: components["parameters"]["SubmitIntentIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original request and audio receipt, or null if no audio receipt is registered. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionAudioStagingResultResponse"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No execution with this identity is recorded on this gateway. */
+      404: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      /** @description Invalid submit identity or correlation header. */
+      422: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {

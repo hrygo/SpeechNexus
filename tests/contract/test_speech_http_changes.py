@@ -286,7 +286,7 @@ def test_speech_make_target_and_existing_ci_job_require_an_explicit_baseline() -
     )
     assert result.returncode != 0 and "CONTRACT_BASE_REF is required" in result.stderr
     steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
-        "python_checks"
+        "python_contracts"
     ]["steps"]
     selected = [s for s in steps if s.get("run") == "make contracts-speech-changes"]
     assert len(selected) == 1 and selected[0]["if"] == "github.event_name == 'pull_request'"

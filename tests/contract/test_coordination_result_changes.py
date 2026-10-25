@@ -256,7 +256,7 @@ def test_result_make_target_requires_baseline_and_ci_keeps_an_explicit_surface()
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     selected = [
         x
-        for x in jobs["python_checks"]["steps"]
+        for x in jobs["python_contracts"]["steps"]
         if x.get("run") == "make contracts-coordination-results"
     ]
     assert len(selected) == 1 and selected[0]["if"] == "github.event_name == 'pull_request'"

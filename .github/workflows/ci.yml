@@ -18,7 +18,56 @@ env:
 
 jobs:
   python_checks:
-    name: Python static checks and unit tests
+    name: Python tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Fetch only the compatibility baseline
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-packages --all-groups
+
+      - name: Set up Node.js for reproducible contract generation
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install locked contract generation tools
+        run: |
+          npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
+          pnpm install --frozen-lockfile
+
+      - name: Run tests with coverage
+        run: uv run pytest -m "not integration" --cov --cov-report=term-missing
+
+      - name: Verify media toolchain
+        run: uv run python scripts/dev-env/media-smoke.py
+
+      - name: Build Python distributions
+        run: |
+          uv build --all-packages --out-dir dist/python
+          uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
+
+  python_contracts:
+    name: Python static and contract checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -102,17 +151,6 @@ jobs:
 
       - name: Validate contracts
         run: uv run python scripts/dev-env/validate-contracts.py
-
-      - name: Run tests with coverage
-        run: uv run pytest -m "not integration" --cov --cov-report=term-missing
-
-      - name: Verify media toolchain
-        run: uv run python scripts/dev-env/media-smoke.py
-
-      - name: Build Python distributions
-        run: |
-          uv build --all-packages --out-dir dist/python
-          uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
 
   integration_shards:
     name: PostgreSQL/InnoDB shard ${{ matrix.shard }}
@@ -251,18 +289,36 @@ jobs:
             --count 6 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
 
+  # Preserve the original protected status while independent read-only checks overlap.
+  python_checks_gate:
+    name: Python static checks and unit tests
+    needs: [python_checks, python_contracts]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete Python execution and contract evidence
+        env:
+          CHECKS_RESULT: ${{ needs.python_checks.result }}
+          CONTRACTS_RESULT: ${{ needs.python_contracts.result }}
+        run: |
+          if [[ "$CHECKS_RESULT" != success || "$CONTRACTS_RESULT" != success ]]; then
+            echo "::error::Python execution=$CHECKS_RESULT; contracts=$CONTRACTS_RESULT"
+            exit 1
+          fi
+
   # Keep the protected status name stable; a failed, cancelled or skipped
   # prerequisite must never turn into a successful merge gate.
   python:
     name: Python quality and tests
-    needs: [python_checks, coordination]
+    needs: [python_checks_gate, coordination]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require both Python and dual-database evidence
         env:
-          CHECKS_RESULT: ${{ needs.python_checks.result }}
+          CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
           COORDINATION_RESULT: ${{ needs.coordination.result }}
         run: |
           if [[ "$CHECKS_RESULT" != success || "$COORDINATION_RESULT" != success ]]; then

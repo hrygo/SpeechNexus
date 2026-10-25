@@ -357,9 +357,9 @@ def test_unprovable_reference_is_not_accepted_even_when_unchanged(
     assert report["findings"], "An unchanged unsupported reference is not proof of compatibility"
 
 
-def test_ci_checks_the_fetched_base_in_the_existing_python_job() -> None:
+def test_ci_checks_the_fetched_base_in_the_independent_contract_job() -> None:
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
-    steps = jobs["python_checks"]["steps"]
+    steps = jobs["python_contracts"]["steps"]
     step = next(
         value
         for value in steps

@@ -130,6 +130,7 @@ def download(archive: Archive, temporary: Path) -> None:
             archive.uri,
             str(temporary / archive.name),
             f"{label}:{archive.digest}",
+            f"Checksum-FileSize:{archive.size}",
         ],
         check=True,
     )

@@ -111,7 +111,8 @@ class PreparationTests(unittest.TestCase):
                         raise subprocess.CalledProcessError(4, args)
                     self.assertEqual(args[1:3], ["download-file", "https://example.test/font.deb"])
                     self.assertEqual(args[4], "SHA256:" + digest)
-                    self.assertEqual(len(args), 5)  # No transport configuration overrides.
+                    self.assertEqual(args[5], f"Checksum-FileSize:{len(payload)}")
+                    self.assertEqual(len(args), 6)  # No transport configuration overrides.
                     Path(args[3]).write_bytes(b"X" * len(payload) if corruption else payload)
                 elif args[:2] == ["sudo", "install"]:
                     self.assertEqual(args[2:4], ["--mode=0644", "--"])
@@ -179,7 +180,7 @@ class PreparationTests(unittest.TestCase):
         calls = self.exercise(policy="Acquire::http::User-Agent-Non-Interactive")
         native = next(args for args in calls if args[0] == HELPER.APT_HELPER)
         self.assertEqual(native[1], "download-file")
-        self.assertEqual(len(native), 5)
+        self.assertEqual(len(native), 6)
         self.assertNotIn("-o", native)  # Do not replace the configured flag/header/context.
 
     def test_prefetch_has_at_most_four_concurrent_archive_downloads(self) -> None:

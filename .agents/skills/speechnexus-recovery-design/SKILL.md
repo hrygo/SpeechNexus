@@ -18,6 +18,8 @@ description: "设计或审查 SpeechNexus 持久写入与异步执行的故障�
 
 按需从 [AGENTS.md](../../../AGENTS.md)、[契约索引](../../../contracts/README.md)和[事务设计](../../../docs/architecture/coordination-transactions.md)定位当前定义；涉及执行命令看[执行命令](../../../docs/architecture/execution-command.md)，涉及资源释放看[运行治理](../../../docs/architecture/runtime-governance.md)，涉及删除看[删除生命周期](../../../docs/architecture/data-deletion.md)。不把文档的“设计要求”表述成“当前实现已支持”。
 
+本技能负责恢复决定与故障窗口。实际改变机器契约时结合 [speechnexus-contract-change](../speechnexus-contract-change/SKILL.md)；改变协调事务端口、锁序、预算或 DDL/权限时结合 [speechnexus-coordination-change](../speechnexus-coordination-change/SKILL.md) 完成落地验证。现有协议和事务未变的客户端恢复修正不加载整套数据库流程；已完成的推演与共同检查直接复用。
+
 ## 沿故障窗口选择动作
 
 用[故障推演表](references/failure-windows.md)展开相关窗口；只分析本次会改变的路径。

@@ -15,6 +15,8 @@ export type Contracts = Pick<
   | "ExecutionControlErrorResponse"
   | "DrainInstanceRequest"
   | "DrainInstanceResponse"
+  | "ExecutionStagingResult"
+  | "ExecutionStagingResultResponse"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

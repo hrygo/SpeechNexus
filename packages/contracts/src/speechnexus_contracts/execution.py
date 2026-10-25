@@ -52,5 +52,15 @@ def parse(name: Literal["DrainInstanceRequest"], value: Any) -> models.DrainInst
 def parse(name: Literal["DrainInstanceResponse"], value: Any) -> models.DrainInstanceResponse: ...
 
 
+@overload
+def parse(name: Literal["ExecutionStagingResult"], value: Any) -> models.ExecutionStagingResult: ...
+
+
+@overload
+def parse(
+    name: Literal["ExecutionStagingResultResponse"], value: Any
+) -> models.ExecutionStagingResultResponse: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("execution", name, value)

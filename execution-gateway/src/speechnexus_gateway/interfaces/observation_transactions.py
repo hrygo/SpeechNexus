@@ -6,6 +6,8 @@ from typing import Any
 from speechnexus_contracts.validation import validate_coordination
 
 from speechnexus_gateway.application.observe_execution import ExecutionObservationService
+from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 from speechnexus_gateway.domain.observation import (
     ExecutionObservation,
     RecordExecutionObservation,
@@ -27,8 +29,9 @@ def observation_command(request: Any) -> RecordExecutionObservation:
     """Translate a validated boundary snapshot without importing DTOs into the domain."""
     value = request["observation"]
     watermark = value.get("output_watermark")
-    if value.get("staging_artifact_ref") is not None:
-        raise InvalidExecutionRequestError("observations do not publish staging artifacts")
+    receipt = request.get("staging_result")
+    if receipt is not None and value.get("staging_artifact_ref") != receipt["reference"]:
+        raise InvalidExecutionRequestError("observation and result reference disagree")
     if watermark is not None and watermark["sample_rate_hz"] != value["sample_rate_hz"]:
         raise InvalidExecutionRequestError("output observation uses another sample rate")
     identity = SubmissionIdentity(
@@ -79,8 +82,23 @@ def observation_command(request: Any) -> RecordExecutionObservation:
             ),
             stop_evidence_kind=StopEvidenceKind(value["stop_evidence_kind"]),
             observed_at=datetime.fromisoformat(value["updated_at"]),
+            staging_reference=(
+                None
+                if value.get("staging_artifact_ref") is None
+                else ExecutionObjectReference(**value["staging_artifact_ref"])
+            ),
         ),
         expected_version=int(request["expected_version"]),
+        staging_result=(
+            None
+            if receipt is None
+            else ExecutionStagingResult(
+                request_digest=receipt["request_digest"],
+                reference=ExecutionObjectReference(**receipt["reference"]),
+                storage_version=receipt["storage_version"],
+                media_type=receipt["media_type"],
+            )
+        ),
     )
 
 

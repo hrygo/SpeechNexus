@@ -100,7 +100,9 @@
         "GatewayFencingBarrierResponse",
         "ExecutionControlErrorResponse",
         "DrainInstanceRequest",
-        "DrainInstanceResponse"
+        "DrainInstanceResponse",
+        "ExecutionStagingResult",
+        "ExecutionStagingResultResponse"
       ]
     },
     "runtime": {

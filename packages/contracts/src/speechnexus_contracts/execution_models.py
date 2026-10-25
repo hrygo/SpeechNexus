@@ -250,6 +250,19 @@ class DrainInstanceResponse(TypedDict):
     updated_at: str
 
 
+class ExecutionStagingResult(TypedDict):
+    request_digest: Sha256Digest
+    reference: ArtifactStorageReference
+    storage_version: str
+    media_type: Literal["application/json"]
+
+
+class ExecutionStagingResultResponse(TypedDict):
+    submit_intent_id: Identifier
+    request_digest: Sha256Digest
+    staging_result: ExecutionStagingResult | None
+
+
 class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
     grapheme: str
     phonemes: str
@@ -514,4 +527,6 @@ type ExecutionContracts = (
     | ExecutionControlErrorResponse
     | DrainInstanceRequest
     | DrainInstanceResponse
+    | ExecutionStagingResult
+    | ExecutionStagingResultResponse
 )

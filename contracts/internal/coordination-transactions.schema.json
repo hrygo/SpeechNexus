@@ -1865,6 +1865,10 @@
         },
         "expected_version": {
           "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "staging_result": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionStagingResult",
+          "description": "Trusted producer only. Register once while executing and eligible. Preserve expected_version CAS: after a lost response query the original identity; an exact receipt replay at the current version is read-only even after later stop. Mismatches conflict. Does not publish or change terminal/stop/budget facts."
         }
       }
     },

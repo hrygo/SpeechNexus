@@ -620,7 +620,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_binding_history(bindings:
     finally:
         engine.dispose()
     assert bindings.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0011_binding_parameter_defaults"}
+        {"version_num": "0012_execution_results"}
     ]
     assert bindings.snapshot() == before
 
@@ -657,5 +657,5 @@ def test_failed_0010_upgrade_rolls_back_new_ddl_and_preserves_old_rows_and_acl(
     sandbox.admin.execute("ALTER TABLE speech_binding_commands RENAME TO binding_collision_fixture")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0011_binding_parameter_defaults"
+    assert sandbox.version() == "0012_execution_results"
     assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == before

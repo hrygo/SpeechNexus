@@ -117,3 +117,11 @@ other documents. Existing source validation, examples and consumer tests remain
 necessary. The general schema/serialization/status/media/security/WS and real
 qualification limits above apply to this mode too. CI runs it as an explicit
 step in the same Python job; no status name, partition or runtime permission changes.
+
+## Separate realtime runtime selection
+
+The [declared realtime constraint check](realtime-contract-change-checks.md)
+compares the public event root, all declared members, PCM and the generated
+transcription projection with a conservative constraint-identity policy. It
+leaves the five checks above unchanged; its result does not extend HTTP/OpenAI
+compatibility promises or establish event timing/real consumer qualification.

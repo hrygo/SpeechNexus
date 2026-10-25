@@ -185,6 +185,7 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
         "make contracts-speech-changes",
         "make contracts-coordination-requests",
         "make contracts-coordination-results",
+        "make contracts-realtime-changes",
         "uv run python scripts/dev-env/validate-contracts.py",
         "uv run ruff format --check .",
         "uv run ruff check .",

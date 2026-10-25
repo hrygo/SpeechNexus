@@ -33,9 +33,3 @@
 - Node=1 仍使用同一持久协议；进程内锁、共享目录或重新加载默认配置不能代替集群恢复设计。
 
 权威入口按需阅读：[协调事务](../../../../docs/architecture/coordination-transactions.md)、[执行及数据生命周期 ADR](../../../../docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)、[存储可移植性 ADR](../../../../docs/decisions/0006-cluster-coordination-and-storage-portability.md)。这些文件规定预期，生产组合根与实测证明实现。
-
-## 维护与评测
-
-保留能区分正确恢复和危险重试的少量场景；变更提交边界、幂等语义、generation 或删除规则时复测。先比较实际决定和持久结果，再判断技能是否改善任务表现，不测试固定措辞。
-
-编写依据：[Agent Skills 实践](https://agentskills.io/skill-creation/best-practices)、[行为评测](https://agentskills.io/skill-creation/evaluating-skills)。日常研发无需为使用本表额外联网。

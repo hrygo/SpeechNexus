@@ -33,6 +33,8 @@ rebase前候选 `5ce84db` 与其CI40238179522保留为已取代记录；新主�
 
 本单元只覆盖 C02/C07 下载组件的取消焦点归属：`workbench-saved-download-probe.mjs` 的成功下载路径断言未变，真实 PG/MinIO 运行由 CI 分片覆盖。取消路径暂无生产 bundle 探针，仍是本单元的证据边界。
 
+合入：head `2acd786`（rebase 到 #187 合并后的 `5afb488`）精确 [CI40240474196](https://github.com/hrygo/SpeechNexus/actions/runs/40240474196) 全14项成功，2026-10-26 06:38（Asia/Shanghai）合入 main `32386fa`；受影响路径的测试树与实际合并树一致。
+
 ## 尚未结算
 
 本单元没有实际 VoiceOver 播报/焦点顺序记录，也不证明物理设备、系统权限/撤销、真实实时服务、模型质量、公开双工、远端算力停止、HTTPS/WSS、长时或目标拓扑。自动可访问性和合成消费者证据不替代这些条件。M1/M2/M3、完整 C04、原41条AC/278个子条件均不据此标为通过。

@@ -30,6 +30,10 @@ Python 测试作业通过 `workbench-pg-probe.py --full-coverage` 在同一次 p
 
 有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
 
+浏览器准备复用[独立脚本](../../scripts/dev-env/prepare-ci-browser.py)：先从锁定 Playwright CLI 的依赖模拟结果取得缺失/升级包，再从 APT 的 URI/大小/摘要计划取得完整归档闭包。现有 Ubuntu runner 自带的 `aria2c` 仅以四个并发下载归档，每个归档不拆分多连接；校验大小/摘要后才写入该临时作业的 APT 缓存，随后仍执行原 `playwright install --with-deps --only-shell chromium`。APT 仍负责签名索引及安装时的归档认证；计划中的旧 MD5 字段只是预取一致性检查，不充当信任根。不改软件源、APT/网络安全配置、超时预算或六分片/受保护汇总，不引入跨运行缓存或外部服务。遇到自定义或不可读取的 APT HTTP(S)/地址族策略时沿用原安装器，避免第二下载器绕过策略。未知计划、下载或校验失败会阻止本次安装，不能假报测试通过；临时预取目录自动清理。
+
+此改进针对已记录的官方字体/库归档串行下载耗尽分片预算，需以新组合实际执行测试验收；单次提速不承诺长期耗时，取消、未开始测试与断言失败分别报告。回退该脚本接线即可恢复原官方安装路径，原失败证据保留。
+
 每个集成分片还检查 PostgreSQL 16 工具，通过 `workbench-pg-probe.py --integration-shard` 启动独立的私有 Unix socket PG，再把 Workbench DSN 传给原 `integration-shards.py run`。双数据库与 MinIO 环境仍指向该作业既有隔离测试服务，不用私有 Workbench DSN 替换协调数据库地址。原分片报告路径、完整 collection、实际执行与意外跳过拒绝规则保持不变；驱动器的生命周期报告与分片报告一并上传，分别保存，不替代分片执行报告。仅有单个分片作业成功不能替代汇总验收。
 
 真实内网模型资格与可复现集成分别验收。`qualification` 标记的三条纪要真实模型用例保留原部署调用与结果断言，不进入普通 `integration` 分片，也不计作 CI 通过；它们验证实际部署资格，不能替代协调事务的确定性门禁。`make workbench-llm-qualification` 要求显式的私有 Workbench PG DSN、获准内网 LLM endpoint/model，并构建真实 Web 入口后执行全部三项。缺少配置时入口直接失败，不以跳过取得资格。普通 CI 的分片完整性仍拒绝任何必需用例跳过，阶段 AC 仍须另附这三项真实模型与版本证据。

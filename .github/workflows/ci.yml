@@ -34,6 +34,16 @@ jobs:
       - name: Verify routing boundaries without installing project dependencies
         run: python3 -m unittest discover -s tests/ci -v
 
+      - name: Set up Node.js for dependency-free design checks
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify design token guardrails without installing project dependencies
+        run: |
+          node --test tests/ci/design-tokens.test.mjs
+          node scripts/dev-env/validate-design-tokens.mjs
+
       - name: Route the exact checked-out diff
         id: route
         env:

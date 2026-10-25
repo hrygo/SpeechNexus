@@ -1,9 +1,11 @@
 """Complete original-command consumers produce private results, never publication/stop."""
 
+import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -270,3 +272,31 @@ async def test_incomplete_or_inconsistent_native_run_never_reaches_storage(
             check=lambda: None,
         )
     assert not store.results
+
+
+async def test_original_absolute_deadline_interrupts_a_blocked_result_store(setup: Any) -> None:
+    class SlowStore(Store):
+        closed = False
+
+        async def stage(self, result: PreparedAsrResult, *, cancelled: Any) -> StagedAsrResult:
+            try:
+                await asyncio.sleep(0.8)
+                return await super().stage(result, cancelled=cancelled)
+            finally:
+                self.closed = True
+
+    request, objects, recognizer = setup
+    request = replace(
+        request,
+        identity=replace(request.identity, deadline_at=datetime.now(UTC) + timedelta(seconds=0.08)),
+    )
+    store = SlowStore()
+    started = time.monotonic()
+    with pytest.raises(AsrCallError) as caught:
+        await consumer(objects, recognizer).stage_result(
+            request, store=store, max_result_bytes=1024, cancelled=lambda: False
+        )
+    assert caught.value.code is AsrFailure.DEADLINE_EXCEEDED
+    assert caught.value.request_may_have_run
+    assert time.monotonic() - started < 0.5
+    assert store.closed and all(stream.closed for stream in objects.streams)

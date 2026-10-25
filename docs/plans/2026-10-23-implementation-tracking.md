@@ -29,7 +29,7 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 | C | #40/#41 作者报告真实 runtime/PG/本机模型/浏览器纪要；#43 真实 sweeper/重启账本重放 | base `4b08c396…` 的本地制品仍未提交/推送，尚未入共同 main；助手需要公开 `speech_job_id` 和已发布音色，目标环境与联合验收仍待。A 仅分析，不代改 C issue |
 
 B 当前阶段验收见[团队 B 目标](2026-10-23-team-b-goal.md#新阶段目标交付可恢复的真实文件语音闭环)。
-本轮 `codex/b03-private-asr-result` 已同步 main `7b042d5`（含 #140 及 CI 分流），
+本轮 `codex/b03-private-asr-result` 已同步 main `8b94167`（含 #140、CI 分流及 Node 前置门禁），
 补[私有结果交接](../architecture/file-asr-results.md)，复用原请求与制品引用契约；
 没有新增业务路由/预算权威，不把合成识别端口或单元回归当作真实引擎/完整集群资格。
 

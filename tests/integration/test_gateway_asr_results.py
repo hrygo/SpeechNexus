@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-from pathlib import Path
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -27,20 +27,19 @@ from speechnexus_gateway.interfaces.file_asr_command import CommandFileAsr
 pytestmark = pytest.mark.integration
 
 
-def results(bucket: str, directory: Path) -> MinioAsrResults:
+def results(bucket: str) -> MinioAsrResults:
     return MinioAsrResults(
         endpoint=os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"],
         bucket=bucket,
         access_key=os.environ["SPEECHNEXUS_TEST_MINIO_ACCESS_KEY"],
         secret_key=os.environ["SPEECHNEXUS_TEST_MINIO_SECRET_KEY"],
-        spool_directory=directory,
         timeout_seconds=10,
     )
 
 
 @pytest.mark.parametrize("speech", [True, False])
 async def test_command_to_private_result_and_pinned_readback(
-    object_store: tuple[MinioExecutionInputs, Minio, str], tmp_path: Path, speech: bool
+    object_store: tuple[MinioExecutionInputs, Minio, str], speech: bool
 ) -> None:
     inputs, admin, bucket = object_store
     command, _ = await asyncio.to_thread(upload_command, admin, bucket)
@@ -58,7 +57,7 @@ async def test_command_to_private_result_and_pinned_readback(
         input_limits=ExecutionInputLimits(1000000, 1024, 10),
         decode_limits=AudioDecodeLimits(),
     )
-    store = results(bucket, tmp_path)
+    store = results(bucket)
     try:
         receipt = await consumer.stage_result(
             request, store=store, max_result_bytes=1024, cancelled=lambda: False
@@ -85,24 +84,21 @@ async def test_command_to_private_result_and_pinned_readback(
 
 async def test_wrong_readback_digest_never_returns_a_receipt(
     object_store: tuple[MinioExecutionInputs, Minio, str],
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from speechnexus_gateway.domain.asr_results import PreparedAsrResult
 
-    _, admin, bucket = object_store
-    store = results(bucket, tmp_path)
-    original = store._client.put_object
+    _, _, bucket = object_store
+    store = results(bucket)
+    original = store._put
 
-    def corrupt(*args: Any, **kwargs: Any) -> Any:
-        import io
+    async def corrupt(*args: Any, **kwargs: Any) -> str:
+        # A successful versioned write of equal-sized wrong bytes still cannot
+        # defeat the expected result digest during actual MinIO GET readback.
+        wrong = replace(args[1], body=b"x" * len(args[1].body))
+        return await original(args[0], wrong, args[2], args[3])
 
-        written = original(*args, **kwargs)
-        # Equal-sized bytes and the latest version still cannot defeat SHA-256.
-        admin.put_object(bucket, args[1], io.BytesIO(b"x" * args[3]), args[3])
-        return written
-
-    monkeypatch.setattr(store._client, "put_object", corrupt)
+    monkeypatch.setattr(store, "_put", corrupt)
     result = PreparedAsrResult("ws-demo", "sha256:" + "a" * 64, b'{"text":"synthetic"}')
     try:
         with pytest.raises(AsrResultError, match="asr_result_readback_failed"):

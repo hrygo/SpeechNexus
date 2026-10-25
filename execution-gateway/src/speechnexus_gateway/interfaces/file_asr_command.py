@@ -7,6 +7,7 @@ The execution owner must persist and authorize the execution before using it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -193,9 +194,17 @@ class CommandFileAsr:
                         AsrFailure.CANCELLED, request_may_have_run=run.has_dispatched
                     )
 
-            return await stage_file_asr_result(
-                snapshot, run, store=store, max_result_bytes=max_result_bytes, check=check
-            )
+            check()
+            remaining = (snapshot.identity.deadline_at - self._now()).total_seconds()
+            try:
+                async with asyncio.timeout(remaining):
+                    return await stage_file_asr_result(
+                        snapshot, run, store=store, max_result_bytes=max_result_bytes, check=check
+                    )
+            except TimeoutError:
+                raise AsrCallError(
+                    AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=run.has_dispatched
+                ) from None
 
     @asynccontextmanager
     async def open(

@@ -38,15 +38,8 @@ def _origin(url: str) -> tuple[str, str | None, int]:
 
 
 class _FixedObjectHTTP(urllib3.PoolManager):
-    def __init__(
-        self,
-        endpoint: str,
-        context: ssl.SSLContext | None,
-        *,
-        allowed_methods: frozenset[str] = frozenset({"HEAD", "GET"}),
-    ) -> None:
+    def __init__(self, endpoint: str, context: ssl.SSLContext | None) -> None:
         self._origin = _origin(endpoint)
-        self._allowed_methods = allowed_methods
         super().__init__(
             num_pools=1,
             maxsize=4,
@@ -57,7 +50,7 @@ class _FixedObjectHTTP(urllib3.PoolManager):
         )
 
     def urlopen(self, method: str, url: str, *args: Any, **kwargs: Any) -> BaseHTTPResponse:
-        if _origin(url) != self._origin or method not in self._allowed_methods:
+        if _origin(url) != self._origin or method not in {"HEAD", "GET"}:
             raise ExecutionInputError("execution_input_origin_rejected")
         kwargs["pool_timeout"] = 3
         kwargs["redirect"] = False
@@ -67,7 +60,7 @@ class _FixedObjectHTTP(urllib3.PoolManager):
         kwargs["decode_content"] = False
         response = super().urlopen(method, url, *args, **kwargs)
         rejected = response.status != 200
-        if rejected or method in {"HEAD", "PUT"}:
+        if rejected or method == "HEAD":
             # HEAD consumers use headers only; they must not retain a connection
             # after preloading is disabled. Never drain/decode an error response.
             try:

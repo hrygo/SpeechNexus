@@ -281,7 +281,11 @@ def _dereference_node(
         annotations = {"title", "description", "default", "examples", "$comment"}
         conflicts = (resolved_mapping.keys() & resolved_siblings.keys()) - annotations
         if any(
-            resolved_mapping[key] != resolved_siblings[key]
+            not _same_json_tree(
+                _compatibility_shape({key: resolved_mapping[key]}),
+                _compatibility_shape({key: resolved_siblings[key]}),
+                numeric_equivalent=True,
+            )
             if side.standard_only
             else not _same_json_tree(resolved_mapping[key], resolved_siblings[key])
             for key in conflicts
@@ -383,19 +387,32 @@ def _compatibility_shape(schema: object, *, standard_only: bool = True) -> objec
     return result
 
 
-def _same_json_tree(left: object, right: object) -> bool:
-    """Retain JSON types: Python's True == 1 and False == 0 are not JSON equality."""
+def _same_json_tree(left: object, right: object, *, numeric_equivalent: bool = False) -> bool:
+    """Exact schema trees by default; JSON value sites may equate 1 and 1.0.
+
+    Booleans never participate in number equality, including in literal containers.
+    The existing response-intersection proof keeps its exact-tree default.
+    """
     if type(left) is not type(right):
-        return False
+        return (
+            numeric_equivalent
+            and type(left) in (int, float)
+            and type(right) in (int, float)
+            and left == right
+        )
     if isinstance(left, Mapping) and isinstance(right, Mapping):
         return (
             all(isinstance(key, str) for key in (*left, *right))
             and left.keys() == right.keys()
-            and all(_same_json_tree(value, right[key]) for key, value in left.items())
+            and all(
+                _same_json_tree(value, right[key], numeric_equivalent=numeric_equivalent)
+                for key, value in left.items()
+            )
         )
     if isinstance(left, list) and isinstance(right, list):
         return len(left) == len(right) and all(
-            _same_json_tree(a, b) for a, b in zip(left, right, strict=True)
+            _same_json_tree(a, b, numeric_equivalent=numeric_equivalent)
+            for a, b in zip(left, right, strict=True)
         )
     return left == right
 
@@ -478,14 +495,21 @@ def _compare_schema(
     )
     if (
         "const" in constrained
-        and ("const" not in accepted or constrained["const"] != accepted["const"])
-        and accepted.get("enum") != [constrained["const"]]
+        and (
+            "const" not in accepted
+            or not _same_json_tree(constrained["const"], accepted["const"], numeric_equivalent=True)
+        )
+        and not _same_json_tree(
+            accepted.get("enum"), [constrained["const"]], numeric_equivalent=True
+        )
     ):
         _issue(issues, pointer, "const value changed")
 
     if ("default" in base_schema) != ("default" in current_schema):
         _issue(issues, pointer, "default presence changed")
-    elif "default" in base_schema and base_schema.get("default") != current_schema.get("default"):
+    elif "default" in base_schema and not _same_json_tree(
+        base_schema.get("default"), current_schema.get("default"), numeric_equivalent=True
+    ):
         _issue(
             issues,
             pointer,
@@ -507,7 +531,11 @@ def _compare_schema(
         values = current_enum
         if "const" in accepted:
             values = [accepted["const"]]
-        missing = [value for value in values or [] if value not in base_enum]
+        missing = [
+            value
+            for value in values or []
+            if not any(_same_json_tree(value, old, numeric_equivalent=True) for old in base_enum)
+        ]
         if values is None or missing:
             _issue(
                 issues,
@@ -606,7 +634,9 @@ def _compare_schema(
         "contains",
         "prefixItems",
     ):
-        if base_schema.get(keyword) != current_schema.get(keyword):
+        if not _same_json_tree(
+            base_schema.get(keyword), current_schema.get(keyword), numeric_equivalent=True
+        ):
             _issue(
                 issues,
                 f"{pointer}/{keyword}",
@@ -660,9 +690,11 @@ def _compare_schema(
             # oneOf is not monotone in its branches: widening a request branch
             # can reject old inputs by making two branches match. Require the
             # resolved constraints to stay equal unless compatibility is proven.
-            if _compatibility_shape(
-                base_variants, standard_only=standard_only
-            ) != _compatibility_shape(current_variants, standard_only=standard_only):
+            if not _same_json_tree(
+                _compatibility_shape(base_variants, standard_only=standard_only),
+                _compatibility_shape(current_variants, standard_only=standard_only),
+                numeric_equivalent=True,
+            ):
                 _issue(
                     issues,
                     f"{pointer}/{keyword}",

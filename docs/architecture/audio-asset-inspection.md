@@ -82,6 +82,15 @@ defence in depth, not a substitute for checking the actual pidfd. Parent-death
 signals are tied to the creating Linux thread; they are never treated as an
 acknowledged stop when a request thread finishes.
 
+One reentrant identity-lifetime lock covers creation, receipt, polling, signal,
+wait and descriptor closure. `run()` owns it while using these identities;
+`close()` requests cancellation through an event and does not claim success
+when that ownership is unavailable. In particular, two closers cannot close a
+pidfd while a third actor still holds its integer for a later signal. A controlled
+barrier regression reproduces the earlier premature close and verifies the
+descriptor remains valid until its last user finishes; its signal hook never
+sends signals to another real process.
+
 The current decoder is configured for single-thread processing, but the actual
 native stack still needs qualification under this no-fork/no-thread policy.
 If it requires another execution model, keep audio unavailable and review that

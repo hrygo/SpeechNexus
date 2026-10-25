@@ -583,3 +583,66 @@ def test_reaped_outer_with_live_actual_identity_retains_slot(
             actual.kill()
         actual.wait(timeout=3)
         runner.close()
+
+
+def test_concurrent_closers_cannot_close_a_pidfd_while_another_uses_it(
+    image: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Controlled run-slot/exit barriers model run finishing between two closes.
+    # The signal hook never forwards a signal; only our own sleeper is killed.
+    runner = worker(image, "print('not dispatched')")
+    outer = subprocess.Popen(["/usr/bin/true"])
+    runner._outer_pidfd = os.pidfd_open(outer.pid)
+    outer.wait(timeout=3)
+    actual = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(10)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    identity = os.pidfd_open(actual.pid)
+    runner._process, runner._worker_pidfd, runner._reaped = outer, identity, False
+    entered, resume, stale = threading.Event(), threading.Event(), threading.Event()
+    first_result: list[bool] = []
+
+    def paused_signal(fd: int, number: int) -> None:
+        if fd == identity and number == signal.SIGKILL:
+            entered.set()
+            if not resume.wait(timeout=3):
+                raise RuntimeError("Synthetic signal barrier expired")
+        try:
+            os.fstat(fd)
+        except OSError:
+            stale.set()
+
+    runner._slot.acquire()
+    slot_owned = True
+    thread = threading.Thread(target=lambda: first_result.append(runner.close()))
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(signal, "pidfd_send_signal", paused_signal)
+            thread.start()
+            assert entered.wait(timeout=3)
+            actual.kill()
+            actual.wait(timeout=3)
+            runner._slot.release()
+            slot_owned = False
+            try:
+                assert runner.close() is False
+                os.fstat(identity)  # the paused user still owns a valid handle
+            finally:
+                resume.set()
+                thread.join(timeout=3)
+        assert not thread.is_alive() and first_result == [False]
+        assert not stale.is_set()
+        assert runner.close() is True
+    finally:
+        resume.set()
+        if slot_owned:
+            runner._slot.release()
+        if thread.ident is not None:
+            thread.join(timeout=3)
+        if actual.poll() is None:
+            actual.kill()
+        actual.wait(timeout=3)
+        runner.close()

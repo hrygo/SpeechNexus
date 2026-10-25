@@ -140,7 +140,7 @@ class AudioInspectionProcess:
         self._python = launcher_python
         self._bubblewrap, self._prlimit = bubblewrap, prlimit
         self._slot = threading.Lock()
-        self._creation = threading.Lock()
+        self._identity = threading.RLock()
         self._closed = threading.Event()
         self._process: subprocess.Popen[bytes] | None = None
         self._outer_pidfd: int | None = None
@@ -151,7 +151,10 @@ class AudioInspectionProcess:
     def run(self, source: BinaryIO, *, cancelled: Callable[[], bool]) -> InspectionProcessResult:
         if not self._slot.acquire(blocking=False):
             return InspectionProcessResult("busy")
+        identity_owned = False
         try:
+            self._identity.acquire()
+            identity_owned = True
             if self._closed.is_set():
                 return InspectionProcessResult("unavailable")
             # A previous kill with no wait receipt retains this instance's slot.
@@ -196,7 +199,7 @@ class AudioInspectionProcess:
                 self._control = control
                 control.setblocking(False)
                 self._reaped = False
-                with self._creation:
+                with self._identity:
                     self._process = subprocess.Popen(
                         args,
                         stdin=child_control.fileno(),
@@ -255,7 +258,7 @@ class AudioInspectionProcess:
                 return InspectionProcessResult("complete", body)
         except BaseException as error:
             # No vendor text, command, environment, filename or input in errors.
-            if self._process is None:
+            if identity_owned and self._process is None:
                 self._reaped = True  # Popen did not return an owned child.
             stopped = self._stop_original()
             if not isinstance(error, Exception):
@@ -264,7 +267,9 @@ class AudioInspectionProcess:
                 return InspectionProcessResult("stop_unknown")
             return InspectionProcessResult("unavailable")
         finally:
-            self._control = None
+            if identity_owned:
+                self._control = None
+                self._identity.release()
             self._slot.release()
 
     def _arguments(self, data_fd: int, seccomp_fd: int) -> list[str]:
@@ -332,6 +337,7 @@ class AudioInspectionProcess:
         ]
 
     def _receive_identity(self) -> bool:
+        """Called only while the identity lifetime lock is owned."""
         if self._worker_pidfd is not None:
             return True
         if self._control is None:
@@ -397,12 +403,17 @@ class AudioInspectionProcess:
         return True
 
     def _stop_original(self) -> bool:
-        if not self._creation.acquire(blocking=False):
+        if not self._identity.acquire(blocking=False):
             return False
         try:
-            process = self._process
+            return self._stop_with_identity()
         finally:
-            self._creation.release()
+            self._identity.release()
+
+    def _stop_with_identity(self) -> bool:
+        # Caller retains the same identity lock through every signal, wait and
+        # later close; another closer cannot recycle any referenced integer fd.
+        process = self._process
         if process is None:
             return self._reaped
         if self._original_exited():
@@ -451,6 +462,7 @@ class AudioInspectionProcess:
         return self._original_exited()
 
     def _close_identities(self) -> None:
+        """Caller owns the identity lock through the last use and descriptor close."""
         assert self._reaped
         for descriptor in (self._worker_pidfd, self._outer_pidfd):
             if descriptor is not None:
@@ -466,9 +478,14 @@ class AudioInspectionProcess:
             self._stop_original()
             return False
         try:
-            stopped = self._stop_original()
-            if stopped:
-                self._close_identities()
-            return stopped
+            if not self._identity.acquire(blocking=False):
+                return False
+            try:
+                stopped = self._stop_original()
+                if stopped:
+                    self._close_identities()
+                return stopped
+            finally:
+                self._identity.release()
         finally:
             self._slot.release()

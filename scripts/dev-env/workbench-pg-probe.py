@@ -346,6 +346,8 @@ def main() -> int:
             command.append(
                 "tests/integration/test_workbench_real_runtime_chapter_create_browser.py"
             )
+            # Public committed-content download through the production Web consumer.
+            command.append("tests/integration/test_workbench_real_runtime_download_browser.py")
             # The realtime tab must not open the microphone before a session is connected.
             command.append(
                 "tests/integration/test_workbench_real_runtime_realtime_consent_browser.py"

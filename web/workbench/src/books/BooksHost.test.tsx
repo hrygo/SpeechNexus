@@ -101,6 +101,18 @@ function setup(
 }
 
 describe("books host", () => {
+  it("keeps existing books and the open book when the selected project is clicked again", async () => {
+    const { projectList } = setup();
+    const open = await screen.findByRole("button", { name: /合成有声书/ });
+    fireEvent.click(open);
+    await waitFor(() => expect(open).toHaveAttribute("aria-pressed", "true"));
+    fireEvent.click(screen.getByRole("button", { name: projectList.data[0]!.name }));
+    expect(screen.getByRole("list", { name: "书目列表" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /合成有声书/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
   it("renames the selected project against the revision it read", async () => {
     const { client, projectList } = setup("book_demo", [book]);
     const selected = projectList.data[0]!;

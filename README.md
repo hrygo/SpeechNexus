@@ -127,6 +127,8 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 相关服务实现并启用后，标准 OpenAI SDK 可将 `base_url` 指向部署的 `/v1`。目前公共语音流程仍在实施，契约和调用示例用于开发对接，不能视为默认部署已支持全部接口。
 
+配置完成的独立工作台可通过公开接口下载已提交副本和已完成导出，支持单段 Range 与完整性校验，页面在校验后交给浏览器保存。配置限制及证据范围见[工作台内容下载](docs/architecture/workbench-content-downloads.md)；完整导出清单、续作和真实模型质量验收仍在推进。
+
 - [语音接口设计](docs/architecture/speech-api.md)：接口、事件和调用方式。
 - [OpenAI 兼容边界](docs/architecture/openai-compatibility.md)：支持的子集与扩展规则。
 - [机器契约](contracts/README.md)：供实现与消费者共同校验的协议定义。

@@ -8,6 +8,7 @@ from starlette.types import Lifespan
 from speechnexus_backend.workbench.application.assistant import WorkbenchAssistant
 from speechnexus_backend.workbench.application.books import WorkbenchBooks
 from speechnexus_backend.workbench.application.deletions import WorkbenchDeletions
+from speechnexus_backend.workbench.application.downloads import WorkbenchDownloads
 from speechnexus_backend.workbench.application.exports import WorkbenchExports
 from speechnexus_backend.workbench.application.meetings import WorkbenchMeetings
 from speechnexus_backend.workbench.application.render_units import WorkbenchRenderUnits
@@ -25,6 +26,7 @@ from speechnexus_backend.workbench.interfaces.http_assistant import (
     create_assistant_router,
 )
 from speechnexus_backend.workbench.interfaces.http_books import create_book_router
+from speechnexus_backend.workbench.interfaces.http_downloads import create_download_router
 from speechnexus_backend.workbench.interfaces.http_exports import (
     create_export_router,
 )
@@ -62,6 +64,8 @@ def create_app(
     render_units: WorkbenchRenderUnits | None = None,
     assistant: WorkbenchAssistant | None = None,
     exports: WorkbenchExports | None = None,
+    downloads: WorkbenchDownloads | None = None,
+    download_timeout_seconds: float = 120,
     voices: WorkbenchVoices | None = None,
     capabilities: Mapping[str, str] | None = None,
     lifespan: Lifespan[FastAPI] | None = None,
@@ -74,6 +78,15 @@ def create_app(
         lifespan=lifespan,
     )
     cursor_codec = CursorCodec(deployment_id, cursor_key)
+    app.include_router(
+        create_download_router(
+            downloads,
+            default_workspace_id=default_workspace_id,
+            max_json_bytes=max_json_bytes,
+            body_timeout_seconds=body_timeout_seconds,
+            download_timeout_seconds=download_timeout_seconds,
+        )
+    )
     app.include_router(
         create_management_router(
             versions,

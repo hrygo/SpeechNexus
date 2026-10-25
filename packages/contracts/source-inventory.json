@@ -124,7 +124,7 @@
     "version": null
   },
   "workbench-openapi.yaml": {
-    "sha256": "744e7d6c427d6477474d90de37061aa61d186b68e819c1e18d6ab0a82ec05607",
-    "version": "0.1.0.dev0"
+    "sha256": "d25b5f7759b3aeeb6e906dfdc7e7f152de688b0fc8203e536f115a7043e4e2f2",
+    "version": "0.1.0.dev1"
   }
 }

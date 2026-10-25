@@ -266,6 +266,7 @@ export function BooksHost({
             type="button"
             aria-pressed={project.id === projectId}
             onClick={() => {
+              if (project.id === projectId) return;
               setProjectId(project.id);
               setBook(null);
               setListed([]);

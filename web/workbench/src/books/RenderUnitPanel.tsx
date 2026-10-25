@@ -637,10 +637,19 @@ function ChapterUnits({
                         {`${label} 读取副本`}
                       </button>
                       {copy.assetId === unit.saved_asset_id && copy.asset !== null && (
-                        <p role="status" aria-label={`${label} 副本信息`}>
-                          {copy.asset.media_type} · {copy.asset.bytes} 字节 · {copy.asset.sha256} ·
-                          来源 {copy.asset.source_artifact_id}
-                        </p>
+                        <div>
+                          <p role="status" aria-label={`${label} 副本信息`}>
+                            {copy.asset.media_type} · {copy.asset.bytes} 字节 · {copy.asset.sha256}{" "}
+                            · 来源 {copy.asset.source_artifact_id}
+                          </p>
+                          <ContentDownload
+                            key={copy.asset.id + copy.asset.sha256}
+                            identity={copy.asset.id + copy.asset.sha256}
+                            filename={`${copy.asset.id}.${copy.asset.media_type === "audio/wav" ? "wav" : copy.asset.media_type === "audio/mpeg" ? "mp3" : "bin"}`}
+                            label={`${label} 校验并下载副本`}
+                            load={(signal) => client.downloadSavedAsset(copy.asset!, signal)}
+                          />
+                        </div>
                       )}
                       {copy.assetId === unit.saved_asset_id && copy.problem !== null && (
                         <p role="alert" aria-label={`${label} 副本错误`}>
@@ -734,3 +743,4 @@ export function RenderUnitPanel(props: { client: WorkbenchClient; chapter: Contr
   return <ChapterUnits key={props.chapter.id} {...props} />;
 }
 export default RenderUnitPanel;
+import { ContentDownload } from "./ContentDownload";

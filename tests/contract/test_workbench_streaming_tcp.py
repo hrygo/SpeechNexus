@@ -92,6 +92,8 @@ def source_server() -> Iterator[tuple[str, list[Any], list[bool]]]:
                 self.send_header("Cache-Control", "no-cache")
             if status == 206:
                 self.send_header("Content-Range", "bytes 0-3/8")
+            if status == 416:
+                self.send_header("Content-Range", "bytes */8")
             if not live:
                 self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -132,11 +134,7 @@ def python_consumer(base: str) -> None:
             if status in (200, 206):
                 assert body == (b"\x00\xff" if status == 200 else b"\x00\xff\x01\x02")
             envelope = {"body": body, "headers": dict(reply.headers)}
-            if status == 416:
-                with pytest.raises(ContractValidationError):
-                    validate_response("downloadBookExport", status, envelope)
-            else:
-                validate_response("downloadBookExport", status, envelope)
+            validate_response("downloadBookExport", status, envelope)
         with client.stream(
             "GET", "/v1/workbench/exports/export-stream/content", headers={"Range": "bytes=0-3"}
         ) as response:

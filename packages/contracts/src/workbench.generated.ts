@@ -506,7 +506,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Download a saved project asset */
+    /**
+     * Download a saved project asset
+     * @description Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes *\/size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.
+     */
     get: operations["downloadSavedAsset"];
     put?: never;
     post?: never;
@@ -597,7 +600,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Download a completed export artifact */
+    /**
+     * Download a completed export artifact
+     * @description Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes *\/size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.
+     */
     get: operations["downloadBookExport"];
     put?: never;
     post?: never;
@@ -1778,6 +1784,16 @@ export interface components {
     } & (unknown & unknown & unknown);
   };
   responses: {
+    /** @description The single requested byte range cannot select content. */
+    RangeNotSatisfiable: {
+      headers: {
+        "Content-Range": string;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Malformed request or unknown field. */
     BadRequest: {
       headers: {
@@ -3146,8 +3162,14 @@ export interface operations {
           "application/octet-stream": string;
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      416: components["responses"]["RangeNotSatisfiable"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createBookExport: {
@@ -3318,10 +3340,16 @@ export interface operations {
           "application/octet-stream": string;
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
       410: components["responses"]["Gone"];
+      413: components["responses"]["PayloadTooLarge"];
+      416: components["responses"]["RangeNotSatisfiable"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   workbenchCreateDeletionPlan: {

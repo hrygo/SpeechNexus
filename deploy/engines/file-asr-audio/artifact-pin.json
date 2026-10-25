@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "model": {
+    "repository": "Qwen/Qwen3-ASR-1.7B",
+    "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+    "license": "Apache-2.0",
+    "model_card": {
+      "file_name": "README.md",
+      "source_git_blob": "3a67d43f21febda213ff36efdb60ef10019af7f3",
+      "digest": "sha256:5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50",
+      "size_bytes": 57456
+    },
+    "files": [
+      {
+        "file_name": "chat_template.json",
+        "source_git_blob": "c44736493efd71ec96218cc626904698cdb13235",
+        "artifact": {
+          "role": "tokenizer",
+          "artifact_id": "model-75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+          "digest": "sha256:75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+          "media_type": "application/json",
+          "size_bytes": 1161
+        }
+      },
+      {
+        "file_name": "config.json",
+        "source_git_blob": "2bc16c9d4ca08963715cfb94d879799b9adbd0e9",
+        "artifact": {
+          "role": "config",
+          "artifact_id": "model-2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+          "digest": "sha256:2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+          "media_type": "application/json",
+          "size_bytes": 6194
+        }
+      },
+      {
+        "file_name": "generation_config.json",
+        "source_git_blob": "7382a4d347c0a865b76bb1b8277f66a5ac312854",
+        "artifact": {
+          "role": "config",
+          "artifact_id": "model-1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+          "digest": "sha256:1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+          "media_type": "application/json",
+          "size_bytes": 142
+        }
+      },
+      {
+        "file_name": "merges.txt",
+        "source_git_blob": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7",
+        "artifact": {
+          "role": "vocab",
+          "artifact_id": "model-8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "digest": "sha256:8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "media_type": "text/plain",
+          "size_bytes": 1671853
+        }
+      },
+      {
+        "file_name": "model-00001-of-00002.safetensors",
+        "source_git_blob": "1522f6592ff361cdc8b95692bbd8c513d68fc40a",
+        "artifact": {
+          "role": "weights",
+          "artifact_id": "model-a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6",
+          "digest": "sha256:a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6",
+          "media_type": "application/octet-stream",
+          "size_bytes": 4220320824
+        }
+      },
+      {
+        "file_name": "model-00002-of-00002.safetensors",
+        "source_git_blob": "5a13bd2988d1368745384b4acb6e8bab73f98a75",
+        "artifact": {
+          "role": "weights",
+          "artifact_id": "model-6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc",
+          "digest": "sha256:6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc",
+          "media_type": "application/octet-stream",
+          "size_bytes": 478200688
+        }
+      },
+      {
+        "file_name": "model.safetensors.index.json",
+        "source_git_blob": "1048a4eb4f21fef9aea06d8568a784b2b5595689",
+        "artifact": {
+          "role": "config",
+          "artifact_id": "model-f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60",
+          "digest": "sha256:f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60",
+          "media_type": "application/json",
+          "size_bytes": 64821
+        }
+      },
+      {
+        "file_name": "preprocessor_config.json",
+        "source_git_blob": "8f7f07346466d5d494ec0d4969d1c3d0190eed72",
+        "artifact": {
+          "role": "config",
+          "artifact_id": "model-45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+          "digest": "sha256:45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+          "media_type": "application/json",
+          "size_bytes": 330
+        }
+      },
+      {
+        "file_name": "tokenizer_config.json",
+        "source_git_blob": "b93109843922a40c6654c5449d3bf95372267c66",
+        "artifact": {
+          "role": "tokenizer",
+          "artifact_id": "model-4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+          "digest": "sha256:4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+          "media_type": "application/json",
+          "size_bytes": 12487
+        }
+      },
+      {
+        "file_name": "vocab.json",
+        "source_git_blob": "4783fe10ac3adce15ac8f358ef5462739852c569",
+        "artifact": {
+          "role": "vocab",
+          "artifact_id": "model-ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "digest": "sha256:ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "media_type": "application/json",
+          "size_bytes": 2776833
+        }
+      }
+    ],
+    "ignored_metadata": [
+      ".complete",
+      ".gitattributes",
+      "configuration.json"
+    ]
+  },
+  "vad": {
+    "repository": "snakers4/silero-vad",
+    "revision": "bfdc0193023f121ea5b3cc7b176dbed570a68a59",
+    "source_file": "src/silero_vad/data/silero_vad.onnx",
+    "license": "MIT",
+    "artifact": {
+      "role": "weights",
+      "artifact_id": "model-1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "digest": "sha256:1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "media_type": "application/octet-stream",
+      "size_bytes": 2327524
+    }
+  },
+  "engine": {
+    "runtime_pin": "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr/runtime-pin.json",
+    "source_commit": "2cf0a6915ce544dc493a0990f2ea38d81601128a",
+    "python_version": "3.12.3",
+    "distribution_count": 268,
+    "distribution_inventory_digest": "sha256:dc54b70e93edf6a58e03138ddadfaa30bbd4b1eddcaa29d05f502741a2965a88"
+  },
+  "repository_files": [
+    {
+      "path": "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr/runtime-pin.json",
+      "digest": "sha256:fd04f6420469bf08db3ac8f7693a1c7f83d6067baf9ac9cf76d5ad475cb3ac13",
+      "size_bytes": 1367
+    },
+    {
+      "path": "deploy/engines/cpu-vad/SILERO_LICENSE",
+      "digest": "sha256:2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+      "size_bytes": 1075
+    },
+    {
+      "path": "deploy/engines/cpu-vad/requirements.txt",
+      "digest": "sha256:4f4007ae70b9b16befac085e880ae85fadc48b569bf7b95881421ccd7e2ac9b8",
+      "size_bytes": 9575
+    },
+    {
+      "path": "deploy/engines/file-asr-audio/requirements.txt",
+      "digest": "sha256:160a7925b119f09488c9ac8b89d867783d918b2889a53e53d7e87f824b52c3ff",
+      "size_bytes": 12818
+    }
+  ]
+}

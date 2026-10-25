@@ -1,7 +1,8 @@
 """A real workbench deployment behind a web tier, for browser qualification.
 
 The API app is not a static host: its contract ingress rejects bundle assets, so the
-deployment serves the bundle from a web tier that proxies `/v1`. These helpers reproduce
+deployment serves the bundle from a web tier that proxies `/v1` and `/v2/workbench`.
+These helpers reproduce
 that topology with the real composition root, and can restart the API alone so the real
 startup path (ledger replay, startup check) runs while the browser session stays open.
 """
@@ -121,13 +122,13 @@ class Tier:
         await self.stop_api()
         await self.start_api()
 
-    async def proxy(self, rest: str, request: Request) -> Response:
-        path = f"/v1/{rest}"
+    async def proxy(self, request: Request) -> Response:
+        path = request.url.path
         committed = request.method == "POST" and path.rsplit("/", 1)[-1] in self._fault_suffixes
         assert self._upstream is not None
         forwarded = await self._upstream.request(
             request.method,
-            f"{self._api_base}/v1/{rest}",
+            f"{self._api_base}{path}",
             params=request.query_params,
             content=await request.body(),
             headers={
@@ -163,10 +164,14 @@ class Tier:
             return FileResponse(dist / "index.html")
 
         @front.api_route(
+            "/v2/workbench/{rest:path}",
+            methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        )
+        @front.api_route(
             "/v1/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
         )
-        async def forward(rest: str, request: Request) -> Response:
-            return await self.proxy(rest, request)
+        async def forward(request: Request) -> Response:
+            return await self.proxy(request)
 
         front.mount("/assets", StaticFiles(directory=dist / "assets"))
         server = uvicorn.Server(

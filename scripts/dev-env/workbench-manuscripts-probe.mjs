@@ -104,7 +104,7 @@ function externalRevision(text) {
 const middleware = (vite) => {
   vite.middlewares.use(async (req, res, next) => {
     const url = new URL(req.url, "http://127.0.0.1");
-    if (!url.pathname.startsWith("/v1/")) return next();
+    if (!url.pathname.startsWith("/v1/") && url.pathname !== "/v2/workbench/status") return next();
     requests++;
     let operation;
     try {

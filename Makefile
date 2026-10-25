@@ -1,11 +1,16 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-realtime-changes contracts-sdk-test contracts-generate contracts-drift \
-	service-smoke stack-config mysql-service \
+	service-smoke stack-config mysql-service acceptance-map-check \
 	format lint typecheck test integration-test workbench-llm-qualification coordination-test python-build build verify
 
 install:
 	uv sync --locked --all-packages --all-groups
 	pnpm install --frozen-lockfile
+
+# This is an acceptance audit, not a CI bypass; known mapping gaps fail the target.
+acceptance-map-check:
+	@test -n "$(ACCEPTANCE_EVIDENCE_ROOT)" || { echo "Set ACCEPTANCE_EVIDENCE_ROOT to the local evidence directory"; exit 1; }
+	uv run python scripts/dev-env/check-acceptance-map.py --evidence-root "$(ACCEPTANCE_EVIDENCE_ROOT)"
 
 dev-bootstrap:
 	./scripts/dev-env/bootstrap.sh

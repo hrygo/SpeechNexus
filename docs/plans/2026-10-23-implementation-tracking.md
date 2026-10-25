@@ -18,25 +18,33 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 
 ## 当前派工入口
 
-本轮代码基线为 main `f239e2d62d1f016a540de11c369d1c899c17304d`。
+此前快照代码基线为 main `f239e2d62d1f016a540de11c369d1c899c17304d`。
 [#163](https://github.com/hrygo/SpeechNexus/pull/163) 的受控 ASR 原生鉴权、目标代次核验和
 预热累计期限修复已集成；[合后 CI40201976264](https://github.com/hrygo/SpeechNexus/actions/runs/40201976264)
 14 项成功，447 秒，五分钟优化目标仍未达到。五组双库/真实 MinIO 回归 102 项通过、无跳过；
 固定镜像中间件验证未加载模型，不替代真实执行、网络隔离、停止/释放或公开发布资格。
 
 当前先推进 [#142](https://github.com/hrygo/SpeechNexus/issues/142) 的真实文件 ASR，再接 CustomVoice TTS。
-B 的[默认文件工厂候选](../architecture/file-asr-runtime.md)已有精确代码 CI 及
+B 的[默认文件工厂](../architecture/file-asr-runtime.md)已随 #168 合入 `ff224d9`，
+最终 head 与合后 CI 均成功；本轮 B 报告交接基于 main `046ae7f`，仅含文档。
+原版本已有精确代码 CI 及
 [真实 1.7B 隔离实验](../audits/2026-10-25-b03-default-real-asr-probe.md)：
-合成语音/静音、原身份重放/重启、私有结果和控制器停止有证据；尚未主线集成，
+合成语音/静音、原身份重放/重启、私有结果和控制器停止有证据；
 A 的生产准入和公开链仍待接通。`5f72b20` 另已完成
 [真实整代次停止→默认网关恢复→A 原事务结算](../audits/2026-10-25-b03-real-stop-settlement.md)：
 实际封锁旧入口，先保留占用，再分别幂等结算租约与实例 base；就绪 provider、配方准入及
 owner 过期仍为显式 fixture，单请求取消与生产预算链不能据此验收。
+`21129b4` 的[取消后安全链](../audits/2026-10-25-b03-real-cancel-settlement.md)另已验证：
+原身份取消/重放保持 unknown、零结果和预算不变，整代次双证据经默认恢复后由 A 原事务幂等结算。
+原生 abort 计数不是必要回执，关联原生取消及单请求停止/释放仍缺直接证据；
+三轮失败/局部结果和清理保留，整体为 partial，不将该报告改写成完整取消或生产资格通过。
 B 已复现并修复 #168 的首次协程执行前取消泄漏本地槽位问题；
-本轮候选 `21129b4` 已同步 main `250cf1c`，网关源码与相关测试保持已审版本，
+此前候选 `21129b4` 同步 main `250cf1c`，网关源码与相关测试保持当时已审版本，
 worker/默认配置/Silero 69 项及隔离 PG/InnoDB/MinIO 104 项通过、无跳过；
 精确候选检查见 [CI462](https://github.com/hrygo/SpeechNexus/actions/runs/40222777113)，不转挂旧版本绿灯。
-新修复版的真实联验范围见上述报告，不将旧实验或局部结算扩为完整业务资格。
+真实联验仍固定报告内原版本，不转挂本轮主干或将局部结算扩为完整业务资格。
+#162 `d83e420` 已交付完整草稿注册输入及显式默认，196 项定向回归和精确 head 的
+14 项 CI 成功；尚未集成或注册权威 binding，草稿验证不授予生产配置资格。
 A 提供权威 binding/default、音频 Asset、完整 Job/准入和发布，
 SDK/C 消费同版公开结果。unknown 继续占用，只由 A 原事务凭匹配停止/释放双证据归还预算。
 详见[团队 B 目标](2026-10-23-team-b-goal.md)，不将组件全绿换算成业务 AC 或物理集群资格。

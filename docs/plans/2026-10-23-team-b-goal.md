@@ -17,11 +17,14 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-25）
 
-本轮将 #168 同步到 main `250cf1c`，候选为 `21129b4`，#162/#168 尚未集成。
-网关源码与相关测试保持已审 `5f72b20` 的内容，本机 worker/默认配置/Silero 69 项、
-隔离 PG/InnoDB/MinIO 104 项均通过、无跳过；私有 PG 停止，静态与契约检查通过。
-新候选检查见 [CI462](https://github.com/hrygo/SpeechNexus/actions/runs/40222777113)，最终状态以该运行及 #168 为准。
-此前 `5f72b20` 的 [CI449](https://github.com/hrygo/SpeechNexus/actions/runs/40217515487)
+本轮报告交接基于 main `046ae7f`；#168 已于 2026-10-25 20:30 UTC 合入
+`ff224d9`，最终 `27baf28` 的 CI40230140652 与合后 CI40231066147 均成功。
+#162 的 `d83e420` 已交付完整 ASR 草稿注册输入和显式默认，196 项定向回归通过，
+[CI40232653703](https://github.com/hrygo/SpeechNexus/actions/runs/40232653703) 全 14 项成功，
+427 秒仍超五分钟；尚未集成或注册权威 binding。
+此前 `21129b4` / main `250cf1c` 的 69 项单元、104 项隔离 PG/InnoDB/MinIO 及
+[CI462](https://github.com/hrygo/SpeechNexus/actions/runs/40222777113) 保留原版本范围。
+`5f72b20` 的 [CI449](https://github.com/hrygo/SpeechNexus/actions/runs/40217515487)
 全 14 项成功，仅覆盖组合 `595386a` 和 main `39aeb419`；依赖下载超时及重试保留。#163 集成时的
 [CI40201976264](https://github.com/hrygo/SpeechNexus/actions/runs/40201976264) 的
 14 项检查均成功，耗时 447 秒，五分钟优化目标仍未达到。#28/#29/#142 已同步集成事实，
@@ -32,13 +35,18 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | 层级 | 已有成果 | 当前边界 |
 | --- | --- | --- |
 | 回执与输入 | [#152](https://github.com/hrygo/SpeechNexus/pull/152)、[#154](https://github.com/hrygo/SpeechNexus/pull/154) 已集成，复用原执行回执与固定版本对象 | 不授予模型、停止/释放或公开发布资格 |
-| 持久执行 | [#158](https://github.com/hrygo/SpeechNexus/pull/158) 已集成；#168 默认工厂候选已有真实模型隔离实验 | #168 未集成，默认 Compose 未启用；A 的生产准入与公开链仍待接通 |
+| 持久执行 | [#158](https://github.com/hrygo/SpeechNexus/pull/158) 与 #168 默认工厂已集成；原受检版本有真实模型隔离实验 | 默认 Compose 未启用；权威配置、A 的生产准入与公开链仍待接通 |
 | 工作台契约 | [#141](https://github.com/hrygo/SpeechNexus/pull/141) 已集成 | 机器协议不证明正式消费者或公开链已可用 |
-| B02 本轮 | #163 已集成鉴权/预热；`5f72b20` 已联验真实整代次停止→默认网关恢复→A 原租约/base 结算及幂等 | 就绪 provider、准入及 owner 过期为显式 fixture；持续 ready、单请求取消、生产公开链及容量资格仍待 |
+| B02 本轮 | #163 已集成鉴权/预热；`5f72b20` 已联验真实整代次停止结算；`21129b4` 补取消后 unknown/原身份重放/零结果及原事务结算 | 就绪 provider、准入及 owner 过期为显式 fixture；原生 abort 直接观察、单请求停止/释放、持续 ready、生产公开链及容量资格仍待 |
 
 各 PR 保存对应候选的检查与报告；旧分支测试数量不转挂最新组合。
-此前 `5f72b20` 加载真实 1.7B 和 CPU VAD，仅使用合成语料；本轮 rebase 没有重载模型，
-未执行物理目标拓扑验收。#142 仍是 B03 阶段子任务；
+此前 `5f72b20` 加载真实 1.7B 和 CPU VAD；
+随后在 `21129b4` 完成[取消后的安全链联验](../audits/2026-10-25-b03-real-cancel-settlement.md)，
+仅使用合成语料：原身份取消/重放保持 unknown、不写结果、不提前退预算，
+整代次双证据后由默认恢复及 A 原事务幂等结算。三轮失败/局部结果及清理保留。
+原生 abort 指标不构成必要回执，单请求停止/释放未证明，最终报告保持 partial；
+本轮仅同步报告到主干、核对原报告与证据摘要，未加载模型或执行物理目标拓扑验收。
+#142 仍是 B03 阶段子任务；
 #149 是后续助手交接，不增加原 25 个主工作包的分母。
 
 真实模型分段成果继续有效：[ASR 生命周期](../audits/2026-10-24-b02-real-asr-controller-probe.md)、
@@ -155,8 +163,8 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 
 | 工作包 | 唯一状态 | 本阶段及后续剩余 |
 | --- | --- | --- |
-| B00 #27 | in-progress | 首条权威配置/许可/版本锁与上界交接，随后逐能力停止/容量资格 |
-| B01 #28 | in-progress | 默认候选的真实整代次停止、网关恢复及 A 原结算已有隔离证据；主线接入、单请求取消与生产公开链待完成 |
+| B00 #27 | in-progress | #162 固定制品和完整注册输入候选已交付；权威配置发布与逐能力停止/容量资格待完成 |
+| B01 #28 | in-progress | #168 默认工厂已集成；原版本整代次停止、网关恢复及 A 结算有隔离证据；单请求取消与生产公开链待完成 |
 | B02 #29 | in-progress | #163 已集成；真实预热/停止、实际入口屏障及 A 租约/base 结算已隔离联验；正式就绪来源、持续 ready、真实故障与 peak→steady/drain 资格待完成 |
 | B03 #30 | in-progress | 先 #142 的 ASR→CustomVoice 公开链；随后 Base、长文本、时钟/重叠和完整参数矩阵 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |

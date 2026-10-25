@@ -33,6 +33,10 @@ A02 的 `0009_profile_drafts` 另加三个 speech 配置私有表：
 它们只支持不可变草稿分配/原键恢复，不扩共享协调端口，不授权 B/C 写入；
 见[草稿端口与迁移边界](profile-drafts.md)。
 
+`0013_profile_lifecycle_intents` 追加 A 私有 `speech_profile_lifecycle_intents`，
+仅保存完整原命令，不写发布结果/默认指针、不扩共享协调端口或 B/C 权限；
+见[私有生命周期意图账本](profile-lifecycle-intents.md)。
+
 | 端口                                                  | 主责           | 权威写入范围                                                             |
 | ----------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |
 | acquire_owner / renew_owner / activate_owner          | A              | resource_pools                                                           |

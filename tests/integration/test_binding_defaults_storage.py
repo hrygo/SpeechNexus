@@ -56,7 +56,7 @@ from speechnexus_backend.speech.interfaces.binding_default_drafts import (
 )
 
 pytestmark = pytest.mark.integration
-HEAD = "0012_execution_results"
+HEAD = "0013_profile_lifecycle_intents"
 
 
 def downgrade_defaults(

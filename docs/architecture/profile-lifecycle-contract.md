@@ -1,5 +1,9 @@
 # Profile publication and activation contract preflight
 
+The later [P2a private intent journal](profile-lifecycle-intents.md) persists original
+commands only. It adds no publisher, pointer or public outcome; the P1a authority
+and remaining lifecycle boundaries described here continue to apply.
+
 This A00/A02 unit supplies future consumer contracts, not a publisher. The product
 still registers only the existing draft create/fixed-get profile routes. No
 publication transaction, trusted validation-report provider, default pointer,

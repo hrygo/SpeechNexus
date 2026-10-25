@@ -1078,7 +1078,7 @@ export interface operations {
       /** @description Original request and audio receipt, or null if no audio receipt is registered. */
       200: {
         headers: {
-          "X-Request-ID": components["headers"]["XRequestId"];
+          "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
@@ -1089,7 +1089,7 @@ export interface operations {
       /** @description No execution with this identity is recorded on this gateway. */
       404: {
         headers: {
-          "X-Request-ID": components["headers"]["XRequestId"];
+          "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
@@ -1099,7 +1099,7 @@ export interface operations {
       /** @description Invalid submit identity or correlation header. */
       422: {
         headers: {
-          "X-Request-ID": components["headers"]["XRequestId"];
+          "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {

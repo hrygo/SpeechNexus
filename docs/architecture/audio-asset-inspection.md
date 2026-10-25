@@ -192,3 +192,53 @@ root-cause finding or a packaging fix. The CI job only reads fixed namespace/LSM
 context after failure. No sysctl, AppArmor, capability, runner or network-isolation
 change is authorized or made to bypass this failure. CI and target qualification
 remain open until a supported execution path is established.
+
+### Pending CI profile decision — no policy change executed
+
+Installing `bubblewrap` does not install or enable its AppArmor policy. Ubuntu's
+[official changelog](https://lists.ubuntu.com/archives/noble-changes/2024-September/041745.html)
+places `bwrap-userns-restrict` in `apparmor-profiles`. Read-only inspection of the
+[official Noble package](https://archive.ubuntu.com/ubuntu/pool/main/a/apparmor/apparmor-profiles_4.0.1really4.0.1-0ubuntu0.24.04.9_all.deb)
+found `usr/share/apparmor/extra-profiles/bwrap-userns-restrict`, explicitly
+disabled by default. Package SHA256 is
+`90b02aa006eea7702cd4e851343e469e41365dda42145a3cb035de1d6c773b8c`;
+the profile file SHA256 is
+`11d39094f044f0cda0febb3ad517b830301da6b2ce929664af09ee9e4dd264f9`.
+The archive was read, not installed or loaded. This establishes provenance and
+intended behavior, not the cause of the runner's effective denial.
+
+The file defines two companion rules: `bwrap` attaches to `/usr/bin/bwrap` and
+allows capabilities during namespace setup; exec stacks the child with
+`unpriv_bwrap`, which denies capabilities. The proposed exception changes host
+policy for **all bwrap invocations on that one ephemeral job VM**, and exposes
+additional kernel namespace functionality. It is not an application-only flag
+or proof of media safety. User approval is required before activation.
+
+The smallest proposed action is conditional on the read-only package/loaded
+profile audit confirming that these rules are absent. Do not replace existing
+profiles or apply unreviewed `local/bwrap-userns-restrict` / `local/unpriv_bwrap`
+includes. If the rules are already loaded or local overrides exist, stop and
+review that actual policy instead of overwriting it.
+
+After explicit approval, obtain this exact package through the runner's
+authenticated APT metadata, verify both hashes, extract only this file into
+`RUNNER_TEMP`, and validate it with the existing compatible parser without
+kernel loading. Do not install the whole `apparmor-profiles` package, upgrade
+the parser or load unrelated policies automatically. The proposed single load
+command (not executed or present in the workflow) is:
+
+```sh
+sudo -n /usr/sbin/apparmor_parser -a -K -I /etc/apparmor.d "$SPEECHNEXUS_BWRAP_PROFILE"
+```
+
+Keep the current runner, sysctls, capability drop, network namespace, readonly
+mounts, seccomp and pidfd stop checks unchanged. Verify child effective
+capabilities remain zero, host loopback remains unreachable, actual exit is
+proved and the exact head's full CI passes. Loading the profile is an experiment
+until these checks succeed; do not claim it is a proven fix in advance.
+
+After every owned worker is confirmed stopped, remove only these newly loaded
+rules with the matching `apparmor_parser -R -K -I /etc/apparmor.d` invocation.
+If a stop cannot be confirmed, retain failure and let the ephemeral VM teardown
+remove policy/processes; do not unload policy around a live unknown worker.
+Nothing in this proposal approves #141, #152, production policy or deployment.

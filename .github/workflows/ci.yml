@@ -96,11 +96,19 @@ jobs:
 
       - name: Install Linux inspection sandbox
         # Only this job executes the real Linux inspection-process tests. The
-        # package installs its Ubuntu user-namespace profile; never relax host
-        # sysctls or fall back to unsandboxed workers when namespaces fail.
+        # bubblewrap package supplies the executable, not an enabled AppArmor
+        # profile. Never install/load a profile, change host policy or fall back
+        # to unsandboxed workers automatically.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends bubblewrap
+
+      - name: Verify inspection startup before complete regression
+        # Fail the same required job early on an unusable native dependency.
+        # The complete coverage run remains unchanged after this real probe.
+        run: >-
+          uv run pytest -q
+          tests/unit/backend/test_audio_inspection_process.py::test_real_worker_sees_only_readonly_input_and_no_host_environment
 
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov --cov-report=term-missing
@@ -113,6 +121,7 @@ jobs:
           import json
           import os
           import platform
+          import subprocess
           from pathlib import Path
           result = {"kernel": platform.release(), "uid": os.getuid()}
           for label, path in {
@@ -125,6 +134,38 @@ jobs:
                   result[label] = Path(path).read_text().strip()[:160]
               except OSError as error:
                   result[label] = f"unavailable(errno={error.errno})"
+          packages = subprocess.run(
+              ["dpkg-query", "-W", "-f=${binary:Package} ${Version} ${db:Status-Status}\n",
+               "bubblewrap", "apparmor", "apparmor-profiles"],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          result["packages"] = {"returncode": packages.returncode,
+                                "stdout": packages.stdout[:1600], "stderr": packages.stderr[:400]}
+          result["parser_present"] = Path("/usr/sbin/apparmor_parser").is_file()
+          result["local_overrides"] = {
+              name: Path("/etc/apparmor.d/local", name).exists()
+              for name in ("bwrap-userns-restrict", "unpriv_bwrap")
+          }
+          # Read-only audit using the runner's existing sudo access. No parser,
+          # profile loading, service restart or security setting change.
+          audit = subprocess.run(
+              ["sudo", "-n", "/usr/sbin/aa-status", "--json"],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          result["profile_audit"] = {"returncode": audit.returncode}
+          if audit.returncode == 0:
+              try:
+                  profiles = json.loads(audit.stdout).get("profiles")
+                  if not isinstance(profiles, dict):
+                      raise ValueError("Unknown status schema")
+                  result["profile_audit"]["format"] = "profiles_dict"
+                  result["profile_audit"]["bwrap"] = {
+                      name: mode for name, mode in profiles.items() if "bwrap" in name
+                  }
+              except (ValueError, AttributeError):
+                  result["profile_audit"]["format"] = "unavailable"
+          else:
+              result["profile_audit"]["stderr"] = audit.stderr[:400]
           print(json.dumps(result, sort_keys=True))
           PY
 

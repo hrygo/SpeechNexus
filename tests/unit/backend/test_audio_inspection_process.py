@@ -139,8 +139,11 @@ def test_real_worker_sees_only_readonly_input_and_no_host_environment(
     runner = worker(
         image,
         "import json,os; "
+        "caps=next(line.split()[1] for line in open('/proc/self/status') "
+        "if line.startswith('CapEff:')); "
         "print(json.dumps({'body':open('/input/media','rb').read().decode(),"
-        "'env':dict(os.environ),'pid':os.getpid(),'net':os.readlink('/proc/self/ns/net')}))",
+        "'env':dict(os.environ),'pid':os.getpid(),'net':os.readlink('/proc/self/ns/net'),"
+        "'caps':caps}))",
     )
     result = runner.run(body, cancelled=lambda: False)
     assert result.status == "complete"
@@ -149,6 +152,7 @@ def test_real_worker_sees_only_readonly_input_and_no_host_environment(
     assert "SYNTHETIC_INSPECTION_CREDENTIAL" not in facts["env"]
     assert facts["net"] != str(Path("/proc/self/ns/net").readlink())
     assert facts["pid"] != os.getpid()
+    assert int(facts["caps"], 16) == 0
     assert body.tell() == 7
     assert runner._process is not None and runner._process.poll() == 0
 

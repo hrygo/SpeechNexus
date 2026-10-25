@@ -22,6 +22,7 @@ describe("AdminUI shell", () => {
     expect(screen.getByText("AdminUI")).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "服务进程" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "共享工作空间" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "场景预设草稿" })).toBeInTheDocument();
   });
 
   it("renders BrandMark with unique gradient IDs, CSS token stops, and decorative a11y support", () => {

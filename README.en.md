@@ -1,122 +1,78 @@
-# SpeechNexus · Acoustic Hub (声枢)
+# SpeechNexus · 声枢
 
-![SpeechNexus · Acoustic Hub — Self-Hosted Speech Engine & Studio](web/shared/src/assets/brand-banner.svg)
+![SpeechNexus · 声枢 — A self-hosted speech service and creation hub](web/shared/src/assets/brand-banner.svg)
 
-**Self-hosted speech engine and voice creation studio**
+**Turn recordings into text and text into speech, in your own environment.**
 
-[简体中文](README.md) · [Features](#features-and-use-cases) · [Quick start](#quick-start) · [Documentation](docs/README.md) · [Feedback](https://github.com/hrygo/SpeechNexus/issues)
+[简体中文](README.md) · [Use cases](#use-cases) · [Current availability](#current-availability) · [Quick start](#quick-start) · [Documentation](#documentation) · [Feedback](https://github.com/hrygo/SpeechNexus/issues)
 
 [![CI](https://github.com/hrygo/SpeechNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/hrygo/SpeechNexus/actions/workflows/ci.yml)
+[![Inference: vLLM](https://img.shields.io/badge/Inference-vLLM-FF6B35)](https://github.com/vllm-project/vllm)
+[![Inference: vLLM-Omni](https://img.shields.io/badge/Inference-vLLM--Omni-FF8F35)](https://github.com/vllm-project/vllm-omni)
+[![ASR: Qwen3-ASR](https://img.shields.io/badge/ASR-Qwen3--ASR-615CED)](https://github.com/QwenLM/Qwen3-ASR)
+[![TTS: Qwen3-TTS](https://img.shields.io/badge/TTS-Qwen3--TTS-8B5CF6)](https://github.com/QwenLM/Qwen3-TTS)
+[![Docker Compose](https://img.shields.io/badge/deploy-Docker_Compose-2496ED?logo=docker&logoColor=white)](deploy/README.md)
 
-SpeechNexus is for teams that want to deploy speech capabilities in their own Linux environment. The product brings together a **speech API, an AdminUI, and a personal speech workbench**. Its goal is to connect speech recognition, synthesis, voice creation, and everyday speech tasks: developers integrate through APIs, users work in the browser, and maintainers manage services and resources.
+SpeechNexus is a speech service and creation hub for your own Linux environment. It connects recognition, synthesis, and voice creation to everyday work: users transcribe, narrate, and organize content in a browser; developers integrate through APIs; operators manage models, resources, and tasks.
 
-> **Early development.** The AdminUI workspace reads and task center, and workbench file-transcription and text-synthesis pages now consume the public API. Service health and configured Asset endpoints are available; real speech execution, model quality, and complete workbench workflows still require integration. The features below describe the product roadmap; real models and production deployments remain unverified.
+> **Early development: suitable for interface previews and development evaluation.** The default startup loads no speech models and cannot yet transcribe real recordings or generate speech. Some pages and service modules are connected and independently verified; complete speech workflows and production deployment still require integration and acceptance. The use cases below describe product goals. See [current availability](#current-availability) for delivered scope.
 
-## Who it is for
+## Why SpeechNexus
 
-SpeechNexus is designed for three needs:
+- **Process content in your own environment.** Designed for local speech inference and intranet deployment, with audio, transcripts, manuscripts, and voice references kept within the deployment network boundary.
+- **Create around a task.** The workbench brings capture, editing, previews, continuation, and export into one workflow.
+- **Integrate a speech foundation into your applications.** The API is designed for independent use; speech services can run without the WebUI, workbench business logic, or an LLM.
 
-- **Add speech to applications**: use a common API for file and realtime recognition, synthesis, and voice resources. The speech foundation can run independently of the WebUI and LLM integration.
-- **Complete speech tasks in the browser**: capture, edit, preview, resume, and export work across transcription, dubbing, meetings, captions, and audiobooks.
-- **Operate services in your own environment**: manage model services, scenario presets, shared voices, tasks, and resources, with local speech inference and optional intranet LLM integration.
+Three entry points serve these needs: the **speech workbench** for creation, **AdminUI** for deployment operations, and the **speech API** for application integration. Their scope and delivery status are described below.
 
-## Features and use cases
+## Use cases
 
-| Feature                            | What you can use it for                                                                                           |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Speech recognition                 | Upload recordings or stream audio to produce editable transcripts, captions, and optional speaker labels          |
-| Speech synthesis                   | Turn text into speech using preset or published voices, with file generation and realtime output                  |
-| Voice creation                     | Design a voice from a description or clone a reference sample, then preview, validate, publish, and reuse it      |
-| Meetings and live captions         | Follow transcripts, mark key points, save records, and optionally generate meeting notes with an intranet LLM     |
-| Voice assistants and teleprompters | Combine recognition, text generation, and synthesis for voice interactions, or follow a script as you speak       |
-| Audiobook production               | Import manuscripts, organize chapters and characters, assign voices, generate chapters, redo sections, and export |
+These are target workflows and are not all available yet.
 
-Long-running tasks are planned to support progress tracking, cancellation, recovery, and downloads. Scenario presets will let users reuse recognition, review, and synthesis settings. See the [product design (Chinese)](docs/speechnexus-product-architecture.md) for the full scope.
+| What you want to do | Target experience and output |
+| --- | --- |
+| Turn recordings into text | Upload audio, review recognized text, and export transcripts or captions, with speaker labels where supported by the model |
+| Narrate a script | Enter text, choose a voice, generate and preview speech, then refine and export audio |
+| Create a reusable voice | Design from a description or clone from reference samples; preview, validate, and explicitly publish before reuse |
+| Capture meetings and live captions | View live text, mark key points, save records, and optionally generate minutes with an intranet LLM |
+| Use a voice assistant or teleprompter | Interact through speech or follow your speaking position in a script |
+| Produce an audiobook | Organize chapters and characters, assign voices, generate by chapter, redo sections, and export |
 
-## Ways to use SpeechNexus
+For example, the target transcription flow is **upload → choose language and preset → track progress → review text → export**. Narration starts with text and voice selection, followed by previews and targeted revisions.
 
-### Complete tasks in the workbench
+See the [product design (Chinese)](docs/speechnexus-product-architecture.md) for the complete scope.
 
-The workbench organizes actions around tasks. Once business features are available, typical workflows will be:
+## Models and inference engines
 
-- **Transcribe a recording**: upload audio → choose a language and preset → follow progress → edit the text → export a transcript or captions.
-- **Create a voiceover**: enter text → choose a voice → generate and preview → revise the content → export audio.
-- **Create a voice**: submit a description or reference sample → generate candidates → preview and validate reuse → confirm publication → use it for future voiceovers.
+The selected **Qwen3 speech model family** covers recognition, narration, and voice creation, with **vLLM / vLLM-Omni** serving inference.
 
-### Integrate through the API
+| Selected model and engine | Intended experience |
+| --- | --- |
+| **Qwen3-ASR · vLLM** | 0.6B for the realtime recognition path; 1.7B for file transcription and full-segment review |
+| **Qwen3-TTS · vLLM-Omni** | CustomVoice for preset voices, VoiceDesign for voices described in text, and Base for sample cloning and reuse of created voices |
+| **Silero VAD · ONNX Runtime CPU** | Detect and segment speech to prepare useful recognition input |
 
-The P0 contracts freeze an OpenAI Audio-compatible subset plus `nexus` interfaces for voices, durable tasks, and scenario presets for applications, SDKs, and MCP callers. A standard OpenAI SDK can point `base_url` at the deployment's `/v1`. Realtime supports a transcription-only `model` connection mode and pre-created nexus sessions; both cover only the declared event subset.
+These are selected integration paths: ASR, VAD, and CustomVoice TTS have partial runtime evidence; complete business integration, quality, recovery, and cluster qualification still need validation. Header badges identify technology choices and do not imply availability at default startup. See the [model and engine decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for responsibilities and acceptance requirements, and [file TTS (Chinese)](docs/architecture/file-tts.md) for component evidence.
 
-Runtime endpoints include `/healthz`, `/readyz`, and configured Asset upload, metadata, content download and shared Workspace GET/keyset listing. The initial path validates actual UTF-8 text; audio inspection depends on B03, and other speech/workbench routes remain in development. An explicitly configured separate writer also enables [profile draft POST / fixed-revision GET](docs/architecture/profile-drafts.md), and a separate writer enables [ModelBinding draft POST / fixed GET](docs/architecture/model-binding-drafts.md), both with original-key replay and distinct unknown results. An explicit four-table writer also enables [binding default declarations and fixed snapshot GET](docs/architecture/binding-defaults-producer.md); publication, activation and default selection remain pending. New Assets default to seven days of retention, overridden by deployment configuration or an explicit upload TTL; changing defaults never changes an existing expiry. Protocol calls, compatibility scope, and examples are documented in the [speech API design (Chinese)](docs/architecture/speech-api.md) and [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md). Machine contracts are indexed in [contracts](contracts/README.md).
+## Current availability
 
-The [workbench C1 HTTP unit (Chinese)](docs/plans/2026-10-24-team-c-c1-management-handoff.md) provides an independently injected factory covering project/transcript versions, pagination, configuration status and versioned project/transcript deletion, verified over real loopback HTTP and isolated PostgreSQL. Shared production composition, migrations, workbench pages and complete speech workflows still require integration.
+Repository delivery summary as of **2026-10-25**. Independently verified modules do not imply complete availability in the default deployment.
 
-The [project and manuscript workbench (Chinese)](docs/plans/2026-10-24-team-c-c1-editor-handoff.md) now provides the page consumer: project/manuscript creation and pagination, historical revision editing, tab-local drafts and original-key recovery, and explicit conflict handling. Web checks and production-bundle Chromium flows with synthetic HTTP pass; real production composition and complete speech workflows remain pending.
+| Area | Current state | Before you try it |
+| --- | --- | --- |
+| Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |
+| File transcription, narration, and task pages | Public API consumer flows connected | Real speech execution, result generation, and complete deployment still need integration |
+| Projects, manuscripts, and meeting records | Pages and an independent workbench service have verification evidence | Separate configuration and database preparation required; not fully assembled in default Compose |
+| Scenario preset drafts | Admin supports complete draft creation, fixed revision reads, explicit confirmation, and original-key recovery, verified through HTTP/PostgreSQL/browser tests | Explicit profile writer configuration required; publication, activation, and retirement are not connected |
+| Live captions, live speech, and voice creation | Page consumers tested with synthetic services | Real services and models pending; creating a task does not publish a reusable voice |
+| Asset upload and download | Available with explicit configuration; UTF-8 text handling verified | Object credentials disabled by default; audio inspection integration pending |
+| Real models and production operation | Partial ASR, VAD, and CustomVoice TTS probes and modules verified | Complete recognition/synthesis, quality, capacity, recovery, and cluster operation still need acceptance |
 
-[Meeting/Minutes HTTP (Chinese)](docs/plans/2026-10-24-team-c-meeting-http-handoff.md) adds five public operations to the C-owned factory: durable meeting records, atomic transcript sealing, source-pinned minutes enqueue/query and original-key recovery. Deletion preview and cleanup include meeting dependencies. Explicit configuration exposes 18 operations; the default factory retains 13. Real loopback HTTP and isolated PostgreSQL use synthetic content and an LLM fake. Realtime capture, audio storage, a real LLM and shared production composition remain pending.
-
-[Meeting and minutes workbench (Chinese)](docs/plans/2026-10-24-team-c-meeting-ui-handoff.md) adds the formal page: project/manuscript selection, creation and explicit ID lookup, exact transcript sealing, approved template/model discovery, minutes status and plain text, and tab-local draft/original-key recovery. Production-bundle Chromium connects to real C HTTP and isolated PostgreSQL, covering lost replies, replay after disabling the LLM, expired output hiding and retained drafts after deletion. The LLM is a fake; this does not qualify real models, devices or production deployment.
-
-The [deletion and recovery workbench (Chinese)](docs/plans/2026-10-24-team-c-deletion-ui-handoff.md) provides ordinary/cascade project and transcript previews, complete scope confirmation, original-key recovery and current cleanup status. Production-bundle Chromium with real C HTTP and isolated PostgreSQL verifies lost replies, storage barriers and physical cleanup. The complete independent-object graph, backup restoration and shared production composition remain pending; recovery does not undo deletion.
-
-The [realtime caption consumer (Chinese)](docs/plans/2026-10-24-team-c-realtime-asr-handoff.md) adds deployment references, explicit admission/microphone controls, credit-bounded input, separate previews/final text/overall execution, original-key and finalized-draft recovery, disconnect gaps and cleanup queries. Production-bundle Chromium uses synthetic HTTP/WS and a synthetic microphone. Public production realtime, real models/devices, duplex, durable meeting integration and complete qualification remain pending; PCM is not persisted in the browser.
-
-The [realtime TTS consumer (Chinese)](docs/plans/2026-10-24-team-c-realtime-tts-handoff.md) adds fixed references, append/commit/finish, bounded PCM playback and separate generation/network/render watermarks. Production-bundle Chromium uses synthetic REST/WS with a real AudioWorklet; production TTS, models/physical devices and duplex qualification remain pending.
-
-The [voice creation task entry (Chinese)](docs/plans/2026-10-24-team-c-voice-create-handoff.md) separates design and sample-clone inputs, confirms existing reference materials, and consumes durable Jobs with original-key recovery. Production-bundle Chromium uses synthetic public HTTP. Candidate previews, reuse validation, explicit publication and real voice creation remain pending; creating a Job does not publish a reusable voice.
-
-The [independent workbench service entry (Chinese)](docs/plans/2026-10-24-team-c-runtime-root-handoff.md) composes real PostgreSQL projects/manuscripts, versioned deletion and meeting save/seal. Explicit environment configuration and a non-owner runtime role must pass read-only startup checks before requests are accepted; the runtime executes no DDL, the LLM is disabled and no production fake is used. Team A still coordinates the owner-only fresh-schema baseline into the migration sequence. Object storage, cleanup/LLM/export workers, public speech imports and full production deployment remain pending.
-
-Contract repairs cover canonical execution commands, synchronous idempotency recovery, strict receipts and data deletion. See [ADR 0005 (Chinese)](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md) for scope and upgrade boundaries. These business protocols are not yet fully connected to the shared production runtime.
-
-Full cluster support remains required. [ADR 0006 (Chinese)](docs/decisions/0006-cluster-coordination-and-storage-portability.md) excludes etcd and moves cross-table rules into controlled application transactions to reduce database coupling. PostgreSQL is the only database targeted for official product support; MySQL/InnoDB is limited to validating key coordination behavior. [Simplified DDL, application transaction design and contracts (Chinese)](docs/architecture/coordination-transactions.md) are delivered, with a shared test prototype on real PG/InnoDB. Production integration and full cluster fault qualification remain pending; see the [refactoring plan (Chinese)](docs/plans/2026-10-23-cluster-coordination-refactor.md).
-
-The [first production coordination unit (Chinese)](docs/architecture/production-jobs.md) implements atomic Job/outbox creation, full-identity replay and read-only recovery of unknown commits, with a PG adapter, minimum runtime grants and versioned migration. It is not connected to public business routes and does not implement the complete public Job or file-speech workflow.
-
-The [`0002_coordination` production storage foundation (Chinese)](docs/architecture/production-coordination-storage.md) completes the 15 coordination tables and minimum A/B role grants while preserving existing Job/outbox data. Remaining scheduling, admission and gateway transactions, and real runtime qualification, still require their owners' implementation and evidence.
-
-[Production owner epoch transactions (Chinese)](docs/architecture/production-owners.md) provide acquire, renew, activate and current-authority queries, with database time after lock waits, complete snapshots and unknown-commit recovery. The complete scheduler loop remains pending; independent runtime and recipe admission are described below.
-
-[Runtime intent transactions (Chinese)](docs/architecture/production-runtime-intents.md) provide independent create/query/observe ports: reserve the complete peak atomically, require trusted warmup/qualification before moving to steady, and return the base only after verified stopping and completed cleanup. Synthetic PG/InnoDB facts do not prove GPU qualification. An independent worker now consumes original runtime intents durably; approved-plan/readiness providers and complete scheduling/observation loops remain unconnected. There are no new public routes.
-
-The [fixed-node HTTPS client (Chinese)](docs/architecture/runtime-controller-client.md) provides bounded, certificate-verified submit/query calls for original runtime intents, consuming generated HTTP validation. Timeouts query the original identity; HTTP ready does not create qualification. B's local observation loop now runs by default and uses its own inspector to update unresolved receipts; GET and exact replay remain read-only. The [durable delivery worker (Chinese)](docs/architecture/production-runtime-delivery.md) connects original requests, lease recovery and transport acknowledgements; deployment TLS, real qualification providers and complete control loops remain pending.
-
-[Lease isolation and release transactions (Chinese)](docs/architecture/production-leases.md) provide independent `quarantine_lease`, `release_lease` and read-only lease queries. Unknown occupancy stays charged; only persisted gateway stop/release or no-dispatch facts permit returning the current lease's increments. The last stage returns the attempt quota. Runtime stopping still owns the instance baseline; independent admission shares this budget authority, while actual scheduler consumers remain pending.
-
-[`0007` admission command storage (Chinese)](docs/architecture/production-admission-storage.md) adds A-private original operation commands and complete admission requests per attempt, with separate business/admission digests and deletion tombstone constraints. It does not invent bodies for legacy records. The independent admission transaction now consumes this storage; command cleanup and public Operation/receipt consumers remain pending.
-
-[Independent complete-recipe admission (Chinese)](docs/architecture/production-admission.md) provides `admit_recipe` and original-attempt queries, atomically storing the private original command, all stage leases, six resource dimensions, slots, concurrent-attempt quota and Job/outbox. Unknown outcomes only query the original identity. Other quota ledgers, command parsing/qualification providers, scheduler loops and public Operation/receipt consumers remain unassembled; the port requires an explicit concurrency-only policy.
-
-The [execution gateway (Chinese)](docs/architecture/execution-gateway.md) provides persistent submit/stop/quarantine, guarded execution observation, trusted command-body redaction and output interval append/original-fact queries, plus authenticated HTTP barrier, submit/abort, drain and read-only query routes enabled by explicit control configuration. Actual loopback HTTP/PostgreSQL integration is verified, with synthetic recovery, observation, command redaction, interval deduplication and unsent-cleanup guards checked on PG/InnoDB. Real engine adapters, metering producers/consumers, deletion authorization and cross-host qualification remain pending. Submit/abort report unavailable without an engine adapter; default Compose does not yet enable these control endpoints.
-
-The [restricted node controller (Chinese)](docs/architecture/node-controller.md) includes HTTP, SQLite, Docker and a bounded local observation loop, with approved container memory limits and HTTP/warmup probes. Actual Qwen3-ASR 0.6B/1.7B loading, synthetic speech and verified stopping have [local evidence](docs/audits/2026-10-24-b02-real-asr-controller-probe.md). A synthetic container was kept loading while the controller was killed; after restart, background inspection advanced its original receipt to ready. [Local stop checkpoints (Chinese)](docs/architecture/node-stop-recovery.md) also have synthetic-container process evidence for crashes before stopping, after exit, around removal and before the final receipt. External reconcile snapshots are diagnostic only and cannot create readiness/stop facts, fence intents or release holds. Silence hallucinations, slow long non-speech responses, real engine crash recovery, the complete scheduler budget loop and cluster qualification remain unresolved; the public speech workflow is not yet available. The independent CustomVoice TTS adapter and probe are documented in [File TTS (Chinese)](docs/architecture/file-tts.md).
-
-The [trusted node stop source (Chinese)](docs/architecture/trusted-node-stop.md) matches an original stop against its local released checkpoint through a read-only query; a fixed TLS gateway consumer then closes the original execution. Partial proof or legacy receipts without checkpoints retain occupancy. Recovery scans page by immutable ID and wrap, preventing an unresolved prefix from starving later records; concurrent usage writes do not double-count executions. TLS/SQLite/dual-database integration covers node restart and A's idempotent release. Restricted private configuration now starts periodic gateway recovery automatically; actual gateway processes verify retained occupancy under partial proof/bad credentials and closure after restart. Real engine faults and physical multi-host qualification remain pending.
-
-[CPU VAD (Chinese)](docs/architecture/cpu-vad.md) implements isolated session state, prefix buffering and versioned bounded segmentation. The pinned ONNX CPU model's [synthetic probe (Chinese)](docs/audits/2026-10-24-b06-cpu-vad-probe.md) detects speech while silence/tone produce no ASR candidate segments. Public realtime ingress, scheduler-integrated ASR dispatch and real-recording quality still require integration and acceptance.
-
-[File audio preparation (Chinese)](docs/architecture/file-asr-audio.md) provides bounded decoding/resampling for five formats, source sample clocks and file VAD composition. A [local probe (Chinese)](docs/audits/2026-10-24-b03-bounded-audio-probe.md) passed synthetic media and two authorized real-recording excerpts. This proves input processing only; Asset audio inspection integration, recognition quality, ASR/TTS services and hard resource isolation remain pending.
-
-[Native file recognition (Chinese)](docs/architecture/file-asr-recognition.md) connects media/VAD to a fixed intranet vLLM ASR endpoint, verifies request identity, completion reason and actual token limits, and rejects truncated results. Both 0.6B and 1.7B completed synthetic and authorized real-recording calls; public ASR, durable dispatch, result publication and full quality/performance qualification remain pending.
-
-[Original commands and verified file inputs (Chinese)](docs/architecture/frozen-execution-inputs.md) provide read-only verification of persisted complete requests, a command bridge for the original submission path, and version-pinned MinIO inputs. Isolated database/object-store tests connect synthetic files to the existing media and recognition consumers; real engine dispatch, complete parameter mapping, stop proof and final publication still require assembly.
-Each object read owns an asynchronous client with a total deadline covering slow headers and bodies. Cancellation stops that operation and joins cleanup; media consumers receive content only after complete verification.
-The file ASR command consumer also maps supported frozen parameters into the media/VAD and recognition pipeline, rejecting unsupported auxiliary capabilities or resources before object reads. Persistent real execution and the public business workflow still require assembly.
-Complete file results can be written to [private result storage (Chinese)](docs/architecture/file-asr-results.md), with bounded aggregation and version/digest readback verification. [Private receipt registration and queries (Chinese)](docs/architecture/execution-staging-results.md) are implemented as components. Durable engine execution wiring, publication and public downloads remain pending; a receipt does not authorize releasing execution capacity.
-
-[Native ASR request cleanup (Chinese)](deploy/engines/vllm-asr-lifecycle/README.md) uses the pinned vLLM plugin entry point to register internal/child requests, protect pending submissions, and clean up after cancellation or streaming response disconnects in native serving. It is disabled by default and produces no GPU stop or resource-release proof; real model lifecycle, gateway fact consumers and the complete execution path still require acceptance.
-
-[Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
-
-The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.
-
-### Maintain a deployment through AdminUI
-
-AdminUI is for deployment maintainers, with planned views for service health, models and voices, presets, resource budgets, global tasks, and diagnostics. The workbench and AdminUI organize user tasks and maintenance tasks separately.
+Implementation details and evidence are linked from the [architecture documents (Chinese)](docs/architecture/README.md), [implementation tracking (Chinese)](docs/plans/2026-10-23-implementation-tracking.md), and [audit records (Chinese)](docs/audits/README.md).
 
 ## Quick start
 
-Preview the current version with Docker Compose. You will need Git, Docker, and the Compose plugin.
+Preview the current version with Docker Compose. You need Git, Docker, and the Compose plugin. These steps start a single-node preview environment.
 
 ### 1. Get the source and prepare configuration
 
@@ -126,7 +82,7 @@ cd SpeechNexus
 cp deploy/compose.env.example deploy/compose.env
 ```
 
-Edit `deploy/compose.env` to replace the example PostgreSQL and MinIO passwords. If you have enabled the native development environment, run `make dev-down` first to avoid database and object-storage port conflicts.
+Edit `deploy/compose.env` to replace the example PostgreSQL and MinIO passwords. If this project's native development services are running, run `make dev-down` first to avoid port conflicts.
 
 ### 2. Build and start
 
@@ -134,18 +90,27 @@ Edit `deploy/compose.env` to replace the example PostgreSQL and MinIO passwords.
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -d
 ```
 
-Once the services are running, open:
+Once services have started, open:
 
-| Entry                     | Address                         | Currently available                                                                       |
-| ------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| AdminUI                   | <http://127.0.0.1:8080>         | Admin interface preview and capability status notes                                       |
-| Personal speech workbench | <http://127.0.0.1:8081>         | Transcription, text synthesis, recovery, and downloads (real service integration pending) |
-| Speech service            | <http://127.0.0.1:8000/healthz> | Process liveness check                                                                    |
+| Entry | Address | Current purpose |
+| --- | --- | --- |
+| Speech workbench | <http://127.0.0.1:8081> | Preview transcription, narration, and other task pages with capability status |
+| AdminUI | <http://127.0.0.1:8080> | Preview deployment management and capability information |
+| Speech service | <http://127.0.0.1:8000/healthz> | Check process liveness |
 
-This startup does not load speech models. Check infrastructure readiness with:
+Check infrastructure readiness:
 
 ```bash
 curl --fail http://127.0.0.1:8000/readyz
+```
+
+A successful `readyz` check means infrastructure dependencies are ready. It does not mean models are loaded or transcription and synthesis are available. If a page reports missing configuration or pending capabilities, consult [current availability](#current-availability); these startup steps alone do not enable real speech processing.
+
+If startup fails, inspect service status and logs. Remove credentials and business content before sharing logs:
+
+```bash
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml ps
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml logs --tail=100 api
 ```
 
 ### 3. Stop services
@@ -154,48 +119,51 @@ curl --fail http://127.0.0.1:8000/readyz
 docker compose --env-file deploy/compose.env -f deploy/compose.yaml down
 ```
 
-This preserves the database and object-storage volumes. See the [deployment guide](deploy/README.md) for configuration, the full port list, and deployment boundaries.
+This preserves database and object-storage volumes. Published ports bind only to loopback by default. See the [deployment guide](deploy/README.md) for configuration, all ports, and requirements for additional modules.
 
-## Deployment and data
+## Integrate speech into an application
 
-The initial scope is a shared deployment within a trusted network, without login, role permissions, or tenant isolation. **Users of a deployment share its data.** “Personal workbench” describes the task experience, not a private user space. The operator controls access through the deployment network and entry point.
+The interface design uses an **OpenAI Audio compatibility subset plus `nexus` extensions**: the standard subset covers recognition and synthesis, while extensions cover voices, durable tasks, and presets. Compatibility is limited to explicitly declared endpoints and events.
 
-The product design requires local speech inference and keeps business audio, transcripts, manuscripts, voice references, and derived content within the deployment network. LLM integration for assistants and meeting notes is optional, disabled by default, and restricted to deployment-approved local / intranet services, with no public-cloud fallback. LLM integration and full egress restrictions remain unimplemented; see the [network boundary decision (Chinese)](docs/decisions/0003-workbench-llm-network-boundary.md).
+Once the relevant services are implemented and enabled, standard OpenAI SDKs can point `base_url` at the deployment's `/v1`. Public speech workflows remain in development; contracts and examples support integration work and do not imply that the default deployment implements every endpoint.
 
-## Roadmap
+- [Speech API design (Chinese)](docs/architecture/speech-api.md): endpoints, events, and usage.
+- [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md): supported subsets and extension rules.
+- [Machine contracts](contracts/README.md): protocol definitions shared by implementations and consumers.
 
-- [x] Runnable services, health checks, and two Web entry previews.
-- [ ] File and realtime recognition, synthesis, and model integration.
-- [ ] Voice design, cloning, validation, publication, and durable tasks.
-- [ ] Workbench transcription, dubbing, and AdminUI business features.
-- [ ] Meetings, captions, assistants, teleprompters, and audiobook workflows.
-- [ ] Real-model quality, capacity, recovery, and production deployment validation.
+## Deployment and data boundaries
 
-See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md) for stages and dependencies, and the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for the preferred model and engine validation path.
+**The initial scope is a shared deployment within a trusted network, without login, role permissions, or tenant isolation.** Users of a deployment share its data. “Personal speech workbench” describes the experience and does not provide private user spaces. Workbench and AdminUI entry points do not establish permission boundaries; the operator controls access.
+
+The product requires local speech inference, keeping business audio, transcripts, manuscripts, voice references, and derived content within the deployment network. LLM integration for assistants and minutes is optional, disabled by default, and restricted to deployment-approved local or intranet services, with no public-cloud fallback. Complete LLM integration and egress restrictions still require acceptance; see the [network boundary decision (Chinese)](docs/decisions/0003-workbench-llm-network-boundary.md).
+
+When the asset service is explicitly enabled, new assets default to **7 days** of retention, overridable by deployment configuration or upload settings. Changes to defaults do not affect existing expiry times. See the [asset service guide (Chinese)](docs/architecture/production-assets.md) for storage, backup, and cleanup configuration.
+
+## What's next
+
+- Connect real file transcription and text synthesis, from task submission to result download.
+- Complete voice design, cloning, previews, validation, and publication.
+- Connect live captions, live speech, and meeting persistence, then expand assistants, teleprompters, and audiobooks.
+- Complete AdminUI business features, resource governance, and real-model quality, recovery, and production deployment acceptance.
+
+See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implementation-plan.md) for stages and dependencies, and the [model selection decision (Chinese)](docs/decisions/0002-speech-models-engines-and-loading.md) for model and engine validation plans.
 
 ## Documentation
 
-| I want to learn about                    | Start here                                                                                                           |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Product scope and complete workflows     | [Product design (Chinese)](docs/speechnexus-product-architecture.md)                                                 |
-| API compatibility and planned usage      | [Speech API design (Chinese)](docs/architecture/speech-api.md)                                                       |
-| Deployment, ports, and configuration     | [Deployment guide](deploy/README.md)                                                                                 |
-| Native development and testing           | [Development environment (Chinese)](docs/development-environment.md)                                                 |
-| Architecture and implementation          | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md)                                            |
-| All designs and decisions                | [Documentation index (Chinese)](docs/README.md)                                                                      |
-| Cluster architecture and single-node MVP | [Cluster-ready deployment decision (Chinese)](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
+| I want to learn about | Start here |
+| --- | --- |
+| Product scope and workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md) |
+| Deployment, ports, and configuration | [Deployment guide](deploy/README.md) |
+| API integration and compatibility | [Speech API (Chinese)](docs/architecture/speech-api.md) |
+| Development and verification | [Development guide (Chinese)](docs/development-environment.md) |
+| Architecture and module boundaries | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md) |
+| All designs, plans, and evidence | [Documentation index (Chinese)](docs/README.md) |
 
-## Contributing
+## Feedback and contributions
 
-Use [Issues](https://github.com/hrygo/SpeechNexus/issues) to report problems, share use cases, or discuss features. Pull requests are welcome. Include your environment, reproduction steps, and expected behavior when reporting a problem; leave out credentials and private audio.
+Use [Issues](https://github.com/hrygo/SpeechNexus/issues) to share use cases, request features, or report problems. Include your environment, reproduction steps, expected behavior, and actual results. Leave out credentials, private audio, and complete business transcripts.
 
-Native development uses Python 3.14 / uv and Node 26 / pnpm 12. Follow the [development environment guide (Chinese)](docs/development-environment.md) to prepare your setup. Run checks appropriate to your changes before submitting; the full native verification command is:
-
-```bash
-make verify
-```
-
-See [AGENTS.md (Chinese)](AGENTS.md) and the [repository layout guide (Chinese)](docs/architecture/repository-layout.md) for engineering rules and validation requirements.
+For development, read the [development guide (Chinese)](docs/development-environment.md) and [AGENTS.md (Chinese)](AGENTS.md), then run checks appropriate to your changes. Full native verification uses `make verify`; first satisfy the guide's host and isolated-service requirements.
 
 ## License and acknowledgments
 

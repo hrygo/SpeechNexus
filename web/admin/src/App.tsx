@@ -1,4 +1,7 @@
 import { AppShell, CapabilityCard } from "@speechnexus/shared";
+import { TaskCenterHost } from "./task-center/TaskCenterHost";
+import { WorkspaceHost } from "./workspaces/WorkspaceHost";
+import { DiagnosticsHost } from "./diagnostics/DiagnosticsHost";
 
 export function App() {
   return (
@@ -7,7 +10,10 @@ export function App() {
       tone="admin"
       eyebrow="SpeechNexus / Admin"
       title="运行事实管理"
-      description="这里将承载模型绑定、资源预算、任务维护与诊断。机器契约已交付，当前版本提供可构建、可部署的入口外壳，业务页面会随 P1 服务闭环逐步接入。"
+      description="读取共享工作空间、任务详情与持久事件，明确核对快照、取消响应和资源清理。部署诊断已可只读核对能力三态与内网模型绑定；预算、租约与计量仍待接入。"
+      statusTitle="任务入口已接入"
+      statusDetail="公开 API 消费已接入，真实部署待联调"
+      statusState="contract"
       boundaryNote="首期没有登录与角色隔离。AdminUI 与工作台在同一部署内共享数据，入口切换只改变任务视图，管理 API 仍需由部署网络与入口网关限制。"
     >
       <section className="card-grid" aria-label="AdminUI 初始化范围">
@@ -20,16 +26,19 @@ export function App() {
         <CapabilityCard
           label="02 / Contract"
           title="语音与管理协议"
-          description="业务路由尚未实现。OpenAI 兼容子集、音色、Job、预设及管理资源的机器契约已冻结并通过门禁。"
+          description="公共机器契约已交付；任务查询、取消和事件已消费同版本生成客户端与校验器，真实部署仍待联调。"
           state="contract"
         />
         <CapabilityCard
           label="03 / Operations"
-          title="资源与任务视图"
-          description="队列、租约、outbox、计量和诊断页面依赖 P1 的 PostgreSQL 权威路径，当前不展示虚构运行数据。"
-          state="planned"
+          title="部署诊断"
+          description="部署能力三态与内网模型绑定已可只读核对；预算、租约、outbox、计量与 GPU 事实尚未接入，没有可读来源前保持为空。"
+          state="contract"
         />
       </section>
+      <DiagnosticsHost />
+      <WorkspaceHost />
+      <TaskCenterHost />
     </AppShell>
   );
 }

@@ -2912,6 +2912,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
             "ordinal": 0,
             "text": "Synthetic narration unit.",
             "voice": voice,
+            "model_binding": {"id": "binding_demo", "revision": "3"},
             "model": "tts-quality",
         }
     )
@@ -2921,6 +2922,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
                 "ordinal": 0,
                 "text": "Synthetic narration unit.",
                 "voice": voice,
+                "model_binding": {"id": "binding_demo", "revision": "3"},
                 "model": "",
             }
         )
@@ -2987,6 +2989,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         "revision": "2",
         "text": "Synthetic narration unit.",
         "voice": {"id": "voice_demo", "revision": "1"},
+        "model_binding": {"id": "binding_demo", "revision": "3"},
         "model": "tts-quality",
         "status": "generating",
         "speech_job_id": None,

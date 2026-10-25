@@ -1,0 +1,160 @@
+"""The serving runtime owns export production: claim, produce, publish, settle.
+
+Only the producer is a test double. It stands in for the speech generation boundary,
+which the workbench consumes over its contract and does not implement. The queue, its
+claim, the publish path and the dispatch loop are the real ones, over disposable
+PostgreSQL and the real object zone.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import os
+from collections.abc import Iterator
+from typing import Any
+
+import httpx
+import pytest
+from minio import Minio
+from pydantic import SecretStr
+from tests.integration.test_workbench_exports_http import create, prepared
+from tests.integration.test_workbench_runtime import Database, serve
+from tests.integration.test_workbench_runtime import database as database
+
+from speechnexus_backend.workbench.application.export_worker import ProducedExport
+from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
+from speechnexus_backend.workbench.runtime import create_runtime_app
+
+pytestmark = pytest.mark.integration
+CONTENT = b"synthetic runtime export bundle\n" * 4
+BUCKET = "speechnexus-workbench-runtime-exports"
+DEADLINE = 20.0
+
+
+class _Bundle:
+    """Test-only producer: reports its one item, then returns synthetic bytes."""
+
+    async def produce_export(self, job: Any, *, report: Any) -> ProducedExport:
+        await report(1)
+        return ProducedExport(content=CONTENT, media_type="application/zip")
+
+
+class _Zone:
+    def __init__(self, zone: MinioObjectZone, client: Minio) -> None:
+        self.zone = zone
+        self.client = client
+
+    def read(self, key: str) -> bytes:
+        response = self.client.get_object(BUCKET, f"exports/{key}")
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
+
+
+@pytest.fixture
+def objects() -> Iterator[_Zone]:
+    endpoint = os.environ.get("SPEECHNEXUS_TEST_MINIO_ENDPOINT")
+    access = os.environ.get("SPEECHNEXUS_TEST_MINIO_ACCESS_KEY")
+    secret = os.environ.get("SPEECHNEXUS_TEST_MINIO_SECRET_KEY")
+    assert endpoint and access and secret, "isolated MinIO service is required for object evidence"
+    client = Minio(
+        endpoint.replace("http://", "").replace("https://", ""),
+        access_key=access,
+        secret_key=secret,
+        secure=endpoint.startswith("https://"),
+    )
+    if not client.bucket_exists(BUCKET):
+        client.make_bucket(BUCKET)
+    zone = MinioObjectZone(endpoint, BUCKET, access, secret, prefix="exports")
+    try:
+        yield _Zone(zone, client)
+    finally:
+        zone.close()
+
+
+def runtime_app(database: Database, *, interval: float, producer: Any | None) -> Any:
+    endpoint = os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"]
+    settings = database.settings().model_copy(
+        update={
+            "export_interval_seconds": interval,
+            "object_endpoint": endpoint,
+            "object_bucket": BUCKET,
+            "object_prefix": "exports",
+            "object_access_key": SecretStr(os.environ["SPEECHNEXUS_TEST_MINIO_ACCESS_KEY"]),
+            "object_secret_key": SecretStr(os.environ["SPEECHNEXUS_TEST_MINIO_SECRET_KEY"]),
+        }
+    )
+    return create_runtime_app(settings, export_producer=producer)
+
+
+async def queue_one(client: httpx.AsyncClient, suffix: str) -> tuple[dict[str, Any], str]:
+    book_id, unit_id, casting = await prepared(client, suffix=suffix)
+    created = await create(
+        client,
+        book_id,
+        casting,
+        unit_ids=[unit_id],
+        key=f"runtime-export-key-{suffix}",
+    )
+    assert created.status_code == 202, created.text
+    return created.json(), book_id
+
+
+async def settled(client: httpx.AsyncClient, export_id: str, status: str) -> dict[str, Any]:
+    async with asyncio.timeout(DEADLINE):
+        while True:
+            fetched = await client.get(f"/v1/workbench/exports/{export_id}")
+            assert fetched.status_code == 200, fetched.text
+            body: dict[str, Any] = fetched.json()
+            if body["status"] == status:
+                return body
+            await asyncio.sleep(0.05)
+
+
+async def test_the_serving_runtime_produces_a_queued_export(
+    database: Database, objects: _Zone
+) -> None:
+    app = runtime_app(database, interval=0.2, producer=_Bundle())
+    async with serve(app) as client:
+        export, book_id = await queue_one(client, "runtime-produce")
+        assert export["status"] == "queued" and export["artifact"] is None
+        # No test calls the worker: the serving runtime's own loop must settle it.
+        finished = await settled(client, export["id"], "succeeded")
+
+    assert finished["progress_completed"] == finished["progress_total"] == 1
+    artifact = finished["artifact"]
+    assert artifact is not None
+    assert artifact["media_type"] == "application/zip"
+    assert artifact["bytes"] == len(CONTENT)
+    assert artifact["sha256"] == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
+    assert finished["error"] is None
+    assert objects.read(f"{book_id}/{export['id']}/{artifact['id']}") == CONTENT
+
+
+async def test_an_unconfigured_runtime_leaves_queued_exports_alone(
+    database: Database, objects: _Zone
+) -> None:
+    app = runtime_app(database, interval=0, producer=_Bundle())
+    async with serve(app) as client:
+        export, _ = await queue_one(client, "runtime-off")
+        await asyncio.sleep(1.5)
+        fetched = await client.get(f"/v1/workbench/exports/{export['id']}")
+        assert fetched.status_code == 200, fetched.text
+        body = fetched.json()
+        assert (body["status"], body["artifact"], body["error"]) == ("queued", None, None)
+
+
+async def test_a_runtime_without_a_producer_does_not_claim_work(
+    database: Database, objects: _Zone
+) -> None:
+    # The queue and the publish path exist, but nothing may be claimed that cannot finish.
+    app = runtime_app(database, interval=0.2, producer=None)
+    async with serve(app) as client:
+        export, _ = await queue_one(client, "runtime-no-producer")
+        await asyncio.sleep(1.5)
+        fetched = await client.get(f"/v1/workbench/exports/{export['id']}")
+        assert fetched.status_code == 200, fetched.text
+        assert fetched.json()["status"] == "queued"

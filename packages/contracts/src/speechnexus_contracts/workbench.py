@@ -106,5 +106,101 @@ def parse(
 ) -> models.RenderUnitGenerationAccepted: ...
 
 
+@overload
+def parse(
+    name: Literal["TeleprompterUpdateRequest"], value: Any
+) -> models.TeleprompterUpdateRequest: ...
+
+
+@overload
+def parse(name: Literal["TeleprompterState"], value: Any) -> models.TeleprompterState: ...
+
+
+@overload
+def parse(name: Literal["SavedAsset"], value: Any) -> models.SavedAsset: ...
+
+
+@overload
+def parse(
+    name: Literal["SavedAssetCreateRequest"], value: Any
+) -> models.SavedAssetCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["Book"], value: Any) -> models.Book: ...
+
+
+@overload
+def parse(name: Literal["BookCreateRequest"], value: Any) -> models.BookCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["Chapter"], value: Any) -> models.Chapter: ...
+
+
+@overload
+def parse(name: Literal["ChapterCreateRequest"], value: Any) -> models.ChapterCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["RenderUnit"], value: Any) -> models.RenderUnit: ...
+
+
+@overload
+def parse(
+    name: Literal["RenderUnitCreateRequest"], value: Any
+) -> models.RenderUnitCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["RenderUnitPatch"], value: Any) -> models.RenderUnitPatch: ...
+
+
+@overload
+def parse(name: Literal["AssistantTurn"], value: Any) -> models.AssistantTurn: ...
+
+
+@overload
+def parse(
+    name: Literal["AssistantTurnCreateRequest"], value: Any
+) -> models.AssistantTurnCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["ExportArtifact"], value: Any) -> models.ExportArtifact: ...
+
+
+@overload
+def parse(name: Literal["ExportCreateRequest"], value: Any) -> models.ExportCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["ExportJob"], value: Any) -> models.ExportJob: ...
+
+
+@overload
+def parse(name: Literal["BookList"], value: Any) -> models.BookList: ...
+
+
+@overload
+def parse(name: Literal["ChapterList"], value: Any) -> models.ChapterList: ...
+
+
+@overload
+def parse(name: Literal["RenderUnitList"], value: Any) -> models.RenderUnitList: ...
+
+
+@overload
+def parse(name: Literal["VoiceList"], value: Any) -> models.VoiceList: ...
+
+
+@overload
+def parse(name: Literal["VoiceSummary"], value: Any) -> models.VoiceSummary: ...
+
+
+@overload
+def parse(name: Literal["VoiceRevision"], value: Any) -> models.VoiceRevision: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

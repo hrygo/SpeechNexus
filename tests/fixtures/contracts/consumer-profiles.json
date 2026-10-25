@@ -300,7 +300,9 @@
         "pool_id": "tts-realtime",
         "enforced_min_fencing_token": 2,
         "barrier_sealed": true,
-        "submitting_intent_ids": ["intent-submitting"],
+        "submitting_intent_ids": [
+          "intent-submitting"
+        ],
         "executing_intent_ids": [],
         "quarantined_intent_ids": [],
         "enforced_at": "2026-10-23T21:00:00Z"
@@ -1649,7 +1651,9 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": ["reusable_tts"]
+          "validation_checks": [
+            "reusable_tts"
+          ]
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",
         "max_output_audio_ms": 1000,
@@ -1709,7 +1713,9 @@
             },
             "response_format": "wav"
           },
-          "validation_checks": ["reusable_tts"],
+          "validation_checks": [
+            "reusable_tts"
+          ],
           "undeclared": true
         },
         "deadline_at": "2026-10-23T12:01:00+00:00",
@@ -4058,7 +4064,9 @@
           "id": "profile-realtime-demo",
           "revision": "1"
         },
-        "modalities": ["asr"],
+        "modalities": [
+          "asr"
+        ],
         "models": {
           "asr": {
             "id": "asr-binding-demo",
@@ -4077,7 +4085,9 @@
           "id": "profile-realtime-demo",
           "revision": "1"
         },
-        "modalities": ["asr"],
+        "modalities": [
+          "asr"
+        ],
         "models": {
           "asr": {
             "id": "asr-binding-demo",
@@ -4191,7 +4201,9 @@
           "id": "profile-realtime-demo",
           "revision": "1"
         },
-        "modalities": ["asr"],
+        "modalities": [
+          "asr"
+        ],
         "models": {
           "tts": {
             "id": "tts-binding-demo",
@@ -4210,7 +4222,9 @@
           "id": "profile-realtime-demo",
           "revision": 1
         },
-        "modalities": ["asr"],
+        "modalities": [
+          "asr"
+        ],
         "models": {
           "asr": {
             "id": "asr-binding-demo",
@@ -4229,7 +4243,9 @@
           "id": "profile-realtime-demo",
           "revision": "1"
         },
-        "modalities": ["asr"],
+        "modalities": [
+          "asr"
+        ],
         "models": {
           "asr": {
             "id": "asr-binding-demo",
@@ -5486,7 +5502,12 @@
       "id": "realtime_events-RealtimeEvent-reject-raw-binary",
       "profile": "realtime_events",
       "schema": "RealtimeEvent",
-      "value": [0, 1, 2, 3],
+      "value": [
+        0,
+        1,
+        2,
+        3
+      ],
       "valid": false
     },
     {
@@ -5531,7 +5552,9 @@
               }
             }
           },
-          "include": ["item.input_audio_transcription.logprobs"]
+          "include": [
+            "item.input_audio_transcription.logprobs"
+          ]
         }
       },
       "valid": false
@@ -5565,7 +5588,12 @@
       "id": "realtime_events-TranscriptionEvent-reject-raw-binary",
       "profile": "realtime_events",
       "schema": "TranscriptionEvent",
-      "value": [0, 1, 2, 3],
+      "value": [
+        0,
+        1,
+        2,
+        3
+      ],
       "valid": false
     },
     {
@@ -5610,7 +5638,9 @@
               }
             }
           },
-          "include": ["item.input_audio_transcription.logprobs"]
+          "include": [
+            "item.input_audio_transcription.logprobs"
+          ]
         }
       },
       "valid": false
@@ -5787,6 +5817,963 @@
       }
     },
     {
+      "id": "workbench-TeleprompterUpdateRequest-valid",
+      "profile": "workbench",
+      "schema": "TeleprompterUpdateRequest",
+      "value": {
+        "script_revision": "3",
+        "visible_position": 120,
+        "manual_hold": true
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-TeleprompterUpdateRequest-reject-missing-hold",
+      "profile": "workbench",
+      "schema": "TeleprompterUpdateRequest",
+      "value": {
+        "script_revision": "3",
+        "visible_position": 120
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterUpdateRequest-reject-number-revision",
+      "profile": "workbench",
+      "schema": "TeleprompterUpdateRequest",
+      "value": {
+        "script_revision": 3,
+        "visible_position": 120,
+        "manual_hold": false
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterUpdateRequest-reject-negative-position",
+      "profile": "workbench",
+      "schema": "TeleprompterUpdateRequest",
+      "value": {
+        "script_revision": "3",
+        "visible_position": -1,
+        "manual_hold": false
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterUpdateRequest-reject-private-field",
+      "profile": "workbench",
+      "schema": "TeleprompterUpdateRequest",
+      "value": {
+        "script_revision": "3",
+        "visible_position": 120,
+        "manual_hold": false,
+        "stream_epoch": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterState-valid",
+      "profile": "workbench",
+      "schema": "TeleprompterState",
+      "value": {
+        "object": "nexus.teleprompter_state",
+        "project_id": "project-demo",
+        "script_revision": "3",
+        "visible_position": 120,
+        "manual_hold": true,
+        "updated_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-TeleprompterState-reject-foreign-object",
+      "profile": "workbench",
+      "schema": "TeleprompterState",
+      "value": {
+        "object": "nexus.meeting",
+        "project_id": "project-demo",
+        "script_revision": "3",
+        "visible_position": 120,
+        "manual_hold": true,
+        "updated_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterState-reject-number-revision",
+      "profile": "workbench",
+      "schema": "TeleprompterState",
+      "value": {
+        "object": "nexus.teleprompter_state",
+        "project_id": "project-demo",
+        "script_revision": 3,
+        "visible_position": 120,
+        "manual_hold": true,
+        "updated_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterState-reject-missing-hold",
+      "profile": "workbench",
+      "schema": "TeleprompterState",
+      "value": {
+        "object": "nexus.teleprompter_state",
+        "project_id": "project-demo",
+        "script_revision": "3",
+        "visible_position": 120,
+        "updated_at": "2026-10-24T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-TeleprompterState-reject-private-field",
+      "profile": "workbench",
+      "schema": "TeleprompterState",
+      "value": {
+        "object": "nexus.teleprompter_state",
+        "project_id": "project-demo",
+        "script_revision": "3",
+        "visible_position": 120,
+        "manual_hold": true,
+        "updated_at": "2026-10-24T00:00:00Z",
+        "internal_stream_epoch": "synthetic-private-marker"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAssetCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "SavedAssetCreateRequest",
+      "value": {
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "display_name": "Chapter 1"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-SavedAssetCreateRequest-valid-minimal",
+      "profile": "workbench",
+      "schema": "SavedAssetCreateRequest",
+      "value": {
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-SavedAssetCreateRequest-reject-missing-receipt",
+      "profile": "workbench",
+      "schema": "SavedAssetCreateRequest",
+      "value": {
+        "source_artifact_id": "artifact-demo-1"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAssetCreateRequest-reject-unknown-field",
+      "profile": "workbench",
+      "schema": "SavedAssetCreateRequest",
+      "value": {
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "private_path": "/etc/passwd"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAssetCreateRequest-reject-empty-display-name",
+      "profile": "workbench",
+      "schema": "SavedAssetCreateRequest",
+      "value": {
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "display_name": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAsset-valid",
+      "profile": "workbench",
+      "schema": "SavedAsset",
+      "value": {
+        "id": "asset-demo-1",
+        "object": "nexus.saved_asset",
+        "project_id": "project-demo-1",
+        "display_name": "Chapter 1",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-SavedAsset-valid-no-display-name",
+      "profile": "workbench",
+      "schema": "SavedAsset",
+      "value": {
+        "id": "asset-demo-1",
+        "object": "nexus.saved_asset",
+        "project_id": "project-demo-1",
+        "display_name": null,
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-SavedAsset-reject-zero-bytes",
+      "profile": "workbench",
+      "schema": "SavedAsset",
+      "value": {
+        "id": "asset-demo-1",
+        "object": "nexus.saved_asset",
+        "project_id": "project-demo-1",
+        "display_name": "Chapter 1",
+        "media_type": "audio/wav",
+        "bytes": 0,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAsset-reject-unprefixed-digest",
+      "profile": "workbench",
+      "schema": "SavedAsset",
+      "value": {
+        "id": "asset-demo-1",
+        "object": "nexus.saved_asset",
+        "project_id": "project-demo-1",
+        "display_name": "Chapter 1",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_artifact_id": "artifact-demo-1",
+        "source_receipt_id": "receipt-demo-1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-SavedAsset-reject-missing-receipt",
+      "profile": "workbench",
+      "schema": "SavedAsset",
+      "value": {
+        "id": "asset-demo-1",
+        "object": "nexus.saved_asset",
+        "project_id": "project-demo-1",
+        "display_name": "Chapter 1",
+        "media_type": "audio/wav",
+        "bytes": 4096,
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_artifact_id": "artifact-demo-1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-BookCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "BookCreateRequest",
+      "value": {
+        "title": "合成有声书",
+        "source_text": "合成书稿"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-BookCreateRequest-valid-minimal",
+      "profile": "workbench",
+      "schema": "BookCreateRequest",
+      "value": {
+        "title": "合成有声书"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-BookCreateRequest-reject-empty-title",
+      "profile": "workbench",
+      "schema": "BookCreateRequest",
+      "value": {
+        "title": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-BookCreateRequest-reject-unknown-field",
+      "profile": "workbench",
+      "schema": "BookCreateRequest",
+      "value": {
+        "title": "合成",
+        "private_path": "/etc/passwd"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Book-valid",
+      "profile": "workbench",
+      "schema": "Book",
+      "value": {
+        "id": "book-demo-1",
+        "object": "nexus.book",
+        "project_id": "project-demo-1",
+        "title": "合成有声书",
+        "status": "draft",
+        "casting_revision": "1",
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Book-reject-unknown-status",
+      "profile": "workbench",
+      "schema": "Book",
+      "value": {
+        "id": "book-demo-1",
+        "object": "nexus.book",
+        "project_id": "project-demo-1",
+        "title": "合成有声书",
+        "status": "published",
+        "casting_revision": "1",
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Book-reject-empty-casting-revision",
+      "profile": "workbench",
+      "schema": "Book",
+      "value": {
+        "id": "book-demo-1",
+        "object": "nexus.book",
+        "project_id": "project-demo-1",
+        "title": "合成有声书",
+        "status": "draft",
+        "casting_revision": "",
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Book-reject-missing-updated-at",
+      "profile": "workbench",
+      "schema": "Book",
+      "value": {
+        "id": "book-demo-1",
+        "object": "nexus.book",
+        "project_id": "project-demo-1",
+        "title": "合成有声书",
+        "status": "draft",
+        "casting_revision": "1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ChapterCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "ChapterCreateRequest",
+      "value": {
+        "title": "第一章",
+        "ordinal": 0,
+        "text": "合成章节正文"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-ChapterCreateRequest-reject-negative-ordinal",
+      "profile": "workbench",
+      "schema": "ChapterCreateRequest",
+      "value": {
+        "title": "第一章",
+        "ordinal": -1,
+        "text": "正文"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ChapterCreateRequest-reject-missing-text",
+      "profile": "workbench",
+      "schema": "ChapterCreateRequest",
+      "value": {
+        "title": "第一章",
+        "ordinal": 0
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Chapter-valid",
+      "profile": "workbench",
+      "schema": "Chapter",
+      "value": {
+        "id": "chapter-demo-1",
+        "object": "nexus.chapter",
+        "book_id": "book-demo-1",
+        "title": "第一章",
+        "ordinal": 0,
+        "text_revision": "1",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-Chapter-reject-exposed-text",
+      "profile": "workbench",
+      "schema": "Chapter",
+      "value": {
+        "id": "chapter-demo-1",
+        "object": "nexus.chapter",
+        "book_id": "book-demo-1",
+        "title": "第一章",
+        "ordinal": 0,
+        "text_revision": "1",
+        "created_at": "2026-10-24T12:00:00Z",
+        "text": "不应出现在公开章节投影"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-Chapter-reject-zero-text-revision",
+      "profile": "workbench",
+      "schema": "Chapter",
+      "value": {
+        "id": "chapter-demo-1",
+        "object": "nexus.chapter",
+        "book_id": "book-demo-1",
+        "title": "第一章",
+        "ordinal": 0,
+        "text_revision": "0",
+        "created_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnitCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "RenderUnitCreateRequest",
+      "value": {
+        "ordinal": 0,
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitCreateRequest-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnitCreateRequest",
+      "value": {
+        "ordinal": 0,
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnitPatch-valid",
+      "profile": "workbench",
+      "schema": "RenderUnitPatch",
+      "value": {
+        "expected_revision": "1",
+        "text": "改写后的旁白单元"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitPatch-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnitPatch",
+      "value": {
+        "text": "缺少修订"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnit-valid",
+      "profile": "workbench",
+      "schema": "RenderUnit",
+      "value": {
+        "object": "nexus.render_unit",
+        "id": "unit_demo",
+        "chapter_id": "chapter_demo",
+        "ordinal": 0,
+        "revision": "1",
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        },
+        "status": "pending",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnit-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnit",
+      "value": {
+        "object": "nexus.render_unit",
+        "id": "unit_demo",
+        "chapter_id": "chapter_demo",
+        "ordinal": 0,
+        "revision": "1",
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        },
+        "status": "done",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-AssistantTurnCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "AssistantTurnCreateRequest",
+      "value": {
+        "input_text": "合成提问：请总结这段合成内容",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-AssistantTurnCreateRequest-invalid",
+      "profile": "workbench",
+      "schema": "AssistantTurnCreateRequest",
+      "value": {
+        "input_text": "合成提问：请总结这段合成内容"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-AssistantTurn-valid",
+      "profile": "workbench",
+      "schema": "AssistantTurn",
+      "value": {
+        "object": "nexus.assistant_turn",
+        "id": "turn_demo",
+        "project_id": "project_demo",
+        "status": "queued",
+        "input_text": "合成提问：请总结这段合成内容",
+        "output_text": null,
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "speech_job_id": null,
+        "playback_generation": 1,
+        "error": null,
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-AssistantTurn-invalid",
+      "profile": "workbench",
+      "schema": "AssistantTurn",
+      "value": {
+        "object": "nexus.assistant_turn",
+        "id": "turn_demo",
+        "project_id": "project_demo",
+        "status": "unknown",
+        "input_text": "合成提问：请总结这段合成内容",
+        "output_text": null,
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "speech_job_id": null,
+        "playback_generation": 1,
+        "error": null,
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ExportCreateRequest-valid",
+      "profile": "workbench",
+      "schema": "ExportCreateRequest",
+      "value": {
+        "expected_casting_revision": "1",
+        "format": "zip"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-ExportCreateRequest-invalid",
+      "profile": "workbench",
+      "schema": "ExportCreateRequest",
+      "value": {
+        "format": "zip"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ExportJob-valid",
+      "profile": "workbench",
+      "schema": "ExportJob",
+      "value": {
+        "object": "nexus.export_job",
+        "id": "export_demo",
+        "book_id": "book_demo",
+        "status": "queued",
+        "format": "zip",
+        "manifest_revision": "1",
+        "progress_completed": 0,
+        "progress_total": 2,
+        "artifact": null,
+        "error": null,
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-ExportJob-invalid",
+      "profile": "workbench",
+      "schema": "ExportJob",
+      "value": {
+        "object": "nexus.export_job",
+        "id": "export_demo",
+        "book_id": "book_demo",
+        "status": "succeeded",
+        "format": "zip",
+        "manifest_revision": "1",
+        "progress_completed": 0,
+        "progress_total": 2,
+        "artifact": null,
+        "error": null,
+        "created_at": "2026-10-24T12:00:00Z",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ExportArtifact-valid",
+      "profile": "workbench",
+      "schema": "ExportArtifact",
+      "value": {
+        "object": "nexus.export_artifact",
+        "id": "artifact_demo",
+        "export_id": "export_demo",
+        "manifest_revision": "1",
+        "media_type": "application/zip",
+        "bytes": 2048,
+        "sha256": "sha256:abababababababababababababababababababababababababababababababab",
+        "created_at": "2026-10-24T12:00:05Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-ExportArtifact-invalid",
+      "profile": "workbench",
+      "schema": "ExportArtifact",
+      "value": {
+        "object": "nexus.export_artifact",
+        "id": "artifact_demo",
+        "export_id": "export_demo",
+        "manifest_revision": "1",
+        "media_type": "application/zip",
+        "bytes": 2048,
+        "sha256": "sha256:short",
+        "created_at": "2026-10-24T12:00:05Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-BookList-valid",
+      "profile": "workbench",
+      "schema": "BookList",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "object": "nexus.book",
+            "id": "book_demo",
+            "project_id": "project_demo",
+            "title": "合成有声书",
+            "status": "draft",
+            "casting_revision": "3",
+            "created_at": "2026-10-24T12:00:00Z",
+            "updated_at": "2026-10-24T12:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-BookList-invalid",
+      "profile": "workbench",
+      "schema": "BookList",
+      "value": {
+        "object": "nexus.list",
+        "data": [],
+        "has_more": false
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-ChapterList-valid",
+      "profile": "workbench",
+      "schema": "ChapterList",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "object": "nexus.chapter",
+            "id": "chapter_demo",
+            "book_id": "book_demo",
+            "title": "第一章",
+            "ordinal": 0,
+            "text_revision": "1",
+            "created_at": "2026-10-24T12:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-ChapterList-invalid",
+      "profile": "workbench",
+      "schema": "ChapterList",
+      "value": {
+        "object": "nexus.list",
+        "data": [],
+        "has_more": false
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnitList-valid",
+      "profile": "workbench",
+      "schema": "RenderUnitList",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "object": "nexus.render_unit",
+            "id": "unit_demo",
+            "chapter_id": "chapter_demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "合成旁白单元",
+            "voice": {
+              "id": "voice_demo",
+              "revision": "1"
+            },
+            "model": "tts-quality",
+            "model_binding": {
+              "id": "binding_demo",
+              "revision": "3"
+            },
+            "status": "pending",
+            "updated_at": "2026-10-24T12:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitList-invalid",
+      "profile": "workbench",
+      "schema": "RenderUnitList",
+      "value": {
+        "object": "nexus.list",
+        "data": [],
+        "has_more": false
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-VoiceSummary-valid",
+      "profile": "workbench",
+      "schema": "VoiceSummary",
+      "value": {
+        "voice_id": "voice-demo-1",
+        "revision": "2",
+        "display_name": "合成旁白",
+        "source_type": "designed",
+        "status": "published",
+        "languages": [
+          "zh-CN"
+        ],
+        "audio_formats": [
+          "wav"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-VoiceSummary-invalid",
+      "profile": "workbench",
+      "schema": "VoiceSummary",
+      "value": {
+        "voice_id": "voice-demo-1",
+        "revision": "2",
+        "display_name": "合成旁白",
+        "source_type": "designed",
+        "status": "draft",
+        "languages": [
+          "zh-CN"
+        ],
+        "audio_formats": [
+          "wav"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-VoiceRevision-valid",
+      "profile": "workbench",
+      "schema": "VoiceRevision",
+      "value": {
+        "voice_id": "voice-demo-1",
+        "revision": "2",
+        "display_name": "合成旁白",
+        "status": "published",
+        "languages": [
+          "zh-CN"
+        ],
+        "audio_formats": [
+          "wav"
+        ],
+        "model_binding": {
+          "id": "binding-demo-1",
+          "revision": "1"
+        },
+        "published_at": "2026-10-24T12:00:00Z",
+        "retired_at": null,
+        "disabled_reason": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-VoiceRevision-invalid",
+      "profile": "workbench",
+      "schema": "VoiceRevision",
+      "value": {
+        "voice_id": "voice-demo-1",
+        "revision": "2",
+        "display_name": "合成旁白",
+        "status": "published",
+        "languages": [
+          "zh-CN"
+        ],
+        "audio_formats": [
+          "wav"
+        ],
+        "model_binding": {
+          "id": "binding-demo-1",
+          "revision": "1"
+        },
+        "published_at": "yesterday",
+        "retired_at": null,
+        "disabled_reason": null
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-VoiceList-valid",
+      "profile": "workbench",
+      "schema": "VoiceList",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "voice_id": "voice-demo-1",
+            "revision": "2",
+            "display_name": "合成旁白",
+            "source_type": "designed",
+            "status": "published",
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ]
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-VoiceList-invalid",
+      "profile": "workbench",
+      "schema": "VoiceList",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "voice_id": "voice-demo-1",
+            "revision": "2",
+            "display_name": "合成旁白",
+            "source_type": "designed",
+            "status": "published",
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ]
+          }
+        ],
+        "has_more": "no",
+        "next_cursor": null
+      },
+      "valid": false
+    },
+    {
       "id": "profile-draft-ProfileRevisionCreateRequest-valid",
       "profile": "admin",
       "schema": "ProfileRevisionCreateRequest",
@@ -5795,7 +6782,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -5828,7 +6817,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -5849,7 +6841,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -5882,7 +6876,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -5906,7 +6903,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -5939,7 +6938,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -5968,7 +6970,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -6001,7 +7005,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -6099,7 +7106,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6117,18 +7127,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6144,7 +7171,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6162,18 +7192,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6194,7 +7241,10 @@
         "revision_id": "mbrev-asr-quality-7",
         "logical_model": "asr-quality",
         "description": "File and full-segment review ASR binding.",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6212,18 +7262,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6252,7 +7319,10 @@
         "revision": "5",
         "revision_id": "mbrev-tts-interactive-5",
         "logical_model": "tts-interactive",
-        "tasks": ["tts_realtime", "tts_file"],
+        "tasks": [
+          "tts_realtime",
+          "tts_file"
+        ],
         "engine": {
           "kind": "vllm_omni",
           "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
@@ -6270,16 +7340,35 @@
         "execution_recipe": {
           "recipe_revision": "2",
           "capacity_manifest_id": "cap-tts-interactive-5",
-          "stage_roles": ["tts_talker", "tts_code2wav", "tts_connector"],
+          "stage_roles": [
+            "tts_talker",
+            "tts_code2wav",
+            "tts_connector"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "tts": {
-            "languages": ["zh", "en"],
-            "audio_formats": ["mp3", "wav", "pcm"],
-            "sample_rates_hz": [24000],
-            "text_commit_modes": ["explicit", "sentence"],
-            "audio_delivery_modes": ["complete", "chunked"],
+            "languages": [
+              "zh",
+              "en"
+            ],
+            "audio_formats": [
+              "mp3",
+              "wav",
+              "pcm"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "text_commit_modes": [
+              "explicit",
+              "sentence"
+            ],
+            "audio_delivery_modes": [
+              "complete",
+              "chunked"
+            ],
             "supports_instructions": true,
             "supports_speed": true,
             "speed_range": {
@@ -6314,7 +7403,10 @@
         "revision": "3",
         "revision_id": "mbrev-voice-design-3",
         "logical_model": "voice-design",
-        "tasks": ["voice_design", "voice_validation"],
+        "tasks": [
+          "voice_design",
+          "voice_validation"
+        ],
         "engine": {
           "kind": "vllm_omni",
           "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
@@ -6332,7 +7424,10 @@
         "execution_recipe": {
           "recipe_revision": "1",
           "capacity_manifest_id": "cap-voice-design-3",
-          "stage_roles": ["voice_design", "voice_clone_base"],
+          "stage_roles": [
+            "voice_design",
+            "voice_clone_base"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
@@ -6341,7 +7436,10 @@
             "clone_supported": true,
             "preview_only_possible": true,
             "reusable_voice_supported": true,
-            "validation_set_revisions": ["1", "2"]
+            "validation_set_revisions": [
+              "1",
+              "2"
+            ]
           }
         },
         "release_tier": "experimental",
@@ -6369,7 +7467,11 @@
         "revision_id": "mbrev-asr-realtime-4",
         "logical_model": "asr-realtime",
         "description": "Realtime ASR binding with VAD preview and full-segment review.",
-        "tasks": ["vad", "asr_realtime", "asr_full_segment_review"],
+        "tasks": [
+          "vad",
+          "asr_realtime",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
@@ -6387,18 +7489,34 @@
         "execution_recipe": {
           "recipe_revision": "4",
           "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
-          "stage_roles": ["vad", "asr_preview", "asr_review"],
+          "stage_roles": [
+            "vad",
+            "asr_preview",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": false,
-            "alignment_modes": ["off", "best_effort"],
-            "diarization_modes": ["off", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": true
           }
@@ -6427,7 +7545,10 @@
         "revision": "1",
         "revision_id": "synthetic-binding-revision-1",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6445,18 +7566,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6485,7 +7623,10 @@
         "revision": "1",
         "revision_id": "synthetic-binding-revision-1",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6503,18 +7644,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6544,7 +7702,10 @@
         "revision": 1,
         "revision_id": "synthetic-binding-revision-1",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6562,18 +7723,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -6602,7 +7780,10 @@
         "revision": "1",
         "revision_id": "synthetic-binding-revision-1",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -6620,18 +7801,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }

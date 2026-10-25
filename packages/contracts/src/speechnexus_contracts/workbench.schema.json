@@ -25,7 +25,29 @@
     "MinutesCreateRequest",
     "MinutesJob",
     "RenderUnitGenerationRequest",
-    "RenderUnitGenerationAccepted"
+    "RenderUnitGenerationAccepted",
+    "TeleprompterUpdateRequest",
+    "TeleprompterState",
+    "SavedAsset",
+    "SavedAssetCreateRequest",
+    "Book",
+    "BookCreateRequest",
+    "Chapter",
+    "ChapterCreateRequest",
+    "RenderUnit",
+    "RenderUnitCreateRequest",
+    "RenderUnitPatch",
+    "AssistantTurn",
+    "AssistantTurnCreateRequest",
+    "ExportArtifact",
+    "ExportCreateRequest",
+    "ExportJob",
+    "BookList",
+    "ChapterList",
+    "RenderUnitList",
+    "VoiceList",
+    "VoiceSummary",
+    "VoiceRevision"
   ],
   "$defs": {
     "ProjectCreateRequest": {
@@ -427,6 +449,29 @@
           "type": "boolean",
           "description": "True only when a deployment-approved intranet LLM is configured."
         },
+        "minutes_profile": {
+          "description": "Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["template_revision", "llm_model"],
+              "properties": {
+                "template_revision": {
+                  "$ref": "#/$defs/Revision"
+                },
+                "llm_model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "shared_deployment_notice": {
           "type": "string",
           "const": "shared_deployment",
@@ -456,7 +501,26 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "llm_enabled": {
+                "const": false
+              }
+            },
+            "required": ["llm_enabled"]
+          },
+          "then": {
+            "properties": {
+              "minutes_profile": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     },
     "ErrorResponse": {
       "$ref": "#/$defs/External_shared_errors_schema_json_ErrorResponse"
@@ -1671,6 +1735,10 @@
         "template_revision": {
           "$ref": "#/$defs/Revision"
         },
+        "expected_source_revision": {
+          "$ref": "#/$defs/Revision",
+          "description": "When supplied, a new intent requires this exact Meeting sealed revision; otherwise llm_source_changed. Accepted same-key same-body intents replay before current source/profile checks. Omission preserves legacy behavior."
+        },
         "llm_model": {
           "type": "string",
           "minLength": 1,
@@ -1883,9 +1951,13 @@
         "voice",
         "model",
         "status",
-        "updated_at"
+        "updated_at",
+        "model_binding"
       ],
       "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
         "id": {
           "$ref": "#/$defs/Identifier"
         },
@@ -2086,11 +2158,941 @@
         }
       ]
     },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    },
     "RenderUnitVoice": {
       "$ref": "#/$defs/ResourceReference"
     },
-    "ResourceReference": {
-      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
+    "TeleprompterUpdateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script_revision", "visible_position", "manual_hold"],
+      "properties": {
+        "script_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "visible_position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "manual_hold": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TeleprompterState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object",
+        "project_id",
+        "script_revision",
+        "visible_position",
+        "manual_hold",
+        "updated_at"
+      ],
+      "properties": {
+        "object": {
+          "const": "nexus.teleprompter_state"
+        },
+        "project_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "script_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "visible_position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "manual_hold": {
+          "type": "boolean"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "SavedAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "project_id",
+        "media_type",
+        "bytes",
+        "sha256",
+        "source_artifact_id",
+        "source_receipt_id",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.saved_asset"
+        },
+        "project_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "display_name": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "source_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "source_receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "SavedAssetCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_artifact_id", "source_receipt_id"],
+      "properties": {
+        "source_artifact_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "source_receipt_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "Book": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "project_id",
+        "title",
+        "status",
+        "casting_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.book"
+        },
+        "project_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "ready", "exporting"]
+        },
+        "casting_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "BookCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_text": {
+          "type": ["string", "null"],
+          "maxLength": 5000000
+        }
+      }
+    },
+    "Chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "object", "book_id", "title", "ordinal", "text_revision", "created_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.chapter"
+        },
+        "book_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ChapterCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "ordinal", "text"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000000
+        }
+      }
+    },
+    "RenderUnitCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "text", "voice", "model", "model_binding"],
+      "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        }
+      }
+    },
+    "RenderUnitPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "required": ["expected_revision"],
+      "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AssistantTurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "project_id",
+        "status",
+        "input_text",
+        "voice",
+        "playback_generation",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.assistant_turn"
+        },
+        "project_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "running", "succeeded", "failed", "cancelled"]
+        },
+        "input_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "output_text": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "voice": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "speech_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "playback_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkbenchJobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["output_text", "speech_job_id"],
+            "properties": {
+              "output_text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "speech_job_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "speech_job_id": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "required": ["speech_job_id"]
+          },
+          "then": {
+            "required": ["output_text"],
+            "properties": {
+              "output_text": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AssistantTurnCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_text", "voice"],
+      "properties": {
+        "input_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "voice": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "$ref": "#/$defs/ResourceReference"
+        }
+      }
+    },
+    "ExportArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "export_id",
+        "manifest_revision",
+        "media_type",
+        "bytes",
+        "sha256",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.export_artifact"
+        },
+        "export_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "manifest_revision": {
+          "$ref": "#/$defs/Revision",
+          "description": "Immutable export manifest used to produce this artifact. It must\nequal the owning ExportJob manifest_revision.\n"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ExportCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_casting_revision", "format"],
+      "properties": {
+        "expected_casting_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["wav", "mp3", "zip"]
+        },
+        "unit_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        }
+      }
+    },
+    "ExportJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "book_id",
+        "status",
+        "format",
+        "manifest_revision",
+        "progress_completed",
+        "progress_total",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.export_job"
+        },
+        "book_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["wav", "mp3", "zip"]
+        },
+        "manifest_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "progress_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "progress_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "artifact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ExportArtifact"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present only when the export succeeds. The artifact must belong to\nthis export and pin exactly this job's manifest revision.\n"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkbenchJobError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["error"],
+            "properties": {
+              "error": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "failed"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["artifact"],
+            "properties": {
+              "artifact": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "artifact": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "BookList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Book"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "ChapterList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chapter"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "RenderUnitList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RenderUnit"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "VoiceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VoiceSummary"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "VoiceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "source_type",
+        "status",
+        "languages",
+        "audio_formats"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_type": {
+          "type": "string",
+          "enum": ["designed", "cloned", "builtin"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "VoiceRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "status",
+        "languages",
+        "audio_formats",
+        "model_binding",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "disabled_reason": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      }
     }
   },
   "anyOf": [
@@ -2162,6 +3164,72 @@
     },
     {
       "$ref": "#/$defs/RenderUnitGenerationAccepted"
+    },
+    {
+      "$ref": "#/$defs/TeleprompterUpdateRequest"
+    },
+    {
+      "$ref": "#/$defs/TeleprompterState"
+    },
+    {
+      "$ref": "#/$defs/SavedAsset"
+    },
+    {
+      "$ref": "#/$defs/SavedAssetCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/Book"
+    },
+    {
+      "$ref": "#/$defs/BookCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/Chapter"
+    },
+    {
+      "$ref": "#/$defs/ChapterCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/RenderUnit"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitPatch"
+    },
+    {
+      "$ref": "#/$defs/AssistantTurn"
+    },
+    {
+      "$ref": "#/$defs/AssistantTurnCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/ExportArtifact"
+    },
+    {
+      "$ref": "#/$defs/ExportCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/ExportJob"
+    },
+    {
+      "$ref": "#/$defs/BookList"
+    },
+    {
+      "$ref": "#/$defs/ChapterList"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitList"
+    },
+    {
+      "$ref": "#/$defs/VoiceList"
+    },
+    {
+      "$ref": "#/$defs/VoiceSummary"
+    },
+    {
+      "$ref": "#/$defs/VoiceRevision"
     }
   ]
 }

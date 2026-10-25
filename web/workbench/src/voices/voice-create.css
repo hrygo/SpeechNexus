@@ -1,0 +1,43 @@
+.voice-create {
+  min-width: 0;
+}
+.voice-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+}
+.voice-fields > div {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.voice-fields input,
+.voice-fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.voice-fields textarea {
+  min-height: 7rem;
+}
+.voice-create pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-create button {
+  margin: 0.4rem 0.4rem 0.4rem 0;
+  max-width: 100%;
+}
+.voice-create dd {
+  overflow-wrap: anywhere;
+  margin-inline-start: 1rem;
+}
+.voice-create input[type="checkbox"] {
+  min-height: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  margin-inline-end: var(--nexus-space-2);
+  vertical-align: middle;
+}

@@ -7563,7 +7563,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -7581,18 +7584,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -7608,7 +7628,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -7626,18 +7649,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -7658,7 +7698,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -7676,18 +7719,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -7704,7 +7764,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -7722,18 +7785,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -7750,7 +7830,10 @@
       "value": {
         "binding_id": "asr-quality",
         "logical_model": "asr-quality",
-        "tasks": ["asr_file", "asr_full_segment_review"],
+        "tasks": [
+          "asr_file",
+          "asr_full_segment_review"
+        ],
         "engine": {
           "kind": "vllm",
           "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -7768,18 +7851,35 @@
         "execution_recipe": {
           "recipe_revision": "3",
           "capacity_manifest_id": "cap-asr-quality-7",
-          "stage_roles": ["asr_batch", "asr_review"],
+          "stage_roles": [
+            "asr_batch",
+            "asr_review"
+          ],
           "requires_complete_reservation": true
         },
         "parameter_domains": {
           "asr": {
-            "languages": ["zh", "en", "auto"],
+            "languages": [
+              "zh",
+              "en",
+              "auto"
+            ],
             "max_segment_ms": 30000,
-            "finalization_modes": ["full_segment"],
+            "finalization_modes": [
+              "full_segment"
+            ],
             "supports_prompt": true,
             "supports_word_timestamps": true,
-            "alignment_modes": ["off", "required", "best_effort"],
-            "diarization_modes": ["off", "required", "best_effort"],
+            "alignment_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
+            "diarization_modes": [
+              "off",
+              "required",
+              "best_effort"
+            ],
             "max_speakers": 8,
             "supports_rollback_tokens": false
           }
@@ -7869,7 +7969,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -7902,7 +8004,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -7938,7 +8043,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -7971,7 +8078,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,
@@ -7999,7 +8109,9 @@
         "display_name": "Caption draft",
         "kind": "asr",
         "release_tier": "experimental",
-        "execution_classes": ["realtime"],
+        "execution_classes": [
+          "realtime"
+        ],
         "parameters": {
           "asr": {
             "language": "zh",
@@ -8032,7 +8144,10 @@
             "required": true
           }
         ],
-        "override_allowlist": ["asr.language", "asr.preview_interval_ms"],
+        "override_allowlist": [
+          "asr.language",
+          "asr.preview_interval_ms"
+        ],
         "override_ranges": {
           "asr.preview_interval_ms": {
             "minimum": 300,

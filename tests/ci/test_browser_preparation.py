@@ -227,9 +227,24 @@ class PreparationTests(unittest.TestCase):
             HELPER.prepare(Path("/unused"), Path("/unused"))
             self.assertIn("http:Timeout", out.getvalue())
             self.assertIn("http:other-or-nested-key", out.getvalue())
+            self.assertIn("http:qualified-Proxy", out.getvalue())
             self.assertIn("unsupported-transport-key", out.getvalue())
             self.assertNotIn("private-host", out.getvalue())
             self.assertEqual(run.call_args_list[-1].args[0], HELPER.INSTALL)
+
+    def test_host_qualified_control_names_do_not_expose_the_private_host(self) -> None:
+        with (
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess(
+                [], 0, "Acquire::http::Timeout\nAcquire::http::private-host::Timeout\n", ""
+            )
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            self.assertIn("http:qualified-Timeout", out.getvalue())
+            self.assertIn("unsupported-transport-key", out.getvalue())
+            self.assertNotIn("private-host", out.getvalue())
+            self.assertEqual(run.call_count, 2)
 
     def test_other_guard_reasons_are_classified_without_raw_keys_or_configuration(self) -> None:
         for key, reason in (

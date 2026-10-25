@@ -178,6 +178,20 @@ def prepare(cache: Path, temporary_root: Path) -> None:
             for line in policy.stdout.splitlines()
         ):
             matches.append(f"{protocol}:other-or-nested-key")
+        # Expose only a documented control name when a qualified key contains
+        # it; arbitrary host/credential components remain entirely private.
+        for line in policy.stdout.splitlines():
+            split = re.split(rf"Acquire::{protocol}::", line, flags=re.I)
+            if len(split) != 2 or line in known:
+                continue
+            parts = [part.lower() for part in split[1].split("::") if part]
+            controls = [key for key in known_keys if key.lower() in parts]
+            matches.extend(f"{protocol}:qualified-{key}" for key in controls)
+            if not controls:
+                matches.append(
+                    f"{protocol}:unclassified-{'nested' if len(parts) > 1 else 'direct'}"
+                )
+        matches = sorted(set(matches))
         categories.extend(matches)
     if re.search(r"Acquire::.*ForceIPv", policy.stdout, re.I):
         categories.append("address-family")

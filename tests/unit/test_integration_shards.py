@@ -446,7 +446,7 @@ def test_browser_consumers_get_locked_web_build_and_chromium_before_execution() 
         assert "continue-on-error" not in step
     assert dependencies["run"] == "pnpm install --frozen-lockfile"
     assert build["run"] == "pnpm build"
-    assert chromium["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    assert chromium["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     run = next(
         i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
     )

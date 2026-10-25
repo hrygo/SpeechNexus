@@ -50,10 +50,10 @@ def test_design_token_guard_runs_before_routing_without_dependency_install() -> 
 def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
     steps = _WORKFLOW["jobs"]["web"]["steps"]
     build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
-    install = next(i for i, s in enumerate(steps) if "playwright install" in s.get("run", ""))
+    install = next(i for i, s in enumerate(steps) if "prepare-ci-browser.py" in s.get("run", ""))
     check = next(i for i, s in enumerate(steps) if s.get("id") == "a11y")
     assert build < install < check
-    assert steps[install]["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    assert steps[install]["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     assert steps[check]["run"] == "pnpm test:a11y"
     assert "continue-on-error" not in steps[check] and "if" not in steps[check]
     artifact = next(
@@ -64,6 +64,17 @@ def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
     assert artifact["with"]["if-no-files-found"] == "error"
     assert "test-results/" in artifact["with"]["path"]
     assert not any("playwright" in s.get("run", "") for s in _WORKFLOW["jobs"]["changes"]["steps"])
+
+
+def test_browser_preparation_keeps_partition_selection_and_original_budgets() -> None:
+    jobs = _WORKFLOW["jobs"]
+    shards = jobs["integration_shards"]
+    install = next(s for s in shards["steps"] if "prepare-ci-browser.py" in s.get("run", ""))
+    assert install["if"] == "steps.integration_tools.outputs.browser == 'true'"
+    assert install["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
+    assert "continue-on-error" not in install
+    assert shards["timeout-minutes"] == jobs["web"]["timeout-minutes"] == 10
+    assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
 
 
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:

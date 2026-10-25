@@ -9,6 +9,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
@@ -245,6 +246,134 @@ async def test_worker_root_rejects_migration_owner_before_contacting_controller(
             async with RuntimeDeliveryRuntime(settings):
                 pytest.fail("A migration owner became the runtime delivery principal")
         assert node.methods == [] and node.runtime.prepared == []
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "login_kind",
+    ["superuser", "schema_owner", "owner_member", "session_authorization", "unprivileged"],
+)
+async def test_startup_role_does_not_hide_the_delivery_login_identity(
+    tls_runtime: RuntimeDatabase,
+    controller_tls: TLSFiles,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    login_kind: str,
+) -> None:
+    with (
+        prepared_delivery(tls_runtime, TLS_COMMAND) as delivery,
+        controller_server(tmp_path / "native", controller_tls) as node,
+    ):
+        db = tls_runtime.foundation.database
+        login_role = db.schema + "_login"
+        owner_role = db.schema + "_table_owner"
+        created = False
+        owner_created = False
+        try:
+            url = db.url
+            session = db.query("SELECT SESSION_USER AS name")[0]["name"]
+            if login_kind not in ("superuser", "session_authorization"):
+                db.query(
+                    f'CREATE ROLE "{login_role}" LOGIN '
+                    "PASSWORD 'synthetic_delivery_login' NOINHERIT"
+                )
+                created = True
+                db.query(f'GRANT "{delivery.role}" TO "{login_role}"')
+                if login_kind == "schema_owner":
+                    db.query(f'ALTER SCHEMA "{db.schema}" OWNER TO "{login_role}"')
+                elif login_kind == "owner_member":
+                    db.query(f'CREATE ROLE "{owner_role}" NOLOGIN')
+                    owner_created = True
+                    db.query(f'GRANT "{owner_role}" TO "{login_role}"')
+                    db.query(f'ALTER TABLE runtime_intent_deliveries OWNER TO "{owner_role}"')
+                    # NOINHERIT does not remove permission to SET ROLE to an owner.
+                    assert db.query(
+                        "SELECT pg_has_role(%s,%s,'USAGE') AS inherited, "
+                        "pg_has_role(%s,%s,'MEMBER') AS member",
+                        (login_role, owner_role, login_role, owner_role),
+                    ) == [{"inherited": False, "member": True}]
+                url = make_conninfo(db.url, user=login_role, password="synthetic_delivery_login")
+                session = login_role
+            url = make_conninfo(
+                url,
+                options=(
+                    f"-c session_authorization={delivery.role}"
+                    if login_kind == "session_authorization"
+                    else f"-c role={delivery.role}"
+                ),
+                application_name="synthetic_delivery_login_canary",
+            )
+            with psycopg.connect(url) as probe:
+                # PG resets session_authorization during authenticated startup;
+                # this remains a rejection control, not a claimed bypass.
+                observed_effective = (
+                    session if login_kind == "session_authorization" else delivery.role
+                )
+                assert probe.execute("SELECT SESSION_USER, CURRENT_USER").fetchone() == (
+                    session,
+                    observed_effective,
+                )
+                probe.execute("SET ROLE NONE")
+                assert probe.execute("SELECT CURRENT_USER").fetchone() == (session,)
+                probe.execute("RESET ROLE")
+                assert probe.execute("SELECT CURRENT_USER").fetchone() == (observed_effective,)
+            settings = RuntimeDeliverySettings(
+                process_role="job-worker",
+                node_id="cloud-test",
+                instance_id="identity-test",
+                database_url=SecretStr(url),
+                database_schema=db.schema,
+                target_node_id=node.endpoint.node_id,
+                controller_address=node.endpoint.address,
+                controller_port=node.endpoint.port,
+                controller_token=SecretStr(node.endpoint.bearer_token),
+                ca_file=node.tls.certificate,
+            )
+            runtime = RuntimeDeliveryRuntime(settings)
+            before = tls_runtime.snapshot()
+            if login_kind == "unprivileged":
+                async with runtime:
+                    assert runtime.service is not None
+                assert tls_runtime.snapshot() == before
+            else:
+                with pytest.raises(ValueError, match="non-owner") as caught:
+                    async with runtime:
+                        pass
+                assert tls_runtime.snapshot() == before
+                assert runtime.service is None
+                for private in (
+                    url,
+                    "synthetic_delivery_login",
+                    "synthetic_delivery_login_canary",
+                    node.endpoint.bearer_token,
+                ):
+                    assert private not in str(caught.value) and private not in caplog.text
+            assert runtime._pool.closed and runtime.service is None
+            assert node.methods == [] and node.runtime.prepared == []
+            assert db.query(
+                "SELECT count(*) AS n FROM pg_stat_activity WHERE application_name=%s",
+                ("synthetic_delivery_login_canary",),
+            ) == [{"n": 0}]
+        finally:
+            if created:
+                from psycopg import sql
+
+                db.admin.execute(
+                    sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(
+                        sql.Identifier(db.schema), sql.Identifier(db.admin.info.user)
+                    )
+                )
+                if owner_created:
+                    db.admin.execute(
+                        sql.SQL("ALTER TABLE {}.runtime_intent_deliveries OWNER TO {}").format(
+                            sql.Identifier(db.schema), sql.Identifier(db.admin.info.user)
+                        )
+                    )
+                db.query(f'DROP OWNED BY "{login_role}"')
+                db.query(f'DROP ROLE "{login_role}"')
+                if owner_created:
+                    db.query(f'DROP OWNED BY "{owner_role}"')
+                    db.query(f'DROP ROLE "{owner_role}"')
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)

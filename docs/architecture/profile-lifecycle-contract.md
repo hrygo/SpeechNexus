@@ -82,3 +82,52 @@ isolated database concurrency/fault evidence. Runtime registration, public publi
 registry, complete parameter resolution and real qualification follow separately.
 No production grant, DDL, deployment, publication or pointer switch occurs here;
 A00/A02 and cross-team Gates remain open.
+
+## P1a: private intent and read-only evidence boundary
+
+| Fact | Current source / owner | Consumer boundary |
+| --- | --- | --- |
+| Fixed profile definition | A02 `speech_profile_revisions` / 0009 | Real immutable draft reads exist; allocation head is not a published/current pointer |
+| Submitted ProfileValidation | Existing admin request and scenario schema 1.0.0 / caller | A claim retained in the original intent, not trusted evidence |
+| Trusted Profile-specific checks | A02 producer with applicable B deployment facts | No production producer/adapter is registered yet; remain unavailable |
+| Binding/capacity/software/topology/quality facts | Existing contracts and B's named evidence; A registry integration | Must be resolved and matched where applicable; cannot substitute a binding report for Profile validation |
+| Published state/current pointer | Later A02 P2 transaction | Not implemented by this command or observation boundary |
+
+The process-local boundary now prepares complete publication/activation intents:
+`speech.interfaces.profile_lifecycle.prepare_profile_publication` and
+`prepare_profile_activation`. They use the generated `profile_lifecycle_http`
+request validator and freeze the operation, profile/revision and full body in a
+bounded canonical document. Publication's expected revision and validation target
+must match the path. No defaults, current/latest lookup, qualification, publication
+timestamp or public Operation are manufactured. Input dictionaries remain unchanged.
+
+The private command retains a hash of the supplied key, including complete intent
+differences such as explicit null, CAS, validation metadata and target. Storage
+must keep the operation context and compare the complete intent, not identify a
+mutation by the key hash alone. A keyless preparation receives a fresh private
+identity; another keyless preparation is a new command, with no public recovery
+promise. Original body/key text is excluded from the command's representation.
+
+`speech.application.profile_lifecycle` checks the private envelope and provides
+the narrow `ProfilePublicationVerifier` port. A real verifier must resolve trusted
+current Profile-specific evidence and check full schema/producer rules, capability
+composition and applicable tier/quality facts. A binding's
+`DeploymentQualificationReport` is a different fact and cannot stand in for this
+Profile validation. No trusted production verifier is implemented or registered
+by this unit; `UnavailableProfilePublicationVerifier` always reports unavailable.
+
+`observe_publication_evidence` accepts only a structured observation bound to the
+exact profile/revision, definition digest and complete intent digest. Empty,
+boolean, wrong-target or wrong-digest results, failed reads and malformed private
+facts remain unavailable. An explicit authoritative denial is distinct from an
+unreadable result. Errors contain fixed text rather than provider/private input.
+Activation cannot use this draft evidence path; missing published lifecycle facts
+remain unavailable, not an authoritative ineligibility decision. Those facts
+belong to the later writer.
+
+The observation and its authority digest are neither a signed approval nor a
+permission to commit. P2 still needs original-result lookup before provider/CAS,
+transactional authority rechecking, persistent result recovery and pointer updates.
+This unit has no database, migration, grants, new public wire fields, route
+registration or lifecycle writes. Synthetic test providers exercise the consumer
+boundary only; P1's real authority producer and the rest of A-CONFIG-01 remain open.

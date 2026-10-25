@@ -105,3 +105,30 @@ async def test_tts_native_cleanup_is_observed_after_remote_done(mode: str) -> No
     assert result["close_calls"] == 1, result
     assert result["remote_cancel_commands"] == 0, result
     assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result
+
+
+@pytest.mark.parametrize("mode", ["delayed", "rejected"])
+@pytest.mark.parametrize("stop_kind", ["abort", "interruption"])
+async def test_capture_cleanup_is_observed_after_remote_session_release(
+    mode: str, stop_kind: str
+) -> None:
+    result = await run_probe(
+        "asr",
+        output_dir(f"asr-cleanup-{stop_kind}-{mode}"),
+        "--cleanup-mode",
+        mode,
+        "--stop-kind",
+        stop_kind,
+    )
+    assert result["passed"] is True, result
+    assert result["cleanup_mode"] == mode, result
+    assert result["stop_kind"] == stop_kind, result
+    assert result["synthetic_microphone"] is True, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["native_close_fault_injection"] is True, result
+    assert result["physical_device"] is False, result
+    assert result["sent_at_stop"] > 0, result
+    assert result["close_calls"] == 1, result
+    assert result["no_late_audio_sent"] is True, result
+    assert result["no_redundant_remote_cancel"] is True, result
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result

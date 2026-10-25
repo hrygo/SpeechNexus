@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import RealtimeHost from "./RealtimeHost";
 import { RealtimeController, type RealtimeSocket } from "./realtime-session";
 import { RealtimeJournal, realtimeJournalKey } from "./realtime-journal";
-import { created, event, ready, session, storage } from "./realtime-fixtures";
+import { created, event, ready, request, session, storage } from "./realtime-fixtures";
 import type { RealtimeClient } from "./realtime-client";
 
 class Socket extends EventTarget implements RealtimeSocket {
@@ -44,6 +44,68 @@ async function create() {
   await screen.findByText("session-demo");
 }
 describe("formal realtime ASR host", () => {
+  it.each(["resolve", "reject"] as const)(
+    "shows local cleanup %s independently of released remote session",
+    async (outcome) => {
+      const f = fixture();
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const closing = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      f.capture.mockResolvedValue({
+        token: "capture",
+        sampleRate: 24000,
+        stopping: new Promise<void>(() => {}),
+        snapshot: { state: "running", reason: undefined },
+        closed: closing,
+        stop: () => closing,
+      });
+      await f.controller.create(request());
+      await f.controller.connect();
+      f.socket.message(created());
+      f.socket.message(ready());
+      await f.controller.startCapture();
+      const complete = {
+        ...session(),
+        status: "closed" as const,
+        cleanup_state: "complete" as const,
+        connection_url: null,
+        closed_at: new Date().toISOString(),
+      };
+      f.client.cancel.mockResolvedValue(complete);
+      f.client.current.mockResolvedValue(complete);
+      render(<RealtimeHost controller={f.controller} />);
+      await act(async () => {
+        await f.controller.close("abort");
+        await f.controller.refresh();
+      });
+      expect(screen.getByTestId("asr-microphone-state")).toHaveTextContent("正在停止");
+      const create = screen.getByRole("button", { name: "创建实时会话" });
+      expect(create).toBeDisabled();
+      if (outcome === "resolve") {
+        await act(async () => {
+          resolve();
+          await closing;
+        });
+        await waitFor(() => expect(create).toBeEnabled());
+        expect(screen.getByTestId("asr-microphone-state")).toHaveTextContent("已停止");
+      } else {
+        await act(async () => {
+          reject(Error("synthetic close failure"));
+          await closing.catch(() => {});
+        });
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("释放未确认"));
+        await act(async () => {
+          await f.controller.refresh();
+        });
+        expect(screen.getByTestId("asr-microphone-state")).not.toHaveTextContent("已停止");
+        expect(create).toBeDisabled();
+      }
+      f.controller.dispose();
+    },
+  );
   it("has empty deployment references, no automatic media/connection, and admits capture only after ready", async () => {
     const f = fixture();
     render(<RealtimeHost controller={f.controller} />);

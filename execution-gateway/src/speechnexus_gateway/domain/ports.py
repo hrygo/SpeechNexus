@@ -104,6 +104,19 @@ class EngineDispatchPort(Protocol):
     def dispatch(self, intent: SubmissionIntent) -> DispatchOutcome: ...
 
 
+class CommittedExecutionStarter(Protocol):
+    """Start prepared work only after a new acceptance commit and ingress release.
+
+    The original unique intent is the durable authority. Neither this callback nor
+    its process-local preparation registry authorizes replays or crash redispatch.
+    Discard removes only an unstarted preparation, never capacity or running work.
+    """
+
+    def start(self, intent: SubmissionIntent) -> None: ...
+
+    def discard(self, submit_intent_id: str) -> None: ...
+
+
 class OriginalExecutionCommandSource(Protocol):
     """Read the verified frozen request; a read never authorizes redispatch."""
 

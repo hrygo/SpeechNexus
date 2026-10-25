@@ -1,121 +1,49 @@
-"""Fixed private S3 reads, version pinning and verified process-private spooling."""
+"""Cancellable version-pinned S3 reads; expose only a complete private spool."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
-import ipaddress
 import os
 import ssl
 import stat
 import tempfile
-from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager, suppress
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from time import monotonic
-from typing import Any, BinaryIO, cast
-from urllib.parse import urlsplit
+from typing import BinaryIO, cast
+from urllib.parse import quote
 
-import urllib3
-from minio import Minio
+import httpx
+from minio.credentials.credentials import Credentials
 from minio.helpers import check_bucket_name
-from urllib3.response import BaseHTTPResponse
-from urllib3.util import Retry, Timeout
 
+from speechnexus_gateway.domain.asr import AsrCallError
 from speechnexus_gateway.domain.execution_inputs import (
     ExecutionInputError,
     ExecutionInputLimits,
     ExecutionObjectReference,
     VerifiedExecutionObject,
+    is_fixed_storage_version,
+)
+from speechnexus_gateway.infrastructure.bounded_io import run_bounded_io
+from speechnexus_gateway.infrastructure.private_s3 import (
+    FixedS3Transport,
+    private_endpoint,
+    signed_headers,
 )
 
 _CHUNK_BYTES = 64 * 1024
 
 
-def _origin(url: str) -> tuple[str, str | None, int]:
-    parsed = urlsplit(url)
-    port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
-    return parsed.scheme, parsed.hostname, port
-
-
-class _FixedObjectHTTP(urllib3.PoolManager):
+class _FixedObjectTransport(FixedS3Transport):
     def __init__(self, endpoint: str, context: ssl.SSLContext | None) -> None:
-        self._origin = _origin(endpoint)
         super().__init__(
-            num_pools=1,
-            maxsize=4,
-            block=True,
-            timeout=Timeout(connect=3, read=3),
-            retries=Retry(total=0, connect=0, read=0, redirect=0, status=0),
-            ssl_context=context,
+            endpoint,
+            context,
+            methods=frozenset({"HEAD", "GET"}),
+            scope_error=lambda: ExecutionInputError("execution_input_origin_rejected"),
         )
-
-    def urlopen(self, method: str, url: str, *args: Any, **kwargs: Any) -> BaseHTTPResponse:
-        if _origin(url) != self._origin or method not in {"HEAD", "GET"}:
-            raise ExecutionInputError("execution_input_origin_rejected")
-        kwargs["pool_timeout"] = 3
-        kwargs["redirect"] = False
-        # The SDK preloads HEAD by default and unconditionally reads error bodies,
-        # even for get_object(preload_content=False). Intercept before either path.
-        kwargs["preload_content"] = False
-        kwargs["decode_content"] = False
-        response = super().urlopen(method, url, *args, **kwargs)
-        rejected = response.status != 200
-        if rejected or method == "HEAD":
-            # HEAD consumers use headers only; they must not retain a connection
-            # after preloading is disabled. Never drain/decode an error response.
-            try:
-                response.close()
-            except Exception:
-                rejected = True
-            try:
-                response.release_conn()
-            except Exception:
-                rejected = True
-            if rejected:
-                raise ExecutionInputError("execution_input_unavailable") from None
-        return response
-
-
-def _endpoint(endpoint: str, context: ssl.SSLContext | None) -> str:
-    try:
-        if not isinstance(endpoint, str):
-            raise ValueError
-        value = urlsplit(endpoint)
-        address = ipaddress.ip_address(value.hostname or "")
-        port = value.port if value.port is not None else (443 if value.scheme == "https" else 80)
-        if (
-            value.scheme not in {"http", "https"}
-            or value.username is not None
-            or value.password is not None
-            or value.query
-            or value.fragment
-            or value.path not in {"", "/"}
-            or "%" in str(value.hostname)
-            or not (
-                address.is_loopback
-                or (
-                    address.is_private
-                    and not address.is_link_local
-                    and not address.is_unspecified
-                    and not address.is_multicast
-                    and not address.is_reserved
-                )
-            )
-            or not 1 <= port <= 65535
-        ):
-            raise ValueError
-        if context is not None and (
-            context.protocol != ssl.PROTOCOL_TLS_CLIENT
-            or context.verify_mode != ssl.CERT_REQUIRED
-            or not context.check_hostname
-            or context.minimum_version < ssl.TLSVersion.TLSv1_2
-        ):
-            raise ValueError
-    except TypeError, ValueError:
-        raise ValueError(
-            "configure a fixed private object-storage origin with verified TLS"
-        ) from None
-    return value.netloc
 
 
 class MinioExecutionInputs:
@@ -129,7 +57,7 @@ class MinioExecutionInputs:
         spool_directory: Path,
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
-        netloc = _endpoint(endpoint, ssl_context)
+        self._netloc = private_endpoint(endpoint, ssl_context)
         try:
             check_bucket_name(bucket, strict=True)
             info = spool_directory.stat()
@@ -142,37 +70,45 @@ class MinioExecutionInputs:
                 or not secret_key
             ):
                 raise ValueError
-            self._http = _FixedObjectHTTP(endpoint, ssl_context)
-            self._client = Minio(
-                netloc,
-                access_key=access_key,
-                secret_key=secret_key,
-                secure=endpoint.startswith("https://"),
-                region="us-east-1",
-                http_client=self._http,
-            )
+            self._credentials = Credentials(access_key, secret_key)
         except Exception:
             raise ValueError(
                 "configure an explicit private object input and spool directory"
             ) from None
+        self._endpoint = endpoint.rstrip("/")
         self._bucket = bucket
         self._directory = spool_directory
+        self._context = ssl_context or ssl.create_default_context()
 
     def close(self) -> None:
-        self._http.clear()
+        """No retained client: every input scope owns and closes its transport."""
 
-    @contextmanager
-    def open_verified(
+    def _new_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            transport=_FixedObjectTransport(self._endpoint, self._context),
+            timeout=httpx.Timeout(3),
+            trust_env=False,
+            follow_redirects=False,
+        )
+
+    def _url(self, reference: ExecutionObjectReference, version: str | None = None) -> str:
+        # Keep opaque keys opaque. A literal '%' must not become a URL escape.
+        url = self._endpoint + "/" + self._bucket + "/" + quote(reference.object_key, safe="/~")
+        return url if version is None else url + "?versionId=" + quote(version, safe="")
+
+    def _headers(self, method: str, url: str) -> dict[str, str]:
+        return signed_headers(method, url, netloc=self._netloc, credentials=self._credentials)
+
+    @asynccontextmanager
+    async def open_verified(
         self,
         reference: ExecutionObjectReference,
         *,
         limits: ExecutionInputLimits,
         cancelled: Callable[[], bool],
-    ) -> Iterator[VerifiedExecutionObject]:
+    ) -> AsyncIterator[VerifiedExecutionObject]:
         if reference.storage_bucket != self._bucket:
             raise ExecutionInputError("execution_input_scope_mismatch")
-        # Keys are opaque S3 names, never filesystem paths or URLs. Exclude path
-        # normalization/control ambiguity before asking the SDK to construct a URL.
         if (
             not reference.object_key.startswith("private/")
             or any(part in {"", ".", ".."} for part in reference.object_key.split("/"))
@@ -182,91 +118,91 @@ class MinioExecutionInputs:
             raise ExecutionInputError("execution_input_scope_mismatch")
         if reference.byte_length > limits.max_bytes:
             raise ExecutionInputError("execution_input_limit_exceeded")
-        deadline = monotonic() + limits.timeout_seconds
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + limits.timeout_seconds
 
         def check() -> None:
             if cancelled():
                 raise ExecutionInputError("execution_input_cancelled")
-            if monotonic() >= deadline:
+            if loop.time() >= deadline:
                 raise ExecutionInputError("execution_input_deadline_exceeded")
 
-        with ExitStack() as stack:
-            response = None
+        check()
+        with tempfile.SpooledTemporaryFile(
+            mode="w+b", max_size=limits.memory_bytes, dir=str(self._directory)
+        ) as spool:
             try:
-                check()
-                original = self._client.stat_object(self._bucket, reference.object_key)
-                check()
-                version = original.version_id
-                if (
-                    not isinstance(version, str)
-                    or not 1 <= len(version) <= 1024
-                    or version == "null"
-                    or original.size != reference.byte_length
-                ):
-                    raise ExecutionInputError("execution_input_identity_mismatch")
-                response = self._client.get_object(
-                    self._bucket,
-                    reference.object_key,
-                    version_id=version,
-                    request_headers={"Accept-Encoding": "identity"},
+                version = await run_bounded_io(
+                    lambda: self._read(reference, cast(BinaryIO, spool), check),
+                    deadline=deadline,
+                    check=check,
                 )
+            except TimeoutError:
+                raise ExecutionInputError("execution_input_deadline_exceeded") from None
+            check()
+            spool.seek(0)
+            # All HTTP work and cleanup has ended before exposing any content.
+            yield VerifiedExecutionObject(reference, cast(BinaryIO, spool), version)
+
+    async def _read(
+        self, reference: ExecutionObjectReference, spool: BinaryIO, check: Callable[[], None]
+    ) -> str:
+        try:
+            async with self._new_client() as client:
+                version = await self._head(client, reference, check)
+                url = self._url(reference, version)
                 check()
-                if (
-                    response.status != 200
-                    or response.headers.getlist("x-amz-version-id") != [version]
-                    or response.headers.getlist("Content-Encoding") not in ([], ["identity"])
-                    or response.headers.getlist("Content-Length") != [str(reference.byte_length)]
-                ):
-                    raise ExecutionInputError("execution_input_identity_mismatch")
-                spool = stack.enter_context(
-                    tempfile.SpooledTemporaryFile(
-                        mode="w+b", max_size=limits.memory_bytes, dir=str(self._directory)
-                    )
-                )
-                digest = hashlib.sha256()
-                total = 0
-                while True:
+                async with client.stream("GET", url, headers=self._headers("GET", url)) as response:
                     check()
-                    # Return available bytes after one underlying read, rather
-                    # than waiting to fill 64 KiB while a slow peer keeps the
-                    # socket alive. Recheck cancel/deadline between reads.
-                    chunk = response.read1(
-                        min(_CHUNK_BYTES, reference.byte_length - total + 1),
-                        decode_content=False,
-                    )
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > reference.byte_length:
+                    self._check_headers(response, reference)
+                    if response.headers.get_list("x-amz-version-id") != [version]:
                         raise ExecutionInputError("execution_input_identity_mismatch")
-                    digest.update(chunk)
-                    spool.write(chunk)
+                    digest, total = hashlib.sha256(), 0
+                    async for chunk in response.aiter_raw(chunk_size=_CHUNK_BYTES):
+                        check()
+                        total += len(chunk)
+                        if total > reference.byte_length:
+                            raise ExecutionInputError("execution_input_identity_mismatch")
+                        digest.update(chunk)
+                        spool.write(chunk)
+                    check()
+                    if (
+                        total != reference.byte_length
+                        or "sha256:" + digest.hexdigest() != reference.content_sha256
+                    ):
+                        raise ExecutionInputError("execution_input_identity_mismatch")
                 check()
-                if (
-                    total != reference.byte_length
-                    or "sha256:" + digest.hexdigest() != reference.content_sha256
-                ):
-                    raise ExecutionInputError("execution_input_identity_mismatch")
-                completed = response
-                response = None
-                try:
-                    completed.close()
-                finally:
-                    completed.release_conn()
-                spool.seek(0)
-                check()
-                verified = VerifiedExecutionObject(reference, cast(BinaryIO, spool), version)
-            except ExecutionInputError:
-                raise
-            except Exception:
-                raise ExecutionInputError("execution_input_unavailable") from None
-            finally:
-                if response is not None:
-                    # Preserve the preparation error, including cancel/deadline.
-                    with suppress(Exception):
-                        response.close()
-                    with suppress(Exception):
-                        response.release_conn()
-            # Remote cleanup is finished. Consumer errors retain their meaning,
-            # while the process-private spool always closes on context exit.
-            yield verified
+            check()
+            return version
+        except ExecutionInputError, AsrCallError:
+            raise
+        except Exception:
+            check()
+            raise ExecutionInputError("execution_input_unavailable") from None
+
+    async def _head(
+        self,
+        client: httpx.AsyncClient,
+        reference: ExecutionObjectReference,
+        check: Callable[[], None],
+    ) -> str:
+        check()
+        url = self._url(reference)
+        async with client.stream("HEAD", url, headers=self._headers("HEAD", url)) as response:
+            check()
+            self._check_headers(response, reference)
+            versions = response.headers.get_list("x-amz-version-id")
+            if len(versions) != 1 or not is_fixed_storage_version(versions[0]):
+                raise ExecutionInputError("execution_input_identity_mismatch")
+            version = versions[0]
+        check()
+        return version
+
+    @staticmethod
+    def _check_headers(response: httpx.Response, reference: ExecutionObjectReference) -> None:
+        if response.status_code != 200:
+            raise ExecutionInputError("execution_input_unavailable")
+        if response.headers.get_list("Content-Length") != [
+            str(reference.byte_length)
+        ] or response.headers.get_list("Content-Encoding") not in ([], ["identity"]):
+            raise ExecutionInputError("execution_input_identity_mismatch")

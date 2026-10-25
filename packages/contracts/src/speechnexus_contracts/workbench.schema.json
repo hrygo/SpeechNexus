@@ -23,7 +23,9 @@
     "MeetingCreateRequest",
     "MeetingSealRequest",
     "MinutesCreateRequest",
-    "MinutesJob"
+    "MinutesJob",
+    "RenderUnitGenerationRequest",
+    "RenderUnitGenerationAccepted"
   ],
   "$defs": {
     "ProjectCreateRequest": {
@@ -1840,6 +1842,255 @@
           }
         }
       ]
+    },
+    "RenderUnitGenerationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_unit_revision"],
+      "properties": {
+        "expected_unit_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "RenderUnitGenerationAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["render_unit", "speech_job_id", "accepted_at"],
+      "properties": {
+        "render_unit": {
+          "$ref": "#/$defs/RenderUnit"
+        },
+        "speech_job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accepted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "RenderUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "chapter_id",
+        "ordinal",
+        "revision",
+        "text",
+        "voice",
+        "model",
+        "status",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.render_unit"
+        },
+        "chapter_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "generating", "ready", "stale", "failed"]
+        },
+        "saved_asset_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speech_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_artifact_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source_artifact_id": {
+                "type": "string"
+              }
+            },
+            "required": ["source_artifact_id"]
+          },
+          "then": {
+            "required": ["source_receipt_id"],
+            "properties": {
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source_receipt_id": {
+                "type": "string"
+              }
+            },
+            "required": ["source_receipt_id"]
+          },
+          "then": {
+            "required": ["source_artifact_id"],
+            "properties": {
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "saved_asset_id": {
+                "type": "string"
+              }
+            },
+            "required": ["saved_asset_id"]
+          },
+          "then": {
+            "required": ["source_artifact_id", "source_receipt_id"],
+            "properties": {
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "generating"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["speech_job_id"],
+            "properties": {
+              "speech_job_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ready"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["speech_job_id", "source_artifact_id", "source_receipt_id"],
+            "properties": {
+              "speech_job_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RenderUnitVoice": {
+      "$ref": "#/$defs/ResourceReference"
+    },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
     }
   },
   "anyOf": [
@@ -1905,6 +2156,12 @@
     },
     {
       "$ref": "#/$defs/MinutesJob"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitGenerationRequest"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitGenerationAccepted"
     }
   ]
 }

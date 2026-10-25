@@ -4,13 +4,14 @@ The recognizer/VAD are synthetic. These tests prove input plumbing, never vendor
 execution/stop facts, model qualification, A's release transaction or publication.
 """
 
+import asyncio
 import hashlib
 import io
 import json
 import os
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -266,9 +267,9 @@ async def test_persisted_command_minio_decoder_and_native_asr_consumer(
     opened: list[VerifiedExecutionObject] = []
     original_open = objects.open_verified
 
-    @contextmanager
-    def track_open(*args: Any, **kwargs: Any) -> Iterator[VerifiedExecutionObject]:
-        with original_open(*args, **kwargs) as verified:
+    @asynccontextmanager
+    async def track_open(*args: Any, **kwargs: Any) -> AsyncIterator[VerifiedExecutionObject]:
+        async with original_open(*args, **kwargs) as verified:
             opened.append(verified)
             yield verified
 
@@ -314,38 +315,74 @@ async def test_persisted_command_minio_decoder_and_native_asr_consumer(
     assert snapshot(foundation) == before
 
 
-def test_overwrite_between_stat_and_get_reads_pinned_original(
+async def test_overwrite_between_stat_and_get_reads_pinned_original(
     object_store: tuple[MinioExecutionInputs, Minio, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     objects, admin, bucket = object_store
-    command, body = upload_command(admin, bucket)
+    command, body = await asyncio.to_thread(upload_command, admin, bucket)
     command["audio"]["storage"]["workspace_id"] = "ws-demo"
     from tests.fake.execution_command import original_request
 
-    original_stat = objects._client.stat_object
+    original_head = objects._head
     versions: list[str] = []
 
-    def stat(*args: Any, **kwargs: Any) -> Any:
-        info = original_stat(*args, **kwargs)
-        assert info.version_id is not None
-        versions.append(info.version_id)
-        admin.put_object(
-            bucket, command["audio"]["storage"]["object_key"], io.BytesIO(b"replacement"), 11
+    async def head(*args: Any, **kwargs: Any) -> str:
+        version = await original_head(*args, **kwargs)
+        versions.append(version)
+        await asyncio.to_thread(
+            admin.put_object,
+            bucket,
+            command["audio"]["storage"]["object_key"],
+            io.BytesIO(b"replacement"),
+            11,
         )
-        return info
+        return version
 
-    monkeypatch.setattr(objects._client, "stat_object", stat)
-    with FileExecutionInputs(objects).open_asr(
+    monkeypatch.setattr(objects, "_head", head)
+    async with FileExecutionInputs(objects).open_asr(
         original_request(command), limits=LIMITS, cancelled=lambda: False
     ) as prepared:
         assert prepared.object_input.stream.read() == body
         assert prepared.object_input.storage_version == versions[0]
-    # A fresh stat must reject the newly replaced object instead of trusting old metadata.
-    monkeypatch.setattr(objects._client, "stat_object", original_stat)
-    with (
-        pytest.raises(ExecutionInputError, match="identity_mismatch"),
-        FileExecutionInputs(objects).open_asr(
+    monkeypatch.setattr(objects, "_head", original_head)
+    with pytest.raises(ExecutionInputError, match="identity_mismatch"):
+        async with FileExecutionInputs(objects).open_asr(
             original_request(command), limits=LIMITS, cancelled=lambda: False
-        ),
-    ):
-        pytest.fail("replacement accepted")
+        ):
+            pytest.fail("replacement accepted")
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "with space",
+        "中文音频",
+        "literal%2F%20%25",
+        "%2e%2e/%252F",
+        "plus+equals=and&percent%",
+        "cafe\u0301",
+    ],
+)
+async def test_async_input_signing_preserves_opaque_object_keys(
+    object_store: tuple[MinioExecutionInputs, Minio, str], suffix: str
+) -> None:
+    from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
+
+    objects, admin, bucket = object_store
+    body = b"synthetic opaque-key content"
+    key = "private/assets/asset-input/" + suffix
+    created = await asyncio.to_thread(
+        admin.put_object, bucket, key, io.BytesIO(body), len(body), content_type="audio/wav"
+    )
+    ref = ExecutionObjectReference(
+        "asset-input",
+        "ws-demo",
+        bucket,
+        key,
+        "sha256:" + hashlib.sha256(body).hexdigest(),
+        len(body),
+    )
+    async with objects.open_verified(ref, limits=LIMITS, cancelled=lambda: False) as verified:
+        assert verified.stream.read() == body
+        assert verified.storage_version == created.version_id
+    assert verified.stream.closed

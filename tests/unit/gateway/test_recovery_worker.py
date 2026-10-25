@@ -191,6 +191,8 @@ def app_with_waiting_worker(
             SimpleNamespace(close=close_ownership),
             SimpleNamespace(close=lambda: closed.append("pool")),
             worker,
+            ingress,
+            ledger,
         ),
     )
     app = create_app(settings=configured(tmp_path, tmp_path / "unused.json"))

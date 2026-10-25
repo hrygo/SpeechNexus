@@ -206,6 +206,11 @@ class CommandFileAsr:
                     AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=run.has_dispatched
                 ) from None
 
+    def validate_request(self, request: SubmitRequest) -> SubmitRequest:
+        """Freeze the supported command before accepting work; no external I/O."""
+        snapshot, _, _, _ = self._resolve(request)
+        return snapshot
+
     @asynccontextmanager
     async def open(
         self, request: SubmitRequest, *, cancelled: Callable[[], bool]
@@ -226,7 +231,7 @@ class CommandFileAsr:
 
         if should_cancel():
             raise AsrCallError(AsrFailure.CANCELLED, request_may_have_run=False)
-        with self._inputs.open_asr(
+        async with self._inputs.open_asr(
             snapshot, limits=self._input_limits, cancelled=should_cancel
         ) as prepared:
             if should_cancel():

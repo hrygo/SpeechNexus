@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private controlled file ASR deployment descriptor",
+  "description": "Operator-provisioned deployment input, never a public request or runtime stop fact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "target", "address", "port", "served_model", "bearer_token"],
+  "properties": {
+    "protocol": { "const": "vllm_api_key_v1" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_node_id",
+        "gateway_id",
+        "pool_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id"
+      ],
+      "properties": {
+        "host_node_id": { "$ref": "#/$defs/identifier" },
+        "gateway_id": { "$ref": "#/$defs/identifier" },
+        "pool_id": { "const": "asr-batch" },
+        "instance_id": { "$ref": "#/$defs/identifier" },
+        "instance_generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "binding_revision_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "address": {
+      "anyOf": [
+        { "type": "string", "format": "ipv4" },
+        { "type": "string", "format": "ipv6" }
+      ]
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "served_model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "not": { "pattern": "[\\r\\n]" }
+    },
+    "bearer_token": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "not": { "pattern": "[\\r\\n]" }
+    }
+  }
+}

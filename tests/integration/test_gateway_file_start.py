@@ -62,6 +62,7 @@ def test_start_rejects_changed_authority_without_modifying_execution(
     foundation: Foundation, recovery_ledger: Ledger, change: str
 ) -> None:
     _, accepted = start(foundation, recovery_ledger)
+    identity = accepted.identity
     db = foundation.database
     if change == "lease":
         db.query(
@@ -88,24 +89,33 @@ def test_start_rejects_changed_authority_without_modifying_execution(
     elif change in {"loading", "draining"}:
         db.query("UPDATE engine_instances SET instance_state = %s", (change,))
     elif change == "generation":
+        next_generation = identity.instance_generation + 1
         db.query(
             "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, "
             "pool_id, gateway_id, binding_revision_id, manifest_id, approved_template_id, "
             "management_mode, loading_policy, config_digest, instance_state, max_slots, "
-            "held_slots) SELECT instance_id, 2, host_node_id, pool_id, gateway_id, "
+            "held_slots) SELECT instance_id, %s, host_node_id, pool_id, gateway_id, "
             "binding_revision_id, manifest_id, approved_template_id, management_mode, "
             "loading_policy, config_digest, 'ready', max_slots, 0 FROM engine_instances "
-            "WHERE instance_id = 'instance-test' AND instance_generation = 1"
+            "WHERE instance_id = %s AND instance_generation = %s",
+            (next_generation, identity.instance_id, identity.instance_generation),
         )
         db.query(
-            "UPDATE runtime_instance_heads SET current_generation = 2, generation_high_water = 2"
+            "UPDATE runtime_instance_heads SET current_generation = %s, generation_high_water = %s "
+            "WHERE instance_id = %s",
+            (next_generation, next_generation, identity.instance_id),
         )
     elif change == "barrier":
         db.query(
             "INSERT INTO gateway_fencing_barriers "
             "(gateway_id, pool_id, min_fencing_token, sealed_evidence_digest) "
-            "VALUES ('gateway-test', 'tts-realtime', 2, %s)",
-            ("sha256:" + "d" * 64,),
+            "VALUES (%s, %s, %s, %s)",
+            (
+                identity.gateway_id,
+                identity.pool_id,
+                identity.fencing_token + 1,
+                "sha256:" + "d" * 64,
+            ),
         )
     elif change in {"version", "cancelled"}:
         db.query(

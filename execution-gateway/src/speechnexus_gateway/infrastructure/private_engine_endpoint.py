@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+_CONFIG_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,7 @@ class PrivateEngineEndpoint:
             or type(self.served_model) is not str
             or _IDENTIFIER.fullmatch(self.served_model) is None
             or type(self.binding_revision_id) is not str
-            or _IDENTIFIER.fullmatch(self.binding_revision_id) is None
+            or _CONFIG_REVISION.fullmatch(self.binding_revision_id) is None
             or (
                 self.bearer_token is not None
                 and (

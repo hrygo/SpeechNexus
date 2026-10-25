@@ -17,12 +17,17 @@ class ScopeCapacityError(RuntimeError):
     """The local bounded cleanup registry cannot accept more native work."""
 
 
+@dataclass(frozen=True)
+class _NativeIdentity:
+    external_id: str
+    parent_id: str
+
+
 @dataclass(eq=False)
 class _Scope:
     owner: AsrScopeController
     sealed: bool = False
-    internal_ids: set[str] = field(default_factory=set)
-    frontend_ids: set[str] = field(default_factory=set)
+    requests: dict[str, _NativeIdentity] = field(default_factory=dict)
     collectors: dict[int, Any] = field(default_factory=dict)
     adds: set[asyncio.Task[Any]] = field(default_factory=set)
     advancing: dict[asyncio.Task[Any], int] = field(default_factory=dict)
@@ -40,6 +45,14 @@ class _ScopedEngine:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._controller.native_engine, name)
+
+    async def abort(self, request_id: Any, internal: bool = False) -> None:
+        controller = self._controller
+        scope = controller.current_scope()
+        if scope is None:
+            await controller.native_engine.abort(request_id, internal=internal)
+            return
+        await controller.abort_owned(scope, request_id, internal=internal)
 
     async def generate(self, *args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
         controller = self._controller
@@ -175,18 +188,75 @@ class AsrScopeController:
         # Keep the collector even for a rejected late child. Native n>1 children
         # share it; close it only after the enclosing add and all sends finish.
         scope.collectors[id(queue)] = queue
-        scope.frontend_ids.add(queue.request_id)
         if scope.sealed:
             raise asyncio.CancelledError
-        if len(scope.internal_ids) >= self._max_internal_requests:
+        if len(scope.requests) >= self._max_internal_requests:
             raise ScopeCapacityError("ASR native request fanout limit exceeded")
         internal_id = request.request_id
-        if not isinstance(internal_id, str) or not internal_id or internal_id in scope.internal_ids:
+        external_id = request.external_req_id
+        parent_id = queue.request_id
+        if (
+            not all(
+                isinstance(value, str) and value for value in (internal_id, external_id, parent_id)
+            )
+            or internal_id in scope.requests
+        ):
             raise ValueError("ASR native request identity is invalid or duplicated")
         # This precedes OutputProcessor registration and EngineCore IPC. Even an
         # ambiguous exception from the original add retains the ID for abort.
-        scope.internal_ids.add(internal_id)
+        scope.requests[internal_id] = _NativeIdentity(external_id, parent_id)
         await self._original_internal_add(request, prompt, parent_req, index, queue)
+
+    async def _wait_adds(self, scope: _Scope) -> None:
+        if scope.adds:
+            # A serving abort may itself be cancelled. Its observation must not
+            # cancel accepted native submissions or another cleanup observer.
+            await asyncio.shield(asyncio.gather(*tuple(scope.adds), return_exceptions=True))
+
+    async def abort_owned(self, scope: _Scope, request_id: Any, *, internal: bool) -> None:
+        """Resolve native external/parent IDs exclusively in this request's ownership."""
+        if scope.owner is not self:
+            raise ValueError("ASR cleanup scope belongs to another engine")
+        requested = {request_id} if isinstance(request_id, str) else set(request_id)
+        # No later child may start while serving cancellation waits for its own
+        # accepted adds. Other scopes' submissions are never included in this wait.
+        scope.sealed = True
+        await self._wait_adds(scope)
+        selected = {
+            identity
+            for identity, association in scope.requests.items()
+            if (
+                identity in requested or association.parent_id in requested
+                if internal
+                else association.external_id in requested
+            )
+        }
+        if selected and not await self._cancel_owned_ids(scope, selected):
+            raise RuntimeError("ASR scoped abort cleanup is unconfirmed")
+
+    async def _cancel_owned_ids(self, scope: _Scope, selected: set[str]) -> bool:
+        families: dict[str, set[str]] = {}
+        for identity, association in scope.requests.items():
+            families.setdefault(association.parent_id, set()).add(identity)
+        # Clearing a parent also clears its children. Include it only if all its
+        # submitted children are selected; never expand the shared external map.
+        frontend_ids = selected | {
+            parent for parent, children in families.items() if children <= selected
+        }
+        complete = True
+        try:
+            self._clear_frontend(sorted(frontend_ids), internal=True)
+        except BaseException:
+            scope.cleanup_failed = True
+            complete = False
+        try:
+            # Always send the recorded internal IDs, even if native abort already
+            # removed the frontend map before losing its IPC acknowledgement.
+            await self._abort_core(sorted(selected))
+        except BaseException:
+            scope.cleanup_failed = True
+            complete = False
+        return complete
 
     async def _cleanup(self, scope: _Scope) -> None:
         try:
@@ -197,9 +267,8 @@ class AsrScopeController:
                 task.cancel()
             if consumers:
                 await asyncio.gather(*consumers, return_exceptions=True)
-            if scope.adds:
-                await asyncio.gather(*scope.adds, return_exceptions=True)
-                scope.adds.clear()
+            await self._wait_adds(scope)
+            scope.adds.clear()
             # These can be suspended after a final yield (e.g. language detection).
             # Their owner tasks need not still be advancing or even alive.
             for native in tuple(scope.generators.values()):
@@ -207,24 +276,8 @@ class AsrScopeController:
                     await native.aclose()
                 except BaseException:
                     scope.cleanup_failed = True
-            if scope.internal_ids:
-                identities = sorted(scope.internal_ids)
-                try:
-                    # n>1 collectors use a parent ID. Clear that parent as well
-                    # as the submitted child IDs, including partial fanout.
-                    self._clear_frontend(
-                        sorted(scope.frontend_ids | scope.internal_ids), internal=True
-                    )
-                except BaseException:
-                    scope.cleanup_failed = True
-                # Native abort filters IDs through OutputProcessor first. That
-                # map may already be empty after an earlier failed native abort.
-                # Always send our pre-registered IDs through the same native
-                # EngineCore client after all adds resolve; never redispatch.
-                try:
-                    await self._abort_core(identities)
-                except BaseException:
-                    scope.cleanup_failed = True
+            if scope.requests:
+                await self._cancel_owned_ids(scope, set(scope.requests))
             for collector in scope.collectors.values():
                 try:
                     collector.close()
@@ -238,8 +291,7 @@ class AsrScopeController:
         if not scope.cleanup_failed:
             scope.generators.clear()
             scope.collectors.clear()
-            scope.internal_ids.clear()
-            scope.frontend_ids.clear()
+            scope.requests.clear()
             self._scopes.discard(scope)
 
     async def wait_closed(self, *, wait_timeout_seconds: float) -> bool:

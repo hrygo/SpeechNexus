@@ -17,7 +17,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-24）
 
-已交付基线为 main `fd60556`（保留 A #131）；[PR #130](https://github.com/hrygo/SpeechNexus/pull/130)
+已交付基线为 main `a56a2d5`（保留 A #131/#133）；[PR #130](https://github.com/hrygo/SpeechNexus/pull/130)
 已交付原持久命令与固定版本文件输入核验，PR/合后主干均 11 项 CI 成功，耗时 295/216 秒。
 #127 的默认周期恢复与正常/异常/重复取消安全退出已经交付，不重复该单元。
 原生 Goal 保持 active；以下只记录分段交付，不关闭父包或 Gate。Issue 顶部当前状态、任务勾选和

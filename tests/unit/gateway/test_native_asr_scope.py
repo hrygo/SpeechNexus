@@ -73,7 +73,13 @@ class NativeEngine:
     async def add_request(self, request_id: str, prompt: Any, params: Any) -> Collector:
         queue = Collector(request_id + "-internal")
         self.collectors.append(queue)
-        await self._add_request(SimpleNamespace(request_id=queue.request_id), None, None, 0, queue)
+        await self._add_request(
+            SimpleNamespace(request_id=queue.request_id, external_req_id=request_id),
+            None,
+            None,
+            0,
+            queue,
+        )
         return queue
 
     async def abort(self, request_ids: Any, *, internal: bool = False) -> None:
@@ -243,7 +249,10 @@ async def test_unscoped_other_serving_is_unchanged(scope_module: Any) -> None:
     assert controller.pending_scopes == 0
 
 
-async def test_failed_cleanup_stays_bounded_and_unconfirmed(scope_module: Any) -> None:
+@pytest.mark.parametrize("cancel_path", ["request-finish", "serving-abort"])
+async def test_failed_cleanup_stays_bounded_and_unconfirmed(
+    scope_module: Any, cancel_path: str
+) -> None:
     engine = NativeEngine()
     engine.fail_abort = True
     engine.allow_add_reply.set()
@@ -252,6 +261,9 @@ async def test_failed_cleanup_stays_bounded_and_unconfirmed(scope_module: Any) -
     scope = controller.open()
     token = scope_module.CURRENT_SCOPE.set(scope)
     await _consumer(controller.engine, "original")
+    if cancel_path == "serving-abort":
+        with pytest.raises(RuntimeError, match="unconfirmed"):
+            await controller.engine.abort("original")
     scope_module.CURRENT_SCOPE.reset(token)
     controller.seal(scope)
     assert not await controller.wait_closed(wait_timeout_seconds=1)
@@ -405,13 +417,20 @@ async def test_asgi_normal_response_preserves_native_text(
     assert engine.aborted == ["original-internal"]
 
 
-async def test_native_fanout_cannot_add_late_sibling(scope_module: Any) -> None:
+@pytest.mark.parametrize("cancel_path", ["request-finish", "repeated-serving-abort"])
+async def test_native_fanout_cannot_add_late_sibling(scope_module: Any, cancel_path: str) -> None:
     class FanoutEngine(NativeEngine):
         async def add_request(self, request_id: str, prompt: Any, params: Any) -> Collector:
             queue = Collector("parent-internal")
             self.collectors.append(queue)
             for child in ["first-internal", "late-second-internal"]:
-                await self._add_request(SimpleNamespace(request_id=child), None, None, 0, queue)
+                await self._add_request(
+                    SimpleNamespace(request_id=child, external_req_id=request_id),
+                    None,
+                    None,
+                    0,
+                    queue,
+                )
             return queue
 
     engine = FanoutEngine()
@@ -432,11 +451,25 @@ async def test_native_fanout_cannot_add_late_sibling(scope_module: Any) -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    controller.seal(scope)
+    aborts = []
+    if cancel_path == "repeated-serving-abort":
+        token = scope_module.CURRENT_SCOPE.set(scope)
+        aborts = [
+            asyncio.create_task(controller.engine.abort("fanout")),
+            asyncio.create_task(controller.engine.abort("fanout")),
+        ]
+        scope_module.CURRENT_SCOPE.reset(token)
+        # Let each cancellation enter its wait before acknowledging the native add.
+        await asyncio.sleep(0)
+    else:
+        controller.seal(scope)
     engine.allow_add_reply.set()
+    if aborts:
+        await asyncio.gather(*aborts)
+        controller.seal(scope)
     assert await controller.wait_closed(wait_timeout_seconds=1)
     assert engine.submitted == ["first-internal"]
-    assert engine.aborted == ["first-internal"]
+    assert set(engine.aborted) == {"first-internal"}
     assert engine.collectors[0].closed
     assert "parent-internal" in frontend_cleared
 
@@ -542,3 +575,156 @@ async def test_plugin_installs_only_on_native_private_asr(
             SimpleNamespace(openai_serving_transcription=SimpleNamespace(engine_client=invalid)),
             SimpleNamespace(),
         )
+
+
+class SharedExternalEngine(NativeEngine):
+    """Native external lookup expands every internal request with that external ID."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.external_ids: dict[str, set[str]] = {}
+        self.internal_external: dict[str, str] = {}
+        self.gates: dict[str, asyncio.Event] = {}
+        self.accepted: asyncio.Queue[str] = asyncio.Queue()
+        self.output_processor.abort_requests = self._expand_and_remove
+        self.sequence = 0
+
+    def _expand_and_remove(self, identities: list[str], *, internal: bool) -> list[str]:
+        expanded: set[str] = set()
+        for identity in identities:
+            if internal:
+                if identity in self.internal_external:
+                    expanded.add(identity)
+            else:
+                expanded.update(self.external_ids.get(identity, set()))
+        for identity in expanded:
+            external = self.internal_external.pop(identity)
+            self.external_ids[external].remove(identity)
+            if not self.external_ids[external]:
+                del self.external_ids[external]
+        return sorted(expanded)
+
+    async def add_request(self, request_id: str, prompt: Any, params: Any) -> Collector:
+        self.sequence += 1
+        queue = Collector(f"{request_id}-random-{self.sequence}")
+        self.collectors.append(queue)
+        await self._add_request(
+            SimpleNamespace(request_id=queue.request_id, external_req_id=request_id),
+            None,
+            None,
+            0,
+            queue,
+        )
+        return queue
+
+    async def _add_request(
+        self, request: Any, prompt: Any, parent: Any, index: int, queue: Collector
+    ) -> None:
+        identity = request.request_id
+        self.external_ids.setdefault(request.external_req_id, set()).add(identity)
+        self.internal_external[identity] = request.external_req_id
+        self.submitted.append(identity)
+        self.gates[identity] = asyncio.Event()
+        self.accepted.put_nowait(identity)
+        await self.gates[identity].wait()
+        self.add_returned = True
+
+    async def abort(self, request_ids: Any, internal: bool = False) -> None:
+        ids = [request_ids] if isinstance(request_ids, str) else list(request_ids)
+        await self._core_abort(self._expand_and_remove(ids, internal=internal))
+
+
+async def _native_serving_cancel_path(
+    engine: Any, request_id: str, entered: asyncio.Event, *, abort_as_list: bool = False
+) -> Any:
+    try:
+        return await _consumer(engine, request_id)
+    except asyncio.CancelledError:
+        # SpeechToTextBaseServing aborts external IDs in its cancellation path.
+        entered.set()
+        await asyncio.gather(
+            engine.abort([request_id] if abort_as_list else request_id), return_exceptions=True
+        )
+        raise
+
+
+@pytest.mark.parametrize("abort_as_list", [False, True])
+async def test_native_serving_duplicate_external_id_cancels_only_its_scope(
+    scope_module: Any, abort_as_list: bool
+) -> None:
+    engine = SharedExternalEngine()
+    controller = scope_module.AsrScopeController(engine)
+    scopes = [controller.open(), controller.open()]
+    serving_abort = asyncio.Event()
+    tasks = []
+    owned_ids = []
+    for scope in scopes:
+        token = scope_module.CURRENT_SCOPE.set(scope)
+        tasks.append(
+            asyncio.create_task(
+                _native_serving_cancel_path(
+                    controller.engine,
+                    "same-X-Request-Id",
+                    serving_abort,
+                    abort_as_list=abort_as_list,
+                )
+            )
+        )
+        scope_module.CURRENT_SCOPE.reset(token)
+        owned_ids.append(await asyncio.wait_for(engine.accepted.get(), 1))
+    try:
+        assert owned_ids[0] != owned_ids[1]
+        tasks[0].cancel()
+        await asyncio.wait_for(serving_abort.wait(), 1)
+        # The first add is still unresolved. Neither original nor other-scope
+        # requests may be cancelled before this scope's add has finished.
+        assert engine.aborted == []
+        engine.gates[owned_ids[0]].set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(tasks[0], 1)
+        assert set(engine.aborted) == {owned_ids[0]}
+        assert not tasks[1].done()
+        assert not engine.gates[owned_ids[1]].is_set()
+        assert engine.external_ids == {"same-X-Request-Id": {owned_ids[1]}}
+        token = scope_module.CURRENT_SCOPE.set(scopes[0])
+        try:
+            # Repeated external cancellation and a guessed foreign internal ID
+            # remain confined to this request, even after its frontend map is gone.
+            await controller.engine.abort("same-X-Request-Id")
+            await controller.engine.abort([owned_ids[0]], internal=True)
+            await controller.engine.abort(owned_ids[1], internal=True)
+        finally:
+            scope_module.CURRENT_SCOPE.reset(token)
+        assert set(engine.aborted) == {owned_ids[0]}
+        assert engine.external_ids == {"same-X-Request-Id": {owned_ids[1]}}
+        # The other request independently completes using the unchanged ID.
+        engine.gates[owned_ids[1]].set()
+        engine.allow_output.set()
+        assert await asyncio.wait_for(tasks[1], 1) == ["synthetic transcript"]
+    finally:
+        for gate in engine.gates.values():
+            gate.set()
+        engine.allow_output.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        for scope in scopes:
+            controller.seal(scope)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        assert await controller.wait_closed(wait_timeout_seconds=1)
+
+
+async def test_facade_abort_outside_asr_scope_preserves_native_behavior(scope_module: Any) -> None:
+    engine = SharedExternalEngine()
+    controller = scope_module.AsrScopeController(engine)
+    tasks = [
+        asyncio.create_task(_consumer(controller.engine, "same-unscoped-ID")) for _ in range(2)
+    ]
+    ids = [await asyncio.wait_for(engine.accepted.get(), 1) for _ in range(2)]
+    await controller.engine.abort("same-unscoped-ID")
+    assert set(engine.aborted) == set(ids)
+    for gate in engine.gates.values():
+        gate.set()
+    engine.allow_output.set()
+    await asyncio.gather(*tasks)
+    assert controller.pending_scopes == 0

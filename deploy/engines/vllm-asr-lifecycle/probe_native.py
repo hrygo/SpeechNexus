@@ -1,8 +1,4 @@
-"""Run in the pinned image after installing the overlay wheel, with no model or GPU.
-
-Actual vendor classes and its entry-point loader are used. IPC collaborators are
-controlled, so this proves installation/native-method integration, not real stop.
-"""
+"""Pinned-image installed-wheel probes, using controlled IPC and no model or GPU."""
 
 from __future__ import annotations
 
@@ -15,6 +11,8 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 from speechnexus_vllm_asr.scope import CURRENT_SCOPE
+from vllm.entrypoints.speech_to_text.base.serving import SpeechToTextBaseServing
+from vllm.outputs import CompletionOutput, RequestOutput
 from vllm.plugins import load_endpoint_plugins
 from vllm.sampling_params import SamplingParams
 from vllm.v1.engine import EngineCoreRequest
@@ -23,9 +21,26 @@ from vllm.v1.engine.input_processor import InputProcessor
 from vllm.v1.engine.output_processor import OutputProcessor
 
 
-async def probe(samples: int) -> dict:
-    plugins = load_endpoint_plugins(("transcription",))
-    selected = [plugin for plugin in plugins if plugin.name == "speechnexus_asr_scope"]
+def core_request(external_id: str, samples: int = 1):
+    return EngineCoreRequest(
+        request_id=external_id,
+        prompt_token_ids=[1],
+        mm_features=None,
+        sampling_params=SamplingParams(n=samples, max_tokens=1),
+        pooling_params=None,
+        arrival_time=0.0,
+        lora_request=None,
+        cache_salt=None,
+        data_parallel_rank=None,
+    )
+
+
+async def install_runtime(core_add):
+    selected = [
+        plugin
+        for plugin in load_endpoint_plugins(("transcription",))
+        if plugin.name == "speechnexus_asr_scope"
+    ]
     assert len(selected) == 1
     plugin = selected[0]
     app = FastAPI()
@@ -33,8 +48,6 @@ async def probe(samples: int) -> dict:
     plugin.attach_router(app)
     assert [route.path for route in app.routes] == paths
     assert any(item.cls.__name__ == "AsrScopeMiddleware" for item in app.user_middleware)
-    entered = asyncio.Event()
-    allow_reply = asyncio.Event()
     registered = []
     collectors = []
     collector_tasks = []
@@ -62,10 +75,6 @@ async def probe(samples: int) -> dict:
         if parent is not None:
             frontend.parent_requests[parent.request_id] = parent
 
-    async def core_add(request):
-        entered.set()
-        await allow_reply.wait()
-
     async def core_abort(identities):
         aborts.extend(identities)
 
@@ -87,25 +96,32 @@ async def probe(samples: int) -> dict:
     )
     state = SimpleNamespace(openai_serving_transcription=SimpleNamespace(engine_client=engine))
     await plugin.init_state(engine, state, SimpleNamespace())
-    controller = state.speechnexus_asr_scopes
-    scope = controller.open()
-    params = SamplingParams(n=samples, max_tokens=1)
-    request = EngineCoreRequest(
-        request_id="transcribe-synthetic",
-        prompt_token_ids=[1],
-        mm_features=None,
-        sampling_params=params,
-        pooling_params=None,
-        arrival_time=0.0,
-        lora_request=None,
-        cache_salt=None,
-        data_parallel_rank=None,
+    return SimpleNamespace(
+        controller=state.speechnexus_asr_scopes,
+        proxy=state.openai_serving_transcription.engine_client,
+        frontend=frontend,
+        registered=registered,
+        collectors=collectors,
+        collector_tasks=collector_tasks,
+        aborts=aborts,
     )
 
+
+async def probe_pending_add(samples: int) -> dict:
+    entered = asyncio.Event()
+    allow_reply = asyncio.Event()
+
+    async def core_add(request):
+        entered.set()
+        await allow_reply.wait()
+
+    runtime = await install_runtime(core_add)
+    controller = runtime.controller
+    scope = controller.open()
+    request = core_request("transcribe-synthetic", samples)
+
     async def consume():
-        async for _ in state.openai_serving_transcription.engine_client.generate(
-            request, params, "transcribe-synthetic"
-        ):
+        async for _ in runtime.proxy.generate(request, request.params, "transcribe-synthetic"):
             raise AssertionError("the controlled pending add must not produce a transcript")
 
     token = CURRENT_SCOPE.set(scope)
@@ -118,29 +134,135 @@ async def probe(samples: int) -> dict:
     with suppress(asyncio.CancelledError):
         await consumer
     if samples == 1:
-        # An already removed frontend map must not suppress the final core abort.
-        frontend.request_states.clear()
-        frontend.external_req_ids.clear()
+        runtime.frontend.request_states.clear()
+        runtime.frontend.external_req_ids.clear()
     controller.seal(scope)
     assert not await controller.wait_closed(wait_timeout_seconds=0.01)
-    assert not aborts
+    assert not runtime.aborts
     allow_reply.set()
     assert await controller.wait_closed(wait_timeout_seconds=5)
-    assert len(registered) == 1
-    assert registered[0] != "transcribe-synthetic"
-    assert aborts == registered
-    assert collectors[0]._input_stream_task is None
-    await asyncio.gather(*collector_tasks, return_exceptions=True)
-    assert all(task.cancelled() for task in collector_tasks)
-    assert not frontend.request_states
-    assert not frontend.external_req_ids
-    assert not frontend.parent_requests
+    assert len(runtime.registered) == 1
+    assert runtime.registered[0] != "transcribe-synthetic"
+    assert runtime.aborts == runtime.registered
+    assert runtime.collectors[0]._input_stream_task is None
+    await asyncio.gather(*runtime.collector_tasks, return_exceptions=True)
+    assert all(task.cancelled() for task in runtime.collector_tasks)
+    assert not runtime.frontend.request_states
+    assert not runtime.frontend.external_req_ids
+    assert not runtime.frontend.parent_requests
     return {
         "native_n": samples,
-        "submitted_children": len(registered),
+        "submitted_children": len(runtime.registered),
         "actual_native_parent_and_frontend_cleanup": True,
         "actual_native_collector_close_observed": True,
         "pending_scopes_after_cleanup": controller.pending_scopes,
+    }
+
+
+async def probe_duplicate_external_ids() -> dict:
+    accepted = asyncio.Queue()
+    gates = {}
+
+    async def core_add(request):
+        gates[request.request_id] = asyncio.Event()
+        accepted.put_nowait(request.request_id)
+        await gates[request.request_id].wait()
+
+    runtime = await install_runtime(core_add)
+    controller = runtime.controller
+    external_id = "same-external-language-request"
+    abort_entered = asyncio.Event()
+    original_abort = runtime.proxy.abort
+
+    async def observed_abort(*args, **kwargs):
+        abort_entered.set()
+        await original_abort(*args, **kwargs)
+
+    runtime.proxy.abort = observed_abort
+    # Execute the actual native serving cancellation handler, not a copied AST
+    # branch or a facade-only call. Only model prompt/parse and IPC are controlled.
+    serving = SimpleNamespace(
+        engine_client=runtime.proxy,
+        asr_config=SimpleNamespace(),
+        tokenizer=SimpleNamespace(),
+        model_cls=SimpleNamespace(
+            get_language_detection_prompt=lambda *args: core_request(external_id),
+            get_language_token_ids=lambda *args: [1],
+            parse_language_detection_output=lambda tokens, tokenizer: "zh" if tokens == [1] else "",
+        ),
+    )
+    scopes = [controller.open(), controller.open()]
+    tasks = []
+    owned = []
+    for scope in scopes:
+        token = CURRENT_SCOPE.set(scope)
+        try:
+            tasks.append(
+                asyncio.create_task(
+                    SpeechToTextBaseServing._detect_language(serving, object(), external_id)
+                )
+            )
+        finally:
+            CURRENT_SCOPE.reset(token)
+        owned.append(await asyncio.wait_for(accepted.get(), 5))
+    try:
+        assert owned[0] != owned[1]
+        tasks[0].cancel()
+        await asyncio.wait_for(abort_entered.wait(), 5)
+        if set(runtime.aborts) - {owned[0]}:
+            print(json.dumps({"duplicate_external_id_aborted_other_scope": True}), flush=True)
+        assert not runtime.aborts, "serving abort overtook an unresolved native add"
+        gates[owned[0]].set()
+        with suppress(asyncio.CancelledError):
+            await asyncio.wait_for(tasks[0], 5)
+        assert set(runtime.aborts) == {owned[0]}, "duplicate external ID crossed request scope"
+        assert not tasks[1].done() and not gates[owned[1]].is_set()
+        assert runtime.frontend.external_req_ids[external_id] == [owned[1]]
+        token = CURRENT_SCOPE.set(scopes[0])
+        try:
+            await runtime.proxy.abort(external_id)
+            await runtime.proxy.abort(owned[1], internal=True)
+        finally:
+            CURRENT_SCOPE.reset(token)
+        assert set(runtime.aborts) == {owned[0]}
+        gates[owned[1]].set()
+        runtime.collectors[1].put(
+            RequestOutput(
+                request_id=external_id,
+                prompt=None,
+                prompt_token_ids=[1],
+                prompt_logprobs=None,
+                outputs=[
+                    CompletionOutput(
+                        index=0,
+                        text="synthetic",
+                        token_ids=[1],
+                        cumulative_logprob=None,
+                        logprobs=None,
+                        finish_reason="stop",
+                    )
+                ],
+                finished=True,
+            )
+        )
+        assert await asyncio.wait_for(tasks[1], 5) == "zh"
+    finally:
+        for gate in gates.values():
+            gate.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        for scope in scopes:
+            controller.seal(scope)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await controller.wait_closed(wait_timeout_seconds=5)
+    assert controller.pending_scopes == 0
+    return {
+        "actual_native_serving_cancel_handler": True,
+        "duplicate_external_id_accepted_without_rewrite": True,
+        "abort_waited_only_own_add": True,
+        "other_scope_completed_native_language_detection": True,
+        "repeated_abort_and_foreign_internal_id_confined": True,
     }
 
 
@@ -151,7 +273,8 @@ async def main() -> None:
     finally:
         os.environ["VLLM_PLUGINS"] = allowlist
     assert load_endpoint_plugins(("render",)) == []
-    results = [await probe(1), await probe(2)]
+    results = [await probe_pending_add(1), await probe_pending_add(2)]
+    isolation = await probe_duplicate_external_ids()
     print(
         json.dumps(
             {
@@ -164,6 +287,7 @@ async def main() -> None:
                 "removed_frontend_map_did_not_drop_core_abort": True,
                 "partial_native_fanout_did_not_send_late_child": True,
                 "cases": results,
+                "cross_scope_isolation": isolation,
                 "model_loaded": False,
                 "gpu_used": False,
                 "real_ipc_or_stop_qualification": False,

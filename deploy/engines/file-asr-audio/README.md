@@ -5,6 +5,23 @@ This optional environment composes PyAV 19.0.2 and HTTPX 0.28.1 with the pinned
 resolved lock. It is not an enabled Compose service or a qualified runtime template.
 Ordinary gateway startup loads neither the media libraries nor the CPU model.
 
+The file-ASR 1.7B model, CPU VAD and repository runtime locks are enumerated in
+[artifact-pin.json](artifact-pin.json). Verify local files without network access,
+Docker, GPU use or model loading:
+
+```bash
+uv run python scripts/dev-env/verify-file-asr-artifacts.py \
+  --model-root "$SPEECHNEXUS_ASR_MODEL_ROOT" \
+  --vad-file "$SPEECHNEXUS_VAD_MODEL_FILE"
+```
+
+Its JSON `artifact_set` and `engine` reuse the existing ModelBinding contract.
+The result verifies a local snapshot against a trusted pin; it does not register
+or publish a binding, inspect a running image, grant capacity qualification, or
+prove an instance/generation or stop. See the
+[binding and parameter handoff](../../../docs/architecture/file-asr-binding-handoff.md)
+for provenance, supported parameters, limits and remaining integration work.
+
 Recompile after an intentional dependency change:
 
 ```bash

@@ -79,6 +79,7 @@ async def read_envelope(
     has_body: bool,
     max_json_bytes: int,
     body_timeout_seconds: float,
+    extra_headers: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     for name in (
         "x-request-id",
@@ -86,6 +87,7 @@ async def read_envelope(
         "content-type",
         "content-length",
         "content-encoding",
+        *extra_headers,
     ):
         values = request.headers.getlist(name)
         if len(values) > 1 or any(any(ord(c) < 32 or ord(c) == 127 for c in v) for v in values):
@@ -118,7 +120,7 @@ async def read_envelope(
         "query": query,
         "headers": {
             k: request.headers[k]
-            for k in ("x-request-id", "idempotency-key")
+            for k in ("x-request-id", "idempotency-key", *extra_headers)
             if k in request.headers
         },
     }

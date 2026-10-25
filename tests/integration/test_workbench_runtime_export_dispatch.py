@@ -133,6 +133,13 @@ async def test_the_serving_runtime_produces_a_queued_export(
         assert export["status"] == "queued" and export["artifact"] is None
         # No test calls the worker: the serving runtime's own loop must settle it.
         finished = await settled(client, export["id"], "succeeded")
+        path = f"/v1/workbench/exports/{export['id']}/content"
+        downloaded = await client.get(path)
+        assert downloaded.status_code == 200 and downloaded.content == CONTENT
+        assert downloaded.headers["etag"] == '"sha256:' + hashlib.sha256(CONTENT).hexdigest() + '"'
+        partial = await client.get(path, headers={"Range": "bytes=1-4"})
+        assert partial.status_code == 206 and partial.content == CONTENT[1:5]
+        assert partial.headers["content-range"] == f"bytes 1-4/{len(CONTENT)}"
 
     assert finished["progress_completed"] == finished["progress_total"] == 1
     artifact = finished["artifact"]

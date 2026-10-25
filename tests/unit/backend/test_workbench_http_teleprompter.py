@@ -104,8 +104,8 @@ async def test_two_operations_pin_the_server_workspace_and_generated_shape() -> 
         assert write.status_code == 200, write.text
         assert write.headers["cache-control"] == "no-store" and write.headers["x-request-id"]
         schema = (await c.get("/openapi.json")).json()
-        # Includes both status versions and the two always-mounted voice reads.
-        assert sum(len(item) for item in schema["paths"].values()) == 18
+        # Both status versions, two voice reads and two public downloads stay mounted.
+        assert sum(len(item) for item in schema["paths"].values()) == 20
     assert store.calls[0] == {"project_id": "project-demo", "workspace_id": "workspace-demo"}
     assert store.calls[1] == {
         "project_id": "project-demo",

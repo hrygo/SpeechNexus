@@ -44,6 +44,9 @@ class WorkbenchSettings(BaseSettings):
         default="saved", pattern=r"^[a-z0-9][a-z0-9-_]*(/[a-z0-9][a-z0-9-_]*)*$"
     )
     saved_asset_deadline_seconds: float = Field(default=300, gt=0, le=900)
+    download_max_bytes: int = Field(default=256 * 1024**2, ge=1, le=2**40)
+    download_max_active: int = Field(default=2, ge=1, le=32)
+    download_timeout_seconds: float = Field(default=120, gt=0, le=900)
     # The intranet text LLM is deployment configuration, never a client choice. Absent
     # means the assistant and new Minutes stay off. Only a loopback or private endpoint
     # is accepted, so the workbench cannot be pointed at a public cloud service, and the
@@ -219,7 +222,15 @@ class WorkbenchSettings(BaseSettings):
             raise ValueError("cursor key must contain 32 to 4096 UTF-8 bytes")
         return value
 
-    @field_validator("max_connections", "max_json_bytes", "body_timeout_seconds", mode="before")
+    @field_validator(
+        "max_connections",
+        "max_json_bytes",
+        "body_timeout_seconds",
+        "download_max_bytes",
+        "download_max_active",
+        "download_timeout_seconds",
+        mode="before",
+    )
     @classmethod
     def reject_bool_limits(cls, value: object) -> object:
         if isinstance(value, bool):

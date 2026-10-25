@@ -8,6 +8,11 @@ database transaction is held across object I/O.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import tempfile
+import threading
+import time
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
@@ -17,6 +22,7 @@ from minio import Minio
 from urllib3.response import BaseHTTPResponse
 from urllib3.util import Retry, Timeout
 
+from speechnexus_backend.workbench.application.downloads import DownloadContent, DownloadError
 from speechnexus_backend.workbench.application.saved_assets import ObjectZoneUnavailableError
 
 MAX_ERASED_OBJECTS = 10_000
@@ -149,3 +155,120 @@ class MinioObjectZone:
             raise
         except Exception:
             raise ObjectZoneUnavailableError from None
+
+
+async def _join(task: asyncio.Task[Any]) -> bool:
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    # Retrieve exceptions even after timeout/disconnect; do not log private SDK errors.
+    if not task.cancelled():
+        task.exception()
+    return cancelled
+
+
+class _VerifiedFile:
+    def __init__(self, body: tempfile.SpooledTemporaryFile[bytes]) -> None:
+        self._body = body
+
+    def _read(self, offset: int, size: int) -> bytes:
+        self._body.seek(offset)
+        return self._body.read(size)
+
+    async def read(self, offset: int, size: int) -> bytes:
+        task = asyncio.create_task(asyncio.to_thread(self._read, offset, size))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await _join(task)
+            raise
+
+    async def close(self) -> None:
+        self._body.close()
+
+
+class MinioDownloadReader:
+    """Full verification into a bounded, private, unlinked spool before HTTP headers.
+
+    The SDK's fixed-origin connect/read/pool timeouts still apply. Cooperative total
+    time/cancellation checks run between reads; a native read may exceed the total
+    deadline until its socket timeout. Never return while that read owns the spool.
+    """
+
+    def __init__(self, zone: MinioObjectZone, *, max_bytes: int, timeout_seconds: float) -> None:
+        if max_bytes < 1 or timeout_seconds <= 0:
+            raise ValueError("invalid download limits")
+        self._zone, self._max_bytes, self._timeout = zone, max_bytes, timeout_seconds
+
+    def _copy(
+        self,
+        content: DownloadContent,
+        body: tempfile.SpooledTemporaryFile[bytes],
+        stopped: threading.Event,
+        deadline: float,
+    ) -> None:
+        response = None
+        try:
+            response = self._zone._client.get_object(
+                self._zone._bucket, self._zone._name(content.key)
+            )
+            size, digest = 0, hashlib.sha256()
+            while True:
+                if stopped.is_set() or time.monotonic() >= deadline:
+                    raise DownloadError("download_unavailable")
+                # Read at most one byte beyond the declared length to detect excess data.
+                chunk = response.read(min(64 * 1024, content.size - size + 1))
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > content.size:
+                    raise DownloadError("download_unavailable")
+                digest.update(chunk)
+                body.write(chunk)
+            if size != content.size or "sha256:" + digest.hexdigest() != content.sha256:
+                raise DownloadError("download_unavailable")
+            body.seek(0)
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                finally:
+                    response.release_conn()
+
+    async def prepare(self, content: DownloadContent) -> _VerifiedFile:
+        if content.size > self._max_bytes:
+            raise DownloadError("download_too_large")
+        # Ownership transfers to the response; all failed preparation paths close it below.
+        body = tempfile.SpooledTemporaryFile(  # noqa: SIM115
+            max_size=min(1024**2, self._max_bytes), mode="w+b"
+        )
+        stopped = threading.Event()
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                self._copy,
+                content,
+                body,
+                stopped,
+                time.monotonic() + self._timeout,
+            )
+        )
+        try:
+            done, _ = await asyncio.wait({task}, timeout=self._timeout)
+            if not done:
+                raise DownloadError("download_unavailable")
+            task.result()
+            return _VerifiedFile(body)
+        except BaseException as error:
+            stopped.set()
+            cancelled = await _join(task)
+            body.close()
+            if isinstance(error, asyncio.CancelledError) or cancelled:
+                raise asyncio.CancelledError from None
+            if not isinstance(error, Exception):
+                raise
+            raise DownloadError("download_unavailable") from None

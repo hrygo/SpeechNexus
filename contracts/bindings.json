@@ -242,6 +242,15 @@
     }
   },
   "http_surfaces": {
+    "pronunciation_read": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}"
+      ],
+      "operations": ["getPronunciationRevision"]
+    },
     "voice_catalogue": {
       "source": "speech-openapi.yaml",
       "validate": true,

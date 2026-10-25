@@ -625,3 +625,14 @@ explicit draft/published values, omitted defaults and negative identity/type
 cases. Parser support does not mean the public pronunciation routes or TTS
 consumption are implemented; the [private draft component](../../docs/architecture/pronunciation-drafts.md)
 selects explicit `publish: false` only.
+
+The opt-in `pronunciation-read-http` export selects only the fixed-revision GET.
+Python imports `speechnexus_contracts.pronunciation_read_http`; TypeScript imports
+`@speechnexus/contracts/pronunciation-read-http`. Both distinguish confirmed
+`404 pronunciation_not_found` from `503 pronunciation_unavailable` and validate
+the declared retry/cache headers without creating an Operation or retrying.
+The 200 representation follows the actual external source. Consumers still
+compare its ID/revision against their requested identity. Shared examples and
+synthetic native TCP tests cover protocol consumption; no public pronunciation
+route or qualification is established. See the [read contract and upgrade
+boundary](../../docs/architecture/pronunciation-read-contract.md).

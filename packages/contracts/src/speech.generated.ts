@@ -240,7 +240,22 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get one immutable pronunciation-set revision */
+    /**
+     * Get one immutable pronunciation-set revision
+     * @description Reads the exact requested revision; the returned status does not
+     *     itself grant publication, execution, or pronunciation qualification.
+     *     Only a confirmed missing revision returns 404 pronunciation_not_found.
+     *     Unreadable metadata returns 503 pronunciation_unavailable with
+     *     retryable: true, not 404. Both replies are non-cacheable and carry the
+     *     matching X-Should-Retry value. Neither fabricates an Operation or
+     *     authorizes allocating a replacement revision. A caller may explicitly
+     *     repeat the same fixed GET; there is no implicit client retry.
+     *
+     *     Invalid path/header/query values or a request body return 400.
+     *     Host/Origin rejection (403), unsupported method (405 with Allow: GET),
+     *     and local read capacity (429) concern this HTTP attempt, not the
+     *     resource's publication or execution state.
+     */
     get: operations["getPronunciationRevision"];
     put?: never;
     post?: never;
@@ -3279,6 +3294,71 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The configured Host/Origin policy rejected this fixed read. */
+    PronunciationReadForbidden: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description This fixed pronunciation-revision path accepts GET only. */
+    PronunciationReadMethodNotAllowed: {
+      headers: {
+        Allow: "GET";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description The fixed revision is confirmed missing; unavailable metadata is not absence. */
+    PronunciationReadNotFound: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "false";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "pronunciation_not_found";
+            /** @constant */
+            type?: "not_found_error";
+            /** @constant */
+            retryable?: false;
+            nexus?: never;
+          };
+        };
+      };
+    };
+    /**
+     * @description Fixed metadata cannot currently be established. Repeat only the same
+     *     fixed GET; this is neither a missing resource nor an execution result.
+     */
+    PronunciationReadUnavailable: {
+      headers: {
+        "Cache-Control": "no-store";
+        "X-Should-Retry": "true";
+        "Retry-After": components["headers"]["RetryAfter"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"] & {
+          error?: {
+            /** @constant */
+            code?: "pronunciation_unavailable";
+            /** @constant */
+            type?: "service_unavailable_error";
+            /** @constant */
+            retryable?: true;
+            nexus?: never;
+          };
+        };
+      };
+    };
     /** @description Operation deadline exceeded; coordinate the original intent before retrying. */
     GatewayTimeout: {
       headers: {
@@ -3768,8 +3848,13 @@ export interface operations {
           "application/json": components["schemas"]["PronunciationRevision"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
-      404: components["responses"]["NotFound"];
+      403: components["responses"]["PronunciationReadForbidden"];
+      404: components["responses"]["PronunciationReadNotFound"];
+      405: components["responses"]["PronunciationReadMethodNotAllowed"];
+      429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["PronunciationReadUnavailable"];
     };
   };
   listJobs: {

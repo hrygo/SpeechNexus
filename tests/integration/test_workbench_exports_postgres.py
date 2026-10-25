@@ -13,6 +13,7 @@ import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -385,7 +386,7 @@ async def test_a_published_bundle_becomes_the_recorded_artifact(export_store: St
     access = os.environ.get("SPEECHNEXUS_TEST_MINIO_ACCESS_KEY")
     secret = os.environ.get("SPEECHNEXUS_TEST_MINIO_SECRET_KEY")
     assert endpoint and access and secret, "isolated MinIO service is required for object evidence"
-    bucket = "speechnexus-workbench-saved"
+    bucket = f"workbench-export-{uuid4().hex}"
     zone = MinioObjectZone(endpoint, bucket, access, secret, prefix="exports")
     client = Minio(
         endpoint.replace("http://", "").replace("https://", ""),
@@ -393,6 +394,8 @@ async def test_a_published_bundle_becomes_the_recorded_artifact(export_store: St
         secret_key=secret,
         secure=endpoint.startswith("https://"),
     )
+    # Each independently selected shard must provision its own object fixture.
+    client.make_bucket(bucket)
     try:
         _, book_id, unit_ids = await book(export_store, suffix="publish")
         export = await create(export_store, book_id, unit_ids=unit_ids, key="export-publish-key")
@@ -428,3 +431,6 @@ async def test_a_published_bundle_becomes_the_recorded_artifact(export_store: St
         await zone.erase_prefix(prefix=f"{book_id}/")
     finally:
         zone.close()
+        for item in client.list_objects(bucket, recursive=True):
+            client.remove_object(bucket, item.object_name)
+        client.remove_bucket(bucket)

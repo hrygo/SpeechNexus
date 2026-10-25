@@ -102,6 +102,7 @@ try {
       require(playback.push(identity, 0, input) === "accepted", "valid PCM rejected");
       require(playback.push(identity, 256, new Float32Array(300)) ===
         "backpressure", "unbounded in-flight PCM");
+      await awaitCondition(() => playback.snapshot.inFlightMessages === 0);
       const rendered = await audio.startRendering();
       const output = rendered.getChannelData(0);
       offset = output.findIndex((sample) => sample !== 0);
@@ -152,6 +153,7 @@ try {
     try {
       require(next.push(identity, 0, input) === "stale", "old epoch/generation was accepted");
       require(next.push(nextIdentity, 0, input) === "accepted", "current epoch rejected");
+      await awaitCondition(() => next.snapshot.inFlightMessages === 0);
       const output = await epochContext.startRendering();
       require(output.getChannelData(0).filter((sample) => sample !== 0).length ===
         input.length, "epoch output count differs");

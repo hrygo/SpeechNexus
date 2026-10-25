@@ -79,6 +79,7 @@ export function BooksHost({
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
   const loaded = useRef<string | null>(null);
+  const chapterWrites = useRef(0);
 
   useEffect(() => {
     if (!active) return;
@@ -121,11 +122,21 @@ export function BooksHost({
   useEffect(() => {
     if (!active || book === null) return;
     let cancelled = false;
+    const writes = chapterWrites.current;
     void (async () => {
       try {
         const page = await session.chapters(book.id);
         if (cancelled) return;
-        setChapters(page.data);
+        // A list started before a successful create cannot erase that commit.
+        // Keep its older rows too: they may not have reached the UI before the write.
+        setChapters((current) =>
+          writes === chapterWrites.current
+            ? page.data
+            : [
+                ...page.data.filter((item) => !current.some((known) => known.id === item.id)),
+                ...current,
+              ],
+        );
         setProblem(null);
       } catch (error) {
         if (!cancelled) setProblem(problemOf(error));
@@ -336,6 +347,7 @@ export function BooksHost({
                     { title: chapterTitle, ordinal: Number(chapterOrdinal), text: chapterText },
                     chapterKey,
                   );
+                  chapterWrites.current += 1;
                   setChapters((current) => [
                     ...current.filter((item) => item.id !== created.id),
                     created,

@@ -122,12 +122,19 @@ try {
     await expect(button("确认取消本任务")).toBeFocused();
     await page.keyboard.press("Enter");
   };
+  const accepted = async () => {
+    await expect(page.getByText("accepted=true / cancelling / pending")).toBeVisible();
+    // Acceptance can render before the explicit cancellation's follow-up GET.
+    // Start recovery measurements only after that operation has reached ready.
+    await expect(button("连接任务事件")).toBeEnabled();
+  };
   const raw = () => page.evaluate((key) => sessionStorage.getItem(key), key);
   const record = async () => JSON.parse(await raw());
   const reload = async () => {
     const before = requests;
     await page.reload();
     await expect(button("读取任务列表")).toBeVisible();
+    await page.waitForLoadState("networkidle");
     assert.equal(requests, before, "recovery must not automatically access any API");
   };
   const reset = async (nextMode) => {
@@ -154,7 +161,7 @@ try {
   await expect(button("准备取消")).toBeDisabled();
   mode = "accepted";
   await button("按原键重放取消").click();
-  await expect(page.getByText("accepted=true / cancelling / pending")).toBeVisible();
+  await accepted();
   assert.deepEqual(cancellations[1], original);
   assert.equal((await record()).cancellation, null);
   await expect(page.getByTestId("task-detail-id")).toHaveText("job-other");
@@ -170,7 +177,7 @@ try {
   assert.equal((await record()).cancellation.key, inFlight.key);
   mode = "accepted";
   await button("按原键重放取消").click();
-  await expect(page.getByText("accepted=true / cancelling / pending")).toBeVisible();
+  await accepted();
   assert.deepEqual(cancellations[3], inFlight);
 
   await reset("accepted");
@@ -213,7 +220,7 @@ try {
   await reload();
   mode = "accepted";
   await button("按原键重放取消").click();
-  await expect(page.getByText("accepted=true / cancelling / pending")).toBeVisible();
+  await accepted();
   assert.deepEqual(cancellations[5], cancellations[4]);
 
   await reset("accepted");

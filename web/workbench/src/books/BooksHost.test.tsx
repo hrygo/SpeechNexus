@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../tests/fixtures/contracts/workbench-http.json";
@@ -187,6 +187,30 @@ describe("books host", () => {
       { title: "第一章", ordinal: 0, text: "合成章节正文" },
       expect.any(String),
     );
+  });
+
+  it("keeps a committed chapter when an older chapter list arrives afterward", async () => {
+    const { client, chapters } = setup("book_demo", [book]);
+    let finishList!: (page: Contracts["ChapterList"]) => void;
+    const listing = new Promise<Contracts["ChapterList"]>((resolve) => {
+      finishList = resolve;
+    });
+    chapters.mockReturnValue(listing);
+    vi.spyOn(client, "createChapter").mockResolvedValue(chapter("chapter_new", 1, "新章节"));
+    await screen.findByLabelText("新章节标题");
+    await waitFor(() => expect(chapters).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("新章节标题"), { target: { value: "新章节" } });
+    fireEvent.change(screen.getByLabelText("新章节序号"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("新章节正文"), { target: { value: "合成正文" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增章节" }));
+    await screen.findByText(/第 2 章 · 新章节/);
+    await act(async () => {
+      finishList(chapterPage([chapter("chapter_existing", 0, "已有章节")]));
+      await listing;
+    });
+    expect(screen.getByText(/第 1 章 · 已有章节/)).toBeVisible();
+    expect(screen.getByText(/第 2 章 · 新章节/)).toBeVisible();
+    expect(screen.getByRole("heading", { name: "渲染单元" })).toBeVisible();
   });
 
   it("replays the same key after a rejected chapter instead of minting a new one", async () => {

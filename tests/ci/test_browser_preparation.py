@@ -8,6 +8,7 @@ import io
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -50,6 +51,8 @@ class PackagePlanTests(unittest.TestCase):
         digest = "a" * 64
         record = f"'https://example.test/pool/liba.deb' liba_1_all.deb 3 SHA256:{digest}"
         self.assertEqual(HELPER.archive_plan("Reading package lists...\n" + record)[0].size, 3)
+        mirror = record.replace("https://example.test", "mirror+file:/etc/apt/apt-mirrors.txt")
+        self.assertEqual(HELPER.archive_plan(mirror)[0].size, 3)
         for malformed in (
             record + "\n" + record,
             record.replace("liba_1_all.deb", "../liba.deb"),
@@ -73,6 +76,7 @@ class PreparationTests(unittest.TestCase):
         corruption: bool = False,
         download_failure: bool = False,
         cached: bytes | None = None,
+        policy: str = "APT::Architecture",
     ) -> list[list[str]]:
         calls: list[list[str]] = []
         payload = b"synthetic archive only"
@@ -88,7 +92,7 @@ class PreparationTests(unittest.TestCase):
                 calls.append(args)
                 if args[0] == "apt-config":
                     self.assertEqual(args, ["apt-config", "dump", "--format", "%f%n"])
-                    return subprocess.CompletedProcess(args, 0, "APT::Architecture\n", "")
+                    return subprocess.CompletedProcess(args, 0, policy + "\n", "")
                 if "--dry-run" in args:
                     return subprocess.CompletedProcess(
                         args, 1, "Missing system dependencies (1):\n  fonts-unifont\n", ""
@@ -102,17 +106,13 @@ class PreparationTests(unittest.TestCase):
                         f"{len(payload)} SHA256:{digest}\n",
                         "",
                     )
-                if args[0] == "aria2c":
+                if args[0] == HELPER.APT_HELPER:
                     if download_failure:
                         raise subprocess.CalledProcessError(4, args)
-                    temporary = Path(args[args.index("--dir") + 1])
-                    self.assertIn("--max-concurrent-downloads=4", args)
-                    self.assertIn("--max-connection-per-server=1", args)
-                    self.assertIn("--no-conf", args)
-                    self.assertNotIn("--check-certificate=false", args)
-                    (temporary / "fonts-unifont_1_all.deb").write_bytes(
-                        b"X" * len(payload) if corruption else payload
-                    )
+                    self.assertEqual(args[1:3], ["download-file", "https://example.test/font.deb"])
+                    self.assertEqual(args[4], "SHA256:" + digest)
+                    self.assertEqual(len(args), 5)  # No transport configuration overrides.
+                    Path(args[3]).write_bytes(b"X" * len(payload) if corruption else payload)
                 elif args[:2] == ["sudo", "install"]:
                     self.assertEqual(args[2:4], ["--mode=0644", "--"])
                     shutil.copyfile(args[4], args[5])
@@ -144,15 +144,52 @@ class PreparationTests(unittest.TestCase):
 
     def test_download_error_blocks_installer_without_a_second_attempt(self) -> None:
         calls = self.exercise(download_failure=True)
-        self.assertEqual(sum(args[0] == "aria2c" for args in calls), 1)
+        self.assertEqual(sum(args[0] == HELPER.APT_HELPER for args in calls), 1)
 
     def test_custom_transport_policy_keeps_original_installer(self) -> None:
-        for key in ("Acquire::http::Proxy", "Acquire::https::Dl-Limit", "Acquire::ForceIPv4"):
+        for key in (
+            "Acquire::http::Proxy",
+            "Acquire::https::Dl-Limit",
+            "Acquire::ForceIPv4",
+            "Acquire::http::Timeout::unknown",
+            "Acquire::Queue-Mode",
+            "Acquire::ForceHash",
+            "Binary::apt-get::Acquire::http::Timeout",
+            "acquire::HTTP::Proxy",
+        ):
             with self.subTest(key=key), patch.object(HELPER.subprocess, "run") as run:
                 run.return_value = subprocess.CompletedProcess([], 0, key + "\n", "")
                 HELPER.prepare(Path("/unused"), Path("/unused"))
                 self.assertEqual(run.call_args_list[-1].args[0], HELPER.INSTALL)
                 self.assertEqual(run.call_count, 2)
+
+    def test_observed_runner_controls_use_native_apt_without_transport_overrides(self) -> None:
+        policy = "\n".join(
+            f"Acquire::{protocol}::{key}"
+            for protocol in ("http", "https")
+            for key in ("Timeout", "Pipeline-Depth", "No-Cache")
+        )
+        calls = self.exercise(policy=policy)
+        self.assertTrue(any(args[0] == HELPER.APT_HELPER for args in calls))
+
+    def test_prefetch_has_at_most_four_concurrent_archive_downloads(self) -> None:
+        lock = threading.Lock()
+        barrier = threading.Barrier(4)
+        active = peak = completed = 0
+
+        def download(archive: object, temporary: Path) -> None:
+            nonlocal active, peak, completed
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            barrier.wait(timeout=3)
+            with lock:
+                active -= 1
+                completed += 1
+
+        with patch.object(HELPER, "download", side_effect=download):
+            HELPER.prefetch([object() for _ in range(8)], Path("/unused"))
+        self.assertEqual((peak, completed), (4, 8))
 
     def test_matching_cache_is_preserved_and_mismatching_cache_is_not_overwritten(self) -> None:
         calls = self.exercise(cached=b"synthetic archive only")

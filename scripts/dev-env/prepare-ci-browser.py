@@ -14,6 +14,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit
@@ -23,6 +24,7 @@ INSTALL = [*PLAYWRIGHT, "install", "--with-deps", "--only-shell", "chromium"]
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?")
 ARCHIVE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+_.:%~-]*\.deb")
 HASHES = {"SHA256": ("sha256", 64), "SHA512": ("sha512", 128)}
+APT_HELPER = "/usr/lib/apt/apt-helper"
 
 
 class Archive(NamedTuple):
@@ -64,9 +66,16 @@ def archive_plan(output: str) -> list[Archive]:
         uri, name, size, checksum = fields
         parsed = urlsplit(uri)
         algorithm, separator, digest = checksum.partition(":")
+        remote = parsed.scheme in {"http", "https", "mirror+http", "mirror+https"} and bool(
+            parsed.hostname
+        )
+        mirror_file = (
+            parsed.scheme == "mirror+file"
+            and parsed.path.startswith("/etc/apt/")
+            and not {".", ".."}.intersection(parsed.path.split("/"))
+        )
         if (
-            parsed.scheme not in {"https", "http"}
-            or not parsed.hostname
+            not (remote or mirror_file)
             or parsed.username is not None
             or parsed.password is not None
             or parsed.fragment
@@ -110,9 +119,32 @@ def checked_capture(args: list[str]) -> str:
     return result.stdout
 
 
+def download(archive: Archive, temporary: Path) -> None:
+    label = next(name for name, (algorithm, _) in HASHES.items() if algorithm == archive.algorithm)
+    # Use APT's own acquire system with its existing configuration, never an
+    # override of timeout, pipelining, cache headers or authentication policy.
+    subprocess.run(
+        [
+            APT_HELPER,
+            "download-file",
+            archive.uri,
+            str(temporary / archive.name),
+            f"{label}:{archive.digest}",
+        ],
+        check=True,
+    )
+
+
+def prefetch(archives: list[Archive], temporary: Path) -> None:
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(download, archive, temporary) for archive in archives]
+        for future in futures:
+            future.result()
+
+
 def prepare(cache: Path, temporary_root: Path) -> None:
-    # Keep custom APT proxy/rate/transport policy on its original path rather
-    # than accidentally bypassing it with a second downloader.
+    # Only the three observed standard-runner controls are supported. Native
+    # APT inherits their values; unknown/custom controls retain the old path.
     # Request key names only, never proxy credentials or other configuration values.
     policy = capture(["apt-config", "dump", "--format", "%f%n"])
     known_keys = (
@@ -140,10 +172,10 @@ def prepare(cache: Path, temporary_root: Path) -> None:
             for key in known_keys
             if f"Acquire::{protocol}::{key}" in policy.stdout.splitlines()
         ]
-        if re.search(rf"Acquire::{protocol}::", policy.stdout) and not matches:
+        if re.search(rf"Acquire::{protocol}::", policy.stdout, re.I) and not matches:
             matches.append(f"{protocol}:other-or-nested-key")
         categories.extend(matches)
-    if re.search(r"Acquire::.*ForceIPv", policy.stdout):
+    if re.search(r"Acquire::.*ForceIPv", policy.stdout, re.I):
         categories.append("address-family")
     # Fixed categories only: no stderr text, arbitrary key suffixes, values,
     # proxy credentials, host names or local configuration paths enter logs.
@@ -162,10 +194,26 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         ),
         flush=True,
     )
+    supported = {
+        f"Acquire::{protocol}::{key}"
+        for protocol in ("http", "https")
+        for key in ("Timeout", "Pipeline-Depth", "No-Cache")
+    }
+    transport_keys = [
+        line
+        for line in policy.stdout.splitlines()
+        if re.search(r"Acquire::(?:http|https)::|Acquire::.*ForceIPv", line, re.I)
+    ]
     if (
         policy.returncode
         or policy.stderr
-        or re.search(r"Acquire::(?:http|https)::|Acquire::.*ForceIPv", policy.stdout, re.I)
+        or os.environ.get("APT_CONFIG")
+        or any(key not in supported for key in transport_keys)
+        or re.search(
+            r"Acquire::Queue-Mode|Acquire::ForceHash|Binary::apt-get::Acquire::|Binary::apt-helper::Acquire::",
+            policy.stdout,
+            re.I,
+        )
     ):
         print(
             "APT transport policy is custom or unreadable; keeping the original installer.",
@@ -173,6 +221,7 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         )
         subprocess.run(INSTALL, check=True)
         return
+    print("Preparing archives with at most four native APT acquire workers.", flush=True)
     subprocess.run(["sudo", "apt-get", "update"], check=True)
     packages = missing_packages(capture([*PLAYWRIGHT, "install-deps", "--dry-run", "chromium"]))
     if packages:
@@ -192,32 +241,7 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         archives = archive_plan(output)
         with tempfile.TemporaryDirectory(prefix="speechnexus-browser-", dir=temporary_root) as root:
             temporary = Path(root)
-            plan = temporary / "archives.txt"
-            plan.write_text(
-                "".join(f"{a.uri}\n  out={a.name}\n" for a in archives), encoding="utf-8"
-            )
-            if archives:
-                subprocess.run(
-                    [
-                        "aria2c",
-                        "--no-conf",
-                        "--max-concurrent-downloads=4",
-                        "--max-connection-per-server=1",
-                        "--split=1",
-                        "--max-tries=2",
-                        "--connect-timeout=20",
-                        "--timeout=30",
-                        "--auto-file-renaming=false",
-                        "--allow-overwrite=false",
-                        "--console-log-level=warn",
-                        "--download-result=hide",
-                        "--dir",
-                        str(temporary),
-                        "--input-file",
-                        str(plan),
-                    ],
-                    check=True,
-                )
+            prefetch(archives, temporary)
             for archive in archives:
                 source = temporary / archive.name
                 if not verified(source, archive):
@@ -232,7 +256,8 @@ def prepare(cache: Path, temporary_root: Path) -> None:
                     check=True,
                 )
             print(
-                f"Prefetched and verified {len(archives)} APT archives for the official installer."
+                f"Prefetched and verified {len(archives)} APT archives for the official installer.",
+                flush=True,
             )
     subprocess.run(INSTALL, check=True)
 

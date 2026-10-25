@@ -217,6 +217,7 @@ def test_fixture_http_unknown_preserves_original_path_body_key_and_no_keyless_re
                         and replay.json()["publication"]["status"] == "published"
                     )
         assert len(calls) == (3 if keyed else 1)
+        assert calls[0][2] == request["headers"].get("Idempotency-Key")
         if keyed:
             assert calls[0] == calls[2] and calls[1][0] == "GET"
         else:

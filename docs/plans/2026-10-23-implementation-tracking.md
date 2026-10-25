@@ -1,7 +1,7 @@
 <!-- speechnexus-implementation:PROGRAM:v1 -->
 # SpeechNexus 三团队整体实施跟踪
 
-总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。快照：2026-10-24T15:50:32+08:00（Asia/Shanghai，实时读取 GitHub）。
+总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。快照：2026-10-25T10:16:47+08:00（Asia/Shanghai，本轮核对38条规划issue）。
 GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源；本矩阵是可刷新的快照。
 
 **工作包完成：0/25；验收 Gate 通过：0/6。** Epic/检查项不混入工作包完成率；duplicate/not_planned 等非完成关闭不计成果，前置未通过的误关 Gate 不计通过。
@@ -18,42 +18,34 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 
 ## 当前派工入口
 
-团队 B 已按具名子单元持续实施；B00/B01/B02/B03/B04/B06 为 in-progress，B05/B07
-为 planned，父包均保持 open。2026-10-24 已交付基线为 main `08c77de`；#112/#114/#116/#119/#121/#123/#127 已交付
-恢复扫描、多执行共享停止事实、节点内观察/停止检查点恢复及外部快照只读边界。当前交付与后续缺口见
-[团队 B 目标的当前对齐](2026-10-23-team-b-goal.md#当前对齐2026-10-24)及 #27–#34 顶部状态；
-已交付[节点检查点背书的停止查询与网关来源](../architecture/trusted-node-stop.md)，
-复用原恢复扫描/停止事务；原生 TLS/SQLite/双库消费者覆盖半证据、重启、共享实例双执行及 A 幂等释放。
-本轮修复恢复扫描的长期未知前缀饥饿与并发用量导致的重复计数，采用只读ID分页、本地轮转和
-互斥分类；默认网关周期驱动现已通过受限私有配置自动启用，真实进程/TLS/PG覆盖
-半证据/坏凭据、SIGKILL重启、自动关闭原执行和A独立释放。见
-[实测记录](../audits/2026-10-24-b01-default-recovery-driver.md)；真实引擎故障、
-完整调度预算闭环及物理多主机仍待。
-当前 #28/#30 在 `codex/b03-frozen-inputs` 接原持久命令与版本固定对象输入，见
-[输入单元方案](2026-10-24-b03-frozen-inputs.md)；合成文件已通过隔离双库/MinIO 接到原生媒体和
-识别消费者，真实引擎、完整有效参数、停止证明与最终发布仍待装配。父包和 Gate 不关闭。
-A/C 的派工仍按各自 Issue 状态核对。
+2026-10-25 已核对全部 38 条规划 issue；25 工作包均 open，21 in-progress、4 planned
+（A05/A06/B05/B07），Gate 仍为 0/6。底层分段交付不等于完整产品验收；各队最新 issue 是
+当前事实来源。详细依赖、验收与历史处理见[现实复盘与新阶段目标](2026-10-25-team-a-realignment.md)。
 
-团队 A 当前集成基线 main `944ab54`：#133私有原子revision/default snapshot存储与原键恢复、
-#134显式四表writer的producer POST/固定parent与snapshot GET，均已管理合入并完成合后CI。
-#134受审head `3aa8129`，合入 `a3611c2`；合前/合后11项均成功，378/310秒，3566非集成
-passed/81.27%、1243集成passed与22既有PG-only跳过单列，六分片来源/摘要/完整union已核验。
-旧三表模式、完整原意图/原键恢复及404/503区分保持；producer0.1.0.dev0/snapshot1.0.0不变。
-0011已占用；历史TS依赖失败和并发回退P1的RED→GREEN证据保留，不重复实施。
-当前A00完成CI关键路径独立取证：B #132已在保留#134的组合上拆分完整Python测试/构建与
-静态/契约，两层always汇总及保护名称保留。PR/合后13项成功为258/211秒；旧3566项经一项
-明确改名后全部保留、净增62项，集成1265项清单不变。A独立核验六ZIP/精确source/完整union，
-仅同步[CI审计](../audits/2026-10-24-ci-efficiency.md#第六轮python-静态契约与完整测试并行的独立核验)，
-不重复改workflow；两次小于5分钟不代表长尾上限或真实引擎资格。证据PR #135已管理合入，
-精确head/合后13项CI成功265/210秒，本地main交接完成。
-下一A00/A02有限单元是[Profile发布/激活契约前置](../architecture/profile-lifecycle-contract.md)：
-复用原请求DTO与完整Profile源，补503原路径/原意图/原键恢复和入口拒绝，成功响应限published。
-独立future Python/TS surface不扩当前草稿运行入口；4项源反例RED→GREEN，95定向、3732完整非集成
-passed/81.47%、1116TS与源码外wheel通过，精确head CI及管理审查仍待核验。
-发布/激活/默认指针、最终参数解析与真实引擎资格仍待；A03/A04文件闭环和真实联合资格
-保持原验收。未执行生产grant/迁移/部署，A00–A07、父包与Gate保持OPEN，见#19/#21；B/C状态由各队维护。
+| 团队 | 当前可证事实 | 下一交接与真实缺口 |
+| --- | --- | --- |
+| A | 共同 main `a8ea85b`；文本 Asset/Workspace、协调窄事务、资源草稿与默认快照存储/HTTP、同源契约与有限门禁已分段交付 | **A-CONFIG-01：可信校验 → 持久发布/CAS → 真实受控 HTTP/固定查询 → 最终参数解析**；首个写入单元 P1。音频检查、完整业务 Job/调度、Artifact/Operation 和公开文件链路仍待 |
+| B | B00/B01/B02/B03/B04/B06 in-progress，B05/B07 planned；#130 固定输入与 #132 原生 ASR 取消/CI 分流已交付 | 主线 #28/#30：真实请求正常/取消/异常、停止/释放、完整参数与最终制品；本地 worker 扩展未提交/未交付不能算完成。A 不操作 B 硬件 |
+| C | #40/#41 作者报告真实 runtime/PG/本机模型/浏览器纪要；#43 真实 sweeper/重启账本重放 | base `4b08c396…` 的本地制品仍未提交/推送，尚未入共同 main；助手需要公开 `speech_job_id` 和已发布音色，目标环境与联合验收仍待。A 仅分析，不代改 C issue |
 
-首轮默认 A00/B00/C00；B00 真实探针仍受环境/制品/语料/窗口约束。B01/B02/C01/C02/C04 的 fake/调查子项可先行，不能据此标整个包 ready 或已实施。
+A #133/#134 的私有原子快照存储与显式四表 producer HTTP 已管理合入并完成合后 CI，0011已占用。
+#135 CI审计在944ab54闭环；#136仅发布/激活契约前置已按受审e62c59c合入a8ea85b，
+合前/合后13项成功366/310秒；3732非集成/81.47%、1243集成passed与22既有跳过分列。
+合前六ZIP字节数/SHA256/精确测试合并来源和完整互斥union已核验。绿色契约不代表持久发布、
+默认指针、最终参数或真实资格，五分钟CI反馈目标也尚未稳定达到。
+
+A #19–#26 已统一当前目标，拆开已交付与待验收；管理端已进一步精简正文，历史通过原PR/CI、
+issue修订和本地快照追溯，不混入当前待办。整理时保留B并发交接。A05/A06保持planned，其余A为in-progress，
+父包/Gate保持open。每轮仍由用户放行跨队Gate与正式发布。
+
+文件 ASR 路线为：真实音频 Asset 与权威有效配置 → 完整业务命令/持久 Job →
+实际准入/唯一外发 → B真实执行/可信停止 → 制品/Operation/receipt → 标准SDK与C消费。
+AsrJobCreate 的 profile 可省略，不能把预设发布当全部请求的强制前置；无profile也必须固定
+权威Binding与显式默认。当前只实现文本Asset检查，音频AssetInspector是明确前置交接。
+
+A00后续队列另有C四项runtime入口缺口：downloadBookExport、downloadSavedAsset、
+streamExportEvents、generateRenderUnit。共同源已声明，bindings未选择，现HTTP投影JSON-only；
+需串行核对binary/SSE/JSON真实消费者。本轮只核对，不立即改共享生成器或扩大#136。
 
 ## 六阶段 Epic 与独立关口
 

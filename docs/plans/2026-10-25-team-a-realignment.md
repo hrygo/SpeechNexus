@@ -1,127 +1,127 @@
 ---
-title: "SpeechNexus 现实复盘与团队 A 新阶段目标"
+title: "SpeechNexus 深度复盘与下一阶段实施路线"
 status: active
-version: "1.0.0"
+version: "2.0.0"
 date: 2026-10-25
 ---
 
-# 从底层部件走到可执行配置与文件 ASR 闭环
+# 从已验证组件走到第一条真实文件链路
 
-本轮依据用户“回归总结以全大局，更新清理 issue 以及其状态，立于现实看清目标，设定新目标”复核。
-共同代码基线为 main `a8ea85b9fcbafee2b79bcad43bc17bcff91043db`；日期按北京时间。
-原 A00–A07 与三队方案保持，当前优先级收敛到文件 ASR 的实际依赖。
+本次依据用户“进行深度总结整理，继往开来”更新原复盘，日期按北京时间。
+冻结主干为 360bb81fa173e9c235abafcb2c10cb2ecc47380b，包含 B 的 #147，尚不包含 A 的 #141。
+原规划 #44 已合入 8333e4ba7c722a36cc70545fd5a0ed2beee38eea，首批生成与 create_job 已交付，不重新启动这些里程碑。
+原三队方案、A00–A07 与 G0–G5 总范围保持。
 
-## 现实基线
+## 结论与统计口径
 
-38 条规划 issue 已核对：总控 1、Epic 6、Gate 6、工作包 25。工作包全部 open，其中
-21 个 in-progress、4 个 planned（A05/A06/B05/B07）；完整包 0/25、Gate 0/6。
-这些数字表示整包验收尚未完成，不表示已交付部件为零，也不按 PR 或测试数量换算产品完成率。
+当前处于“已有可靠组件，尚未贯通真实业务链路”的阶段。下一交付目标是：
+**同一集成版本上，一次公开文件 ASR 请求从上传走到真实执行、持久结果、受控发布和 SDK/工作台下载，并在重放、确认丢失、取消和重启后保持原身份。之后沿同一协议接 CustomVoice TTS。**
 
-| 范围 | 已有证据 | 尚未证明的能力 |
+当前 40 条非 PR issue = 原规划 38 条 + B 阶段任务 [#142](https://github.com/hrygo/SpeechNexus/issues/142) + A→C 交接 [#149](https://github.com/hrygo/SpeechNexus/issues/149)。
+原25个工作包均open：21个in-progress，4个planned（A05/A06/B05/B07）；完整工作包0/25，Gate 0/6。
+#142/#149单列，不改变原分母。步骤勾选、组件合入、作者本机报告与整包AC分别判断，不按累计PR、测试或文件数推算产品完成率。
+
+本次读取当前代码、PR/CI和issue，没有重新执行业务测试、访问GPU或复跑C本机环境。
+下表引用各精确版本的既有证据，适用范围随行列明；完整工作包和阶段要求继续由
+[跟踪矩阵](2026-10-23-implementation-tracking.md)及各issue的AC维护。
+
+## 可复核交付矩阵
+
+表内SHA为实际合并提交；明确标为head/base的行不属于主干交付。
+
+| 组件与状态 | PR / 精确SHA | 验证与实际成立的行为 | 剩余AC / 边界 |
+| --- | --- | --- | --- |
+| A00首批生成、所有权：已合入 | [#46](https://github.com/hrygo/SpeechNexus/pull/46) e06501d664ec1b54df74d3f0d4c4aad0898a967c；[#51](https://github.com/hrygo/SpeechNexus/pull/51) 88fdacccc5372b7fdd077441490f40bd1dfc78ba | 锁定生成器、离线闭包、Python/TS正负例、漂移、源码外wheel；首批49组消费者样例 | 不是全部runtime/HTTP/事件覆盖；REST/WS/MCP统一语义、时序及三队真实消费仍待 |
+| A00有限兼容门禁：已合入 | #115/#117/#118/#120；后续修复[#122](https://github.com/hrygo/SpeechNexus/pull/122) b03e07f3b09e815c2701d0010f9978c516c9267a | 四份HTTP、18协调请求、TransactionResult和speech路径的有限结构比较；布尔/数字、字面量引用和OpenAPI对象引用反例修复 | 仅声明支持面，不证明任意schema等价或业务时序，A00整体AC开放 |
+| A01 Job/outbox与恢复：已合入 | [#49](https://github.com/hrygo/SpeechNexus/pull/49) f210821d655bd7deb326825d750d83584c3ce159；[#128](https://github.com/hrygo/SpeechNexus/pull/128) 75dc96afd497d741311db732ad106659f2746ac0 | 真实PG/InnoDB原子写入/冲突/回滚；#128的59例覆盖实际提交丢回执→读取受压→原身份恢复，无跳过 | 六字段CreateJob/JobFact只是协调元数据，尚非完整公开业务Job/有效配置/结果/用量/Operation |
+| A01/A03准入、runtime投递与隔离：已合入 | #87/#88/#99/#100/#102；[#105](https://github.com/hrygo/SpeechNexus/pull/105) 329e7d21689dd8e7be6ae696a03ba6ac1b6f205b | 双库竞争、丢回执、TLS/崩溃/损坏原文、claim/CAS、查询失败保持未知、先隔离记账后激活；新增共享回归无跳过 | 真实批准计划/readiness、完整scheduler/业务quota/结算、18端口跨owner联合及目标拓扑仍待 |
+| A02/A07首资源生命周期：已合入 | [#58](https://github.com/hrygo/SpeechNexus/pull/58) d7463fb3e6421d7fe57efdf99566f241a163c7bb；[#61](https://github.com/hrygo/SpeechNexus/pull/61) 01d549f9fbe7617956f23570039eba1544b57d46 | 实际UTF-8文本检查、PG/MinIO版本/长度/摘要、HTTP/Range、7天默认TTL与恢复；存储35例、HTTP/维护12例 | Audio AssetInspector未接入；Artifact/receipt、通用删除/独立副本和备份恢复资格仍待 |
+| A02 Profile草稿：已合入 | #107/#108；[#113](https://github.com/hrygo/SpeechNexus/pull/113) fea2def25e7f732a0971c381377cba8117309db9 | 真实PG创建/固定读取、CAS/原键、未知/取消/重启、会话/有效身份及实际Python/TS HTTP；受检集成1034通过/22既有跳过 | draft-only，不代表可信校验、发布/激活或默认指针 |
+| A02 Binding/默认快照：已合入 | #125/#126/#129/#131/#133；[#134](https://github.com/hrygo/SpeechNexus/pull/134) a3611c21f2e29308374aadfd9bf0cbc63a9336b9 | 0010/0011私有不可变存储、四表writer真实HTTP；113项相关双库/PG回归无跳过；并发回退保护与原键恢复 | 仅声明/草稿事实，权威来源、资格接纳与最终参数仍待，不回填历史默认 |
+| A-CONFIG-01/P1a：已合入 | 契约前置#136；[#139](https://github.com/hrygo/SpeechNexus/pull/139) 78b0528bfdcac68256199c6dec3aa4fbfef245cf | 完整原意图、目标/定义/意图摘要绑定、默认不可用；39新单元/155组合，合后CI40157256453全13项 | 只读观察不是提交许可；真实生产者、原结果优先/事务内重检、发布账本/CAS/HTTP仍待 |
+| A00 render generation：已实现未合入 | [#141](https://github.com/hrygo/SpeechNexus/pull/141) head b840ea2d2f6f4b538cafbfe2355ac464a5cc7808；受检base 7b042d59c4870346326da3be4dbb8adbe50c8e69 | CI40159242336 full全14项；3972单元/81.64%，1243集成通过+22既有跳过；六ZIP/互斥全集、29 HTTP/4 DTO、合成回环和wheel已验证 | 仅JSON/DTO候选；自动审核拒绝合并待用户确认。当前main360的组合未验证，不计主干入口或实际公开Job/C路由 |
+| B原命令消费：已合入 | [#140](https://github.com/hrygo/SpeechNexus/pull/140) 4b5f9e4d64ceb4eb94a8aabf448e5d38794489bb | 完整原参数、固定输入、未支持能力在I/O前拒绝、迟到不得成功；合成识别回归 | 不等于真实引擎已接持久submit/observe/abort/恢复，不证明停止/释放或GPU资格 |
+| B私有ASR结果：已合入 | [#147](https://github.com/hrygo/SpeechNexus/pull/147) 360bb81fa173e9c235abafcb2c10cb2ecc47380b | EOF后有界汇总、独立异步I/O一次PUT/固定版本HEAD/GET/摘要；155定向回归；实际MinIO三例与其余输入用例合计28通过，无跳过 | VAD/识别为替身；持久回执登记/查询、真实执行与A发布未接。输入同步HEAD状态头总期限仍缺，不能外推结果端期限保证 |
+| CI路由/Token/页面门禁：已合入 | #143–#145；[#146](https://github.com/hrygo/SpeechNexus/pull/146) 8b94167d494808c73ac45ebc98478195be09f9b1；[#148](https://github.com/hrygo/SpeechNexus/pull/148) 8eb52eb43d0caacbd4c4a7ab7d9d58a09e169b85 | 精确diff分流、full真实分片、39 Token回归、29浏览器回归/504语义色对测量及反例；必需检查保留 | 静态Token不覆盖任意动态JS；局部页面探针不等于完整WCAG/屏幕阅读器/跨设备资格；单次时延不作SLA |
+
+当前主干的[合后CI40165031760](https://github.com/hrygo/SpeechNexus/actions/runs/40165031760)全14项成功：
+4003非集成通过、81.88%、9既有warning；1268集成收集=1246通过+22既有PG-only不适用跳过。
+这是组件回归，不是新增真实GPU/公开链路资格，也不能与#141旧base的3972/1265混算。
+历史失败、取消、RED→GREEN、最小角色与精确测试合并来源保留在原PR/CI，不改写成全范围通过。
+
+## 未集成实现与证据债务
+
+| 候选 | 已有作者证据 | 集成缺口与解除条件 |
 | --- | --- | --- |
-| A00/A01 | 同源生成/解析/样例、漂移与有限结构门禁；A 自有 10 个写端口、PG/最小角色、原键恢复及隔离加固 | 18 端口跨 owner 联合、全部协议/真实消费者语义 |
-| A02 | 文本 Asset/Workspace；Profile/Binding 草稿；显式默认快照的原子存储、原键恢复和真实 HTTP | 音频检查、持久发布/CAS、权威配置/最终参数、Artifact/Operation/receipt |
-| A03/A04 | owner/claim、完整配方窄事务、持久 runtime 意图投递、受控资源 HTTP | 业务策略/readiness、完整调度/结算、公开业务 Job/SSE、标准文件 ASR/TTS 生产链路 |
-| A05/A06/A07 | 实时/音色契约；首个文本 Asset 保留/删除账本 | 实时/音色业务；通用删除、备份恢复、目标拓扑与发布资格 |
-| B | 有界媒体、原生文件 ASR/CustomVoice、固定输入核验、停止查询等分段交付 | 真实请求完成/取消/释放、完整参数与最终制品的联合闭环；本地 worker 扩展尚未交付 |
-| C | 作者最新报告已有真实 runtime/PG/本机模型/浏览器纪要，以及 sweeper/重启账本重放 | 仍基于 `4b08c396…` 未提交/推送，尚未进入共同 main；目标环境与联合验收仍待 |
+| C #35–#43 | base 4b08c396c0fe8fc43c7e85683e534befab6bb22b；真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放、章节/单元登记；导出worker默认关闭预接线 | 未提交/推送，无可评审新head，不计共同main。C提供可获取提交或完整补丁/摘要、迁移owner片段、组合根/HTTP注册与生产消费者清单，再同版复核；A不代改C issue或提交其本机代码 |
+| B worker观察扩展 | #28/#30/#142报告原工作树候选与受控回归 | 未提交/集成候选没有可作为交付版本的新head；与#140/#147分开。B按真实执行链需要交付版本/回执与故障证据 |
+| A→C助手交接 #149 | planned，无该交接真实成功证据 | A04提供真实可查询Speech Job，A06/B05提供已发布声音，再由C验证同键/取消/超时；默认关闭页面或fake ID不消项，不前移为文件G1前置 |
 
-当前 `app.py` 注册的是健康、Asset、Workspace、Profile 草稿和 Binding 草稿入口。
-`speech/domain/jobs.py::CreateJob` 是六字段协调身份，`JobFact` 只有 Job ID/摘要；
-`OriginalBusinessCommand` 校验规范正文/摘要，不证明业务语义和资源资格。
-这些事实不足以构造公开 `Job` 所需的真实状态、有效配置、结果、用量和 Operation。
+C最新[第69轮清点](https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393997645)已纠正旧统计：
+按method+path、排除测试文件后，“无直接Web调用”原始条目为6；识别等价消费后，
+getTranscriptRevision并非缺陷，章节/单元读取已有列表与实际HTTP覆盖，当前明确待补直接消费包括updateProject与getVoiceRevision。
+这是作者本地清点，不等于6个功能缺陷或共同主干验收。不能继续引用“只剩3个”，也不能与下方A00的4项runtime缺口相减。
 
-`TextAssetInspector` 对非文本返回不可用。B03 已有有界媒体实现，但还没有接成 A 的音频
-Asset 检查；不能从文件名/MIME 生成 ready，也不能让 backend 导入 gateway 应用层来绕过边界。
+## 原因、风险与应保留的工程成果
 
-## 本轮有限交付与 CI 实情
+1. **验证层级容易混淆。** 生成样例、事务/HTTP、真实存储、实际模型、公开链路与目标拓扑分别记证据。
+   原键/完整命令、单事务预算、最小权限、未知恢复和真实停止后释放规则继续作为业务链底座。
+2. **真实来源尚未接到生产者。** ProfileValidation是客户端声明，草稿/快照是声明格式；B部署报告不自动成为Profile资格。
+   给来源、owner、固定版本与当前适用条件，不能再靠包装类型解除依赖。
+3. **业务Job与协调身份仍有缺口。** 当前app注册健康、Asset、Workspace与草稿资源。
+   CreateJob六字段/JobFact不能投影出未持久化的有效配置、正文结果、用量或Operation。
+4. **对象与可恢复结果仍有缺口。** #147的固定私有对象不代表执行成功，同键再次调用可能新增对象版本。
+   B观察入口仍拒绝非空staging引用；先冻结完整元数据/storage_version及登记/查询，再接持久事实，不能只删除拒绝。
+5. **共同版本债务限制联合验收。** C已有真实本机成果，仍需可获取制品与兼容迁移。
+   不再称纪要“缺LLM”，也不把本机成功外推到Linux、内容出站、真实设备或生产资格。
+6. **共享集成窗口造成重复验证。** #141实现保持15文件不变，却随#140/#143/#144/#145多次更新基线。
+   建议汇集共享变更后安排稳定评审窗口，先合受检单元再处理无关main写入；新head仍须正常检查，不复用旧绿灯或改保护。
 
-- #133/#134 已交付默认快照原子存储与显式四表 producer HTTP；0011 已占用。
-- #135 CI 审计已合入 `944ab54`，合前/合后 13 项成功，265/210 秒。
-- #136 发布/激活**契约前置**已按受审 `e62c59c` 管理合入 `a8ea85b`；合前/合后
-  [40152572208](https://github.com/hrygo/SpeechNexus/actions/runs/40152572208) /
-  [40153162439](https://github.com/hrygo/SpeechNexus/actions/runs/40153162439) 均 13 项成功，
-  366/310 秒。3732 非集成通过、81.47%，1243 集成通过与 22 个既有不适用跳过分列。
-  合前六 ZIP 大小/摘要/来源与完整互斥并集已独立核验。
+## 下一阶段最小可验收路线
 
-运行器排队和执行时间仍有波动，五分钟反馈目标尚未稳定达到。本轮不重复 B #132 的 CI
-分流、不放宽检查，也不把绿色检查当作业务上线或真实模型资格。
+复用#21/#22/#23/#142/#37，先文件ASR，再CustomVoice TTS，不新建重复工作包。
+每轮最多一个主要写入单元；源、生成、锁、迁移与组合根串行，按具体制品解除依赖，不要求整个上游包关闭。
+A-CONFIG-01继续作为配置工作流，不能阻塞所有无Profile请求。
 
-## 新目标 A-CONFIG-01：从草稿到可执行配置
-
-**围绕文件 ASR 所需的配置，把可信校验、持久发布/CAS、实际受控 HTTP 与固定查询接通，
-再完成最终参数解析，产出可供完整业务 Job 固定的有效配置。**
-
-主责 A02，A00 支持同源消费者，A01 支持窄事务，A03/A04 接后续业务命令与公开任务。
-实施顺序如下；每个子单元独立评审，最多一个主要写入单元，公共源/生成/迁移/组合根串行。
-
-| 顺序 | 可交付子单元 | 前置与退出证据 |
+| 次序 / owner | 最小交付结果 | 依赖解除与验收出口 |
 | --- | --- | --- |
-| P1，下一项 | 可信校验 provider、固定目标与发布/激活领域边界 | 复用 #136 的请求/响应；明确 ProfileValidation 与权威证据的解析/归属，验证目标、层级和当前适用性；客户端 digest/validation 不能自证资格。缺可信事实时明确不可用 |
-| P2 | 私有发布结果账本、不可变历史与当前指针 CAS | 基于 P1；原键/完整原意图重放在新 CAS 前裁决；发布与指针同事务；旧 revision/default snapshot/Job 不重写。真实 PG 的并发、丢 COMMIT 回执、读取受压、取消与恢复；迁移序号开工时重新核对 |
-| P3 | 真实受控 POST/固定已发布查询、发布/激活消费者 | 基于 P2；独立最小 writer 生命周期，检查会话/有效身份；真实 PG + Python/TS HTTP，正确 404/409/503、keyless 未知及有界入口；只把已注册操作加入 operational OpenAPI |
-| P4 | 文件 ASR 最终参数解析与不可变有效配置 | 固定权威 Binding/默认快照、可选 published Profile 和策略；allowlist/ranges、绑定域、跨字段/硬约束及 exact 拒绝；输出真实有效值、来源版本、摘要，交给完整业务命令生产者 |
+| 下一A单元：A02+B03音频检查 | 在现有AssetInspector/对象发布中真实检查asr_input，保留7天TTL、原键和固定对象版本 | 先确定B有界媒体复用边界/版本，不跨服务导入gateway应用层或复制解码器；真实A HTTP+PG+MinIO验证合法音频、损坏/截断、超限/取消、重放/重启，不据MIME/文件名判ready |
+| 并行具名交接：A02+B #142配置 | 固定首条真实ASR的Binding、显式默认、模型/软件/容量及支持参数，产出完整有效配置 | B提供真实版本/上界；A检查绑定域、硬约束、允许覆盖与exact拒绝。无Profile合法；有Profile必须已发布固定引用。缺事实保持不可用，不从草稿/示例猜值 |
+| A01/A03/A04业务Job | 固定音频与有效配置，持久业务事实/事件，复用原Job/outbox和完整配方准入 | 真实PG与共享双库竞争/丢回执/取消/接管；公开Job与完整命令一致，旧owner、原身份和父预算规则不变 |
+| B #142执行与结果回执 | 从原持久submit查询/恢复唯一真实执行与唯一完整结果回执 | 先冻结内部登记/查询元数据、storage_version与所有权；修复或明确阻断输入HEAD总期限缺口；真实执行、丢确认/重启/取消不重复外发或重写结果，unknown不释放 |
+| A02/A04制品发布 | 消费B持久结果，发布Artifact/receipt/Operation和公开查询/下载 | 固定执行/对象版本/摘要；原子发布、迟到/取消/重启/发布确认丢失可恢复。私有JSON按原请求转成JSON/text，不伪造用量/语言/时间戳 |
+| A04+B03+C02联合出口 | 标准SDK上传→真实转写→公开下载，C导入/校对/导出 | 同SHA、模型/镜像/语料/拓扑；正常/无语音、重放/未知、取消/重启和双逻辑节点竞争。ASR子链通过不自动放行仍含TTS的G1；物理多机与逻辑集群分列 |
 
-P1 先列清既有权威事实的 owner 与可消费版本，再实现最小领域/应用单元；不先造一套公开报告协议。
-Profile 是 `AsrJobCreate` 的可选字段，不强制让每个请求都经过预设发布。有 Profile 时必须解析
-已发布固定引用；无 Profile 时同样需要权威 Binding 与显式默认，不能从草稿、示例、能力范围
-或引擎未声明行为补值。绑定默认 → 已发布预设 → 允许覆盖，之后执行硬约束和最终检查；
-只允许原产品规则声明的段预算协商，`require_exact_parameters` 必须拒绝自动收紧。
+配置工作流保留P1真实可信生产者→P2原结果优先/账本与指针CAS→P3受控HTTP/固定已发布查询→P4最终参数。
+#139仅P1a。Profile发布不替代音色发布，不修改历史Job；不为样例启用假预设、回填默认或扩大生产权限。
+实时/音色/辅助、通用删除/备份恢复、MCP/完整SDK与目标拓扑仍属于原范围，后续按真实依赖验收，不静默删项。
 
-ModelBinding 发布/资格来源若是 P4 的实际缺口，单独登记同源/生产者交接与验收，不能用草稿
-替代，也不同时扩展全部资源家族。真实质量/容量/引擎资格继续由 B 的具名事实证明。
+## A00排队项与审批边界
 
-本目标完成需要真实隔离数据库、原身份恢复、最小角色和真实 HTTP 消费证据；合成报告/媒体
-只能证明相应代码路径。生产迁移/grant/部署、真实发布和跨队 Gate 仍按用户原授权边界执行。
-没有可信配置时保持不可用，不能为了让示例跑通而激活假预设或回填历史默认。
-
-## 文件 ASR 整体路线与三队交接
-
-```mermaid
-flowchart LR
-    A[音频 Asset 真实检查] --> J[完整业务命令与持久 Job]
-    C[A-CONFIG-01 权威有效配置] --> J
-    J --> Q[实际准入与唯一外发]
-    Q --> B[B 真实执行与可信停止]
-    B --> R[Artifact / Operation / receipt 发布]
-    R --> S[标准 SDK 与 C 导入校对导出]
-```
-
-| 依赖 | owner | 需要交付什么；何时算解除 |
+| 操作 | 当前main的runtime支持 | 候选/后续验证 |
 | --- | --- | --- |
-| 音频 Asset 检查 | A02 + B03 | 对齐可消费的媒体检查边界，沿用 A 的 AssetInspector/对象发布/7 天默认 TTL；实际媒体事实、有界解码、损坏/超限/取消、原键与重启恢复通过真实 A HTTP/PG/对象存储。与配置主线分别登记，不跨服务导入或复制实现 |
-| B 正常/取消/异常执行 | B01/B03，A03 消费 | 精确绑定/引擎/拓扑/输入版本；可验证完成、停止与释放事实；未知仍占用，A 原事务才退预算。A 不操作 B 硬件 |
-| 完整公开业务 Job | A02/A03/A04 | 使用真实输入和固定有效配置，持久化业务事实/事件/结果；不能把协调 JobFact 投影成假公开 Job。随后接实际查询、取消、SSE 与 SDK |
-| C 共同版本交付 | C；A 集成 | 可获取、可评审的制品与 exact base/head、迁移片段/组合根及消费者证据；本机未提交包不能算共同 main。A 不替 C 修改 issue 或提交其本机工作 |
-| 联合关闭文件链路 | A04/B03/C02 | 同一 SHA 的真实模型→受控制品→SDK/工作台消费，含重放、取消未知、重启与失败。文件 ASR 子链路通过不自动关闭还包含 TTS 的 G1 |
+| POST generateRenderUnit | 未选择 | #141仅JSON/DTO候选；审批解除后仍需最新main同步、新head审查/CI及合后交接 |
+| GET downloadSavedAsset | 未选择；200/206 octet-stream | 明确媒体投影、Range/错误、字节/取消上界与实际消费者 |
+| GET downloadBookExport | 未选择；200/206 octet-stream | 同上，保留本操作409/410等声明状态，不复制另一操作错误集 |
+| GET streamExportEvents | 未选择；SSE指向六成员ExportEvent | 同源union、Last-Event-ID、410/断线恢复与有界帧；单条样例不冒充时序或C业务成功 |
 
-## C 最新证据与 A00 排队项
+源当前未将206 Content-Range标必需，也未声明下载416；在源与C实际路由对齐前不自造状态或全局兜底。
+A的runtime口径独立于C的生产消费者清点；完整静态类型不代表运行时解析/传输支持。
 
-已读取 C 在北京时间 2026-10-25 的 [#40](https://github.com/hrygo/SpeechNexus/issues/40)、
-[#41](https://github.com/hrygo/SpeechNexus/issues/41)、[#43](https://github.com/hrygo/SpeechNexus/issues/43)
-顶部现实核对：纪要由真实 lifespan 派发 worker 认领，本机模型与浏览器链路成功；删除/恢复也有
-真实 sweeper 与启动期账本重放证据。这里记录的是作者本机报告，A 未独立复跑，制品仍未提交/推送。
-助手成功状态必须携带公开 `speech_job_id` 且需要已发布音色，分别依赖 A04 与 A06/B05；
-Profile 发布不替代音色发布。目标网络/设备/Linux/部署与联合恢复资格继续开放。
+#141代码/精确版本复审和旧base full CI已完成，管理端合并被自动安全审核拒绝，
+理由为实际接口/A00/Gate未完成、局部合并授权前提不足；管理端已请求用户明确确认。
+当前保持未合并，不换工具重试；本次总结不是该批准，不改变其head或移入本轮文档交付。
+若获确认，先正常同步最新main、复核实际增量/必需检查/未解决意见，再由管理端处理。
+跨队Gate、正式发布、生产grant/DDL、GPU与内容使用遵守原授权。
 
-共同源已声明以下四操作，runtime bindings 尚未选择；TypeScript 全量 OpenAPI 类型并不补齐 runtime：
+## CI与执行纪律
 
-| 操作 | 成功媒体 | 当前边界 |
-| --- | --- | --- |
-| generateRenderUnit | 202 application/json | 尚未入 Workbench runtime profile |
-| downloadSavedAsset / downloadBookExport | 200/206 application/octet-stream | 投影/消费者尚不支持此二进制路径 |
-| streamExportEvents | 200 text/event-stream | 现生成器 HTTP 投影限定 application/json，不能当作完整事件消费者 |
+文档PR轻量路径实测16秒，对照原#138全量821秒；不同runner/排队，仅是两次观测。
+#141两个完整组合为285秒和706秒，后者pytest175.18秒；总时延与测试执行分开记录。
+当前main合后CI为292秒、pytest233.51秒，不承诺持续五分钟，也不据此判断业务性能。
+[CI范围](../architecture/ci-validation.md)保留full/轻量边界，Token与页面门禁不替代业务验收。
 
-这些列入 A00 后续串行队列，需正负/错误/流终止与实际消费者验收；本次只读核对，不立即改生成器，
-不扩展已完成的 #136。
-
-## issue 清理与执行纪律
-
-A #19–#26 已统一当前目标并修正已交付子任务；先折叠历史，随后管理端进一步精简正文。
-以最新 issue 正文的任务为准；原始失败/取消/修复与 SHA/测试证据可从原 PR/CI、issue 修订和
-本地快照追溯，历史不再混入当前复选进度。#6 汇总现实缺口；整理时保留 B 的并发交接，
-B/C 的 issue 未由 A 修改。A05/A06 保持 planned，其余 A 为 in-progress。
-没有完整验收的父包/Gate不关闭，也不为显示进展另造重复工作包或放宽退出条件。
-
-后续先更新 issue 的当前单元/依赖/验收，再实施。P1 完成后按实证推进 P2，缺外部事实时继续
-独立工作并写清 owner/解除条件；不反复重跑已完成单元，不以文档/契约交付替代产品闭环。
+每轮先写清“解除哪条业务依赖、固定哪份制品、何种正反例可验收”，再实施。
+仅整理文档/issue时复用有效证据，核对链接/声明/diff，不安装依赖或重复全库/硬件测试。
+正文维护目标、进展、任务与AC，细节链接原PR/CI，保留失败记录，不堆叠平行历史章节。
+C issue由C维护；主包/Gate只有真实AC齐备才关闭，由用户最终放行。

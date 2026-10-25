@@ -94,5 +94,17 @@ def parse(name: Literal["MinutesCreateRequest"], value: Any) -> models.MinutesCr
 def parse(name: Literal["MinutesJob"], value: Any) -> models.MinutesJob: ...
 
 
+@overload
+def parse(
+    name: Literal["RenderUnitGenerationRequest"], value: Any
+) -> models.RenderUnitGenerationRequest: ...
+
+
+@overload
+def parse(
+    name: Literal["RenderUnitGenerationAccepted"], value: Any
+) -> models.RenderUnitGenerationAccepted: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

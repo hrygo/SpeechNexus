@@ -44,10 +44,10 @@ C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再
 A00在当前main仍缺四项runtime绑定：generateRenderUnit仅#141候选；
 downloadSavedAsset/downloadBookExport二进制与streamExportEvents SSE仍待，不据静态类型或单条样例消项。
 
-#141保持未合并，head b840ea2d2f6f4b538cafbfe2355ac464a5cc7808，受检base7b042d5。
-CI40159242336的14项成功/3972单元/81.64%/1243集成通过+22既有跳过，仅适用于该旧组合。
-精确head复审通过，但管理端合并被自动安全审核拒绝，等待用户明确确认；本轮不重试、不改变其head或夹带实现。
-当前main360的组合尚未验证；若批准，仍须正常同步、审查新增量、取得新head必需检查，再由管理端处理。
+#141补齐`generateRenderUnit`的两个runtime DTO及JSON HTTP入口，沿用既有Workbench源契约。
+原14文件实现与样例保留；另三个binary/SSE、实际C路由、公开SpeechJob与音色资格仍需各自证据。
+旧CI40159242336仅证明原base/head组合。用户现已要求推进团队A PR合并，
+本单元正同步最新main并重新验证；既有自动审核拒绝作为历史记录保留，不视为已合并或整包验收。
 
 文件ASR路线：真实ready音频 + 固定权威配置 → 完整业务Job/原子准入 → 唯一真实外发 →
 B持久结果回执与可信停止 → A发布/下载 → SDK/C消费。

@@ -172,7 +172,11 @@ def prepare(cache: Path, temporary_root: Path) -> None:
             for key in known_keys
             if f"Acquire::{protocol}::{key}" in policy.stdout.splitlines()
         ]
-        if re.search(rf"Acquire::{protocol}::", policy.stdout, re.I) and not matches:
+        known = {f"Acquire::{protocol}::{key}" for key in known_keys}
+        if any(
+            re.search(rf"Acquire::{protocol}::", line, re.I) and line not in known
+            for line in policy.stdout.splitlines()
+        ):
             matches.append(f"{protocol}:other-or-nested-key")
         categories.extend(matches)
     if re.search(r"Acquire::.*ForceIPv", policy.stdout, re.I):
@@ -204,17 +208,44 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         for line in policy.stdout.splitlines()
         if re.search(r"Acquire::(?:http|https)::|Acquire::.*ForceIPv", line, re.I)
     ]
-    if (
-        policy.returncode
-        or policy.stderr
-        or os.environ.get("APT_CONFIG")
-        or any(key not in supported for key in transport_keys)
-        or re.search(
-            r"Acquire::Queue-Mode|Acquire::ForceHash|Binary::apt-get::Acquire::|Binary::apt-helper::Acquire::",
-            policy.stdout,
-            re.I,
-        )
+    reasons = []
+    if policy.returncode:
+        reasons.append("config-command-failed")
+    if policy.stderr:
+        reasons.append("config-stderr")
+    if os.environ.get("APT_CONFIG"):
+        reasons.append("alternate-config")
+    unsupported = [key for key in transport_keys if key not in supported]
+    if unsupported:
+        reasons.append("unsupported-transport-key")
+    for pattern, reason in (
+        (r"Acquire::Queue-Mode", "queue-control"),
+        (r"Acquire::ForceHash", "hash-control"),
+        (r"Binary::apt-get::Acquire::", "apt-get-binary-control"),
+        (r"Binary::apt-helper::Acquire::", "apt-helper-binary-control"),
     ):
+        if re.search(pattern, policy.stdout, re.I):
+            reasons.append(reason)
+    # This classifies namespace only, never the arbitrary unsupported suffix.
+    scopes = set()
+    for key in unsupported:
+        for prefix, scope in (
+            ("Acquire::", "global"),
+            ("Binary::apt-get::", "apt-get-binary"),
+            ("Binary::apt-helper::", "apt-helper-binary"),
+            ("Binary::apt::", "apt-binary"),
+        ):
+            if key.lower().startswith(prefix.lower()):
+                scopes.add(scope)
+                break
+        else:
+            scopes.add("other-namespace")
+    print(
+        "APT prefetch guard: "
+        + json.dumps({"reasons": reasons, "unsupported_scopes": sorted(scopes)}),
+        flush=True,
+    )
+    if reasons:
         print(
             "APT transport policy is custom or unreadable; keeping the original installer.",
             flush=True,

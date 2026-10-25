@@ -216,6 +216,48 @@ class PreparationTests(unittest.TestCase):
                 self.assertNotIn(private, output)
             self.assertEqual(run.call_args_list[-1].args[0], HELPER.INSTALL)
 
+    def test_mixed_known_and_nested_keys_remain_visible_and_block_prefetch(self) -> None:
+        with (
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess(
+                [], 0, "Acquire::http::Timeout\nAcquire::http::Proxy::private-host\n", ""
+            )
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            self.assertIn("http:Timeout", out.getvalue())
+            self.assertIn("http:other-or-nested-key", out.getvalue())
+            self.assertIn("unsupported-transport-key", out.getvalue())
+            self.assertNotIn("private-host", out.getvalue())
+            self.assertEqual(run.call_args_list[-1].args[0], HELPER.INSTALL)
+
+    def test_other_guard_reasons_are_classified_without_raw_keys_or_configuration(self) -> None:
+        for key, reason in (
+            ("Acquire::Queue-Mode", "queue-control"),
+            ("Acquire::ForceHash", "hash-control"),
+            ("Binary::apt-get::Acquire::http::Timeout", "apt-get-binary-control"),
+            ("Binary::apt-helper::Acquire::http::Timeout", "apt-helper-binary-control"),
+        ):
+            with (
+                self.subTest(reason=reason),
+                patch.object(HELPER.subprocess, "run") as run,
+                patch("sys.stdout", new_callable=io.StringIO) as out,
+            ):
+                run.return_value = subprocess.CompletedProcess([], 0, key + "\n", "")
+                HELPER.prepare(Path("/unused"), Path("/unused"))
+                self.assertIn(reason, out.getvalue())
+                self.assertEqual(run.call_count, 2)
+        with (
+            patch.dict("os.environ", {"APT_CONFIG": "/private/config"}),
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            self.assertIn("alternate-config", out.getvalue())
+            self.assertNotIn("/private/config", out.getvalue())
+            self.assertEqual(run.call_count, 2)
+
     def test_unreadable_root_policy_does_not_enable_an_alternate_transport(self) -> None:
         with patch.object(HELPER.subprocess, "run") as run:
             run.return_value = subprocess.CompletedProcess([], 0, "", "unreadable configuration")

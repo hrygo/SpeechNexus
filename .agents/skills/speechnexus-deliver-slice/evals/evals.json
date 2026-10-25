@@ -1,0 +1,23 @@
+{
+  "skill_name": "speechnexus-deliver-slice",
+  "evals": [
+    {
+      "id": "D1",
+      "prompt": "按 fixtures.md 的 D1 用户要求评估交接与实施顺序。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "区分生成契约、生产者、正式页面和真实资格；指出未注册发布路由、缺生产 Publisher、Editor 未装配；C 可先接草稿，不等待 A 整包；发布依赖具名 A/B 制品；保留原完整目标，不写代码。"
+    },
+    {
+      "id": "D2",
+      "prompt": "按 fixtures.md 的 D2 判断能否验收并给最小验证动作。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "不判通过；识别只检查脚本存在而未执行，需真正启动探针并核对恢复/分页断言；建议移除调用仍保留引用的负例保护；合成浏览器证据不结算物理设备条件，不放宽 AC。"
+    },
+    {
+      "id": "D3",
+      "prompt": "按 fixtures.md 的 D3 给出验证范围。",
+      "files": ["evals/fixtures.md"],
+      "expected_output": "只做文档 diff/目标文字核对和 git diff --check；不启动数据库、浏览器、模型，不建立完整 AC 矩阵或新计划，不扩大任务。"
+    }
+  ]
+}

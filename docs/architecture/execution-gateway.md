@@ -1,8 +1,8 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.15.0"
-date: 2026-10-24
+version: "1.16.0"
+date: 2026-10-25
 ---
 
 # 执行网关：提交、屏障与未知执行恢复
@@ -14,20 +14,23 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 `GatewayIngress` 已将完整外发段与入口屏障串行，`seal_barrier` 已保存实际封锁后的最低 token。
 `mark_execution_unknown`、`record_execution_observation`、受信命令正文清理
 与自身 submit/interval 分支的 `query_outcome`、`append_interval` 已实现；
-认证 HTTP 屏障、只读执行查询与提交/中止路由已接入生产组合根，但提交与中止要真正外发引擎，
-仍需在组合根注入引擎 adapter。实例 `drain` 路由已服务，但在没有该 adapter 的组合根里只报告
+认证 HTTP 屏障、只读执行查询与提交/中止路由已接入生产组合根。
+[文件 ASR 默认装配](file-asr-runtime.md)可按显式私有配置接现有 worker 与引擎 adapter；
+未配置时提交/中止仍拒绝执行。实例 `drain` 路由已服务，但在没有该 adapter 的组合根里只报告
 在途事实，不停止任何执行。真实计量采集器仍待后续单元。本页区分已实现、已验证与未交付。
 
 语音处理侧另有 [CPU VAD](cpu-vad.md)、[有界文件媒体](file-asr-audio.md)和
 [原生文件识别](file-asr-recognition.md)：已实现 VAD 门禁、源样本时钟与真实 vLLM 调用，
-通过固定模型/授权录音探针。它们尚未装配公开实时入口或持久 submit dispatch；
+通过固定模型/授权录音探针。文件持久 dispatch 现可按私有配置装配，验证中的模型为替身；
+公开实时入口、真实模型默认运行与完整公开链仍待验证，
 不改变本页的提交与停止证据、预算和屏障语义。
 文件侧另有[原命令消费者](frozen-execution-inputs.md#原命令驱动的文件-asr-消费者)，
 将同源校验后的参数接到核验输入、媒体/VAD和识别；仍须由已持久授权的执行者调用，
 不能在短提交握手中运行整个文件，也不产生停止或释放事实。
 该消费者也可将完整结果写入[私有结果存储](file-asr-results.md)，返回读回核验后的固定版本和摘要；
-[原事务登记与版本查询](execution-staging-results.md)候选可持久保存完整回执，已有针对性本地验证，
-作为本分支候选，尚未主线集成，不改变终态或预算权威。真实执行接线、执行终态、A 发布与公开消费仍待，
+[原事务登记与版本查询](execution-staging-results.md)可持久保存完整回执，
+文件 worker 和默认配置装配复用该事务，不改变终态或预算权威。
+真实模型默认运行、执行终态、A 发布与公开消费仍待，
 存储回执不作停止或释放证明。
 
 ## 1. 代码位置与依赖
@@ -665,5 +668,6 @@ PG 另验证真实 pool 锁等待后的取时与提交确认丢失后的只读�
 
 原生 TLS/SQLite、网关 PG 与 A 的 PG/InnoDB 消费者联调覆盖共享实例双执行、
 半证据保留占用、节点重启补齐与幂等释放。InnoDB 网关侧使用相同 SQL/领域规则的测试装配，
-不是已经交付生产 MySQL 驱动。默认网关周期驱动与真实 ASR/TTS dispatch/故障仍待，
+不是已经交付生产 MySQL 驱动。默认周期驱动与文件工厂已有条件配置入口，
+真实 ASR/TTS dispatch/故障资格仍待，
 不能据合成联调宣称生产调度、GPU 或物理集群资格完成。

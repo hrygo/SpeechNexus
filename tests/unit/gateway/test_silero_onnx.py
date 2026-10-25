@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -194,3 +195,32 @@ def test_model_read_is_bounded_before_loading_vendor_dependencies(
     with pytest.raises(VadError, match="invalid local"):
         SileroOnnxCpuModel(model_path=path, expected_sha256=DIGEST)
     assert not runtime
+
+
+@pytest.mark.parametrize("kind", ["fifo", "directory"])
+def test_model_cannot_block_activation_on_special_or_replaced_files(
+    tmp_path: Path, runtime: list[FakeInferenceSession], kind: str
+) -> None:
+    path = tmp_path / "synthetic.onnx"
+    if kind == "fifo":
+        os.mkfifo(path, 0o600)
+    else:
+        path.mkdir()
+    with pytest.raises(VadError):
+        SileroOnnxCpuModel(model_path=path, expected_sha256=DIGEST)
+    assert not runtime
+
+
+def test_regular_model_volume_symlinks_keep_digest_verification(
+    tmp_path: Path, runtime: list[FakeInferenceSession]
+) -> None:
+    target = tmp_path / "target.onnx"
+    target.write_bytes(MODEL)
+    path = tmp_path / "synthetic.onnx"
+    path.symlink_to(target)
+    assert SileroOnnxCpuModel(model_path=path, expected_sha256=DIGEST).model_sha256 == DIGEST
+    assert len(runtime) == 1
+    target.write_bytes(b"changed model bytes")
+    with pytest.raises(VadError, match="digest mismatch"):
+        SileroOnnxCpuModel(model_path=path, expected_sha256=DIGEST)
+    assert len(runtime) == 1

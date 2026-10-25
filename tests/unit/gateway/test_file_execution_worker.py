@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,6 +25,7 @@ from speechnexus_gateway.domain.asr_results import (
 )
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
+    DispatchResult,
     ExecutionState,
     SubmissionIntent,
     SubmissionOutcomeUnknownError,
@@ -83,7 +85,10 @@ class Pipeline:
 
 @contextmanager
 def configured(
-    ledger: InMemorySubmissionLedger | None = None, pipeline: Pipeline | None = None
+    ledger: InMemorySubmissionLedger | None = None,
+    pipeline: Pipeline | None = None,
+    *,
+    max_pending: int = 2,
 ) -> Iterator[tuple[Any, ...]]:
     ledger = ledger or InMemorySubmissionLedger()
     pipeline = pipeline or Pipeline()
@@ -96,7 +101,7 @@ def configured(
         results=results,
         max_result_bytes=1024,
         max_command_bytes=16384,
-        max_pending=2,
+        max_pending=max_pending,
     )
     worker.open()
     submit = SubmitExecutionService(
@@ -241,6 +246,68 @@ async def test_cancel_stops_local_task_without_manufacturing_stop_or_release() -
         assert pipeline.calls == 1
 
 
+async def test_abort_before_first_coroutine_step_frees_only_the_local_slot() -> None:
+    with configured(max_pending=1) as (ledger, pipeline, results, worker, submit, abort, _):
+        blocked, release, finished = threading.Event(), threading.Event(), threading.Event()
+        loop = worker._loop
+        assert loop is not None
+
+        def block_loop() -> None:
+            blocked.set()
+            assert release.wait(3), "the test must release the worker loop"
+
+        loop.call_soon_threadsafe(block_loop)
+        try:
+            assert await asyncio.to_thread(blocked.wait, 2)
+            request = original_request()
+            accepted = submit.submit(request)
+            assert accepted.intent.execution_state is ExecutionState.EXECUTING
+            ticket = worker._preparations[request.identity.submit_intent_id]
+            task_before_launch = ticket.task
+            assert ticket.started and task_before_launch is None
+            leases_before = copy.deepcopy(ledger._lease_states)
+            for _ in range(2):
+                aborted = abort.abort(
+                    AbortExecutionRequest(
+                        request.identity.submit_intent_id,
+                        request.identity.operation_id,
+                        request.identity.attempt_id,
+                        request.identity.fencing_token,
+                        "client_cancelled",
+                        100,
+                    )
+                )
+                assert aborted is not None
+                assert aborted.intent.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+
+            def watch_completion() -> None:
+                assert ticket.task is not None
+                ticket.task.add_done_callback(lambda _: finished.set())
+
+            # Launch, abort and this observer are queued while the loop is
+            # blocked, so cancellation precedes the coroutine's first step.
+            loop.call_soon_threadsafe(watch_completion)
+        finally:
+            release.set()
+        assert await asyncio.to_thread(finished.wait, 2)
+        assert ticket.task is not None and ticket.task.cancelled()
+        assert pipeline.calls == results.calls == 0 and not pipeline.started.is_set()
+        assert not ledger._evidence and ledger._lease_states == leases_before
+        assert stored(ledger, request).execution_state.holds_capacity
+        assert submit.submit(request).idempotent_replay
+
+        next_request = replace(
+            request,
+            identity=replace(
+                request.identity, submit_intent_id="intent-next", lease_id="lease-next"
+            ),
+        )
+        next_accepted = submit.submit(next_request)
+        assert next_accepted.intent.execution_state is ExecutionState.EXECUTING
+        await wait_for(lambda: stored(ledger, next_request).staging_result is not None)
+        assert pipeline.calls == results.calls == 1 and worker.running
+
+
 class BlockedResult(InMemorySubmissionLedger):
     def __init__(self) -> None:
         super().__init__()
@@ -256,6 +323,47 @@ class BlockedResult(InMemorySubmissionLedger):
         if request.staging_result is not None:
             self.finished.set()
         return result
+
+
+async def test_cancel_keeps_local_slot_until_database_writer_finishes() -> None:
+    ledger = BlockedResult()
+    with configured(ledger, max_pending=1) as (_, pipeline, results, worker, submit, abort, _):
+        request = original_request()
+        next_request = replace(
+            request,
+            identity=replace(
+                request.identity, submit_intent_id="intent-next", lease_id="lease-next"
+            ),
+        )
+        submit.submit(request)
+        assert await asyncio.to_thread(ledger.entered.wait, 2)
+        try:
+            ticket = worker._preparations[request.identity.submit_intent_id]
+            leases_before = copy.deepcopy(ledger._lease_states)
+            for _ in range(2):
+                abort.abort(
+                    AbortExecutionRequest(
+                        request.identity.submit_intent_id,
+                        request.identity.operation_id,
+                        request.identity.attempt_id,
+                        request.identity.fencing_token,
+                        "client_cancelled",
+                        100,
+                    )
+                )
+            await wait_for(lambda: ticket.task is not None and ticket.task.cancelling() == 2)
+            assert ticket.task is not None and not ticket.task.done()
+            assert worker.dispatch(next_request).result is DispatchResult.NOT_SENT
+            assert not ledger.finished.is_set()
+        finally:
+            ledger.release.set()
+        await wait_for(lambda: not worker._preparations)
+        assert stored(ledger, request).execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        assert not ledger._evidence and ledger._lease_states == leases_before
+        assert pipeline.calls == results.calls == 1
+        assert submit.submit(next_request).intent.execution_state is ExecutionState.EXECUTING
+        await wait_for(lambda: stored(ledger, next_request).staging_result is not None)
+        assert pipeline.calls == results.calls == 2 and worker.running
 
 
 async def test_close_joins_database_registration_before_returning() -> None:

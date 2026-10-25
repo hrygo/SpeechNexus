@@ -1,12 +1,14 @@
 """Prefetch the locked Playwright APT plan, then run its unchanged installer.
 
-Only the ephemeral Ubuntu CI runner uses this helper. APT remains the package
-authority and verifies archives again during the official installation.
+Only the ephemeral Ubuntu CI runner uses this helper. APT authenticates package
+indexes; strong digest verification is required before writing its full cache,
+because the official installer may reuse completed archives by size alone.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -20,7 +22,7 @@ PLAYWRIGHT = ["pnpm", "exec", "playwright"]
 INSTALL = [*PLAYWRIGHT, "install", "--with-deps", "--only-shell", "chromium"]
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?")
 ARCHIVE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+_.:%~-]*\.deb")
-HASHES = {"SHA256": ("sha256", 64), "SHA512": ("sha512", 128), "MD5Sum": ("md5", 32)}
+HASHES = {"SHA256": ("sha256", 64), "SHA512": ("sha512", 128)}
 
 
 class Archive(NamedTuple):
@@ -89,7 +91,7 @@ def archive_plan(output: str) -> list[Archive]:
 def verified(path: Path, archive: Archive) -> bool:
     if not path.is_file() or path.is_symlink() or path.stat().st_size != archive.size:
         return False
-    digest = hashlib.new(archive.algorithm, usedforsecurity=False)
+    digest = hashlib.new(archive.algorithm)
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
@@ -113,12 +115,62 @@ def prepare(cache: Path, temporary_root: Path) -> None:
     # than accidentally bypassing it with a second downloader.
     # Request key names only, never proxy credentials or other configuration values.
     policy = capture(["apt-config", "dump", "--format", "%f%n"])
+    known_keys = (
+        "Proxy",
+        "Proxy-Auto-Detect",
+        "ProxyAutoDetect",
+        "Dl-Limit",
+        "Timeout",
+        "Pipeline-Depth",
+        "No-Cache",
+        "Max-Age",
+        "No-Store",
+        "User-Agent",
+        "AllowRedirect",
+        "CaInfo",
+        "Verify-Peer",
+        "Verify-Host",
+        "SslCert",
+        "SslKey",
+    )
+    categories = []
+    for protocol in ("http", "https"):
+        matches = [
+            f"{protocol}:{key}"
+            for key in known_keys
+            if f"Acquire::{protocol}::{key}" in policy.stdout.splitlines()
+        ]
+        if re.search(rf"Acquire::{protocol}::", policy.stdout) and not matches:
+            matches.append(f"{protocol}:other-or-nested-key")
+        categories.extend(matches)
+    if re.search(r"Acquire::.*ForceIPv", policy.stdout):
+        categories.append("address-family")
+    # Fixed categories only: no stderr text, arbitrary key suffixes, values,
+    # proxy credentials, host names or local configuration paths enter logs.
+    print(
+        "APT preparation policy: "
+        + json.dumps(
+            {
+                "exit": policy.returncode,
+                "stderr": "permission-denied"
+                if "permission denied" in policy.stderr.lower()
+                else "other"
+                if policy.stderr
+                else "none",
+                "categories": categories,
+            }
+        ),
+        flush=True,
+    )
     if (
         policy.returncode
         or policy.stderr
         or re.search(r"Acquire::(?:http|https)::|Acquire::.*ForceIPv", policy.stdout, re.I)
     ):
-        print("APT transport policy is custom or unreadable; keeping the original installer.")
+        print(
+            "APT transport policy is custom or unreadable; keeping the original installer.",
+            flush=True,
+        )
         subprocess.run(INSTALL, check=True)
         return
     subprocess.run(["sudo", "apt-get", "update"], check=True)
@@ -128,6 +180,8 @@ def prepare(cache: Path, temporary_root: Path) -> None:
             [
                 "sudo",
                 "apt-get",
+                "-o",
+                "Acquire::ForceHash=sha256",
                 "--print-uris",
                 "--yes",
                 "--no-install-recommends",

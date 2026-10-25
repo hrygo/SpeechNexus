@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import shutil
 import subprocess
 import tempfile
@@ -57,6 +58,7 @@ class PackagePlanTests(unittest.TestCase):
             record.replace("pool/liba.deb", "pool/liba.deb?token=synthetic"),
             record.replace(" 3 ", " 0 "),
             record.replace("SHA256:" + digest, "SHA256:bad"),
+            record.replace("SHA256:" + digest, "MD5Sum:" + "a" * 32),
             record.replace(" 3 SHA256:" + digest, " 3"),
             record.replace("pool/liba", "pool/\nout=bad"),
         ):
@@ -92,6 +94,7 @@ class PreparationTests(unittest.TestCase):
                         args, 1, "Missing system dependencies (1):\n  fonts-unifont\n", ""
                     )
                 if "--print-uris" in args:
+                    self.assertIn("Acquire::ForceHash=sha256", args)
                     return subprocess.CompletedProcess(
                         args,
                         0,
@@ -108,7 +111,7 @@ class PreparationTests(unittest.TestCase):
                     self.assertIn("--no-conf", args)
                     self.assertNotIn("--check-certificate=false", args)
                     (temporary / "fonts-unifont_1_all.deb").write_bytes(
-                        b"corrupt" if corruption else payload
+                        b"X" * len(payload) if corruption else payload
                     )
                 elif args[:2] == ["sudo", "install"]:
                     self.assertEqual(args[2:4], ["--mode=0644", "--"])
@@ -154,7 +157,27 @@ class PreparationTests(unittest.TestCase):
     def test_matching_cache_is_preserved_and_mismatching_cache_is_not_overwritten(self) -> None:
         calls = self.exercise(cached=b"synthetic archive only")
         self.assertFalse(any(args[:2] == ["sudo", "install"] for args in calls))
-        self.exercise(cached=b"existing unknown bytes")
+        self.exercise(cached=b"X" * len(b"synthetic archive only"))
+
+    def test_policy_diagnostics_only_emit_fixed_categories(self) -> None:
+        with (
+            patch.object(HELPER.subprocess, "run") as run,
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            run.return_value = subprocess.CompletedProcess(
+                [],
+                0,
+                "Acquire::http::Proxy\nAcquire::https::Proxy::private-host\n",
+                "permission denied at /private/path user:secret",
+            )
+            HELPER.prepare(Path("/unused"), Path("/unused"))
+            output = out.getvalue()
+            self.assertIn("http:Proxy", output)
+            self.assertIn("https:other-or-nested-key", output)
+            self.assertIn("permission-denied", output)
+            for private in ("private-host", "/private/path", "secret", "user:"):
+                self.assertNotIn(private, output)
+            self.assertEqual(run.call_args_list[-1].args[0], HELPER.INSTALL)
 
     def test_unreadable_root_policy_does_not_enable_an_alternate_transport(self) -> None:
         with patch.object(HELPER.subprocess, "run") as run:

@@ -137,7 +137,10 @@
         "DrainInstanceRequest",
         "DrainInstanceResponse",
         "ExecutionStagingResult",
-        "ExecutionStagingResultResponse"
+        "ExecutionStagingResultResponse",
+        "ExecutionAudioMetadata",
+        "ExecutionAudioStagingResult",
+        "ExecutionAudioStagingResultResponse"
       ]
     },
     "runtime": {

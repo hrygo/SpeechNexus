@@ -2206,6 +2206,10 @@
         "staging_result": {
           "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionStagingResult",
           "description": "Trusted producer only. Register once while executing and eligible. Preserve expected_version CAS: after a lost response query the original identity; an exact receipt replay at the current version is read-only even after later stop. Mismatches conflict. Does not publish or change terminal/stop/budget facts."
+        },
+        "audio_staging_result": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionAudioStagingResult",
+          "description": "Trusted producer only. The audio receipt is a separate optional property so the JSON receipt above keeps its exact shape; send at most one of the two, never both. The same registration, expected_version CAS, original-identity replay and no terminal/stop/budget effect apply, and the receipt must match the original output stream and cover every generated sample."
         }
       }
     },
@@ -2251,6 +2255,85 @@
           }
         }
       ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionAudioStagingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Trusted private version-pinned audio receipt. The producer verifies the\nencoded payload and its source PCM clock. Registration requires the original\noutput stream, sample rate and authoritative generated_pcm_samples to match\naudio.source_pcm_samples, with real recorded output intervals and the frozen\nceiling respected. Generated intervals for this file execution must cover\n[0, source_pcm_samples) without gaps, not just reach its max-end watermark.\nRegistration never appends samples or proves stopping.\nPCM delivery length is source_pcm_samples * 2; WAV contains that PCM; MP3\nuses the source clock rather than decoder padding. At most 64 MiB delivery.\nOld ledger readers must be upgraded before any audio producer is enabled.\n",
+      "required": ["request_digest", "reference", "storage_version", "media_type", "audio"],
+      "properties": {
+        "request_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+        },
+        "reference": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ArtifactStorageReference"
+        },
+        "storage_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "not": {
+            "const": "null"
+          }
+        },
+        "media_type": {
+          "enum": ["audio/wav", "audio/pcm", "audio/mpeg"]
+        },
+        "audio": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionAudioMetadata"
+        }
+      },
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "object",
+              "properties": {
+                "byte_length": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 67108864
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionAudioMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Source mono PCM16LE clock, before delivery encoding; not MP3 decoded-frame\nlength (which may include codec padding). duration_ms is exactly\nfloor(source_pcm_samples * 1000 / sample_rate_hz).\nInitial persistent file-TTS scope is 24 kHz mono, at most 64 MiB source PCM.\n",
+      "required": [
+        "sample_rate_hz",
+        "channels",
+        "source_pcm_samples",
+        "duration_ms",
+        "source_pcm_digest"
+      ],
+      "properties": {
+        "sample_rate_hz": {
+          "const": 24000
+        },
+        "channels": {
+          "const": 1
+        },
+        "source_pcm_samples": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 33554432
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1398101
+        },
+        "source_pcm_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+        }
+      }
     },
     "redact_execution_command": {
       "type": "object",

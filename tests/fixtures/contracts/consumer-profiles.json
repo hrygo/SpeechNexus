@@ -10012,6 +10012,410 @@
         "disabled_reason": null
       },
       "valid": false
+    },
+    {
+      "id": "audio-staging-wav",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": true,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-pcm",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": true,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "byte_length": 4800
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/pcm",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-mpeg",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": true,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/mpeg",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-unknown-field",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "extra": true
+      }
+    },
+    {
+      "id": "audio-staging-oversize",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 67108865
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-bad-rate",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 8000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-stereo",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 2,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-pcm-bound",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 33554433,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-unknown-audio-field",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "extra": true
+        }
+      }
+    },
+    {
+      "id": "audio-staging-unsupported-media",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/flac",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-staging-null-version",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "null",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-never-enters-legacy-json",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4844
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav",
+        "audio": {
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "source_pcm_samples": 2400,
+          "duration_ms": 100,
+          "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    },
+    {
+      "id": "audio-response-pending",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResultResponse",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-a",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "staging_result": null
+      }
+    },
+    {
+      "id": "audio-response-registered",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResultResponse",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-a",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "staging_result": {
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reference": {
+            "asset_or_artifact_id": "artifact-synthetic",
+            "workspace_id": "workspace-synthetic",
+            "storage_bucket": "synthetic-private",
+            "object_key": "private/synthetic/result.json",
+            "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "byte_length": 4844
+          },
+          "storage_version": "synthetic-version",
+          "media_type": "audio/wav",
+          "audio": {
+            "sample_rate_hz": 24000,
+            "channels": 1,
+            "source_pcm_samples": 2400,
+            "duration_ms": 100,
+            "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      }
+    },
+    {
+      "id": "json-never-enters-audio-view",
+      "profile": "execution",
+      "schema": "ExecutionAudioStagingResultResponse",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-a",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "staging_result": {
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reference": {
+            "asset_or_artifact_id": "artifact-synthetic",
+            "workspace_id": "workspace-synthetic",
+            "storage_bucket": "synthetic-private",
+            "object_key": "private/synthetic/result.json",
+            "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "byte_length": 11
+          },
+          "storage_version": "synthetic-version",
+          "media_type": "application/json"
+        }
+      }
+    },
+    {
+      "id": "audio-metadata-source-clock",
+      "profile": "execution",
+      "schema": "ExecutionAudioMetadata",
+      "valid": true,
+      "value": {
+        "sample_rate_hz": 24000,
+        "channels": 1,
+        "source_pcm_samples": 2400,
+        "duration_ms": 100,
+        "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "id": "audio-metadata-rejects-unsupported-clock",
+      "profile": "execution",
+      "schema": "ExecutionAudioMetadata",
+      "valid": false,
+      "value": {
+        "sample_rate_hz": 8000,
+        "channels": 1,
+        "source_pcm_samples": 2400,
+        "duration_ms": 100,
+        "source_pcm_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
     }
   ]
 }

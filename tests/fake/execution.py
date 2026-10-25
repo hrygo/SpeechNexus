@@ -20,7 +20,11 @@ from speechnexus_gateway.domain.command_redaction import (
 from speechnexus_gateway.domain.fencing import BarrierConflictError, BarrierSnapshot, IngressFence
 from speechnexus_gateway.domain.instance_drain import DrainInventory, InstanceIdentity
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
-from speechnexus_gateway.domain.output_intervals import OutputIntervalRecord, OutputIntervalWrite
+from speechnexus_gateway.domain.output_intervals import (
+    MeterKind,
+    OutputIntervalRecord,
+    OutputIntervalWrite,
+)
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
@@ -168,6 +172,18 @@ class InMemorySubmissionLedger:
         if stored is None:
             raise InvalidExecutionRequestError("unknown execution observation")
         updated = request.apply(stored, at=self._now())
+        if updated is not stored and request.staging_result is not None:
+            intervals = [
+                record.interval
+                for record in self._intervals.values()
+                if record.interval.submit_intent_id == key
+                and record.interval.meter_kind is MeterKind.GENERATED
+            ]
+            request.validate_audio_coverage(
+                sample_start=min((item.sample_start for item in intervals), default=None),
+                sample_end=max((item.sample_end for item in intervals), default=None),
+                sample_count=sum(item.sample_end - item.sample_start for item in intervals),
+            )
         self._intents[key] = copy.deepcopy(updated)
         return updated
 

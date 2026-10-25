@@ -13,5 +13,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 - [0008：控制器观察前的持久 runtime 意图](0008-runtime-intents-before-controller-observation.md)（accepted，2026-10-24；区分无观察协调快照与实际控制器响应，扩展同库 outbox；生产事务/派发待实现）。
 
 - [0009：工作台显式模型绑定与配置发现的 HTTP 版本迁移](0009-workbench-explicit-binding-http-version.md)（accepted，2026-10-25；保留严格 v1、新增 v2 显式绑定与状态配置发现，消费者按路径迁移）。
+- [0010：私有音频回执与旧 JSON 消费者兼容](0010-private-audio-receipt-compatibility.md)（accepted，2026-10-25；独立音频读取视图、复用原回执及样本账本，先升级读取者再启用生产者）。
 
 [文档索引](../README.md)

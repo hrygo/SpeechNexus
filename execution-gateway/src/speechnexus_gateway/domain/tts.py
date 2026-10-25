@@ -96,6 +96,10 @@ class TtsDeliveryFormat(StrEnum):
     MP3 = "mp3"
     PCM = "pcm"
 
+    @property
+    def media_type(self) -> str:
+        return {"wav": "audio/wav", "mp3": "audio/mpeg", "pcm": "audio/pcm"}[self.value]
+
 
 @dataclass(frozen=True, slots=True)
 class TtsPolicy:

@@ -9,7 +9,7 @@ date: 2026-10-24
 
 本单元把已复核的 vLLM-Omni `/v1/audio/speech` 能力做成网关原生端口：冻结文本与音色策略、
 固定私网端点、结构化校验引擎音频、并把规范化 PCM16 有界编码为交付格式。
-公开 `/v1/audio/speech` 路由、持久 dispatch 装配、调度准入、对象写入/发布、音色发布
+公开 `/v1/audio/speech` 路由、持久 dispatch 装配、调度准入、对象发布、音色发布
 以及 Base/VoiceDesign 仍另行接入；不能把适配器直接注册成绕过租约和提交屏障的业务路由。
 
 ## 端口和结果
@@ -20,6 +20,7 @@ date: 2026-10-24
 | infrastructure | `VllmTtsEndpoint`、`VllmTtsSynthesizer` | 固定私网 HTTP 端点、单次 JSON 调用、响应头与 RIFF 结构校验 |
 | infrastructure | `LocalTtsEncoder` | 本地 PCM/WAV/MP3 交付编码，显式字节、时长与取消边界 |
 | application | `FileTtsSynthesis`、`FileTtsResult` | 单次外发一次合成，再编码为声明的交付格式 |
+| domain / infrastructure | `PreparedTtsResult`、`MinioTtsResults` | 独立音频回执，经共享私有 S3 写入与固定版本读回，不发布或修改计量 |
 
 端点是配置的私网 IP 明文（回环或私有地址）、端口、`served_model` 和 binding revision，
 与 ASR 适配器共用同一 `PrivateEngineEndpoint` 校验。调用方不能从请求、重定向或环境代理
@@ -45,6 +46,25 @@ result = await synthesis.run()
 结果包含执行 ID、请求 ID、策略摘要、binding revision、引擎媒体类型、采样率、声道、
 PCM 字节数、时长和交付载荷。文本与音频载荷不进入 `repr`；`pcm_bytes` 是规范化后的
 单声道 PCM16 大小，不是引擎响应大小。
+
+### 私有音频 staging
+
+已具备准入与唯一执行资格的调用方可以改用
+`await synthesis.stage_result(workspace_id=..., request_digest=..., store=...)`，
+连接现有合成、编码与 `MinioTtsResults`。它只支持持久执行身份允许的 24 kHz mono
+交集，返回固定对象版本与源 PCM 样本元数据。原生接口的 8 kHz 声明不因此获得资格。
+单次对象已尝试后，即使确认丢失，也不能在同一 synthesis 上重新外发或再次 PUT。
+
+调用方须通过原 B 区间端口登记实际生成样本，再调用原观察事务登记回执。
+新音频查询、完整区间检查、升级顺序及回退边界见
+[执行回执](execution-staging-results.md)和 [ADR 0010](../decisions/0010-private-audio-receipt-compatibility.md)。
+生产 TTS 命令映射/default factory 仍未装配；上述组件接线不能替代 A 的公开发布链。
+
+staging 本地稳定错误为 `tts_result_invalid`、`tts_result_cancelled`、
+`tts_result_deadline_exceeded`、`tts_result_storage_unknown`、
+`tts_result_versioning_required`、`tts_result_readback_failed`、
+`tts_result_identity_mismatch`。它们不直接扩充公开执行错误枚举；调用方仍按原
+unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知对象。
 
 ## 参数、边界和失败语义
 

@@ -19,18 +19,16 @@ from speechnexus_gateway.domain.tts import (
     TtsPolicy,
     TtsRequest,
 )
+from speechnexus_gateway.infrastructure.local_tts_encoder import LocalTtsEncoder
 
 POLICY = TtsPolicy("config-1", "Vivian")
 PCM = b"\x01\x00" * 2400
 AUDIO = TtsAudio("request-1", "audio/wav", PCM, 24000, 1, POLICY.digest)
-DELIVERY = TtsDelivery(
-    TtsDeliveryFormat.WAV,
-    "audio/wav",
-    b"RIFF" + b"\x00" * 40,
-    24000,
-    1,
-    100,
-    "sha256:" + "0" * 64,
+DELIVERY = LocalTtsEncoder().encode(
+    AUDIO,
+    target=TtsDeliveryFormat.WAV,
+    max_payload_bytes=1024 * 1024,
+    cancelled=lambda: False,
 )
 
 

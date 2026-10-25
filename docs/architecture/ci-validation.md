@@ -39,3 +39,15 @@ uv run pytest tests/ci tests/contract/test_ci_workflow.py tests/unit/test_integr
 ```
 
 需要完整复核时可在 Actions 手动运行 CI；本机完整检查仍按 [AGENTS.md](../../AGENTS.md) 的宿主和隔离服务前置条件执行。
+
+## 轻量路径实测（2026-10-25）
+
+| 指标 | 原文档 PR | 新文档 PR |
+| --- | ---: | ---: |
+| 实际执行作业 | 13 | 2 |
+| 整轮耗时（含调度/排队） | 821 秒 | 16 秒 |
+| 累计作业执行时间 | 1584 秒 | 11 秒 |
+
+来源：[原 PR #138](https://github.com/hrygo/SpeechNexus/actions/runs/40155498616)、[新 PR #144 首次运行](https://github.com/hrygo/SpeechNexus/actions/runs/40158818797)。新运行的七个业务作业按范围不适用，最终必需门禁通过。完整路径另由 [PR #143](https://github.com/hrygo/SpeechNexus/pull/143) 的 14 项检查通过验证。
+
+以上是两次文档改动的托管观测；runner 与排队情况不同，不代表长期分位数或业务测试自身提速。`main` 与手动运行继续执行完整验证。

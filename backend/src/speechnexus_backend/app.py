@@ -15,10 +15,11 @@ from starlette.responses import Response
 
 from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
-from speechnexus_backend.binding_runtime import BindingRuntime
+from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService
+from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.readiness import (
@@ -55,6 +56,7 @@ from speechnexus_backend.speech.interfaces.http.workspaces import (
 
 class _SpeechAPI(FastAPI):
     _business_contracts_added = False
+    _binding_defaults_enabled = False
 
     def openapi(self) -> dict[str, Any]:
         document = super().openapi()
@@ -65,7 +67,7 @@ class _SpeechAPI(FastAPI):
                 asset_http_contract(),
                 workspace_http_contract(),
                 profile_http_contract(),
-                binding_http_contract(),
+                binding_http_contract(producer=self._binding_defaults_enabled),
             ):
                 surface = copy.deepcopy(contract)
                 document["paths"].update(surface["paths"])
@@ -102,10 +104,19 @@ def create_app(
     workspaces: WorkspaceService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
+    binding_defaults: BindingDefaultDrafts | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
     resolved_settings = settings or Settings()
+    producer = (
+        binding_defaults is not None
+        or resolved_settings.binding_defaults_writer_database_url is not None
+    )
+    if producer and (
+        bindings is not None or resolved_settings.binding_writer_database_url is not None
+    ):
+        raise ValueError("Configure one explicit binding writer mode")
     resolved_readiness = readiness or _build_readiness(resolved_settings)
     runtime = (
         AssetRuntime(resolved_settings)
@@ -130,8 +141,20 @@ def create_app(
         if bindings is None and resolved_settings.binding_writer_database_url is not None
         else None
     )
+    binding_defaults_runtime = (
+        BindingDefaultsRuntime(resolved_settings)
+        if binding_defaults is None
+        and resolved_settings.binding_defaults_writer_database_url is not None
+        else None
+    )
 
-    def get_bindings() -> BindingDrafts | None:
+    def get_bindings() -> BindingDrafts | BindingDefaultDrafts | None:
+        if producer:
+            if binding_defaults is not None:
+                return binding_defaults
+            return (
+                binding_defaults_runtime.provider if binding_defaults_runtime is not None else None
+            )
         if bindings is not None:
             return bindings
         return binding_runtime.provider if binding_runtime is not None else None
@@ -139,6 +162,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
+            if binding_defaults_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, binding_defaults_runtime.close)
+                await run_in_threadpool(binding_defaults_runtime.open)
             if binding_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_runtime.close)
                 await run_in_threadpool(binding_runtime.open)
@@ -161,6 +187,7 @@ def create_app(
         description="Health, assets, workspace reads and immutable configuration drafts.",
         lifespan=lifespan,
     )
+    app._binding_defaults_enabled = producer
     app.add_middleware(
         AssetIngress,
         max_bytes=resolved_settings.asset_max_bytes,
@@ -187,6 +214,7 @@ def create_app(
     )
     app.add_middleware(
         BindingIngress,
+        producer=producer,
         max_bytes=resolved_settings.binding_receive_max_bytes,
         concurrency=resolved_settings.binding_receive_concurrency,
         receive_timeout_seconds=resolved_settings.binding_receive_timeout_seconds,
@@ -199,7 +227,7 @@ def create_app(
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
-    app.include_router(create_binding_router(get_bindings))
+    app.include_router(create_binding_router(get_bindings, producer=producer))
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
@@ -240,4 +268,5 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.profile_runtime = profile_runtime
     app.state.binding_runtime = binding_runtime
+    app.state.binding_defaults_runtime = binding_defaults_runtime
     return app

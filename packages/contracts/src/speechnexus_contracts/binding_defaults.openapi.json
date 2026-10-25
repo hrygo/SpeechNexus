@@ -3,7 +3,7 @@
   "info": {
     "title": "SpeechNexus binding default producer contract",
     "version": "0.1.0.dev0",
-    "description": "Contract-only extension for creating a new binding revision with explicitly declared parameter defaults and reading its fixed snapshot. This profile does not advertise implemented operational routes or prove persistence, authority, publication or qualification. Legacy admin 0.1.0.dev3 remains the implemented draft contract until the producer is wired."
+    "description": "Explicit producer mode for creating a new binding revision with declared parameter defaults and reading its fixed snapshot. The API registers this profile when the controlled four-table writer mode is explicitly selected; legacy admin 0.1.0.dev3 remains the independent three-table draft mode. This contract does not prove producer authority, publication or engine qualification."
   },
   "security": [
     {

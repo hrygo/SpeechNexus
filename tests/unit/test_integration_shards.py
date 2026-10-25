@@ -346,7 +346,8 @@ def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(resu
 def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> None:
     consumer = "test_generated_typescript_client_consumes_actual_loopback_http"
     paths = [
-        ROOT / f"tests/integration/test_{resource}_http.py" for resource in ("binding", "profile")
+        ROOT / f"tests/integration/test_{resource}_http.py"
+        for resource in ("binding", "profile", "binding_defaults")
     ]
     for path in paths:
         definitions = {

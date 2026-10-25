@@ -89,3 +89,9 @@ Origin. This release does not claim complete backup restoration, production
 object IAM/outbound restrictions, arbitrary audio inspection or G1 qualification.
 
 预设草稿 HTTP writer 默认关闭。仅在操作者已应用 `0009_profile_drafts` 并独立配置最小非 owner 角色后，设置 `SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL`；不得复用 Compose bootstrap owner。启动仅验证权限并管理独立连接池，不执行迁移或 grant。原请求/原键重放、固定读取和限额见 [profile drafts](../docs/architecture/profile-drafts.md#http-runtime-and-controlled-writer)。此配置不发布或激活预设。
+
+绑定草稿选择一个显式模式：`SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` 使用旧三表角色；
+`SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` 使用预先迁移到0011的四表最小角色，
+启用原子默认值声明与固定快照GET。两者互斥、默认均为空；没有通用数据库身份回退，
+也不会自动扩旧角色权限。配置示例仅传递操作者已配置的凭据，不执行grant、DDL或部署。
+模式、错误恢复与实际入口见 [producer HTTP](../docs/architecture/binding-defaults-producer.md)。

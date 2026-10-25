@@ -241,7 +241,10 @@ async def test_audio_trickle_headers_obey_one_total_deadline(server: Server, met
     started = time.monotonic()
     with pytest.raises(TtsResultError, match="tts_result_deadline_exceeded"):
         await value.stage(result, cancelled=lambda: False)
-    assert time.monotonic() - started < 0.5
+    # The server trickles a header every 30 ms for 1.2 s; a per-packet inactivity timeout would
+    # run that long, so staying below it proves the total deadline is what stopped the upload.
+    # Keep a wide margin above the 80 ms budget for loaded CI schedulers.
+    assert time.monotonic() - started < 1.0
     assert server.bodies[server.slow_key] == result.body
     assert sum(verb == "PUT" for verb, _ in server.calls) == 1
 

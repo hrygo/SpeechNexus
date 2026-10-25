@@ -166,7 +166,19 @@ class ExecutionSnapshot:
                 ),
             }
         # A private staging key alone is not a complete immutable artifact reference.
+        if intent.staging_result is not None:
+            payload["staging_artifact_ref"] = intent.staging_result.value()["reference"]
         return payload
+
+    def staging_response(self) -> dict[str, object]:
+        """A separate version-aware projection; existing status fields stay compatible."""
+        return {
+            "submit_intent_id": self.intent.identity.submit_intent_id,
+            "request_digest": self.intent.request_digest,
+            "staging_result": (
+                None if self.intent.staging_result is None else self.intent.staging_result.value()
+            ),
+        }
 
     def response(self) -> dict[str, object]:
         return {"kind": "execution", "execution": self.status()}

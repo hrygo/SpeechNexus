@@ -121,6 +121,7 @@ jobs:
           import json
           import os
           import platform
+          import re
           import subprocess
           from pathlib import Path
           result = {"kernel": platform.release(), "uid": os.getuid()}
@@ -166,6 +167,28 @@ jobs:
                   result["profile_audit"]["format"] = "unavailable"
           else:
               result["profile_audit"]["stderr"] = audit.stderr[:400]
+          # Read only recent kernel denials. Emit fixed audit fields for bwrap,
+          # never unrelated journal lines or arbitrary command/path arguments.
+          kernel_audit = subprocess.run(
+              ["sudo", "-n", "journalctl", "--dmesg", "--since=-5min", "-n", "80",
+               "--no-pager", "--output=short-iso", '--grep=apparmor="DENIED"'],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          fields = ("apparmor", "operation", "profile", "comm", "pid", "error",
+                    "capability", "capname", "requested_mask", "denied_mask")
+          denials = []
+          for line in kernel_audit.stdout.splitlines():
+              if "bwrap" not in line or 'apparmor="DENIED"' not in line:
+                  continue
+              entry = {"timestamp": line.split(maxsplit=1)[0][:40]}
+              for field in fields:
+                  match = re.search(r'\b' + field + r'=("[^"]*"|\S+)', line)
+                  if match:
+                      entry[field] = match.group(1).strip('"')[:120]
+              denials.append(entry)
+          result["recent_bwrap_kernel_denials"] = {
+              "returncode": kernel_audit.returncode, "records": denials[:16],
+          }
           print(json.dumps(result, sort_keys=True))
           PY
 

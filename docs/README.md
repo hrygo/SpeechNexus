@@ -13,6 +13,7 @@
 | [规范执行命令与内部文本流](architecture/execution-command.md)                                       | 完整有效命令、摘要、受控资源引用与 TTS 文本提交                                 |
 | [原命令与核验文件输入](architecture/frozen-execution-inputs.md) | 原持久请求只读核验、一次提交命令桥、版本固定对象输入及真实执行剩余边界 |
 | [文件 ASR 私有结果](architecture/file-asr-results.md) | 完整正文有界汇总、固定版本对象写入与读回核验；持久登记与公开发布边界 |
+| [执行回执登记与查询](architecture/execution-staging-results.md) | 原观察事务、固定版本私有回执、CAS/恢复、权限与只读查询；不发布或退预算 |
 | [原生 ASR 请求清理](../deploy/engines/vllm-asr-lifecycle/README.md) | 固定引擎插件、内部/子请求归属、在途提交保护与取消清理；不代表 GPU 停止证明 |
 | [数据删除与依赖裁决](architecture/data-deletion.md)                                                 | 预检、明确级联、独立副本、异步清理和恢复账本                                    |
 | [精简分布式协调 Schema](architecture/distributed-coordination-schema.md)                            | 普通约束、当前指针、表所有权与历史原型隔离                                      |

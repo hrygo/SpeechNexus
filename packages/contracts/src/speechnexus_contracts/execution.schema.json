@@ -11,7 +11,9 @@
     "GatewayFencingBarrierResponse",
     "ExecutionControlErrorResponse",
     "DrainInstanceRequest",
-    "DrainInstanceResponse"
+    "DrainInstanceResponse",
+    "ExecutionStagingResult",
+    "ExecutionStagingResultResponse"
   ],
   "$defs": {
     "SubmitExecutionRequest": {
@@ -2381,6 +2383,73 @@
           }
         }
       ]
+    },
+    "ExecutionStagingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Private immutable receipt from the trusted execution adapter after complete\nversion-pinned readback. Not a publication, execution terminal or release fact.\nInitial supported container is Transcription JSON; TTS media is not enabled here.\n",
+      "required": ["request_digest", "reference", "storage_version", "media_type"],
+      "properties": {
+        "request_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "reference": {
+          "$ref": "#/$defs/ArtifactStorageReference"
+        },
+        "storage_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "not": {
+            "const": "null"
+          }
+        },
+        "media_type": {
+          "const": "application/json"
+        }
+      },
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "object",
+              "properties": {
+                "byte_length": {
+                  "type": "integer",
+                  "minimum": 11,
+                  "maximum": 4194304
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionStagingResultResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A null result means no complete receipt has been registered, never proof of\nno object or no running computation. Read only; cannot authorize redispatch.\nPublishing consumers must independently check current cancellation/terminal authority.\n",
+      "required": ["submit_intent_id", "request_digest", "staging_result"],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "staging_result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionStagingResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   },
   "anyOf": [
@@ -2410,6 +2479,12 @@
     },
     {
       "$ref": "#/$defs/DrainInstanceResponse"
+    },
+    {
+      "$ref": "#/$defs/ExecutionStagingResult"
+    },
+    {
+      "$ref": "#/$defs/ExecutionStagingResultResponse"
     }
   ]
 }

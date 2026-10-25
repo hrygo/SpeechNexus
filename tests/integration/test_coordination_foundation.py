@@ -38,6 +38,7 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
+from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
 from speechnexus_backend.speech.infrastructure.runtime_delivery_schema import RUNTIME_DELIVERY_DDL
@@ -159,6 +160,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *RUNTIME_OBSERVATION_DDL,
             *ADMISSION_COMMAND_DDL,
             *RUNTIME_DELIVERY_DDL,
+            *EXECUTION_RESULT_DDL,
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
@@ -476,7 +478,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0011_binding_parameter_defaults"
+    assert sandbox.version() == "0012_execution_results"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -543,7 +545,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0011_binding_parameter_defaults"
+        assert sandbox.version() == "0012_execution_results"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

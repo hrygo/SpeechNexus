@@ -14,6 +14,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Protocol
 
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     EngineInstanceState,
@@ -31,6 +32,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreError,
     hard_output_ceiling_samples,
     max_output_audio_ms_for,
+    verify_result_eligibility,
     verify_submit_eligibility,
     verify_submit_identity,
 )
@@ -140,6 +142,7 @@ SELECT s.submit_intent_id, s.lease_id, s.operation_id, s.attempt_id, s.command_d
        s.updated_at_us, s.execution_state, s.cleanup_state, s.engine_request_id,
        s.dispatched_at_us, s.error_code, s.output_stream_id, s.sample_rate_hz,
        s.hard_output_ceiling_samples, s.generated_pcm_samples, s.staging_output_object_key,
+       s.staging_result_document,
        s.version, s.terminated_at_us,
        EXISTS (SELECT 1 FROM output_sample_intervals AS i
                WHERE i.operation_id = s.operation_id AND i.attempt_id = s.attempt_id
@@ -391,7 +394,11 @@ def list_quarantined_intents(
 
 
 def save_submit_intent(
-    cursor: SubmitCursor, intent: SubmissionIntent, *, expected_version: int
+    cursor: SubmitCursor,
+    intent: SubmissionIntent,
+    *,
+    expected_version: int,
+    registering_result: bool = False,
 ) -> None:
     """Write the state the caller derived, but only from the version it read."""
     if intent.version != expected_version + 1:
@@ -400,6 +407,13 @@ def save_submit_intent(
         raise ExecutionCleanupPendingError("terminal writes with cleanup require record_stop")
     intent.validate()
     current = lock_submit_intent(cursor, intent.identity.submit_intent_id)
+    if registering_result and (
+        current.staging_result is not None
+        or current.has_staging_output
+        or intent.staging_result is None
+        or not intent.has_staging_output
+    ):
+        raise InvalidExecutionRequestError("result registration is not a first complete receipt")
     if current.version != expected_version:
         raise StaleSubmissionVersionError("submit intent version changed since it was read")
     if current.execution_state.is_terminal:
@@ -409,7 +423,13 @@ def save_submit_intent(
         or current.request_digest != intent.request_digest
         or current.output_stream_id != intent.output_stream_id
         or current.generated_pcm_samples != intent.generated_pcm_samples
-        or current.has_staging_output != intent.has_staging_output
+        or (
+            not registering_result
+            and (
+                current.has_staging_output != intent.has_staging_output
+                or current.staging_result != intent.staging_result
+            )
+        )
         or current.has_output_intervals != intent.has_output_intervals
         or (
             current.engine_request_id is not None
@@ -438,6 +458,44 @@ def save_submit_intent(
         raise StaleSubmissionVersionError(
             "submit intent was not updated at the version the caller read"
         )
+
+
+def lock_result_registration(
+    cursor: SubmitCursor, identity: SubmissionIdentity, *, clock: Callable[[], datetime]
+) -> SubmissionIntent:
+    """Use the existing global lock order and recheck authority after every wait."""
+    initial = read_submit_intent(cursor, identity.submit_intent_id)
+    if initial is None or initial.identity != identity:
+        raise InvalidExecutionRequestError("result references another execution")
+    _lock_authority_rows(cursor, identity)
+    current = lock_submit_intent(cursor, identity.submit_intent_id)
+    if current.staging_result is None:
+        verify_result_eligibility(
+            identity,
+            _read_lease_facts(cursor, identity.lease_id),
+            sealed_min_fencing_token=_read_sealed_min_fencing_token(cursor, identity),
+            now=clock(),
+        )
+    return current
+
+
+def save_staging_result(cursor: SubmitCursor, intent: SubmissionIntent) -> None:
+    result = intent.staging_result
+    if result is None:
+        raise InvalidExecutionRequestError("result metadata is missing")
+    cursor.execute(
+        "UPDATE submit_intents SET staging_result_document = %s, staging_output_object_key = %s "
+        "WHERE submit_intent_id = %s AND version = %s "
+        "AND staging_result_document IS NULL AND staging_output_object_key IS NULL",
+        (
+            result.document,
+            result.reference.object_key,
+            intent.identity.submit_intent_id,
+            intent.version,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise StaleSubmissionVersionError("result changed before its registration")
 
 
 def lock_submit_intent(
@@ -482,6 +540,10 @@ def lock_submit_intent(
 
 def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
     try:
+        document = row.get("staging_result_document")
+        result = None if document is None else ExecutionStagingResult.from_document(document)
+        if result is not None and result.reference.object_key != row["staging_output_object_key"]:
+            raise ValueError("stored result pointer disagrees with the receipt")
         sample_rate_hz = row["sample_rate_hz"]
         ceiling = row["hard_output_ceiling_samples"]
         identity = SubmissionIdentity(
@@ -548,6 +610,7 @@ def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
             generated_pcm_samples=row["generated_pcm_samples"],
             has_staging_output=row["staging_output_object_key"] is not None,
             has_output_intervals=bool(row["has_output_intervals"]),
+            staging_result=result,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise SubmissionStoreError(

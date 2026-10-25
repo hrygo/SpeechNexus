@@ -18,6 +18,16 @@ class ExecutionInputError(ValueError):
         self.code = code
 
 
+def is_fixed_storage_version(value: object) -> bool:
+    """Storage versions are opaque, non-null identifiers, never control text."""
+    return (
+        type(value) is str
+        and 1 <= len(value) <= 1024
+        and value != "null"
+        and not any(ord(char) < 32 or ord(char) == 127 for char in value)
+    )
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class ExecutionObjectReference:
     asset_or_artifact_id: str

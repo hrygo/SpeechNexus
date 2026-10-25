@@ -57,9 +57,11 @@ export interface MicrophoneCapture {
   readonly token: string;
   readonly sampleRate: number;
   readonly snapshot: {
-    readonly state: "running" | "stopped" | "failed";
+    readonly state: "running" | "stopping" | "stopped" | "failed";
     readonly reason: CaptureReason | undefined;
   };
+  /** Input has stopped; native resource release is confirmed separately by closed. */
+  readonly stopping: Promise<void>;
   readonly closed: Promise<void>;
   stop(): Promise<void>;
 }
@@ -96,11 +98,15 @@ export async function createMicrophoneCapture(
   let stream: MediaStream | undefined;
   let source: MediaStreamAudioSourceNode | undefined;
   let node: AudioWorkletNode | undefined;
-  let phase: "starting" | "running" | "stopped" | "failed" = "starting";
+  let phase: "starting" | "running" | "stopping" | "stopped" | "failed" = "starting";
   let reason: CaptureReason | undefined;
   let cleanupFailed = false;
   const listeners: (() => void)[] = [];
   const lifetime = new AbortController();
+  let notifyStopping!: () => void;
+  const stopping = new Promise<void>((resolve) => {
+    notifyStopping = resolve;
+  });
   let resolveClosed!: () => void;
   let rejectClosed!: (error: CaptureError) => void;
   const closed = new Promise<void>((resolve, reject) => {
@@ -121,8 +127,9 @@ export async function createMicrophoneCapture(
     for (const track of value.getTracks()) safely(() => track.stop());
   };
   const finish = (failed: boolean, cause?: CaptureReason): Promise<void> => {
-    if (phase === "stopped" || phase === "failed") return closed;
-    phase = failed ? "failed" : "stopped";
+    if (phase !== "starting" && phase !== "running") return closed;
+    phase = "stopping";
+    notifyStopping();
     reason = cause;
     clearTimeout(timer);
     for (const remove of listeners.splice(0)) remove();
@@ -145,7 +152,10 @@ export async function createMicrophoneCapture(
         phase = "failed";
         reason = "capture_cleanup_failed";
         rejectClosed(new CaptureError(reason));
-      } else resolveClosed();
+      } else {
+        phase = failed ? "failed" : "stopped";
+        resolveClosed();
+      }
     };
     void release();
     return closed;
@@ -312,6 +322,7 @@ export async function createMicrophoneCapture(
     return {
       token,
       sampleRate: options.sampleRate,
+      stopping,
       closed,
       get snapshot() {
         return { state: phase === "starting" ? "failed" : phase, reason };
@@ -320,7 +331,7 @@ export async function createMicrophoneCapture(
     };
   } catch (error: unknown) {
     const code = startError(error).code;
-    void finish(true, code);
+    await finish(true, code);
     throw new CaptureError(reason ?? code);
   }
 }

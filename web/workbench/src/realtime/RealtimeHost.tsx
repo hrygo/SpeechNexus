@@ -12,6 +12,15 @@ const problems: Record<NonNullable<RealtimeSnapshot["problem"]>, string> = {
   read_failed: "当前会话状态尚未确认。请刷新读取；旧回执不能证明当前状态。",
   protocol: "实时消息不符合约定，已停止采集。已确认正文保留，清理状态请重新读取。",
   capture: "麦克风采集已中断或不可用。已停止本次输入，已确认正文仍可复制。",
+  capture_cleanup:
+    "本地采集资源释放未确认，已阻断新会话与采集。请关闭此浏览器标签页；服务端清理状态仍需单独读取。",
+};
+const microphoneNames: Record<RealtimeSnapshot["microphone"], string> = {
+  idle: "已停止",
+  starting: "正在请求设备",
+  running: "采集中",
+  stopping: "正在停止，等待本地资源释放",
+  failed: "本地资源释放未确认",
 };
 const cleanupNames = {
   not_required: "无需清理",
@@ -80,6 +89,7 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
   const canCreate =
     !locked &&
     !s.connecting &&
+    s.microphone === "idle" &&
     (!r.session ||
       (!!s.current &&
         ["closed", "failed", "expired"].includes(s.current.status) &&
@@ -223,13 +233,7 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
                   : "尚未连接"}
             </dd>
             <dt>麦克风</dt>
-            <dd>
-              {s.microphone === "running"
-                ? "采集中"
-                : s.microphone === "starting"
-                  ? "正在请求设备"
-                  : "已停止"}
-            </dd>
+            <dd data-testid="asr-microphone-state">{microphoneNames[s.microphone]}</dd>
           </dl>
           <div className="realtime-actions">
             <button

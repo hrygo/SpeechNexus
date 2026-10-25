@@ -9,7 +9,6 @@ import os
 import platform
 import re
 import select
-import selectors
 import shutil
 import signal
 import socket
@@ -19,7 +18,6 @@ import sysconfig
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryFile
 from typing import Any, BinaryIO
@@ -407,11 +405,11 @@ def test_shutdown_cannot_confirm_a_concurrent_creator_before_its_handle_exists(
     entered, resume = threading.Event(), threading.Event()
     original = runner._arguments
 
-    def paused(data_fd: int, seccomp_fd: int) -> list[str]:
+    def paused(data_fd: int, seccomp_fd: int, deadline: float) -> list[str]:
         entered.set()
         if not resume.wait(timeout=3):
             raise RuntimeError("Synthetic creation barrier expired")
-        return original(data_fd, seccomp_fd)
+        return original(data_fd, seccomp_fd, deadline)
 
     monkeypatch.setattr(runner, "_arguments", paused)
     results: list[InspectionProcessResult] = []
@@ -432,86 +430,13 @@ def test_shutdown_cannot_confirm_a_concurrent_creator_before_its_handle_exists(
     assert runner.close() is True
 
 
-def test_api_process_crash_stops_its_owned_namespace_worker(image: tuple[Path, str]) -> None:
-    root, executable = image
-    script = """
-import json, os, subprocess, sys, threading, time
-from pathlib import Path
-from tempfile import TemporaryFile
-from speechnexus_backend.speech.infrastructure.audio_inspection_process import (
-    AudioInspectionProcess, InspectionProcessLimits,
-)
-runner = AudioInspectionProcess(
-    Path(sys.argv[1]), (sys.argv[2], '-I', '-S', '-c',
-                       "import time; print('payload-started',flush=True); time.sleep(20)"),
-    InspectionProcessLimits(1024, 256*1024**2, 10, 30), launcher_python=sys.argv[2],
-)
-with TemporaryFile() as data, TemporaryFile() as info:
-    original = subprocess.Popen
-    outputs = []
-    def launch(args, **kwargs):
-        index = args.index('--unshare-user')
-        args = args[:index] + ['--info-fd', str(info.fileno())] + args[index:]
-        kwargs['pass_fds'] += (info.fileno(),)
-        outputs.append(kwargs['stdout'])
-        return original(args, **kwargs)
-    subprocess.Popen = launch
-    def observe():
-        while True:
-            try:
-                child = json.loads(os.pread(info.fileno(), 4096, 0))['child-pid']
-                if (runner._process is not None and outputs
-                        and b'payload-started' in os.pread(outputs[0].fileno(),128,0)):
-                    print(runner._process.pid, child, flush=True)
-                    return
-            except (json.JSONDecodeError, KeyError):
-                pass
-            time.sleep(0.01)
-    threading.Thread(target=observe, daemon=True).start()
-    data.write(b'synthetic-crash-input'); data.seek(0)
-    result = runner.run(data, cancelled=lambda: False)
-    print(result.status, runner._process.returncode, flush=True)
-"""
-    helper = subprocess.Popen(
-        [sys.executable, "-c", script, str(root), executable],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env={"PYTHONPATH": str(Path("backend/src").resolve())},
-    )
-    worker_pid: int | None = None
-    process_group: int | None = None
-    try:
-        assert helper.stdout is not None
-        with selectors.DefaultSelector() as events:
-            events.register(helper.stdout, selectors.EVENT_READ)
-            assert events.select(timeout=5), "Synthetic API helper did not launch a worker"
-            process_group, worker_pid = map(int, helper.stdout.readline(64).split())
-        # bwrap reports its real namespace child. /proc/.../children requires
-        # CONFIG_CHECKPOINT_RESTORE and is absent on the local kernel.
-        owned = [process_group, worker_pid]
-        assert all(Path(f"/proc/{pid}/stat").exists() for pid in owned)
-        helper.kill()  # no finally/close in the synthetic API process
-        helper.wait(timeout=3)
+@pytest.mark.parametrize("phase", ["running", "before_ack"])
+def test_api_process_crash_stops_its_owned_namespace_worker(
+    image: tuple[Path, str], phase: str
+) -> None:
+    from tests.unit.backend.test_audio_inspection_parent_death import assert_api_crash_stops_owned
 
-        def running(pid: int) -> bool:
-            try:
-                return Path(f"/proc/{pid}/stat").read_text().split()[2] not in ("Z", "X")
-            except FileNotFoundError:
-                return False
-
-        deadline = time.monotonic() + 3
-        while any(running(pid) for pid in owned) and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert not any(running(pid) for pid in owned)
-    finally:
-        if process_group is not None:
-            with suppress(ProcessLookupError):
-                os.killpg(process_group, 9)
-        if helper.poll() is None:
-            helper.kill()
-        helper.wait(timeout=3)
-        if helper.stdout is not None:
-            helper.stdout.close()
+    assert_api_crash_stops_owned(image, phase=phase)
 
 
 def test_detached_payload_cannot_clear_parent_death_and_has_actual_exit_proof(
@@ -548,8 +473,9 @@ def test_detached_payload_cannot_clear_parent_death_and_has_actual_exit_proof(
             os.close(descriptor)
 
 
+@pytest.mark.parametrize("live_identity", ["worker", "guardian"])
 def test_reaped_outer_with_live_actual_identity_retains_slot(
-    image: tuple[Path, str], body: BinaryIO, monkeypatch: pytest.MonkeyPatch
+    image: tuple[Path, str], body: BinaryIO, monkeypatch: pytest.MonkeyPatch, live_identity: str
 ) -> None:
     # Controlled real OS identities model an already-dead wrapper and a live
     # payload. No media, permissions or unrelated process is involved.
@@ -564,14 +490,18 @@ def test_reaped_outer_with_live_actual_identity_retains_slot(
         stderr=subprocess.DEVNULL,
     )
     runner._process = outer
-    runner._worker_pidfd = os.pidfd_open(actual.pid)
+    live_fd = os.pidfd_open(actual.pid)
+    exited_fd = os.dup(runner._outer_pidfd)
+    runner._worker_pidfd, runner._guardian_pidfd = (
+        (live_fd, exited_fd) if live_identity == "worker" else (exited_fd, live_fd)
+    )
     runner._reaped = False
     signal_identity = signal.pidfd_send_signal
     try:
         with monkeypatch.context() as patch:
 
             def deny_actual(fd: int, number: int) -> None:
-                if fd == runner._worker_pidfd and number == signal.SIGKILL:
+                if fd == live_fd and number == signal.SIGKILL:
                     raise PermissionError("Synthetic actual stop unavailable")
                 signal_identity(fd, number)
 
@@ -587,6 +517,45 @@ def test_reaped_outer_with_live_actual_identity_retains_slot(
             actual.kill()
         actual.wait(timeout=3)
         runner.close()
+
+
+def test_payload_cannot_tamper_with_guardian_or_inherit_control_capabilities(
+    image: tuple[Path, str], body: BinaryIO
+) -> None:
+    code = """
+import ctypes, errno, os, platform
+lib = ctypes.CDLL(None, use_errno=True)
+calls = {
+    'x86_64': [(101, 2, 1, 0, 0), (310, 1, 0, 0, 0, 0, 0),
+               (311, 1, 0, 0, 0, 0, 0), (438, -1, 0, 0),
+               (62, 1, 0), (129, 1, 0, 0), (297, 1, 1, 0, 0),
+               (425, 0, 0), (426, -1, 0, 0, 0, 0, 0), (427, -1, 0, 0, 0)],
+    'aarch64': [(117, 2, 1, 0, 0), (270, 1, 0, 0, 0, 0, 0),
+                (271, 1, 0, 0, 0, 0, 0), (438, -1, 0, 0),
+                (129, 1, 0), (138, 1, 0, 0), (240, 1, 1, 0, 0),
+                (425, 0, 0), (426, -1, 0, 0, 0, 0, 0), (427, -1, 0, 0, 0)]
+}
+# Nonmutating/invalid-argument probes only, all within this owned namespace.
+for args in calls[platform.machine()]:
+    ctypes.set_errno(0)
+    assert lib.syscall(*args) == -1 and ctypes.get_errno() == errno.EPERM, args[0]
+try:
+    fd = os.open('/proc/1/mem', os.O_RDONLY)
+except PermissionError:
+    pass
+else:
+    os.close(fd)
+    raise AssertionError('Guardian memory must be inaccessible')
+for entry in os.listdir('/proc/self/fd'):
+    try:
+        target = os.readlink('/proc/self/fd/' + entry)
+    except FileNotFoundError:
+        continue
+    assert target != 'anon_inode:[pidfd]' and not target.startswith('socket:')
+print('sealed')
+"""
+    result = worker(image, code).run(body, cancelled=lambda: False)
+    assert result.status == "complete" and result.output == b"sealed\n"
 
 
 def test_concurrent_closers_cannot_close_a_pidfd_while_another_uses_it(
@@ -606,6 +575,7 @@ def test_concurrent_closers_cannot_close_a_pidfd_while_another_uses_it(
     )
     identity = os.pidfd_open(actual.pid)
     runner._process, runner._worker_pidfd, runner._reaped = outer, identity, False
+    runner._guardian_pidfd = os.dup(runner._outer_pidfd)
     entered, resume, stale = threading.Event(), threading.Event(), threading.Event()
     first_result: list[bool] = []
 

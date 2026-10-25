@@ -74,17 +74,40 @@ class InspectionProcessResult:
             raise ValueError("Incomplete inspection cannot expose worker output")
 
 
-def _single_process_filter() -> bytes | None:
+def _single_process_filter(
+    *, role: Literal["bootstrap", "guardian", "payload"] = "payload"
+) -> bytes | None:
     # seccomp_data: nr at 0, audit architecture at 4. Fail closed for another
     # ABI; x32 cannot bypass the x86_64 syscall comparisons below.
     targets = {
-        "x86_64": (0xC000003E, (56, 57, 58, 435, 272, 308), 157),
-        "aarch64": (0xC00000B7, (220, 435, 97, 268), 167),
+        "x86_64": (
+            0xC000003E,
+            (56, 57, 58, 435),
+            (272, 308),
+            (101, 310, 311, 312, 438),
+            (62, 129, 200, 234, 297, 424),
+            157,
+        ),
+        "aarch64": (
+            0xC00000B7,
+            (220, 435),
+            (97, 268),
+            (117, 270, 271, 272, 438),
+            (129, 130, 131, 138, 240, 424),
+            167,
+        ),
     }
     target = targets.get(platform.machine())
     if target is None:
         return None
-    architecture, denied, prctl = target
+    architecture, forks, namespaces, peer_access, signals, prctl = target
+    # Only the fixed read-only launcher can fork once during bootstrap. Both
+    # guardian and child seal this before any untrusted command can execute.
+    denied: tuple[int, ...] = namespaces + peer_access + (425, 426, 427)
+    if role != "bootstrap":
+        denied += forks
+    if role == "payload":
+        denied += signals
     instructions = [
         (0x20, 0, 0, 4),  # load architecture
         (0x15, 1, 0, architecture),
@@ -108,7 +131,7 @@ def _single_process_filter() -> bytes | None:
 
 
 class AudioInspectionProcess:
-    """One local slot, retained until the original supervisor is actually reaped.
+    """One local slot, retained until actual worker/guardian exit and outer reap.
 
     This is not a gateway stop receipt or a global compute-budget authority.
     A caller must not interpret output as media facts without its separate
@@ -144,6 +167,7 @@ class AudioInspectionProcess:
         self._closed = threading.Event()
         self._process: subprocess.Popen[bytes] | None = None
         self._outer_pidfd: int | None = None
+        self._guardian_pidfd: int | None = None
         self._worker_pidfd: int | None = None
         self._control: socket.socket | None = None
         self._reaped = True
@@ -162,7 +186,9 @@ class AudioInspectionProcess:
                 return InspectionProcessResult("stop_unknown")
             self._close_identities()
             self._process = None
-            policy = _single_process_filter() if platform.system() == "Linux" else None
+            policy = (
+                _single_process_filter(role="bootstrap") if platform.system() == "Linux" else None
+            )
             if policy is None or not self._bubblewrap.is_file() or not self._prlimit.is_file():
                 return InspectionProcessResult("unavailable")
             if cancelled():
@@ -195,7 +221,7 @@ class AudioInspectionProcess:
                     return InspectionProcessResult("timeout")
                 seccomp.write(policy)
                 seccomp.seek(0)
-                args = self._arguments(data.fileno(), seccomp.fileno())
+                args = self._arguments(data.fileno(), seccomp.fileno(), deadline)
                 self._control = control
                 control.setblocking(False)
                 self._reaped = False
@@ -213,6 +239,30 @@ class AudioInspectionProcess:
                     # No concurrent closer can reap/reuse the numeric PID
                     # between child creation and opening its kernel identity.
                     self._outer_pidfd = os.pidfd_open(self._process.pid)
+                    guardian_policy = _single_process_filter(role="guardian")
+                    payload_policy = _single_process_filter()
+                    assert guardian_policy is not None and payload_policy is not None
+                    binding = (
+                        b"P3"
+                        + struct.pack(">HH", len(guardian_policy), len(payload_policy))
+                        + guardian_policy
+                        + payload_policy
+                    )
+                    api_identity = os.pidfd_open(os.getpid())
+                    try:
+                        if control.sendmsg(
+                            [binding],
+                            [
+                                (
+                                    socket.SOL_SOCKET,
+                                    socket.SCM_RIGHTS,
+                                    array.array("i", [api_identity]),
+                                )
+                            ],
+                        ) != len(binding):
+                            raise ValueError("Inspection parent identity was not transferred")
+                    finally:
+                        os.close(api_identity)
                 child_control.close()
                 starting = self._await_identity(cancelled, deadline)
                 if starting is not None:
@@ -241,6 +291,9 @@ class AudioInspectionProcess:
                     if not self._stop_original():
                         return InspectionProcessResult("stop_unknown")
                     return InspectionProcessResult(status)
+                if time.monotonic() >= deadline:
+                    stopped = self._stop_original()
+                    return InspectionProcessResult("timeout" if stopped else "stop_unknown")
                 if not self._original_exited():
                     stopped = self._stop_original()
                     return InspectionProcessResult("failed" if stopped else "stop_unknown")
@@ -272,7 +325,7 @@ class AudioInspectionProcess:
                 self._identity.release()
             self._slot.release()
 
-    def _arguments(self, data_fd: int, seccomp_fd: int) -> list[str]:
+    def _arguments(self, data_fd: int, seccomp_fd: int, deadline: float) -> list[str]:
         limits = self._limits
         return [
             str(self._prlimit),
@@ -333,19 +386,20 @@ class AudioInspectionProcess:
             "-I",
             "-S",
             "/inspection/launch.py",
+            repr(deadline),
             *self._command,
         ]
 
     def _receive_identity(self) -> bool:
         """Called only while the identity lifetime lock is owned."""
-        if self._worker_pidfd is not None:
+        if self._worker_pidfd is not None and self._guardian_pidfd is not None:
             return True
         if self._control is None:
             return False
         try:
             data, ancillary, flags, _ = self._control.recvmsg(
                 64,
-                socket.CMSG_SPACE(array.array("i").itemsize),
+                socket.CMSG_SPACE(2 * array.array("i").itemsize),
                 socket.MSG_DONTWAIT | socket.MSG_CMSG_CLOEXEC,
             )
         except BlockingIOError, InterruptedError:
@@ -357,22 +411,23 @@ class AudioInspectionProcess:
         if not data and not descriptors:
             return False
         if (
-            data != b"speechnexus-inspection-v1"
+            data != b"speechnexus-inspection-v3"
             or flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC)
-            or len(descriptors) != 1
+            or len(descriptors) != 2
         ):
             for descriptor in descriptors:
                 os.close(descriptor)
             raise ValueError("Invalid private inspection identity")
-        descriptor = descriptors[0]
         try:
-            signal.pidfd_send_signal(descriptor, 0)
-        except ProcessLookupError:
-            pass  # A pidfd for an already exited worker is still exit evidence.
+            for descriptor in descriptors:
+                # An exited pidfd still gives stable kernel exit evidence.
+                with suppress(ProcessLookupError):
+                    signal.pidfd_send_signal(descriptor, 0)
         except BaseException:
-            os.close(descriptor)
+            for descriptor in descriptors:
+                os.close(descriptor)
             raise
-        self._worker_pidfd = descriptor
+        self._guardian_pidfd, self._worker_pidfd = descriptors
         return True
 
     def _await_identity(
@@ -392,11 +447,12 @@ class AudioInspectionProcess:
     def _original_exited(self) -> bool:
         if self._reaped:
             return True
-        if self._worker_pidfd is None or self._process is None:
+        if self._worker_pidfd is None or self._guardian_pidfd is None or self._process is None:
             return False
         observer = select.poll()
         observer.register(self._worker_pidfd, select.POLLIN)
-        exited = any(flags & select.POLLIN for _, flags in observer.poll(0))
+        observer.register(self._guardian_pidfd, select.POLLIN)
+        exited = sum(bool(flags & select.POLLIN) for _, flags in observer.poll(0)) == 2
         if not exited or self._process.poll() is None:
             return False
         self._reaped = True
@@ -426,7 +482,7 @@ class AudioInspectionProcess:
         # without our acknowledgement, so collect its identity before killing it.
         identity_deadline = time.monotonic() + 1
         while (
-            self._worker_pidfd is None
+            (self._worker_pidfd is None or self._guardian_pidfd is None)
             and process.poll() is None
             and time.monotonic() < identity_deadline
         ):
@@ -436,7 +492,7 @@ class AudioInspectionProcess:
             except OSError, ValueError:
                 break
             time.sleep(0.01)
-        for descriptor in (self._worker_pidfd, self._outer_pidfd):
+        for descriptor in (self._worker_pidfd, self._guardian_pidfd, self._outer_pidfd):
             if descriptor is not None:
                 with suppress(OSError):
                     signal.pidfd_send_signal(descriptor, signal.SIGKILL)
@@ -451,23 +507,32 @@ class AudioInspectionProcess:
             return False
         with suppress(OSError, ValueError):
             self._receive_identity()
-        if self._worker_pidfd is None:
+        if self._worker_pidfd is None or self._guardian_pidfd is None:
             return False
         if not self._original_exited():
-            with suppress(OSError):
-                signal.pidfd_send_signal(self._worker_pidfd, signal.SIGKILL)
             observer = select.poll()
-            observer.register(self._worker_pidfd, select.POLLIN)
-            observer.poll(1000)
+            pending = {self._worker_pidfd, self._guardian_pidfd}
+            for descriptor in pending:
+                with suppress(OSError):
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                observer.register(descriptor, select.POLLIN)
+            stop_deadline = time.monotonic() + 1
+            while pending and time.monotonic() < stop_deadline:
+                for descriptor, event in observer.poll(
+                    max(1, int((stop_deadline - time.monotonic()) * 1000))
+                ):
+                    if event & select.POLLIN:
+                        observer.unregister(descriptor)
+                        pending.discard(descriptor)
         return self._original_exited()
 
     def _close_identities(self) -> None:
         """Caller owns the identity lock through the last use and descriptor close."""
         assert self._reaped
-        for descriptor in (self._worker_pidfd, self._outer_pidfd):
+        for descriptor in (self._worker_pidfd, self._guardian_pidfd, self._outer_pidfd):
             if descriptor is not None:
                 os.close(descriptor)
-        self._worker_pidfd = self._outer_pidfd = None
+        self._worker_pidfd = self._guardian_pidfd = self._outer_pidfd = None
 
     def close(self) -> bool:
         self._closed.set()

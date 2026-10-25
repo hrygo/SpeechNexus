@@ -57,14 +57,14 @@ cluster admission or a shared compute-budget ledger.
 | Isolation | bubblewrap requires a user namespace and isolates network, PID, IPC and UTS namespaces; capabilities are dropped and further user namespaces disabled. No unsandboxed fallback. |
 | Input | Flush and bound the private regular file, reopen it read-only, then use `--ro-bind-data` to create an anonymous, read-only `/input/media`. No API descriptor-directory access or persistent named copy. |
 | Filesystem | Runtime image, `/input/media`, `/proc`, `/dev` and `/tmp` are read-only; no writable scratch tree. stdout is the only content-bearing writable regular file. |
-| CPU / address space | Host `prlimit` installs equal hard/soft CPU and address-space limits before namespace setup. They also constrain the worker. These are per-process limits, not a measurement of whole-service RSS. |
-| Process multiplication | Seccomp rejects fork/vfork/clone/clone3, unshare and setns for the supported Linux x86_64/aarch64 syscall ABIs. The worker is PID 1 and cannot create child processes or threads. Another ABI is unavailable. |
+| CPU / address space | Host `prlimit` installs equal hard/soft CPU and address-space limits before namespace setup. They constrain the guardian and its one child individually. Budget both bounded processes and outer setup overhead; these are not aggregate CPU/RSS or cgroup limits. |
+| Process multiplication | Only the fixed read-only launcher can fork once during trusted bootstrap. The non-exec guardian is PID 1; both it and the actual worker install additional seccomp filters denying fork/vfork/clone/clone3 before any untrusted command can execute. All stages deny unshare/setns. Supported syscall ABIs are Linux x86_64/aarch64; another ABI is unavailable. |
 | Encoded input memory | The anonymous encoded copy is separately bounded by `input_bytes`; its pages are additional to the worker's address-space limit. Include both, plus bounded supervisor overhead, in deployment capacity sizing. No claim of a cgroup-wide memory limit. |
 | Output | Setup's file-size limit permits only the bounded encoded input. Inside the image, `prlimit` narrows it to `output_bytes + 1` before executing the worker. Read at most that many bytes; excess or failure exposes no partial result. |
-| Actual identity | Before exec, the trusted launcher transfers its self-pidfd over a private Unix socket. It waits for acknowledgement, closes that channel, restores stdin to `/dev/null`, then execs the payload in the same kernel process. No client PID or numeric PID replay identifies the payload. |
-| Deadline / cancellation | The supervisor monitors setup and execution, signals the actual pidfd and its separately owned outer pidfd, requires actual-pidfd `POLLIN` and outer wait/reap, and never uses a Python pre-exec callback. Outer exit or a changed process group alone is no stop proof. |
+| Actual identity | Before forking, the fixed launcher receives the original API process pidfd. It transfers its guardian pidfd and its own unreaped child's actual worker pidfd over the private socket. Sealed-child readiness and original API acknowledgement precede payload exec. No client PID, wrapper report or recycled numeric PID identifies the payload. |
+| Deadline / cancellation | The supervisor monitors setup and execution, signals the actual worker, guardian and separately owned outer pidfds, requires worker and guardian `POLLIN` plus outer wait/reap, and never uses a Python pre-exec callback. Outer exit or a changed process group alone is no stop proof. The guardian independently monitors the same absolute monotonic deadline. |
 | Unknown stop | Failed kill or missing actual identity/exit proof yields `stop_unknown`; the local slot remains held even when the outer wrapper has exited. Startup without a recoverable identity is not automatically retried. |
-| Parent crash | `--die-with-parent` kills the namespace worker; anonymous input, output and policy descriptors have no named private copy to retain. A fresh API must recover Asset metadata/object outcomes through the existing ledger. |
+| Parent crash | The guardian never execs and watches the original API pidfd during startup and execution. API exit causes an actual-worker pidfd kill and wait. This does not depend on exec preserving a parent-death signal. `--die-with-parent` remains defence in depth. Anonymous descriptors retain no named private copy; a fresh API still recovers Asset metadata/object outcomes through the existing ledger. |
 
 The wall deadline starts before process creation. Process creation and kernel
 I/O/reaping can exceed a requested deadline; an uninterruptible kernel task is
@@ -73,14 +73,30 @@ an absolute bound on physical termination. Confirmed kill/reap is only evidence
 about this local inspection process, never an ASR engine stop receipt, Job
 terminal state or permission to release gateway/instance budgets.
 
-The launcher is trusted setup code and executes no decoder before the parent
-owns its pidfd. The metadata socket carries only that identity/acknowledgement
-and is removed before payload execution. A required pidfd API missing from the
-host fails closed; there is no PID-only stop qualification. The syscall filter
-also prevents the payload from clearing/replacing `PR_SET_PDEATHSIG`. This is
-defence in depth, not a substitute for checking the actual pidfd. Parent-death
-signals are tied to the creating Linux thread; they are never treated as an
-acknowledged stop when a request thread finishes.
+The launcher is trusted setup code. Its private version-3 socket carries only
+the original API pidfd, bounded syscall programs, guardian/worker pidfds and
+acknowledgement. Before forking, the guardian becomes nondumpable; it never
+execs afterward. The child closes inherited API/guardian pidfds and the API
+control socket, restores stdin to `/dev/null`, installs its stricter filter,
+reports sealing readiness and waits for the guardian's go-ahead. The guardian
+checks API liveness and the absolute deadline while waiting for readiness and
+API acknowledgement. Thus a child fork preceding readiness does not expose an
+untrusted execution window or require the guardian to arm a death signal later.
+The child closes its final private gate before exec.
+
+All stages deny ptrace, process_vm read/write, kcmp, pidfd_getfd and io_uring.
+The payload additionally denies process signal syscalls, including queued
+signals; it cannot signal or inspect guardian memory. These restrictions and
+guardian nondumpability do not rely on the host's Yama setting. The payload's
+fork/thread and `PR_SET_PDEATHSIG` prohibitions remain. The bootstrap allows
+only trusted setup to fork; it is not an execution mode for a decoder.
+
+A required pidfd API missing from the host fails closed; there is no PID-only
+stop qualification. Parent-death signals can be cleared by kernel exec/LSM
+transitions and are tied to the creating Linux thread. They are never treated
+as an acknowledged stop when a request thread finishes. The guardian's original
+API process identity and actual worker exit observations supply the independent
+liveness path.
 
 One reentrant identity-lifetime lock covers creation, receipt, polling, signal,
 wait and descriptor closure. `run()` owns it while using these identities;
@@ -169,8 +185,17 @@ proof, and a reaped outer/live actual identity that cannot free the slot when
 the actual stop is unavailable. This is a lifecycle test, not evidence of a host
 filesystem/network escape or an uninterruptible kernel task.
 
-The parent-crash test uses bubblewrap's child-pid report, so it does not depend
-on the optional `/proc/.../children` kernel interface. The image fixture copies
+The parent-crash test relays stable outer, guardian and actual worker pidfds
+from an owned API helper, crashes that helper without cleanup, and requires all
+three kernel exit observations within the original three-second assertion.
+It covers running and pre-acknowledgement phases; wrapper exit alone cannot
+satisfy it. A separate controlled bootstrap clears its own death signal before
+the production bootstrap filter, then runs the same launcher and handshake.
+That regression reproduced surviving actual identities before the guardian fix;
+it simulates exec clearing without changing host policy and is not a namespace
+or AppArmor qualification. Safe probes cover denied peer-memory/signal access,
+inaccessible guardian memory and absent inherited control descriptors.
+The image fixture copies
 only the current interpreter/stdlib, prlimit and their linked libraries; it
 does not mount the host root or load a model. CI installs bubblewrap only in the
 Python test job and never skips these tests or relaxes namespace policy.
@@ -189,56 +214,50 @@ That locates failure at loopback address setup, not at decoding or dependency
 resolution. Ubuntu's installed tool was 0.9.0, versus local 0.12.0; both upstream
 versions perform this address operation, so version difference alone is not a
 root-cause finding or a packaging fix. The CI job only reads fixed namespace/LSM
-context after failure. No sysctl, AppArmor, capability, runner or network-isolation
-change is authorized or made to bypass this failure. CI and target qualification
-remain open until a supported execution path is established.
+context after failure. No global sysctl, capability, runner or network-isolation restriction was
+relaxed. The separately approved one-time policy experiment below exposed an
+additional crash-lifecycle failure. CI and target qualification remain open.
 
-### Pending CI profile decision — no policy change executed
+### Consumed one-time CI experiment
 
-Installing `bubblewrap` does not install or enable its AppArmor policy. Ubuntu's
-[official changelog](https://lists.ubuntu.com/archives/noble-changes/2024-September/041745.html)
-places `bwrap-userns-restrict` in `apparmor-profiles`. Read-only inspection of the
-[official Noble package](https://archive.ubuntu.com/ubuntu/pool/main/a/apparmor/apparmor-profiles_4.0.1really4.0.1-0ubuntu0.24.04.9_all.deb)
-found `usr/share/apparmor/extra-profiles/bwrap-userns-restrict`, explicitly
-disabled by default. Package SHA256 is
+Installing `bubblewrap` does not install its AppArmor policy. The official
+Noble `apparmor-profiles_4.0.1really4.0.1-0ubuntu0.24.04.9_all.deb` contains the
+otherwise disabled `usr/share/apparmor/extra-profiles/bwrap-userns-restrict`.
+The approved package SHA256 was
 `90b02aa006eea7702cd4e851343e469e41365dda42145a3cb035de1d6c773b8c`;
-the profile file SHA256 is
+the extracted rule SHA256 was
 `11d39094f044f0cda0febb3ad517b830301da6b2ce929664af09ee9e4dd264f9`.
-The archive was read, not installed or loaded. This establishes provenance and
-intended behavior, not the cause of the runner's effective denial.
 
-The file defines two companion rules: `bwrap` attaches to `/usr/bin/bwrap` and
-allows capabilities during namespace setup; exec stacks the child with
-`unpriv_bwrap`, which denies capabilities. The proposed exception changes host
-policy for **all bwrap invocations on that one ephemeral job VM**, and exposes
-additional kernel namespace functionality. It is not an application-only flag
-or proof of media safety. User approval is required before activation.
+The user approved exactly one temporary Python job VM experiment. Its immutable
+source was `f8b592fd732babe41788e64f9de80151037c0a0c`, based on main
+`58bc51b3e592eadfcc11fdac948bb2d2b6ad4ff4` and the then-current supervisor.
+[Run 40186938755, attempt 1](https://github.com/hrygo/SpeechNexus/actions/runs/40186938755)
+used Python job `121149688551` and runner `1000056216`. The immutable approval
+commit `83a77770a779cfa5bb41fb683a81e7a191a8a119` bound those exact identities.
+No experiment workflow or policy-loader implementation enters this PR.
 
-The smallest proposed action is conditional on the read-only package/loaded
-profile audit confirming that these rules are absent. Do not replace existing
-profiles or apply unreviewed `local/bwrap-userns-restrict` / `local/unpriv_bwrap`
-includes. If the rules are already loaded or local overrides exist, stop and
-review that actual policy instead of overwriting it.
+At 10:59:53 UTC the job loaded only the verified `bwrap` and `unpriv_bwrap`
+rules. The real startup probe passed, and frozen-baseline compatibility checks
+passed. The full non-integration suite had **4139 passed and 1 failed**, coverage
+81.66%; the failure was the original API-crash stop assertion. Media smoke and
+wheel build did not run. This is a failed full validation, not successful CI.
+At 11:02:29 UTC cleanup recorded `remaining_new_uid_processes=[]` and
+`profiles_after_cleanup={}`. Only the two newly loaded rules were removed.
+Artifact `12597160172` preserves the receipt, exact rule and consumed marker;
+its ZIP SHA256 is
+`246f141141cf683dd25d932476da3b0b54133e69b4bac66258f9a5ca3e12d388`.
 
-After explicit approval, obtain this exact package through the runner's
-authenticated APT metadata, verify both hashes, extract only this file into
-`RUNNER_TEMP`, and validate it with the existing compatible parser without
-kernel loading. Do not install the whole `apparmor-profiles` package, upgrade
-the parser or load unrelated policies automatically. The proposed single load
-command (not executed or present in the workflow) is:
+The authorization was consumed by this VM. It does not permit another dispatch,
+rerun, rule load or permanent on-push policy step. Further policy experiments
+or lasting CI configuration need explicit approval. The source branch and
+failure/cleanup receipts remain historical evidence; later code cannot inherit
+that run's result.
 
-```sh
-sudo -n /usr/sbin/apparmor_parser -a -K -I /etc/apparmor.d "$SPEECHNEXUS_BWRAP_PROFILE"
-```
-
-Keep the current runner, sysctls, capability drop, network namespace, readonly
-mounts, seccomp and pidfd stop checks unchanged. Verify child effective
-capabilities remain zero, host loopback remains unreachable, actual exit is
-proved and the exact head's full CI passes. Loading the profile is an experiment
-until these checks succeed; do not claim it is a proven fix in advance.
-
-After every owned worker is confirmed stopped, remove only these newly loaded
-rules with the matching `apparmor_parser -R -K -I /etc/apparmor.d` invocation.
-If a stop cannot be confirmed, retain failure and let the ephemeral VM teardown
-remove policy/processes; do not unload policy around a live unknown worker.
-Nothing in this proposal approves #141, #152, production policy or deployment.
+The logs did not distinguish the surviving numeric PID. Upstream
+[Linux v6.17 AppArmor exec logic](https://github.com/torvalds/linux/blob/v6.17/security/apparmor/lsm.c#L961-L976)
+clears `pdeath_signal` on some label changes, supporting a concrete failure
+mechanism without proving the exact Ubuntu binary's register state. A local
+controlled exec-clear regression reproduced the old actual-worker survival.
+The non-exec guardian and original API pidfd remove reliance on this signal;
+local RED→GREEN and ordinary namespace tests remain separate from validation
+under the CI AppArmor rules. That CI validation is still pending.

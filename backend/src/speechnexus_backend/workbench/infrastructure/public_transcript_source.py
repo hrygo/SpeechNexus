@@ -19,13 +19,21 @@ _MAX_TEXT_BYTES = 4_000_000
 _MAX_TEXT_CHARACTERS = 1_000_000
 
 
-def _plain_utf8(media_type: str) -> None:
+def _transcript_format(media_type: str) -> str:
     parts = [part.strip().lower() for part in media_type.split(";")]
-    if parts[0] != "text/plain" or any(
+    if parts[0] not in {"text/plain", "application/json"} or any(
         parameter not in {"charset=utf-8", 'charset="utf-8"', "charset=utf8", 'charset="utf8"'}
         for parameter in parts[1:]
     ):
         raise TranscriptSourceError("source_unsupported")
+    return parts[0]
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate transcription field")
+    return result
 
 
 class PublicTranscriptSource:
@@ -110,7 +118,7 @@ class PublicTranscriptSource:
                     or artifact["status"] != "ready"
                 ):
                     raise TranscriptSourceError("source_invalid")
-                _plain_utf8(artifact["media_type"])
+                media_type = _transcript_format(artifact["media_type"])
                 self._check_expiry(artifact.get("expires_at"))
                 expected_bytes = int(artifact["bytes"])
                 if expected_bytes > _MAX_TEXT_BYTES:
@@ -123,6 +131,13 @@ class PublicTranscriptSource:
                 ):
                     raise TranscriptSourceError("source_invalid")
                 text = content.decode("utf-8", errors="strict")
+                if media_type == "application/json":
+                    # File ASR stages the public Transcription shape. Validate that
+                    # generated boundary, then preserve its exact text, not JSON markup.
+                    text = parse(
+                        "Transcription", json.loads(text, object_pairs_hook=_unique_object)
+                    )["text"]
+                    text.encode("utf-8", errors="strict")
                 # Valid UTF-8 may contain NUL, which cannot be represented in a PG
                 # text column. Reject the source before opening a final transaction;
                 # never silently remove characters from a sealed original.
@@ -134,5 +149,5 @@ class PublicTranscriptSource:
                 return text
         except httpx.HTTPError, httpx.InvalidURL, TimeoutError:
             raise TranscriptSourceError("source_unavailable") from None
-        except ContractValidationError, ValueError:
+        except ContractValidationError, ValueError, RecursionError:
             raise TranscriptSourceError("source_invalid") from None

@@ -38,6 +38,7 @@ CONTENT = TEXT.encode()
 @dataclass
 class PublicService:
     content: bytes = CONTENT
+    media_type: str = "text/plain; charset=utf-8"
     reads: int = 0
     hold: bool = False
     entered: asyncio.Event = field(default_factory=asyncio.Event)
@@ -62,7 +63,7 @@ class PublicService:
                         "workspace_id": "workspace-one",
                         "kind": "transcript",
                         "status": "ready",
-                        "media_type": "text/plain; charset=utf-8",
+                        "media_type": self.media_type,
                         "bytes": len(self.content),
                         "sha256": "sha256:" + hashlib.sha256(self.content).hexdigest(),
                         "receipt_id": "receipt-source",
@@ -136,10 +137,14 @@ async def import_one(app: WorkbenchVersions, parent_id: str) -> Transcript:
     )
 
 
+@pytest.mark.parametrize("json_source", [False, True])
 async def test_real_http_import_sealed_then_corrected_history_and_replay_without_source(
-    store: Store, public_http: tuple[PublicService, PublicTranscriptSource]
+    store: Store, public_http: tuple[PublicService, PublicTranscriptSource], json_source: bool
 ) -> None:
     state, reader = public_http
+    if json_source:
+        state.media_type = "application/json"
+        state.content = json.dumps({"text": TEXT}, ensure_ascii=False).encode()
     app = WorkbenchVersions(store.uow, source_reader=reader)
     parent = await create_parent(store)
     original = await import_one(app, parent.id)

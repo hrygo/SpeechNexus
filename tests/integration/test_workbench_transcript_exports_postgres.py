@@ -33,11 +33,19 @@ from speechnexus_backend.workbench.infrastructure.public_transcript_source impor
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize("json_source", [False, True])
 async def test_public_import_and_corrected_versions_export_exact_bytes_without_rereading_source(
-    store: Store, public_http: tuple[PublicService, PublicTranscriptSource]
+    store: Store, public_http: tuple[PublicService, PublicTranscriptSource], json_source: bool
 ) -> None:
     state, source = public_http
-    state.content = "\ufeff合成原文\r\n😀e\u0301\n".encode()
+    text = "\ufeff合成原文\r\n😀e\u0301\n"
+    if json_source:
+        import json
+
+        state.media_type = "application/json"
+        state.content = json.dumps({"text": text}, ensure_ascii=False).encode()
+    else:
+        state.content = text.encode()
     app = WorkbenchVersions(store.uow, source_reader=source)
     parent = await create_parent(store)
     original = await import_one(app, parent.id)
@@ -45,7 +53,7 @@ async def test_public_import_and_corrected_versions_export_exact_bytes_without_r
     exports = TranscriptTextExports(app)
     sealed = await exports.export_revision(original.id, 1)
     corrected = await exports.export_revision(original.id, 2)
-    assert sealed.content == state.content and sealed.status == "sealed"
+    assert sealed.content == text.encode() and sealed.status == "sealed"
     assert corrected.content == "校对\r\n".encode() and corrected.status == "draft"
     assert (
         corrected.source_revision == 1 and corrected.source == sealed.source == original.head.source

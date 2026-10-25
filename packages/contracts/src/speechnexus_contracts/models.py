@@ -140,6 +140,30 @@ class JobExpiredEventData(TypedDict):
 type AssetPurpose = Literal["asr_input", "voice_reference", "text_input"]
 type AssetStatus = Literal["staging", "ready", "rejected", "expired", "deleted"]
 type ArtifactStatus = Literal["ready", "expired", "deleted"]
+
+
+class Language(TypedDict):
+    code: str
+
+
+class TranscriptionLogprob(TypedDict):
+    token: NotRequired[str | None]
+    bytes: NotRequired[list[float] | None]
+    logprob: NotRequired[float | None]
+
+
+class ExternalSharedPublicAudioSchemaJsonUsageDuration(TypedDict):
+    type: Literal["duration"]
+    seconds: float
+
+
+class ExternalSharedPublicAudioSchemaJsonUsageTokens(TypedDict):
+    type: Literal["tokens"]
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 type ExternalSharedLanguageSchemaJsonLanguageTag = str
 type ExternalSharedSpeechOverridesSchemaJsonSeed = int | None
 type ExternalSharedSpeechOverridesSchemaJsonSpeed = float
@@ -452,6 +476,10 @@ class Artifact(TypedDict):
     expires_at: NotRequired[str | None]
 
 
+type UsageDuration = ExternalSharedPublicAudioSchemaJsonUsageDuration
+type UsageTokens = ExternalSharedPublicAudioSchemaJsonUsageTokens
+
+
 class ExternalSharedReceiptsSchemaJsonPublicExecutionFacts(TypedDict):
     language: NotRequired[ExternalSharedLanguageSchemaJsonLanguageTag]
     seed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSeed]
@@ -662,6 +690,9 @@ class JobCancellation(TypedDict):
     operations: list[OperationReference]
 
 
+type TranscriptionUsage = UsageDuration | UsageTokens
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -711,6 +742,13 @@ class ArtifactPublishedEvent(TypedDict):
     job_id: Identifier
     occurred_at: str
     data: ArtifactPublishedEventData
+
+
+class Transcription(TypedDict):
+    text: str
+    languages: NotRequired[list[Language]]
+    logprobs: NotRequired[list[TranscriptionLogprob]]
+    usage: NotRequired[TranscriptionUsage]
 
 
 type ExecutionReceipt = ExternalSharedReceiptsSchemaJsonExecutionReceipt
@@ -916,6 +954,7 @@ type FileContract = (
     | AssetUploadRequest
     | Asset
     | Artifact
+    | Transcription
     | Operation
     | OperationCancellation
     | ErrorResponse

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { EditorJournal, type EditorStorage } from "./editor-journal";
 import { EditorSession, type EditorProblem } from "./editor-session";
-import { WorkbenchClient } from "./workbench-client";
+import { WorkbenchClient, type Contracts } from "./workbench-client";
+import { FixedTranscriptDownload } from "./FixedTranscriptDownload";
 import "./manuscripts.css";
 
 const problems: Record<EditorProblem, string> = {
@@ -27,9 +28,34 @@ function initialize(client?: WorkbenchClient, storage?: EditorStorage) {
   }
 }
 
-function ActiveEditor({ session }: { session: EditorSession }) {
+type SpeechSource = Extract<
+  Contracts["TranscriptCreateRequest"]["source"],
+  { kind: "speech_artifact" }
+>;
+
+function ActiveEditor({
+  session,
+  speechSource,
+}: {
+  session: EditorSession;
+  speechSource?: SpeechSource | undefined;
+}) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const { record } = state;
+  const sourceKey = speechSource ? `${speechSource.artifact_id}:${speechSource.receipt_id}` : "";
+  const [dismissed, setDismissed] = useState("");
+  const alreadyImported =
+    speechSource &&
+    record.view?.transcript.source_artifact_id === speechSource.artifact_id &&
+    record.view?.transcript.source_receipt_id === speechSource.receipt_id;
+  const pendingSource = record.pending?.kind === "transcript" ? record.pending.body.source : null;
+  const importSource = pendingSource
+    ? pendingSource.kind === "speech_artifact"
+      ? pendingSource
+      : undefined
+    : sourceKey !== dismissed && !alreadyImported
+      ? speechSource
+      : undefined;
   const locked = state.busy || record.pending !== null;
   const writeDisabled = locked || state.blocked || !state.status?.workbench_enabled;
   const [history, setHistory] = useState<{ viewKey: string; value: string } | null>(null);
@@ -210,15 +236,29 @@ function ActiveEditor({ session }: { session: EditorSession }) {
         <div className="manuscripts-document">
           {!record.project && <p>选择一个共享项目，或创建项目后保存原稿。</p>}
           {record.project && (
-            <details className="manuscripts-create" open={record.view === null}>
+            <details
+              className="manuscripts-create"
+              open={record.view === null || importSource !== undefined}
+            >
               <summary>新建稿件</summary>
               <form
                 aria-label="创建稿件"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void session.createTranscript();
+                  void session.createTranscript(importSource);
                 }}
               >
+                {importSource && (
+                  <div role="group" aria-label="待导入语音原稿">
+                    <p>
+                      制品 {importSource.artifact_id}，回执 {importSource.receipt_id}
+                      。选择项目并确认后，服务端校验来源并保存封存原稿；校对会追加新修订。
+                    </p>
+                    <button type="button" disabled={locked} onClick={() => setDismissed(sourceKey)}>
+                      返回手工输入
+                    </button>
+                  </div>
+                )}
                 <label>
                   稿件名称
                   <input
@@ -227,18 +267,25 @@ function ActiveEditor({ session }: { session: EditorSession }) {
                     onChange={(event) => session.form("transcriptName", event.currentTarget.value)}
                   />
                 </label>
-                <label>
-                  原稿正文
-                  <textarea
-                    rows={7}
-                    value={record.forms.newText}
-                    disabled={locked}
-                    onChange={(event) => session.form("newText", event.currentTarget.value)}
-                  />
-                </label>
+                {!importSource && (
+                  <label>
+                    原稿正文
+                    <textarea
+                      rows={7}
+                      value={record.forms.newText}
+                      disabled={locked}
+                      onChange={(event) => session.form("newText", event.currentTarget.value)}
+                    />
+                  </label>
+                )}
+                {importSource && record.forms.newText !== "" && (
+                  <p role="alert">
+                    已有未保存的手工正文。请返回手工输入处理，原文不会被语音导入覆盖。
+                  </p>
+                )}
                 <p>原稿保存后成为初始修订。后续修改会生成新修订，不覆盖原文。</p>
                 <button type="submit" disabled={writeDisabled}>
-                  保存原稿
+                  {importSource ? "导入语音原稿" : "保存原稿"}
                 </button>
               </form>
             </details>
@@ -260,6 +307,10 @@ function ActiveEditor({ session }: { session: EditorSession }) {
                 <summary>查看固定版本原文</summary>
                 <pre aria-label="固定版本原文">{record.view.revision.text}</pre>
               </details>
+              <FixedTranscriptDownload
+                view={record.view}
+                disabled={locked || state.blocked || !state.verified}
+              />
               <label>
                 校对草稿
                 <textarea
@@ -362,9 +413,11 @@ function ActiveEditor({ session }: { session: EditorSession }) {
 export function ManuscriptHost({
   client,
   storage,
+  speechSource,
 }: {
   client?: WorkbenchClient;
   storage?: EditorStorage;
+  speechSource?: SpeechSource | undefined;
 }) {
   const [session] = useState(() => initialize(client, storage));
   if (!session)
@@ -373,6 +426,6 @@ export function ManuscriptHost({
         <p role="alert">恢复信息不可用。已暂停提交，原记录未清除；请修复浏览器存储后重新载入。</p>
       </section>
     );
-  return <ActiveEditor session={session} />;
+  return <ActiveEditor session={session} speechSource={speechSource} />;
 }
 export default ManuscriptHost;

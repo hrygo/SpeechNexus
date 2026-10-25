@@ -401,6 +401,7 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
     assert set(exec_doc["paths"]) == {
         "/internal/v1/executions/submit",
         "/internal/v1/executions/{submit_intent_id}",
+        "/internal/v1/executions/{submit_intent_id}/staging-result",
         "/internal/v1/executions/{submit_intent_id}/abort",
         "/internal/v1/gateways/{gateway_id}/fencing-barrier",
         "/internal/v1/instances/{instance_id}/drain",

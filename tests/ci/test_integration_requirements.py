@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import io
 import sys
+import tokenize
 import unittest
 from pathlib import Path
 
@@ -18,7 +20,31 @@ sys.modules[SPEC.name] = GATE
 SPEC.loader.exec_module(GATE)
 
 
+def probe_literals(source: str) -> set[str]:
+    """Lex strings without parsing newer application syntax on the runner's Python."""
+    values: set[str] = set()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type != tokenize.STRING:
+            continue
+        try:
+            value = ast.literal_eval(token.string)
+        except (SyntaxError, ValueError):
+            continue
+        if (
+            isinstance(value, str)
+            and value.startswith("scripts/dev-env/")
+            and value.endswith(".mjs")
+        ):
+            values.add(value)
+    return values
+
+
 class IntegrationRequirementsTests(unittest.TestCase):
+    def test_probe_inventory_accepts_newer_python_syntax_without_parsing_it(self) -> None:
+        source = "try:\n    pass\nexcept FirstError, SecondError:\n    pass\n"
+        source += 'SCRIPT = "scripts/dev-env/example.mjs"\n'
+        self.assertEqual(probe_literals(source), {"scripts/dev-env/example.mjs"})
+
     def test_browser_dependencies_follow_actual_parameterized_nodeids(self) -> None:
         browser = [
             "tests/integration/test_workbench_example_browser.py::test_page[postgresql]",
@@ -48,15 +74,7 @@ class IntegrationRequirementsTests(unittest.TestCase):
     def test_every_current_probe_consumer_declares_browser_tools(self) -> None:
         consumers = []
         for path in (ROOT / "tests/integration").glob("test_*.py"):
-            literals = {
-                node.value
-                for node in ast.walk(ast.parse(path.read_text()))
-                if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            }
-            if not any(
-                value.startswith("scripts/dev-env/") and value.endswith(".mjs")
-                for value in literals
-            ):
+            if not probe_literals(path.read_text()):
                 continue
             nodeid = f"{path.relative_to(ROOT)}::test_dependency_inventory"
             self.assertTrue(GATE.tool_requirements([nodeid], 0, 1)["browser"], str(path))

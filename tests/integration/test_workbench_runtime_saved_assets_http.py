@@ -22,9 +22,11 @@ from typing import Any
 import pytest
 from minio import Minio
 from pydantic import SecretStr
+from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
 
+from speechnexus_backend.workbench.domain.saved_assets import saved_object_key
 from speechnexus_backend.workbench.runtime import create_runtime_app
 
 pytestmark = pytest.mark.integration
@@ -41,6 +43,7 @@ DIGEST = "sha256:" + hashlib.sha256(CONTENT).hexdigest()
 class _Base:
     """A loopback stand-in for the speech base: artifact metadata plus its bytes."""
 
+    content: bytes = CONTENT
     reads: int = 0
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
     errors: list[str] = field(default_factory=list)
@@ -63,8 +66,8 @@ class _Base:
                         "kind": "audio",
                         "status": "ready",
                         "media_type": "audio/wav",
-                        "bytes": len(CONTENT),
-                        "sha256": DIGEST,
+                        "bytes": len(self.content),
+                        "sha256": "sha256:" + hashlib.sha256(self.content).hexdigest(),
                         "receipt_id": RECEIPT,
                         "created_at": "2026-10-25T00:00:00Z",
                     }
@@ -72,7 +75,7 @@ class _Base:
                 self._write(writer, b"application/json", body)
             else:
                 assert path == f"/v1/nexus/artifacts/{ARTIFACT}/content".encode()
-                self._write(writer, b"application/octet-stream", CONTENT)
+                self._write(writer, b"application/octet-stream", self.content)
             await writer.drain()
         except ConnectionError, asyncio.CancelledError:
             pass
@@ -99,11 +102,15 @@ class _Base:
 
 
 @pytest.fixture
-def objects() -> Iterator[None]:
-    assert os.environ.get("SPEECHNEXUS_TEST_MINIO_ENDPOINT"), (
-        "isolated MinIO service is required for object evidence"
+def objects() -> Iterator[Minio]:
+    endpoint = os.environ.get("SPEECHNEXUS_TEST_MINIO_ENDPOINT")
+    assert endpoint, "isolated MinIO service is required for object evidence"
+    yield Minio(
+        endpoint.replace("http://", "").replace("https://", ""),
+        access_key=os.environ["SPEECHNEXUS_TEST_MINIO_ACCESS_KEY"],
+        secret_key=os.environ["SPEECHNEXUS_TEST_MINIO_SECRET_KEY"],
+        secure=endpoint.startswith("https://"),
     )
-    yield None
 
 
 def runtime_settings(database: Database, base_origin: str, *, objects: bool) -> Any:
@@ -129,13 +136,16 @@ def runtime_settings(database: Database, base_origin: str, *, objects: bool) -> 
 
 
 async def test_a_copy_written_from_the_base_is_read_back_over_http_without_refetching(
-    database: Database, objects: None
+    database: Database, objects: Minio
 ) -> None:
     state = _Base()
     server = await asyncio.start_server(state.connection, "127.0.0.1", 0)
     host, port = server.sockets[0].getsockname()[:2]
     try:
-        settings = runtime_settings(database, f"http://{host}:{port}", objects=True)
+        settings = runtime_settings(database, f"http://{host}:{port}", objects=True).model_copy(
+            # Retain bytes for this visibility assertion; this is not a cleanup SLO test.
+            update={"cleanup_interval_seconds": 300}
+        )
         async with serve(create_runtime_app(settings)) as client:
             project = await client.post("/v1/workbench/projects", json={"name": "合成副本项目"})
             assert project.status_code == 201, project.text
@@ -152,7 +162,11 @@ async def test_a_copy_written_from_the_base_is_read_back_over_http_without_refet
             assert saved["object"] == "nexus.saved_asset"
             assert saved["sha256"] == DIGEST and saved["bytes"] == len(CONTENT)
             assert saved["source_artifact_id"] == ARTIFACT
+            project_id = project.json()["id"]
             reads_after_save = state.reads
+            # The source is now offline: a committed copy must still be independently readable.
+            server.close()
+            await server.wait_closed()
 
             read = await client.get(f"/v1/workbench/saved-assets/{saved['id']}")
             assert read.status_code == 200, read.text
@@ -160,9 +174,67 @@ async def test_a_copy_written_from_the_base_is_read_back_over_http_without_refet
             assert read.json() == saved
             assert state.reads == reads_after_save
 
+            path = f"/v1/workbench/saved-assets/{saved['id']}/content"
+            content = await client.get(path)
+            assert content.status_code == 200, content.text
+            assert content.content == CONTENT
+            assert content.headers["etag"] == '"' + DIGEST + '"'
+            assert content.headers["content-length"] == str(len(CONTENT))
+            for header, expected in [("bytes=0-3", CONTENT[:4]), ("bytes=-3", CONTENT[-3:])]:
+                partial = await client.get(path, headers={"Range": header})
+                assert partial.status_code == 206 and partial.content == expected
+            outside = await client.get(path, headers={"Range": f"bytes={len(CONTENT)}-"})
+            assert outside.status_code == 416
+            assert outside.headers["content-range"] == f"bytes */{len(CONTENT)}"
+            assert state.reads == reads_after_save
+
             missing = await client.get("/v1/workbench/saved-assets/asset_saved_unknown")
             assert missing.status_code == 404, missing.text
             assert missing.json()["error"]["code"] == "resource_not_found"
+            missing_content = await client.get(
+                "/v1/workbench/saved-assets/asset_saved_unknown/content"
+            )
+            assert missing_content.status_code == 404, missing_content.text
+            other_settings = settings.model_copy(update={"workspace_id": "workspace-other"})
+            async with serve(create_runtime_app(other_settings)) as other:
+                hidden = await other.get(path)
+                assert hidden.status_code == 404, hidden.text
+                assert hidden.json()["error"]["code"] == "resource_not_found"
+                assert "etag" not in hidden.headers
+            plan = await client.post(
+                "/v1/workbench/deletion-plans",
+                json={
+                    "mode": "cascade",
+                    "target": {
+                        "owner": "workbench",
+                        "kind": "project",
+                        "resource": {
+                            "id": project_id,
+                            "revision": str(project.json()["metadata_revision"]),
+                        },
+                    },
+                },
+                headers={"Idempotency-Key": "saved-copy-download-delete-plan"},
+            )
+            assert plan.status_code == 200, plan.text
+            deleted = await client.post(
+                "/v1/workbench/deletions",
+                json=acceptance(plan.json()),
+                headers={"Idempotency-Key": "saved-copy-download-delete"},
+            )
+            assert deleted.status_code == 202, deleted.text
+            hidden = await client.get(path)
+            assert hidden.status_code == 404, hidden.text
+            assert hidden.json()["error"]["code"] == "resource_not_found"
+            assert "etag" not in hidden.headers
+            # Visibility must come from the committed tombstone, not missing object bytes.
+            raw = objects.get_object(BUCKET, "saved/" + saved_object_key(project_id, DIGEST))
+            try:
+                assert raw.read() == CONTENT
+            finally:
+                raw.close()
+                raw.release_conn()
+            assert state.reads == reads_after_save
     finally:
         server.close()
         await server.wait_closed()

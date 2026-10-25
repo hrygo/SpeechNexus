@@ -128,6 +128,8 @@ The interface design uses an **OpenAI Audio compatibility subset plus `nexus` ex
 
 Once the relevant services are implemented and enabled, standard OpenAI SDKs can point `base_url` at the deployment's `/v1`. Public speech workflows remain in development; contracts and examples support integration work and do not imply that the default deployment implements every endpoint.
 
+The configured independent workbench provides public downloads of committed copies and completed exports, with single byte ranges and integrity checks. The UI verifies content before handing it to the browser to save. See [workbench content downloads (Chinese)](docs/architecture/workbench-content-downloads.md) for limits and evidence scope. Complete export manifests, continuation, and real model quality acceptance remain in progress.
+
 - [Speech API design (Chinese)](docs/architecture/speech-api.md): endpoints, events, and usage.
 - [OpenAI compatibility boundaries (Chinese)](docs/architecture/openai-compatibility.md): supported subsets and extension rules.
 - [Machine contracts](contracts/README.md): protocol definitions shared by implementations and consumers.

@@ -30,6 +30,16 @@ Python 测试作业通过 `workbench-pg-probe.py --full-coverage` 在同一次 p
 
 有 `browser` 需求的分片安装完整锁定 Web 依赖、构建两个实际入口，并安装相同版本 Chromium headless shell 及系统依赖后运行测试；只有 Node 契约消费者的分片保留锁定生产依赖安装；数据库分片不安装浏览器。需求随真实 nodeid 分区计算，不在 workflow 中固定某几个分片号。汇总 `check` 子命令与 `tests/ci` 轻量路由回归继续仅依赖 Python 标准库。
 
+浏览器准备复用[独立脚本](../../scripts/dev-env/prepare-ci-browser.py)：先从锁定 Playwright CLI 的依赖模拟结果取得缺失/升级包，再向 APT 请求 URI/大小/SHA256 清单。仅在这条清单命令中选择 SHA256 输出，避免 `--print-uris` 的历史 MD5 默认值；不改系统或实际安装配置。归档通过 APT 自带的 `apt-helper download-file` 最多四个并发下载，同时传入强摘要和 `Checksum-FileSize`，让原生获取阶段约束已认证大小；不新增下载器依赖或覆盖传输政策。写入完整 APT 缓存前仍独立核对 SHA256/SHA512 与大小，MD5-only、错误大小、错误强摘要及不匹配的已有缓存均拒绝。不覆盖未知缓存内容。
+
+随后仍执行原 `playwright install --with-deps --only-shell chromium`。信任链依赖 APT 认证的索引与上述写前强校验，不能假定安装器会重新校验完整缓存：APT 2.8 的[现有归档路径](https://github.com/Debian/apt/blob/2.8.1/apt-pkg/acquire-item.cc#L3494-L3507)可能只按大小复用。未知或无法得到强摘要的计划直接失败，不降级到弱摘要或强制信任。
+
+不改软件源、APT/网络安全配置、超时预算或六分片/受保护汇总，不引入跨运行缓存或外部服务。真实 runner 确认 HTTP/HTTPS 配置了 `Timeout`、`Pipeline-Depth`、`No-Cache`，并通过限定字段名诊断定位到直接 HTTP `User-Agent-Non-Interactive`。APT 2.8.1 的[原生实现](https://github.com/Debian/apt/blob/2.8.1/methods/http.cc)按既有配置与 systemd unit 语境选择非交互标记；apt-helper 使用同一 acquire HTTP method，不改写配置值、header 或上下文。仅对上述已核实控制及无控制情形开放预取；HTTPS 同名项、代理、自定义 User-Agent、地址族、速率/队列/hash、特定 APT binary、替代配置、未知/嵌套键或不可读取配置仍沿用原安装器。
+
+诊断输出固定分类、退出码与错误类型；对直接字段仅允许 1–64 字符、字母开头且只含 ASCII 字母/数字/下划线/连字符的字段名。空字段另分类，其他文本只给分类/数量；不输出配置值、代理凭据、嵌套主机名、URL 或原始 stderr。识别出字段名不自动授予预取资格，必须先核对原生语义。未知计划、下载或校验失败会阻止安装，临时预取目录自动清理。首版真实 CI 全部观察到 fallback，不能证明预取或提速；精确支持后仍须取得新的真实 runner 执行证据。
+
+此改进针对已记录的官方字体/库归档串行下载耗尽分片预算，需以新组合实际执行测试验收；单次提速不承诺长期耗时，取消、未开始测试与断言失败分别报告。回退该脚本接线即可恢复原官方安装路径，原失败证据保留。
+
 每个集成分片还检查 PostgreSQL 16 工具，通过 `workbench-pg-probe.py --integration-shard` 启动独立的私有 Unix socket PG，再把 Workbench DSN 传给原 `integration-shards.py run`。双数据库与 MinIO 环境仍指向该作业既有隔离测试服务，不用私有 Workbench DSN 替换协调数据库地址。原分片报告路径、完整 collection、实际执行与意外跳过拒绝规则保持不变；驱动器的生命周期报告与分片报告一并上传，分别保存，不替代分片执行报告。仅有单个分片作业成功不能替代汇总验收。
 
 真实内网模型资格与可复现集成分别验收。`qualification` 标记的三条纪要真实模型用例保留原部署调用与结果断言，不进入普通 `integration` 分片，也不计作 CI 通过；它们验证实际部署资格，不能替代协调事务的确定性门禁。`make workbench-llm-qualification` 要求显式的私有 Workbench PG DSN、获准内网 LLM endpoint/model，并构建真实 Web 入口后执行全部三项。缺少配置时入口直接失败，不以跳过取得资格。普通 CI 的分片完整性仍拒绝任何必需用例跳过，阶段 AC 仍须另附这三项真实模型与版本证据。

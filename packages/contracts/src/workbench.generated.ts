@@ -506,7 +506,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Download a saved project asset */
+    /**
+     * Download a saved project asset
+     * @description Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes *\/size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.
+     */
     get: operations["downloadSavedAsset"];
     put?: never;
     post?: never;
@@ -597,7 +600,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Download a completed export artifact */
+    /**
+     * Download a completed export artifact
+     * @description Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes *\/size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.
+     */
     get: operations["downloadBookExport"];
     put?: never;
     post?: never;
@@ -712,6 +718,29 @@ export interface paths {
      *     not found; the workbench never serves a draft as if it were published.
      */
     get: operations["getVoiceRevision"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/voices/{voice_id}/revisions/{revision}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get one immutable voice revision with its complete disable reason
+     * @description Reports one published revision exactly as the base holds it, including the model
+     *     binding the base pinned for it. An unknown, unpublished or discarded revision is
+     *     not found; the workbench never serves a draft as if it were published.
+     *     Unlike the frozen v1 projection, disabled_reason preserves up to 2000 characters.
+     */
+    get: operations["getVoiceRevisionV2"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1432,6 +1461,21 @@ export interface components {
       retired_at: string | null;
       disabled_reason: string | null;
     };
+    VoiceRevisionV2: {
+      voice_id: components["schemas"]["Identifier"];
+      revision: components["schemas"]["Revision"];
+      display_name: string;
+      /** @enum {string} */
+      status: "published" | "retired" | "disabled";
+      languages: string[];
+      audio_formats: string[];
+      model_binding: components["schemas"]["ResourceReference"];
+      /** Format: date-time */
+      published_at: string;
+      /** Format: date-time */
+      retired_at: string | null;
+      disabled_reason: string | null;
+    };
     WorkbenchStatusV2: {
       /** @constant */
       object: "nexus.workbench_status";
@@ -1778,6 +1822,16 @@ export interface components {
     } & (unknown & unknown & unknown);
   };
   responses: {
+    /** @description The single requested byte range cannot select content. */
+    RangeNotSatisfiable: {
+      headers: {
+        "Content-Range": string;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Malformed request or unknown field. */
     BadRequest: {
       headers: {
@@ -3146,8 +3200,14 @@ export interface operations {
           "application/octet-stream": string;
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      416: components["responses"]["RangeNotSatisfiable"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createBookExport: {
@@ -3318,10 +3378,16 @@ export interface operations {
           "application/octet-stream": string;
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
       410: components["responses"]["Gone"];
+      413: components["responses"]["PayloadTooLarge"];
+      416: components["responses"]["RangeNotSatisfiable"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   workbenchCreateDeletionPlan: {
@@ -3565,6 +3631,39 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       408: components["responses"]["RequestTimeout"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getVoiceRevisionV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        voice_id: components["parameters"]["VoiceIdPath"];
+        revision: components["parameters"]["RevisionPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable published voice revision. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceRevisionV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
       500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
     };

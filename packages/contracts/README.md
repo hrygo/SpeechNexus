@@ -316,10 +316,14 @@ const download = await client.GET("/v1/workbench/saved-assets/{asset_id}/content
 Success returns the original ReadableStream, with no clone/read/buffering in
 validation. Empty content can yield null/undefined as in openapi-fetch. The
 caller owns a bounded reader, deadline and cancellation; the JSON limit does
-not limit binary downloads. Declared JSON errors remain bounded: saved assets keep 401/404; book export
-also keeps 409/410. The
-source leaves Content-Range optional on 206 and declares no 416; validation
-retains that scope and does not check actual range selection, media or digest.
+not limit binary downloads. Workbench source `0.1.0.dev1` additionally declares
+400/408/413/416/500/503 JSON failures on both download operations; saved assets keep
+401/404 and book export also keeps 409/410. Strict `dev0` clients must regenerate
+before the new producer is deployed. The source leaves Content-Range optional on
+206 for existing consumers and adds the `bytes */size` shape on 416. Validation
+does not check actual range selection or digest. The production C routes and Web
+consumer add those behavioral checks; their limits and evidence scope are documented
+in [committed content downloads](../../docs/architecture/workbench-content-downloads.md).
 New binary constraints fail generation until implemented.
 
 For `streamExportEvents`, use `parseAs: "stream"` as well. The middleware checks
@@ -553,6 +557,23 @@ The running backend merges this complete projection with health schemas; it
 never publishes the unimplemented speech paths in its OpenAPI. Schema default
 annotations stay optional in TypeScript (`--default-non-nullable false`) and
 never cause runtime default insertion. Generated files remain drift-protected.
+
+## Voice catalogue read HTTP contract
+
+The opt-in `voice-catalogue-http` entrypoint selects only `listVoices` and
+`getVoiceRevision` from the existing speech source. Python imports
+`speechnexus_contracts.voice_catalogue_http`; TypeScript imports
+`@speechnexus/contracts/voice-catalogue-http`. Both validate complete public
+revisions, including nested capabilities and lifecycle provenance; neither grants
+publication or retirement methods. Shared positive/negative examples live in
+`tests/fixtures/contracts/voice-catalogue-http.json`.
+
+The running workbench adapter consumes this validator before mapping the C
+projection and checks exact requested voice/revision identity separately.
+Workbench source `0.1.0.dev2` adds `getVoiceRevisionV2` / `VoiceRevisionV2` for
+the public 2000-character disable reason; v1 remains at its frozen 128-character
+bound. Deploy the v2 C route before the updated formal Web consumer. See
+[mapping, upgrade and evidence limits](../../docs/architecture/workbench-voice-catalogue.md).
 
 ## Workspace read HTTP contract
 

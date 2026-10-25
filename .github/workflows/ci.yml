@@ -316,7 +316,7 @@ jobs:
 
       - name: Install Chromium for browser consumers
         if: steps.integration_tools.outputs.browser == 'true'
-        run: pnpm exec playwright install --with-deps --only-shell chromium
+        run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Start isolated versioned object storage
         run: ./scripts/dev-env/minio-test-service.sh
@@ -489,7 +489,7 @@ jobs:
         run: pnpm build
 
       - name: Install Chromium headless shell for accessibility checks
-        run: pnpm exec playwright install --with-deps --only-shell chromium
+        run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Check rendered accessibility and contrast
         id: a11y

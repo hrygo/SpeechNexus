@@ -2592,6 +2592,67 @@
         }
       }
     },
+    "getVoiceRevisionV2": {
+      "path": "/v2/workbench/voices/{voice_id}/revisions/{revision}",
+      "method": "get",
+      "request": "HttpRequest_getVoiceRevisionV2",
+      "parameters": {
+        "path": {
+          "voice_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getVoiceRevisionV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getVoiceRevisionV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getVoiceRevisionV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getVoiceRevisionV2_404",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getVoiceRevisionV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getVoiceRevisionV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getVoiceRevisionV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getVoiceRevisionV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
     "getWorkbenchStatusV2": {
       "path": "/v2/workbench/status",
       "method": "get",
@@ -3018,6 +3079,40 @@
           "schema": "HttpResponse_downloadSavedAsset_404",
           "headers": {},
           "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadSavedAsset_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadSavedAsset_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadSavedAsset_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadSavedAsset_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadSavedAsset_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadSavedAsset_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
         }
       }
     },
@@ -3072,6 +3167,40 @@
         "410": {
           "schema": "HttpResponse_downloadBookExport_410",
           "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadBookExport_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadBookExport_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadBookExport_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadBookExport_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadBookExport_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadBookExport_503",
+          "headers": {
+            "retry-after": "integer"
+          },
           "json": true
         }
       }
@@ -3509,6 +3638,15 @@
     "HttpResponse_getVoiceRevision_408",
     "HttpResponse_getVoiceRevision_500",
     "HttpResponse_getVoiceRevision_503",
+    "HttpRequest_getVoiceRevisionV2",
+    "HttpResponse_getVoiceRevisionV2_200",
+    "HttpResponse_getVoiceRevisionV2_400",
+    "HttpResponse_getVoiceRevisionV2_401",
+    "HttpResponse_getVoiceRevisionV2_404",
+    "HttpResponse_getVoiceRevisionV2_408",
+    "HttpResponse_getVoiceRevisionV2_413",
+    "HttpResponse_getVoiceRevisionV2_500",
+    "HttpResponse_getVoiceRevisionV2_503",
     "HttpRequest_getWorkbenchStatusV2",
     "HttpResponse_getWorkbenchStatusV2_200",
     "HttpResponse_getWorkbenchStatusV2_401",
@@ -3572,6 +3710,12 @@
     "HttpResponse_downloadSavedAsset_206",
     "HttpResponse_downloadSavedAsset_401",
     "HttpResponse_downloadSavedAsset_404",
+    "HttpResponse_downloadSavedAsset_400",
+    "HttpResponse_downloadSavedAsset_408",
+    "HttpResponse_downloadSavedAsset_413",
+    "HttpResponse_downloadSavedAsset_416",
+    "HttpResponse_downloadSavedAsset_500",
+    "HttpResponse_downloadSavedAsset_503",
     "HttpRequest_downloadBookExport",
     "HttpResponse_downloadBookExport_200",
     "HttpResponse_downloadBookExport_206",
@@ -3579,6 +3723,12 @@
     "HttpResponse_downloadBookExport_404",
     "HttpResponse_downloadBookExport_409",
     "HttpResponse_downloadBookExport_410",
+    "HttpResponse_downloadBookExport_400",
+    "HttpResponse_downloadBookExport_408",
+    "HttpResponse_downloadBookExport_413",
+    "HttpResponse_downloadBookExport_416",
+    "HttpResponse_downloadBookExport_500",
+    "HttpResponse_downloadBookExport_503",
     "HttpRequest_streamExportEvents",
     "HttpResponse_streamExportEvents_200",
     "HttpEvent_streamExportEvents",
@@ -6564,6 +6714,73 @@
         "disabled_reason": {
           "type": ["string", "null"],
           "maxLength": 128
+        }
+      }
+    },
+    "VoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "status",
+        "languages",
+        "audio_formats",
+        "model_binding",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "disabled_reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
         }
       }
     },
@@ -14930,6 +15147,181 @@
       },
       "required": ["body"]
     },
+    "HttpRequest_getVoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "voice_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["voice_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getVoiceRevisionV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceRevisionV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_getWorkbenchStatusV2": {
       "type": "object",
       "additionalProperties": false,
@@ -16179,6 +16571,112 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_downloadSavedAsset_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadSavedAsset_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_downloadBookExport": {
       "type": "object",
       "additionalProperties": false,
@@ -16323,6 +16821,112 @@
         "headers": {
           "type": "object",
           "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadBookExport_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
           "required": [],
           "additionalProperties": true
         },

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "WorkbenchContracts",
-  "x-nexus-bindings-version": "0.1.0.dev0",
+  "x-nexus-bindings-version": "0.1.0.dev2",
   "x-nexus-entrypoints": [
     "ProjectCreateRequest",
     "ProjectPatch",
@@ -48,6 +48,7 @@
     "VoiceList",
     "VoiceSummary",
     "VoiceRevision",
+    "VoiceRevisionV2",
     "WorkbenchStatusV2",
     "RenderUnitV2",
     "RenderUnitCreateRequestV2",
@@ -3049,6 +3050,73 @@
         }
       }
     },
+    "VoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "status",
+        "languages",
+        "audio_formats",
+        "model_binding",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "disabled_reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
     "WorkbenchStatusV2": {
       "type": "object",
       "additionalProperties": false,
@@ -3949,6 +4017,9 @@
     },
     {
       "$ref": "#/$defs/VoiceRevision"
+    },
+    {
+      "$ref": "#/$defs/VoiceRevisionV2"
     },
     {
       "$ref": "#/$defs/WorkbenchStatusV2"

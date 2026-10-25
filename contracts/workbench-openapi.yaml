@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus workbench API
-  version: 0.1.0.dev0
+  version: 0.1.0.dev2
   description: |
     Optional application layer for projects, transcripts, meetings, assistant
     turns, teleprompter state, audiobook rendering, saved copies, and exports.
@@ -1392,6 +1392,17 @@ paths:
     get:
       tags: [saved-assets]
       operationId: downloadSavedAsset
+      description: >-
+        Reads only the workbench's committed immutable copy, never the speech source.
+        Validates its complete stored byte count and SHA-256 before sending content.
+        Supports one closed, open-ended or suffix byte range; malformed/empty ranges
+        return 400, unsatisfiable ranges return 416 with Content-Range bytes */size.
+        Successful replies include Content-Length, Accept-Ranges bytes and a strong
+        ETag equal to the quoted stored SHA-256. 206 includes Content-Range.
+        Unavailable storage, verification or local download capacity returns 503;
+        content beyond the deployment's bounded download limit returns 413.
+        The source's lifetime does not expire an independently committed saved copy.
+        A non-completed export returns 409; an expired export returns 410.
       summary: Download a saved project asset
       parameters:
         - $ref: "#/components/parameters/SavedAssetIdPath"
@@ -1426,6 +1437,19 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /v1/workbench/books/{book_id}/exports:
     post:
       tags: [exports]
@@ -1563,6 +1587,17 @@ paths:
     get:
       tags: [exports]
       operationId: downloadBookExport
+      description: >-
+        Reads only the workbench's committed immutable copy, never the speech source.
+        Validates its complete stored byte count and SHA-256 before sending content.
+        Supports one closed, open-ended or suffix byte range; malformed/empty ranges
+        return 400, unsatisfiable ranges return 416 with Content-Range bytes */size.
+        Successful replies include Content-Length, Accept-Ranges bytes and a strong
+        ETag equal to the quoted stored SHA-256. 206 includes Content-Range.
+        Unavailable storage, verification or local download capacity returns 503;
+        content beyond the deployment's bounded download limit returns 413.
+        The source's lifetime does not expire an independently committed saved copy.
+        A non-completed export returns 409; an expired export returns 410.
       summary: Download a completed export artifact
       parameters:
         - $ref: "#/components/parameters/ExportIdPath"
@@ -1601,6 +1636,19 @@ paths:
           $ref: "#/components/responses/Conflict"
         "410":
           $ref: "#/components/responses/Gone"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "416":
+          $ref: "#/components/responses/RangeNotSatisfiable"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /v1/workbench/deletion-plans:
     post:
       operationId: workbenchCreateDeletionPlan
@@ -1840,6 +1888,44 @@ paths:
           $ref: "#/components/responses/NotFound"
         "408":
           $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v2/workbench/voices/{voice_id}/revisions/{revision}:
+    get:
+      tags: [voices]
+      operationId: getVoiceRevisionV2
+      summary: Get one immutable voice revision with its complete disable reason
+      description: |
+        Reports one published revision exactly as the base holds it, including the model
+        binding the base pinned for it. An unknown, unpublished or discarded revision is
+        not found; the workbench never serves a draft as if it were published.
+        Unlike the frozen v1 projection, disabled_reason preserves up to 2000 characters.
+      parameters:
+        - $ref: "#/components/parameters/VoiceIdPath"
+        - $ref: "#/components/parameters/RevisionPath"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Immutable published voice revision.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceRevisionV2"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
         "503":
@@ -2235,6 +2321,18 @@ components:
         type: string
         pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$"
   responses:
+    RangeNotSatisfiable:
+      description: The single requested byte range cannot select content.
+      headers:
+        Content-Range:
+          required: true
+          schema:
+            type: string
+            pattern: '^bytes \*/[0-9]+$'
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     BadRequest:
       description: Malformed request or unknown field.
       content:
@@ -3842,6 +3940,58 @@ components:
         disabled_reason:
           type: [string, "null"]
           maxLength: 128
+    VoiceRevisionV2:
+      type: object
+      additionalProperties: false
+      required:
+        - voice_id
+        - revision
+        - display_name
+        - status
+        - languages
+        - audio_formats
+        - model_binding
+        - published_at
+        - retired_at
+        - disabled_reason
+      properties:
+        voice_id:
+          $ref: "#/components/schemas/Identifier"
+        revision:
+          $ref: "#/components/schemas/Revision"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [published, retired, disabled]
+        languages:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 35
+        audio_formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        model_binding:
+          $ref: "#/components/schemas/ResourceReference"
+        published_at:
+          type: string
+          format: date-time
+        retired_at:
+          type: [string, "null"]
+          format: date-time
+        disabled_reason:
+          type: [string, "null"]
+          maxLength: 2000
     WorkbenchStatusV2:
       type: object
       additionalProperties: false

@@ -38,6 +38,13 @@ def test_export_validation_has_explicit_execution_limits() -> None:
         ("export_max_archive_entries", 0),
         ("export_max_audio_seconds", float("inf")),
         ("export_validation_timeout_seconds", float("nan")),
+        ("download_max_bytes", 0),
+        ("download_max_bytes", True),
+        ("download_max_active", 0),
+        ("download_max_active", 33),
+        ("download_max_active", True),
+        ("download_timeout_seconds", float("inf")),
+        ("download_timeout_seconds", float("nan")),
     ],
 )
 def test_export_validation_limits_refuse_unbounded_configuration(field: str, value: Any) -> None:

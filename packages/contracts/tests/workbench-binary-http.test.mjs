@@ -74,7 +74,7 @@ test(
   "native download checks media/errors/status, rejects redirects and validates before I/O",
   { timeout: 5000 },
   async () => {
-    const replies = [200, 206, 401, 404, 416, 200, 302];
+    const replies = [200, 206, 401, 404, 417, 200, 302];
     let calls = 0;
     let follows = 0;
     const server = createServer((request, response) => {
@@ -98,7 +98,7 @@ test(
         response.writeHead(status, { "Content-Type": "application/json" });
         response.end(
           JSON.stringify(
-            examples.find((e) => e.status === (status === 416 ? 404 : status) && e.valid).value
+            examples.find((e) => e.status === (status === 417 ? 404 : status) && e.valid).value
               .body,
           ),
         );

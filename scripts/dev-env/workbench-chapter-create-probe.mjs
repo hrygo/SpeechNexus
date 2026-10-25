@@ -213,7 +213,7 @@ try {
   assert.ok(
     result.failed.some(
       (item) =>
-        item.path === "/v1/workbench/voices/voice_synthetic/revisions/1" && item.status === 503,
+        item.path === "/v2/workbench/voices/voice_synthetic/revisions/1" && item.status === 503,
     ),
   );
   assert.ok(

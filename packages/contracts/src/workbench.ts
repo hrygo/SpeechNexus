@@ -51,6 +51,7 @@ export type Contracts = Pick<
   | "VoiceList"
   | "VoiceSummary"
   | "VoiceRevision"
+  | "VoiceRevisionV2"
   | "WorkbenchStatusV2"
   | "RenderUnitV2"
   | "RenderUnitCreateRequestV2"

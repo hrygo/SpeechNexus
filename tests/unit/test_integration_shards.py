@@ -332,7 +332,8 @@ def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(resu
     }
     assert set(shards["services"]) == {"postgres", "mysql"}
     gate = jobs["coordination"]
-    assert gate["needs"] == ["integration_shards"] and "always()" in gate["if"]
+    assert gate["needs"] == ["changes", "integration_shards"] and "always()" in gate["if"]
+    assert "needs.changes.outputs.mode == 'full'" in gate["if"]
     condition = gate["steps"][0]["run"]
     executed = subprocess.run(
         ["bash", "-e", "-c", condition],

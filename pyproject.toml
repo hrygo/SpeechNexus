@@ -71,6 +71,11 @@ line-length = 100
 target-version = "py314"
 src = ["backend/src", "execution-gateway/src", "node-controller/src", "tests"]
 
+[tool.ruff.per-file-target-version]
+# These lightweight entry points use the runner's system Python, without uv.
+"scripts/dev-env/ci-routing.py" = "py312"
+"tests/ci/*.py" = "py312"
+
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "ASYNC", "RUF", "PTH", "RET"]
 ignore = ["RUF001"]

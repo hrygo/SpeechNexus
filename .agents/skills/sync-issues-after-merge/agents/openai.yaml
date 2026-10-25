@@ -1,0 +1,4 @@
+interface:
+  display_name: "合并后同步 Issues"
+  short_description: "PR 合并主干后按证据同步 issue 状态，压缩过期摘要并控制正文增长"
+  default_prompt: "使用 $sync-issues-after-merge 核实指定 PR 已合并主干，按证据同步相关 issue 的正文、任务、AC、状态与标签，并保持正文精简可维护。"

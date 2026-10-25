@@ -14,7 +14,8 @@ def deletion_migration_sql(schema: str) -> sql.Composed:
 def grant_deletion_runtime_sql(schema: str, role: str) -> sql.Composed:
     return sql.SQL("""
         GRANT SELECT ON {s}.deletion_plans, {s}.deletion_records, {s}.deletion_receipts,
-            {s}.resource_tombstones, {s}.erased_mutation_receipts, {s}.deletion_ledger TO {r};
+            {s}.resource_tombstones, {s}.erased_mutation_receipts, {s}.deletion_ledger,
+            {s}.deletion_outbox TO {r};
         GRANT INSERT ON {s}.deletion_plans, {s}.deletion_records, {s}.deletion_receipts,
             {s}.resource_tombstones, {s}.deletion_outbox TO {r};
     """).format(s=schema_identifier(schema), r=sql.Identifier(role))
@@ -48,6 +49,10 @@ CREATE TABLE {s}.deletion_plans (
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL CHECK (expires_at = created_at + interval '300 seconds'),
     dependencies jsonb NOT NULL CHECK (jsonb_typeof(dependencies) = 'array'),
+    -- Private owner metadata pins the full cleanup scope without exposing content
+    -- bodies or adding an independent public revision to immutable saved assets.
+    content_snapshot jsonb CHECK (
+        content_snapshot IS NULL OR jsonb_typeof(content_snapshot) = 'object'),
     plan_digest text NOT NULL CHECK (plan_digest ~ '^sha256:[0-9a-f]{{64}}$')
 );
 CREATE INDEX deletion_plans_workspace ON {s}.deletion_plans(workspace_id, id);
@@ -62,7 +67,8 @@ CREATE TABLE {s}.deletion_records (
 CREATE INDEX deletion_records_workspace ON {s}.deletion_records(workspace_id, id);
 
 CREATE TABLE {s}.resource_tombstones (
-    resource_kind text NOT NULL CHECK (resource_kind IN ('project', 'transcript')),
+    resource_kind text NOT NULL
+        CHECK (resource_kind IN ('project', 'transcript', 'audiobook', 'saved_asset')),
     resource_id text NOT NULL CHECK (char_length(resource_id) BETWEEN 1 AND 128),
     resource_revision numeric(19,0) NOT NULL
         CHECK (resource_revision BETWEEN 1 AND 9999999999999999999),

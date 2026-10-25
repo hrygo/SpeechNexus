@@ -29,6 +29,7 @@ from speechnexus_backend.workbench.domain.saved_assets import (
 )
 from speechnexus_backend.workbench.domain.versions import InvalidVersionChangeError
 from speechnexus_backend.workbench.interfaces.http_saved_assets import create_saved_asset_router
+from tests.fake.content_writes import FakeContentWrites
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 PROJECT = "project-demo"
@@ -69,6 +70,7 @@ def asset(**changes: Any) -> SavedAsset:
 
 class Store:
     def __init__(self, events: list[str]) -> None:
+        self.content_writes = FakeContentWrites()
         self.events = events
         self.saved: SavedAsset | None = None
         self.replay_asset: SavedAsset | None = None

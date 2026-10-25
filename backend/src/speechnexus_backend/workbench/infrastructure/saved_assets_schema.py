@@ -8,18 +8,25 @@ tables, and object bytes stay discoverable under the project's object prefix.
 
 from psycopg import sql
 
+from speechnexus_backend.workbench.infrastructure.content_writes_schema import (
+    content_writes_migration_sql,
+    grant_content_writes_runtime_sql,
+)
 from speechnexus_backend.workbench.infrastructure.version_schema import schema_identifier
 
 
 def saved_assets_migration_sql(schema: str) -> sql.Composed:
-    return sql.SQL(_DDL).format(s=schema_identifier(schema))
+    return sql.SQL(";\n").join(
+        (sql.SQL(_DDL).format(s=schema_identifier(schema)), content_writes_migration_sql(schema))
+    )
 
 
 def grant_saved_assets_runtime_sql(schema: str, role: str) -> sql.Composed:
     # Immutable rows: the runtime may insert and read, and may never update or delete.
-    return sql.SQL("""
+    statements = sql.SQL("""
     GRANT SELECT, INSERT ON {s}.saved_assets, {s}.saved_asset_receipts TO {r};
     """).format(s=schema_identifier(schema), r=sql.Identifier(role))
+    return sql.SQL(";\n").join((statements, grant_content_writes_runtime_sql(schema, role)))
 
 
 def grant_saved_assets_cleanup_sql(schema: str, role: str) -> sql.Composed:

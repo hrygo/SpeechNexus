@@ -9,11 +9,13 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from uuid import uuid4
 
+import httpx
 import psycopg
 import pytest
 from minio import Minio
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
+from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import serve
 from tests.integration.test_workbench_saved_assets_cleanup import (
     BUCKET,
@@ -33,6 +35,9 @@ from speechnexus_backend.workbench.infrastructure.deletion_codec import plan_dig
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
 from speechnexus_backend.workbench.infrastructure.postgres_deletions import (
     PostgresDeletionUnitOfWork,
+)
+from speechnexus_backend.workbench.infrastructure.postgres_owned_deletions import (
+    PostgresOwnedDeletionCatalog,
 )
 from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
@@ -145,7 +150,9 @@ async def owed_deletion(probe: Probe, suffix: str = "recovery") -> tuple[str, st
     )
     deletions = WorkbenchDeletions(
         PostgresDeletionUnitOfWork(
-            PostgresVersionUnitOfWork(app_dsn, schema=probe.schema), meetings=True
+            PostgresVersionUnitOfWork(app_dsn, schema=probe.schema),
+            meetings=True,
+            owned=PostgresOwnedDeletionCatalog(),
         ),
         digest_plan=plan_digest,
     )
@@ -227,6 +234,74 @@ async def test_startup_without_pending_deletions_serves(probe: Probe) -> None:
         assert await pending(probe) == ()
 
 
+@pytest.mark.parametrize("kind", ["project", "transcript"])
+async def test_runtime_recovery_includes_confirmed_meetings(probe: Probe, kind: str) -> None:
+    settings = probe.runtime_settings().model_copy(update={"cleanup_interval_seconds": 60})
+    async with serve(create_runtime_app(settings)) as client:
+        created = await client.post("/v1/workbench/projects", json={"name": "合成会议删除项目"})
+        assert created.status_code == 201, created.text
+        project = created.json()
+        source = await client.post(
+            f"/v1/workbench/projects/{project['id']}/transcripts",
+            json={"display_name": "合成会议原稿", "source": {"kind": "manual", "text": "合成正文"}},
+        )
+        assert source.status_code == 201, source.text
+        transcript = source.json()["transcript"]
+        meeting = await client.post(
+            f"/v1/workbench/projects/{project['id']}/meetings",
+            json={"display_name": "合成会议", "transcript_id": transcript["id"]},
+        )
+        assert meeting.status_code == 201, meeting.text
+        plan = await client.post(
+            "/v1/workbench/deletion-plans",
+            json={
+                "mode": "cascade",
+                "target": {
+                    "owner": "workbench",
+                    "kind": kind,
+                    "resource": {
+                        "id": project["id"] if kind == "project" else transcript["id"],
+                        "revision": "1",
+                    },
+                },
+            },
+            headers={"Idempotency-Key": "meeting-plan"},
+        )
+        assert plan.status_code == 200, plan.text
+        assert any(d["target"]["kind"] == "meeting" for d in plan.json()["dependencies"])
+        accepted = await client.post(
+            "/v1/workbench/deletions",
+            json=acceptance(plan.json()),
+            headers={"Idempotency-Key": "meeting-delete"},
+        )
+        assert accepted.status_code == 202, accepted.text
+        deletion_id = accepted.json()["id"]
+    assert await pending(probe) == (deletion_id,)
+
+    # Only the production composition and its real lifespan are allowed to replay
+    # this deletion: directly constructing a correctly configured worker hides the bug.
+    for _ in range(2):
+        app = create_runtime_app(settings)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
+            ) as client,
+        ):
+            current = await client.get(f"/v1/workbench/deletions/{deletion_id}")
+            assert current.status_code == 200, current.text
+            assert current.json()["status"] == "succeeded"
+            assert current.json()["cleanup_state"] == "complete"
+            assert any(t["kind"] == "meeting" for t in current.json()["result"]["deleted"])
+            assert (
+                await client.get(f"/v1/workbench/meetings/{meeting.json()['id']}")
+            ).status_code == 404
+            assert (await client.get(f"/v1/workbench/projects/{project['id']}")).status_code == (
+                404 if kind == "project" else 200
+            )
+        assert await pending(probe) == ()
+
+
 DEAD_ZONE = "http://127.0.0.1:1"
 
 
@@ -240,6 +315,8 @@ def minio() -> Iterator[Objects]:
     zone = MinioObjectZone(endpoint, BUCKET, access, secret, prefix="saved")
     host = endpoint.split("://", 1)[-1]
     client = Minio(host, access_key=access, secret_key=secret, secure=False)
+    if not client.bucket_exists(BUCKET):
+        client.make_bucket(BUCKET)
     try:
         yield Objects(zone, client)
     finally:

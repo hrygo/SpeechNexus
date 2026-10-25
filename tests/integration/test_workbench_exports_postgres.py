@@ -45,6 +45,10 @@ from speechnexus_backend.workbench.infrastructure.books_schema import (
     books_migration_sql,
     grant_books_runtime_sql,
 )
+from speechnexus_backend.workbench.infrastructure.content_writes_schema import (
+    content_writes_migration_sql,
+    grant_content_writes_runtime_sql,
+)
 from speechnexus_backend.workbench.infrastructure.exports_schema import (
     exports_migration_sql,
     grant_exports_runtime_sql,
@@ -75,6 +79,8 @@ async def export_store(store: Store) -> AsyncIterator[Store]:
         await owner.execute(grant_books_runtime_sql(store.schema, store.role))
         await owner.execute(render_units_migration_sql(store.schema))
         await owner.execute(grant_render_units_runtime_sql(store.schema, store.role))
+        await owner.execute(content_writes_migration_sql(store.schema))
+        await owner.execute(grant_content_writes_runtime_sql(store.schema, store.role))
         await owner.execute(exports_migration_sql(store.schema))
         await owner.execute(grant_exports_runtime_sql(store.schema, store.role))
     yield store

@@ -14,6 +14,9 @@ from speechnexus_backend.workbench.infrastructure.books_schema import (
     books_migration_sql,
     grant_books_runtime_sql,
 )
+from speechnexus_backend.workbench.infrastructure.content_writes_schema import (
+    grant_content_writes_cleanup_sql,
+)
 from speechnexus_backend.workbench.infrastructure.deletion_schema import (
     deletion_migration_sql,
     grant_cleanup_runtime_sql,
@@ -24,10 +27,12 @@ from speechnexus_backend.workbench.infrastructure.exports_schema import (
     grant_exports_runtime_sql,
 )
 from speechnexus_backend.workbench.infrastructure.meetings_schema import (
+    grant_meetings_cleanup_sql,
     grant_meetings_runtime_sql,
     meetings_migration_sql,
 )
 from speechnexus_backend.workbench.infrastructure.minutes_tasks_schema import (
+    grant_minutes_cleanup_sql,
     grant_minutes_runtime_sql,
     minutes_tasks_migration_sql,
 )
@@ -51,7 +56,7 @@ from speechnexus_backend.workbench.infrastructure.version_schema import (
     schema_identifier,
 )
 
-SCHEMA_REVISION = 10
+SCHEMA_REVISION = 11
 TABLES = frozenset(
     {
         "projects",
@@ -77,6 +82,7 @@ TABLES = frozenset(
         "teleprompter_receipts",
         "saved_assets",
         "saved_asset_receipts",
+        "content_write_intents",
         "books",
         "chapters",
         "book_receipts",
@@ -132,6 +138,13 @@ def cleanup_grants_sql(schema: str, role: str) -> sql.Composed:
         (
             grant_cleanup_runtime_sql(schema, role),
             grant_saved_assets_cleanup_sql(schema, role),
+            grant_meetings_cleanup_sql(schema, role),
+            grant_minutes_cleanup_sql(schema, role),
+            grant_content_writes_cleanup_sql(schema, role),
+            sql.SQL(
+                "GRANT SELECT ON {s}.books, {s}.chapters, {s}.render_units, "
+                "{s}.render_unit_generations, {s}.export_jobs TO {r}"
+            ).format(s=_namespace(schema), r=sql.Identifier(role)),
         )
     )
 

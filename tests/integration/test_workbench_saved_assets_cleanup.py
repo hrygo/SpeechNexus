@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 from collections.abc import AsyncIterator, Iterator
@@ -18,18 +19,23 @@ from tests.integration.test_workbench_deletions_postgres import content, service
 from tests.integration.test_workbench_versions_postgres import Store
 from tests.integration.test_workbench_versions_postgres import store as store
 
+from speechnexus_backend.workbench.application.saved_assets import ObjectZoneUnavailableError
+from speechnexus_backend.workbench.domain.deletion import DeletionTarget
 from speechnexus_backend.workbench.domain.saved_assets import (
     project_object_prefix,
     saved_object_key,
 )
-from speechnexus_backend.workbench.infrastructure.deletion_codec import plan_digest
+from speechnexus_backend.workbench.infrastructure.deletion_codec import (
+    deletion_payload,
+    plan_digest,
+)
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
 from speechnexus_backend.workbench.infrastructure.postgres_deletion_cleanup import (
     PostgresDeletionCleanup,
 )
 from speechnexus_backend.workbench.infrastructure.postgres_versions import PostgresVersionUnitOfWork
-from speechnexus_backend.workbench.infrastructure.runtime_schema import cleanup_grants_sql
 from speechnexus_backend.workbench.infrastructure.saved_assets_schema import (
+    grant_saved_assets_cleanup_sql,
     saved_assets_migration_sql,
 )
 
@@ -44,9 +50,9 @@ async def assets_store(store: Store, cleanup: Cleanup) -> AsyncIterator[Store]:
     """The shared partial fixture plus the module-owned saved-asset fragment."""
     async with await psycopg.AsyncConnection.connect(store.owner_dsn, autocommit=True) as owner:
         await owner.execute(saved_assets_migration_sql(store.schema))
-        # The erasing worker gets the composed grant set, so a deployment that uses it
-        # cannot miss the saved-asset read privilege this sweep needs.
-        await owner.execute(cleanup_grants_sql(store.schema, store.role + "_cleanup"))
+        # This partial fixture owns versions/deletion/saved-assets only. Full runtime
+        # composition, including meeting grants, is verified by the recovery tests.
+        await owner.execute(grant_saved_assets_cleanup_sql(store.schema, store.role + "_cleanup"))
     yield store
 
 
@@ -188,3 +194,117 @@ async def test_project_cleanup_removes_the_committed_object_bytes(
             )
         ).fetchone()
     assert count == (0,)
+
+
+async def test_public_completion_waits_for_object_erasure_and_recovers_after_failure(
+    assets_store: Store, cleanup: Cleanup
+) -> None:
+    project, _ = await content(assets_store)
+    record = await accept(assets_store, project)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class PausedFailure(Zone):
+        async def erase_prefix(self, *, prefix: str) -> int:
+            await super().erase_prefix(prefix=prefix)
+            entered.set()
+            await release.wait()
+            raise OSError("synthetic object erasure failure")
+
+    zone = PausedFailure(deletion_id=record.id, dsn=cleanup.dsn, schema=assets_store.schema)
+    worker = PostgresDeletionCleanup(
+        PostgresVersionUnitOfWork(cleanup.dsn, schema=assets_store.schema), objects=zone
+    )
+    attempt = asyncio.create_task(worker.run(record.id))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        # A peer sees committed row erasure, but the public owner cannot yet claim
+        # that the accepted content deletion is complete.
+        current = await service(assets_store).get(project.workspace_id, record.id)
+        assert zone.committed == [True]
+        assert current.result is None
+        assert deletion_payload(current)["cleanup_state"] == "pending"
+    finally:
+        release.set()
+        with pytest.raises(OSError, match="synthetic object"):
+            await attempt
+    assert (await service(assets_store).get(project.workspace_id, record.id)).result is None
+    assert await worker.pending(limit=2) == (record.id,)
+
+    # Removing configuration cannot turn an outstanding object promise into success.
+    without_zone = PostgresDeletionCleanup(
+        PostgresVersionUnitOfWork(cleanup.dsn, schema=assets_store.schema)
+    )
+    assert await without_zone.pending(limit=2) == (record.id,)
+    with pytest.raises(ObjectZoneUnavailableError):
+        await without_zone.run(record.id)
+    assert (await service(assets_store).get(project.workspace_id, record.id)).result is None
+
+    recovered_zone = Zone()
+    recovered = PostgresDeletionCleanup(
+        PostgresVersionUnitOfWork(cleanup.dsn, schema=assets_store.schema), objects=recovered_zone
+    )
+    result = await recovered.run(record.id)
+    assert result is not None
+    assert recovered_zone.prefixes == [project_object_prefix(project.id)]
+    assert (await service(assets_store).get(project.workspace_id, record.id)).result == result
+    assert (
+        deletion_payload(await service(assets_store).get(project.workspace_id, record.id))["status"]
+        == "succeeded"
+    )
+    assert await recovered.pending(limit=2) == ()
+    assert await recovered.run(record.id) == result
+    assert recovered_zone.prefixes == [project_object_prefix(project.id)]
+
+
+async def test_transcript_cleanup_with_objects_settles_without_erasing_project_objects(
+    assets_store: Store, cleanup: Cleanup
+) -> None:
+    project, transcript = await content(assets_store)
+    app = service(assets_store)
+    plan = await app.preview(
+        workspace_id=project.workspace_id,
+        target=DeletionTarget("workbench", "transcript", transcript.id, transcript.head.number),
+        mode="cascade",
+        key="transcript-plan",
+    )
+    record = await app.accept(
+        workspace_id=project.workspace_id,
+        plan_id=plan.id,
+        expected_revision=plan.revision,
+        digest=plan_digest(plan),
+        targets=plan.confirmed_targets,
+        key="transcript-delete",
+    )
+    zone = Zone()
+    worker = PostgresDeletionCleanup(
+        PostgresVersionUnitOfWork(cleanup.dsn, schema=assets_store.schema), objects=zone
+    )
+    result = await worker.run(record.id)
+    assert result is not None
+    assert zone.prefixes == []
+    assert await worker.pending(limit=2) == ()
+    assert (await app.get(project.workspace_id, record.id)).result == result
+    assert await assets_store.app.get_project(project.id) == project
+    # The object decision survives a fresh worker, rather than only process memory.
+    restarted = PostgresDeletionCleanup(
+        PostgresVersionUnitOfWork(cleanup.dsn, schema=assets_store.schema), objects=zone
+    )
+    assert await restarted.pending(limit=2) == ()
+    assert await restarted.run(record.id) == result
+    assert zone.prefixes == []
+
+    # An existing prototype row ledger can predate the explicit no-object marker.
+    # Its accepted transcript plan is sufficient to settle that inapplicable phase,
+    # without rewriting the immutable ledger or touching the project's bytes.
+    async with await psycopg.AsyncConnection.connect(assets_store.owner_dsn) as owner:
+        await owner.execute(
+            sql.SQL(
+                "UPDATE {}.deletion_outbox SET objects_erased_at=NULL WHERE deletion_id=%s"
+            ).format(sql.Identifier(assets_store.schema)),
+            (record.id,),
+        )
+    assert await restarted.pending(limit=2) == (record.id,)
+    assert (await app.get(project.workspace_id, record.id)).result is None
+    assert await restarted.run(record.id) == result
+    assert await restarted.pending(limit=2) == ()
+    assert zone.prefixes == []

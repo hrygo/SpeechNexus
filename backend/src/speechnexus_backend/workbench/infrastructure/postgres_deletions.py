@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 from psycopg.rows import class_row
 from psycopg.types.json import Jsonb
@@ -23,6 +23,7 @@ from speechnexus_backend.workbench.domain.deletion import (
     DeletionDependency,
     DeletionMode,
     DeletionPlan,
+    DeletionPlanChangedError,
     DeletionRecord,
     DeletionResult,
     DeletionTarget,
@@ -33,6 +34,9 @@ from speechnexus_backend.workbench.domain.deletion import (
     dependency_snapshot,
 )
 from speechnexus_backend.workbench.infrastructure.deletion_codec import plan_digest
+from speechnexus_backend.workbench.infrastructure.postgres_owned_deletions import (
+    PostgresOwnedDeletionCatalog,
+)
 from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
@@ -69,6 +73,7 @@ class _PlanRow:
     expires_at: datetime
     dependencies: list[list[str]]
     plan_digest: str
+    content_snapshot: dict[str, Any] | None
 
     def domain(self) -> DeletionPlan:
         dependencies = tuple(
@@ -121,13 +126,28 @@ class _LedgerRow:
     retained_independent_copies: list[list[str]]
 
 
-async def _load_result(base: _Session, deletion_id: str) -> DeletionResult | None:
-    row = await base._one(
-        _LedgerRow,
+async def _load_result(
+    base: _Session, deletion_id: str, *, complete_only: bool = False
+) -> DeletionResult | None:
+    # The immutable ledger is row-erasure evidence. Public completion also needs the
+    # object-phase marker; its timestamp includes the last completed erasure step.
+    statement = (
         """
+        SELECT l.id, GREATEST(l.completed_at, o.objects_erased_at) AS completed_at,
+            l.deleted, l.retained_independent_copies
+        FROM {s}.deletion_ledger l JOIN {s}.deletion_outbox o USING (deletion_id)
+        WHERE l.deletion_id = %s AND o.completed_at IS NOT NULL
+            AND o.objects_erased_at IS NOT NULL
+        """
+        if complete_only
+        else """
         SELECT id, completed_at, deleted, retained_independent_copies
         FROM {s}.deletion_ledger WHERE deletion_id = %s
-    """,
+        """
+    )
+    row = await base._one(
+        _LedgerRow,
+        statement,
         (deletion_id,),
     )
     if row is None:
@@ -149,21 +169,37 @@ async def _load_result(base: _Session, deletion_id: str) -> DeletionResult | Non
 class PostgresDeletionUnitOfWork:
     """Compose the existing private PG session; no second connection or transaction."""
 
-    def __init__(self, versions: PostgresVersionUnitOfWork, *, meetings: bool = False) -> None:
+    def __init__(
+        self,
+        versions: PostgresVersionUnitOfWork,
+        *,
+        meetings: bool = False,
+        owned: PostgresOwnedDeletionCatalog | None = None,
+    ) -> None:
         self._versions = versions
         self._meetings = meetings
+        self._owned = owned
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[DeletionSession]:
         async with self._versions.transaction() as session:
             assert isinstance(session, _Session)
-            yield _DeletionSession(session, meetings=self._meetings)
+            yield _DeletionSession(session, meetings=self._meetings, owned=self._owned)
 
 
 class _DeletionSession:
-    def __init__(self, base: _Session, *, meetings: bool = False) -> None:
+    def __init__(
+        self,
+        base: _Session,
+        *,
+        meetings: bool = False,
+        owned: PostgresOwnedDeletionCatalog | None = None,
+    ) -> None:
         self._base = base
         self._meetings = meetings
+        self._owned = owned
+        self._content: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._plan_content: dict[str, dict[str, Any] | None] = {}
         self._snapshots: dict[
             tuple[str, str, str], tuple[DeletionTarget, tuple[DeletionDependency, ...]]
         ] = {}
@@ -250,6 +286,10 @@ class _DeletionSession:
                         "blocks" if await base._deleted("meeting", meeting.id) else "cascade",
                     )
                 )
+        if self._owned is not None and target.kind == "project":
+            owned = await self._owned.snapshot(base, project_id)
+            dependencies.extend(owned.dependencies)
+            self._content[(workspace_id, target.kind, target.id)] = owned.content
         result = current, dependency_snapshot(tuple(dependencies), mode=mode)
         self._snapshots[(workspace_id, target.kind, target.id)] = result
         return result
@@ -259,12 +299,16 @@ class _DeletionSession:
             _PlanRow,
             """
             SELECT id, workspace_id, target_kind, target_id, target_revision, mode,
-                created_at, expires_at, dependencies, plan_digest FROM {s}.deletion_plans
+                created_at, expires_at, dependencies, plan_digest, content_snapshot
+            FROM {s}.deletion_plans
             WHERE workspace_id = %s AND id = %s
         """,
             (workspace_id, plan_id),
         )
-        return None if row is None else row.domain()
+        if row is None:
+            return None
+        self._plan_content[row.id] = row.content_snapshot
+        return row.domain()
 
     async def save_plan(self, plan: DeletionPlan, digest: str) -> None:
         snapshot = self._snapshots.get((plan.workspace_id, plan.target.kind, plan.target.id))
@@ -284,8 +328,9 @@ class _DeletionSession:
         await self._base._execute(
             """
             INSERT INTO {s}.deletion_plans (id, workspace_id, target_kind, target_id,
-                target_revision, mode, created_at, expires_at, dependencies, plan_digest)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                target_revision, mode, created_at, expires_at, dependencies, plan_digest,
+                content_snapshot)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 plan.id,
@@ -298,6 +343,9 @@ class _DeletionSession:
                 plan.expires_at,
                 Jsonb(dependencies),
                 digest,
+                Jsonb(self._content[(plan.workspace_id, plan.target.kind, plan.target.id)])
+                if (plan.workspace_id, plan.target.kind, plan.target.id) in self._content
+                else None,
             ),
         )
 
@@ -318,10 +366,16 @@ class _DeletionSession:
         )
         if row is None:
             return None
-        result = await _load_result(self._base, deletion_id) if current else None
+        result = (
+            await _load_result(self._base, deletion_id, complete_only=True) if current else None
+        )
         return DeletionRecord(row.id, row.plan_id, row.plan_digest, row.created_at, result)
 
     async def accept(self, plan: DeletionPlan, record: DeletionRecord) -> None:
+        if self._owned is not None and plan.target.kind == "project":
+            current = self._content.get((plan.workspace_id, plan.target.kind, plan.target.id))
+            if current is None or self._plan_content.get(plan.id) != current:
+                raise DeletionPlanChangedError
         if (
             self._snapshots.get((plan.workspace_id, plan.target.kind, plan.target.id))
             != (plan.target, plan.dependencies)

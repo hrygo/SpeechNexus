@@ -49,6 +49,9 @@ from speechnexus_backend.workbench.infrastructure.postgres_meetings import Postg
 from speechnexus_backend.workbench.infrastructure.postgres_minutes_tasks import (
     PostgresMinutesTasks,
 )
+from speechnexus_backend.workbench.infrastructure.postgres_owned_deletions import (
+    PostgresOwnedDeletionCatalog,
+)
 from speechnexus_backend.workbench.infrastructure.postgres_render_units import (
     PostgresRenderUnits,
 )
@@ -70,6 +73,15 @@ from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
 _READ_ONLY = frozenset({"erased_mutation_receipts", "deletion_ledger", "runtime_schema_revision"})
 _INSERT = TABLES - _READ_ONLY
 _UPDATE_COLUMNS = {
+    "content_write_intents": {
+        "token",
+        "intent",
+        "state",
+        "object_key",
+        "sha256",
+        "bytes",
+        "updated_at",
+    },
     "assistant_turns": {
         "error",
         "output_text",
@@ -218,7 +230,7 @@ async def check_database(settings: WorkbenchSettings) -> None:
                     row["kind"] != "r"
                     or row["owned"]
                     or row["destructive"]
-                    or (name != "deletion_outbox" and not row["readable"])
+                    or not row["readable"]
                     or (name in _INSERT and not row["insertable"])
                     or (name in _READ_ONLY and row["any_insert"])
                 ):
@@ -384,9 +396,9 @@ async def _dispatch_exports(worker: ExportWorker, interval: float) -> None:
     """Produce queued exports while serving; cancellation ends the loop.
 
     The queue is the durable record: a pass claims a bounded page, publishes object
-    bytes before the database reference and records one outcome per claimed job. A
-    failed pass is logged and retried, so a restart or an operator cancel cannot leave
-    a claim without an outcome.
+    bytes before the database reference and records outcomes for completed attempts.
+    A failed pass is diagnosed without exception content. This loop only claims
+    queued jobs; running claims and unknown completions need separate recovery.
     """
     while True:
         await asyncio.sleep(interval)
@@ -395,7 +407,8 @@ async def _dispatch_exports(worker: ExportWorker, interval: float) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            _log.exception("export pass failed; the queue still records what is owed")
+            # Adapter failures may contain content or private service details.
+            _log.error("export pass failed; inspect durable export state before retrying")
 
 
 def _deletion_recovery(
@@ -410,7 +423,9 @@ def _deletion_recovery(
             schema=settings.database_schema,
             max_connections=2,
         ),
+        meetings=True,
         objects=objects,
+        owned=PostgresOwnedDeletionCatalog(),
     )
     return WorkbenchRecovery(worker, worker)
 
@@ -538,7 +553,10 @@ def create_runtime_app(
         None
         if settings.cleanup_database_url is None
         else WorkbenchDeletions(
-            PostgresDeletionUnitOfWork(versions, meetings=True), digest_plan=plan_digest
+            PostgresDeletionUnitOfWork(
+                versions, meetings=True, owned=PostgresOwnedDeletionCatalog()
+            ),
+            digest_plan=plan_digest,
         ),
         meetings=WorkbenchMeetings(PostgresMeetings(versions), llm),
         teleprompter=WorkbenchTeleprompter(PostgresTeleprompter(versions)),

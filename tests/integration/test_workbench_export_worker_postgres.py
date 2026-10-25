@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Iterator
+from io import BytesIO
 from typing import Any
 
 import pytest
@@ -106,7 +107,7 @@ def worker(store: Store, zone: _Zone, producer: Any | None) -> ExportWorker:
 async def test_a_queued_export_is_claimed_produced_published_and_completed(
     export_store: Store, zone: _Zone
 ) -> None:
-    _, book_id, _ = await book(export_store, suffix="worker")
+    project_id, book_id, _ = await book(export_store, suffix="worker")
     export = await create(export_store, book_id, key="export-worker-run-key")
     assert export.progress_total == 2
 
@@ -122,19 +123,19 @@ async def test_a_queued_export_is_claimed_produced_published_and_completed(
     assert done.artifact.media_type == "application/zip"
 
     # The published object really holds the produced bytes.
-    key = f"{book_id}/{export.id}/{done.artifact.id}"
+    key = f"{project_id}/exports/{export.id}/{done.artifact.id}"
     assert zone.read(key) == CONTENT
 
     # The claim moved it out of the queue, so a second pass has nothing to do.
     assert await worker(export_store, zone, _Bundle()).run_once() == 0
 
-    await zone.zone.erase_prefix(prefix=f"{book_id}/")
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")
 
 
 async def test_a_cancellation_during_production_settles_the_export(
     export_store: Store, zone: _Zone
 ) -> None:
-    _, book_id, _ = await book(export_store, suffix="cancel")
+    project_id, book_id, _ = await book(export_store, suffix="cancel")
     export = await create(export_store, book_id, key="export-worker-cancel-key")
     service = WorkbenchExports(PostgresExports(export_store.uow))
 
@@ -142,7 +143,7 @@ async def test_a_cancellation_during_production_settles_the_export(
     settled = await service.get_export(export_id=export.id, workspace_id=WORKSPACE)
     # Cancellation is noticed at the next reported item, not instantly.
     assert (settled.status, settled.artifact) == ("cancelled", None)
-    await zone.zone.erase_prefix(prefix=f"{book_id}/")
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")
 
 
 async def test_a_producer_failure_is_recorded_without_publishing_anything(
@@ -179,7 +180,7 @@ async def test_an_abort_without_a_real_cancellation_is_recorded_as_failed(
 
 
 async def test_without_a_producer_the_queue_is_left_alone(export_store: Store, zone: _Zone) -> None:
-    _, book_id, _ = await book(export_store, suffix="off")
+    project_id, book_id, _ = await book(export_store, suffix="off")
     export = await create(export_store, book_id, key="export-worker-off-key")
 
     assert await worker(export_store, zone, None).run_once() == 0
@@ -189,4 +190,109 @@ async def test_without_a_producer_the_queue_is_left_alone(export_store: Store, z
     # An unconfigured deployment must never invent an artifact.
     assert (untouched.status, untouched.artifact) == ("queued", None)
     assert await worker(export_store, zone, _Bundle()).run_once() == 1
-    await zone.zone.erase_prefix(prefix=f"{book_id}/")
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")
+
+
+@pytest.mark.parametrize(("content", "media_type"), [(b"", "application/zip"), (CONTENT, "")])
+async def test_invalid_output_is_durably_failed_without_an_object(
+    export_store: Store, zone: _Zone, content: bytes, media_type: str
+) -> None:
+    class InvalidBundle(_Bundle):
+        async def produce_export(self, job: ExportJob, *, report: Any) -> ProducedExport:
+            await super().produce_export(job, report=report)
+            return ProducedExport(content=content, media_type=media_type)
+
+    project_id, book_id, _ = await book(export_store, suffix="invalid-output")
+    accepted = await create(export_store, book_id, key="export-invalid-output-key")
+    assert await worker(export_store, zone, InvalidBundle()).run_once() == 1
+
+    failed = await WorkbenchExports(PostgresExports(export_store.uow)).get_export(
+        export_id=accepted.id, workspace_id=WORKSPACE
+    )
+    assert failed.status == "failed" and failed.artifact is None
+    assert failed.error is not None and failed.error.code == "unavailable"
+    assert (
+        list(zone.client.list_objects(BUCKET, prefix=f"exports/{project_id}/", recursive=True))
+        == []
+    )
+    assert await worker(export_store, zone, _Bundle()).run_once() == 0
+
+
+async def test_one_failed_object_write_does_not_strand_the_rest_of_the_claimed_batch(
+    export_store: Store, zone: _Zone
+) -> None:
+    class FailFirstWrite:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def put(self, *, key: str, body: BytesIO, length: int) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise OSError("synthetic private object outage")
+            await zone.zone.put(key=key, body=body, length=length)
+
+    project_id, book_id, _ = await book(export_store, suffix="write-failure")
+    first = await create(export_store, book_id, key="export-write-failure-first")
+    second = await create(export_store, book_id, key="export-write-failure-second")
+    assert (
+        await ExportWorker(
+            PostgresExports(export_store.uow), FailFirstWrite(), _Bundle()
+        ).run_once()
+        == 2
+    )
+
+    service = WorkbenchExports(PostgresExports(export_store.uow))
+    failed = await service.get_export(export_id=first.id, workspace_id=WORKSPACE)
+    succeeded = await service.get_export(export_id=second.id, workspace_id=WORKSPACE)
+    assert failed.status == "failed" and failed.artifact is None
+    assert failed.error is not None and failed.error.message == "export production failed"
+    assert succeeded.status == "succeeded" and succeeded.artifact is not None
+    assert zone.read(f"{project_id}/exports/{second.id}/{succeeded.artifact.id}") == CONTENT
+    assert await worker(export_store, zone, _Bundle()).run_once() == 0
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")
+
+
+async def test_a_lost_completion_reply_preserves_the_committed_artifact(
+    export_store: Store, zone: _Zone
+) -> None:
+    class LostCompletionReply(PostgresExports):
+        async def complete_export(self, *, export_id: str, artifact: Any) -> ExportJob:
+            await super().complete_export(export_id=export_id, artifact=artifact)
+            raise OSError("synthetic lost completion reply")
+
+    project_id, book_id, _ = await book(export_store, suffix="lost-completion")
+    accepted = await create(export_store, book_id, key="export-lost-completion-key")
+    with pytest.raises(OSError, match="synthetic lost completion reply"):
+        await ExportWorker(LostCompletionReply(export_store.uow), zone.zone, _Bundle()).run_once()
+
+    recovered = await WorkbenchExports(PostgresExports(export_store.uow)).get_export(
+        export_id=accepted.id, workspace_id=WORKSPACE
+    )
+    assert recovered.status == "succeeded" and recovered.error is None
+    assert recovered.artifact is not None
+    assert zone.read(f"{project_id}/exports/{accepted.id}/{recovered.artifact.id}") == CONTENT
+    assert await worker(export_store, zone, _Bundle()).run_once() == 0
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")
+
+
+async def test_cancellation_while_put_is_in_flight_settles_after_confirmed_write(
+    export_store: Store, zone: _Zone
+) -> None:
+    project_id, book_id, _ = await book(export_store, suffix="late-cancel")
+    export = await create(export_store, book_id, key="late-cancel-original-key")
+    service = WorkbenchExports(PostgresExports(export_store.uow))
+
+    class CancelDuringPut:
+        async def put(self, *, key: str, body: BytesIO, length: int) -> None:
+            await service.cancel_export(export_id=export.id, workspace_id=WORKSPACE)
+            await zone.zone.put(key=key, body=body, length=length)
+
+    assert (
+        await ExportWorker(
+            PostgresExports(export_store.uow), CancelDuringPut(), _Bundle()
+        ).run_once()
+        == 1
+    )
+    done = await service.get_export(export_id=export.id, workspace_id=WORKSPACE)
+    assert done.status == "cancelled" and done.artifact is None
+    await zone.zone.erase_prefix(prefix=f"{project_id}/")

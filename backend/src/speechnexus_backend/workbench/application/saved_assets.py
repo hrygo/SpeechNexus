@@ -7,6 +7,7 @@ import json
 from typing import BinaryIO, Protocol
 from uuid import uuid4
 
+from speechnexus_backend.workbench.application.content_writes import ContentWrites
 from speechnexus_backend.workbench.application.speech_sources import (
     ArtifactCopy,
     SpeechArtifactSource,
@@ -29,6 +30,9 @@ class ObjectZoneUnavailableError(Exception):
 
 class SavedAssetStore(Protocol):
     """Transactions own the receipt check; every method is short and keyed by project."""
+
+    @property
+    def content_writes(self) -> ContentWrites: ...
 
     async def get(self, *, asset_id: str, workspace_id: str) -> SavedAsset: ...
 
@@ -118,9 +122,8 @@ class WorkbenchSavedAssets:
         if key is not None and not 8 <= len(key) <= 128:
             raise InvalidVersionChangeError("invalid saved asset request key")
         intent = _intent_digest(source_artifact_id, source_receipt_id, display_name)
-        # Visibility first: an invisible project must neither fetch artifact bytes nor
-        # leave objects behind, so a deletion that starts later cannot be raced by this
-        # save's object writes. Erasure still sweeps late objects as a second barrier.
+        # Visibility and receipt reads are optimizations. The durable reservation
+        # under the project lock is the barrier against a concurrent deletion.
         await self._store.check_project(project_id=project_id, workspace_id=workspace_id)
         if key is not None:
             # Outside any transaction: an accepted replay must not refetch the artifact.
@@ -129,16 +132,34 @@ class WorkbenchSavedAssets:
             )
             if existing is not None:
                 return existing
-        copy = await self._source.copy(
-            artifact_id=source_artifact_id, receipt_id=source_receipt_id, workspace_id=workspace_id
+        writes = self._store.content_writes
+        write = await writes.reserve_asset(
+            project_id=project_id,
+            workspace_id=workspace_id,
+            asset_id=uuid4().hex,
+            source_artifact_id=source_artifact_id,
+            source_receipt_id=source_receipt_id,
+            display_name=display_name,
+            key=key,
+            intent_digest=intent,
         )
+        copy: ArtifactCopy | None = None
+        put_started, put_confirmed = False, False
         try:
+            copy = await self._source.copy(
+                artifact_id=source_artifact_id,
+                receipt_id=source_receipt_id,
+                workspace_id=workspace_id,
+            )
             object_key = saved_object_key(project_id, copy.sha256)
+            await writes.writing(write, object_key=object_key, sha256=copy.sha256, size=copy.bytes)
             # Object first, database reference second: a rollback never publishes a row
             # whose bytes were not durably written.
+            put_started = True
             await self._objects.put(key=object_key, body=copy.body, length=copy.bytes)
+            put_confirmed = True
             return await self._store.commit(
-                asset_id=uuid4().hex,
+                asset_id=write.resource_id,
                 project_id=project_id,
                 workspace_id=workspace_id,
                 object_key=object_key,
@@ -147,7 +168,12 @@ class WorkbenchSavedAssets:
                 intent_digest=intent if key is not None else None,
             )
         finally:
-            copy.close()
+            if copy is not None:
+                copy.close()
+            if not put_started or put_confirmed:
+                await writes.settle(write)
+            else:
+                await writes.unknown(write)
 
     @staticmethod
     def _copy(copy: ArtifactCopy, display_name: str | None) -> SavedAssetCopy:

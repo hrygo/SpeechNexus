@@ -16,6 +16,7 @@ from io import BytesIO
 from typing import Protocol
 from uuid import uuid4
 
+from speechnexus_backend.workbench.application.content_writes import ContentWrites
 from speechnexus_backend.workbench.domain.exports import (
     ExportArtifact,
     ExportError,
@@ -39,6 +40,9 @@ class ExportProducer(Protocol):
 
 
 class ExportWorkerStore(Protocol):
+    @property
+    def content_writes(self) -> ContentWrites: ...
+
     async def claim_queued_exports(self, *, limit: int) -> list[ExportJob]: ...
 
     async def record_export_progress(self, *, export_id: str, completed: int) -> ExportJob: ...
@@ -83,6 +87,7 @@ class ExportWorker:
         for job in claimed:
             try:
                 produced = await self._producer.produce_export(job, report=self._reporter(job))
+                artifact = await self._publish(job, produced)
             except ExportCancelledError:
                 try:
                     # The cancellation was requested while producing; settle it as asked.
@@ -102,9 +107,14 @@ class ExportWorker:
                     error=ExportError("unavailable", "export production failed", True),
                 )
                 continue
-            await self._store.complete_export(
-                export_id=job.id, artifact=await self._publish(job, produced)
-            )
+            # A completion reply may be lost after commit. Let the store's original
+            # outcome remain authoritative instead of recording a compensating failure.
+            try:
+                await self._store.complete_export(export_id=job.id, artifact=artifact)
+            except ExportStateConflictError:
+                # PUT is confirmed and the producer has stopped. Only a persisted
+                # cancellation may settle here; unknown completion still propagates.
+                await self._store.settle_cancel_export(export_id=job.id)
         return len(claimed)
 
     def _reporter(self, job: ExportJob) -> ReportProgress:
@@ -121,12 +131,9 @@ class ExportWorker:
         assert self._zone is not None
         artifact_id = uuid4().hex
         digest = "sha256:" + hashlib.sha256(produced.content).hexdigest()
-        await self._zone.put(
-            key=f"{job.book_id}/{job.id}/{artifact_id}",
-            body=BytesIO(produced.content),
-            length=len(produced.content),
-        )
-        return ExportArtifact(
+        # Validate domain metadata before persisting any content: an empty or
+        # malformed producer result is a failed export, never a published object.
+        artifact = ExportArtifact(
             id=artifact_id,
             export_id=job.id,
             manifest_revision=job.manifest_revision,
@@ -135,3 +142,18 @@ class ExportWorker:
             sha256=digest,
             created_at=datetime.now(UTC),
         )
+        writes = self._store.content_writes
+        write = await writes.reserve_export(export_id=job.id, artifact_id=artifact_id)
+        key = f"{write.project_id}/exports/{job.id}/{artifact_id}"
+        put_started, put_confirmed = False, False
+        try:
+            await writes.writing(write, object_key=key, sha256=digest, size=artifact.bytes)
+            put_started = True
+            await self._zone.put(key=key, body=BytesIO(produced.content), length=artifact.bytes)
+            put_confirmed = True
+        finally:
+            if not put_started or put_confirmed:
+                await writes.settle(write)
+            else:
+                await writes.unknown(write)
+        return artifact

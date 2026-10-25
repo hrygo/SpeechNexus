@@ -12,6 +12,9 @@ from speechnexus_backend.workbench.application.versions import (
     ResourceNotFoundError,
 )
 from speechnexus_backend.workbench.domain.saved_assets import SavedAsset, SavedAssetCopy
+from speechnexus_backend.workbench.infrastructure.postgres_content_writes import (
+    PostgresContentWrites,
+)
 from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
@@ -65,6 +68,7 @@ class PostgresSavedAssets:
 
     def __init__(self, versions: PostgresVersionUnitOfWork) -> None:
         self._versions = versions
+        self.content_writes = PostgresContentWrites(versions)
 
     async def _project(
         self, base: _Session, project_id: str, workspace_id: str, *, lock: bool

@@ -27,7 +27,7 @@ def grant_meetings_cleanup_sql(schema: str, role: str) -> sql.Composed:
 _DDL = """
 ALTER TABLE {s}.resource_tombstones DROP CONSTRAINT resource_tombstones_resource_kind_check,
     ADD CONSTRAINT tombstones_kind_meetings
-    CHECK (resource_kind IN ('project','transcript','meeting'));
+    CHECK (resource_kind IN ('project','transcript','meeting','audiobook','saved_asset'));
 CREATE TABLE {s}.meetings (
     id text PRIMARY KEY CHECK (char_length(id) BETWEEN 1 AND 128),
     workspace_id text NOT NULL CHECK (char_length(workspace_id) BETWEEN 1 AND 128),

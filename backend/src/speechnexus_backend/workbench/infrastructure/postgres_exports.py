@@ -33,6 +33,9 @@ from speechnexus_backend.workbench.domain.versions import (
     InvalidVersionChangeError,
     RevisionConflictError,
 )
+from speechnexus_backend.workbench.infrastructure.postgres_content_writes import (
+    PostgresContentWrites,
+)
 from speechnexus_backend.workbench.infrastructure.postgres_versions import (
     PostgresVersionUnitOfWork,
     _Session,
@@ -161,6 +164,7 @@ def _error_json(value: ExportError) -> dict[str, object]:
 class PostgresExports(ExportJobStore):
     def __init__(self, versions: PostgresVersionUnitOfWork) -> None:
         self._versions = versions
+        self.content_writes = PostgresContentWrites(versions)
 
     async def _scope(self, base: _Session, book_id: str) -> _ScopeRow | None:
         return await base._one(
@@ -323,10 +327,13 @@ class PostgresExports(ExportJobStore):
     async def cancel_export(self, *, export_id: str, workspace_id: str) -> tuple[ExportJob, bool]:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
-            row = await self._row(base, export_id, lock=True)
+            row = await self._row(base, export_id)
             if row is None:
                 raise ResourceNotFoundError
             await self._project(base, row.project_id, workspace_id, lock=True)
+            row = await self._row(base, export_id, lock=True)
+            if row is None:
+                raise ResourceNotFoundError
             current = row.domain()
             if current.status in {"cancelling", "cancelled"}:
                 return current, False
@@ -346,6 +353,9 @@ class PostgresExports(ExportJobStore):
         """Apply one domain transition to the locked row and persist its columns."""
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
+            row = await self._row(base, export_id)
+            if row is None or await base.get_project(row.project_id, for_update=True) is None:
+                raise ResourceNotFoundError
             row = await self._row(base, export_id, lock=True)
             if row is None:
                 raise ResourceNotFoundError
@@ -398,12 +408,19 @@ class PostgresExports(ExportJobStore):
                 f"""
                 SELECT {_COLUMNS} FROM {{s}}.export_jobs
                 WHERE status = 'queued' ORDER BY created_at, id
-                FOR UPDATE SKIP LOCKED LIMIT %s
+                LIMIT %s
             """,
                 (limit,),
             )
             claimed: list[ExportJob] = []
-            for row in rows or []:
+            # All lifecycle changes share project -> export lock order with deletion.
+            # A concurrent claimant rechecks the row under the same project lock.
+            for candidate in sorted(rows or [], key=lambda row: (row.project_id, row.id)):
+                if await base.get_project(candidate.project_id, for_update=True) is None:
+                    continue
+                row = await self._row(base, candidate.id, lock=True)
+                if row is None or row.status != "queued":
+                    continue
                 running = row.domain().start(now=await base.now())
                 await base._execute(
                     """
@@ -412,7 +429,9 @@ class PostgresExports(ExportJobStore):
                     (running.status, running.updated_at, running.id),
                 )
                 claimed.append(running)
-            return claimed
+            # Lock in a global order, but preserve the queue order for dispatch.
+            order = {row.id: index for index, row in enumerate(rows or [])}
+            return sorted(claimed, key=lambda job: order[job.id])
 
     async def settle_cancel_export(self, *, export_id: str) -> ExportJob:
         return await self._advance(export_id, lambda job, now: job.settle_cancel(now=now))

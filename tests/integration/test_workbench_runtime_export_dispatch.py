@@ -120,6 +120,9 @@ async def test_the_serving_runtime_produces_a_queued_export(
     app = runtime_app(database, interval=0.2, producer=_Bundle())
     async with serve(app) as client:
         export, book_id = await queue_one(client, "runtime-produce")
+        owned_book = await client.get(f"/v1/workbench/books/{book_id}")
+        assert owned_book.status_code == 200, owned_book.text
+        project_id = owned_book.json()["project_id"]
         assert export["status"] == "queued" and export["artifact"] is None
         # No test calls the worker: the serving runtime's own loop must settle it.
         finished = await settled(client, export["id"], "succeeded")
@@ -131,7 +134,7 @@ async def test_the_serving_runtime_produces_a_queued_export(
     assert artifact["bytes"] == len(CONTENT)
     assert artifact["sha256"] == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
     assert finished["error"] is None
-    assert objects.read(f"{book_id}/{export['id']}/{artifact['id']}") == CONTENT
+    assert objects.read(f"{project_id}/exports/{export['id']}/{artifact['id']}") == CONTENT
 
 
 async def test_an_unconfigured_runtime_leaves_queued_exports_alone(

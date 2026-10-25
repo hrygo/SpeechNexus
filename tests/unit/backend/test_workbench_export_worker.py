@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
+
+import pytest
 
 from speechnexus_backend.workbench.application.export_worker import (
     ExportCancelledError,
@@ -36,6 +39,9 @@ def job() -> ExportJob:
 
 class _Store:
     def __init__(self, queued: list[ExportJob] | None = None) -> None:
+        from tests.fake.content_writes import FakeContentWrites
+
+        self.content_writes = FakeContentWrites()
         self.queued = queued or []
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.progress: list[int] = []
@@ -77,9 +83,18 @@ class _Zone:
 
 
 class _Producer:
-    def __init__(self, *, items: int = 2, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        items: int = 2,
+        error: Exception | None = None,
+        content: bytes = CONTENT,
+        media_type: str = "application/zip",
+    ) -> None:
         self.items = items
         self.error = error
+        self.content = content
+        self.media_type = media_type
         self.reported: list[int] = []
 
     async def produce_export(self, job: ExportJob, *, report: Any) -> ProducedExport:
@@ -88,7 +103,7 @@ class _Producer:
             await report(item)
         if self.error is not None:
             raise self.error
-        return ProducedExport(content=CONTENT, media_type="application/zip")
+        return ProducedExport(content=self.content, media_type=self.media_type)
 
 
 def worker(store: _Store, zone: _Zone | None, producer: _Producer | None) -> ExportWorker:
@@ -122,8 +137,8 @@ async def test_a_claimed_export_is_produced_published_and_completed() -> None:
     assert artifact.bytes == len(CONTENT)
     assert artifact.sha256 == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
     # The published object really holds the produced bytes.
-    assert list(zone.objects) == [f"book_demo/export_demo/{artifact.id}"]
-    assert zone.objects[f"book_demo/export_demo/{artifact.id}"] == CONTENT
+    assert list(zone.objects) == [f"project-synthetic/exports/export_demo/{artifact.id}"]
+    assert zone.objects[f"project-synthetic/exports/export_demo/{artifact.id}"] == CONTENT
 
 
 async def test_cancellation_during_production_settles_instead_of_completing() -> None:
@@ -169,3 +184,86 @@ async def test_an_empty_queue_claims_nothing() -> None:
     store = _Store()
     assert await worker(store, _Zone(), _Producer()).run_once() == 0
     assert [name for name, _ in store.calls] == ["claim"]
+
+
+@pytest.mark.parametrize(
+    ("content", "media_type"),
+    [(b"", "application/zip"), (CONTENT, ""), (CONTENT, "x" * 129)],
+)
+async def test_invalid_produced_metadata_fails_before_writing_any_object(
+    content: bytes, media_type: str
+) -> None:
+    store = _Store(queued=[job()])
+    zone = _Zone()
+    producer = _Producer(content=content, media_type=media_type)
+
+    assert await worker(store, zone, producer).run_once() == 1
+
+    assert zone.objects == {}
+    assert [name for name, _ in store.calls] == ["claim", "progress", "progress", "fail"]
+    error = store.calls[-1][1]["error"]
+    assert (error.code, error.retryable) == ("unavailable", True)
+
+
+async def test_an_object_write_failure_fails_only_its_export_and_continues_the_claimed_batch() -> (
+    None
+):
+    class FailFirstWrite(_Zone):
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+
+        async def put(self, *, key: str, body: BytesIO, length: int) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise OSError("private object endpoint and synthetic content must not escape")
+            await super().put(key=key, body=body, length=length)
+
+    store = _Store(queued=[job(), replace(job(), id="export_second")])
+    zone = FailFirstWrite()
+
+    assert await worker(store, zone, _Producer()).run_once() == 2
+
+    assert [name for name, _ in store.calls] == [
+        "claim",
+        "progress",
+        "progress",
+        "fail",
+        "progress",
+        "progress",
+        "complete",
+    ]
+    error = next(value["error"] for name, value in store.calls if name == "fail")
+    assert (error.code, error.retryable) == ("unavailable", True)
+    assert "private" not in error.message and "synthetic content" not in error.message
+    artifact = store.calls[-1][1]["artifact"]
+    assert artifact.export_id == "export_second"
+    assert list(zone.objects) == [f"project-synthetic/exports/export_second/{artifact.id}"]
+
+
+async def test_an_unknown_completion_does_not_overwrite_the_original_outcome_with_failure() -> None:
+    class UnknownCompletion(_Store):
+        async def complete_export(self, *, export_id: str, artifact: ExportArtifact) -> ExportJob:
+            await super().complete_export(export_id=export_id, artifact=artifact)
+            # The database may have committed the completion before losing its reply.
+            raise OSError("completion result unknown")
+
+    store = UnknownCompletion(queued=[job()])
+    zone = _Zone()
+    with pytest.raises(OSError, match="completion result unknown"):
+        await worker(store, zone, _Producer()).run_once()
+    assert [name for name, _ in store.calls] == ["claim", "progress", "progress", "complete"]
+    assert len(zone.objects) == 1
+
+
+async def test_cancellation_after_confirmed_put_is_settled_without_compensating_failure() -> None:
+    class CancellingStore(_Store):
+        async def complete_export(self, *, export_id: str, artifact: ExportArtifact) -> ExportJob:
+            self.calls.append(("complete", {"artifact": artifact}))
+            raise ExportStateConflictError
+
+    store = CancellingStore(queued=[job()])
+    zone = _Zone()
+    assert await worker(store, zone, _Producer()).run_once() == 1
+    assert len(zone.objects) == 1
+    assert [name for name, _ in store.calls][-2:] == ["complete", "settle_cancel"]

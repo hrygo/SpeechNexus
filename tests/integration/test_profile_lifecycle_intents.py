@@ -207,6 +207,7 @@ def test_original_lookup_precedes_new_write_permission_and_missing_recovery_neve
         ("operation", "activate"),
         ("intent_json", "[" * 10000 + "]" * 10000),
     ],
+    ids=["digest-mismatch", "operation-mismatch", "deep-json"],
 )
 def test_corrupt_history_is_unknown_without_repair_or_provider_calls(
     journal: Journal, column: str, value: str

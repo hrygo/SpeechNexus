@@ -220,7 +220,12 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         else set()
     )
     binding_tables = (
-        {"speech_binding_families", "speech_binding_revisions", "speech_binding_commands"}
+        {
+            "speech_binding_families",
+            "speech_binding_revisions",
+            "speech_binding_commands",
+            "speech_binding_defaults",
+        }
         if db.dialect == "postgresql"
         else set()
     )
@@ -471,7 +476,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0010_model_binding_drafts"
+    assert sandbox.version() == "0011_binding_parameter_defaults"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -538,7 +543,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0010_model_binding_drafts"
+        assert sandbox.version() == "0011_binding_parameter_defaults"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

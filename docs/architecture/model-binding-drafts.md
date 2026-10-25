@@ -214,4 +214,56 @@ fields, write registry data or establish a published/default configuration.
 A separate [default producer profile](binding-defaults-producer.md) defines the
 future input and fixed snapshot lookup. It references the canonical fields above
 and leaves this implemented `binding` surface and its negative-input checks
-unchanged. Actual atomic persistence and HTTP support remain pending.
+unchanged. The in-process atomic port below implements persistence; actual
+producer HTTP support remains pending.
+
+## Atomic default declarations
+
+`BindingDefaultDrafts` / `PostgresBindingDefaults` persist one complete original
+intent, parent revision and at most one default snapshot in the same short
+transaction. The independent `prepare_binding_defaults_draft` validates the
+frozen producer DTO, canonical parameter fields and declared parent task/domain
+relationships. It neither infers values nor resolves external resource references
+or engine qualification. The existing HTTP preparer continues rejecting the new
+field. No new route or operational OpenAPI capability is enabled here.
+
+Omission stores no snapshot; explicit `{}` stores one. Presence and values belong
+to the original intent digest, so omission ↔ `{}` and changed values conflict under
+the original key. Parameters stay outside the legacy ModelBinding response shape.
+The legacy create/recover adapter rejects commands carrying declarations before
+writing; callers must use the atomic port. Legacy parent GET remains readable.
+
+Append-only `0011_binding_parameter_defaults` follows 0010. A nullable
+`defaults_declared` command marker preserves old rows as NULL, while new atomic
+commands record presence explicitly. `speech_binding_defaults` has unique parent
+and global snapshot identities, private canonical JSON v1, parameter and record
+digests, and a compound foreign key fixing the parent family/revision/global ID,
+original key/request digest, document version and creation time. History is never
+backfilled. The snapshot uses the accepted parent's creation time.
+
+The new provisioning declaration `binding_defaults_grants` extends the original
+three-table writer with SELECT/INSERT on the immutable snapshot table. It does
+not execute grants, change the existing writer's lifecycle, or broaden startup
+permissions. Runtime UPDATE/DELETE and coordination access remain denied. A future
+HTTP unit must explicitly validate and wire its controlled writer lifecycle.
+
+Creation and recovery return the original parent/snapshot identities. Recovery is
+read-only and never allocates IDs. A lost or late committed reply, cancellation,
+pool pressure or unreadable original result remains `unknown/query_original`.
+Deadlines are cooperative bounds, not hard network interrupts. A declared but
+missing/corrupt snapshot or inconsistent marker is unavailable, never a fabricated
+empty declaration. Fixed reads return None only for an authoritative absent parent
+or declaration. The record digest detects changed snapshot identity/metadata as
+well as parameter corruption; it is not a security signature against a DB owner.
+
+Migration rollback is allowed only when no new snapshot or declared original
+command remains; a declared journal also blocks rollback after child corruption.
+Failure rolls back new DDL and preserves older facts/ACLs. Isolated PostgreSQL is
+the product authority; the test-only InnoDB adapter executes the same transaction
+SQL solely to probe portability. Tests cover real lock waits, original rollback,
+commit reply loss/read pressure, cancellation, delayed committed replies, partial
+rollback, parent FK, permission refusal and migration preservation.
+
+Producer HTTP, published/default registry, merged parameter resolution and actual
+engine/quality evidence remain separate acceptance. This port neither publishes
+nor activates revisions and does not rewrite historical Jobs.

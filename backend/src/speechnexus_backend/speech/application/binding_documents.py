@@ -8,6 +8,9 @@ from collections.abc import Iterator
 from decimal import Decimal
 from typing import Any
 
+from speechnexus_contracts.binding_defaults_producer import parse as parse_default_intent
+
+from speechnexus_backend.speech.application.binding_default_rules import validate_declared_defaults
 from speechnexus_backend.speech.domain.binding_drafts import CreateBindingDraft
 from speechnexus_backend.speech.domain.configuration import MAX_DOCUMENT_BYTES, document_digest
 
@@ -102,10 +105,23 @@ def decode_document(raw: bytes) -> dict[str, Any]:
         raise ValueError("Invalid stored binding document") from None
 
 
+def command_defaults(intent: dict[str, Any]) -> bytes | None:
+    return encode_document(intent["parameter_defaults"]) if "parameter_defaults" in intent else None
+
+
 def check_command(command: CreateBindingDraft) -> None:
     intent = decode_document(command.intent)
+    parameters = command_defaults(intent)
+    if parameters is not None:
+        # Saved producer intents are untrusted on recovery as well as on entry.
+        parse_default_intent("BindingDefaultsCreateRequest", intent)
+    if parameters != command.parameter_defaults:
+        raise ValueError("Inconsistent binding default declaration")
+    intent.pop("parameter_defaults", None)
     if (
         intent.pop("binding_id") != command.binding_id
         or encode_document(intent) != command.definition
     ):
         raise ValueError("Inconsistent binding command")
+    if parameters is not None:
+        validate_declared_defaults(intent, decode_document(parameters))

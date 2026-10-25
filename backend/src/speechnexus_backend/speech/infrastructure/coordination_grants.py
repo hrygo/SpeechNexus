@@ -54,7 +54,8 @@ GATEWAY_UPDATES = {
     "gateway_fencing_barriers": "min_fencing_token sealed_evidence_digest version",
     "submit_intents": (
         "execution_state cleanup_state engine_request_id dispatched_at_us "
-        "staging_output_object_key terminated_at_us generated_pcm_samples error_code "
+        "staging_output_object_key staging_result_document terminated_at_us "
+        "generated_pcm_samples error_code "
         "request_document command_redacted_at_us command_deletion_job_id "
         "command_deletion_evidence_digest updated_at_us version"
     ),

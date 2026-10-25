@@ -74,3 +74,8 @@ ExecutionStatus = Annotated[
     BeforeValidator(lambda value: parse("ExecutionStatusResponse", value)),
     WithJsonSchema(wire_schema("ExecutionStatusResponse")),
 ]
+ExecutionStagingResultResponse = Annotated[
+    models.ExecutionStagingResultResponse,
+    BeforeValidator(lambda value: parse("ExecutionStagingResultResponse", value)),
+    WithJsonSchema(wire_schema("ExecutionStagingResultResponse")),
+]

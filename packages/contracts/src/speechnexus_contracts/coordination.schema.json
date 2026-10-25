@@ -2202,8 +2202,55 @@
         },
         "expected_version": {
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "staging_result": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionStagingResult",
+          "description": "Trusted producer only. Register once while executing and eligible. Preserve expected_version CAS: after a lost response query the original identity; an exact receipt replay at the current version is read-only even after later stop. Mismatches conflict. Does not publish or change terminal/stop/budget facts."
         }
       }
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionStagingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Private immutable receipt from the trusted execution adapter after complete\nversion-pinned readback. Not a publication, execution terminal or release fact.\nInitial supported container is Transcription JSON; TTS media is not enabled here.\n",
+      "required": ["request_digest", "reference", "storage_version", "media_type"],
+      "properties": {
+        "request_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+        },
+        "reference": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ArtifactStorageReference"
+        },
+        "storage_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "not": {
+            "const": "null"
+          }
+        },
+        "media_type": {
+          "const": "application/json"
+        }
+      },
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "object",
+              "properties": {
+                "byte_length": {
+                  "type": "integer",
+                  "minimum": 11,
+                  "maximum": 4194304
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "redact_execution_command": {
       "type": "object",

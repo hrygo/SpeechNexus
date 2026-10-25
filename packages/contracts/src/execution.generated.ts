@@ -38,6 +38,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/executions/{submit_intent_id}/staging-result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the immutable private result version without publishing or executing */
+    get: operations["getExecutionStagingResult"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/executions/{submit_intent_id}/abort": {
     parameters: {
       query?: never;
@@ -146,6 +163,32 @@ export interface components {
       object_key: string;
       content_sha256: components["schemas"]["Sha256Digest"];
       byte_length: number;
+    };
+    /**
+     * @description Private immutable receipt from the trusted execution adapter after complete
+     *     version-pinned readback. Not a publication, execution terminal or release fact.
+     *     Initial supported container is Transcription JSON; TTS media is not enabled here.
+     */
+    ExecutionStagingResult: {
+      request_digest: components["schemas"]["Sha256Digest"];
+      reference: components["schemas"]["ArtifactStorageReference"];
+      storage_version: string;
+      /** @constant */
+      media_type: "application/json";
+    } & {
+      reference: {
+        byte_length?: number;
+      };
+    };
+    /**
+     * @description A null result means no complete receipt has been registered, never proof of
+     *     no object or no running computation. Read only; cannot authorize redispatch.
+     *     Publishing consumers must independently check current cancellation/terminal authority.
+     */
+    ExecutionStagingResultResponse: {
+      submit_intent_id: components["schemas"]["Identifier"];
+      request_digest: components["schemas"]["Sha256Digest"];
+      staging_result: components["schemas"]["ExecutionStagingResult"] | null;
     };
     /**
      * @description Monotonic high-water summary over the authoritative interval ledger.
@@ -769,6 +812,53 @@ export interface operations {
       };
       401: components["responses"]["Unauthorized"];
       /** @description Submit intent not found on this gateway control store. */
+      404: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      /** @description Invalid submit identity or correlation header. */
+      422: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      503: components["responses"]["ControlUnavailable"];
+    };
+  };
+  getExecutionStagingResult: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        submit_intent_id: components["parameters"]["SubmitIntentIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original request identity and registered result, or null while unregistered. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionStagingResultResponse"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No execution with this identity is recorded on this gateway. */
       404: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];

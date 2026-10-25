@@ -8,7 +8,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
+from speechnexus_gateway.domain.execution_inputs import (
+    ExecutionObjectReference,
+    is_fixed_storage_version,
+)
 
 MAX_ASR_RESULT_BYTES = 4 * 1024 * 1024
 ASR_RESULT_MEDIA_TYPE = "application/json"
@@ -79,10 +82,7 @@ class StagedAsrResult:
             type(self.request_digest) is not str
             or _DIGEST.fullmatch(self.request_digest) is None
             or not isinstance(self.reference, ExecutionObjectReference)
-            or type(self.storage_version) is not str
-            or not 1 <= len(self.storage_version) <= 1024
-            or self.storage_version == "null"
-            or any(ord(char) < 32 or ord(char) == 127 for char in self.storage_version)
+            or not is_fixed_storage_version(self.storage_version)
         ):
             raise AsrResultError("asr_result_identity_mismatch")
 

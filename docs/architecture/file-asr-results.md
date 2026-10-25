@@ -22,7 +22,7 @@ date: 2026-10-25
 | 输出上界   | 调用方显式指定 11–4,194,304 字节，包含 JSON 与 UTF-8 转义开销；不是容量准入或业务配额 |
 | 交接引用   | 复用内部 `ArtifactStorageReference` 的六个字段；不新增 wire DTO 或路由                |
 | 私有元数据 | 原 `request_digest`、固定 S3 `storage_version`；只能由后续受权执行/发布者持久消费     |
-| 发布与预算 | A 负责执行结果的持久登记、发布、公开响应和下载；原停止/释放与预算事务保持各自权威     |
+| 发布与预算 | B 登记私有执行回执；A 负责公开 Artifact 登记、发布、响应和下载；停止/预算保持原权威     |
 
 `response_format=json/text` 仍按原命令冻结。这里使用同一种私有 JSON 结果容器，
 供 A 读取正文后按原请求生成公开 JSON 或文本响应；不能直接把 JSON 对象按 `text/plain`
@@ -71,9 +71,10 @@ date: 2026-10-25
 重新识别来恢复结果。执行所有者仍须实现固定引用的持久登记、原身份查询、发布/取消竞争
 与孤儿对象清理。没有登记回执不能反推对象不存在；对象存在也不能反推任务成功。
 
-结果引用不含执行终态、停止或释放断言。它不修改 `submit_intents`、Job、lease、output
-interval 或预算，不将观察事务中非空 staging 的既有拒绝放宽。公开 `ExecutionStatus`
-持久输出投影、真实引擎接收/恢复、A 发布与 C 消费仍待后续装配。
+结果引用不含执行终态、停止或释放断言。本组件不修改 `submit_intents`、Job、lease、
+output interval 或预算。[执行结果登记与查询](execution-staging-results.md)通过原观察事务
+保存完整、固定版本的私有回执；单独 staging key 或不完整引用仍不能登记结果。
+真实引擎接收/恢复、A 发布与 C 消费继续装配。
 
 ## 验证范围
 

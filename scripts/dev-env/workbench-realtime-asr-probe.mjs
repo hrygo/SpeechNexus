@@ -14,10 +14,13 @@ const { values } = parseArgs({
     output: { type: "string" },
     "cleanup-mode": { type: "string" },
     "stop-kind": { type: "string", default: "abort" },
+    "device-switch": { type: "boolean", default: false },
   },
 });
 assert(values.output);
 const cleanupMode = values["cleanup-mode"];
+const deviceSwitch = values["device-switch"];
+assert(!deviceSwitch || cleanupMode === undefined);
 assert(cleanupMode === undefined || ["delayed", "rejected"].includes(cleanupMode));
 const stopKind = values["stop-kind"];
 assert(["abort", "interruption"].includes(stopKind));
@@ -386,9 +389,10 @@ const context = await browser.newContext({
   }),
   page = await context.newPage();
 await context.addInitScript((cleanupMode) => {
-  window.__realtimeMedia = { streams: [], contexts: [] };
+  window.__realtimeMedia = { streams: [], contexts: [], requests: [] };
   const get = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
   navigator.mediaDevices.getUserMedia = async function (options) {
+    window.__realtimeMedia.requests.push(options);
     const stream = await get(options);
     window.__realtimeMedia.streams.push(stream);
     return stream;
@@ -465,6 +469,14 @@ try {
   await page.goto(origin);
   await enter();
   await expect(page.getByLabel("会话预设编号")).toHaveValue("");
+  if (deviceSwitch) {
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 0);
+    const read = page.getByRole("button", { name: "读取麦克风列表" });
+    await read.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(/麦克风列表已读取|浏览器尚未列出麦克风/)).toBeVisible();
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 0);
+  }
   await create();
   await expect(page.getByRole("alert")).toContainText("提交结果尚未确认");
   await page.reload();
@@ -478,7 +490,115 @@ try {
   await connect(first);
   await page.getByRole("button", { name: "开始麦克风采集" }).click();
   await expect(page.getByText("<b>合成预览</b>", { exact: true })).toBeVisible();
-  if (cleanupMode) {
+  if (deviceSwitch) {
+    send(first, {
+      type: "conversation.item.input_audio_transcription.completed",
+      event_id: "switch-final",
+      item_id: "switch-item",
+      content_index: 0,
+      transcript: "合成切换前正文",
+      usage: { type: "duration", seconds: 0.1 },
+    });
+    await expect(page.getByLabel("本标签页最终正文草稿")).toHaveValue("合成切换前正文");
+    const read = page.getByRole("button", { name: "读取麦克风列表" });
+    await read.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(/麦克风列表已读取/)).toBeVisible();
+    const select = page.getByLabel("输入麦克风", { exact: true });
+    const option = select.locator("option").last();
+    const selected = await option.getAttribute("value");
+    assert(
+      selected && selected.length > 16,
+      "native fake microphone must expose an opaque device identity",
+    );
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 1);
+    await select.focus();
+    await page.keyboard.type(await option.innerText());
+    await expect(select).toHaveValue(selected);
+    assert.equal(first.value.status, "active");
+    assert.equal(writes.filter((w) => w.path.endsWith("/cancellations")).length, 0);
+    const apply = page.getByRole("button", { name: "应用麦克风选择" });
+    await apply.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "实时字幕", exact: true })).toBeFocused();
+    await expect(page.getByRole("alert")).toContainText("提交结果尚未确认");
+    await expect(page.getByText(/input_device_changed/)).toBeVisible();
+    await mediaStopped();
+    assert.equal(sessions.size, 1);
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 1);
+    const stoppedAt = first.sent;
+    await expect(page.getByRole("button", { name: "创建实时会话", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "按原键重放" }).click();
+    await expect(page.getByText(/正在结束.*接受时快照/)).toBeVisible();
+    assert.equal(writes.at(-1).key, writes.at(-2).key);
+    assert.deepEqual(writes.at(-1).body, writes.at(-2).body);
+    complete(first);
+    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
+    await create();
+    await expect(page.getByText("session-2", { exact: true })).toBeVisible();
+    const second = sessions.get("session-2");
+    await connect(second);
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 1);
+    await expect(page.getByText(/已开始新的会话边界/)).toBeVisible();
+    const start = page.getByRole("button", { name: "开始麦克风采集" });
+    await start.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => second.sent).toBe(2400);
+    assert.equal(
+      await page.evaluate(
+        (id) => window.__realtimeMedia.requests[1].audio.deviceId.exact === id,
+        selected,
+      ),
+      true,
+    );
+    const journal = await page.evaluate(() =>
+      sessionStorage.getItem("speechnexus.workbench.realtime-asr.v1"),
+    );
+    assert(!journal.includes(selected));
+    assert(!JSON.stringify(writes).includes(selected));
+    await expect(page.getByLabel("本标签页最终正文草稿")).toHaveValue("合成切换前正文");
+    await page.getByRole("button", { name: "停止采集并中止" }).click();
+    await mediaStopped();
+    assert.equal(first.sent, stoppedAt);
+    complete(second);
+    await page.getByRole("button", { name: "读取当前会话状态" }).click();
+    await expect(page.getByText("已关闭 · 清理完成", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 360, height: 960 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+    await page.screenshot({ path: resolve(output, "device-switch.png"), fullPage: true });
+    await page.reload();
+    await enter();
+    await expect(page.getByLabel("输入麦克风", { exact: true })).toHaveValue("");
+    assert.equal(await page.evaluate(() => window.__realtimeMedia.requests.length), 0);
+    await expect(page.getByLabel("本标签页最终正文草稿")).toHaveValue("合成切换前正文");
+    assert.deepEqual(errors, []);
+    assert.deepEqual(serverErrors, []);
+    assert.deepEqual(outbound, []);
+    const result = {
+      passed: true,
+      device_switch: true,
+      synthetic_microphone: true,
+      physical_device: false,
+      actual_audio_worklet: true,
+      sessions: sessions.size,
+      capture_requests: 2,
+      explicit_restart: true,
+      original_cancel_replay: true,
+      local_device_metadata_only: true,
+      old_audio_stopped: true,
+      confirmed_text_preserved: true,
+      keyboard_switch_and_start: true,
+      errors,
+      serverErrors,
+      outbound,
+    };
+    await writeFile(resolve(output, "result.json"), JSON.stringify(result, null, 2));
+    process.stdout.write(JSON.stringify(result) + "\n");
+  } else if (cleanupMode) {
     if (stopKind === "interruption")
       await page.evaluate(() => window.__realtimeMedia.contexts[0].suspend());
     else await page.getByRole("button", { name: "停止采集并中止" }).click();

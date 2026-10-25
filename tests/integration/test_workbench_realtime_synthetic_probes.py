@@ -132,3 +132,23 @@ async def test_capture_cleanup_is_observed_after_remote_session_release(
     assert result["no_late_audio_sent"] is True, result
     assert result["no_redundant_remote_cancel"] is True, result
     assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result
+
+
+async def test_input_device_switch_keeps_new_capture_explicit() -> None:
+    result = await run_probe("asr", output_dir("asr-device-switch"), "--device-switch")
+    assert result["passed"] is True, result
+    assert result["device_switch"] is True, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["synthetic_microphone"] is True, result
+    assert result["physical_device"] is False, result
+    assert result["sessions"] == result["capture_requests"] == 2, result
+    for fact in (
+        "explicit_restart",
+        "original_cancel_replay",
+        "local_device_metadata_only",
+        "old_audio_stopped",
+        "confirmed_text_preserved",
+        "keyboard_switch_and_start",
+    ):
+        assert result[fact] is True, (fact, result)
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result

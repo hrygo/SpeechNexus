@@ -31,25 +31,22 @@ PG为正式数据库，InnoDB为共享协调对照；停止与释放双证据后
 | 团队 | 当前可证事实 | 下一交接与真实缺口 |
 | --- | --- | --- |
 | A | 协调原事务/未知恢复、文本 Asset/Workspace、草稿及默认快照 HTTP 已合入；#139 只交付 P1a 原意图/只读边界。#155 head `0db7a4c` 提交独立音频检查进程候选，本轮回读 CI40177149300 已失败 | A 修复当前 CI 后仍需共享媒体/镜像与真实音频 ready；接权威配置、完整业务 Job/准入、Artifact/Operation/receipt 和公开发布下载。监督器存在不等于媒体已检验 |
-| B | #140/#147 已合入；#152 head `cc49865`、#154 head `7841845` 各自全 14 项 CI 成功，均未合入；持久文件 runner 已完成双消费者竞争/真实 commit 确认丢失及完整本机回归 | 按 #152→#154→runner 串行交付与集成；runner 待精确版本 CI，再接真实 ASR、可信停止/释放及 A/C 同版公开链；接着 CustomVoice |
+| B | #140/#147 已合入；#152 回执登记与 #154 异步输入已依次集成，PR/合后 CI 均成功；#158 交付提交后文件执行组件与双消费者/确认丢失回归 | #158 的最新组合与集成事实以该 PR 为准；继续接固定真实 ASR、可信停止/释放及 A/C 同版公开链，再接 CustomVoice；替身不构成模型资格 |
 | C | 已提交 [PR #153](https://github.com/hrygo/SpeechNexus/pull/153)，head `6d3d092`，可获取候选；已有作者本机 PG/浏览器/LLM 等分层记录 | 与 main 有冲突，该 head 没有 checks/status/PR workflow；同步并保留最新 A/B 增量、取得新 head CI、迁移/组合根与 method+path 消费者核验，再接真实语音；不再称“未提交” |
 
-B 的 #152 需要 A 串行评审 `0012_execution_results` 与列权限，再由管理侧集成；
-#154 的 base 是 #152，不能跳过依赖，也不能把旧绿灯用于新的主线组合。
-本地 `codex/b03-durable-file-runner` 在此前 100 项定向回归之后，补齐两个独立消费者
-对同一原 intent 的实际入口竞争、真实接收/结果 commit 确认丢失及线程创建失败清理反例。
-最新 worker/生命周期 16 项、隔离 worker 7 项通过；完整非集成 4069 项通过、
-覆盖率 81.72%，完整集成 1320 项通过、22 项既有 PG-only 参数不适用跳过。
-Ruff/mypy/依赖边界、契约校验与生成漂移通过；候选待精确版本 PR CI，
-识别/VAD 仍为替身，无真实模型或公开链路资格。独立 worktree 的三个已批准 skill
-已本地创建/校验，不抵扣业务 AC。
+#152 的 `0012_execution_results` 与列权限已按用户授权完成 A 范围串行接收，
+合入 `ef16d71`；#154 随后合入 `0832074`，各自精确 PR 与合后 CI 均成功。
+#158 的提交后文件执行组件覆盖独立消费者对同一原 intent 的实际入口竞争、
+真实接收/结果 commit 确认丢失及线程创建失败清理；生命周期、双库与对象回归的
+精确版本、CI 和报告见 [PR #158](https://github.com/hrygo/SpeechNexus/pull/158)。
+识别/VAD 仍为替身，默认固定真实引擎、可信停止/释放、A 发布与公开链路资格仍待。
+独立 worktree 的项目 skill 候选不抵扣业务 AC。
 B00/B01/B02/B03/B04/B06 保持 in-progress，B05/B07 保持 planned，不把待集成子项扩为整包 blocked。
 
-A00 的 [#141](https://github.com/hrygo/SpeechNexus/pull/141) head `b840ea2` 仍开放且与 main 冲突；
-CI40159242336 的 14 项成功仅属于旧组合。待管理处理、新组合审查和检查，
-本轮不重试合并或修改其 head。generateRenderUnit 的 JSON/runtime 候选与
-另三项 downloadSavedAsset/downloadBookExport binary、streamExportEvents SSE 缺口分别核对；
-C 的生产消费者覆盖不能代替 A runtime 绑定。
+A00 的 [#141](https://github.com/hrygo/SpeechNexus/pull/141) 已合入主干 `a7f4d46`，
+补齐 `generateRenderUnit` 两个 runtime DTO 和 JSON HTTP 入口，沿用既有 Workbench 源契约。
+另三个 downloadSavedAsset/downloadBookExport binary、streamExportEvents SSE 入口、
+实际 C 路由、公开 SpeechJob 和音色资格仍需各自证据；旧 CI 只适用于原 base/head 组合。
 
 文件 ASR 路线：真实 ready 音频 + 权威 binding/显式默认 → 完整持久 Job/原子准入 →
 原 intent 唯一真实执行 → B 私有结果回执/可信停止 → A 发布/下载 → SDK/C 消费。

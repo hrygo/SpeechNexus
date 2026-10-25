@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import test from "node:test";
+import { parse } from "../src/workbench.ts";
 import {
   validateRequest,
   validateResponse,
@@ -22,6 +23,60 @@ const sample = (operation, kind, status) =>
         (status === undefined || e.status === status),
     ).value,
   );
+
+test("render generation uses native HTTP and preserves original identity on explicit calls", async () => {
+  const request = sample("generateRenderUnit", "request");
+  const accepted = sample("generateRenderUnit", "response", 202);
+  const received = [];
+  const replies = [202, 409, 429];
+  const server = createServer(async (wire, response) => {
+    const chunks = [];
+    for await (const chunk of wire) chunks.push(chunk);
+    received.push({
+      method: wire.method,
+      path: wire.url,
+      key: wire.headers["idempotency-key"],
+      body: JSON.parse(Buffer.concat(chunks).toString()),
+    });
+    const status = replies[received.length - 1];
+    response.writeHead(status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(sample("generateRenderUnit", "response", status).body));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = createValidatedClient(`http://127.0.0.1:${server.address().port}`, 8192);
+    for (const status of replies) {
+      const result = await client.POST("/v1/workbench/render-units/{unit_id}/generations", {
+        params: { path: request.path, header: request.headers },
+        body: parse("RenderUnitGenerationRequest", request.body),
+      });
+      assert.equal(result.response.status, status);
+      if (status === 202) {
+        assert.deepEqual(parse("RenderUnitGenerationAccepted", result.data), accepted.body);
+      } else assert.deepEqual(result.error, sample("generateRenderUnit", "response", status).body);
+    }
+    assert.deepEqual(
+      received,
+      replies.map(() => ({
+        method: "POST",
+        path: "/v1/workbench/render-units/unit-demo/generations",
+        key: "original-render-key",
+        body: request.body,
+      })),
+    );
+    await assert.rejects(() =>
+      client.POST("/v1/workbench/render-units/{unit_id}/generations", {
+        params: { path: request.path },
+        body: { expected_unit_revision: 7 },
+      }),
+    );
+    assert.equal(received.length, 3);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
 
 for (const example of examples) {
   test(`http-${example.id}`, () => {

@@ -406,6 +406,9 @@ export interface paths {
      * @description Pins text, voice, pronunciation, model, and profile revisions. The
      *     speech base only receives a bounded text unit Job; the workbench owns
      *     chapter and book composition.
+     *     This legacy version cannot express the required model binding. The
+     *     production boundary returns 503 workbench_unavailable without writes;
+     *     use createRenderUnitV2 with the caller-selected binding.
      */
     post: operations["createRenderUnit"];
     delete?: never;
@@ -717,6 +720,90 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v2/workbench/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Report workbench feature availability */
+    get: operations["getWorkbenchStatusV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/chapters/{chapter_id}/render-units": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List chapter render units
+     * @description Render units are listed newest first; the explicit unit ordinal carries
+     *     the position inside the chapter's render plan.
+     */
+    get: operations["listRenderUnitsV2"];
+    put?: never;
+    /**
+     * Create a fixed render unit
+     * @description Pins text, voice, pronunciation, model, and profile revisions. The
+     *     speech base only receives a bounded text unit Job; the workbench owns
+     *     chapter and book composition.
+     */
+    post: operations["createRenderUnitV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/render-units/{unit_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a render unit */
+    get: operations["getRenderUnitV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update render-unit text or casting
+     * @description A changed text, voice, pronunciation, model, or profile creates a new
+     *     unit revision and marks dependent output stale. Unchanged units remain
+     *     reusable.
+     */
+    patch: operations["updateRenderUnitV2"];
+    trace?: never;
+  };
+  "/v2/workbench/render-units/{unit_id}/generations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit a speech Job for a render unit */
+    post: operations["generateRenderUnitV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -740,11 +827,6 @@ export interface components {
       workbench_enabled: boolean;
       /** @description True only when a deployment-approved intranet LLM is configured. */
       llm_enabled: boolean;
-      /** @description Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile. */
-      minutes_profile?: {
-        template_revision: components["schemas"]["Revision"];
-        llm_model: string;
-      } | null;
       /**
        * @description UI must localize this code as "all workspaces are shared within this deployment; no personal isolation is implied".
        * @constant
@@ -757,7 +839,7 @@ export interface components {
         /** @enum {string} */
         status: "available" | "disabled" | "unavailable";
       }[];
-    } & unknown;
+    };
     Project: {
       id: components["schemas"]["Identifier"];
       /** @constant */
@@ -1009,7 +1091,6 @@ export interface components {
     };
     RenderUnitVoice: components["schemas"]["ResourceReference"];
     RenderUnit: {
-      model_binding: components["schemas"]["ResourceReference"];
       id: components["schemas"]["Identifier"];
       /** @constant */
       object: "nexus.render_unit";
@@ -1031,7 +1112,6 @@ export interface components {
       updated_at: string;
     } & (unknown & unknown & unknown & unknown & unknown);
     RenderUnitCreateRequest: {
-      model_binding: components["schemas"]["ResourceReference"];
       ordinal: number;
       text: string;
       voice: components["schemas"]["ResourceReference"];
@@ -1040,7 +1120,6 @@ export interface components {
       profile?: components["schemas"]["ResourceReference"];
     };
     RenderUnitPatch: {
-      model_binding?: components["schemas"]["ResourceReference"];
       expected_revision: components["schemas"]["Revision"];
       text?: string;
       voice?: components["schemas"]["ResourceReference"];
@@ -1352,6 +1431,83 @@ export interface components {
       /** Format: date-time */
       retired_at: string | null;
       disabled_reason: string | null;
+    };
+    WorkbenchStatusV2: {
+      /** @constant */
+      object: "nexus.workbench_status";
+      workbench_enabled: boolean;
+      /** @description True only when a deployment-approved intranet LLM is configured. */
+      llm_enabled: boolean;
+      /** @description Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile. */
+      minutes_profile?: {
+        template_revision: components["schemas"]["Revision"];
+        llm_model: string;
+      } | null;
+      /**
+       * @description UI must localize this code as "all workspaces are shared within this deployment; no personal isolation is implied".
+       * @constant
+       */
+      shared_deployment_notice: "shared_deployment";
+      capabilities: {
+        /** @enum {string} */
+        name:
+          "transcription" | "meeting_minutes" | "assistant" | "teleprompter" | "audiobook_export";
+        /** @enum {string} */
+        status: "available" | "disabled" | "unavailable";
+      }[];
+    } & unknown;
+    RenderUnitV2: {
+      model_binding: components["schemas"]["ResourceReference"];
+      id: components["schemas"]["Identifier"];
+      /** @constant */
+      object: "nexus.render_unit";
+      chapter_id: components["schemas"]["Identifier"];
+      ordinal: number;
+      revision: components["schemas"]["Revision"];
+      text: string;
+      voice: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"] | null;
+      model: string;
+      profile?: components["schemas"]["ResourceReference"] | null;
+      /** @enum {string} */
+      status: "pending" | "generating" | "ready" | "stale" | "failed";
+      saved_asset_id?: components["schemas"]["Identifier"] | null;
+      speech_job_id?: components["schemas"]["Identifier"] | null;
+      source_artifact_id?: components["schemas"]["Identifier"] | null;
+      source_receipt_id?: components["schemas"]["Identifier"] | null;
+      /** Format: date-time */
+      updated_at: string;
+    } & (unknown & unknown & unknown & unknown & unknown);
+    RenderUnitCreateRequestV2: {
+      model_binding: components["schemas"]["ResourceReference"];
+      ordinal: number;
+      text: string;
+      voice: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"];
+      model: string;
+      profile?: components["schemas"]["ResourceReference"];
+    };
+    RenderUnitPatchV2: {
+      model_binding?: components["schemas"]["ResourceReference"];
+      expected_revision: components["schemas"]["Revision"];
+      text?: string;
+      voice?: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"] | null;
+      model?: string;
+      profile?: components["schemas"]["ResourceReference"] | null;
+    };
+    RenderUnitListV2: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["RenderUnitV2"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    RenderUnitGenerationAcceptedV2: {
+      render_unit: components["schemas"]["RenderUnitV2"];
+      speech_job_id: components["schemas"]["Identifier"];
+      /** Format: date-time */
+      accepted_at: string;
     };
     /** @enum {string} */
     ErrorType:
@@ -2764,8 +2920,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getRenderUnit: {
@@ -2791,8 +2952,13 @@ export interface operations {
           "application/json": components["schemas"]["RenderUnit"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   updateRenderUnit: {
@@ -2826,8 +2992,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   generateRenderUnit: {
@@ -3396,6 +3567,218 @@ export interface operations {
       408: components["responses"]["RequestTimeout"];
       500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getWorkbenchStatusV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workbench status. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkbenchStatusV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listRenderUnitsV2: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        chapter_id: components["parameters"]["ChapterIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Render units. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitListV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  createRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        chapter_id: components["parameters"]["ChapterIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitCreateRequestV2"];
+      };
+    };
+    responses: {
+      /** @description Render unit created. */
+      201: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Render unit. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  updateRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitPatchV2"];
+      };
+    };
+    responses: {
+      /** @description Updated render unit. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  generateRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitGenerationRequest"];
+      };
+    };
+    responses: {
+      /** @description Speech Job submitted. */
+      202: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitGenerationAcceptedV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+      422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["TooManyRequests"];
     };
   };
 }

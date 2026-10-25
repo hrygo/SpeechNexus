@@ -202,5 +202,33 @@ def parse(name: Literal["VoiceSummary"], value: Any) -> models.VoiceSummary: ...
 def parse(name: Literal["VoiceRevision"], value: Any) -> models.VoiceRevision: ...
 
 
+@overload
+def parse(name: Literal["WorkbenchStatusV2"], value: Any) -> models.WorkbenchStatusV2: ...
+
+
+@overload
+def parse(name: Literal["RenderUnitV2"], value: Any) -> models.RenderUnitV2: ...
+
+
+@overload
+def parse(
+    name: Literal["RenderUnitCreateRequestV2"], value: Any
+) -> models.RenderUnitCreateRequestV2: ...
+
+
+@overload
+def parse(name: Literal["RenderUnitPatchV2"], value: Any) -> models.RenderUnitPatchV2: ...
+
+
+@overload
+def parse(name: Literal["RenderUnitListV2"], value: Any) -> models.RenderUnitListV2: ...
+
+
+@overload
+def parse(
+    name: Literal["RenderUnitGenerationAcceptedV2"], value: Any
+) -> models.RenderUnitGenerationAcceptedV2: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

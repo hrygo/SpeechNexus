@@ -68,7 +68,7 @@ async def chapter(client: httpx.AsyncClient) -> str:
 async def create(client: httpx.AsyncClient, chapter_id: str, **overrides: Any) -> httpx.Response:
     body = {**BODY, **overrides}
     return await client.post(
-        f"/v1/workbench/chapters/{chapter_id}/render-units",
+        f"/v2/workbench/chapters/{chapter_id}/render-units",
         json=body,
         headers={"Idempotency-Key": CREATE_KEY},
     )
@@ -92,12 +92,12 @@ async def test_render_unit_create_replays_and_updates_over_real_http(
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == unit["id"]
 
-    fetched = await client.get(f"/v1/workbench/render-units/{unit['id']}")
+    fetched = await client.get(f"/v2/workbench/render-units/{unit['id']}")
     assert fetched.status_code == 200, fetched.text
     assert fetched.json() == unit
 
     revised = await client.patch(
-        f"/v1/workbench/render-units/{unit['id']}",
+        f"/v2/workbench/render-units/{unit['id']}",
         json={"expected_revision": "1", "text": "改写后的旁白单元"},
     )
     assert revised.status_code == 200, revised.text
@@ -105,7 +105,7 @@ async def test_render_unit_create_replays_and_updates_over_real_http(
     assert revised.json()["text"] == "改写后的旁白单元"
 
     stale = await client.patch(
-        f"/v1/workbench/render-units/{unit['id']}",
+        f"/v2/workbench/render-units/{unit['id']}",
         json={"expected_revision": "1", "model": "tts-other"},
     )
     assert stale.status_code == 409, stale.text
@@ -115,14 +115,14 @@ async def test_render_unit_create_replays_and_updates_over_real_http(
 async def test_render_unit_errors_are_typed_and_content_free(client: httpx.AsyncClient) -> None:
     chapter_id = await chapter(client)
     missing = await client.post(
-        f"/v1/workbench/chapters/{chapter_id}/render-units",
+        f"/v2/workbench/chapters/{chapter_id}/render-units",
         json={key: value for key, value in BODY.items() if key != "model_binding"},
         headers={"Idempotency-Key": CREATE_KEY},
     )
     assert missing.status_code in {400, 422}, missing.text
     assert "binding_demo" not in missing.text
 
-    unknown = await client.get("/v1/workbench/render-units/unit_absent")
+    unknown = await client.get("/v2/workbench/render-units/unit_absent")
     assert unknown.status_code == 404, unknown.text
     assert unknown.json()["error"]["code"] == "resource_not_found"
 
@@ -135,7 +135,7 @@ async def test_render_unit_errors_are_typed_and_content_free(client: httpx.Async
     # The request envelope already refuses a patch with nothing to change, so the
     # application-level refusal only guards callers that bypass HTTP.
     empty = await client.patch(
-        f"/v1/workbench/render-units/{created.json()['id']}",
+        f"/v2/workbench/render-units/{created.json()['id']}",
         json={"expected_revision": "1"},
     )
     assert empty.status_code == 400, empty.text
@@ -147,14 +147,14 @@ async def test_render_unit_listing_pages_over_real_http(client: httpx.AsyncClien
     created = []
     for index in range(3):
         made = await client.post(
-            f"/v1/workbench/chapters/{chapter_id}/render-units",
+            f"/v2/workbench/chapters/{chapter_id}/render-units",
             json={**BODY, "ordinal": index},
             headers={"Idempotency-Key": f"render-list-key-{index}"},
         )
         assert made.status_code == 201, made.text
         created.append(made.json())
 
-    first = await client.get(f"/v1/workbench/chapters/{chapter_id}/render-units?limit=2")
+    first = await client.get(f"/v2/workbench/chapters/{chapter_id}/render-units?limit=2")
     assert first.status_code == 200, first.text
     body = first.json()
     assert body["object"] == "nexus.list"
@@ -162,7 +162,7 @@ async def test_render_unit_listing_pages_over_real_http(client: httpx.AsyncClien
     assert body["has_more"] is True and body["next_cursor"]
 
     second = await client.get(
-        f"/v1/workbench/chapters/{chapter_id}/render-units",
+        f"/v2/workbench/chapters/{chapter_id}/render-units",
         params={"limit": 2, "cursor": body["next_cursor"]},
     )
     assert second.status_code == 200, second.text
@@ -170,7 +170,7 @@ async def test_render_unit_listing_pages_over_real_http(client: httpx.AsyncClien
     assert [item["id"] for item in page["data"]] == [created[0]["id"]]
     assert page["has_more"] is False and page["next_cursor"] is None
     # A listed unit carries exactly what a direct read returns.
-    single = await client.get(f"/v1/workbench/render-units/{created[0]['id']}")
+    single = await client.get(f"/v2/workbench/render-units/{created[0]['id']}")
     assert single.status_code == 200, single.text
     assert page["data"][0] == single.json()
 
@@ -178,13 +178,13 @@ async def test_render_unit_listing_pages_over_real_http(client: httpx.AsyncClien
     # out-of-range limit is refused at the boundary.
     other = await other_chapter(client)
     foreign = await client.get(
-        f"/v1/workbench/chapters/{other}/render-units", params={"cursor": body["next_cursor"]}
+        f"/v2/workbench/chapters/{other}/render-units", params={"cursor": body["next_cursor"]}
     )
     assert foreign.status_code == 400
     assert foreign.json()["error"]["code"] == "invalid_cursor"
-    absent = await client.get("/v1/workbench/chapters/chapter-absent/render-units")
+    absent = await client.get("/v2/workbench/chapters/chapter-absent/render-units")
     assert absent.status_code == 404
-    refused = await client.get(f"/v1/workbench/chapters/{chapter_id}/render-units?limit=0")
+    refused = await client.get(f"/v2/workbench/chapters/{chapter_id}/render-units?limit=0")
     assert refused.status_code == 400
 
 

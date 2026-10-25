@@ -58,7 +58,7 @@ async def prepared(client: httpx.AsyncClient, *, suffix: str = "one") -> tuple[s
     )
     assert chapter.status_code == 201, chapter.text
     unit = await client.post(
-        f"/v1/workbench/chapters/{chapter.json()['id']}/render-units",
+        f"/v2/workbench/chapters/{chapter.json()['id']}/render-units",
         json={
             "ordinal": 0,
             "text": "合成旁白单元",

@@ -1,11 +1,39 @@
 {
   "examples": [
     {
+      "id": "getWorkbenchStatus-request-valid-v2",
+      "kind": "request",
+      "operation": "getWorkbenchStatusV2",
+      "value": {},
+      "valid": true
+    },
+    {
       "id": "getWorkbenchStatus-request-valid",
       "kind": "request",
       "operation": "getWorkbenchStatus",
       "value": {},
       "valid": true
+    },
+    {
+      "id": "getWorkbenchStatus-response-declared-200-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "value": {
+        "body": {
+          "object": "nexus.workbench_status",
+          "workbench_enabled": true,
+          "llm_enabled": false,
+          "shared_deployment_notice": "shared_deployment",
+          "capabilities": [
+            {
+              "name": "transcription",
+              "status": "disabled"
+            }
+          ]
+        }
+      },
+      "valid": true,
+      "status": 200
     },
     {
       "id": "getWorkbenchStatus-response-declared-200",
@@ -29,6 +57,25 @@
       "status": 200
     },
     {
+      "id": "getWorkbenchStatus-response-declared-401-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
       "id": "getWorkbenchStatus-response-declared-401",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -46,6 +93,27 @@
       },
       "valid": true,
       "status": 401
+    },
+    {
+      "id": "getWorkbenchStatus-response-undeclared-status-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "value": {
+        "body": {
+          "object": "nexus.workbench_status",
+          "workbench_enabled": true,
+          "llm_enabled": false,
+          "shared_deployment_notice": "shared_deployment",
+          "capabilities": [
+            {
+              "name": "transcription",
+              "status": "disabled"
+            }
+          ]
+        }
+      },
+      "valid": false,
+      "status": 299
     },
     {
       "id": "getWorkbenchStatus-response-undeclared-status",
@@ -5658,6 +5726,28 @@
       "valid": false
     },
     {
+      "id": "getWorkbenchStatus-management-400-valid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 400,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
       "id": "getWorkbenchStatus-management-400-valid",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -5680,6 +5770,21 @@
       "valid": true
     },
     {
+      "id": "getWorkbenchStatus-management-400-invalid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 400,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "detail": "Synthetic invalid envelope"
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "getWorkbenchStatus-management-400-invalid",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -5693,6 +5798,28 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "getWorkbenchStatus-management-408-valid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 408,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     },
     {
       "id": "getWorkbenchStatus-management-408-valid",
@@ -5717,6 +5844,21 @@
       "valid": true
     },
     {
+      "id": "getWorkbenchStatus-management-408-invalid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 408,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "detail": "Synthetic invalid envelope"
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "getWorkbenchStatus-management-408-invalid",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -5730,6 +5872,28 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "getWorkbenchStatus-management-413-valid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 413,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     },
     {
       "id": "getWorkbenchStatus-management-413-valid",
@@ -5754,6 +5918,21 @@
       "valid": true
     },
     {
+      "id": "getWorkbenchStatus-management-413-invalid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 413,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "detail": "Synthetic invalid envelope"
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "getWorkbenchStatus-management-413-invalid",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -5767,6 +5946,28 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "getWorkbenchStatus-management-500-valid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 500,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     },
     {
       "id": "getWorkbenchStatus-management-500-valid",
@@ -5791,6 +5992,21 @@
       "valid": true
     },
     {
+      "id": "getWorkbenchStatus-management-500-invalid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 500,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "detail": "Synthetic invalid envelope"
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "getWorkbenchStatus-management-500-invalid",
       "kind": "response",
       "operation": "getWorkbenchStatus",
@@ -5804,6 +6020,28 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "getWorkbenchStatus-management-503-valid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 503,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     },
     {
       "id": "getWorkbenchStatus-management-503-valid",
@@ -5826,6 +6064,21 @@
         }
       },
       "valid": true
+    },
+    {
+      "id": "getWorkbenchStatus-management-503-invalid-v2",
+      "kind": "response",
+      "operation": "getWorkbenchStatusV2",
+      "status": 503,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "detail": "Synthetic invalid envelope"
+        }
+      },
+      "valid": false
     },
     {
       "id": "getWorkbenchStatus-management-503-invalid",
@@ -8326,7 +8579,7 @@
     {
       "id": "minutes-profile-approved",
       "kind": "response",
-      "operation": "getWorkbenchStatus",
+      "operation": "getWorkbenchStatusV2",
       "value": {
         "body": {
           "object": "nexus.workbench_status",
@@ -8351,7 +8604,7 @@
     {
       "id": "minutes-profile-disabled-null",
       "kind": "response",
-      "operation": "getWorkbenchStatus",
+      "operation": "getWorkbenchStatusV2",
       "value": {
         "body": {
           "object": "nexus.workbench_status",
@@ -8373,7 +8626,7 @@
     {
       "id": "minutes-profile-disabled-approved",
       "kind": "response",
-      "operation": "getWorkbenchStatus",
+      "operation": "getWorkbenchStatusV2",
       "value": {
         "body": {
           "object": "nexus.workbench_status",
@@ -8398,7 +8651,7 @@
     {
       "id": "minutes-profile-numeric-revision",
       "kind": "response",
-      "operation": "getWorkbenchStatus",
+      "operation": "getWorkbenchStatusV2",
       "value": {
         "body": {
           "object": "nexus.workbench_status",
@@ -8423,7 +8676,7 @@
     {
       "id": "minutes-profile-internal-endpoint",
       "kind": "response",
-      "operation": "getWorkbenchStatus",
+      "operation": "getWorkbenchStatusV2",
       "value": {
         "body": {
           "object": "nexus.workbench_status",
@@ -11963,9 +12216,9 @@
       "status": 503
     },
     {
-      "id": "createRenderUnit-request-valid",
+      "id": "createRenderUnit-request-valid-v2",
       "kind": "request",
-      "operation": "createRenderUnit",
+      "operation": "createRenderUnitV2",
       "value": {
         "path": {
           "chapter_id": "chapter_demo"
@@ -11990,9 +12243,32 @@
       "valid": true
     },
     {
-      "id": "createRenderUnit-request-invalid",
+      "id": "createRenderUnit-request-valid",
       "kind": "request",
       "operation": "createRenderUnit",
+      "value": {
+        "path": {
+          "chapter_id": "chapter_demo"
+        },
+        "headers": {
+          "Idempotency-Key": "synthetic-render-key-0001"
+        },
+        "body": {
+          "ordinal": 0,
+          "text": "合成旁白单元",
+          "voice": {
+            "id": "voice_demo",
+            "revision": "1"
+          },
+          "model": "tts-quality"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "createRenderUnit-request-invalid-v2",
+      "kind": "request",
+      "operation": "createRenderUnitV2",
       "value": {
         "path": {
           "chapter_id": "chapter_demo"
@@ -12010,6 +12286,41 @@
       "valid": false
     },
     {
+      "id": "createRenderUnit-request-invalid",
+      "kind": "request",
+      "operation": "createRenderUnit",
+      "value": {
+        "path": {
+          "chapter_id": "chapter_demo"
+        },
+        "body": {
+          "ordinal": 0,
+          "text": "合成旁白单元",
+          "voice": {
+            "id": "voice_demo",
+            "revision": "1"
+          },
+          "model": "tts-quality",
+          "model_binding": {
+            "id": "binding-demo",
+            "revision": "3"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "getRenderUnit-request-valid-v2",
+      "kind": "request",
+      "operation": "getRenderUnitV2",
+      "value": {
+        "path": {
+          "unit_id": "unit_demo"
+        }
+      },
+      "valid": true
+    },
+    {
       "id": "getRenderUnit-request-valid",
       "kind": "request",
       "operation": "getRenderUnit",
@@ -12021,6 +12332,15 @@
       "valid": true
     },
     {
+      "id": "getRenderUnit-request-invalid-v2",
+      "kind": "request",
+      "operation": "getRenderUnitV2",
+      "value": {
+        "path": {}
+      },
+      "valid": false
+    },
+    {
       "id": "getRenderUnit-request-invalid",
       "kind": "request",
       "operation": "getRenderUnit",
@@ -12028,6 +12348,21 @@
         "path": {}
       },
       "valid": false
+    },
+    {
+      "id": "updateRenderUnit-request-valid-v2",
+      "kind": "request",
+      "operation": "updateRenderUnitV2",
+      "value": {
+        "path": {
+          "unit_id": "unit_demo"
+        },
+        "body": {
+          "expected_revision": "1",
+          "text": "改写后的旁白单元"
+        }
+      },
+      "valid": true
     },
     {
       "id": "updateRenderUnit-request-valid",
@@ -12043,6 +12378,18 @@
         }
       },
       "valid": true
+    },
+    {
+      "id": "updateRenderUnit-request-invalid-v2",
+      "kind": "request",
+      "operation": "updateRenderUnitV2",
+      "value": {
+        "path": {
+          "unit_id": "unit_demo"
+        },
+        "body": {}
+      },
+      "valid": false
     },
     {
       "id": "updateRenderUnit-request-invalid",
@@ -12436,6 +12783,20 @@
       "valid": true
     },
     {
+      "id": "listRenderUnits-request-valid-v2",
+      "kind": "request",
+      "operation": "listRenderUnitsV2",
+      "value": {
+        "path": {
+          "chapter_id": "chapter_demo"
+        },
+        "query": {
+          "limit": 50
+        }
+      },
+      "valid": true
+    },
+    {
       "id": "listRenderUnits-request-valid",
       "kind": "request",
       "operation": "listRenderUnits",
@@ -12450,6 +12811,18 @@
       "valid": true
     },
     {
+      "id": "listRenderUnits-request-invalid-v2",
+      "kind": "request",
+      "operation": "listRenderUnitsV2",
+      "value": {
+        "path": {},
+        "query": {
+          "limit": 0
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "listRenderUnits-request-invalid",
       "kind": "request",
       "operation": "listRenderUnits",
@@ -12460,6 +12833,44 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "listRenderUnits-response-200-v2",
+      "kind": "response",
+      "operation": "listRenderUnitsV2",
+      "status": 200,
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "object": "nexus.render_unit",
+              "id": "unit_demo",
+              "chapter_id": "chapter_demo",
+              "ordinal": 0,
+              "revision": "1",
+              "text": "合成旁白单元",
+              "voice": {
+                "id": "voice_demo",
+                "revision": "1"
+              },
+              "model": "tts-quality",
+              "model_binding": {
+                "id": "binding_demo",
+                "revision": "3"
+              },
+              "status": "pending",
+              "updated_at": "2026-10-24T12:00:00Z"
+            }
+          ],
+          "has_more": false,
+          "next_cursor": null
+        },
+        "headers": {
+          "X-Request-ID": "request-demo"
+        }
+      },
+      "valid": true
     },
     {
       "id": "listRenderUnits-response-200",
@@ -12482,10 +12893,6 @@
                 "revision": "1"
               },
               "model": "tts-quality",
-              "model_binding": {
-                "id": "binding_demo",
-                "revision": "3"
-              },
               "status": "pending",
               "updated_at": "2026-10-24T12:00:00Z"
             }
@@ -12657,6 +13064,186 @@
           "published_at": "2026-10-24T12:00:00Z",
           "retired_at": null,
           "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnit-request-valid-migration",
+      "operation": "generateRenderUnit",
+      "kind": "request",
+      "valid": true,
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "body": {
+          "expected_unit_revision": "1"
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnit-request-invalid",
+      "operation": "generateRenderUnit",
+      "kind": "request",
+      "valid": false,
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "body": {
+          "expected_unit_revision": 1
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnit-response-valid",
+      "operation": "generateRenderUnit",
+      "kind": "response",
+      "status": 202,
+      "valid": true,
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "Synthetic narration.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "1"
+            },
+            "model": "synthetic-model",
+            "status": "generating",
+            "updated_at": "2026-10-25T00:00:00Z",
+            "speech_job_id": "job-demo"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnit-response-invalid",
+      "operation": "generateRenderUnit",
+      "kind": "response",
+      "status": 202,
+      "valid": false,
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "Synthetic narration.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "1"
+            },
+            "model": "synthetic-model",
+            "status": "generating",
+            "updated_at": "2026-10-25T00:00:00Z",
+            "model_binding": {
+              "id": "binding-demo",
+              "revision": "3"
+            },
+            "speech_job_id": "job-demo"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnitV2-request-valid",
+      "operation": "generateRenderUnitV2",
+      "kind": "request",
+      "valid": true,
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "body": {
+          "expected_unit_revision": "1"
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnitV2-request-invalid",
+      "operation": "generateRenderUnitV2",
+      "kind": "request",
+      "valid": false,
+      "value": {
+        "path": {
+          "unit_id": "unit-demo"
+        },
+        "body": {
+          "expected_unit_revision": 1
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnitV2-response-valid",
+      "operation": "generateRenderUnitV2",
+      "kind": "response",
+      "status": 202,
+      "valid": true,
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "Synthetic narration.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "1"
+            },
+            "model": "synthetic-model",
+            "status": "generating",
+            "updated_at": "2026-10-25T00:00:00Z",
+            "model_binding": {
+              "id": "binding-demo",
+              "revision": "3"
+            },
+            "speech_job_id": "job-demo"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "generateRenderUnitV2-response-invalid",
+      "operation": "generateRenderUnitV2",
+      "kind": "response",
+      "status": 202,
+      "valid": false,
+      "value": {
+        "body": {
+          "render_unit": {
+            "id": "unit-demo",
+            "object": "nexus.render_unit",
+            "chapter_id": "chapter-demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "Synthetic narration.",
+            "voice": {
+              "id": "voice-demo",
+              "revision": "1"
+            },
+            "model": "synthetic-model",
+            "status": "generating",
+            "updated_at": "2026-10-25T00:00:00Z",
+            "speech_job_id": "job-demo"
+          },
+          "speech_job_id": "job-demo",
+          "accepted_at": "2026-10-25T00:00:00Z"
         }
       }
     }

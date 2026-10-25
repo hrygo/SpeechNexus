@@ -2906,7 +2906,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
             {"input_text": "Synthetic input.", "voice": voice, "model": ""}
         )
 
-    render_create_validator = _component_validator(workbench, "RenderUnitCreateRequest")
+    render_create_validator = _component_validator(workbench, "RenderUnitCreateRequestV2")
     render_create_validator.validate(
         {
             "ordinal": 0,
@@ -2996,7 +2996,7 @@ def test_workbench_job_errors_and_terminal_states_are_typed() -> None:
         "source_artifact_id": None,
         "updated_at": "2026-10-23T00:00:00Z",
     }
-    render_validator = _component_validator(workbench, "RenderUnit")
+    render_validator = _component_validator(workbench, "RenderUnitV2")
     with pytest.raises(ValidationError):
         render_validator.validate(render_unit)
     render_unit["speech_job_id"] = "speech_job_demo"

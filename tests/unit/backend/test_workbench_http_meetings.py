@@ -132,8 +132,8 @@ async def test_five_operations_use_generated_shapes_and_pin_server_workspace() -
         schema = (await c.get("/openapi.json")).json()
         # The two published voice-catalogue reads are mounted even without a speech base,
         # so they can answer a stable unavailable error instead of vanishing.
-        assert sum(len(p) for p in schema["paths"].values()) == 20
-        status = (await c.get("/v1/workbench/status")).json()
+        assert sum(len(p) for p in schema["paths"].values()) == 21
+        status = (await c.get("/v2/workbench/status")).json()
         assert status["workbench_enabled"] and status["llm_enabled"]
         assert status["minutes_profile"] == {
             "template_revision": "1",

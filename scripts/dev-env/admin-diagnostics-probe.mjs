@@ -39,7 +39,7 @@ page.on("response", (response) => {
     failed.push({ path: new URL(response.url()).pathname, status: response.status() });
 });
 page.on("request", (request) => {
-  if (new URL(request.url()).pathname.endsWith("/v1/workbench/status"))
+  if (new URL(request.url()).pathname.endsWith("/v2/workbench/status"))
     statusReads.push(request.method());
 });
 await context.route("**/*", async (route) => {

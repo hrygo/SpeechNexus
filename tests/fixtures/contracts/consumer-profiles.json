@@ -6272,11 +6272,7 @@
           "id": "voice_demo",
           "revision": "1"
         },
-        "model": "tts-quality",
-        "model_binding": {
-          "id": "binding_demo",
-          "revision": "3"
-        }
+        "model": "tts-quality"
       },
       "valid": true
     },
@@ -6291,7 +6287,11 @@
           "id": "voice_demo",
           "revision": "1"
         },
-        "model": "tts-quality"
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        }
       },
       "valid": false
     },
@@ -6330,10 +6330,6 @@
           "revision": "1"
         },
         "model": "tts-quality",
-        "model_binding": {
-          "id": "binding_demo",
-          "revision": "3"
-        },
         "status": "pending",
         "updated_at": "2026-10-24T12:00:00Z"
       },
@@ -6355,10 +6351,6 @@
           "revision": "1"
         },
         "model": "tts-quality",
-        "model_binding": {
-          "id": "binding_demo",
-          "revision": "3"
-        },
         "status": "done",
         "updated_at": "2026-10-24T12:00:00Z"
       },
@@ -6609,10 +6601,6 @@
               "revision": "1"
             },
             "model": "tts-quality",
-            "model_binding": {
-              "id": "binding_demo",
-              "revision": "3"
-            },
             "status": "pending",
             "updated_at": "2026-10-24T12:00:00Z"
           }
@@ -9569,6 +9557,263 @@
           "speech_job_id": "job-demo",
           "updated_at": "2026-10-25T00:00:00Z"
         },
+        "accepted_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-valid-v2",
+      "profile": "workbench",
+      "schema": "WorkbenchStatusV2",
+      "valid": true,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "disabled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-reject-extra-field-v2",
+      "profile": "workbench",
+      "schema": "WorkbenchStatusV2",
+      "valid": false,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "disabled"
+          }
+        ],
+        "internal_endpoint": "synthetic-private-marker"
+      }
+    },
+    {
+      "id": "workbench-WorkbenchStatus-reject-ready-capability-v2",
+      "profile": "workbench",
+      "schema": "WorkbenchStatusV2",
+      "valid": false,
+      "value": {
+        "object": "nexus.workbench_status",
+        "workbench_enabled": true,
+        "llm_enabled": false,
+        "shared_deployment_notice": "shared_deployment",
+        "capabilities": [
+          {
+            "name": "transcription",
+            "status": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "id": "workbench-RenderUnitCreateRequest-valid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitCreateRequestV2",
+      "value": {
+        "ordinal": 0,
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitCreateRequest-invalid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitCreateRequestV2",
+      "value": {
+        "ordinal": 0,
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnitPatch-valid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitPatchV2",
+      "value": {
+        "expected_revision": "1",
+        "text": "改写后的旁白单元"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitPatch-invalid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitPatchV2",
+      "value": {
+        "text": "缺少修订"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnit-valid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitV2",
+      "value": {
+        "object": "nexus.render_unit",
+        "id": "unit_demo",
+        "chapter_id": "chapter_demo",
+        "ordinal": 0,
+        "revision": "1",
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        },
+        "status": "pending",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnit-invalid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitV2",
+      "value": {
+        "object": "nexus.render_unit",
+        "id": "unit_demo",
+        "chapter_id": "chapter_demo",
+        "ordinal": 0,
+        "revision": "1",
+        "text": "合成旁白单元",
+        "voice": {
+          "id": "voice_demo",
+          "revision": "1"
+        },
+        "model": "tts-quality",
+        "model_binding": {
+          "id": "binding_demo",
+          "revision": "3"
+        },
+        "status": "done",
+        "updated_at": "2026-10-24T12:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "id": "workbench-RenderUnitList-valid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitListV2",
+      "value": {
+        "object": "nexus.list",
+        "data": [
+          {
+            "object": "nexus.render_unit",
+            "id": "unit_demo",
+            "chapter_id": "chapter_demo",
+            "ordinal": 0,
+            "revision": "1",
+            "text": "合成旁白单元",
+            "voice": {
+              "id": "voice_demo",
+              "revision": "1"
+            },
+            "model": "tts-quality",
+            "model_binding": {
+              "id": "binding_demo",
+              "revision": "3"
+            },
+            "status": "pending",
+            "updated_at": "2026-10-24T12:00:00Z"
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "valid": true
+    },
+    {
+      "id": "workbench-RenderUnitList-invalid-v2",
+      "profile": "workbench",
+      "schema": "RenderUnitListV2",
+      "value": {
+        "object": "nexus.list",
+        "data": [],
+        "has_more": false
+      },
+      "valid": false
+    },
+    {
+      "id": "generateRenderUnitV2-response-valid-json",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationAcceptedV2",
+      "valid": true,
+      "value": {
+        "render_unit": {
+          "id": "unit-demo",
+          "object": "nexus.render_unit",
+          "chapter_id": "chapter-demo",
+          "ordinal": 0,
+          "revision": "1",
+          "text": "Synthetic narration.",
+          "voice": {
+            "id": "voice-demo",
+            "revision": "1"
+          },
+          "model": "synthetic-model",
+          "status": "generating",
+          "updated_at": "2026-10-25T00:00:00Z",
+          "model_binding": {
+            "id": "binding-demo",
+            "revision": "3"
+          },
+          "speech_job_id": "job-demo"
+        },
+        "speech_job_id": "job-demo",
+        "accepted_at": "2026-10-25T00:00:00Z"
+      }
+    },
+    {
+      "id": "generateRenderUnitV2-response-invalid-json",
+      "profile": "workbench",
+      "schema": "RenderUnitGenerationAcceptedV2",
+      "valid": false,
+      "value": {
+        "render_unit": {
+          "id": "unit-demo",
+          "object": "nexus.render_unit",
+          "chapter_id": "chapter-demo",
+          "ordinal": 0,
+          "revision": "1",
+          "text": "Synthetic narration.",
+          "voice": {
+            "id": "voice-demo",
+            "revision": "1"
+          },
+          "model": "synthetic-model",
+          "status": "generating",
+          "updated_at": "2026-10-25T00:00:00Z",
+          "speech_job_id": "job-demo"
+        },
+        "speech_job_id": "job-demo",
         "accepted_at": "2026-10-25T00:00:00Z"
       }
     }

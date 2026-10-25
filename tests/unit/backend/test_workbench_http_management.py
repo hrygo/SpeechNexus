@@ -57,8 +57,8 @@ async def test_status_reports_configuration_and_full_schema_without_fictitious_c
         assert (await c.get("/v1/workbench/projects")).status_code == 503
         assert (await c.get("/v1/workbench/deletions/deletion-one")).status_code == 503
         schema = (await c.get("/openapi.json")).json()
-        # Includes the two always-mounted voice-catalogue reads (see the voice router).
-        assert len([op for item in schema["paths"].values() for op in item.values()]) == 15
+        # Includes both status versions and the two always-mounted voice reads.
+        assert len([op for item in schema["paths"].values() for op in item.values()]) == 16
         for path in ["/docs", "/redoc", "/docs/oauth2-redirect"]:
             assert (await c.get(path)).status_code == 404
 

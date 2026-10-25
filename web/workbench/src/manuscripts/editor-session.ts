@@ -18,7 +18,7 @@ export type EditorProblem =
   | "rejected";
 export type EditorSnapshot = {
   record: EditorRecord;
-  status: Contracts["WorkbenchStatus"] | null;
+  status: Contracts["WorkbenchStatusV2"] | null;
   projects: Contracts["ProjectList"] | null;
   transcripts: Contracts["TranscriptList"] | null;
   conflict: Contracts["TranscriptView"] | null;

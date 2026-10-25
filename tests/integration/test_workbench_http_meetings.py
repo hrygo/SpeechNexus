@@ -103,7 +103,7 @@ async def test_real_http_full_meeting_minutes_delete_and_physical_cleanup(
     async with connection(store, meetings) as c:
         project, source, meeting = await setup(c)
         path = f"/v1/workbench/meetings/{meeting['id']}"
-        assert (await c.get("/v1/workbench/status")).json()["minutes_profile"] == {
+        assert (await c.get("/v2/workbench/status")).json()["minutes_profile"] == {
             "template_revision": "1",
             "llm_model": PROFILE.model,
         }
@@ -217,8 +217,8 @@ async def test_real_http_disabled_llm_profile_and_unsupported_source_fail_honest
         job = await enqueue(c, meeting)
     disabled = WorkbenchMeetings(PostgresMeetings(store.uow))
     async with connection(store, disabled) as c:
-        assert not (await c.get("/v1/workbench/status")).json()["llm_enabled"]
-        assert "minutes_profile" not in (await c.get("/v1/workbench/status")).json()
+        assert not (await c.get("/v2/workbench/status")).json()["llm_enabled"]
+        assert "minutes_profile" not in (await c.get("/v2/workbench/status")).json()
         assert await enqueue(c, meeting) == job
         r = await c.post(
             path + "/minutes",

@@ -13,7 +13,7 @@ function setup(enabled = false) {
   };
   const client = new WorkbenchClient(vi.fn());
   vi.spyOn(client, "status").mockResolvedValue({
-    ...parse("WorkbenchStatus", sample("getWorkbenchStatus")),
+    ...parse("WorkbenchStatusV2", sample("getWorkbenchStatusV2")),
     llm_enabled: enabled,
   });
   vi.spyOn(client, "projects").mockResolvedValue(parse("ProjectList", sample("listProjects")));

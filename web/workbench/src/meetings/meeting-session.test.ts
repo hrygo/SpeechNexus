@@ -13,8 +13,8 @@ function setup(data = new Map<string, string>()) {
   };
   const client = new WorkbenchClient(vi.fn());
   const status = vi.spyOn(client, "status").mockResolvedValue(
-    parse("WorkbenchStatus", {
-      ...parse("WorkbenchStatus", sample("getWorkbenchStatus")),
+    parse("WorkbenchStatusV2", {
+      ...parse("WorkbenchStatusV2", sample("getWorkbenchStatusV2")),
       llm_enabled: true,
       minutes_profile: { template_revision: "7", llm_model: "approved-model" },
     }),
@@ -305,7 +305,7 @@ describe("meeting session recovery and source facts", () => {
     await f.session.createMinutes();
     const original = f.minutes.mock.calls[0]!;
     const g = setup(f.data);
-    g.status.mockResolvedValue(parse("WorkbenchStatus", sample("getWorkbenchStatus")));
+    g.status.mockResolvedValue(parse("WorkbenchStatusV2", sample("getWorkbenchStatusV2")));
     g.current.mockResolvedValue({
       ...meeting(),
       status: "minutes_pending",
@@ -323,7 +323,7 @@ describe("meeting session recovery and source facts", () => {
   it("requires profile discovery rather than guessing version one", async () => {
     const f = await sealed();
     f.status.mockResolvedValue({
-      ...parse("WorkbenchStatus", sample("getWorkbenchStatus")),
+      ...parse("WorkbenchStatusV2", sample("getWorkbenchStatusV2")),
       llm_enabled: true,
     });
     await f.session.discover();

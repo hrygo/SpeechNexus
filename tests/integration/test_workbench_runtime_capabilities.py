@@ -30,7 +30,7 @@ class _Bundle:
 
 
 async def status_of(client: httpx.AsyncClient) -> dict[str, Any]:
-    response = await client.get("/v1/workbench/status")
+    response = await client.get("/v2/workbench/status")
     assert response.status_code == 200, response.text
     body: dict[str, Any] = response.json()
     return body

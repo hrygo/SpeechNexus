@@ -482,7 +482,7 @@ async def test_a_unit_reports_only_its_own_projects_retained_copy(
     assert payload["saved_asset_id"] == asset.id
     # The served contract accepts the copy on the wire, not only in Python.
     envelope = {"body": payload, "headers": {"X-Request-ID": "request-demo"}}
-    assert validate_response("getRenderUnit", 200, envelope) == envelope
+    assert validate_response("getRenderUnitV2", 200, envelope) == envelope
 
     # The very same artifact under another receipt stays unlinked.
     other = await service.get_unit(unit_id=unlinked.id, workspace_id=SAVED_WORKSPACE)

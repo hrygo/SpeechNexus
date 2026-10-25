@@ -238,7 +238,7 @@ package does not register them in the speech backend.
 
 ### Workbench HTTP boundary
 
-`workbench-http` derives fifteen paths / eighteen operations from the source
+`workbench-http` derives its reviewed v1/v2 paths and operations from the source
 OpenAPI: status, project create/read/update/list, transcript create/read/list and
 revision create/read, deletion plan/create/read, meeting create/read/seal and
 minutes create/read. The packaged
@@ -495,3 +495,11 @@ asset runtime pool, and projects these selected methods in runtime OpenAPI.
 Workspace writes remain separate A04 tasks. Schema checks and synthetic client
 tests alone do not qualify the running service; actual non-owner PG/MinIO HTTP
 coverage is documented in `docs/architecture/production-assets.md`.
+
+Workbench status/configuration discovery and bound rendering use the generated
+`WorkbenchStatusV2`, `RenderUnitV2`, `RenderUnitCreateRequestV2`,
+`RenderUnitPatchV2` and `RenderUnitListV2` entrypoints with `/v2/workbench` HTTP
+paths. V1 keeps its strict original schemas; the production boundary refuses v1
+render creation with `503 workbench_unavailable` and performs no write.
+`generateRenderUnit` / `generateRenderUnitV2` are validated contract declarations,
+not registered production operations. See [ADR 0009](../../docs/decisions/0009-workbench-explicit-binding-http-version.md).

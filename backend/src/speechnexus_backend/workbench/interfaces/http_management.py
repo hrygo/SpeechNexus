@@ -45,6 +45,7 @@ from speechnexus_backend.workbench.interfaces.version_views import (
 OPERATIONS = frozenset(
     {
         "getWorkbenchStatus",
+        "getWorkbenchStatusV2",
         "listProjects",
         "listTranscripts",
         "workbenchCreateDeletionPlan",
@@ -95,7 +96,7 @@ def create_management_router(
     async def dispatch(operation: str, value: dict[str, Any]) -> tuple[int, Any]:
         query = value["query"]
         workspace = query.get("workspace_id", default_workspace_id)
-        if operation == "getWorkbenchStatus":
+        if operation in {"getWorkbenchStatus", "getWorkbenchStatusV2"}:
             profile = None if meetings is None else meetings.llm_profile
             return 200, {
                 "object": "nexus.workbench_status",
@@ -118,7 +119,7 @@ def create_management_router(
                             "llm_model": profile.model,
                         }
                     }
-                    if profile is not None
+                    if profile is not None and operation == "getWorkbenchStatusV2"
                     else {}
                 ),
             }

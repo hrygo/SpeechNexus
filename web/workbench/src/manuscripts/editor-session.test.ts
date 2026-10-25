@@ -52,7 +52,7 @@ function setup(data = new Map<string, string>()) {
   const client = new WorkbenchClient(vi.fn());
   const status = vi
     .spyOn(client, "status")
-    .mockResolvedValue(parse("WorkbenchStatus", example("getWorkbenchStatus")));
+    .mockResolvedValue(parse("WorkbenchStatusV2", example("getWorkbenchStatusV2")));
   const projects = vi
     .spyOn(client, "projects")
     .mockResolvedValue(parse("ProjectList", example("listProjects")));

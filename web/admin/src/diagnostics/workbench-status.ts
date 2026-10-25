@@ -1,6 +1,6 @@
 import { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
 
-export type WorkbenchStatus = Contracts["WorkbenchStatus"];
+export type WorkbenchStatus = Contracts["WorkbenchStatusV2"];
 
 export class WorkbenchStatusError extends Error {
   constructor(readonly code: string) {
@@ -16,7 +16,7 @@ export class WorkbenchStatusError extends Error {
 export async function loadWorkbenchStatus(signal?: AbortSignal): Promise<WorkbenchStatus> {
   let response: Response;
   try {
-    response = await fetch("/v1/workbench/status", {
+    response = await fetch("/v2/workbench/status", {
       headers: { accept: "application/json" },
       cache: "no-store",
       credentials: "same-origin",
@@ -34,7 +34,7 @@ export async function loadWorkbenchStatus(signal?: AbortSignal): Promise<Workben
     throw new WorkbenchStatusError("status_unreadable");
   }
   try {
-    return parse("WorkbenchStatus", body);
+    return parse("WorkbenchStatusV2", body);
   } catch {
     throw new WorkbenchStatusError("status_invalid");
   }

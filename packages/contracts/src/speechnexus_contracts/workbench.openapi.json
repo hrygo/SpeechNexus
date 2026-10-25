@@ -3,7 +3,7 @@
   "info": {
     "title": "SpeechNexus workbench API",
     "version": "0.1.0.dev0",
-    "description": "Optional application layer for projects, transcripts, meetings, assistant\nturns, teleprompter state, audiobook rendering, saved copies, and exports.\n\nThis API is not OpenAI-compatible and never replaces the public speech API.\nIt calls the speech base through public Job/Artifact APIs and keeps its own\nrecords, staging, outbox, and export artifacts. Every workspace is shared in\nP0; no route establishes a user identity or personal private space.\n\nThe project/transcript HTTP boundary uses 400 malformed_request or\ninvalid_request for rejected syntax/parameters, 408 request_timeout for\nbody intake deadlines, 413 request_too_large for bounded request intake,\nand 415 unsupported_media_type for non-UTF-8 JSON writes. Version and\nidempotency conflicts are 409 revision_conflict / idempotency_conflict;\ninvalid_change is 422. Speech import failures retain source_invalid /\nsource_unsupported (422), source_too_large (413), source_expired (410),\nand source_unavailable (503). Absent/deleted resources, including original\ncreate-key replays after deletion, return 404 resource_not_found.\nDisabled workbench/storage use 503 workbench_unavailable / store_unavailable.\nUncertain commits use 503 outcome_unknown; preserve the original key and\nnever automatically create a new intent. Unexpected application or output\nvalidation failures use 500 internal_error.\nMeeting routes use the same bounded intake and storage errors. Their\nworkspace is the server-configured default; clients cannot select it.\nUnavailable meeting storage uses 503 meetings_unavailable. A source or\naudio-save mode without an installed adapter returns 422\nmeeting_source_unsupported. Minutes creation uses 503 llm_disabled,\n422 llm_profile_mismatch / llm_invalid_input, and 409\nllm_source_not_sealed / llm_source_changed / minutes_conflict.\nProvider/source failures use 503 llm_unavailable / llm_invalid_response /\nllm_source_unavailable. Optional Idempotency-Key pins the original\naccepted create/seal/202 snapshot; GET returns current state. Keep the\noriginal key after uncertain outcomes; a request without a key creates\na new intent and must never be automatically retried.\nLists use descending (created_at, id) live keyset pagination. Cursors are\nopaque and bound to deployment, resource kind and parent scope; malformed,\naltered or mismatched tokens return 400 invalid_cursor, never silently\nrestart from page one. Changing limit is allowed; newer insertions require\na new first-page read. has_more is true exactly when next_cursor is non-null.\nAll three deletion operations accept optional workspace_id, defaulting to\nthe configured deployment workspace; this is query scope, not identity.\nOnly project/transcript deletion graphs are currently implemented; other\nworkbench kinds return 422 deletion_resource_unsupported. Foreign owners\nreturn 422 deletion_owner_mismatch. Incomplete confirmations return 422\ndeletion_confirmation_mismatch; changed/expired plans or blocking dependencies\nreturn 409 deletion_plan_changed / deletion_plan_expired /\ndeletion_dependency_conflict. Acceptance returns queued intent, not cleanup\ncompletion; same-key replay preserves that original acceptance snapshot.\nErrors contain no request\ncontent or internal diagnostics and never imply rollback or remote stop.\n"
+    "description": "Optional application layer for projects, transcripts, meetings, assistant\nturns, teleprompter state, audiobook rendering, saved copies, and exports.\n\nThis API is not OpenAI-compatible and never replaces the public speech API.\nIt calls the speech base through public Job/Artifact APIs and keeps its own\nrecords, staging, outbox, and export artifacts. Every workspace is shared in\nP0; no route establishes a user identity or personal private space.\n\nThe project/transcript HTTP boundary uses 400 malformed_request or\ninvalid_request for rejected syntax/parameters, 408 request_timeout for\nbody intake deadlines, 413 request_too_large for bounded request intake,\nand 415 unsupported_media_type for non-UTF-8 JSON writes. Version and\nidempotency conflicts are 409 revision_conflict / idempotency_conflict;\ninvalid_change is 422. Speech import failures retain source_invalid /\nsource_unsupported (422), source_too_large (413), source_expired (410),\nand source_unavailable (503). Absent/deleted resources, including original\ncreate-key replays after deletion, return 404 resource_not_found.\nDisabled workbench/storage use 503 workbench_unavailable / store_unavailable.\nUncertain commits use 503 outcome_unknown; preserve the original key and\nnever automatically create a new intent. Unexpected application or output\nvalidation failures use 500 internal_error.\nMeeting routes use the same bounded intake and storage errors. Their\nworkspace is the server-configured default; clients cannot select it.\nUnavailable meeting storage uses 503 meetings_unavailable. A source or\naudio-save mode without an installed adapter returns 422\nmeeting_source_unsupported. Minutes creation uses 503 llm_disabled,\n422 llm_profile_mismatch / llm_invalid_input, and 409\nllm_source_not_sealed / llm_source_changed / minutes_conflict.\nProvider/source failures use 503 llm_unavailable / llm_invalid_response /\nllm_source_unavailable. Optional Idempotency-Key pins the original\naccepted create/seal/202 snapshot; GET returns current state. Keep the\noriginal key after uncertain outcomes; a request without a key creates\na new intent and must never be automatically retried.\nLists use descending (created_at, id) live keyset pagination. Cursors are\nopaque and bound to deployment, resource kind and parent scope; malformed,\naltered or mismatched tokens return 400 invalid_cursor, never silently\nrestart from page one. Changing limit is allowed; newer insertions require\na new first-page read. has_more is true exactly when next_cursor is non-null.\nAll three deletion operations accept optional workspace_id, defaulting to\nthe configured deployment workspace; this is query scope, not identity.\nOnly project/transcript deletion graphs are currently implemented; other\nworkbench kinds return 422 deletion_resource_unsupported. Foreign owners\nreturn 422 deletion_owner_mismatch. Incomplete confirmations return 422\ndeletion_confirmation_mismatch; changed/expired plans or blocking dependencies\nreturn 409 deletion_plan_changed / deletion_plan_expired /\ndeletion_dependency_conflict. Acceptance returns queued intent, not cleanup\ncompletion; same-key replay preserves that original acceptance snapshot.\nV2 status and render-unit paths expose approved Minutes configuration and\nexplicit fixed model bindings. V1 schemas remain strict; v1 render creation\nis unavailable without a binding and returns 503 workbench_unavailable\nwithout writing a partial unit. Clients must explicitly select v2.\nErrors contain no request\ncontent or internal diagnostics and never imply rollback or remote stop.\n"
   },
   "security": [
     {
@@ -2029,7 +2029,7 @@
         "tags": ["audiobooks"],
         "operationId": "createRenderUnit",
         "summary": "Create a fixed render unit",
-        "description": "Pins text, voice, pronunciation, model, and profile revisions. The\nspeech base only receives a bounded text unit Job; the workbench owns\nchapter and book composition.\n",
+        "description": "Pins text, voice, pronunciation, model, and profile revisions. The\nspeech base only receives a bounded text unit Job; the workbench owns\nchapter and book composition.\nThis legacy version cannot express the required model binding. The\nproduction boundary returns 503 workbench_unavailable without writes;\nuse createRenderUnitV2 with the caller-selected binding.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/ChapterIdPath"
@@ -2081,6 +2081,21 @@
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           }
         }
       }
@@ -2119,6 +2134,21 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       },
@@ -2178,6 +2208,21 @@
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           }
         }
       }
@@ -2617,6 +2662,383 @@
           }
         }
       }
+    },
+    "/v2/workbench/status": {
+      "get": {
+        "tags": ["status"],
+        "operationId": "getWorkbenchStatusV2",
+        "summary": "Report workbench feature availability",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workbench status.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchStatusV2"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v2/workbench/chapters/{chapter_id}/render-units": {
+      "get": {
+        "tags": ["audiobooks"],
+        "operationId": "listRenderUnitsV2",
+        "x-nexus-pagination": {
+          "order": ["created_at_desc", "id_desc"],
+          "cursor_binding": ["deployment", "resource_kind", "parent_scope"],
+          "cursor_opaque": true,
+          "consistency": "live_keyset"
+        },
+        "summary": "List chapter render units",
+        "description": "Render units are listed newest first; the explicit unit ordinal carries\nthe position inside the chapter's render plan.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ChapterIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Render units.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitListV2"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": ["audiobooks"],
+        "operationId": "createRenderUnitV2",
+        "summary": "Create a fixed render unit",
+        "description": "Pins text, voice, pronunciation, model, and profile revisions. The\nspeech base only receives a bounded text unit Job; the workbench owns\nchapter and book composition.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ChapterIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderUnitCreateRequestV2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Render unit created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitV2"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        }
+      }
+    },
+    "/v2/workbench/render-units/{unit_id}": {
+      "get": {
+        "tags": ["audiobooks"],
+        "operationId": "getRenderUnitV2",
+        "summary": "Get a render unit",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RenderUnitIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Render unit.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitV2"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["audiobooks"],
+        "operationId": "updateRenderUnitV2",
+        "summary": "Update render-unit text or casting",
+        "description": "A changed text, voice, pronunciation, model, or profile creates a new\nunit revision and marks dependent output stale. Unchanged units remain\nreusable.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RenderUnitIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderUnitPatchV2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated render unit.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitV2"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        }
+      }
+    },
+    "/v2/workbench/render-units/{unit_id}/generations": {
+      "post": {
+        "tags": ["audiobooks"],
+        "operationId": "generateRenderUnitV2",
+        "summary": "Submit a speech Job for a render unit",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RenderUnitIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderUnitGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Speech Job submitted.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderUnitGenerationAcceptedV2"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2817,29 +3239,6 @@
             "type": "boolean",
             "description": "True only when a deployment-approved intranet LLM is configured."
           },
-          "minutes_profile": {
-            "description": "Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.",
-            "oneOf": [
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["template_revision", "llm_model"],
-                "properties": {
-                  "template_revision": {
-                    "$ref": "#/components/schemas/Revision"
-                  },
-                  "llm_model": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                  }
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "shared_deployment_notice": {
             "type": "string",
             "const": "shared_deployment",
@@ -2869,35 +3268,7 @@
               }
             }
           }
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "llm_enabled": {
-                  "const": false
-                }
-              },
-              "required": ["llm_enabled"]
-            },
-            "then": {
-              "properties": {
-                "minutes_profile": {
-                  "type": "null"
-                }
-              }
-            }
-          }
-        ]
-      },
-      "Revision": {
-        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
-      },
-      "External_shared_identifiers_schema_json_Revision": {
-        "type": "string",
-        "pattern": "^[1-9][0-9]{0,18}$",
-        "maxLength": 19,
-        "description": "Monotonic decimal revision represented as a string."
+        }
       },
       "ErrorResponse": {
         "$ref": "#/components/schemas/External_shared_errors_schema_json_ErrorResponse"
@@ -3189,6 +3560,12 @@
             "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
           }
         }
+      },
+      "External_shared_identifiers_schema_json_Revision": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,18}$",
+        "maxLength": 19,
+        "description": "Monotonic decimal revision represented as a string."
       },
       "External_shared_speech_overrides_schema_json_turn_detection": {
         "type": "object",
@@ -3597,6 +3974,9 @@
           "source_artifact_id": ["source_receipt_id"],
           "source_receipt_id": ["source_artifact_id"]
         }
+      },
+      "Revision": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision"
       },
       "TranscriptCreateRequest": {
         "type": "object",
@@ -4685,13 +5065,9 @@
           "voice",
           "model",
           "status",
-          "updated_at",
-          "model_binding"
+          "updated_at"
         ],
         "properties": {
-          "model_binding": {
-            "$ref": "#/components/schemas/ResourceReference"
-          },
           "id": {
             "$ref": "#/components/schemas/Identifier"
           },
@@ -4892,11 +5268,11 @@
           }
         ]
       },
-      "ResourceReference": {
-        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
-      },
       "RenderUnitVoice": {
         "$ref": "#/components/schemas/ResourceReference"
+      },
+      "ResourceReference": {
+        "$ref": "#/components/schemas/External_shared_references_schema_json_ResourceReference"
       },
       "TeleprompterState": {
         "type": "object",
@@ -5205,11 +5581,8 @@
       "RenderUnitCreateRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["ordinal", "text", "voice", "model", "model_binding"],
+        "required": ["ordinal", "text", "voice", "model"],
         "properties": {
-          "model_binding": {
-            "$ref": "#/components/schemas/ResourceReference"
-          },
           "ordinal": {
             "type": "integer",
             "minimum": 0
@@ -5241,9 +5614,6 @@
         "minProperties": 2,
         "required": ["expected_revision"],
         "properties": {
-          "model_binding": {
-            "$ref": "#/components/schemas/ResourceReference"
-          },
           "expected_revision": {
             "$ref": "#/components/schemas/Revision"
           },
@@ -5833,6 +6203,439 @@
           "disabled_reason": {
             "type": ["string", "null"],
             "maxLength": 128
+          }
+        }
+      },
+      "WorkbenchStatusV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "object",
+          "workbench_enabled",
+          "llm_enabled",
+          "shared_deployment_notice",
+          "capabilities"
+        ],
+        "properties": {
+          "object": {
+            "const": "nexus.workbench_status"
+          },
+          "workbench_enabled": {
+            "type": "boolean"
+          },
+          "llm_enabled": {
+            "type": "boolean",
+            "description": "True only when a deployment-approved intranet LLM is configured."
+          },
+          "minutes_profile": {
+            "description": "Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.",
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["template_revision", "llm_model"],
+                "properties": {
+                  "template_revision": {
+                    "$ref": "#/components/schemas/Revision"
+                  },
+                  "llm_model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shared_deployment_notice": {
+            "type": "string",
+            "const": "shared_deployment",
+            "description": "UI must localize this code as \"all workspaces are shared within this deployment; no personal isolation is implied\"."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "status"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "transcription",
+                    "meeting_minutes",
+                    "assistant",
+                    "teleprompter",
+                    "audiobook_export"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["available", "disabled", "unavailable"]
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "llm_enabled": {
+                  "const": false
+                }
+              },
+              "required": ["llm_enabled"]
+            },
+            "then": {
+              "properties": {
+                "minutes_profile": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RenderUnitListV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object", "data", "has_more", "next_cursor"],
+        "properties": {
+          "object": {
+            "const": "nexus.list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RenderUnitV2"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "RenderUnitV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "object",
+          "chapter_id",
+          "ordinal",
+          "revision",
+          "text",
+          "voice",
+          "model",
+          "status",
+          "updated_at",
+          "model_binding"
+        ],
+        "properties": {
+          "model_binding": {
+            "$ref": "#/components/schemas/ResourceReference"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "object": {
+            "const": "nexus.render_unit"
+          },
+          "chapter_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "voice": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          },
+          "pronunciation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "generating", "ready", "stale", "failed"]
+          },
+          "saved_asset_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speech_job_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_artifact_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_receipt_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "source_artifact_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["source_artifact_id"]
+            },
+            "then": {
+              "required": ["source_receipt_id"],
+              "properties": {
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "source_receipt_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["source_receipt_id"]
+            },
+            "then": {
+              "required": ["source_artifact_id"],
+              "properties": {
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "saved_asset_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["saved_asset_id"]
+            },
+            "then": {
+              "required": ["source_artifact_id", "source_receipt_id"],
+              "properties": {
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "generating"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["speech_job_id"],
+              "properties": {
+                "speech_job_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ready"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["speech_job_id", "source_artifact_id", "source_receipt_id"],
+              "properties": {
+                "speech_job_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_artifact_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                },
+                "source_receipt_id": {
+                  "$ref": "#/components/schemas/Identifier"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RenderUnitCreateRequestV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ordinal", "text", "voice", "model", "model_binding"],
+        "properties": {
+          "model_binding": {
+            "$ref": "#/components/schemas/ResourceReference"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "voice": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          },
+          "pronunciation": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profile": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          }
+        }
+      },
+      "RenderUnitPatchV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 2,
+        "required": ["expected_revision"],
+        "properties": {
+          "model_binding": {
+            "$ref": "#/components/schemas/ResourceReference"
+          },
+          "expected_revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "voice": {
+            "$ref": "#/components/schemas/RenderUnitVoice"
+          },
+          "pronunciation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RenderUnitVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RenderUnitGenerationAcceptedV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["render_unit", "speech_job_id", "accepted_at"],
+        "properties": {
+          "render_unit": {
+            "$ref": "#/components/schemas/RenderUnitV2"
+          },
+          "speech_job_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

@@ -1,6 +1,6 @@
 """Strict public projection of a render unit; private bodies stay internal."""
 
-from typing import Any
+from typing import Any, Literal
 
 from speechnexus_contracts.workbench import parse
 
@@ -12,13 +12,13 @@ def _pin(value: RevisionPin) -> dict[str, str]:
     return {"id": value.id, "revision": str(value.revision)}
 
 
-def render_unit_payload(value: RenderUnit) -> Any:
+def render_unit_payload(value: RenderUnit, *, version: Literal[1, 2] = 2) -> Any:
     if type(value) is not RenderUnit:
         raise ValueError("invalid workbench render unit snapshot")
     dependencies = value.dependencies
     generation = value.generation
     return parse(
-        "RenderUnit",
+        "RenderUnitV2" if version == 2 else "RenderUnit",
         {
             "object": "nexus.render_unit",
             "id": value.id,
@@ -28,7 +28,7 @@ def render_unit_payload(value: RenderUnit) -> Any:
             "text": dependencies.text,
             "voice": _pin(dependencies.voice),
             "model": dependencies.model,
-            "model_binding": _pin(dependencies.model_binding),
+            **({"model_binding": _pin(dependencies.model_binding)} if version == 2 else {}),
             "pronunciation": None
             if dependencies.pronunciation is None
             else _pin(dependencies.pronunciation),

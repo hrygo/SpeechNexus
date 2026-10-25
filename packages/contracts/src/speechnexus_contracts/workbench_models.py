@@ -30,6 +30,14 @@ class Capability(TypedDict):
     status: Literal["available", "disabled", "unavailable"]
 
 
+class WorkbenchStatus(TypedDict):
+    object: Literal["nexus.workbench_status"]
+    workbench_enabled: bool
+    llm_enabled: bool
+    shared_deployment_notice: Literal["shared_deployment"]
+    capabilities: list[Capability]
+
+
 type ExternalSharedErrorsSchemaJsonErrorType = Literal[
     "invalid_request_error",
     "authentication_error",
@@ -201,7 +209,6 @@ class WorkbenchJobError(TypedDict):
 
 
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
-type RenderUnitVoice = ResourceReference
 type Sha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
 
 
@@ -214,16 +221,6 @@ class ChapterCreateRequest(TypedDict):
     title: str
     ordinal: int
     text: str
-
-
-class RenderUnitCreateRequest(TypedDict):
-    model_binding: ResourceReference
-    ordinal: int
-    text: str
-    voice: RenderUnitVoice
-    pronunciation: NotRequired[RenderUnitVoice]
-    model: str
-    profile: NotRequired[RenderUnitVoice]
 
 
 class AssistantTurnCreateRequest(TypedDict):
@@ -303,20 +300,6 @@ class TranscriptList(TypedDict):
     data: list[Transcript]
     has_more: bool
     next_cursor: str | None
-
-
-class MinutesProfile(TypedDict):
-    template_revision: Revision
-    llm_model: str
-
-
-class WorkbenchStatus(TypedDict):
-    object: Literal["nexus.workbench_status"]
-    workbench_enabled: bool
-    llm_enabled: bool
-    minutes_profile: NotRequired[MinutesProfile | None]
-    shared_deployment_notice: Literal["shared_deployment"]
-    capabilities: list[Capability]
 
 
 class ExternalSharedSpeechOverridesSchemaJsonTurnDetection(TypedDict):
@@ -429,24 +412,7 @@ class RenderUnitGenerationRequest(TypedDict):
     expected_unit_revision: Revision
 
 
-class RenderUnit(TypedDict):
-    model_binding: ResourceReference
-    id: Identifier
-    object: Literal["nexus.render_unit"]
-    chapter_id: Identifier
-    ordinal: int
-    revision: Revision
-    text: str
-    voice: RenderUnitVoice
-    pronunciation: NotRequired[RenderUnitVoice | None]
-    model: str
-    profile: NotRequired[RenderUnitVoice | None]
-    status: Literal["pending", "generating", "ready", "stale", "failed"]
-    saved_asset_id: NotRequired[Identifier | None]
-    speech_job_id: NotRequired[Identifier | None]
-    source_artifact_id: NotRequired[Identifier | None]
-    source_receipt_id: NotRequired[Identifier | None]
-    updated_at: str
+type RenderUnitVoice = ResourceReference
 
 
 class TeleprompterUpdateRequest(TypedDict):
@@ -504,8 +470,16 @@ class Chapter(TypedDict):
     created_at: str
 
 
+class RenderUnitCreateRequest(TypedDict):
+    ordinal: int
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice]
+    model: str
+    profile: NotRequired[RenderUnitVoice]
+
+
 class RenderUnitPatch(TypedDict):
-    model_binding: NotRequired[ResourceReference]
     expected_revision: Revision
     text: NotRequired[str]
     voice: NotRequired[RenderUnitVoice]
@@ -577,13 +551,6 @@ class ChapterList(TypedDict):
     next_cursor: str | None
 
 
-class RenderUnitList(TypedDict):
-    object: Literal["nexus.list"]
-    data: list[RenderUnit]
-    has_more: bool
-    next_cursor: str | None
-
-
 class VoiceSummary(TypedDict):
     voice_id: Identifier
     revision: Revision
@@ -605,6 +572,73 @@ class VoiceRevision(TypedDict):
     published_at: str
     retired_at: str | None
     disabled_reason: str | None
+
+
+class MinutesProfile(TypedDict):
+    template_revision: Revision
+    llm_model: str
+
+
+class WorkbenchStatusV2(TypedDict):
+    object: Literal["nexus.workbench_status"]
+    workbench_enabled: bool
+    llm_enabled: bool
+    minutes_profile: NotRequired[MinutesProfile | None]
+    shared_deployment_notice: Literal["shared_deployment"]
+    capabilities: list[Capability]
+
+
+class RenderUnitV2(TypedDict):
+    model_binding: ResourceReference
+    id: Identifier
+    object: Literal["nexus.render_unit"]
+    chapter_id: Identifier
+    ordinal: int
+    revision: Revision
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: str
+    profile: NotRequired[RenderUnitVoice | None]
+    status: Literal["pending", "generating", "ready", "stale", "failed"]
+    saved_asset_id: NotRequired[Identifier | None]
+    speech_job_id: NotRequired[Identifier | None]
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    updated_at: str
+
+
+class RenderUnitCreateRequestV2(TypedDict):
+    model_binding: ResourceReference
+    ordinal: int
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice]
+    model: str
+    profile: NotRequired[RenderUnitVoice]
+
+
+class RenderUnitPatchV2(TypedDict):
+    model_binding: NotRequired[ResourceReference]
+    expected_revision: Revision
+    text: NotRequired[str]
+    voice: NotRequired[RenderUnitVoice]
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: NotRequired[str]
+    profile: NotRequired[RenderUnitVoice | None]
+
+
+class RenderUnitListV2(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[RenderUnitV2]
+    has_more: bool
+    next_cursor: str | None
+
+
+class RenderUnitGenerationAcceptedV2(TypedDict):
+    render_unit: RenderUnitV2
+    speech_job_id: Identifier
+    accepted_at: str
 
 
 class ProjectCreateRequest(TypedDict):
@@ -685,10 +719,30 @@ class ExternalSharedDeletionSchemaJsonDeletionPlan(TypedDict):
 type DeletionPlan = ExternalSharedDeletionSchemaJsonDeletionPlan
 
 
-class RenderUnitGenerationAccepted(TypedDict):
-    render_unit: RenderUnit
-    speech_job_id: Identifier
-    accepted_at: str
+class RenderUnit(TypedDict):
+    id: Identifier
+    object: Literal["nexus.render_unit"]
+    chapter_id: Identifier
+    ordinal: int
+    revision: Revision
+    text: str
+    voice: RenderUnitVoice
+    pronunciation: NotRequired[RenderUnitVoice | None]
+    model: str
+    profile: NotRequired[RenderUnitVoice | None]
+    status: Literal["pending", "generating", "ready", "stale", "failed"]
+    saved_asset_id: NotRequired[Identifier | None]
+    speech_job_id: NotRequired[Identifier | None]
+    source_artifact_id: NotRequired[Identifier | None]
+    source_receipt_id: NotRequired[Identifier | None]
+    updated_at: str
+
+
+class RenderUnitList(TypedDict):
+    object: Literal["nexus.list"]
+    data: list[RenderUnit]
+    has_more: bool
+    next_cursor: str | None
 
 
 class VoiceList(TypedDict):
@@ -706,6 +760,12 @@ class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     observed: ExternalSharedReceiptsSchemaJsonPublicExecutionFacts
     missing: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
     unknown: list[ExternalSharedReceiptsSchemaJsonReceiptFactPath]
+
+
+class RenderUnitGenerationAccepted(TypedDict):
+    render_unit: RenderUnit
+    speech_job_id: Identifier
+    accepted_at: str
 
 
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
@@ -791,4 +851,10 @@ type WorkbenchContracts = (
     | VoiceList
     | VoiceSummary
     | VoiceRevision
+    | WorkbenchStatusV2
+    | RenderUnitV2
+    | RenderUnitCreateRequestV2
+    | RenderUnitPatchV2
+    | RenderUnitListV2
+    | RenderUnitGenerationAcceptedV2
 )

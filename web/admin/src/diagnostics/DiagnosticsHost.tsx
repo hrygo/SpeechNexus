@@ -52,7 +52,7 @@ export function DiagnosticsHost({
     <section aria-label="部署诊断" aria-busy={loading}>
       <h2>部署诊断</h2>
       <p>
-        本页只读部署自身在 <code>/v1/workbench/status</code>{" "}
+        本页只读部署自身在 <code>/v2/workbench/status</code>{" "}
         上报的事实，不探测引擎、不读取凭据，也不显示未读取到的运行数据。
       </p>
       <button type="button" disabled={loading} onClick={read}>

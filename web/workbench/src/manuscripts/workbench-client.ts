@@ -67,8 +67,8 @@ export class WorkbenchClient {
 
   async status(signal?: AbortSignal) {
     return result(
-      "WorkbenchStatus",
-      await this.#api.GET("/v1/workbench/status", { signal: signal ?? null }),
+      "WorkbenchStatusV2",
+      await this.#api.GET("/v2/workbench/status", { signal: signal ?? null }),
     );
   }
 
@@ -339,8 +339,8 @@ export class WorkbenchClient {
 
   async renderUnits(chapterId: string, cursor?: string, signal?: AbortSignal) {
     const value = result(
-      "RenderUnitList",
-      await this.#api.GET("/v1/workbench/chapters/{chapter_id}/render-units", {
+      "RenderUnitListV2",
+      await this.#api.GET("/v2/workbench/chapters/{chapter_id}/render-units", {
         params: {
           path: { chapter_id: chapterId },
           query: cursor === undefined ? {} : { cursor },
@@ -388,19 +388,13 @@ export class WorkbenchClient {
    */
   async createRenderUnit(
     chapterId: string,
-    body: {
-      ordinal: number;
-      text: string;
-      voice: { id: string; revision: string };
-      model: string;
-      model_binding: { id: string; revision: string };
-    },
+    body: Contracts["RenderUnitCreateRequestV2"],
     key: string,
     signal?: AbortSignal,
   ) {
     const value = result(
-      "RenderUnit",
-      await this.#api.POST("/v1/workbench/chapters/{chapter_id}/render-units", {
+      "RenderUnitV2",
+      await this.#api.POST("/v2/workbench/chapters/{chapter_id}/render-units", {
         params: { path: { chapter_id: chapterId } },
         headers: { "Idempotency-Key": key },
         body,
@@ -595,12 +589,12 @@ export class WorkbenchClient {
     return value;
   }
 
-  async updateRenderUnit(unitId: string, body: Contracts["RenderUnitPatch"], key: string) {
+  async updateRenderUnit(unitId: string, body: Contracts["RenderUnitPatchV2"], key: string) {
     const value = result(
-      "RenderUnit",
-      await this.#api.PATCH("/v1/workbench/render-units/{unit_id}", {
+      "RenderUnitV2",
+      await this.#api.PATCH("/v2/workbench/render-units/{unit_id}", {
         params: { path: { unit_id: unitId } },
-        body: parse("RenderUnitPatch", body),
+        body: parse("RenderUnitPatchV2", body),
         headers: { "Idempotency-Key": key },
       }),
     );

@@ -20,7 +20,7 @@ export type MeetingProblem =
   | "profile";
 export type MeetingSnapshot = {
   record: MeetingRecord;
-  status: Contracts["WorkbenchStatus"] | null;
+  status: Contracts["WorkbenchStatusV2"] | null;
   projects: Contracts["ProjectList"] | null;
   transcripts: Contracts["TranscriptList"] | null;
   minutes: Contracts["MinutesJob"] | null;

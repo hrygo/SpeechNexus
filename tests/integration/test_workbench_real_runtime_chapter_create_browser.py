@@ -103,7 +103,7 @@ async def test_a_chapter_created_in_the_production_bundle_is_stored_and_readable
         # The unit the page registered must be the one stored, with the pin it was given.
         result = events[-1]
         units = (
-            await client.get(f"/v1/workbench/chapters/{chapters[0]['id']}/render-units")
+            await client.get(f"/v2/workbench/chapters/{chapters[0]['id']}/render-units")
         ).json()["data"]
         # Two units: the mouse-driven one and the keyboard-only one. Their order in the list
         # is the deployment's business, so compare as a set.
@@ -115,7 +115,7 @@ async def test_a_chapter_created_in_the_production_bundle_is_stored_and_readable
         assert unit["model"] == "tts-quality"
         assert unit["model_binding"] == {"id": "binding_synthetic", "revision": "1"}
         assert unit["status"] == "pending"  # registered, not generated: generation is A's
-        one = await client.get(f"/v1/workbench/render-units/{unit['id']}")
+        one = await client.get(f"/v2/workbench/render-units/{unit['id']}")
         assert one.status_code == 200, one.text
         assert one.json() == unit
         # The rename the test injected is the one that must be stored: the page's later

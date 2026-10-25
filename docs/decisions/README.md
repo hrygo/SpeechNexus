@@ -12,4 +12,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 - [0007：遗留协调原型的退出与删除](0007-legacy-coordination-retirement.md)（accepted，2026-10-23；逐项迁移有效业务不变量后，退出旧 PG 必跑门禁并删除废弃原型；条件待验收）。
 - [0008：控制器观察前的持久 runtime 意图](0008-runtime-intents-before-controller-observation.md)（accepted，2026-10-24；区分无观察协调快照与实际控制器响应，扩展同库 outbox；生产事务/派发待实现）。
 
+- [0009：工作台显式模型绑定与配置发现的 HTTP 版本迁移](0009-workbench-explicit-binding-http-version.md)（accepted，2026-10-25；保留严格 v1、新增 v2 显式绑定与状态配置发现，消费者按路径迁移）。
+
 [文档索引](../README.md)

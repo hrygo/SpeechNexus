@@ -174,10 +174,10 @@ def test_minutes_profile_discovery_is_public_pinned_and_absent_when_disabled(
         }
     }
     if valid:
-        assert validate_response("getWorkbenchStatus", 200, value) is value
+        assert validate_response("getWorkbenchStatusV2", 200, value) is value
     else:
         with pytest.raises(ContractValidationError):
-            validate_response("getWorkbenchStatus", 200, value)
+            validate_response("getWorkbenchStatusV2", 200, value)
 
 
 def test_minutes_expected_source_revision_is_validated_on_wire() -> None:

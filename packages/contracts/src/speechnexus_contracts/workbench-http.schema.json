@@ -2052,6 +2052,33 @@
           "schema": "HttpResponse_createRenderUnit_422",
           "headers": {},
           "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_createRenderUnit_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_createRenderUnit_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_createRenderUnit_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createRenderUnit_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_createRenderUnit_415",
+          "headers": {},
+          "json": true
         }
       }
     },
@@ -2084,6 +2111,33 @@
         "404": {
           "schema": "HttpResponse_getRenderUnit_404",
           "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getRenderUnit_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getRenderUnit_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getRenderUnit_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getRenderUnit_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getRenderUnit_503",
+          "headers": {
+            "retry-after": "integer"
+          },
           "json": true
         }
       }
@@ -2132,6 +2186,33 @@
         },
         "422": {
           "schema": "HttpResponse_updateRenderUnit_422",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_updateRenderUnit_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_updateRenderUnit_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_updateRenderUnit_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_updateRenderUnit_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_updateRenderUnit_415",
           "headers": {},
           "json": true
         }
@@ -2510,6 +2591,390 @@
           "json": true
         }
       }
+    },
+    "getWorkbenchStatusV2": {
+      "path": "/v2/workbench/status",
+      "method": "get",
+      "request": "HttpRequest_getWorkbenchStatusV2",
+      "parameters": {
+        "path": {},
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_401",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getWorkbenchStatusV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
+    "listRenderUnitsV2": {
+      "path": "/v2/workbench/chapters/{chapter_id}/render-units",
+      "method": "get",
+      "request": "HttpRequest_listRenderUnitsV2",
+      "parameters": {
+        "path": {
+          "chapter_id": "string"
+        },
+        "query": {
+          "cursor": "string",
+          "limit": "integer"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listRenderUnitsV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listRenderUnitsV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_listRenderUnitsV2_404",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listRenderUnitsV2_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_listRenderUnitsV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_listRenderUnitsV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_listRenderUnitsV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listRenderUnitsV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
+    "createRenderUnitV2": {
+      "path": "/v2/workbench/chapters/{chapter_id}/render-units",
+      "method": "post",
+      "request": "HttpRequest_createRenderUnitV2",
+      "parameters": {
+        "path": {
+          "chapter_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "201": {
+          "schema": "HttpResponse_createRenderUnitV2_201",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_createRenderUnitV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_createRenderUnitV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_createRenderUnitV2_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_createRenderUnitV2_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_createRenderUnitV2_422",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_createRenderUnitV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_createRenderUnitV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_createRenderUnitV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_createRenderUnitV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_createRenderUnitV2_415",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "getRenderUnitV2": {
+      "path": "/v2/workbench/render-units/{unit_id}",
+      "method": "get",
+      "request": "HttpRequest_getRenderUnitV2",
+      "parameters": {
+        "path": {
+          "unit_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getRenderUnitV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getRenderUnitV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getRenderUnitV2_404",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getRenderUnitV2_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getRenderUnitV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getRenderUnitV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getRenderUnitV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getRenderUnitV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
+    "updateRenderUnitV2": {
+      "path": "/v2/workbench/render-units/{unit_id}",
+      "method": "patch",
+      "request": "HttpRequest_updateRenderUnitV2",
+      "parameters": {
+        "path": {
+          "unit_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_updateRenderUnitV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_updateRenderUnitV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_updateRenderUnitV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_updateRenderUnitV2_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_updateRenderUnitV2_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_updateRenderUnitV2_422",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_updateRenderUnitV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_updateRenderUnitV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_updateRenderUnitV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_updateRenderUnitV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        },
+        "415": {
+          "schema": "HttpResponse_updateRenderUnitV2_415",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "generateRenderUnitV2": {
+      "path": "/v2/workbench/render-units/{unit_id}/generations",
+      "method": "post",
+      "request": "HttpRequest_generateRenderUnitV2",
+      "parameters": {
+        "path": {
+          "unit_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string",
+          "idempotency-key": "string"
+        }
+      },
+      "responses": {
+        "202": {
+          "schema": "HttpResponse_generateRenderUnitV2_202",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_generateRenderUnitV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_generateRenderUnitV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_generateRenderUnitV2_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_generateRenderUnitV2_409",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_generateRenderUnitV2_422",
+          "headers": {},
+          "json": true
+        },
+        "429": {
+          "schema": "HttpResponse_generateRenderUnitV2_429",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
     }
   },
   "x-nexus-entrypoints": [
@@ -2827,10 +3292,20 @@
     "HttpResponse_createRenderUnit_404",
     "HttpResponse_createRenderUnit_409",
     "HttpResponse_createRenderUnit_422",
+    "HttpResponse_createRenderUnit_408",
+    "HttpResponse_createRenderUnit_413",
+    "HttpResponse_createRenderUnit_500",
+    "HttpResponse_createRenderUnit_503",
+    "HttpResponse_createRenderUnit_415",
     "HttpRequest_getRenderUnit",
     "HttpResponse_getRenderUnit_200",
     "HttpResponse_getRenderUnit_401",
     "HttpResponse_getRenderUnit_404",
+    "HttpResponse_getRenderUnit_400",
+    "HttpResponse_getRenderUnit_408",
+    "HttpResponse_getRenderUnit_413",
+    "HttpResponse_getRenderUnit_500",
+    "HttpResponse_getRenderUnit_503",
     "HttpRequest_updateRenderUnit",
     "HttpResponse_updateRenderUnit_200",
     "HttpResponse_updateRenderUnit_400",
@@ -2838,6 +3313,11 @@
     "HttpResponse_updateRenderUnit_404",
     "HttpResponse_updateRenderUnit_409",
     "HttpResponse_updateRenderUnit_422",
+    "HttpResponse_updateRenderUnit_408",
+    "HttpResponse_updateRenderUnit_413",
+    "HttpResponse_updateRenderUnit_500",
+    "HttpResponse_updateRenderUnit_503",
+    "HttpResponse_updateRenderUnit_415",
     "HttpRequest_createAssistantTurn",
     "HttpResponse_createAssistantTurn_202",
     "HttpResponse_createAssistantTurn_400",
@@ -2887,7 +3367,65 @@
     "HttpResponse_getVoiceRevision_404",
     "HttpResponse_getVoiceRevision_408",
     "HttpResponse_getVoiceRevision_500",
-    "HttpResponse_getVoiceRevision_503"
+    "HttpResponse_getVoiceRevision_503",
+    "HttpRequest_getWorkbenchStatusV2",
+    "HttpResponse_getWorkbenchStatusV2_200",
+    "HttpResponse_getWorkbenchStatusV2_401",
+    "HttpResponse_getWorkbenchStatusV2_400",
+    "HttpResponse_getWorkbenchStatusV2_408",
+    "HttpResponse_getWorkbenchStatusV2_413",
+    "HttpResponse_getWorkbenchStatusV2_500",
+    "HttpResponse_getWorkbenchStatusV2_503",
+    "HttpRequest_listRenderUnitsV2",
+    "HttpResponse_listRenderUnitsV2_200",
+    "HttpResponse_listRenderUnitsV2_401",
+    "HttpResponse_listRenderUnitsV2_404",
+    "HttpResponse_listRenderUnitsV2_400",
+    "HttpResponse_listRenderUnitsV2_408",
+    "HttpResponse_listRenderUnitsV2_413",
+    "HttpResponse_listRenderUnitsV2_500",
+    "HttpResponse_listRenderUnitsV2_503",
+    "HttpRequest_createRenderUnitV2",
+    "HttpResponse_createRenderUnitV2_201",
+    "HttpResponse_createRenderUnitV2_400",
+    "HttpResponse_createRenderUnitV2_401",
+    "HttpResponse_createRenderUnitV2_404",
+    "HttpResponse_createRenderUnitV2_409",
+    "HttpResponse_createRenderUnitV2_422",
+    "HttpResponse_createRenderUnitV2_408",
+    "HttpResponse_createRenderUnitV2_413",
+    "HttpResponse_createRenderUnitV2_500",
+    "HttpResponse_createRenderUnitV2_503",
+    "HttpResponse_createRenderUnitV2_415",
+    "HttpRequest_getRenderUnitV2",
+    "HttpResponse_getRenderUnitV2_200",
+    "HttpResponse_getRenderUnitV2_401",
+    "HttpResponse_getRenderUnitV2_404",
+    "HttpResponse_getRenderUnitV2_400",
+    "HttpResponse_getRenderUnitV2_408",
+    "HttpResponse_getRenderUnitV2_413",
+    "HttpResponse_getRenderUnitV2_500",
+    "HttpResponse_getRenderUnitV2_503",
+    "HttpRequest_updateRenderUnitV2",
+    "HttpResponse_updateRenderUnitV2_200",
+    "HttpResponse_updateRenderUnitV2_400",
+    "HttpResponse_updateRenderUnitV2_401",
+    "HttpResponse_updateRenderUnitV2_404",
+    "HttpResponse_updateRenderUnitV2_409",
+    "HttpResponse_updateRenderUnitV2_422",
+    "HttpResponse_updateRenderUnitV2_408",
+    "HttpResponse_updateRenderUnitV2_413",
+    "HttpResponse_updateRenderUnitV2_500",
+    "HttpResponse_updateRenderUnitV2_503",
+    "HttpResponse_updateRenderUnitV2_415",
+    "HttpRequest_generateRenderUnitV2",
+    "HttpResponse_generateRenderUnitV2_202",
+    "HttpResponse_generateRenderUnitV2_400",
+    "HttpResponse_generateRenderUnitV2_401",
+    "HttpResponse_generateRenderUnitV2_404",
+    "HttpResponse_generateRenderUnitV2_409",
+    "HttpResponse_generateRenderUnitV2_422",
+    "HttpResponse_generateRenderUnitV2_429"
   ],
   "$defs": {
     "WorkbenchStatus": {
@@ -2910,29 +3448,6 @@
         "llm_enabled": {
           "type": "boolean",
           "description": "True only when a deployment-approved intranet LLM is configured."
-        },
-        "minutes_profile": {
-          "description": "Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.",
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["template_revision", "llm_model"],
-              "properties": {
-                "template_revision": {
-                  "$ref": "#/$defs/Revision"
-                },
-                "llm_model": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "shared_deployment_notice": {
           "type": "string",
@@ -2963,35 +3478,7 @@
             }
           }
         }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "llm_enabled": {
-                "const": false
-              }
-            },
-            "required": ["llm_enabled"]
-          },
-          "then": {
-            "properties": {
-              "minutes_profile": {
-                "type": "null"
-              }
-            }
-          }
-        }
-      ]
-    },
-    "Revision": {
-      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
-    },
-    "External_shared_identifiers_schema_json_Revision": {
-      "type": "string",
-      "pattern": "^[1-9][0-9]{0,18}$",
-      "maxLength": 19,
-      "description": "Monotonic decimal revision represented as a string."
+      }
     },
     "ErrorResponse": {
       "$ref": "#/$defs/External_shared_errors_schema_json_ErrorResponse"
@@ -3283,6 +3770,12 @@
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         }
       }
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
     },
     "External_shared_speech_overrides_schema_json_turn_detection": {
       "type": "object",
@@ -3691,6 +4184,9 @@
         "source_artifact_id": ["source_receipt_id"],
         "source_receipt_id": ["source_artifact_id"]
       }
+    },
+    "Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
     },
     "TranscriptCreateRequest": {
       "type": "object",
@@ -4779,13 +5275,9 @@
         "voice",
         "model",
         "status",
-        "updated_at",
-        "model_binding"
+        "updated_at"
       ],
       "properties": {
-        "model_binding": {
-          "$ref": "#/$defs/ResourceReference"
-        },
         "id": {
           "$ref": "#/$defs/Identifier"
         },
@@ -4986,11 +5478,11 @@
         }
       ]
     },
-    "ResourceReference": {
-      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
-    },
     "RenderUnitVoice": {
       "$ref": "#/$defs/ResourceReference"
+    },
+    "ResourceReference": {
+      "$ref": "#/$defs/External_shared_references_schema_json_ResourceReference"
     },
     "TeleprompterState": {
       "type": "object",
@@ -5299,11 +5791,8 @@
     "RenderUnitCreateRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ordinal", "text", "voice", "model", "model_binding"],
+      "required": ["ordinal", "text", "voice", "model"],
       "properties": {
-        "model_binding": {
-          "$ref": "#/$defs/ResourceReference"
-        },
         "ordinal": {
           "type": "integer",
           "minimum": 0
@@ -5335,9 +5824,6 @@
       "minProperties": 2,
       "required": ["expected_revision"],
       "properties": {
-        "model_binding": {
-          "$ref": "#/$defs/ResourceReference"
-        },
         "expected_revision": {
           "$ref": "#/$defs/Revision"
         },
@@ -5919,6 +6405,439 @@
         "disabled_reason": {
           "type": ["string", "null"],
           "maxLength": 128
+        }
+      }
+    },
+    "WorkbenchStatusV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object",
+        "workbench_enabled",
+        "llm_enabled",
+        "shared_deployment_notice",
+        "capabilities"
+      ],
+      "properties": {
+        "object": {
+          "const": "nexus.workbench_status"
+        },
+        "workbench_enabled": {
+          "type": "boolean"
+        },
+        "llm_enabled": {
+          "type": "boolean",
+          "description": "True only when a deployment-approved intranet LLM is configured."
+        },
+        "minutes_profile": {
+          "description": "Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["template_revision", "llm_model"],
+              "properties": {
+                "template_revision": {
+                  "$ref": "#/$defs/Revision"
+                },
+                "llm_model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shared_deployment_notice": {
+          "type": "string",
+          "const": "shared_deployment",
+          "description": "UI must localize this code as \"all workspaces are shared within this deployment; no personal isolation is implied\"."
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "transcription",
+                  "meeting_minutes",
+                  "assistant",
+                  "teleprompter",
+                  "audiobook_export"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["available", "disabled", "unavailable"]
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "llm_enabled": {
+                "const": false
+              }
+            },
+            "required": ["llm_enabled"]
+          },
+          "then": {
+            "properties": {
+              "minutes_profile": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RenderUnitListV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data", "has_more", "next_cursor"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RenderUnitV2"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "RenderUnitV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object",
+        "chapter_id",
+        "ordinal",
+        "revision",
+        "text",
+        "voice",
+        "model",
+        "status",
+        "updated_at",
+        "model_binding"
+      ],
+      "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "object": {
+          "const": "nexus.render_unit"
+        },
+        "chapter_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "generating", "ready", "stale", "failed"]
+        },
+        "saved_asset_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speech_job_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_artifact_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_receipt_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source_artifact_id": {
+                "type": "string"
+              }
+            },
+            "required": ["source_artifact_id"]
+          },
+          "then": {
+            "required": ["source_receipt_id"],
+            "properties": {
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source_receipt_id": {
+                "type": "string"
+              }
+            },
+            "required": ["source_receipt_id"]
+          },
+          "then": {
+            "required": ["source_artifact_id"],
+            "properties": {
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "saved_asset_id": {
+                "type": "string"
+              }
+            },
+            "required": ["saved_asset_id"]
+          },
+          "then": {
+            "required": ["source_artifact_id", "source_receipt_id"],
+            "properties": {
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "generating"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["speech_job_id"],
+            "properties": {
+              "speech_job_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ready"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["speech_job_id", "source_artifact_id", "source_receipt_id"],
+            "properties": {
+              "speech_job_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_artifact_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "source_receipt_id": {
+                "$ref": "#/$defs/Identifier"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RenderUnitCreateRequestV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "text", "voice", "model", "model_binding"],
+      "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        }
+      }
+    },
+    "RenderUnitPatchV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "required": ["expected_revision"],
+      "properties": {
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "voice": {
+          "$ref": "#/$defs/RenderUnitVoice"
+        },
+        "pronunciation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RenderUnitVoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "RenderUnitGenerationAcceptedV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["render_unit", "speech_job_id", "accepted_at"],
+      "properties": {
+        "render_unit": {
+          "$ref": "#/$defs/RenderUnitV2"
+        },
+        "speech_job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accepted_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -11966,6 +12885,91 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_createRenderUnit_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnit_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnit_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnit_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnit_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_getRenderUnit": {
       "type": "object",
       "additionalProperties": false,
@@ -12044,6 +13048,91 @@
         "headers": {
           "type": "object",
           "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnit_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnit_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnit_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnit_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnit_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
           "required": [],
           "additionalProperties": true
         },
@@ -12181,6 +13270,91 @@
       "required": ["body"]
     },
     "HttpResponse_updateRenderUnit_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnit_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnit_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnit_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnit_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnit_415": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -13235,6 +14409,1134 @@
       "required": ["body"]
     },
     "HttpResponse_getVoiceRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getWorkbenchStatusV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": []
+    },
+    "HttpResponse_getWorkbenchStatusV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/WorkbenchStatusV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getWorkbenchStatusV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listRenderUnitsV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "chapter_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["chapter_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_listRenderUnitsV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitListV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitsV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_createRenderUnitV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "chapter_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["chapter_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitCreateRequestV2"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_createRenderUnitV2_201": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_createRenderUnitV2_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getRenderUnitV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "unit_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["unit_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getRenderUnitV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getRenderUnitV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_updateRenderUnitV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "unit_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["unit_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitPatchV2"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_updateRenderUnitV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_updateRenderUnitV2_415": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_generateRenderUnitV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "unit_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["unit_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "idempotency-key": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitGenerationRequest"
+        }
+      },
+      "required": ["path", "body"]
+    },
+    "HttpResponse_generateRenderUnitV2_202": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitGenerationAcceptedV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_429": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

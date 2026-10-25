@@ -32,6 +32,25 @@ const failure = {
 };
 
 describe("generated same-origin Workbench consumer", () => {
+  it("uses v2 discovery and refuses a legacy render reply without retry or fallback", async () => {
+    const statusFetch = vi.fn<typeof globalThis.fetch>(() =>
+      Promise.resolve(reply(example("getWorkbenchStatusV2"))),
+    );
+    await new WorkbenchClient(statusFetch).status();
+    expect(new URL((statusFetch.mock.calls[0]![0] as Request).url).pathname).toBe(
+      "/v2/workbench/status",
+    );
+
+    const legacyFetch = vi.fn<typeof globalThis.fetch>(() =>
+      Promise.resolve(reply(example("listRenderUnits"))),
+    );
+    await expect(new WorkbenchClient(legacyFetch).renderUnits("chapter_demo")).rejects.toThrow();
+    expect(legacyFetch).toHaveBeenCalledTimes(1);
+    expect(new URL((legacyFetch.mock.calls[0]![0] as Request).url).pathname).toBe(
+      "/v2/workbench/chapters/chapter_demo/render-units",
+    );
+  });
+
   it("consumes exact create intent without normalization, retries or redirects", async () => {
     const body = example("createTranscript") as {
       transcript: { display_name: string };
@@ -373,7 +392,7 @@ describe("book export consumer", () => {
     );
     expect(unit.id).toBe("unit_demo");
     const request = fetch.mock.calls[0]![0] as Request;
-    expect(new URL(request.url).pathname).toBe("/v1/workbench/chapters/chapter_demo/render-units");
+    expect(new URL(request.url).pathname).toBe("/v2/workbench/chapters/chapter_demo/render-units");
     expect(request.method).toBe("POST");
     expect(request.headers.get("Idempotency-Key")).toBe("unit-key");
 
@@ -446,12 +465,12 @@ describe("book export consumer", () => {
       new WorkbenchClient(() => Promise.resolve(reply(chapters))).chapters("book-other"),
     ).rejects.toThrow();
 
-    const units = example("listRenderUnits");
+    const units = example("listRenderUnitsV2");
     const unitFetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(reply(units)));
     await expect(new WorkbenchClient(unitFetch).renderUnits("chapter_demo")).resolves.toBeTruthy();
     const unitRequest = unitFetch.mock.calls[0]![0] as Request;
     expect(new URL(unitRequest.url).pathname).toBe(
-      "/v1/workbench/chapters/chapter_demo/render-units",
+      "/v2/workbench/chapters/chapter_demo/render-units",
     );
     await expect(
       new WorkbenchClient(() => Promise.resolve(reply(units))).renderUnits("chapter-other"),
@@ -514,7 +533,7 @@ describe("book export consumer", () => {
   });
 
   it("revises a render unit exactly one revision and never retries a conflict", async () => {
-    const unit = parse("RenderUnit", {
+    const unit = parse("RenderUnitV2", {
       object: "nexus.render_unit",
       id: "unit_demo",
       chapter_id: "chapter_demo",
@@ -536,7 +555,7 @@ describe("book export consumer", () => {
     await expect(client.updateRenderUnit(unit.id, patch, "redo-key")).resolves.toBeTruthy();
     const request = fetch.mock.calls[0]![0] as Request;
     expect(request.method).toBe("PATCH");
-    expect(new URL(request.url).pathname).toBe(`/v1/workbench/render-units/${unit.id}`);
+    expect(new URL(request.url).pathname).toBe(`/v2/workbench/render-units/${unit.id}`);
 
     // A response that stays behind the expected revision is refused.
     await expect(

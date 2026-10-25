@@ -6,7 +6,7 @@ import { asState, designState } from "./copy";
 import { WorkbenchStatusError, type WorkbenchStatus } from "./workbench-status";
 
 function status(overrides: Record<string, unknown> = {}): WorkbenchStatus {
-  return parse("WorkbenchStatus", {
+  return parse("WorkbenchStatusV2", {
     object: "nexus.workbench_status",
     workbench_enabled: true,
     llm_enabled: false,

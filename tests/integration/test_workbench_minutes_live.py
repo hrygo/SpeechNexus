@@ -145,7 +145,7 @@ async def test_the_serving_lifespan_dispatch_loop_completes_a_queued_task(
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
         ) as client:
-            status = await client.get("/v1/workbench/status")
+            status = await client.get("/v2/workbench/status")
         assert status.status_code == 200, status.text
         published = status.json()
         assert published["llm_enabled"] is True

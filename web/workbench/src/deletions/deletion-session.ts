@@ -15,7 +15,7 @@ export type DeletionProblem =
   "unknown" | "rejected" | "read_failed" | "storage" | "unavailable" | "invalid" | "expired";
 export type DeletionSnapshot = {
   record: DeletionRecord;
-  status: Contracts["WorkbenchStatus"] | null;
+  status: Contracts["WorkbenchStatusV2"] | null;
   projects: Contracts["ProjectList"] | null;
   transcripts: Contracts["TranscriptList"] | null;
   project: Contracts["Project"] | null;

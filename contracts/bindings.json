@@ -104,7 +104,13 @@
         "RenderUnitList",
         "VoiceList",
         "VoiceSummary",
-        "VoiceRevision"
+        "VoiceRevision",
+        "WorkbenchStatusV2",
+        "RenderUnitV2",
+        "RenderUnitCreateRequestV2",
+        "RenderUnitPatchV2",
+        "RenderUnitListV2",
+        "RenderUnitGenerationAcceptedV2"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -296,7 +302,11 @@
         "/v1/workbench/exports/{export_id}",
         "/v1/workbench/exports/{export_id}/cancellations",
         "/v1/workbench/voices",
-        "/v1/workbench/voices/{voice_id}/revisions/{revision}"
+        "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+        "/v2/workbench/status",
+        "/v2/workbench/chapters/{chapter_id}/render-units",
+        "/v2/workbench/render-units/{unit_id}",
+        "/v2/workbench/render-units/{unit_id}/generations"
       ]
     },
     "profile": {

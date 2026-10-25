@@ -45,7 +45,13 @@ export type HttpOperation =
   | "getBookExport"
   | "cancelBookExport"
   | "listVoices"
-  | "getVoiceRevision";
+  | "getVoiceRevision"
+  | "getWorkbenchStatusV2"
+  | "listRenderUnitsV2"
+  | "createRenderUnitV2"
+  | "getRenderUnitV2"
+  | "updateRenderUnitV2"
+  | "generateRenderUnitV2";
 type HttpPaths = Pick<
   paths,
   | "/v1/workbench/status"
@@ -81,6 +87,10 @@ type HttpPaths = Pick<
   | "/v1/workbench/exports/{export_id}/cancellations"
   | "/v1/workbench/voices"
   | "/v1/workbench/voices/{voice_id}/revisions/{revision}"
+  | "/v2/workbench/status"
+  | "/v2/workbench/chapters/{chapter_id}/render-units"
+  | "/v2/workbench/render-units/{unit_id}"
+  | "/v2/workbench/render-units/{unit_id}/generations"
 >;
 const validator = createHttpValidator(bundle);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {

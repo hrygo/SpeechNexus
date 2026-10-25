@@ -51,6 +51,12 @@ export type Contracts = Pick<
   | "VoiceList"
   | "VoiceSummary"
   | "VoiceRevision"
+  | "WorkbenchStatusV2"
+  | "RenderUnitV2"
+  | "RenderUnitCreateRequestV2"
+  | "RenderUnitPatchV2"
+  | "RenderUnitListV2"
+  | "RenderUnitGenerationAcceptedV2"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

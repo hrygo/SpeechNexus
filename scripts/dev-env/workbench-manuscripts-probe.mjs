@@ -109,7 +109,7 @@ const middleware = (vite) => {
     let operation;
     try {
       const path = {};
-      if (url.pathname === "/v1/workbench/status") operation = "getWorkbenchStatus";
+      if (url.pathname === "/v2/workbench/status") operation = "getWorkbenchStatusV2";
       else if (url.pathname === "/v1/workbench/projects")
         operation = req.method === "POST" ? "createProject" : "listProjects";
       else {
@@ -160,14 +160,16 @@ const middleware = (vite) => {
         } else if (operation === "createTranscript") {
           if (!projects.has(path.project_id)) return send(error("resource_not_found"), 404);
           const id = `transcript-created-${++sequence}`;
+          // A read example may be sealed; a manual create must return its draft original.
+          const created = sample("createTranscript");
           const metadata = {
-            ...transcript,
+            ...created.transcript,
             id,
             project_id: path.project_id,
             display_name: body.display_name,
           };
           const revision = {
-            ...original,
+            ...created.revision,
             id: `revision-${id}-1`,
             transcript_id: id,
             text: body.source.text,
@@ -195,7 +197,7 @@ const middleware = (vite) => {
         receipts.set(slot, { body: structuredClone(body), data: structuredClone(data) });
         return send(data, 201);
       }
-      if (operation === "getWorkbenchStatus")
+      if (operation === "getWorkbenchStatusV2")
         return send({ ...sample(operation), workbench_enabled: enabled, capabilities: [] });
       if (operation === "listProjects")
         return send({
@@ -346,19 +348,19 @@ try {
   await page.getByLabel("稿件名称").fill("新合成原稿");
   await page.getByLabel("原稿正文").fill("合成原稿😀");
   await button("保存原稿").click();
-  // Reading the catalogue is an explicit step, and the editor only appears once a manuscript
-  // from that catalogue is selected. The control is disabled while a request is in flight (the
-  // save above still refreshes), so wait for it instead of assuming it is ready.
-  // Saving here leaves the page in its documented uncertain state ("正在读取或提交，请稍候…",
-  // with the original request kept for replay and never resent automatically), so the intended
-  // recovery is to replay it before continuing — the same step this probe already uses earlier.
-  await expect(button("按原键重放")).toBeEnabled({ timeout: 15000 });
-  await button("按原键重放").click();
+  // This response is delivered normally. The earlier lost-revision scenario already proves
+  // original-key recovery; an invalid sealed manual-create response must not be replayed as success.
   await expect(button("核对当前版本")).toBeEnabled({ timeout: 15000 });
   await button("核对当前版本").click();
   await expect(button("新合成原稿")).toBeVisible();
   await button("新合成原稿").click();
   await expect(page.getByLabel("校对草稿")).toHaveValue("合成原稿😀");
+  const createdTranscript = [...transcripts.values()].find(
+    (item) => item.display_name === "新合成原稿",
+  );
+  const createdOriginal = versions.get(createdTranscript.id)[0];
+  assert.equal(createdOriginal.status, "draft");
+  assert.equal(createdOriginal.source_revision, null);
   await page.setViewportSize({ width: 360, height: 800 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -428,6 +430,8 @@ try {
     immutable_history: true,
     unsaved_refresh_recovery: true,
     project_transcript_create: true,
+    manual_create_status: createdOriginal.status,
+    manual_create_source_revision: createdOriginal.source_revision,
     paging: true,
     corrupt_and_quota_fail_closed: true,
     disabled_service: true,

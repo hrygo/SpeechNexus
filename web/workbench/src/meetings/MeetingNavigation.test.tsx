@@ -34,7 +34,7 @@ function setup(loseCreate = false) {
         body = meeting();
         status = 201;
       }
-    } else if (path.endsWith("/status")) body = sample("getWorkbenchStatus");
+    } else if (path.endsWith("/status")) body = sample("getWorkbenchStatusV2");
     else if (path.endsWith("/projects")) body = sample("listProjects");
     else if (path.endsWith("/projects/project-demo")) body = sample("createProject");
     else if (path.endsWith("/transcripts")) body = sample("listTranscripts");

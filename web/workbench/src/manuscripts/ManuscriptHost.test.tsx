@@ -40,7 +40,7 @@ function setup() {
   const client = new WorkbenchClient(vi.fn());
   const status = vi
     .spyOn(client, "status")
-    .mockResolvedValue(parse("WorkbenchStatus", example("getWorkbenchStatus")));
+    .mockResolvedValue(parse("WorkbenchStatusV2", example("getWorkbenchStatusV2")));
   vi.spyOn(client, "projects").mockResolvedValue(parse("ProjectList", example("listProjects")));
   vi.spyOn(client, "project").mockResolvedValue(parse("Project", example("createProject")));
   vi.spyOn(client, "transcripts").mockResolvedValue(
@@ -159,7 +159,7 @@ describe("production manuscript host", () => {
 
   it("reports disabled service without fictional sample rows", async () => {
     const f = setup();
-    const status = parse("WorkbenchStatus", example("getWorkbenchStatus"));
+    const status = parse("WorkbenchStatusV2", example("getWorkbenchStatusV2"));
     status.workbench_enabled = false;
     f.status.mockResolvedValue(status);
     render(<ManuscriptHost client={f.client} storage={f.storage} />);

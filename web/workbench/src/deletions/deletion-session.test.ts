@@ -18,7 +18,7 @@ function fixture() {
   const project = parse("Project", sample("getProject"));
   const client = new WorkbenchClient(vi.fn());
   vi.spyOn(client, "status").mockResolvedValue({
-    ...parse("WorkbenchStatus", sample("getWorkbenchStatus")),
+    ...parse("WorkbenchStatusV2", sample("getWorkbenchStatusV2")),
     workbench_enabled: true,
   });
   vi.spyOn(client, "projects").mockResolvedValue({

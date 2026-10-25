@@ -2,6 +2,8 @@
 
 审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
 
+- [2026-10-25 协调端口与消费者取证](2026-10-25-coordination-port-evidence.md)：冻结 `7dc276a` 的 18 端口、7 查询快照、实际调用方和精确合后双库报告；保留业务装配、原生 envelope 与真实执行的验收缺口。
+
 - [2026-10-22 设计审查](2026-10-22-speechnexus-design-review.md)：方案缺陷、修正、上游核验和未验证边界。
 - [2026-10-22 开发环境就绪审查](2026-10-22-development-environment-readiness.md)：本机工具链、独立服务、验证证据、推理缺口与后续入口。
 - [2026-10-23 架构与契约合规审查](2026-10-23-architecture-contract-compliance.md)：上一轮阻断项复核、OpenAI SDK 兼容、契约严格性、SOLID / DRY、容量账目收口与残余风险。

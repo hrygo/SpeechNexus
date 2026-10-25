@@ -166,7 +166,7 @@ See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implem
 
 Use [Issues](https://github.com/hrygo/SpeechNexus/issues) to share use cases, request features, or report problems. Include your environment, reproduction steps, expected behavior, and actual results. Leave out credentials, private audio, and complete business transcripts.
 
-For development, read the [development guide (Chinese)](docs/development-environment.md) and [AGENTS.md (Chinese)](AGENTS.md), then run checks appropriate to your changes. Full native verification uses `make verify`; first satisfy the guide's host and isolated-service requirements.
+See the [contribution and issue guide (Chinese)](CONTRIBUTING.md) for feedback templates, implementation tasks, and closure rules. For development, read the [development guide (Chinese)](docs/development-environment.md) and [AGENTS.md (Chinese)](AGENTS.md), then run checks appropriate to your changes. Full native verification uses `make verify`; first satisfy the guide's host and isolated-service requirements.
 
 ## License and acknowledgments
 

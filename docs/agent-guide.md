@@ -22,6 +22,7 @@
 | 任务 | 入口 |
 | --- | --- |
 | 当前能力、启动入口 | [README.md](../README.md)、[README.en.md](../README.en.md) |
+| 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |
 | 模块边界与依赖方向 | [工程目录说明](architecture/repository-layout.md) |
 | 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](architecture/http-contract-change-checks.md) |
@@ -41,7 +42,7 @@
 
 ## 执行约定
 
-- 日常开发以一个 PR 完整解决一个小 issue 为默认；合入主干且全部 AC 满足后直接关闭。正文保持 `目标`、`进展总结`、`任务清单`、`验收标准（AC）` 四部分，小 issue 各部分简写即可。Epic、Gate 与编排矩阵仅适用于实际存在的关系和交付依赖。
+- 外部反馈保留问题、复现与讨论；实施任务采用 `目标`、`进展总结`、`任务清单`、`验收标准（AC）` 四部分，简写即可。日常开发以一个 PR 完整解决一个小 issue 为默认，合入主干且 AC 满足后直接关闭；Epic、Gate、矩阵与 `status:*` 仅用于实际采用这些约定的跟踪项。具体入口与生命周期见[贡献指南](../CONTRIBUTING.md)。
 - 每项任务按交付目标选择主技能；涉及其他边界时补充相应技能，共同材料与检查直接复用。
 - 项目技能由本仓库 `.agents/skills/` 提供，按请求与描述匹配加载；支持文件按当前分支需要读取。显式调用不扩大授权。
 - 验证范围由实际改动决定，命令入口见[验证指南](agent-verification.md)；`Makefile`、`package.json`、CI 和有效测试说明规定执行条件。纯文档修改只做文档检查。
@@ -58,8 +59,8 @@
 | 修改协调事务、锁序、租约释放或预算落地 | `speechnexus-coordination-change`；核对事务原子性、停止证据、锁序和双库范围 |
 | 客户端丢回执后，方案需要新增原命令查询接口并修改持久事务 | recovery 主导恢复决定，contract 处理新接口及消费者，coordination 处理事务；共同材料和检查复用，不串行重跑三套完整流程 |
 | 调整 Web 间距 | `web/AGENTS.md` 与 Web 检查；不启动数据库 |
-| 整理某个 issue 正文 | `speechnexus-issue-maintenance`；四部分结构，不擅改状态和标签 |
-| 一个 PR 完成小 issue 全部范围与 AC，并合入主干 | `sync-issues-after-merge`；直接关闭并维护 `status:done`，没有相关层级就只处理这一项 |
+| 整理某个 issue 正文 | `speechnexus-issue-maintenance`；保留反馈结构，实施任务用四部分，不擅改状态和标签 |
+| 一个 PR 完成小 issue 全部范围与 AC，并合入主干 | `sync-issues-after-merge`；直接关闭，既有标签体系适用时维护 `status:done`，没有相关层级就只处理这一项 |
 | 小 issue 已正确自动关闭，正文、勾选和标签均准确 | 核对后结束；不重开、不重复写入、不刷新无关矩阵 |
 | 查看某 PR 是否已满足 AC | 只读核对证据；不因读取技能而写远端 |
 | 合并获准 PR 并完成收尾 | `sync-issues-after-merge`；核实主干合并、逐项判断 AC、写后回读 |

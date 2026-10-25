@@ -3,7 +3,7 @@
   gap: var(--nexus-space-4);
   min-width: 0;
 }
-.realtime-asr :is(button, input, textarea) {
+.realtime-asr :is(button, input, select, textarea) {
   min-height: 44px;
   max-width: 100%;
   padding: var(--nexus-space-3);
@@ -22,7 +22,7 @@
   opacity: 0.55;
   cursor: default;
 }
-.realtime-asr :is(button, input, textarea):focus-visible {
+.realtime-asr :is(button, input, select, textarea):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -55,6 +55,7 @@
   min-width: 0;
 }
 .realtime-asr input,
+.realtime-asr select,
 .realtime-asr textarea {
   box-sizing: border-box;
   width: 100%;

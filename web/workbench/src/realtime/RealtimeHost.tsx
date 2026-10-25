@@ -3,6 +3,7 @@ import { parse } from "../../../../packages/contracts/src/realtime";
 import { RealtimeClient } from "./realtime-client";
 import { RealtimeJournal, type RealtimeStorage } from "./realtime-journal";
 import { RealtimeController, type RealtimeSnapshot } from "./realtime-session";
+import InputDevicePicker from "./InputDevicePicker";
 import "./realtime.css";
 
 const problems: Record<NonNullable<RealtimeSnapshot["problem"]>, string> = {
@@ -207,6 +208,16 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
           <button type="submit">创建实时会话</button>
         </fieldset>
       </form>
+      {active && (
+        <InputDevicePicker
+          value={s.inputDeviceId}
+          disabled={locked || s.microphone === "stopping" || s.microphone === "failed"}
+          onSelect={(id) => {
+            void controller.selectInputDevice(id);
+            heading.current?.focus();
+          }}
+        />
+      )}
       {r.session && (
         <section aria-label="会话与清理事实">
           <h3>会话与清理事实</h3>

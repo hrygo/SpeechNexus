@@ -40,6 +40,7 @@ export type RealtimeSnapshot = {
   blocked: boolean;
   connecting: boolean;
   committing: boolean;
+  inputDeviceId: string | null;
   microphone: "idle" | "starting" | "running" | "stopping" | "failed";
   problem:
     | "storage"
@@ -87,6 +88,7 @@ export class RealtimeController {
       blocked: false,
       connecting: false,
       committing: false,
+      inputDeviceId: null,
       microphone: "idle",
       problem: record.pending ? "unknown" : null,
     });
@@ -399,6 +401,23 @@ export class RealtimeController {
     this.#queue = task.catch(() => undefined);
     return task;
   }
+  async selectInputDevice(inputDeviceId: string | null) {
+    if (
+      !this.#idle() ||
+      !this.#active ||
+      this.#state.record.pending ||
+      this.#state.microphone === "stopping" ||
+      this.#captureCleanupFailed ||
+      inputDeviceId === this.#state.inputDeviceId ||
+      inputDeviceId === ""
+    )
+      return;
+    this.#publish({ inputDeviceId });
+    if (this.#socket || this.#capturePending || this.#device || this.#state.connecting) {
+      this.#drop("input_device_changed");
+      await this.close("abort");
+    }
+  }
   async startCapture() {
     const stream = this.#stream?.getSnapshot();
     if (
@@ -429,6 +448,7 @@ export class RealtimeController {
         frameSamples,
         maxPendingFrames: Math.min(20, Math.max(2, Math.floor(24000 / frameSamples))),
         signal: abort.signal,
+        ...(this.#state.inputDeviceId ? { deviceId: this.#state.inputDeviceId } : {}),
         onFrame: async (frame, signal) => {
           identity(
             !signal.aborted &&
@@ -599,11 +619,15 @@ export class RealtimeController {
     if (mode === "abort") this.#drop("abort_requested");
     else void this.#stopDevice();
     const session = this.#state.record.session;
+    const current = this.#state.current;
     if (
       !this.#idle() ||
       !session ||
       this.#state.record.pending ||
       terminal(session) ||
+      (current &&
+        terminal(current) &&
+        ["complete", "not_required"].includes(current.cleanup_state)) ||
       (session.status === "draining" && mode === "drain")
     )
       return;

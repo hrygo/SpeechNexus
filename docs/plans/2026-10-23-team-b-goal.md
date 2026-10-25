@@ -17,9 +17,10 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-25）
 
-本轮基线为已合入 #158 的 main `28775a52f50f6bfd6f0ee1d68d4fc3d8fcbf5ea7`，
-[合后 CI40184352053](https://github.com/hrygo/SpeechNexus/actions/runs/40184352053) 的
-14 项检查均成功。#28/#30/#142 已同步串行集成事实，仍 open / in-progress；
+当前基线为已合入 #163 的 main `f239e2d62d1f016a540de11c369d1c899c17304d`，
+[合后 CI40201976264](https://github.com/hrygo/SpeechNexus/actions/runs/40201976264) 的
+14 项检查均成功，耗时 447 秒，五分钟优化目标仍未达到。#28/#29/#142 已同步集成事实，
+仍 open / in-progress；
 业务 AC、Gate 和 B00–B07 Goal 均不因组件合入自动通过。
 
 | 层级 | 已有成果 | 当前边界 |
@@ -27,7 +28,7 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | 回执与输入 | [#152](https://github.com/hrygo/SpeechNexus/pull/152)、[#154](https://github.com/hrygo/SpeechNexus/pull/154) 已集成，复用原执行回执与固定版本对象 | 不授予模型、停止/释放或公开发布资格 |
 | 持久执行 | [#158](https://github.com/hrygo/SpeechNexus/pull/158) 已集成：接收确认提交后启动、原身份恢复、重启隔离和线程清理 | 仍需显式工厂装配；默认环境未接固定真实引擎 |
 | 工作台契约 | [#141](https://github.com/hrygo/SpeechNexus/pull/141) 已集成 | 机器协议不证明正式消费者或公开链已可用 |
-| B02 本轮 | `codex/b-29-warmup-deadline` 修复累计期限与多 IP 重复预热 | 独立回环 HTTP / fake Docker 验证，不改变真实运行资格 |
+| B02 本轮 | #163 已集成累计期限/单次 POST 修复、原生鉴权与目标代次核验 | 回环 HTTP、fake Docker、固定镜像中间件和隔离存储验证，不改变真实模型或完整停止/释放资格 |
 
 各 PR 保存对应候选的检查与报告；旧分支测试数量不转挂最新组合。
 本轮没有加载模型、使用私人语料或执行目标拓扑验收。#142 仍是 B03 阶段子任务；
@@ -76,16 +77,23 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 
 ## 已集成的持久执行单元与本轮缺口
 
-本轮从 `70ab43d` 复用 #161 的已验证预热修复，继续交付
+[#163](https://github.com/hrygo/SpeechNexus/pull/163) 已随 main `f239e2d` 集成 #161 的预热修复及
 [受控 ASR 原生鉴权与代次检查](../architecture/controlled-asr-generation.md)。
 控制器为固定目标派生原生 key，检查实际镜像/argv/环境和身份；网关在读取对象前拒绝
 不匹配或未绑定代次的真实 endpoint。固定镜像的无 GPU/无网络中间件检查覆盖缺 key、
 旧 key、新 key 和未鉴权 health；不加载模型，不替代默认真实装配或停止/预算联验。
-该候选的精确版本验证与集成以对应 PR 为准，#29/#142 及完整 Goal 仍未完成。
+精确 PR 组合与合后 CI 均为 14 项成功；#29/#142 及完整 Goal 仍未完成。
 [#163](https://github.com/hrygo/SpeechNexus/pull/163) 同时修正 ASR 集成样例及其 file-start
 消费者：generation 和 barrier 反例使用原执行身份，不再误改旧 TTS 目标。
 修前四项双库反例复现失败，修后五组 PG/InnoDB/MinIO 消费者回归 102 项通过、无跳过；
 私有 PG 确认停止。实际生产校验未放宽，精确候选 CI 与评审仍以 PR 当前状态为准。
+
+`codex/b-142-default-asr-runtime` 已在上述 main 上实现[配置驱动的默认文件 ASR 工厂](../architecture/file-asr-runtime.md)，
+装配既有 worker、固定代次识别器、CPU VAD 与对象输入/结果适配器，不再要求测试注入工厂。
+配置缺失保持不可用；结构、目标与上界错误在取得控制权限前拒绝，不生成权威 binding/default 或另一份预算。
+77 项针对性验证及六组 PG/InnoDB/真实 MinIO 回归 104 项通过、无跳过；
+默认入口覆盖真实回环 HTTP/对象读写、无语音、重放和重启，模型输出与 VAD 仍为替身。
+候选尚未主线集成，完整本机与精确版本 CI 待完成；真实实例、可信停止及 A/C 公开链分别取证。
 
 [持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
@@ -109,7 +117,7 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 完整非集成 4112 项通过、覆盖率 81.75%，完整隔离 PG/InnoDB/MinIO 1320 项通过，
 22 项既有 PG-only adapter 的 InnoDB 参数组合不适用跳过，未计入通过。
 Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、集成 1 条警告。
-候选仍须精确版本 PR CI 与评审集成。下一步是固定可信引擎的实际装配与完整身份核验，
+该修复已随 #163 完成精确版本 PR/合后 CI 与主线集成。下一步是固定可信引擎的实际装配与完整身份核验，
 再与 A 的发布/预算和 SDK/C 联验；真实引擎异常退出及目标拓扑资格保留未完成。
 
 原工作树 `codex/b03-worker-fence-observation` 的未提交观察草稿保持独立，
@@ -119,7 +127,7 @@ Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、�
 | --- | --- | --- |
 | B00 #27 | in-progress | 首条权威配置/许可/版本锁与上界交接，随后逐能力停止/容量资格 |
 | B01 #28 | in-progress | 提交后执行组件已集成；默认真实装配、旧入口封锁和 A 预算闭环待完成 |
-| B02 #29 | in-progress | #163 交付 warmup 修复、原生鉴权与目标代次校验候选；五组双库/MinIO 回归 102 项通过，精确 CI/评审以 PR 为准；默认真实装配、持续 ready、故障与 peak→steady/drain 联验待完成 |
+| B02 #29 | in-progress | #163 的 warmup 修复、原生鉴权与目标代次校验已集成，PR/合后 CI 全绿；五组双库/MinIO 回归 102 项通过；默认真实装配、持续 ready、故障与 peak→steady/drain 联验待完成 |
 | B03 #30 | in-progress | 先 #142 的 ASR→CustomVoice 公开链；随后 Base、长文本、时钟/重叠和完整参数矩阵 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |

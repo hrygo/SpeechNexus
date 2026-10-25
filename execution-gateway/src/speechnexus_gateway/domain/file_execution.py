@@ -1,9 +1,14 @@
 """File execution ports; acceptance and results retain the original intent authority."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
 
-from speechnexus_gateway.domain.asr_results import AsrResultStore, StagedAsrResult
+from speechnexus_gateway.domain.asr_results import (
+    AsrResultStore,
+    StagedAsrResult,
+    validate_asr_result_limit,
+)
 from speechnexus_gateway.domain.ports import (
     CommandEngineDispatchPort,
     CommittedExecutionStarter,
@@ -12,7 +17,33 @@ from speechnexus_gateway.domain.ports import (
     ExecutionFactLedger,
     OriginalExecutionCommandSource,
 )
-from speechnexus_gateway.domain.submission import SubmissionIntent, SubmitRequest
+from speechnexus_gateway.domain.submission import (
+    MAX_ORIGINAL_COMMAND_BYTES,
+    SubmissionIntent,
+    SubmitRequest,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FileExecutionLimits:
+    """Local consumption bounds, independent of admission or scheduling budgets."""
+
+    max_result_bytes: int
+    max_command_bytes: int
+    max_pending: int
+    shutdown_seconds: float
+
+    def __post_init__(self) -> None:
+        validate_asr_result_limit(self.max_result_bytes)
+        if (
+            type(self.max_command_bytes) is not int
+            or not 1 <= self.max_command_bytes <= MAX_ORIGINAL_COMMAND_BYTES
+        ):
+            raise ValueError("file work requires an explicit original-command byte budget")
+        if type(self.max_pending) is not int or not 1 <= self.max_pending <= 64:
+            raise ValueError("file work requires a bounded local preparation count")
+        if type(self.shutdown_seconds) not in (int, float) or not 0 < self.shutdown_seconds <= 30:
+            raise ValueError("file worker shutdown requires a bounded wait")
 
 
 class FileAsrExecution(Protocol):

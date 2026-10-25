@@ -4,6 +4,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,8 +18,36 @@ env:
   PNPM_VERSION: "12.14.0"
 
 jobs:
+  changes:
+    name: CI scope and lightweight checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      mode: ${{ steps.route.outputs.mode }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify routing boundaries without installing project dependencies
+        run: python3 -m unittest discover -s tests/ci -v
+
+      - name: Route the exact checked-out diff
+        id: route
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 scripts/dev-env/ci-routing.py \
+            --event="$EVENT_NAME" --base="$BASE_SHA" \
+            --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
+
   python_checks:
     name: Python tests and build
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -68,6 +97,8 @@ jobs:
 
   python_contracts:
     name: Python static and contract checks
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -154,6 +185,8 @@ jobs:
 
   integration_shards:
     name: PostgreSQL/InnoDB shard ${{ matrix.shard }}
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
@@ -251,12 +284,11 @@ jobs:
           retention-days: 7
           overwrite: true
 
-  # Preserve the protected status name and require both actual execution and
-  # a complete, disjoint inventory. Failure/cancellation/skipping cannot pass.
+  # Full scope still requires actual execution and a complete, disjoint inventory.
   coordination:
     name: PostgreSQL and InnoDB integration
-    needs: [integration_shards]
-    if: ${{ always() }}
+    needs: [changes, integration_shards]
+    if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -292,8 +324,8 @@ jobs:
   # Preserve the original protected status while independent read-only checks overlap.
   python_checks_gate:
     name: Python static checks and unit tests
-    needs: [python_checks, python_contracts]
-    if: ${{ always() }}
+    needs: [changes, python_checks, python_contracts]
+    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -307,27 +339,50 @@ jobs:
             exit 1
           fi
 
-  # Keep the protected status name stable; a failed, cancelled or skipped
-  # prerequisite must never turn into a successful merge gate.
+  # Keep protected names stable. Only a successful explicit route can make a
+  # lane inapplicable; unexpected skipping, failure or cancellation cannot pass.
   python:
     name: Python quality and tests
-    needs: [python_checks_gate, coordination]
+    needs: [changes, python_checks_gate, coordination, web, deployment]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Require both Python and dual-database evidence
+      - name: Require every result selected by the verified scope
         env:
+          MODE: ${{ needs.changes.outputs.mode }}
+          ROUTING_RESULT: ${{ needs.changes.result }}
           CHECKS_RESULT: ${{ needs.python_checks_gate.result }}
           COORDINATION_RESULT: ${{ needs.coordination.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+          DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
         run: |
-          if [[ "$CHECKS_RESULT" != success || "$COORDINATION_RESULT" != success ]]; then
-            echo "::error::Python checks=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT"
+          if [[ "$ROUTING_RESULT" != success ]]; then
+            echo "::error::CI routing=$ROUTING_RESULT"
             exit 1
           fi
+          case "$MODE" in
+            docs)
+              checks=skipped; coordination=skipped; web=skipped; deployment=skipped ;;
+            web)
+              checks=success; coordination=skipped; web=success; deployment=skipped ;;
+            full)
+              checks=success; coordination=success; web=success; deployment=success ;;
+            *)
+              echo "::error::Missing or invalid CI scope"
+              exit 1 ;;
+          esac
+          if [[ "$CHECKS_RESULT" != "$checks" || "$COORDINATION_RESULT" != "$coordination" ||
+                "$WEB_RESULT" != "$web" || "$DEPLOYMENT_RESULT" != "$deployment" ]]; then
+            echo "::error::Scope=$MODE; Python=$CHECKS_RESULT; PG/InnoDB=$COORDINATION_RESULT; Web=$WEB_RESULT; deployment=$DEPLOYMENT_RESULT"
+            exit 1
+          fi
+          echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."
 
   web:
     name: Web quality, tests, and build
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -369,6 +424,8 @@ jobs:
 
   deployment:
     name: Deployment configuration
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 

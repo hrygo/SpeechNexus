@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import math
+import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 
-from speechnexus_gateway.application.file_asr_audio import FileAsrAudio
+from speechnexus_gateway.application.file_asr_audio import FileAsrAudio, PreparedAsrSegment
 from speechnexus_gateway.domain.asr import (
     AsrAudio,
     AsrCallError,
@@ -50,9 +53,17 @@ class FileAsrTranscription:
         execution_id: str,
         policy: AsrPolicy,
         cancelled: Callable[[], bool],
+        final_deadline_seconds: float | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         if type(execution_id) is not str or not 1 <= len(execution_id) <= 128:
             raise ValueError("a fixed execution identity is required")
+        if final_deadline_seconds is not None and (
+            type(final_deadline_seconds) not in (int, float)
+            or not math.isfinite(final_deadline_seconds)
+            or not 0 < final_deadline_seconds <= 10
+        ):
+            raise ValueError("invalid file ASR final deadline")
         self.summary: AudioDecodeSummary | None = None
         self._audio = audio
         self._recognizer = recognizer
@@ -60,8 +71,15 @@ class FileAsrTranscription:
         self._execution_id = execution_id
         self._policy = policy
         self._cancelled = cancelled
+        self._final_deadline = final_deadline_seconds
+        self._monotonic = monotonic
         self._has_dispatched = False
         self._iterator = self._recognize()
+
+    @property
+    def has_dispatched(self) -> bool:
+        """Conservative execution fact; never a stop or resource-release proof."""
+        return self._has_dispatched
 
     def __aiter__(self) -> FileAsrTranscription:
         return self
@@ -79,6 +97,26 @@ class FileAsrTranscription:
         if self._cancelled():
             raise AsrCallError(AsrFailure.CANCELLED, request_may_have_run=self._has_dispatched)
 
+    def _remaining_final(self, prepared: PreparedAsrSegment) -> float | None:
+        if self._final_deadline is None:
+            return None
+        closed_at = prepared.closed_at_monotonic
+        now = self._monotonic()
+        if (
+            closed_at is None
+            or type(closed_at) not in (int, float)
+            or not math.isfinite(closed_at)
+            or not math.isfinite(now)
+            or closed_at > now
+        ):
+            raise ValueError("file ASR requires a valid segment closing clock")
+        remaining = closed_at + self._final_deadline - now
+        if remaining <= 0:
+            raise AsrCallError(
+                AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=self._has_dispatched
+            )
+        return remaining
+
     async def _recognize(self) -> AsyncGenerator[FileAsrSegment]:
         completed: AudioDecodeSummary | None = None
         try:
@@ -90,6 +128,7 @@ class FileAsrTranscription:
                     raise ValueError("VAD and ASR must consume the same frozen config revision")
                 if self._recognizer.binding_revision_id != self._binding_revision:
                     raise ValueError("ASR binding cannot change within an execution")
+                self._remaining_final(prepared)
                 request_id = None
                 engine_request_id = None
                 text = ""
@@ -106,10 +145,19 @@ class FileAsrTranscription:
                             "binding_revision_id": self._binding_revision,
                         }
                     ).removeprefix("sha256:")
+                    remaining = self._remaining_final(prepared)
                     self._has_dispatched = True
-                    recognized = await self._recognizer.transcribe(
-                        AsrAudio(request_id, vad.pcm16), self._policy, cancelled=self._cancelled
-                    )
+                    try:
+                        async with asyncio.timeout(remaining):
+                            recognized = await self._recognizer.transcribe(
+                                AsrAudio(request_id, vad.pcm16),
+                                self._policy,
+                                cancelled=self._cancelled,
+                            )
+                    except TimeoutError:
+                        raise AsrCallError(
+                            AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=True
+                        ) from None
                     if (
                         recognized.request_id != request_id
                         or recognized.policy_digest != self._policy.digest
@@ -124,6 +172,7 @@ class FileAsrTranscription:
                     text = recognized.text
                     engine_request_id = recognized.engine_request_id
                     completion_tokens = recognized.completion_tokens
+                self._remaining_final(prepared)
                 yield FileAsrSegment(
                     vad.sequence,
                     prepared.source_clock,

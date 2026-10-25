@@ -1,15 +1,16 @@
 ---
 title: "原执行命令与核验文件输入"
 status: active
-version: "0.1.0"
-date: 2026-10-24
+version: "0.2.0"
+date: 2026-10-25
 ---
 
 # 原执行命令与核验文件输入
 
 这是 [B01 执行网关](execution-gateway.md)与 [B03 文件识别](file-asr-recognition.md)的输入接入单元。
 已提供原命令只读端口、一次提交路径的命令桥，以及固定 MinIO/S3 的核验输入适配器。
-默认组合根仍拒绝业务执行；真实引擎生命周期、完整有效参数映射、最终制品发布与公开消费者待接入。
+另有原命令驱动的文件 ASR 消费者，复用同源校验并映射已支持的参数。
+默认组合根仍拒绝业务执行；真实引擎生命周期、其余参数/能力、最终制品发布与公开消费者待接入。
 不能因为读取了原命令或成功消费合成文件，就宣称真实执行、停止或模型资格完成。
 
 ## 原命令
@@ -67,18 +68,54 @@ DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须�
 3 秒界限，整体期限与取消按阶段和块合作检查，不承诺瞬时中断底层网络调用。
 
 `VerifiedFileAsrInput` 返回同一完整请求、原媒体格式与已核验流，供既有
-`FileAsrAudio` / `FileAsrTranscription` 消费。本单元不自动选择 ASR/VAD 配方、补有效参数、
-忽略资源引用或发布识别结果。未实现的参数必须在后续配方装配时明确拒绝。
+`FileAsrAudio` / `FileAsrTranscription` 消费。输入端口本身不选择 ASR/VAD 配方或发布结果。
+
+## 原命令驱动的文件 ASR 消费者
+
+`interfaces.file_asr_command.CommandFileAsr` 显式组合原生输入、解码、VAD 与文件识别。
+它先复制原命令，复用生成的 `SubmitExecutionRequest` 校验和既有 canonical digest，
+核对原绑定与配置策略身份，再读取核验对象。调用方修改原请求不会改变已打开的执行。
+该入口没有独立 wire/schema、业务路由、预算账本或命令权威。
+
+| 命令字段 / 配置 | 消费语义 |
+| --- | --- |
+| `kind/task_kind/stage_role` | 只接受 `asr/asr_file/asr_batch`；流式和复核阶段分别接线 |
+| `language/prompt/temperature` | 原值映射 `AsrPolicy`；null prompt 表示无提示词，转换为空字符串 |
+| `turn_detection` | 只接受 `server_vad`；原 `silence_duration_ms` 映射 `VadPolicy` |
+| `max_segment_ms` | 原值映射 VAD 硬切段上限，且必须不小于 preview interval，不沿用调用方另填的切段长度 |
+| `finalization/rollback_tokens` | 当前只接受 `full_segment/0`，不冒充流式回滚或实时复核 |
+| `final_deadline_ms` | 从段关闭到正文 final 的完整窗口；单次 HTTP 另取它与显式部署调用上限的较小者 |
+| 原 `deadline_at` | 在输入、解码/VAD、识别及结果检查中合作检查；到期报告 deadline，已可能外发仍保持未知事实 |
+| `alignment/diarization` | 当前都必须为 `off`；required 和 best_effort 均不静默忽略 |
+| `vocabulary_set_revision/resources` | 当前不支持词表、发音表或声音资源；非空材料/引用在对象读取前拒绝 |
+| `response_format/timestamp_granularities` | 当前仅接受 json/text 且不请求时间戳；最终序列化和发布仍由结果拥有方接入 |
+| `preview_interval_ms/auxiliary_deadline_ms` | 按同源契约校验；文件入口不产生预览，辅助关闭，因此不启动对应实时/辅助步骤 |
+| token 上限、VAD 声学阈值、媒体/对象读取界限 | 由批准部署显式提供；VAD tuning 必须匹配原策略 revision，不从当前默认或示例补值 |
+
+`open(request, cancelled=...)` 返回原 `FileAsrTranscription` 的单次迭代器，退出、调用方异常、
+取消和期限耗尽均关闭媒体与私有临时流。绑定在对象读取期间变化也不允许改投另一模型。
+`has_dispatched` 只表示可能已有识别调用；不是接收回执、持久引擎状态或停止/释放证明。
+本地期限检查不替代数据库的租约准入或 A 的预算裁决。
+媒体/VAD 保留段关闭时钟的保守下界（含关闭该段的批次处理），不在延迟交付 pending 段时
+重新计时。识别在外发前检查剩余窗口，以剩余时间约束异步调用，且在返回/输出前再次检查；
+等待期间过期、引擎迟到或不响应均不产生成功 final。该时钟只用于本进程的期限，不充当源音频
+时间戳、可跨进程恢复的事实或 GPU 释放证据。
+
+调用方必须已持久记录并授权原执行；不能把该长迭代器放进原入口锁的短提交握手，也不能
+注册成绕过准入的公开接口。真实引擎受控接收/恢复、强停止事实、最终发布、重叠合并及
+其他参数/资源能力仍待后续闭环装配；本消费者不宣称这些能力已实现。
 
 ## 验证范围
 
-单元入口：`tests/unit/gateway/test_original_command.py`、`test_execution_objects.py`。
+单元入口：`tests/unit/gateway/test_original_command.py`、`test_execution_objects.py`、
+`test_file_asr_command.py`。
 `test_execution_object_sdk.py` 使用真实 SDK 的 get/stat 与受控底层 HTTP 响应，
 以正文读取即失败的 guard 验证巨型、分块、压缩和其他错误状态零正文读取及清理。
 实际隔离服务入口：`tests/integration/test_gateway_frozen_inputs.py`，使用集成门禁规定的
 PG/InnoDB/MinIO 环境变量，缺服务不算通过，配置见[集成测试说明](../../tests/integration/README.md)。
 
 集成覆盖原网关角色、原命令往返与篡改/清理/版本拒绝，stat/GET 之间覆盖时的版本固定，
-以及持久原请求→真实 MinIO→真实媒体解码→现有 VAD/文件识别消费者。
+以及持久原请求→同源命令参数转换→真实 MinIO→真实媒体解码→现有 VAD/文件识别消费者，
+核对原语言、提示词、温度、期限、切段与策略摘要，不再手工另填识别策略。
 VAD/识别端口使用合成测试替身，不加载模型，不使用私人语料；无预算、停止或发布写入。
 真实模型、请求级 abort/status、停止＋释放双证据及物理多机资格另行验收。

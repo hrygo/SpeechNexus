@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus administration API",
-    "version": "0.1.0.dev3",
+    "version": "0.1.0.dev4",
     "description": "Deployment-scoped administration and observation API. These routes do not\nestablish a user identity, role, or tenant boundary. A deployment may expose\nthem on a separate listener or route allowlist, but the API itself must not\npretend that hiding a navigation entry is authorization.\n\nModel binding revisions, runtime instances, capacity manifests, and\nqualification reports are separate resources. No response exposes private\nartifact paths, engine endpoints, credentials, or arbitrary container\ncontrol.\n"
   },
   "security": [
@@ -2329,7 +2329,7 @@
         }
       },
       "ProfileCreateMethodNotAllowed": {
-        "description": "The selected draft creation path accepts POST only.",
+        "description": "The selected profile mutation path accepts POST only.",
         "headers": {
           "Allow": {
             "required": true,
@@ -2383,7 +2383,7 @@
         }
       },
       "ProfileMediaUnsupported": {
-        "description": "Draft creation requires application/json encoded as UTF-8.",
+        "description": "Profile mutations require application/json encoded as UTF-8.",
         "content": {
           "application/json": {
             "schema": {

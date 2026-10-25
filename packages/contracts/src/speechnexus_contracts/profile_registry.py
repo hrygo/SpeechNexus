@@ -16,5 +16,5 @@ PROFILES = frozenset(
     )
 )
 HTTP_PROFILES = frozenset(
-    ("admin", "runtime", "workbench", "profile", "binding", "binding_defaults")
+    ("admin", "runtime", "workbench", "profile", "profile_lifecycle", "binding", "binding_defaults")
 )

@@ -34,7 +34,7 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 识别消费者，真实引擎、完整有效参数、停止证明与最终发布仍待装配。父包和 Gate 不关闭。
 A/C 的派工仍按各自 Issue 状态核对。
 
-团队 A 当前集成基线 main `2bd6acc`：#133私有原子revision/default snapshot存储与原键恢复、
+团队 A 当前集成基线 main `944ab54`：#133私有原子revision/default snapshot存储与原键恢复、
 #134显式四表writer的producer POST/固定parent与snapshot GET，均已管理合入并完成合后CI。
 #134受审head `3aa8129`，合入 `a3611c2`；合前/合后11项均成功，378/310秒，3566非集成
 passed/81.27%、1243集成passed与22既有PG-only跳过单列，六分片来源/摘要/完整union已核验。
@@ -44,7 +44,12 @@ passed/81.27%、1243集成passed与22既有PG-only跳过单列，六分片来源
 静态/契约，两层always汇总及保护名称保留。PR/合后13项成功为258/211秒；旧3566项经一项
 明确改名后全部保留、净增62项，集成1265项清单不变。A独立核验六ZIP/精确source/完整union，
 仅同步[CI审计](../audits/2026-10-24-ci-efficiency.md#第六轮python-静态契约与完整测试并行的独立核验)，
-不重复改workflow；两次小于5分钟不代表长尾上限或真实引擎资格。证据发布PR仍待管理复审。
+不重复改workflow；两次小于5分钟不代表长尾上限或真实引擎资格。证据PR #135已管理合入，
+精确head/合后13项CI成功265/210秒，本地main交接完成。
+下一A00/A02有限单元是[Profile发布/激活契约前置](../architecture/profile-lifecycle-contract.md)：
+复用原请求DTO与完整Profile源，补503原路径/原意图/原键恢复和入口拒绝，成功响应限published。
+独立future Python/TS surface不扩当前草稿运行入口；4项源反例RED→GREEN，95定向、3732完整非集成
+passed/81.47%、1116TS与源码外wheel通过，精确head CI及管理审查仍待核验。
 发布/激活/默认指针、最终参数解析与真实引擎资格仍待；A03/A04文件闭环和真实联合资格
 保持原验收。未执行生产grant/迁移/部署，A00–A07、父包与Gate保持OPEN，见#19/#21；B/C状态由各队维护。
 

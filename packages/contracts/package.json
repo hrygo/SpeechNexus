@@ -16,6 +16,7 @@
     "./realtime-events": "./src/realtime_events.ts",
     "./scenario-profiles": "./src/scenario_profiles.ts",
     "./profile-http": "./src/profile-http.ts",
+    "./profile-lifecycle-http": "./src/profile_lifecycle-http.ts",
     "./model-bindings": "./src/model_bindings.ts",
     "./binding-http": "./src/binding-http.ts",
     "./gateway-recovery": "./src/gateway_recovery.ts",

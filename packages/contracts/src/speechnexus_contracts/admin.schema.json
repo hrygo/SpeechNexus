@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminContracts",
-  "x-nexus-bindings-version": "0.1.0.dev3",
+  "x-nexus-bindings-version": "0.1.0.dev4",
   "x-nexus-entrypoints": [
     "WorkspaceCreateRequest",
     "WorkspacePatch",
@@ -9,7 +9,10 @@
     "WorkspaceList",
     "ErrorResponse",
     "ProfileRevisionCreateRequest",
-    "ModelBindingCreateRequest"
+    "ModelBindingCreateRequest",
+    "ProfilePublicationRequest",
+    "ProfileActivationRequest",
+    "ProfilePublishedRevision"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -1453,6 +1456,461 @@
     "External_shared_capability_domains_schema_json_ReleaseTier": {
       "type": "string",
       "enum": ["experimental", "best_effort", "production"]
+    },
+    "ProfilePublicationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_revision", "expected_current_revision", "validation"],
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validation": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_ProfileValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "revision",
+        "validation_report_id",
+        "validated_at",
+        "status",
+        "evidence_digest"
+      ],
+      "properties": {
+        "profile_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+        },
+        "validation_report_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier"
+        },
+        "validated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["experimental", "production"]
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Sha256Digest"
+        },
+        "corpus_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "External_scenario_profile_schema_json_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_scenario_profile_schema_json_Revision": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+    },
+    "External_scenario_profile_schema_json_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "ProfileActivationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_current_revision"],
+      "properties": {
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ProfilePublishedRevision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Root"
+        },
+        {
+          "type": "object",
+          "required": ["validation"],
+          "properties": {
+            "validation": {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+            },
+            "publication": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "published"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_scenario_profile_schema_json_Root": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ScenarioProfileRevision",
+      "description": "Immutable scenario preset revision. A profile composes explicit ASR/TTS policy parameters with capability requirements, validation evidence, and publication lifecycle metadata. It never carries scheduling priority, engine endpoints, model paths, credentials, or user identity.",
+      "type": "object",
+      "required": ["schema_version", "profile_id", "revision", "publication"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Identifier",
+          "description": "Stable profile family identifier. The pair (profile_id, revision) is immutable."
+        },
+        "revision": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+        },
+        "publication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "published_at", "retired_at", "disabled_reason"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["draft", "published", "retired", "disabled"]
+            },
+            "published_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "retired_at": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled_reason": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "validation": {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileValidation"
+        },
+        "supersedes_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/External_scenario_profile_schema_json_Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_scenario_profile_schema_json_ProfileDefinition"
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "draft"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "published_at": {
+                    "type": "null"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "published"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "retired"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at", "retired_at"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "disabled_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "const": "disabled"
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "properties": {
+              "publication": {
+                "required": ["published_at", "disabled_reason"],
+                "properties": {
+                  "published_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "retired_at": {
+                    "type": "null"
+                  },
+                  "disabled_reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "publication": {
+                "properties": {
+                  "status": {
+                    "not": {
+                      "const": "draft"
+                    }
+                  }
+                },
+                "required": ["status"]
+              }
+            },
+            "required": ["publication"]
+          },
+          "then": {
+            "required": ["validation"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "asr"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["asr"],
+                "not": {
+                  "required": ["tts"]
+                },
+                "properties": {
+                  "output": {
+                    "not": {
+                      "required": ["audio_format"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "tts"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["tts"],
+                "not": {
+                  "required": ["asr"]
+                },
+                "properties": {
+                  "output": {
+                    "not": {
+                      "required": ["transcript_format"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "duplex"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": ["asr", "tts"]
+              },
+              "execution_classes": {
+                "contains": {
+                  "const": "realtime"
+                },
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "release_tier": {
+                "const": "production"
+              }
+            },
+            "required": ["release_tier"]
+          },
+          "then": {
+            "properties": {
+              "validation": {
+                "properties": {
+                  "status": {
+                    "const": "production"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
     }
   },
   "anyOf": [
@@ -1476,6 +1934,15 @@
     },
     {
       "$ref": "#/$defs/ModelBindingCreateRequest"
+    },
+    {
+      "$ref": "#/$defs/ProfilePublicationRequest"
+    },
+    {
+      "$ref": "#/$defs/ProfileActivationRequest"
+    },
+    {
+      "$ref": "#/$defs/ProfilePublishedRevision"
     }
   ]
 }

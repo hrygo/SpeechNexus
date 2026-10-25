@@ -146,6 +146,28 @@ export interface paths {
      *     A changed pointer returns 409 `configuration_changed`. An identical
      *     Idempotency-Key replay returns the original publication; a changed
      *     intent under the same key returns 409 `idempotency_conflict`.
+     *
+     *     The submitted validation identifies evidence to verify, not authority
+     *     to publish. The server must resolve trusted evidence for this fixed
+     *     profile revision and recheck its current applicability; a schema-valid
+     *     report or caller-supplied digest alone cannot establish qualification.
+     *
+     *     An unreadable original result or uncertain commit returns 503
+     *     `profile_result_unknown`, with `retryable: false`. This does not prove
+     *     that publication or pointer activation failed. Only a caller retaining
+     *     the original Idempotency-Key may explicitly replay this same POST with
+     *     the complete original path, body and key to recover its original result,
+     *     before re-evaluating a new mutation or current-pointer CAS. There is no
+     *     automatic retry, new key, Operation or HTTP query-by-key resource.
+     *     Keyless unknown results have no promised automatic recovery. A fixed
+     *     revision GET describes that resource, not the outcome of this command;
+     *     unreadable metadata cannot be reported as confirmed absence.
+     *
+     *     Malformed path/header/body input returns 400. Bounded ingress may refuse
+     *     Host/Origin (403), method (405 with Allow: POST), receive timeout (408),
+     *     size (413), non-JSON media (415), or local receive capacity (429).
+     *     These refusals describe this HTTP attempt and do not settle an earlier
+     *     original-key result or authorize a different key or automatic mutation.
      */
     post: operations["publishProfileRevision"];
     delete?: never;
@@ -172,6 +194,25 @@ export interface paths {
      *     activated. An identical Idempotency-Key replay returns the original
      *     activation; a changed intent under the same key returns 409
      *     `idempotency_conflict`.
+     *
+     *     An unreadable original result or uncertain commit returns 503
+     *     `profile_result_unknown`, with `retryable: false`; it is not evidence
+     *     that the pointer stayed unchanged. Only a caller retaining the original
+     *     Idempotency-Key may explicitly replay this same POST with its complete
+     *     original path, body and key to recover its original result, before
+     *     evaluating a new mutation or the current-pointer CAS. No automatic
+     *     retry, new key, Operation or HTTP query-by-key resource is provided.
+     *     Keyless unknown results have no promised automatic recovery. A fixed
+     *     revision GET does not prove the outcome or identity of this command;
+     *     unreadable metadata cannot be reported as confirmed absence.
+     *
+     *     Malformed path/header/body input returns 400. Bounded ingress may refuse
+     *     Host/Origin (403), method (405 with Allow: POST), receive timeout (408),
+     *     size (413), non-JSON media (415), or local receive capacity (429).
+     *     These refusals do not settle an earlier original-key result or permit
+     *     a different key or an automatic mutation. Lifecycle/CAS conflicts retain
+     *     the existing 409 response; activation never changes revision contents
+     *     or treats a draft/retired/disabled revision as published.
      */
     post: operations["activatePublishedProfileRevision"];
     delete?: never;
@@ -623,6 +664,13 @@ export interface components {
       expected_revision: components["schemas"]["Revision"];
       expected_current_revision: components["schemas"]["Revision"] | null;
       validation: components["schemas"]["ProfileValidation"];
+    };
+    ProfilePublishedRevision: components["schemas"]["scenario-profile.schema"] & {
+      validation: components["schemas"]["ProfileValidation"];
+      publication?: {
+        /** @constant */
+        status?: "published";
+      };
     };
     ProfileActivationRequest: {
       expected_current_revision: components["schemas"]["Revision"] | null;
@@ -3144,7 +3192,7 @@ export interface components {
         "application/json": components["schemas"]["ProfileDraftConflictError"];
       };
     };
-    /** @description The selected draft creation path accepts POST only. */
+    /** @description The selected profile mutation path accepts POST only. */
     ProfileCreateMethodNotAllowed: {
       headers: {
         Allow: "POST";
@@ -3182,7 +3230,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
-    /** @description Draft creation requires application/json encoded as UTF-8. */
+    /** @description Profile mutations require application/json encoded as UTF-8. */
     ProfileMediaUnsupported: {
       headers: {
         [name: string]: unknown;
@@ -3202,6 +3250,16 @@ export interface components {
     };
     /** @description Original creation result unreadable or commit uncertain; retain original intent/key. */
     ProfileCreationUnknown: {
+      headers: {
+        "X-Request-ID": components["headers"]["XRequestId"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ProfileCreationUnknownError"];
+      };
+    };
+    /** @description Original lifecycle result unreadable or commit uncertain; retain original path/intent/key. */
+    ProfileLifecycleUnknown: {
       headers: {
         "X-Request-ID": components["headers"]["XRequestId"];
         [name: string]: unknown;
@@ -3577,21 +3635,28 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Profile revision published and activated. */
+      /** @description Profile revision published and activated, or the original publication replayed. */
       200: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["scenario-profile.schema"];
+          "application/json": components["schemas"]["ProfilePublishedRevision"];
         };
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["ProfileCreateMethodNotAllowed"];
+      408: components["responses"]["ProfileReceiveTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["ProfileRequestTooLarge"];
+      415: components["responses"]["ProfileMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["ProfileReceiveFull"];
+      503: components["responses"]["ProfileLifecycleUnknown"];
     };
   };
   activatePublishedProfileRevision: {
@@ -3613,20 +3678,27 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Published profile revision activated. */
+      /** @description Published profile revision activated, or the original activation replayed. */
       200: {
         headers: {
           "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["scenario-profile.schema"];
+          "application/json": components["schemas"]["ProfilePublishedRevision"];
         };
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["ProfileCreateMethodNotAllowed"];
+      408: components["responses"]["ProfileReceiveTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["ProfileRequestTooLarge"];
+      415: components["responses"]["ProfileMediaUnsupported"];
+      429: components["responses"]["ProfileReceiveFull"];
+      503: components["responses"]["ProfileLifecycleUnknown"];
     };
   };
   retireProfileRevision: {

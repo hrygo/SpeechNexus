@@ -51,7 +51,10 @@
         "WorkspaceList",
         "ErrorResponse",
         "ProfileRevisionCreateRequest",
-        "ModelBindingCreateRequest"
+        "ModelBindingCreateRequest",
+        "ProfilePublicationRequest",
+        "ProfileActivationRequest",
+        "ProfilePublishedRevision"
       ]
     },
     "workbench": {
@@ -247,6 +250,16 @@
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
       ],
       "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
+    },
+    "profile_lifecycle": {
+      "source": "admin-openapi.yaml",
+      "validate": true,
+      "typescript_source": "admin",
+      "paths": [
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
+        "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations"
+      ],
+      "operations": ["publishProfileRevision", "activatePublishedProfileRevision"]
     },
     "binding": {
       "source": "admin-openapi.yaml",

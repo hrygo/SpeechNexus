@@ -1,0 +1,2507 @@
+{
+  "version": "0.1.0.dev4",
+  "scope": "Synthetic contracts only; no publisher, trusted report or physical qualification.",
+  "examples": [
+    {
+      "id": "publish-original",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "publish-keyless",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "publish-full-range-cas",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": "9999999999999999999",
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "publish-invalid-latest",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "latest"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-invalid-number-revision",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": 1
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-missing-current",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-invalid-current",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": true,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-unknown-body-field",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "operation_id": "fabricated-operation"
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-invalid-key",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "short",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-duplicate-header",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic",
+          "idempotency-key": "second-synthetic-key"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-unknown-query",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        },
+        "query": {
+          "latest": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-unknown-path",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "operation_id": "fabricated-operation"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-missing-validation",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1"
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-missing-evidence-digest",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-invalid-validation-tier",
+      "operation": "publishProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "expected_revision": "1",
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "ready",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "headers": {
+          "Idempotency-Key": "publish-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "publish-published",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "publish-success-invalid-draft",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "publish-success-invalid-retired",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "retired",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": "2026-10-25T00:01:00Z",
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "publish-success-invalid-disabled",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "disabled",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": "synthetic disabled state"
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "publish-success-missing-validation",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "publish-success-null-publication-time",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "publish-unknown",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-retryable",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-retry-after",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false,
+            "retry_after_ms": 100
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-wrong-type",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "api_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-absence",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "resource_not_found",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-operation",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false,
+            "nexus": {
+              "operation_id": "fabricated-operation"
+            }
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-unknown-invalid-wrong-param",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": "validation",
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "publish-http-400",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "publish-http-401",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "credential_required",
+            "type": "authentication_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "publish-http-403",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "origin_forbidden",
+            "type": "permission_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 403
+    },
+    {
+      "id": "publish-http-404",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "resource_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "publish-http-408",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "receive_timeout",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 408
+    },
+    {
+      "id": "publish-http-409",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "publish-http-413",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "request_too_large",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 413
+    },
+    {
+      "id": "publish-http-415",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "unsupported_media_type",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 415
+    },
+    {
+      "id": "publish-http-429",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "receive_capacity_full",
+            "type": "rate_limit_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 429
+    },
+    {
+      "id": "publish-http-422",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_configuration",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 422
+    },
+    {
+      "id": "publish-method",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST"
+        }
+      },
+      "valid": true,
+      "status": 405
+    },
+    {
+      "id": "publish-method-invalid-missing",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {}
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "publish-method-invalid-wrong",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "GET"
+        }
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "publish-method-invalid-duplicate",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST",
+          "allow": "POST"
+        }
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "publish-invalid-status",
+      "operation": "publishProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 201
+    },
+    {
+      "id": "activate-original",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-keyless",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-full-range-cas",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": "9999999999999999999"
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-invalid-latest",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "latest"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-invalid-number-revision",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": 1
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-missing-current",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {},
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-invalid-current",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": true
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-unknown-body-field",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null,
+          "operation_id": "fabricated-operation"
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-invalid-key",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "short",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-duplicate-header",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic",
+          "idempotency-key": "second-synthetic-key"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-unknown-query",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        },
+        "query": {
+          "latest": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-unknown-path",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "operation_id": "fabricated-operation"
+        },
+        "body": {
+          "expected_current_revision": null
+        },
+        "headers": {
+          "Idempotency-Key": "activate-original-synthetic",
+          "X-Request-ID": "lifecycle-synthetic"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-published",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "activate-success-invalid-draft",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "draft",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "activate-success-invalid-retired",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "retired",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": "2026-10-25T00:01:00Z",
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "activate-success-invalid-disabled",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "disabled",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": "synthetic disabled state"
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "activate-success-missing-validation",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "activate-success-null-publication-time",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": null,
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 200
+    },
+    {
+      "id": "activate-unknown",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-retryable",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": true
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-retry-after",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false,
+            "retry_after_ms": 100
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-wrong-type",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "api_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-absence",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "resource_not_found",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-operation",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false,
+            "nexus": {
+              "operation_id": "fabricated-operation"
+            }
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-unknown-invalid-wrong-param",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "profile_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": "validation",
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false,
+      "status": 503
+    },
+    {
+      "id": "activate-http-400",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 400
+    },
+    {
+      "id": "activate-http-401",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "credential_required",
+            "type": "authentication_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 401
+    },
+    {
+      "id": "activate-http-403",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "origin_forbidden",
+            "type": "permission_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 403
+    },
+    {
+      "id": "activate-http-404",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "resource_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 404
+    },
+    {
+      "id": "activate-http-408",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "receive_timeout",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 408
+    },
+    {
+      "id": "activate-http-409",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "activate-http-413",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "request_too_large",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 413
+    },
+    {
+      "id": "activate-http-415",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "unsupported_media_type",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 415
+    },
+    {
+      "id": "activate-http-429",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "receive_capacity_full",
+            "type": "rate_limit_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true,
+      "status": 429
+    },
+    {
+      "id": "activate-method",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST"
+        }
+      },
+      "valid": true,
+      "status": 405
+    },
+    {
+      "id": "activate-method-invalid-missing",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {}
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "activate-method-invalid-wrong",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "GET"
+        }
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "activate-method-invalid-duplicate",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic lifecycle contract result.",
+            "param": null,
+            "request_id": "lifecycle-synthetic",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST",
+          "allow": "POST"
+        }
+      },
+      "valid": false,
+      "status": 405
+    },
+    {
+      "id": "activate-invalid-status",
+      "operation": "activatePublishedProfileRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "display_name": "Caption draft",
+          "kind": "asr",
+          "release_tier": "experimental",
+          "execution_classes": [
+            "realtime"
+          ],
+          "parameters": {
+            "asr": {
+              "language": "zh",
+              "preview_interval_ms": 500,
+              "max_segment_ms": 8000,
+              "finalization": "full_segment",
+              "final_deadline_ms": 2000,
+              "auxiliary_deadline_ms": 5000,
+              "rollback_tokens": 5,
+              "turn_detection": {
+                "mode": "server_vad",
+                "silence_duration_ms": 400
+              },
+              "vocabulary_set_revision": null,
+              "alignment": "off",
+              "diarization": "off"
+            },
+            "output": {
+              "transcript_format": "json",
+              "save_artifacts": false
+            }
+          },
+          "required_capabilities": [
+            {
+              "capability": "asr.streaming_preview",
+              "required": true
+            },
+            {
+              "capability": "asr.full_segment_review",
+              "required": true
+            }
+          ],
+          "override_allowlist": [
+            "asr.language",
+            "asr.preview_interval_ms"
+          ],
+          "override_ranges": {
+            "asr.preview_interval_ms": {
+              "minimum": 300,
+              "maximum": 1000
+            }
+          },
+          "slo_ref": "slo/realtime-caption-v1",
+          "schema_version": "1.0.0",
+          "profile_id": "caption-draft",
+          "revision": "1",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-25T00:00:00Z",
+            "retired_at": null,
+            "disabled_reason": null
+          },
+          "validation": {
+            "profile_id": "caption-draft",
+            "revision": "1",
+            "validation_report_id": "validation-synthetic-lifecycle",
+            "validated_at": "2026-10-25T00:00:00Z",
+            "status": "experimental",
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "valid": false,
+      "status": 201
+    }
+  ]
+}

@@ -331,6 +331,14 @@ responses are declared on the source GET operations. These are contract
 artifacts; the backend separately connects the same two GET operations to
 read-only PostgreSQL and its configured runtime. Planned writes remain unregistered.
 
+The independent future `profile-lifecycle-http` surface selects profile publication
+and activation from admin `0.1.0.dev4`, with same-source request DTOs, published-only
+success validation, bounded ingress responses and original-path/body/key recovery
+after 503. Existing draft `profile-http` still selects create/fixed-get only.
+These artifacts do not register a publisher, grant authority to caller-supplied
+validation evidence or establish production qualification. See
+[the contract preflight](../docs/architecture/profile-lifecycle-contract.md).
+
 ## Validation
 
 Run:

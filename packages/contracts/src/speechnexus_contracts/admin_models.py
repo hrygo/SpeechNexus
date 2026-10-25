@@ -373,6 +373,25 @@ class ExternalModelBindingSchemaJsonVoiceParameterDomain(TypedDict):
 type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
     "experimental", "best_effort", "production"
 ]
+type ExternalScenarioProfileSchemaJsonIdentifier = ExternalSharedIdentifiersSchemaJsonIdentifier
+type ExternalScenarioProfileSchemaJsonRevision = ExternalSharedIdentifiersSchemaJsonRevision
+type ExternalScenarioProfileSchemaJsonSha256Digest = ExternalSharedIdentifiersSchemaJsonSha256Digest
+
+
+class Publication(TypedDict):
+    status: Literal["published"]
+    published_at: str | None
+    retired_at: str | None
+    disabled_reason: str | None
+
+
+class Publication1(TypedDict):
+    status: Literal["draft", "published", "retired", "disabled"]
+    published_at: str | None
+    retired_at: str | None
+    disabled_reason: str | None
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 type Revision = ExternalSharedIdentifiersSchemaJsonRevision
 
@@ -464,6 +483,21 @@ type ExternalModelBindingSchemaJsonReleaseTier = (
 )
 
 
+class ExternalScenarioProfileSchemaJsonProfileValidation(TypedDict):
+    profile_id: ExternalScenarioProfileSchemaJsonIdentifier
+    revision: ExternalScenarioProfileSchemaJsonRevision
+    validation_report_id: ExternalScenarioProfileSchemaJsonIdentifier
+    validated_at: str
+    status: Literal["experimental", "production"]
+    evidence_digest: ExternalScenarioProfileSchemaJsonSha256Digest
+    corpus_revision: NotRequired[str]
+    notes: NotRequired[str]
+
+
+class ProfileActivationRequest(TypedDict):
+    expected_current_revision: Revision | None
+
+
 class WorkspaceCreateRequest(TypedDict):
     display_name: str
     policy_id: NotRequired[Identifier]
@@ -542,6 +576,12 @@ class ExternalModelBindingSchemaJsonExecutionRecipe(TypedDict):
     requires_complete_reservation: NotRequired[bool]
 
 
+class ProfilePublicationRequest(TypedDict):
+    expected_revision: Revision
+    expected_current_revision: Revision | None
+    validation: ExternalScenarioProfileSchemaJsonProfileValidation
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -580,6 +620,28 @@ class ModelBindingCreateRequest(TypedDict):
     release_tier: ExternalModelBindingSchemaJsonReleaseTier
 
 
+class ExternalScenarioProfileSchemaJsonRoot(TypedDict):
+    display_name: str
+    description: NotRequired[str]
+    kind: Literal["asr", "tts", "duplex"]
+    release_tier: ExternalScenarioProfileSchemaJsonProfileReleaseTier
+    execution_classes: list[ExternalScenarioProfileSchemaJsonExecutionClass]
+    parameters: ExternalScenarioProfileSchemaJsonProfileParameters
+    required_capabilities: list[ExternalScenarioProfileSchemaJsonCapabilityRequirement]
+    override_allowlist: list[ExternalScenarioProfileSchemaJsonParameterPath]
+    override_ranges: dict[
+        ExternalScenarioProfileSchemaJsonParameterPath,
+        ExternalScenarioProfileSchemaJsonOverrideRange,
+    ]
+    slo_ref: str
+    schema_version: Literal["1.0.0"]
+    profile_id: ExternalScenarioProfileSchemaJsonIdentifier
+    revision: ExternalScenarioProfileSchemaJsonRevision
+    publication: Publication1
+    validation: NotRequired[ExternalScenarioProfileSchemaJsonProfileValidation]
+    supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
+
+
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
     operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
@@ -601,6 +663,28 @@ class ProfileRevisionCreateRequest(TypedDict):
     slo_ref: str
     profile_id: Identifier
     expected_latest_revision: Revision | None
+
+
+class ProfilePublishedRevision(TypedDict):
+    display_name: str
+    description: NotRequired[str]
+    kind: Literal["asr", "tts", "duplex"]
+    release_tier: ExternalScenarioProfileSchemaJsonProfileReleaseTier
+    execution_classes: list[ExternalScenarioProfileSchemaJsonExecutionClass]
+    parameters: ExternalScenarioProfileSchemaJsonProfileParameters
+    required_capabilities: list[ExternalScenarioProfileSchemaJsonCapabilityRequirement]
+    override_allowlist: list[ExternalScenarioProfileSchemaJsonParameterPath]
+    override_ranges: dict[
+        ExternalScenarioProfileSchemaJsonParameterPath,
+        ExternalScenarioProfileSchemaJsonOverrideRange,
+    ]
+    slo_ref: str
+    schema_version: Literal["1.0.0"]
+    profile_id: ExternalScenarioProfileSchemaJsonIdentifier
+    revision: ExternalScenarioProfileSchemaJsonRevision
+    publication: Publication
+    validation: ExternalScenarioProfileSchemaJsonProfileValidation
+    supersedes_revision: NotRequired[ExternalScenarioProfileSchemaJsonRevision | None]
 
 
 class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
@@ -627,4 +711,7 @@ type AdminContracts = (
     | ErrorResponse
     | ProfileRevisionCreateRequest
     | ModelBindingCreateRequest
+    | ProfilePublicationRequest
+    | ProfileActivationRequest
+    | ProfilePublishedRevision
 )

@@ -2708,6 +2708,9 @@
           "408": {
             "$ref": "#/components/responses/RequestTimeout"
           },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
           },

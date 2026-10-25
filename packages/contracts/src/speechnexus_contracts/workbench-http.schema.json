@@ -2634,6 +2634,11 @@
           "headers": {},
           "json": true
         },
+        "413": {
+          "schema": "HttpResponse_getVoiceRevisionV2_413",
+          "headers": {},
+          "json": true
+        },
         "500": {
           "schema": "HttpResponse_getVoiceRevisionV2_500",
           "headers": {},
@@ -3639,6 +3644,7 @@
     "HttpResponse_getVoiceRevisionV2_401",
     "HttpResponse_getVoiceRevisionV2_404",
     "HttpResponse_getVoiceRevisionV2_408",
+    "HttpResponse_getVoiceRevisionV2_413",
     "HttpResponse_getVoiceRevisionV2_500",
     "HttpResponse_getVoiceRevisionV2_503",
     "HttpRequest_getWorkbenchStatusV2",
@@ -15248,6 +15254,22 @@
       "required": ["body"]
     },
     "HttpResponse_getVoiceRevisionV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_413": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

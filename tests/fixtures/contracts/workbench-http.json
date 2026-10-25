@@ -13469,6 +13469,28 @@
           "disabled_reason": null
         }
       }
+    },
+    {
+      "id": "getVoiceRevisionV2-response-declared-413",
+      "kind": "response",
+      "operation": "getVoiceRevisionV2",
+      "status": 413,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     }
   ]
 }

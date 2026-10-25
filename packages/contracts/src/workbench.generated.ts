@@ -3663,6 +3663,7 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
       500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
     };

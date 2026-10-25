@@ -158,6 +158,20 @@ async def test_complete_disabled_reason_uses_v2_without_breaking_v1(
         assert response.json()["retired_at"] == "2026-10-24T12:00:00Z"
 
 
+async def test_v2_oversized_get_body_is_a_declared_error_without_calling_the_base() -> None:
+    port = Port()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=build(WorkbenchVoices(port))),
+        base_url="http://workbench.test",
+    ) as client:
+        response = await client.request(
+            "GET", f"/v2/workbench/voices/{VOICE}/revisions/2", content=b"x" * (64 * 1024 + 1)
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["error"]["code"] == "request_too_large"
+    assert port.calls == []
+
+
 async def test_a_missing_revision_is_a_declared_not_found() -> None:
     port = Port()
     port.failure = ResourceNotFoundError()

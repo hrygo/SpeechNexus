@@ -131,7 +131,13 @@ async def test_five_operations_use_generated_shapes_and_pin_server_workspace() -
         assert service.calls[4]["minutes_id"] == "minutes-demo"
         schema = (await c.get("/openapi.json")).json()
         # Voice reads and public downloads answer stable unavailable errors when unconfigured.
-        assert sum(len(p) for p in schema["paths"].values()) == 23
+        assert sum(len(p) for p in schema["paths"].values()) == 24
+        assert (
+            schema["paths"]["/v2/workbench/voices/{voice_id}/revisions/{revision}"]["get"][
+                "operationId"
+            ]
+            == "getVoiceRevisionV2"
+        )
         status = (await c.get("/v2/workbench/status")).json()
         assert status["workbench_enabled"] and status["llm_enabled"]
         assert status["minutes_profile"] == {

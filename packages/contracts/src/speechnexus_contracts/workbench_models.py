@@ -596,6 +596,19 @@ class VoiceRevision(TypedDict):
     disabled_reason: str | None
 
 
+class VoiceRevisionV2(TypedDict):
+    voice_id: Identifier
+    revision: Revision
+    display_name: str
+    status: Literal["published", "retired", "disabled"]
+    languages: list[Language]
+    audio_formats: list[AudioFormat]
+    model_binding: ResourceReference
+    published_at: str
+    retired_at: str | None
+    disabled_reason: str | None
+
+
 class MinutesProfile(TypedDict):
     template_revision: Revision
     llm_model: str
@@ -958,6 +971,7 @@ type WorkbenchContracts = (
     | VoiceList
     | VoiceSummary
     | VoiceRevision
+    | VoiceRevisionV2
     | WorkbenchStatusV2
     | RenderUnitV2
     | RenderUnitCreateRequestV2

@@ -558,6 +558,23 @@ never publishes the unimplemented speech paths in its OpenAPI. Schema default
 annotations stay optional in TypeScript (`--default-non-nullable false`) and
 never cause runtime default insertion. Generated files remain drift-protected.
 
+## Voice catalogue read HTTP contract
+
+The opt-in `voice-catalogue-http` entrypoint selects only `listVoices` and
+`getVoiceRevision` from the existing speech source. Python imports
+`speechnexus_contracts.voice_catalogue_http`; TypeScript imports
+`@speechnexus/contracts/voice-catalogue-http`. Both validate complete public
+revisions, including nested capabilities and lifecycle provenance; neither grants
+publication or retirement methods. Shared positive/negative examples live in
+`tests/fixtures/contracts/voice-catalogue-http.json`.
+
+The running workbench adapter consumes this validator before mapping the C
+projection and checks exact requested voice/revision identity separately.
+Workbench source `0.1.0.dev2` adds `getVoiceRevisionV2` / `VoiceRevisionV2` for
+the public 2000-character disable reason; v1 remains at its frozen 128-character
+bound. Deploy the v2 C route before the updated formal Web consumer. See
+[mapping, upgrade and evidence limits](../../docs/architecture/workbench-voice-catalogue.md).
+
 ## Workspace read HTTP contract
 
 The opt-in `admin-http` surface selects `listWorkspaces` and `getWorkspace`

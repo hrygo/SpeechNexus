@@ -2592,6 +2592,67 @@
         }
       }
     },
+    "getVoiceRevisionV2": {
+      "path": "/v2/workbench/voices/{voice_id}/revisions/{revision}",
+      "method": "get",
+      "request": "HttpRequest_getVoiceRevisionV2",
+      "parameters": {
+        "path": {
+          "voice_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getVoiceRevisionV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getVoiceRevisionV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getVoiceRevisionV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getVoiceRevisionV2_404",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getVoiceRevisionV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getVoiceRevisionV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getVoiceRevisionV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getVoiceRevisionV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
     "getWorkbenchStatusV2": {
       "path": "/v2/workbench/status",
       "method": "get",
@@ -3577,6 +3638,15 @@
     "HttpResponse_getVoiceRevision_408",
     "HttpResponse_getVoiceRevision_500",
     "HttpResponse_getVoiceRevision_503",
+    "HttpRequest_getVoiceRevisionV2",
+    "HttpResponse_getVoiceRevisionV2_200",
+    "HttpResponse_getVoiceRevisionV2_400",
+    "HttpResponse_getVoiceRevisionV2_401",
+    "HttpResponse_getVoiceRevisionV2_404",
+    "HttpResponse_getVoiceRevisionV2_408",
+    "HttpResponse_getVoiceRevisionV2_413",
+    "HttpResponse_getVoiceRevisionV2_500",
+    "HttpResponse_getVoiceRevisionV2_503",
     "HttpRequest_getWorkbenchStatusV2",
     "HttpResponse_getWorkbenchStatusV2_200",
     "HttpResponse_getWorkbenchStatusV2_401",
@@ -6644,6 +6714,73 @@
         "disabled_reason": {
           "type": ["string", "null"],
           "maxLength": 128
+        }
+      }
+    },
+    "VoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "status",
+        "languages",
+        "audio_formats",
+        "model_binding",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "disabled_reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
         }
       }
     },
@@ -14990,6 +15127,181 @@
       "required": ["body"]
     },
     "HttpResponse_getVoiceRevision_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_getVoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "voice_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["voice_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getVoiceRevisionV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceRevisionV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_503": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

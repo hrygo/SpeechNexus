@@ -321,7 +321,7 @@ describe("book export consumer", () => {
     expect(read.status).toBe("retired");
     expect(read.retired_at).toBe("2026-10-25T01:00:00Z");
     const request = fetch.mock.calls[0]![0] as Request;
-    expect(new URL(request.url).pathname).toBe("/v1/workbench/voices/voice_demo/revisions/2");
+    expect(new URL(request.url).pathname).toBe("/v2/workbench/voices/voice_demo/revisions/2");
 
     fetch.mockResolvedValueOnce(reply({ ...revision, revision: "3" }));
     await expect(client.voiceRevision("voice_demo", "2")).rejects.toThrow();

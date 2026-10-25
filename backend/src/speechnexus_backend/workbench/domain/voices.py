@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 MAX_DISPLAY_NAME_LENGTH = 128
+MAX_DISABLED_REASON_LENGTH = 2000
 MAX_LANGUAGE_LENGTH = 35
 MAX_AUDIO_FORMAT_LENGTH = 64
 MAX_CURSOR_LENGTH = 512
@@ -157,11 +158,11 @@ class VoiceRevision:
         if self.retired_at is not None:
             _moment(self.retired_at)
         if self.disabled_reason is not None:
-            _text(self.disabled_reason, MAX_DISPLAY_NAME_LENGTH)
-        if self.status == "retired" and self.retired_at is None:
-            raise ValueError("a retired voice revision carries its retirement moment")
-        if self.status != "retired" and self.retired_at is not None:
-            raise ValueError("only a retired voice revision carries a retirement moment")
+            _text(self.disabled_reason, MAX_DISABLED_REASON_LENGTH)
+        if self.status in {"retired", "disabled"} and self.retired_at is None:
+            raise ValueError("an inactive voice revision carries its retirement moment")
+        if self.status == "published" and self.retired_at is not None:
+            raise ValueError("a published voice revision has no retirement moment")
         if self.status == "disabled" and self.disabled_reason is None:
             raise ValueError("a disabled voice revision carries its reason")
         if self.status != "disabled" and self.disabled_reason is not None:

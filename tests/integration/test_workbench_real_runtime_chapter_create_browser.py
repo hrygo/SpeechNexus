@@ -143,7 +143,7 @@ async def test_a_chapter_created_in_the_production_bundle_is_stored_and_readable
     # stale rename. No speech base means both voice reads are refused.
     assert result["failed"] == [
         {"path": "/v1/workbench/voices", "status": 503},
-        {"path": "/v1/workbench/voices/voice_synthetic/revisions/1", "status": 503},
+        {"path": "/v2/workbench/voices/voice_synthetic/revisions/1", "status": 503},
         {
             "path": f"/v1/workbench/projects/{project['id']}",
             "status": 409,

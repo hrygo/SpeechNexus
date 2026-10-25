@@ -546,8 +546,8 @@ export class WorkbenchClient {
    */
   async voiceRevision(voiceId: string, revision: string, signal?: AbortSignal) {
     const value = result(
-      "VoiceRevision",
-      await this.#api.GET("/v1/workbench/voices/{voice_id}/revisions/{revision}", {
+      "VoiceRevisionV2",
+      await this.#api.GET("/v2/workbench/voices/{voice_id}/revisions/{revision}", {
         params: { path: { voice_id: voiceId, revision } },
         signal: signal ?? null,
       }),

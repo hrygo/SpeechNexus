@@ -141,7 +141,7 @@ def test_http_document_is_closed_isolated_and_only_declares_selected_paths() -> 
     validate(actual)
     manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
     assert set(actual["paths"]) == set(manifest["http_surfaces"]["workbench"]["paths"])
-    assert len(actual["paths"]) == 40
+    assert len(actual["paths"]) == 41
     names: set[str] = set()
     for item in actual["paths"].values():
         for operation in item.values():
@@ -160,7 +160,7 @@ def test_http_document_is_closed_isolated_and_only_declares_selected_paths() -> 
                 e["operation"] == name and e["kind"] == "request" and e["valid"] for e in EXAMPLES
             ), name
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 40
+    assert len(contract()["paths"]) == 41
 
 
 def test_unknown_profile_or_operation_never_selects_user_supplied_files() -> None:

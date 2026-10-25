@@ -231,7 +231,7 @@ it("says a unit has no saved copy instead of implying one exists", async () => {
 it("reads a voice revision with its retirement and disable facts", async () => {
   const { client } = setup([unit()]);
   const read = vi.spyOn(client, "voiceRevision").mockResolvedValue(
-    parse("VoiceRevision", {
+    parse("VoiceRevisionV2", {
       voice_id: "voice_demo",
       revision: "2",
       display_name: "合成音色",
@@ -240,8 +240,8 @@ it("reads a voice revision with its retirement and disable facts", async () => {
       audio_formats: ["wav"],
       model_binding: { id: "binding_demo", revision: "3" },
       published_at: "2026-10-25T00:00:00Z",
-      retired_at: null,
-      disabled_reason: "合成停用原因",
+      retired_at: "2026-10-26T01:00:00Z",
+      disabled_reason: "停".repeat(2000),
     }),
   );
   await screen.findByLabelText("核对音色 id");
@@ -252,8 +252,8 @@ it("reads a voice revision with its retirement and disable facts", async () => {
   const info = await screen.findByRole("status", { name: "音色修订信息" });
   expect(info).toHaveTextContent("合成音色");
   expect(info).toHaveTextContent("disabled");
-  expect(info).toHaveTextContent("合成停用原因");
-  expect(info).toHaveTextContent("未退役");
+  expect(info).toHaveTextContent("停".repeat(2000));
+  expect(info).toHaveTextContent("2026-10-26T01:00:00Z");
   expect(info).toHaveTextContent("binding_demo@3");
   expect(read).toHaveBeenCalledWith("voice_demo", "2");
 });

@@ -69,6 +69,7 @@ def test_plain_probe_and_optional_runtime_still_run_without_coverage() -> None:
     assert "tests/integration/test_workbench_runtime.py" not in plain
     assert "tests/integration/test_workbench_runtime.py" in runtime
     assert runtime.count("tests/integration/test_workbench_runtime_export_dispatch.py") == 1
+    assert runtime.count("tests/integration/test_workbench_runtime_voice_catalogue.py") == 1
     assert not any(argument.startswith("--cov") for argument in runtime)
 
 

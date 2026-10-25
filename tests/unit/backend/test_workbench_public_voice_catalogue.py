@@ -1,7 +1,9 @@
 """The voice catalogue adapter maps the base's answers without inventing any of them."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from typing import Any
 
 import httpx
@@ -24,15 +26,30 @@ SUMMARY = {
     "languages": ["zh-CN"],
     "audio_formats": ["wav"],
 }
-REVISION = {
+REVISION: dict[str, Any] = {
     "resource_type": "voice_revision",
     "voice_id": "voice-demo-1",
     "revision": "2",
     "object": "nexus.voice_revision",
     "status": "published",
     "display_name": "合成旁白",
-    "languages": ["zh-CN"],
-    "audio_formats": ["wav"],
+    "source": {
+        "type": "designed",
+        "draft_id": "draft-demo-1",
+        "draft_revision": "1",
+        "source_asset_digest": None,
+    },
+    "capabilities": {
+        "languages": ["zh-CN"],
+        "audio_formats": ["wav"],
+        "sample_rates_hz": [24000],
+        "modes": ["complete"],
+    },
+    "validation": {
+        "validation_id": "validation-demo-1",
+        "status": "passed",
+        "checked_at": "2026-10-24T12:00:00Z",
+    },
     "model_binding": {"id": "binding-demo-1", "revision": "1"},
     "published_at": "2026-10-24T12:00:00Z",
     "retired_at": None,
@@ -137,12 +154,198 @@ async def test_a_retired_revision_keeps_its_retirement_moment() -> None:
     assert value.status == "retired" and value.retired_at is not None
 
 
+async def test_a_disabled_revision_keeps_its_retirement_and_reason() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return answer(
+            {
+                **REVISION,
+                "status": "disabled",
+                "retired_at": "2026-10-25T08:00:00Z",
+                "disabled_reason": "合成绑定已停用",
+            }
+        )
+
+    value = await catalogue(handler).get_revision(voice_id="voice-demo-1", revision="2")
+    assert value.status == "disabled" and value.retired_at is not None
+    assert value.disabled_reason == "合成绑定已停用"
+
+
+@pytest.mark.parametrize("length", [129, 2000])
+async def test_a_canonical_disabled_reason_is_preserved_without_truncation(length: int) -> None:
+    reason = "停" * length
+    value = await catalogue(
+        lambda _: answer(
+            REVISION
+            | {
+                "status": "disabled",
+                "retired_at": "2026-10-25T08:00:00Z",
+                "disabled_reason": reason,
+            }
+        )
+    ).get_revision(voice_id="voice-demo-1", revision="2")
+    assert value.disabled_reason == reason
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"voice_id":"voice-other-1",' + json.dumps(REVISION).encode()[1:],
+        b" " * (256 * 1024 + 1) + json.dumps(REVISION).encode(),
+    ],
+)
+async def test_duplicate_keys_and_oversized_answers_are_closed(raw: bytes) -> None:
+    stream = Stream(raw)
+    async with httpx.AsyncClient(
+        base_url=BASE,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, headers={"content-type": "application/json"}, stream=stream
+            )
+        ),
+    ) as client:
+        with pytest.raises(VoiceCatalogueUnavailableError):
+            await PublicVoiceCatalogue(client).get_revision(voice_id="voice-demo-1", revision="2")
+    assert stream.closed
+
+
+async def test_caller_cancellation_propagates_and_closes_the_response() -> None:
+    entered = asyncio.Event()
+
+    class Blocked(Stream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            entered.set()
+            await asyncio.Event().wait()
+            yield b""
+
+    stream = Blocked(b"")
+    async with httpx.AsyncClient(
+        base_url=BASE,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, headers={"content-type": "application/json"}, stream=stream
+            )
+        ),
+    ) as client:
+        task = asyncio.create_task(
+            PublicVoiceCatalogue(client).get_revision(voice_id="voice-demo-1", revision="2")
+        )
+        await asyncio.wait_for(entered.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert stream.closed
+
+
+@pytest.mark.parametrize(("key", "value"), [("voice_id", "voice-other-1"), ("revision", "3")])
+async def test_a_revision_cannot_substitute_the_requested_identity(key: str, value: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return answer({**REVISION, key: value})
+
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(handler).get_revision(voice_id="voice-demo-1", revision="2")
+
+
+async def test_the_legacy_flattened_revision_is_not_a_public_revision() -> None:
+    legacy = {k: v for k, v in REVISION.items() if k != "capabilities"}
+    legacy |= {"languages": ["zh-CN"], "audio_formats": ["wav"]}
+
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(lambda _: answer(legacy)).get_revision(
+            voice_id="voice-demo-1", revision="2"
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"object": "other.list", "data": [SUMMARY], "has_more": False, "next_cursor": None},
+        {
+            "object": "nexus.list",
+            "data": [SUMMARY],
+            "has_more": False,
+            "next_cursor": None,
+            "private_endpoint": "synthetic-private-field",
+        },
+    ],
+)
+async def test_listing_does_not_ignore_noncanonical_fields_or_discriminators(value: Any) -> None:
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(lambda _: answer(value)).list_summaries(
+            workspace_id=WORKSPACE, language=None, limit=50, after=None
+        )
+
+
+@pytest.mark.parametrize("field", ["source", "validation", "capabilities", "resource_type"])
+async def test_revision_requires_its_complete_public_provenance(field: str) -> None:
+    value = deepcopy(REVISION)
+    value.pop(field)
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(lambda _: answer(value)).get_revision(voice_id="voice-demo-1", revision="2")
+
+
+async def test_transport_failure_is_an_unavailable_catalogue() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("synthetic connection failure")
+
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(handler).get_revision(voice_id="voice-demo-1", revision="2")
+
+
+async def test_the_total_deadline_closes_an_incomplete_response() -> None:
+    class Blocked(Stream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            await asyncio.Event().wait()
+            yield b""
+
+    stream = Blocked(b"")
+    async with httpx.AsyncClient(
+        base_url=BASE,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, headers={"content-type": "application/json"}, stream=stream
+            )
+        ),
+    ) as client:
+        with pytest.raises(VoiceCatalogueUnavailableError):
+            await asyncio.wait_for(
+                PublicVoiceCatalogue(client, deadline_seconds=0.01).get_revision(
+                    voice_id="voice-demo-1", revision="2"
+                ),
+                0.3,
+            )
+    assert stream.closed
+
+
 async def test_a_missing_revision_is_reported_as_not_found() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return answer({"error": {"code": "resource_not_found"}}, status=404)
 
     with pytest.raises(ResourceNotFoundError):
         await catalogue(handler).get_revision(voice_id="voice-demo-1", revision="9")
+
+
+async def test_an_undeclared_listing_404_is_unavailable() -> None:
+    with pytest.raises(VoiceCatalogueUnavailableError):
+        await catalogue(lambda _: answer({}, status=404)).list_summaries(
+            workspace_id=WORKSPACE, language=None, limit=50, after=None
+        )
+
+
+async def test_redirect_is_refused_even_when_the_injected_client_follows_redirects() -> None:
+    reads: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        reads.append(request.url.path)
+        return httpx.Response(302, headers={"location": "/synthetic-private-target"})
+
+    async with httpx.AsyncClient(
+        base_url=BASE, follow_redirects=True, transport=httpx.MockTransport(handler)
+    ) as client:
+        with pytest.raises(VoiceCatalogueUnavailableError):
+            await PublicVoiceCatalogue(client).list_summaries(
+                workspace_id=WORKSPACE, language=None, limit=50, after=None
+            )
+    assert reads == ["/v1/nexus/voices"]
 
 
 @pytest.mark.parametrize(

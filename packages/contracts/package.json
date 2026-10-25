@@ -8,6 +8,7 @@
     "./admin": "./src/admin.ts",
     "./admin-http": "./src/admin-http.ts",
     "./voice-catalogue-http": "./src/voice_catalogue-http.ts",
+    "./pronunciation-read-http": "./src/pronunciation_read-http.ts",
     "./workbench": "./src/workbench.ts",
     "./execution": "./src/execution.ts",
     "./runtime": "./src/runtime.ts",

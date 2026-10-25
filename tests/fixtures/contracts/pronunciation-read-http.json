@@ -1,0 +1,1213 @@
+{
+  "version": "0.1.0.dev0",
+  "scope": "Synthetic protocol samples; no route, publication or phonetic qualification.",
+  "examples": [
+    {
+      "id": "fixed-big-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "maximum-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9999999999999999999"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "lowercase-header",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "header-omitted",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {}
+      },
+      "valid": true
+    },
+    {
+      "id": "numeric-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": 1
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "boolean-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": true
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "leading-zero-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "01"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "zero-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "0"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "too-large-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "10000000000000000000"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "uppercase-id",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "PRON-SYNTHETIC",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "short-id",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "ab",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "private-path-field",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "key_digest": "synthetic-private-value"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "query-by-key-is-not-a-resource",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {
+          "key": "synthetic-original-key"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-query",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {
+          "cursor": "synthetic"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "read-has-no-body",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        },
+        "body": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "null-is-still-a-body",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        },
+        "body": null
+      },
+      "valid": false
+    },
+    {
+      "id": "ambiguous-header-case",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read",
+          "x-request-id": "other"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "numeric-request-id",
+      "operation": "getPronunciationRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "pronunciation_id": "pron-synthetic-read",
+          "revision": "9007199254740993"
+        },
+        "query": {},
+        "headers": {
+          "X-Request-ID": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "draft-representation",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "published-wire-only",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "published",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "retired-wire-only",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "retired",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "numeric-response-revision",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": 1,
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "wrong-resource-type",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "voice_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "invalid-status",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "ready",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "private-command-field",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z",
+          "key_digest": "synthetic-private-value"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-entry-field",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh",
+              "priority": 1
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "invalid-language",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "ZH"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "confirmed-not-found",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 404,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "not-found-lowercase-headers",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 404,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "cache-control": "no-store",
+          "x-should-retry": "false"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "unavailable-metadata",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "read-retry-after",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "unavailable-as-not-found",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 404,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-as-unavailable",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unavailable-wrong-retry-flag",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unavailable-wrong-header",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unavailable-boolean-header",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-retry-header",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-no-store",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "cacheable-unavailable",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "public",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "metadata-does-not-invent-operation",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true,
+            "nexus": {
+              "operation_id": "operation-synthetic"
+            }
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "absence-does-not-invent-operation",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 404,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false,
+            "nexus": {
+              "operation_id": "operation-synthetic"
+            }
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-with-retry",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 404,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_not_found",
+            "type": "not_found_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-error-field",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true,
+            "internal_endpoint": "synthetic-private-value"
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "method-get-only",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "GET"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "wrong-allow",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Allow": "POST"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-allow",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 405,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_method_not_allowed",
+            "type": "invalid_request_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-request",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 400,
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_pronunciation_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "forbidden-host",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 403,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_host_rejected",
+            "type": "permission_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "read-capacity",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 429,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_ingress_full",
+            "type": "rate_limit_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Retry-After": "1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "reserved-unauthorized",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 401,
+      "value": {
+        "body": {
+          "error": {
+            "code": "invalid_api_key",
+            "type": "authentication_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "undeclared-conflict",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 409,
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": false
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "undeclared-status",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 500,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "invalid-response-envelope",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 200,
+      "value": {
+        "body": {
+          "resource_type": "pronunciation_revision",
+          "id": "pron-synthetic-read",
+          "revision": "9007199254740993",
+          "object": "nexus.pronunciation_revision",
+          "status": "draft",
+          "encoding": "pinyin",
+          "entries": [
+            {
+              "grapheme": "合成",
+              "phonemes": "he2 cheng2",
+              "language": "zh"
+            }
+          ],
+          "created_at": "2026-01-01T00:00:00.000001Z"
+        },
+        "headers": {
+          "X-Request-ID": "synthetic-pron-read"
+        },
+        "internal": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "retry-after-not-integer",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": "soon"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retry-after-negative",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": "-1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retry-after-boolean",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": true
+        }
+      },
+      "valid": false
+    }
+  ]
+}

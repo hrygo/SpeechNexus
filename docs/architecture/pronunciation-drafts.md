@@ -5,6 +5,11 @@ revisions. It does not register public routes, publish a dictionary, select a
 default, execute TTS or establish voice/engine qualification. Public list/create/
 fixed-revision HTTP and the rest of A02/A04 remain separate work.
 
+The [fixed-revision read contract](pronunciation-read-contract.md) now provides
+an opt-in generated GET validator and distinguishes unavailable metadata from
+confirmed absence. It does not register a public route or change this private
+writer's scope.
+
 The canonical request is `PronunciationCreateRequest` in
 `contracts/speech-openapi.yaml`; the response is `PronunciationRevision` in
 `contracts/voice-resource.schema.json`. Both runtime entrypoints are generated

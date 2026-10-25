@@ -318,6 +318,35 @@ async def test_an_empty_book_cannot_be_exported_and_erasure_takes_the_rows(
     assert await rows(export_store, "export_job_receipts") == 0
 
 
+@pytest.mark.parametrize("completed", [0, 1])
+async def test_completion_cannot_invent_missing_progress(
+    export_store: Store, completed: int
+) -> None:
+    _, book_id, _ = await book(export_store, suffix="incomplete")
+    accepted = await create(export_store, book_id, key="incomplete-completion-key")
+    service = exports(export_store)
+    await service.start_export(export_id=accepted.id)
+    await service.record_export_progress(export_id=accepted.id, completed=completed)
+    artifact = ExportArtifact(
+        id="artifact_incomplete",
+        export_id=accepted.id,
+        manifest_revision=accepted.manifest_revision,
+        media_type="application/zip",
+        bytes=4096,
+        sha256=DIGEST,
+        created_at=datetime.now(UTC),
+    )
+    with pytest.raises(ValueError, match="incomplete progress"):
+        await service.complete_export(export_id=accepted.id, artifact=artifact)
+    row = await stored(export_store, accepted.id)
+    assert row["status"] == "running" and row["artifact"] is None
+    assert int(row["progress_completed"]) == completed
+    await service.record_export_progress(export_id=accepted.id, completed=accepted.progress_total)
+    assert (
+        await service.complete_export(export_id=accepted.id, artifact=artifact)
+    ).status == "succeeded"
+
+
 async def test_the_worker_write_path_persists_every_transition(export_store: Store) -> None:
     _, book_id, unit_ids = await book(export_store, suffix="worker")
     export = await create(export_store, book_id, unit_ids=[unit_ids[0]], key="export-worker-key")
@@ -402,8 +431,10 @@ async def test_a_published_bundle_becomes_the_recorded_artifact(export_store: St
         service = exports(export_store)
         await service.start_export(export_id=export.id)
 
-        # Synthetic bundle bytes: real objects, no claim about real audio content.
-        body = b"synthetic export bundle payload\n" * 8
+        # Decodable synthetic audio, never real speech or model output.
+        from tests.fake.export_media import synthetic_export_zip
+
+        body = synthetic_export_zip(chapters=len(unit_ids))
         digest = "sha256:" + hashlib.sha256(body).hexdigest()
         key = f"{book_id}/{export.id}/artifact_demo"
         await zone.put(key=key, body=io.BytesIO(body), length=len(body))
@@ -417,6 +448,7 @@ async def test_a_published_bundle_becomes_the_recorded_artifact(export_store: St
             sha256=digest,
             created_at=datetime.now(UTC),
         )
+        await service.record_export_progress(export_id=export.id, completed=export.progress_total)
         done = await service.complete_export(export_id=export.id, artifact=published)
         assert done.artifact == published
         assert (await stored(export_store, export.id))["artifact"]["sha256"] == digest

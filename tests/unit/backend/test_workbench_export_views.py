@@ -48,15 +48,16 @@ def job(**overrides: Any) -> ExportJob:
 
 def states() -> list[ExportJob]:
     started = job().start(now=NOW + timedelta(1))
+    completed = started.record_progress(completed=started.progress_total, now=NOW + timedelta(2))
     return [
         job(),
         started.record_progress(completed=1, now=NOW + timedelta(2)),
-        started.complete(artifact=artifact(), now=NOW + timedelta(3)),
+        completed.complete(artifact=artifact(), now=NOW + timedelta(3)),
         started.fail(
             error=ExportError("unavailable", "合成导出失败", True), now=NOW + timedelta(3)
         ),
         started.request_cancel(now=NOW + timedelta(2)).settle_cancel(now=NOW + timedelta(3)),
-        started.complete(artifact=artifact(), now=NOW + timedelta(3)).expire(
+        completed.complete(artifact=artifact(), now=NOW + timedelta(3)).expire(
             now=NOW + timedelta(4)
         ),
     ]

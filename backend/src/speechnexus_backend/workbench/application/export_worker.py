@@ -1,9 +1,9 @@
 """Export worker: claim, produce, publish and settle one bounded batch.
 
-The producer is a narrow port because producing content needs the speech pipeline.
-Without one the worker is disabled and jobs stay queued: an unconfigured deployment
-must never invent an artifact. Cancellation is cooperative — the worker notices a
-cancellation at the next reported item, so a started export is not stopped instantly.
+The producer assembles a fixed selection of saved audio; it must not invoke inference.
+Without a producer and validator the worker is disabled and jobs stay queued:
+an unconfigured deployment must never invent an artifact. Cancellation is cooperative:
+the worker notices it at the next progress check, so an export is not stopped instantly.
 """
 
 from __future__ import annotations
@@ -39,6 +39,10 @@ class ExportProducer(Protocol):
     async def produce_export(self, job: ExportJob, *, report: ReportProgress) -> ProducedExport: ...
 
 
+class ExportValidator(Protocol):
+    async def validate_export(self, job: ExportJob, produced: ProducedExport) -> None: ...
+
+
 class ExportWorkerStore(Protocol):
     @property
     def content_writes(self) -> ContentWrites: ...
@@ -68,26 +72,31 @@ class ExportWorker:
         store: ExportWorkerStore,
         zone: ObjectZone | None = None,
         producer: ExportProducer | None = None,
+        validator: ExportValidator | None = None,
     ) -> None:
         self._store = store
         self._zone = zone
         self._producer = producer
+        self._validator = validator
 
     @property
     def enabled(self) -> bool:
-        # Producing needs both a producer and somewhere to publish its bytes.
-        return self._producer is not None and self._zone is not None
+        return self._producer is not None and self._zone is not None and self._validator is not None
 
     async def run_once(self, *, limit: int = 4) -> int:
         """Return how many queued exports this call claimed and settled."""
         if not self.enabled:
             return 0
-        assert self._producer is not None and self._zone is not None
+        assert self._producer is not None and self._zone is not None and self._validator is not None
         claimed = await self._store.claim_queued_exports(limit=limit)
         for job in claimed:
             try:
-                produced = await self._producer.produce_export(job, report=self._reporter(job))
-                artifact = await self._publish(job, produced)
+                progress, produced = await self._produce(job)
+                await self._validator.validate_export(progress, produced)
+                # Re-acknowledge only the already persisted count. This checks a
+                # cancellation accepted while decoding before reserving any write.
+                progress = await self._record_progress(progress, progress.progress_completed)
+                artifact = await self._publish(progress, produced)
             except ExportCancelledError:
                 try:
                     # The cancellation was requested while producing; settle it as asked.
@@ -102,10 +111,16 @@ class ExportWorker:
                 continue
             except Exception:
                 # Only a stable, provider-free code reaches callers.
-                await self._store.fail_export(
-                    export_id=job.id,
-                    error=ExportError("unavailable", "export production failed", True),
-                )
+                try:
+                    await self._store.fail_export(
+                        export_id=job.id,
+                        error=ExportError("unavailable", "export production failed", True),
+                    )
+                except ExportStateConflictError:
+                    # A persisted cancellation can win while validation fails.
+                    # Production/validation has stopped, so settle that request.
+                    # Unknown failure commits still propagate without compensation.
+                    await self._store.settle_cancel_export(export_id=job.id)
                 continue
             # A completion reply may be lost after commit. Let the store's original
             # outcome remain authoritative instead of recording a compensating failure.
@@ -117,15 +132,42 @@ class ExportWorker:
                 await self._store.settle_cancel_export(export_id=job.id)
         return len(claimed)
 
-    def _reporter(self, job: ExportJob) -> ReportProgress:
-        async def report(completed: int) -> None:
-            try:
-                await self._store.record_export_progress(export_id=job.id, completed=completed)
-            except ExportStateConflictError as error:
-                # A cancellation takes the job out of running; stop producing.
-                raise ExportCancelledError from error
+    async def _produce(self, job: ExportJob) -> tuple[ExportJob, ProducedExport]:
+        assert self._producer is not None
+        progress, reporting = job, True
 
-        return report
+        async def report(completed: int) -> None:
+            nonlocal progress
+            if not reporting:
+                raise ValueError("export producer has finished reporting")
+            progress = await self._record_progress(job, completed)
+
+        try:
+            produced = await self._producer.produce_export(job, report=report)
+        finally:
+            reporting = False
+        if progress.progress_completed != job.progress_total:
+            raise ValueError("export production is incomplete")
+        return progress, produced
+
+    async def _record_progress(self, job: ExportJob, completed: int) -> ExportJob:
+        try:
+            current = await self._store.record_export_progress(
+                export_id=job.id, completed=completed
+            )
+        except ExportStateConflictError as error:
+            raise ExportCancelledError from error
+        if (
+            current.id != job.id
+            or current.book_id != job.book_id
+            or current.manifest_revision != job.manifest_revision
+            or current.format != job.format
+            or current.progress_total != job.progress_total
+            or current.status != "running"
+            or current.progress_completed != completed
+        ):
+            raise ValueError("export progress acknowledgement does not match its intent")
+        return current
 
     async def _publish(self, job: ExportJob, produced: ProducedExport) -> ExportArtifact:
         assert self._zone is not None

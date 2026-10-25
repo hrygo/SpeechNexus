@@ -1,9 +1,8 @@
 """The serving runtime owns export production: claim, produce, publish, settle.
 
-Only the producer is a test double. It stands in for the speech generation boundary,
-which the workbench consumes over its contract and does not implement. The queue, its
-claim, the publish path and the dispatch loop are the real ones, over disposable
-PostgreSQL and the real object zone.
+The producer is a test-only saved-audio assembler using decodable synthetic audio.
+It invokes no inference. The queue, claim, validator, publication and dispatch loop
+are production paths over disposable PostgreSQL and the real object zone.
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ import httpx
 import pytest
 from minio import Minio
 from pydantic import SecretStr
+from tests.fake.export_media import synthetic_export_zip
 from tests.integration.test_workbench_exports_http import create, prepared
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
@@ -27,7 +27,7 @@ from speechnexus_backend.workbench.infrastructure.minio_object_zone import Minio
 from speechnexus_backend.workbench.runtime import create_runtime_app
 
 pytestmark = pytest.mark.integration
-CONTENT = b"synthetic runtime export bundle\n" * 4
+CONTENT = synthetic_export_zip(chapters=1)
 BUCKET = "speechnexus-workbench-runtime-exports"
 DEADLINE = 20.0
 
@@ -75,11 +75,18 @@ def objects() -> Iterator[_Zone]:
         zone.close()
 
 
-def runtime_app(database: Database, *, interval: float, producer: Any | None) -> Any:
+def runtime_app(
+    database: Database,
+    *,
+    interval: float,
+    producer: Any | None,
+    max_output_bytes: int = 256 * 1024**2,
+) -> Any:
     endpoint = os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"]
     settings = database.settings().model_copy(
         update={
             "export_interval_seconds": interval,
+            "export_max_output_bytes": max_output_bytes,
             "object_endpoint": endpoint,
             "object_bucket": BUCKET,
             "object_prefix": "exports",
@@ -135,6 +142,36 @@ async def test_the_serving_runtime_produces_a_queued_export(
     assert artifact["sha256"] == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
     assert finished["error"] is None
     assert objects.read(f"{project_id}/exports/{export['id']}/{artifact['id']}") == CONTENT
+
+
+@pytest.mark.parametrize(
+    ("content", "max_output_bytes"),
+    [(b"synthetic invalid archive", 1_000_000), (CONTENT, len(CONTENT) - 1)],
+    ids=["invalid-media", "configured-output-limit"],
+)
+async def test_the_runtime_rejects_invalid_or_over_budget_media_before_publication(
+    database: Database, objects: _Zone, content: bytes, max_output_bytes: int
+) -> None:
+    class InvalidBundle(_Bundle):
+        async def produce_export(self, job: Any, *, report: Any) -> ProducedExport:
+            await report(1)
+            return ProducedExport(content=content, media_type="application/zip")
+
+    app = runtime_app(
+        database, interval=0.2, producer=InvalidBundle(), max_output_bytes=max_output_bytes
+    )
+    async with serve(app) as client:
+        export, book_id = await queue_one(client, "runtime-invalid")
+        owned_book = await client.get(f"/v1/workbench/books/{book_id}")
+        assert owned_book.status_code == 200
+        project_id = owned_book.json()["project_id"]
+        failed = await settled(client, export["id"], "failed")
+    assert failed["artifact"] is None and failed["error"]["code"] == "unavailable"
+    assert failed["progress_completed"] == failed["progress_total"] == 1
+    assert (
+        list(objects.client.list_objects(BUCKET, prefix=f"exports/{project_id}/", recursive=True))
+        == []
+    )
 
 
 async def test_an_unconfigured_runtime_leaves_queued_exports_alone(

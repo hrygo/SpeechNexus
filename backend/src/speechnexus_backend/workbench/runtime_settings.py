@@ -71,10 +71,16 @@ class WorkbenchSettings(BaseSettings):
     # How often a serving instance looks for queued Minutes work; the queue itself is
     # the durable record, so an idle or restarted instance owes nothing extra.
     minutes_interval_seconds: float = Field(default=5, gt=0, le=300)
-    # Zero keeps export production off. The workbench owns the export queue and its
-    # publish path, but the producer belongs to the speech generation boundary, so an
-    # unconfigured deployment must never claim queued exports it cannot finish.
+    # Zero keeps export production off. Workbench export assembly consumes saved
+    # audio through an injected producer; it never invokes speech generation.
+    # An unconfigured deployment must not claim work it cannot finish.
     export_interval_seconds: float = Field(default=0, ge=0, le=300)
+    # Execution safety limits, not model/quality or deployment qualifications.
+    export_max_output_bytes: int = Field(default=256 * 1024**2, ge=1, le=2**40)
+    export_max_unpacked_bytes: int = Field(default=512 * 1024**2, ge=1, le=2**40)
+    export_max_archive_entries: int = Field(default=1024, ge=1, le=100_000)
+    export_max_audio_seconds: float = Field(default=36000, gt=0, le=604800)
+    export_validation_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
     @staticmethod
     def _explicit_host(value: str) -> bool:

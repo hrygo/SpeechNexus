@@ -73,15 +73,10 @@ def test_progress_only_moves_forward_inside_a_running_export() -> None:
 
 def test_completion_requires_an_artifact_pinned_to_this_export() -> None:
     running = job().start(now=NOW + timedelta(1))
+    running = running.record_progress(completed=running.progress_total, now=running.updated_at)
     done = running.complete(artifact=artifact(), now=NOW + timedelta(6))
     # Producing every requested item is what completion means.
     assert (done.status, done.progress_completed, done.artifact) == ("succeeded", 4, artifact())
-    assert (
-        job().complete(artifact=artifact(), now=NOW + timedelta(1)).status != "queued"
-        if False
-        else True
-    )
-
     with pytest.raises(ExportStateConflictError):
         job().complete(artifact=artifact(), now=NOW + timedelta(1))
     with pytest.raises(ValueError, match="belong to its own export"):
@@ -98,7 +93,10 @@ def test_failure_and_expiry_own_their_paired_fields() -> None:
     with pytest.raises(ExportStateConflictError):
         failed.fail(error=failure, now=NOW + timedelta(2))
 
-    done = job().start(now=NOW + timedelta(1)).complete(artifact=artifact(), now=NOW + timedelta(2))
+    running = job().start(now=NOW + timedelta(1))
+    done = running.record_progress(completed=4, now=running.updated_at).complete(
+        artifact=artifact(), now=NOW + timedelta(2)
+    )
     expired = done.expire(now=NOW + timedelta(3))
     # Retention drops the artifact reference; the manifest stays as evidence.
     assert (expired.status, expired.artifact, expired.manifest_revision) == ("expired", None, 3)
@@ -117,6 +115,29 @@ def test_cancellation_runs_through_its_own_state() -> None:
         settled.request_cancel(now=NOW + timedelta(4))
     with pytest.raises(ExportStateConflictError):
         job().settle_cancel(now=NOW + timedelta(1))
+
+
+@pytest.mark.parametrize("completed", [0, 1, 3])
+def test_completing_cannot_invent_unreported_progress(completed: int) -> None:
+    running = job().start(now=NOW).record_progress(completed=completed, now=NOW)
+    with pytest.raises(ValueError, match="progress"):
+        running.complete(artifact=artifact(), now=NOW + timedelta(seconds=6))
+    assert running.progress_completed == completed and running.artifact is None
+
+
+def test_a_successful_snapshot_requires_complete_progress() -> None:
+    from dataclasses import replace
+
+    running = job().start(now=NOW)
+    with pytest.raises(ValueError, match="progress"):
+        replace(running, status="succeeded", artifact=artifact())
+
+
+@pytest.mark.parametrize("media_type", ["audio/wav", "audio/mpeg", "application/octet-stream"])
+def test_an_artifact_cannot_change_the_accepted_export_format(media_type: str) -> None:
+    running = job().start(now=NOW).record_progress(completed=4, now=NOW)
+    with pytest.raises(ValueError, match="media type"):
+        running.complete(artifact=artifact(media_type=media_type), now=NOW + timedelta(seconds=6))
 
 
 def test_invalid_field_values_are_refused_at_construction() -> None:

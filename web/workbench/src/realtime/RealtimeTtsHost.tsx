@@ -4,6 +4,7 @@ import { RealtimeClient } from "./realtime-client";
 import type { RealtimeStorage } from "./realtime-journal";
 import { TtsJournal } from "./tts-journal";
 import { TtsController, type TtsControllerSnapshot } from "./tts-session";
+import { useRealtimeFocus } from "./useRealtimeFocus";
 import "./realtime.css";
 
 const problems: Record<NonNullable<TtsControllerSnapshot["problem"]>, string> = {
@@ -37,8 +38,8 @@ function Content({ controller: c, active }: { controller: TtsController; active:
     [modelRev, setModelRev] = useState(r.request?.models.tts?.revision ?? ""),
     [voice, setVoice] = useState(r.request?.voice?.id ?? ""),
     [voiceRev, setVoiceRev] = useState(r.request?.voice?.revision ?? "");
+  const { root, heading } = useRealtimeFocus(active);
   const [invalid, setInvalid] = useState(false),
-    heading = useRef<HTMLHeadingElement>(null),
     life = useRef({ generation: 0 });
   useEffect(() => {
     const owner = life.current,
@@ -59,8 +60,8 @@ function Content({ controller: c, active }: { controller: TtsController; active:
   }, [active, c]);
   useEffect(() => {
     void c.setActive(active && !document.hidden);
-    if (active) heading.current?.focus();
-  }, [active, c]);
+    if (active && !document.hidden) heading.current?.focus();
+  }, [active, c, heading]);
   const locked = s.busy || s.blocked || !!r.pending || !active;
   const released =
     s.current &&
@@ -77,7 +78,7 @@ function Content({ controller: c, active }: { controller: TtsController; active:
     u?.phase === "accepting" &&
     (s.stream?.phase === "active" || s.stream?.phase === "draining");
   return (
-    <section className="realtime-asr" aria-label="实时配音工作台">
+    <section ref={root} className="realtime-asr" aria-label="实时配音工作台">
       <header>
         <h2 ref={heading} tabIndex={-1}>
           实时配音

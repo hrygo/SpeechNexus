@@ -4,6 +4,7 @@ import { RealtimeClient } from "./realtime-client";
 import { RealtimeJournal, type RealtimeStorage } from "./realtime-journal";
 import { RealtimeController, type RealtimeSnapshot } from "./realtime-session";
 import InputDevicePicker from "./InputDevicePicker";
+import { useRealtimeFocus } from "./useRealtimeFocus";
 import "./realtime.css";
 
 const problems: Record<NonNullable<RealtimeSnapshot["problem"]>, string> = {
@@ -63,8 +64,8 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
     [model, setModel] = useState(r.request?.models.asr?.id ?? ""),
     [modelRevision, setModelRevision] = useState(r.request?.models.asr?.revision ?? "");
   const [invalid, setInvalid] = useState(false);
-  const heading = useRef<HTMLHeadingElement>(null),
-    lifecycle = useRef({ generation: 0 });
+  const { root, heading } = useRealtimeFocus(active);
+  const lifecycle = useRef({ generation: 0 });
   useEffect(() => {
     const owner = lifecycle.current,
       generation = ++owner.generation;
@@ -84,8 +85,8 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
   }, [controller]);
   useEffect(() => {
     controller.setActive(active);
-    if (active) heading.current?.focus();
-  }, [active, controller]);
+    if (active && !document.hidden) heading.current?.focus();
+  }, [active, controller, heading]);
   const locked = s.busy || s.blocked || !!r.pending;
   const canCreate =
     !locked &&
@@ -103,7 +104,7 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
     s.microphone === "idle";
   const draft = r.captions.map((c) => c.text).join("\n");
   return (
-    <section className="realtime-asr" aria-label="实时字幕工作台" aria-busy={s.busy}>
+    <section ref={root} className="realtime-asr" aria-label="实时字幕工作台" aria-busy={s.busy}>
       <header>
         <h2 ref={heading} tabIndex={-1}>
           实时字幕

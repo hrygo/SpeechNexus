@@ -6,6 +6,188 @@ import { TtsJournal, ttsJournalKey } from "./tts-journal";
 import { storage } from "./realtime-fixtures";
 import { ttsEvent, ttsReady, ttsRequest, ttsSession, ttsStarted } from "./tts-fixtures";
 import type { TtsPlayback } from "./tts-playback";
+import type { RealtimeClient } from "./realtime-client";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+function expectUsableFocus(stage: string) {
+  const focused = document.activeElement;
+  expect
+    .soft(
+      {
+        element: focused?.tagName,
+        inWorkbench: screen.getByRole("region", { name: "实时配音工作台" }).contains(focused),
+        enabled: !focused?.matches(":disabled, [aria-disabled='true']"),
+        focusable: focused?.matches("button, input, textarea, select, a[href], [tabindex]"),
+      },
+      stage,
+    )
+    .toMatchObject({ inWorkbench: true, enabled: true, focusable: true });
+  if (focused instanceof HTMLElement && focused !== document.body)
+    expect.soft(focused, stage).toBeVisible();
+}
+function focusFixture() {
+  const client = {
+    create: vi.fn<RealtimeClient["create"]>().mockResolvedValue(ttsSession()),
+    current: vi.fn<RealtimeClient["current"]>().mockResolvedValue(ttsSession()),
+    cancel: vi
+      .fn<RealtimeClient["cancel"]>()
+      .mockResolvedValue({ ...ttsSession(), status: "draining", cleanup_state: "pending" }),
+  };
+  const socket = Object.assign(new EventTarget(), {
+    readyState: 1,
+    bufferedAmount: 0,
+    send: vi.fn(),
+    close: vi.fn(),
+  });
+  const playback = vi.fn<(...args: unknown[]) => Promise<TtsPlayback>>();
+  const controller = new TtsController(client, new TtsJournal(storage()), {
+    socket: () => socket,
+    playback,
+  });
+  return { client, socket, playback, controller };
+}
+function fillReferences() {
+  for (const [label, value] of [
+    ["TTS profile ID", "profile-tts"],
+    ["TTS profile revision", "1"],
+    ["TTS model ID", "tts-demo"],
+    ["TTS model revision", "1"],
+    ["Voice ID（可留空由服务端解析）", "voice-demo"],
+    ["Voice revision", "1"],
+  ])
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+}
+
+it("keeps usable keyboard focus through pending TTS creation, unknown result and original-key replay", async () => {
+  const f = focusFixture(),
+    first = deferred<ReturnType<typeof ttsSession>>(),
+    replay = deferred<ReturnType<typeof ttsSession>>();
+  f.client.create
+    .mockReset()
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(replay.promise);
+  render(<RealtimeTtsHost controller={f.controller} />);
+  fillReferences();
+  const submit = screen.getByRole("button", { name: "创建实时配音会话" });
+  submit.focus();
+  expect(submit).toHaveFocus();
+  fireEvent.click(submit);
+  expect(f.client.create).toHaveBeenCalledTimes(1);
+  expect(submit).toBeDisabled();
+  expectUsableFocus("TTS creation pending must not strand focus on the disabled submit button");
+  await act(async () => {
+    first.reject(Error("synthetic lost response"));
+    await first.promise.catch(() => {});
+  });
+  expect(screen.getByRole("alert")).toHaveTextContent("请求结果尚未确认");
+  const retry = screen.getByRole("button", { name: "按原键重放" });
+  expect(retry).toBeEnabled();
+  expectUsableFocus("unknown TTS result must leave a keyboard recovery destination");
+  retry.focus();
+  fireEvent.click(retry);
+  expect(retry).toBeDisabled();
+  expectUsableFocus("TTS replay pending must leave the now-disabled retry button");
+  await act(async () => {
+    replay.resolve(ttsSession());
+    await replay.promise;
+  });
+  expect(screen.getByText("session-demo")).toBeInTheDocument();
+  expect(f.client.create.mock.calls[1]).toEqual(f.client.create.mock.calls[0]);
+  expect(retry).toBeDisabled();
+  expectUsableFocus("successful TTS replay must leave the disabled retry button");
+  f.controller.dispose();
+});
+it("keeps usable focus when connecting and starting TTS playback disable their triggers", async () => {
+  const f = focusFixture(),
+    reading = deferred<ReturnType<typeof ttsSession>>(),
+    opening = deferred<TtsPlayback>();
+  await f.controller.create(ttsRequest());
+  f.client.current.mockReturnValue(reading.promise);
+  f.playback.mockReturnValue(opening.promise);
+  render(<RealtimeTtsHost controller={f.controller} />);
+  const connect = screen.getByRole("button", { name: "连接配音会话" });
+  connect.focus();
+  expect(connect).toHaveFocus();
+  fireEvent.click(connect);
+  expect(connect).toBeDisabled();
+  expectUsableFocus("TTS connection pending must leave the disabled connect button");
+  await act(async () => {
+    reading.resolve(ttsSession());
+    await reading.promise;
+  });
+  await act(async () => {
+    f.socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(ttsReady()) }));
+    await f.controller.settled();
+  });
+  const start = screen.getByRole("button", { name: "开始一轮配音" });
+  expect(start).toBeEnabled();
+  start.focus();
+  expect(start).toHaveFocus();
+  fireEvent.click(start);
+  expect(f.playback).toHaveBeenCalledTimes(1);
+  expect(start).toBeDisabled();
+  expectUsableFocus("TTS playback opening must leave the disabled start button");
+  let state: ReturnType<TtsPlayback["snapshot"]>["state"] = "running";
+  await act(async () => {
+    opening.resolve({
+      push: vi.fn(),
+      snapshot: () => ({ state, received: 0, rendered: 0 }),
+      stop: () => {
+        state = "stopped";
+        return Promise.resolve();
+      },
+    });
+    await opening.promise;
+  });
+  expect(screen.getByTestId("tts-playback-state")).toHaveTextContent("running");
+  expectUsableFocus("running TTS playback must leave an enabled keyboard destination");
+  f.controller.dispose();
+});
+it.each([true, false])(
+  "does not steal user-moved focus when TTS creation settles with active=%s",
+  async (active) => {
+    const f = focusFixture(),
+      creating = deferred<ReturnType<typeof ttsSession>>();
+    f.client.create.mockReturnValue(creating.promise);
+    const view = render(
+      <>
+        <button>其他工作区入口</button>
+        <RealtimeTtsHost controller={f.controller} />
+      </>,
+    );
+    fillReferences();
+    const submit = screen.getByRole("button", { name: "创建实时配音会话" });
+    submit.focus();
+    fireEvent.click(submit);
+    const destination = active
+      ? screen.getByLabelText("待追加文本")
+      : screen.getByRole("button", { name: "其他工作区入口" });
+    destination.focus();
+    if (!active)
+      view.rerender(
+        <>
+          <button>其他工作区入口</button>
+          <RealtimeTtsHost controller={f.controller} active={false} />
+        </>,
+      );
+    expect(destination).toHaveFocus();
+    await act(async () => {
+      creating.resolve(ttsSession());
+      await creating.promise;
+    });
+    expect(screen.getByText("session-demo")).toBeInTheDocument();
+    expect(destination).toHaveFocus();
+    f.controller.dispose();
+  },
+);
 
 it.each(["resolve", "reject"] as const)(
   "allows stopping local audio after remote done and shows cleanup %s honestly",

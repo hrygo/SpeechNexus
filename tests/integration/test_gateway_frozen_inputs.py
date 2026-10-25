@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,15 +31,18 @@ from tests.integration.test_gateway_stop_evidence import stop_ledger as stop_led
 from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
 from tests.integration.test_production_jobs import database as database
 from tests.unit.gateway.test_audio_decode import wav_source
-from tests.unit.gateway.test_file_asr import POLICY, Recognizer
+from tests.unit.gateway.test_file_asr import Recognizer
 from tests.unit.gateway.test_original_command import Engine
 
 from speechnexus_gateway.application.command_dispatch import OriginalCommandDispatch
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
-from speechnexus_gateway.application.file_asr import FileAsrTranscription
-from speechnexus_gateway.application.file_asr_audio import FileAsrAudio
+from speechnexus_gateway.domain.asr import AsrPolicy
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
-from speechnexus_gateway.domain.execution_inputs import ExecutionInputError, ExecutionInputLimits
+from speechnexus_gateway.domain.execution_inputs import (
+    ExecutionInputError,
+    ExecutionInputLimits,
+    VerifiedExecutionObject,
+)
 from speechnexus_gateway.domain.media import AudioDecodeLimits
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -50,6 +54,7 @@ from speechnexus_gateway.domain.submission import (
 from speechnexus_gateway.domain.vad import VadPolicy
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
 from speechnexus_gateway.infrastructure.pyav_audio import PyAvAudioDecoder
+from speechnexus_gateway.interfaces.file_asr_command import CommandFileAsr
 
 pytestmark = pytest.mark.integration
 LIMITS = ExecutionInputLimits(1000000, 1024, 10)
@@ -236,9 +241,20 @@ async def test_persisted_command_minio_decoder_and_native_asr_consumer(
     recovery_ledger: Ledger,
     object_store: tuple[MinioExecutionInputs, Minio, str],
     bad_digest: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     objects, admin, bucket = object_store
     command, _ = upload_command(admin, bucket)
+    command["parameters"].update(
+        {
+            "language": "zh",
+            "prompt": "Synthetic frozen hint",
+            "temperature": 0.25,
+            "max_segment_ms": 1000,
+            "final_deadline_ms": 600,
+            "turn_detection": {"mode": "server_vad", "silence_duration_ms": 240},
+        }
+    )
     if bad_digest:
         command["audio"]["storage"]["content_sha256"] = "sha256:" + "0" * 64
     request, intent = persist(foundation, recovery_ledger, command)
@@ -246,42 +262,55 @@ async def test_persisted_command_minio_decoder_and_native_asr_consumer(
     assert restored.request_document == request.request_document
     before = snapshot(foundation)
     recognizer = Recognizer()
+    recognizer.binding_revision_id = restored.identity.binding_revision_id
+    opened: list[VerifiedExecutionObject] = []
+    original_open = objects.open_verified
 
-    def consume() -> Any:
-        return FileExecutionInputs(objects).open_asr(
-            restored, limits=LIMITS, cancelled=lambda: False
-        )
+    @contextmanager
+    def track_open(*args: Any, **kwargs: Any) -> Iterator[VerifiedExecutionObject]:
+        with original_open(*args, **kwargs) as verified:
+            opened.append(verified)
+            yield verified
 
+    monkeypatch.setattr(objects, "open_verified", track_open)
+    consumer = CommandFileAsr(
+        inputs=FileExecutionInputs(objects),
+        decoder=PyAvAudioDecoder(),
+        vad_model=ScriptedVadModel(fallback=0.9),
+        recognizer=recognizer,
+        vad_tuning=VadPolicy(restored.identity.policy_revision_id),
+        max_completion_tokens=64,
+        max_call_seconds=2,
+        input_limits=LIMITS,
+        decode_limits=AudioDecodeLimits(),
+    )
+    expected_policy = AsrPolicy(
+        restored.identity.policy_revision_id,
+        language="zh",
+        prompt="Synthetic frozen hint",
+        temperature=0.25,
+        max_completion_tokens=64,
+        timeout_seconds=0.6,
+    )
+    expected_vad = VadPolicy(
+        restored.identity.policy_revision_id, max_segment_ms=1000, silence_duration_ms=240
+    )
     if bad_digest:
-        with pytest.raises(ExecutionInputError, match="identity_mismatch"), consume():
-            pytest.fail("corrupt content reached decoder")
-        assert not recognizer.requests
+        with pytest.raises(ExecutionInputError, match="identity_mismatch"):
+            async with consumer.open(restored, cancelled=lambda: False):
+                pytest.fail("corrupt content reached decoder")
+        assert not recognizer.requests and not opened
     else:
-        with consume() as prepared:
-            stream = prepared.object_input.stream
-            audio = FileAsrAudio(
-                decoder=PyAvAudioDecoder(),
-                model=ScriptedVadModel(fallback=0.9),
-                source=stream,
-                source_format=prepared.source_format,
-                limits=AudioDecodeLimits(),
-                vad_policy=VadPolicy("config-1", max_segment_ms=1000),
-                cancelled=lambda: False,
-            )
-            transcription = FileAsrTranscription(
-                audio=audio,
-                recognizer=recognizer,
-                execution_id="execution-input",
-                policy=POLICY,
-                cancelled=lambda: False,
-            )
+        async with consumer.open(restored, cancelled=lambda: False) as transcription:
             result = [segment async for segment in transcription]
             assert (
                 transcription.summary is not None and transcription.summary.source_samples == 48013
             )
             assert len(result) == len(recognizer.requests) == 2
             assert result[-1].source_sample_span[1] == 48013
-        assert stream.closed
+            assert all(s.policy_digest == expected_policy.digest for s in result)
+            assert all(s.vad_policy_digest == expected_vad.digest for s in result)
+        assert opened and all(verified.stream.closed for verified in opened)
     assert snapshot(foundation) == before
 
 

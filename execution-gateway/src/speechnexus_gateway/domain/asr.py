@@ -13,6 +13,8 @@ from speechnexus_gateway.domain.canonical import command_digest
 
 ASR_RECIPE_VERSION = "file-asr-1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+# Opaque configuration identities also admit colons; engine request IDs do not.
+_CONFIG_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 _LANGUAGE = re.compile(r"(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)")
 
 
@@ -51,7 +53,7 @@ class AsrPolicy:
     def __post_init__(self) -> None:
         if (
             type(self.config_revision) is not str
-            or _IDENTIFIER.fullmatch(self.config_revision) is None
+            or _CONFIG_REVISION.fullmatch(self.config_revision) is None
             or type(self.language) is not str
             or len(self.language) > 35
             or _LANGUAGE.fullmatch(self.language) is None

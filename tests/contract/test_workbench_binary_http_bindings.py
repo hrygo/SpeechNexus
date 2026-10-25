@@ -18,7 +18,12 @@ EXAMPLES = json.loads(
 
 
 def source_accepts(example: dict[str, Any], value: dict[str, Any]) -> bool:
-    operation = SOURCE["paths"]["/v1/workbench/saved-assets/{asset_id}/content"]["get"]
+    path = (
+        "/v1/workbench/exports/{export_id}/content"
+        if example["operation"] == "downloadBookExport"
+        else "/v1/workbench/saved-assets/{asset_id}/content"
+    )
+    operation = SOURCE["paths"][path]["get"]
     raw = operation["responses"].get(str(example["status"]))
     if raw is None or "body" not in value:
         return False
@@ -47,10 +52,10 @@ def test_native_binary_response_agrees_with_source_and_keeps_input(example: dict
     before = copy.deepcopy(value)
     assert source_accepts(example, value) is example["valid"]
     if example["valid"]:
-        assert validate_response("downloadSavedAsset", example["status"], value) is value
+        assert validate_response(example["operation"], example["status"], value) is value
     else:
         with pytest.raises(ContractValidationError, match=r"^Invalid HTTP response$"):
-            validate_response("downloadSavedAsset", example["status"], value)
+            validate_response(example["operation"], example["status"], value)
     assert value == before
 
 

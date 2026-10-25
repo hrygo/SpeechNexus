@@ -330,6 +330,16 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                 == {"type": "string", "format": "binary"}
             ):
                 media_type = "application/octet-stream"
+            elif (
+                binary_response
+                and set(content) == {"text/event-stream"}
+                and content["text/event-stream"].get("schema") == {"type": "string"}
+                and set(content["text/event-stream"].get("x-sse-event-schema", {})) == {"$ref"}
+                and content["text/event-stream"]["x-sse-event-schema"]["$ref"].startswith(
+                    "#/components/schemas/"
+                )
+            ):
+                media_type = "text/event-stream"
             else:
                 raise ValueError("Unsupported validated HTTP body representation")
             envelope["properties"]["body"] = rebase(content[media_type]["schema"])
@@ -427,6 +437,15 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                     "json": media_type == "application/json",
                     **({"binary": True} if media_type == "application/octet-stream" else {}),
                 }
+                if media_type == "text/event-stream":
+                    event_name = "HttpEvent_" + name
+                    if event_name in definitions:
+                        raise ValueError("HTTP event collides with a component")
+                    definitions[event_name] = rebase(
+                        response["content"][media_type]["x-sse-event-schema"]
+                    )
+                    entrypoints.append(event_name)
+                    metadata["responses"][status]["event"] = event_name
             operations[name] = metadata
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -439,13 +458,26 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
 def generate_http_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
     document = bundle_http_surface(config)
     bundle = bundle_http_validation(document)
+    events = {
+        operation: bundle["$defs"][reply["event"]]["$ref"].removeprefix("#/$defs/")
+        for operation, metadata in bundle["x-nexus-http-operations"].items()
+        for reply in metadata["responses"].values()
+        if "event" in reply
+    }
     python = destination / "src/speechnexus_contracts"
     schema = python / f"{name}-http.schema.json"
     schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
     wrapper = python / f"{name}_http.py"
+    event_imports = (
+        "from collections.abc import Iterable, Generator\n"
+        "from .http_validation import validate_http_event, iter_http_events\n"
+        if events
+        else ""
+    )
     wrapper.write_text(
         '"""Generated HTTP validation entrypoints; do not edit."""\n'
-        "from typing import Any\n"
+        + event_imports
+        + "from typing import Any\n"
         "from .http_validation import "
         "contract_for, validate_http_request, validate_http_response\n\n"
         "def contract() -> dict[str, Any]:\n"
@@ -455,6 +487,17 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         "def validate_response(operation: str, status: int, value: Any) -> Any:\n"
         f"    return validate_http_response({name!r}, operation, status, value)\n"
     )
+    if events:
+        with wrapper.open("a") as stream:
+            stream.write(
+                "\n"
+                "def validate_event(operation: str, value: Any) -> Any:\n"
+                f"    return validate_http_event({name!r}, operation, value)\n\n"
+                "def iter_events(operation: str, chunks: Iterable[bytes], request: Any, "
+                "*, max_event_bytes: int) -> Generator[Any]:\n"
+                f"    return iter_http_events({name!r}, operation, chunks, request, "
+                "max_event_bytes=max_event_bytes)\n"
+            )
     types = destination / f"src/{name}-http.ts"
     types_source = config.get("typescript_source", name)
     if "operations" in config:
@@ -482,7 +525,8 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         'import { createHttpValidator } from "./http-runtime.mjs";\n'
         f'import bundle from "./speechnexus_contracts/{name}-http.schema.json" '
         'with { type: "json" };\n'
-        f'import type {{ paths }} from "./{types_source}.generated";\n'
+        f"import type {{ {'paths, components' if events else 'paths'} }} "
+        f'from "./{types_source}.generated";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
         "export type HttpOperation = "
         + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])
@@ -501,6 +545,24 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         "  client.use(validator.middleware(baseUrl, maxJsonBytes));\n"
         "  return client;\n}\n"
     )
+    if events:
+        with types.open("a") as stream:
+            stream.write(
+                "export type HttpEvents = {\n"
+                + "".join(
+                    f'  {json.dumps(operation)}: components["schemas"][{json.dumps(schema)}];\n'
+                    for operation, schema in events.items()
+                )
+                + "};\n"
+                "export function validateEvent<K extends keyof HttpEvents>("
+                "operation: K, value: unknown): HttpEvents[K] {\n"
+                "  return validator.validateEvent(operation, value) as HttpEvents[K];\n}\n"
+                "export function readEvents<K extends keyof HttpEvents>("
+                "operation: K, source: ReadableStream<Uint8Array>, request: unknown, "
+                "maxEventBytes: number): AsyncIterable<HttpEvents[K]> {\n"
+                "  return validator.readEvents(operation, source, request, maxEventBytes) "
+                "as AsyncIterable<HttpEvents[K]>;\n}\n"
+            )
     return [path.relative_to(destination) for path in (schema, wrapper, types)]
 
 

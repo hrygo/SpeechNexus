@@ -1,4 +1,4 @@
-import { createValidatedClient } from "../src/workbench-http";
+import { createValidatedClient, readEvents, validateEvent } from "../src/workbench-http";
 import { parse, type Contracts } from "../src/workbench";
 
 const client = createValidatedClient("http://deployment.invalid", 262144);
@@ -27,5 +27,28 @@ void download.then((result) => {
 });
 // @ts-expect-error binary download declares GET only
 void client.POST("/v1/workbench/saved-assets/{asset_id}/content", {});
-// @ts-expect-error book download remains outside the selected runtime surface
-void client.GET("/v1/workbench/exports/{export_id}/content", {});
+void client.GET("/v1/workbench/exports/{export_id}/content", {
+  params: { path: { export_id: "export-demo" }, header: { Range: "bytes=0-3" } },
+  parseAs: "stream",
+});
+declare const eventBytes: ReadableStream<Uint8Array>;
+const events = readEvents(
+  "streamExportEvents",
+  eventBytes,
+  { path: { export_id: "export-demo" }, headers: { "Last-Event-ID": "9007199254740993" } },
+  65536,
+);
+void (async () => {
+  for await (const event of events) {
+    const id: string = event.id;
+    void id;
+    if (event.type === "export.failed") {
+      const retryable: boolean = event.data.error.retryable;
+      void retryable;
+    }
+  }
+})();
+const typedEvent = validateEvent("streamExportEvents", {});
+void typedEvent.export_id;
+// @ts-expect-error a binary operation has no SSE event union
+void validateEvent("downloadBookExport", {});

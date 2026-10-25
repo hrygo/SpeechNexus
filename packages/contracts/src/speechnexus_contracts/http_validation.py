@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Generator, Iterable, Iterator
 from functools import lru_cache
 from importlib.resources import files
 from typing import Any, cast
@@ -88,9 +89,12 @@ def validate_http_response(profile: str, operation: str, status: int, value: Any
     if type(status) is not int or str(status) not in operation_metadata["responses"]:
         raise ContractValidationError("Invalid HTTP response")
     metadata = operation_metadata["responses"][str(status)]
-    if metadata.get("binary"):
+    if metadata.get("binary") or metadata.get("event"):
         if not isinstance(value, dict) or not isinstance(
-            value.get("body"), (bytes, bytearray, memoryview)
+            value.get("body"),
+            (bytes, bytearray, memoryview, Iterator)
+            if metadata.get("event")
+            else (bytes, bytearray, memoryview),
         ):
             raise ContractValidationError("Invalid HTTP response")
         # OpenAPI binary is an octet representation, not JSON text. Validate a
@@ -106,3 +110,44 @@ def validate_http_response(profile: str, operation: str, status: int, value: Any
     if not validator.is_valid(normalized):
         raise ContractValidationError("Invalid HTTP response")
     return value
+
+
+def _event_schema(profile: str, operation: str) -> str:
+    schemas = [
+        reply["event"]
+        for reply in _operation(profile, operation)["responses"].values()
+        if "event" in reply
+    ]
+    if len(schemas) != 1:
+        raise ValueError("Unknown HTTP event operation")
+    return cast(str, schemas[0])
+
+
+def validate_http_event(profile: str, operation: str, value: Any) -> Any:
+    schema = _event_schema(profile, operation)
+    if not _validators(f"{profile}-http.schema.json")[schema].is_valid(value):
+        raise ContractValidationError("Invalid HTTP event")
+    return value
+
+
+def iter_http_events(
+    profile: str,
+    operation: str,
+    chunks: Iterable[bytes],
+    request: Any,
+    *,
+    max_event_bytes: int,
+) -> Generator[Any]:
+    from .sse import iter_sse
+
+    _event_schema(profile, operation)
+    validate_http_request(profile, operation, request)
+    metadata = _operation(profile, operation)
+    normalized = _normalize(request, metadata["parameters"], "Invalid HTTP request")
+    return iter_sse(
+        chunks,
+        lambda value: validate_http_event(profile, operation, value),
+        normalized.get("path", {}),
+        normalized.get("headers", {}).get("last-event-id"),
+        max_event_bytes,
+    )

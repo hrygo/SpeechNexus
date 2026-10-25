@@ -20,7 +20,7 @@ for (const example of examples) {
     const value = structuredClone(example.value);
     if (example.body_kind === "bytes") value.body = Uint8Array.from(value.body);
     const before = structuredClone(value);
-    const call = () => validateResponse("downloadSavedAsset", example.status, value);
+    const call = () => validateResponse(example.operation, example.status, value);
     if (example.valid) assert.equal(call(), value);
     else assert.throws(call, { name: "ContractValidationError", message: "Invalid HTTP response" });
     assert.deepEqual(value, before);

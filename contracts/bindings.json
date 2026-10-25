@@ -110,7 +110,8 @@
         "RenderUnitCreateRequestV2",
         "RenderUnitPatchV2",
         "RenderUnitListV2",
-        "RenderUnitGenerationAcceptedV2"
+        "RenderUnitGenerationAcceptedV2",
+        "ExportEvent"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -195,9 +196,7 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": [
-        "ScenarioProfileRevision"
-      ],
+      "schemas": ["ScenarioProfileRevision"],
       "schema_refs": {
         "ScenarioProfileRevision": "#"
       }
@@ -207,9 +206,7 @@
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": [
-        "ModelBindingRevision"
-      ],
+      "schemas": ["ModelBindingRevision"],
       "schema_refs": {
         "ModelBindingRevision": "#"
       }
@@ -220,18 +217,14 @@
       "format": "json-schema",
       "client": false,
       "definitions_prefix": "/$defs/",
-      "schemas": [
-        "GatewayRecoveryConfig"
-      ]
+      "schemas": ["GatewayRecoveryConfig"]
     },
     "binding_defaults": {
       "source": "binding-parameter-defaults.schema.json",
       "version": "1.0.0",
       "format": "json-schema",
       "client": false,
-      "schemas": [
-        "BindingParameterDefaultsSnapshot"
-      ],
+      "schemas": ["BindingParameterDefaultsSnapshot"],
       "schema_refs": {
         "BindingParameterDefaultsSnapshot": "#"
       }
@@ -315,7 +308,9 @@
         "/v2/workbench/chapters/{chapter_id}/render-units",
         "/v2/workbench/render-units/{unit_id}",
         "/v2/workbench/render-units/{unit_id}/generations",
-        "/v1/workbench/saved-assets/{asset_id}/content"
+        "/v1/workbench/saved-assets/{asset_id}/content",
+        "/v1/workbench/exports/{export_id}/content",
+        "/v1/workbench/exports/{export_id}/events"
       ]
     },
     "profile": {
@@ -326,10 +321,7 @@
         "/v1/nexus/admin/profiles",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}"
       ],
-      "operations": [
-        "createProfileRevision",
-        "getProfileRevisionForAdministration"
-      ]
+      "operations": ["createProfileRevision", "getProfileRevisionForAdministration"]
     },
     "profile_lifecycle": {
       "source": "admin-openapi.yaml",
@@ -339,10 +331,7 @@
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/publications",
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}/activations"
       ],
-      "operations": [
-        "publishProfileRevision",
-        "activatePublishedProfileRevision"
-      ]
+      "operations": ["publishProfileRevision", "activatePublishedProfileRevision"]
     },
     "binding": {
       "source": "admin-openapi.yaml",
@@ -352,10 +341,7 @@
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"
       ],
-      "operations": [
-        "createModelBindingDraft",
-        "getModelBindingRevision"
-      ]
+      "operations": ["createModelBindingDraft", "getModelBindingRevision"]
     },
     "binding_defaults": {
       "source": "binding-defaults-producer.openapi.yaml",

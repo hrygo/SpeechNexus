@@ -9816,6 +9816,152 @@
         "speech_job_id": "job-demo",
         "accepted_at": "2026-10-25T00:00:00Z"
       }
+    },
+    {
+      "id": "export-event-export.queued",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "1",
+        "type": "export.queued",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "id": "export-event-export.progress",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "2",
+        "type": "export.progress",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:01Z",
+        "data": {
+          "status": "running",
+          "progress_completed": 2,
+          "progress_total": 5
+        }
+      }
+    },
+    {
+      "id": "export-event-export.succeeded",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "3",
+        "type": "export.succeeded",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:02Z",
+        "data": {
+          "status": "succeeded",
+          "artifact": {
+            "id": "export_artifact_demo",
+            "object": "nexus.export_artifact",
+            "export_id": "export_demo",
+            "manifest_revision": "3",
+            "media_type": "application/zip",
+            "bytes": 2048,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-10-23T00:00:02Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "export-event-export.failed",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "4",
+        "type": "export.failed",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:03Z",
+        "data": {
+          "status": "failed",
+          "error": {
+            "code": "export_failure",
+            "message": "synthetic export failure",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-event-export.cancelled",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "5",
+        "type": "export.cancelled",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:04Z",
+        "data": {
+          "status": "cancelled"
+        }
+      }
+    },
+    {
+      "id": "export-event-export.artifact_published",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": true,
+      "value": {
+        "id": "6",
+        "type": "export.artifact_published",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:05Z",
+        "data": {
+          "artifact": {
+            "id": "export_artifact_demo",
+            "object": "nexus.export_artifact",
+            "export_id": "export_demo",
+            "manifest_revision": "3",
+            "media_type": "application/zip",
+            "bytes": 2048,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at": "2026-10-23T00:00:02Z"
+          }
+        }
+      }
+    },
+    {
+      "id": "numeric-event-id",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": false,
+      "value": {
+        "id": 1,
+        "type": "export.queued",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "id": "zero-event-id",
+      "profile": "workbench",
+      "schema": "ExportEvent",
+      "valid": false,
+      "value": {
+        "id": "0",
+        "type": "export.queued",
+        "export_id": "export_demo",
+        "occurred_at": "2026-10-23T00:00:00Z",
+        "data": {
+          "status": "queued"
+        }
+      }
     }
   ]
 }

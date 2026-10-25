@@ -230,5 +230,9 @@ def parse(
 ) -> models.RenderUnitGenerationAcceptedV2: ...
 
 
+@overload
+def parse(name: Literal["ExportEvent"], value: Any) -> models.ExportEvent: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("workbench", name, value)

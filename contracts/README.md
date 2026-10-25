@@ -334,7 +334,7 @@ It preserves string revisions and the submitted key, and validates the declared
 not implement a Workbench route, create a public speech Job or establish voice
 publication.
 
-`downloadSavedAsset` also selects the existing GET content path: 200/206 are
+`downloadSavedAsset` and `downloadBookExport` select their existing GET content paths: 200/206 are
 `application/octet-stream`, while 401/404 retain their JSON error schema. Python
 `validate_response` accepts native bytes/bytearray/memoryview without decoding
 or copying content. TypeScript accepts Uint8Array or ReadableStream; actual
@@ -348,8 +348,23 @@ The source permits a missing Content-Range on 206 and declares no 416 here;
 this projection preserves those choices. It does not validate actual range
 selection, length/digest, media safety or a C production route. New constraints
 on a binary schema fail generation until their validation is implemented.
-Book-export download and export SSE remain unselected; no source wire/default
-or persistent state changes are made by these transport entrypoints.
+`streamExportEvents` selects the existing SSE operation and its original
+401/404/410 JSON errors. Its canonical `x-sse-event-schema` produces an HTTP
+event entrypoint and the same six-member `ExportEvent` Python/TS runtime union.
+Native response metadata validation does not consume the stream. Explicit
+`iter_events` / `readEvents` helpers frame UTF-8 incrementally, enforce the
+caller's per-event byte bound, validate each source payload and pin it to the
+original export id and cursor. Provided SSE id/event fields must agree with the
+payload; sequence comparison preserves decimal precision. CR reserves its
+optional LF in the bound. Incomplete/invalid/oversized events are not yielded.
+
+The consumer retains only the last verified event id, chooses subsequent reads
+and handles 410 through the existing error/state protocol. There is no automatic
+reconnect, retry or terminal-success inference from EOF. Reader cancellation
+closes this transport; it is not export cancellation or a resource-release
+receipt. Full export state-machine/C route qualification remains separate.
+No source wire/default, database, lockfile or persistent state changes are made
+by these transport entrypoints.
 Separate public realtime profiles expose session/PCM DTOs and the original public event
 union plus a fourteen-member transcription selection. They reuse canonical
 sources without enabling routes or a socket. Shared trace inputs distinguish

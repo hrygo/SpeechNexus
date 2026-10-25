@@ -1,5 +1,6 @@
 import { createProfileParser } from "./profile-runtime.mjs";
 import { ContractValidationError } from "./errors.mjs";
+import { readSse } from "./sse-runtime.mjs";
 
 function normalize(value, types, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
@@ -88,7 +89,7 @@ export function createHttpValidator(bundle) {
     const meta = responses[status];
     try {
       let validationValue = value;
-      if (meta.binary) {
+      if (meta.binary || meta.event) {
         if (
           !value ||
           typeof value !== "object" ||
@@ -125,7 +126,7 @@ export function createHttpValidator(bundle) {
         if (request.redirect !== "error") throw new ContractValidationError("Invalid HTTP request");
         const [name, meta] = locate(schemaPath, request);
         if (
-          Object.values(meta.responses).some((reply) => reply.binary) &&
+          Object.values(meta.responses).some((reply) => reply.binary || reply.event) &&
           options.parseAs !== "stream"
         ) {
           throw new ContractValidationError("Invalid HTTP request");
@@ -158,10 +159,10 @@ export function createHttpValidator(bundle) {
         try {
           const reply = meta.responses[response.status];
           if (!reply) throw new ContractValidationError("Invalid HTTP response");
-          if (reply.binary) {
+          if (reply.binary || reply.event) {
             if (
               response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !==
-              "application/octet-stream"
+              (reply.event ? "text/event-stream" : "application/octet-stream")
             ) {
               throw new ContractValidationError("Invalid HTTP response");
             }
@@ -182,5 +183,31 @@ export function createHttpValidator(bundle) {
       },
     };
   }
-  return { validateRequest, validateResponse, middleware };
+  function validateEvent(name, value) {
+    const replies = Object.values(operation(name).responses).filter((reply) => reply.event);
+    if (replies.length !== 1) throw new Error("Unknown HTTP event operation");
+    try {
+      parse(replies[0].event, value);
+    } catch (error) {
+      if (!(error instanceof ContractValidationError)) throw error;
+      throw new ContractValidationError("Invalid HTTP event");
+    }
+    return value;
+  }
+  function readEvents(name, source, request, maxEventBytes) {
+    validateRequest(name, request);
+    const meta = operation(name);
+    const normalized = normalize(request, meta.parameters, "Invalid HTTP request");
+    if (Object.values(meta.responses).filter((reply) => reply.event).length !== 1) {
+      throw new Error("Unknown HTTP event operation");
+    }
+    return readSse(
+      source,
+      (value) => validateEvent(name, value),
+      normalized.path ?? {},
+      normalized.headers?.["last-event-id"],
+      maxEventBytes,
+    );
+  }
+  return { validateRequest, validateResponse, validateEvent, readEvents, middleware };
 }

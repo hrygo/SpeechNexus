@@ -13274,6 +13274,123 @@
           "Range": "bytes=0-3,8-9"
         }
       }
+    },
+    {
+      "id": "downloadBookExport-request",
+      "kind": "request",
+      "operation": "downloadBookExport",
+      "valid": true,
+      "value": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3"
+        }
+      }
+    },
+    {
+      "id": "downloadBookExport-invalid-request",
+      "kind": "request",
+      "operation": "downloadBookExport",
+      "valid": false,
+      "value": {
+        "path": {
+          "export_id": 1
+        }
+      }
+    },
+    {
+      "id": "streamExportEvents-request",
+      "kind": "request",
+      "operation": "streamExportEvents",
+      "valid": true,
+      "value": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Last-Event-ID": "9007199254740993"
+        }
+      }
+    },
+    {
+      "id": "streamExportEvents-invalid-request",
+      "kind": "request",
+      "operation": "streamExportEvents",
+      "valid": false,
+      "value": {
+        "path": {
+          "export_id": 1
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-401",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 401,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-404",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 404,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-410",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 410,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-invalid-json-error",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 410,
+      "valid": false,
+      "value": {
+        "body": {}
+      }
     }
   ]
 }

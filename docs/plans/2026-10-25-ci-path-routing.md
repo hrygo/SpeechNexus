@@ -39,7 +39,7 @@
 
 - [x] 扩展实际汇总 shell 的成功/失败/取消/跳过组合回归，先观察失败。
 - [x] 接入路由，完整模式保留现有命令；文档不安装依赖或启动服务，Web 保留 Python 消费者验证。
-- [ ] 运行针对性 pytest、Ruff、mypy、actionlint 和 `git diff --check`，预期通过；独立审查后以 PR 验证全量路径。
+- [x] 运行针对性 pytest、Ruff、mypy、actionlint 和 `git diff --check`，预期通过；独立审查后以 PR 验证全量路径。
 
 ## Task 3: 运行证据与维护说明
 

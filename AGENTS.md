@@ -50,6 +50,7 @@
 | 遗留协调原型的退出与删除 | [ADR 0007](docs/decisions/0007-legacy-coordination-retirement.md) |
 | Web 视觉、设计 Token 与无障碍 | [UI/UX 设计框架](docs/architecture/ui-ux-design-framework-and-tokens.md) |
 | 本机环境、初始化或部署 | [development-environment.md](docs/development-environment.md)、[deploy/README.md](deploy/README.md) |
+| CI 调度、验证范围与门禁 | [ci-validation.md](docs/architecture/ci-validation.md)、[ci.yml](.github/workflows/ci.yml) |
 | SpeechRail 代码或规则复用 | [speechrail-reuse.md](docs/architecture/speechrail-reuse.md) |
 
 当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线和已接受决定，并按后续 ADR 标明的替代范围理解旧决定。发现冲突时指出具体差异，不能通过放宽校验掩盖。计划、占位目录和带日期记录不能单独证明能力已经实现；测试原型与历史 fixture 的验证结果须注明保护边界，不能视为生产模块已交付。报告区分已实现、已验证、契约要求和计划状态。

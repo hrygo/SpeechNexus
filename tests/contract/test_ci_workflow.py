@@ -32,6 +32,12 @@ _EXPECTED = {
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
     },
+    "no-db": {
+        "CHECKS_RESULT": "success",
+        "COORDINATION_RESULT": "skipped",
+        "WEB_RESULT": "success",
+        "DEPLOYMENT_RESULT": "success",
+    },
 }
 
 
@@ -87,7 +93,7 @@ def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full"])
+@pytest.mark.parametrize("mode", list(_EXPECTED))
 @pytest.mark.parametrize("checks", _STATES)
 @pytest.mark.parametrize("coordination", _STATES)
 def test_protected_status_never_passes_missing_evidence(
@@ -116,7 +122,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full"])
+@pytest.mark.parametrize("mode", list(_EXPECTED))
 @pytest.mark.parametrize("lane", ["WEB_RESULT", "DEPLOYMENT_RESULT"])
 @pytest.mark.parametrize("state", _STATES)
 def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
@@ -127,7 +133,7 @@ def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full", "", "unknown"])
+@pytest.mark.parametrize("mode", [*_EXPECTED, "", "unknown"])
 @pytest.mark.parametrize("routing", _STATES)
 def test_missing_or_invalid_routing_cannot_authorize_a_merge(mode: str, routing: str) -> None:
     states = _EXPECTED.get(mode, _EXPECTED["full"])
@@ -164,7 +170,8 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
         assert job["needs"] == ["changes"]
         assert (
             job["if"]
-            == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+            == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' "
+            "|| needs.changes.outputs.mode == 'no-db' }}"
         )
         steps = job["steps"]
         assert any(
@@ -244,5 +251,8 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
     assert "uv sync" not in commands and "pnpm install" not in commands
     assert "services" not in routing and "needs" not in routing
     assert jobs["integration_shards"]["if"] == "${{ needs.changes.outputs.mode == 'full' }}"
-    assert jobs["deployment"]["if"] == "${{ needs.changes.outputs.mode == 'full' }}"
+    assert (
+        jobs["deployment"]["if"]
+        == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}"
+    )
     assert jobs["web"]["if"] == jobs["python_checks"]["if"]

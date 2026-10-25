@@ -116,6 +116,15 @@ export function createTtsDemoTransport(scenario: TtsDemoScenario) {
       if (!originals.has(key)) {
         originals.set(key, body);
         stats.executions++;
+        job = parse("Job", {
+          ...job,
+          workspace_id: command.workspace_id ?? job.workspace_id,
+          effective_configuration: {
+            ...job.effective_configuration,
+            voice: command.voice,
+            profile: command.profile ?? null,
+          },
+        });
       }
       if (scenario === "create-unknown" && !lostCreate) {
         lostCreate = true;

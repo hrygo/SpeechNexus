@@ -36,6 +36,8 @@ interface AsrTaskRecord extends TaskIdentity {
 }
 interface TtsTaskRecord extends TaskIdentity, Readonly<TtsSelection> {
   readonly version: 2;
+  /** Additive confirmation metadata; it never changes the v2 request body. */
+  readonly effectiveModelKey?: string;
 }
 export type TaskRecord = AsrTaskRecord | TtsTaskRecord;
 export type RecoveryRecord = TaskRecord | UploadRecord;
@@ -116,9 +118,18 @@ function validRecord(value: unknown): RecoveryRecord {
   }
   if (row.version !== 1 && row.version !== 2) return invalid();
   const expected = row.version === 1 ? fields : [...fields, ...ttsFields];
+  const hasModelKey = row.version === 2 && Object.hasOwn(row, "effectiveModelKey");
   if (
-    Object.keys(row).length !== expected.length ||
+    Object.keys(row).length !== expected.length + Number(hasModelKey) ||
     expected.some((field) => !Object.hasOwn(row, field))
+  )
+    return invalid();
+  if (
+    hasModelKey &&
+    (row.jobId === null ||
+      typeof row.effectiveModelKey !== "string" ||
+      row.effectiveModelKey.length < 1 ||
+      row.effectiveModelKey.length > 256)
   )
     return invalid();
   for (const field of ["model", "assetId", "workspaceId", "createKey", "cancelKey"])
@@ -226,7 +237,10 @@ export class SessionTaskJournal implements FileTaskJournal {
       (afterUpload ||
         fixed.some((field) => before[field] !== record[field]) ||
         JSON.stringify(jobCommand(before)) !== JSON.stringify(jobCommand(record)) ||
-        (before.jobId !== null && before.jobId !== record.jobId))
+        (before.jobId !== null && before.jobId !== record.jobId) ||
+        (before.version === 2 &&
+          before.effectiveModelKey !== undefined &&
+          (record.version !== 2 || record.effectiveModelKey !== before.effectiveModelKey)))
     )
       throw new TaskJournalError("changed");
     const raw = JSON.stringify(record);

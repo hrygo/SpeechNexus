@@ -60,7 +60,17 @@ function fixture() {
     sample_rate_hz: null,
     channels: null,
   });
-  const job = parse("Job", { ...example("queued-job"), kind: "tts" });
+  const job = parse("Job", {
+    ...example("queued-job"),
+    kind: "tts",
+    effective_configuration: {
+      models: { tts: { id: "model-tts-fixed", revision: "7" } },
+      voice: { id: selection.voiceId, revision: selection.voiceRevision },
+      profile: { id: selection.profileId, revision: selection.profileRevision },
+      policy_revision: "1",
+      catalog_revision: "1",
+    },
+  });
   const artifact = parse("Artifact", {
     ...example("artifact"),
     id: "artifact-audio",
@@ -159,6 +169,16 @@ afterEach(() => {
 });
 
 describe("production text synthesis host", () => {
+  it("shows confirmed model, voice and profile revisions from the accepted Job", async () => {
+    const f = fixture();
+    render(<FileTaskHost kind="tts" client={f.client} storage={f.storage} />);
+    fill();
+    submit();
+    expect(await screen.findByText("model-tts-fixed@7")).toBeVisible();
+    expect(screen.getByText("voice-demo@1")).toBeVisible();
+    expect(screen.getByText("profile-demo@2")).toBeVisible();
+  });
+
   it("mounts empty with no network/default fake choices and owns a separate slot", async () => {
     const f = fixture();
     f.data.set(asrKey, "foreign-asr-record");

@@ -84,6 +84,28 @@ export function FileTaskPanel({
         <dd>{job?.id ?? "尚未确认"}</dd>
         <dt>任务状态</dt>
         <dd data-testid="file-job-status">{job?.status ?? "尚未确认"}</dd>
+        {job?.kind === "tts" && (
+          <>
+            <dt>实际模型修订</dt>
+            <dd>
+              {job.effective_configuration.models.tts
+                ? `${job.effective_configuration.models.tts.id}@${job.effective_configuration.models.tts.revision}`
+                : "尚未确认"}
+            </dd>
+            <dt>实际声音修订</dt>
+            <dd>
+              {job.effective_configuration.voice
+                ? `${job.effective_configuration.voice.id}@${job.effective_configuration.voice.revision}`
+                : "尚未确认"}
+            </dd>
+            <dt>实际参数修订</dt>
+            <dd>
+              {job.effective_configuration.profile
+                ? `${job.effective_configuration.profile.id}@${job.effective_configuration.profile.revision}`
+                : "尚未确认"}
+            </dd>
+          </>
+        )}
         <dt>资源清理</dt>
         <dd>{job?.cleanup_state ?? "尚无证据"}</dd>
         <dt>原执行</dt>

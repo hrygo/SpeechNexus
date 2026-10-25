@@ -94,6 +94,8 @@ def test_pattern(operation: dict[str, str], method: str | None) -> re.Pattern[st
     patterns = [rf"\b{escaped_id}\b", requested]
     if method:
         patterns.append(rf"\.{re.escape(method)}\(")
+        # Tests often name the client method as a spy target rather than calling it.
+        patterns.append(rf"[\"']{re.escape(method)}[\"']")
     return re.compile("|".join(patterns))
 
 

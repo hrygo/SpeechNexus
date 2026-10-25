@@ -164,3 +164,19 @@ def test_write_preserves_registrations(tmp_path: Path) -> None:
         copy.deepcopy(existing),
     )
     assert fresh["operations"][0]["pending"]["owner"] == "C"
+
+
+def test_spy_target_method_name_counts_as_behavior_test(tmp_path: Path) -> None:
+    module = load()
+    source = tmp_path / "web/workbench/src/assistant/assistant-session.test.ts"
+    source.parent.mkdir(parents=True)
+    source.write_text('vi.spyOn(client, "assistantTurn").mockResolvedValue(turn());')
+    operation = {
+        "id": "getAssistantTurn",
+        "method": "get",
+        "path": "/v1/workbench/assistant-turns/{turn_id}",
+    }
+    pattern = module.test_pattern(
+        operation, module.client_methods(module.ROOT).get(("GET", operation["path"]))
+    )
+    assert pattern.search(source.read_text())

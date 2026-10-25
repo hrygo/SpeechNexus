@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import BinaryIO
@@ -29,6 +30,8 @@ class PreparedAsrSegment:
     vad: VadSegment
     source_clock: SourceAudioClock
     source_sample_span: tuple[int, int]
+    # Conservative lower bound: includes work within the VAD batch that closes it.
+    closed_at_monotonic: float | None = None
 
 
 class FileAsrAudio:
@@ -44,6 +47,7 @@ class FileAsrAudio:
         limits: AudioDecodeLimits,
         vad_policy: VadPolicy,
         cancelled: Callable[[], bool],
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.summary: AudioDecodeSummary | None = None
         self.model_sha256 = model.model_sha256
@@ -60,6 +64,7 @@ class FileAsrAudio:
             self._stream.close()
             raise
         self._cancelled = cancelled
+        self._monotonic = monotonic
         self._iterator = self._prepare()
         self._closed = False
 
@@ -87,7 +92,9 @@ class FileAsrAudio:
         if self._cancelled():
             raise MediaCancelledError("file audio preparation was cancelled")
 
-    def _wrap(self, segment: VadSegment, *, final: bool = False) -> PreparedAsrSegment:
+    def _wrap(
+        self, segment: VadSegment, *, closed_at: float, final: bool = False
+    ) -> PreparedAsrSegment:
         self._check()
         clock = self._stream.clock
         if clock is None:
@@ -99,10 +106,10 @@ class FileAsrAudio:
             source_samples=self._stream.source_samples,
             final=final,
         )
-        return PreparedAsrSegment(segment, clock, source_span)
+        return PreparedAsrSegment(segment, clock, source_span, closed_at)
 
     def _prepare(self) -> Generator[PreparedAsrSegment]:
-        pending: VadSegment | None = None
+        pending: tuple[VadSegment, float] | None = None
         completed: AudioDecodeSummary | None = None
         try:
             self._check()
@@ -110,23 +117,26 @@ class FileAsrAudio:
                 self._check()
                 if block.sample_rate_hz != 16000:
                     raise MediaError("file ASR requires the declared 16 kHz model clock")
-                for segment in self._vad.push(block.pcm16, sample_start=block.sample_start):
+                closed_at = self._monotonic()
+                segments = self._vad.push(block.pcm16, sample_start=block.sample_start)
+                for segment in segments:
                     if pending is not None:
-                        yield self._wrap(pending)
-                    pending = segment
+                        yield self._wrap(pending[0], closed_at=pending[1])
+                    pending = (segment, closed_at)
             self._check()
             if self._stream.summary is None:
                 raise MediaError("decoder did not complete the original audio")
+            closed_at = self._monotonic()
             try:
                 final = self._vad.commit()
             except EmptyVadBufferError:
                 final = ()
             for segment in final:
                 if pending is not None:
-                    yield self._wrap(pending)
-                pending = segment
+                    yield self._wrap(pending[0], closed_at=pending[1])
+                pending = (segment, closed_at)
             if pending is not None:
-                yield self._wrap(pending, final=True)
+                yield self._wrap(pending[0], closed_at=pending[1], final=True)
             self._check()
             completed = self._stream.summary
         finally:

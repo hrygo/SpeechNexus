@@ -1,6 +1,8 @@
 """Real synthetic codec/VAD composition with a scripted recognition port."""
 
+import asyncio
 import re
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -49,7 +51,13 @@ class Recognizer:
         return result
 
 
-def audio(*, speech: bool = True, samples: int = 48013, revision: str = "config-1") -> FileAsrAudio:
+def audio(
+    *,
+    speech: bool = True,
+    samples: int = 48013,
+    revision: str = "config-1",
+    monotonic: Callable[[], float] = time.monotonic,
+) -> FileAsrAudio:
     return FileAsrAudio(
         decoder=PyAvAudioDecoder(),
         model=ScriptedVadModel(fallback=0.9 if speech else 0.0),
@@ -58,6 +66,7 @@ def audio(*, speech: bool = True, samples: int = 48013, revision: str = "config-
         limits=AudioDecodeLimits(),
         vad_policy=VadPolicy(revision, max_segment_ms=1000),
         cancelled=lambda: False,
+        monotonic=monotonic,
     )
 
 
@@ -125,6 +134,52 @@ async def test_configuration_mismatch_is_rejected_before_any_recognition() -> No
     with pytest.raises(ValueError, match="same frozen config"):
         _ = [segment async for segment in prepared]
     assert prepared.summary is None and not recognizer.requests
+
+
+async def test_final_window_includes_time_after_segment_closed_before_dispatch() -> None:
+    recognizer = Recognizer()
+    prepared = pipeline(
+        recognizer,
+        source=audio(monotonic=lambda: 50.0),
+        final_deadline_seconds=0.75,
+        monotonic=lambda: 51.0,
+    )
+    with pytest.raises(AsrCallError) as error:
+        _ = [s async for s in prepared]
+    assert error.value.code is AsrFailure.DEADLINE_EXCEEDED
+    assert not error.value.request_may_have_run
+    assert not recognizer.requests and prepared.summary is None
+
+
+async def test_final_window_interrupts_a_nonresponding_recognizer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recognizer = Recognizer()
+    interrupted = asyncio.Event()
+    never = asyncio.Event()
+
+    async def stalled(
+        request: AsrAudio, policy: AsrPolicy, *, cancelled: Callable[[], bool]
+    ) -> AsrText:
+        recognizer.requests.append(request)
+        try:
+            await never.wait()
+            raise AssertionError("unexpected release")
+        finally:
+            interrupted.set()
+
+    monkeypatch.setattr(recognizer, "transcribe", stalled)
+    prepared = pipeline(
+        recognizer,
+        source=audio(monotonic=lambda: 50.0),
+        final_deadline_seconds=0.01,
+        monotonic=lambda: 50.0,
+    )
+    with pytest.raises(AsrCallError) as error:
+        _ = [s async for s in prepared]
+    assert error.value.code is AsrFailure.DEADLINE_EXCEEDED
+    assert error.value.request_may_have_run and interrupted.is_set()
+    assert len(recognizer.requests) == 1 and prepared.summary is None
 
 
 @pytest.mark.parametrize("field", ["request_id", "policy_digest", "completion_tokens"])

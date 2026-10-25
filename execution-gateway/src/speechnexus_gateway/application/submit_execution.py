@@ -8,6 +8,7 @@ holding capacity until verified stop evidence arrives.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -16,6 +17,7 @@ from speechnexus_gateway.application.observe_execution import check_gateway_scop
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.ports import (
+    CommittedExecutionStarter,
     EngineDispatchPort,
     EngineObservationPort,
     SubmissionLedger,
@@ -28,6 +30,7 @@ from speechnexus_gateway.domain.submission import (
     InvalidExecutionRequestError,
     RecordStop,
     SubmissionIntent,
+    SubmissionOutcomeUnknownError,
     SubmitIntentConflictError,
     SubmitRequest,
     VerifiedStopEvidence,
@@ -52,12 +55,14 @@ class SubmitExecutionService:
         ingress: GatewayIngress,
         dispatch: EngineDispatchPort,
         observation: EngineObservationPort,
+        committed_execution: CommittedExecutionStarter | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._ledger = ledger
         self._ingress = ingress
         self._dispatch = dispatch
         self._observation = observation
+        self._committed_execution = committed_execution
         self._now = now or (lambda: datetime.now(UTC))
 
     def submit(self, request: SubmitRequest) -> SubmissionOutcome:
@@ -88,7 +93,33 @@ class SubmitExecutionService:
                 if existing.request_digest != request.request_digest:
                     raise SubmitIntentConflictError("submit intent has another effective request")
                 return SubmissionOutcome(intent=existing, idempotent_replay=True)
-            return self._submit_new(request)
+            try:
+                outcome = self._submit_new(request)
+            except BaseException:
+                self._discard_preparation(identity.submit_intent_id)
+                raise
+
+        # A long file task must not retain the ingress send lock. Only this
+        # invocation's newly committed acceptance may reach the start callback.
+        if self._committed_execution is not None:
+            if outcome.intent.execution_state is ExecutionState.EXECUTING:
+                try:
+                    self._committed_execution.start(outcome.intent)
+                except Exception:
+                    self._discard_preparation(identity.submit_intent_id)
+                    raise SubmissionOutcomeUnknownError(
+                        "the accepted execution must be queried by its original identity"
+                    ) from None
+            else:
+                self._discard_preparation(identity.submit_intent_id)
+        return outcome
+
+    def _discard_preparation(self, submit_intent_id: str) -> None:
+        if self._committed_execution is not None:
+            # Preparation cleanup cannot erase a commit ambiguity. Running
+            # execution/resource cleanup still requires its original facts.
+            with suppress(Exception):
+                self._committed_execution.discard(submit_intent_id)
 
     def _submit_new(self, request: SubmitRequest) -> SubmissionOutcome:
         identity = request.identity

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from speechnexus_gateway import __version__
 from speechnexus_gateway.application.abort_execution import ExecutionAbortService
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
+from speechnexus_gateway.application.command_dispatch import OriginalCommandDispatch
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
@@ -21,6 +22,7 @@ from speechnexus_gateway.application.readiness import (
 )
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
+from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
@@ -56,6 +58,10 @@ class _ControlReadinessProbe:
             worker = self._app.state.recovery_worker
             if not isinstance(worker, RecoveryWorker) or not worker.running:
                 raise RuntimeError("gateway recovery is not running")
+        if self._app.state.file_execution_required:
+            runtime = self._app.state.file_execution_runtime
+            if runtime is None or not runtime.running:
+                raise RuntimeError("file execution is not running")
         await run_in_threadpool(service.check_ownership)
 
 
@@ -80,6 +86,8 @@ def _build_control(
     ProcessIngressOwnership,
     GatewayPool,
     RecoveryWorker | None,
+    GatewayIngress,
+    PostgresSubmissionLedger,
 ]:
     configuration = load_recovery_configuration(settings)
     directory = settings.ingress_lock_directory
@@ -119,6 +127,8 @@ def _build_control(
             ownership,
             pool,
             worker,
+            ingress,
+            ledger,
         )
     except BaseException:
         try:
@@ -130,10 +140,15 @@ def _build_control(
 
 
 def _close_control(
-    worker: RecoveryWorker | None, pool: GatewayPool, ownership: ProcessIngressOwnership
+    worker: RecoveryWorker | None,
+    pool: GatewayPool,
+    ownership: ProcessIngressOwnership,
+    file_execution: FileExecutionRuntime | None = None,
 ) -> None:
     # One synchronous cleanup job retains ordering even if its async waiter is cancelled.
     # A failed join must retain resources/ownership, never leave a writer using closed state.
+    if file_execution is not None:
+        file_execution.close()
     if worker is not None:
         worker.close()
     try:
@@ -142,19 +157,31 @@ def _close_control(
         ownership.close()
 
 
+async def _join_lifecycle_call[T](call: Callable[[], T]) -> tuple[T, bool]:
+    """Acquire the thread's result before propagating cancellation to its owner."""
+    pending = asyncio.create_task(run_in_threadpool(call))
+    cancelled = False
+    while not pending.done():
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break  # Retrieve the original failure from the completed task.
+    return pending.result(), cancelled
+
+
 async def _finish_control(
-    worker: RecoveryWorker | None, pool: GatewayPool, ownership: ProcessIngressOwnership
+    worker: RecoveryWorker | None,
+    pool: GatewayPool,
+    ownership: ProcessIngressOwnership,
+    file_execution: FileExecutionRuntime | None = None,
 ) -> None:
     if worker is not None:
         worker.request_stop()
-    cleanup = asyncio.create_task(run_in_threadpool(_close_control, worker, pool, ownership))
-    cancelled = False
-    while not cleanup.done():
-        try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError:
-            cancelled = True
-    cleanup.result()
+    _, cancelled = await _join_lifecycle_call(
+        lambda: _close_control(worker, pool, ownership, file_execution)
+    )
     if cancelled:
         raise asyncio.CancelledError
 
@@ -168,6 +195,8 @@ def create_app(
     instance_drain: InstanceDrainService | None = None,
     submit_execution: SubmitExecutionService | None = None,
     abort_execution: ExecutionAbortService | None = None,
+    file_execution_factory: Callable[[GatewayIngress, FileExecutionLedger], FileExecutionRuntime]
+    | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
     if barrier_control is not None and not resolved_settings.execution_control_enabled:
@@ -182,31 +211,75 @@ def create_app(
         raise ValueError("injected execution control still requires explicit control configuration")
     if barrier_control is not None and resolved_settings.recovery_config_file is not None:
         raise ValueError("configured recovery requires the default control lifespan")
+    if file_execution_factory is not None and (
+        not resolved_settings.execution_control_enabled
+        or any(
+            service is not None
+            for service in (
+                barrier_control,
+                execution_query,
+                instance_drain,
+                submit_execution,
+                abort_execution,
+            )
+        )
+    ):
+        raise ValueError("file execution requires the default owned control lifespan")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if not resolved_settings.execution_control_enabled or barrier_control is not None:
             yield
             return
-        service, queries, drain, ownership, pool, worker = await run_in_threadpool(
-            _build_control, resolved_settings
-        )
+        control, cancelled = await _join_lifecycle_call(lambda: _build_control(resolved_settings))
+        service, queries, drain, ownership, pool, worker, ingress, ledger = control
         app.state.barrier_control = service
         app.state.execution_query = queries
         app.state.instance_drain = drain
         app.state.recovery_worker = worker
+        file_execution: FileExecutionRuntime | None = None
         try:
+            if cancelled:
+                raise asyncio.CancelledError
+            if file_execution_factory is not None:
+                runtime, cancelled = await _join_lifecycle_call(
+                    lambda: file_execution_factory(ingress, ledger)
+                )
+                file_execution = runtime
+                app.state.file_execution_runtime = runtime
+                if cancelled:
+                    raise asyncio.CancelledError
+                _, cancelled = await _join_lifecycle_call(runtime.open)
+                if cancelled:
+                    raise asyncio.CancelledError
+                app.state.submit_execution = SubmitExecutionService(
+                    ledger=ledger,
+                    ingress=ingress,
+                    dispatch=OriginalCommandDispatch(
+                        commands=ledger,
+                        engine=runtime,
+                        max_document_bytes=runtime.max_command_bytes,
+                    ),
+                    observation=runtime,
+                    committed_execution=runtime,
+                )
+                app.state.abort_execution = ExecutionAbortService(
+                    ingress=ingress, ledger=ledger, abort=runtime
+                )
             if worker is not None:
                 worker.start()
             yield
         finally:
             try:
-                await _finish_control(worker, pool, ownership)
+                await _finish_control(worker, pool, ownership, file_execution)
             finally:
                 app.state.barrier_control = None
                 app.state.execution_query = None
                 app.state.instance_drain = None
                 app.state.recovery_worker = None
+                app.state.file_execution_runtime = None
+                app.state.submit_execution = None
+                app.state.abort_execution = None
 
     app = FastAPI(
         title="SpeechNexus execution gateway API",
@@ -226,6 +299,8 @@ def create_app(
     app.state.submit_execution = submit_execution
     app.state.abort_execution = abort_execution
     app.state.recovery_worker = None
+    app.state.file_execution_required = file_execution_factory is not None
+    app.state.file_execution_runtime = None
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(

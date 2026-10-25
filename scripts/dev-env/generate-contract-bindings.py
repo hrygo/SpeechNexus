@@ -25,6 +25,20 @@ CONTRACTS = ROOT / "contracts"
 PACKAGE = ROOT / "packages/contracts"
 
 
+def generate_typescript_types(source: Path, output: Path) -> None:
+    """Use the locked compiler and its resolved Header Objects for presence."""
+    subprocess.run(
+        [
+            "node",
+            str(ROOT / "scripts/dev-env/normalize-typescript-headers.mjs"),
+            str(source),
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+
 def flatten_typed_dicts(path: Path) -> None:
     """Flatten allOf field refinement for mutable TypedDicts (template revision 1).
 
@@ -644,20 +658,7 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
         if types_name != "speech" or config["source"] != "speech-openapi.yaml":
             raise ValueError("Shared TypeScript types must use the canonical speech source")
     else:
-        subprocess.run(
-            [
-                "pnpm",
-                "exec",
-                "openapi-typescript",
-                str(source),
-                "--output",
-                str(types),
-                "--default-non-nullable",
-                "false",
-            ],
-            cwd=ROOT,
-            check=True,
-        )
+        generate_typescript_types(source, types)
     script = (
         "// Generated from contracts/bindings.json; do not edit.\n"
         'import { createProfileParser } from "./profile-runtime.mjs";\n'
@@ -852,19 +853,8 @@ def generate(destination: Path) -> list[Path]:
         cwd=ROOT,
         capture_output=True,
     )
-    subprocess.run(
-        [
-            "pnpm",
-            "exec",
-            "openapi-typescript",
-            str(CONTRACTS / manifest["source"]),
-            "--output",
-            str(destination / "src/speech.generated.ts"),
-            "--default-non-nullable",
-            "false",
-        ],
-        cwd=ROOT,
-        check=True,
+    generate_typescript_types(
+        CONTRACTS / manifest["source"], destination / "src/speech.generated.ts"
     )
     (destination / "src/file.generated.ts").write_text(
         "// Generated from contracts/bindings.json; do not edit.\n"

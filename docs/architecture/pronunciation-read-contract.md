@@ -30,6 +30,13 @@ after an unavailable result; the generated client never retries automatically,
 changes revision or creates a replacement dictionary. A 404 body claiming
 unavailability or allowing retry is rejected by both runtime validators.
 
+`Retry-After` remains optional in runtime validation and in the TypeScript
+response DTO. The locked compiler otherwise makes every referenced Header
+Object required. The generation adapter reads presence from that compiler's
+resolved source document and updates only response-header optional markers in
+its TypeScript AST. Header value types, mandatory policy headers, source schemas
+and runtime validators are preserved; no service is required to add a retry header.
+
 Path revisions stay canonical decimal **strings**, including values above the
 JavaScript safe integer bound. HTTP integer headers are decoded independently;
 that does not authorize conversion of revision identifiers. Callers must compare

@@ -1136,6 +1136,78 @@
         "internal": {}
       },
       "valid": false
+    },
+    {
+      "id": "retry-after-not-integer",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": "soon"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retry-after-negative",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": "-1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retry-after-boolean",
+      "operation": "getPronunciationRevision",
+      "kind": "response",
+      "status": 503,
+      "value": {
+        "body": {
+          "error": {
+            "code": "pronunciation_unavailable",
+            "type": "service_unavailable_error",
+            "message": "Synthetic read outcome.",
+            "param": null,
+            "request_id": "synthetic-pron-read",
+            "retryable": true
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "true",
+          "Retry-After": true
+        }
+      },
+      "valid": false
     }
   ]
 }

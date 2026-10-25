@@ -44,6 +44,13 @@ pnpm --filter @speechnexus/contracts typecheck
 pnpm --filter @speechnexus/contracts test
 ```
 
+OpenAPI TypeScript generation uses the locked compiler and a response-header
+AST adapter: a referenced Header Object is optional unless its resolved source
+declares `required: true`. This also covers external response/header aliases.
+The adapter preserves header value types and mandatory inline headers; it does
+not rewrite source schemas or runtime validation. Compile-time consumers cover
+omitted optional headers, required controls and invalid values.
+
 Inputs are `contracts/bindings.json`, the speech OpenAPI and its local reference
 closure. The generator refuses references outside `contracts/` and remote URIs.
 Python uses datamodel-code-generator 0.86.0 with the checked-in TypedDict

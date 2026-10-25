@@ -22,6 +22,20 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
+    # Alembic has already read its version/mutex inside this transaction.
+    # A repeatable snapshot could predate a writer that commits while LOCK waits.
+    # Reject it rather than count stale history after acquiring the table locks.
+    if connection.execute(text("SHOW transaction_isolation")).scalar_one() != "read committed":
+        raise RuntimeError("Binding default downgrade requires READ COMMITTED isolation")
+    # Match the normal writer's command -> revision -> snapshot lock order.
+    # Counts alone take ACCESS SHARE and cannot exclude an in-flight/new writer.
+    # Hold these locks through both checks and DDL in the migration transaction:
+    # an earlier writer is observed after commit; a later one cannot succeed
+    # against a schema that is being removed.
+    op.execute(
+        "LOCK TABLE speech_binding_commands, speech_binding_revisions, "
+        "speech_binding_defaults IN ACCESS EXCLUSIVE MODE"
+    )
     snapshots = connection.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar_one()
     declared = connection.execute(
         text("SELECT count(*) FROM speech_binding_commands WHERE defaults_declared IS TRUE")

@@ -256,8 +256,14 @@ empty declaration. Fixed reads return None only for an authoritative absent pare
 or declaration. The record digest detects changed snapshot identity/metadata as
 well as parameter corruption; it is not a security signature against a DB owner.
 
-Migration rollback is allowed only when no new snapshot or declared original
-command remains; a declared journal also blocks rollback after child corruption.
+Migration rollback first locks commands → revisions → snapshots in ACCESS
+EXCLUSIVE mode, matching writer order and holding the locks through both counts
+and DDL. Downgrade requires READ COMMITTED; it rejects repeatable/serializable
+snapshots that may predate a writer's commit while acquiring these locks.
+An earlier writer must finish before the check; a later atomic writer
+cannot succeed through the removal window. Rollback is allowed only when no new
+snapshot or declared original command remains; a declared journal also blocks
+rollback after child corruption.
 Failure rolls back new DDL and preserves older facts/ACLs. Isolated PostgreSQL is
 the product authority; the test-only InnoDB adapter executes the same transaction
 SQL solely to probe portability. Tests cover real lock waits, original rollback,

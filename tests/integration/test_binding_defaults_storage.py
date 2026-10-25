@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Event
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -17,12 +19,14 @@ from alembic import command as migration
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.pool import NullPool
 from tests.integration.test_binding_drafts import Bindings
 from tests.integration.test_binding_drafts import bindings as bindings
 from tests.integration.test_coordination_foundation import UpgradeSandbox
 from tests.integration.test_coordination_foundation import upgrade_sandbox as upgrade_sandbox
-from tests.integration.test_production_jobs import ROOT, FaultConnection
+from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.binding_defaults_database import MySQLBindingDefaults
 from tests.support.binding_examples import binding_request
@@ -53,6 +57,45 @@ from speechnexus_backend.speech.interfaces.binding_default_drafts import (
 
 pytestmark = pytest.mark.integration
 HEAD = "0011_binding_parameter_defaults"
+
+
+def downgrade_defaults(
+    db: JobDatabase,
+    *,
+    application: str,
+    before_counts: Callable[[], None] | None = None,
+    isolation: str = "READ COMMITTED",
+) -> None:
+    from alembic.config import Config
+
+    engine = create_engine(
+        db.url.replace("postgresql://", "postgresql+psycopg://", 1),
+        poolclass=NullPool,
+        hide_parameters=True,
+        connect_args={"application_name": application},
+        isolation_level=isolation,
+    )
+
+    def before_execute(
+        connection: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        if before_counts is not None and statement.startswith(f"SELECT count(*) FROM {TABLE}"):
+            before_counts()
+
+    event.listen(engine, "before_cursor_execute", before_execute)
+    config = Config(str(ROOT / "alembic.ini"))
+    config.attributes["schema"] = db.schema
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.downgrade(config, "0010_model_binding_drafts")
+    finally:
+        engine.dispose()
 
 
 @dataclass
@@ -594,6 +637,104 @@ def test_declared_history_blocks_downgrade_even_if_child_missing(
         engine.dispose()
     assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
     assert defaults.snapshot() == before
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+def test_writer_commit_while_downgrade_waits_preserves_all_declared_facts(
+    defaults: Defaults,
+) -> None:
+    db = defaults.bindings.db
+    cmd = defaults.prepare()
+    application = "sn_defaults_downgrade_" + db.schema
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        with defaults.bindings.writer() as (_, cursor):
+            accepted = sql.create_default_draft(
+                cursor,
+                cmd,
+                cursor.clock,
+                lambda: "mbrev-before-downgrade",
+                lambda: "mbdefaults-before-downgrade",
+            )
+            # Snapshot this actual uncommitted transaction, not a later race with DROP.
+            before = {}
+            for table in (*defaults.bindings.snapshot().keys(), TABLE):
+                cursor.execute(f"SELECT * FROM {table} ORDER BY 1,2")
+                before[table] = cursor.fetchall()
+            pending = workers.submit(downgrade_defaults, db, application=application)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                rows = db.query(
+                    "SELECT pid FROM pg_stat_activity WHERE application_name=%s "
+                    "AND cardinality(pg_blocking_pids(pid))>0",
+                    (application,),
+                )
+                if rows:
+                    break
+                assert not pending.done(), "Migration must wait for the active writer"
+                time.sleep(0.01)
+            else:
+                pytest.fail("Actual downgrade lock wait was not observed")
+        # The writer has really committed; the migration must now see and preserve it.
+        with pytest.raises(RuntimeError, match="default history"):
+            pending.result(timeout=5)
+    assert defaults.port.recover(cmd).snapshot == accepted.snapshot
+    assert defaults.snapshot() == before
+    assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+def test_downgrade_lock_before_writer_prevents_success_followed_by_history_loss(
+    defaults: Defaults,
+) -> None:
+    db = defaults.bindings.db
+    at_counts, release_counts = Event(), Event()
+
+    def pause_before_counts() -> None:
+        at_counts.set()
+        assert release_counts.wait(5), "Test did not release the actual migration transaction"
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        migration_result = workers.submit(
+            downgrade_defaults,
+            db,
+            application="sn_defaults_first_" + db.schema,
+            before_counts=pause_before_counts,
+        )
+        try:
+            assert at_counts.wait(5)
+            writer = workers.submit(defaults.port.create, defaults.prepare())
+            db.await_waiter()
+            assert not writer.done(), (
+                "A writer must not succeed inside the downgrade check/DDL window"
+            )
+        finally:
+            release_counts.set()
+        migration_result.result(timeout=5)
+        result = writer.result(timeout=5)
+    assert result.outcome == "unknown" and result.recovery == "query_original"
+    assert all(not rows for rows in defaults.bindings.snapshot().values())
+    assert db.query("SELECT to_regclass(%s) AS name", (TABLE,)) == [{"name": None}]
+    assert db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0010_model_binding_drafts"}
+    ]
+
+
+@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
+def test_downgrade_refuses_old_transaction_snapshots_without_ddl(
+    defaults: Defaults, isolation: str
+) -> None:
+    before = defaults.snapshot()
+    with pytest.raises(RuntimeError, match="READ COMMITTED"):
+        downgrade_defaults(
+            defaults.bindings.db,
+            application="sn_defaults_isolation",
+            isolation=isolation,
+        )
+    assert defaults.snapshot() == before
+    assert defaults.bindings.db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": HEAD}
+    ]
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)

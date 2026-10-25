@@ -156,6 +156,9 @@ class PreparationTests(unittest.TestCase):
             "Acquire::ForceHash",
             "Binary::apt-get::Acquire::http::Timeout",
             "acquire::HTTP::Proxy",
+            "Acquire::http::User-Agent-Non-Interactive::private-host",
+            "Acquire::https::User-Agent-Non-Interactive",
+            "Acquire::http::User-Agent",
         ):
             with self.subTest(key=key), patch.object(HELPER.subprocess, "run") as run:
                 run.return_value = subprocess.CompletedProcess([], 0, key + "\n", "")
@@ -171,6 +174,13 @@ class PreparationTests(unittest.TestCase):
         )
         calls = self.exercise(policy=policy)
         self.assertTrue(any(args[0] == HELPER.APT_HELPER for args in calls))
+
+    def test_confirmed_direct_noninteractive_agent_control_stays_in_native_apt(self) -> None:
+        calls = self.exercise(policy="Acquire::http::User-Agent-Non-Interactive")
+        native = next(args for args in calls if args[0] == HELPER.APT_HELPER)
+        self.assertEqual(native[1], "download-file")
+        self.assertEqual(len(native), 5)
+        self.assertNotIn("-o", native)  # Do not replace the configured flag/header/context.
 
     def test_prefetch_has_at_most_four_concurrent_archive_downloads(self) -> None:
         lock = threading.Lock()

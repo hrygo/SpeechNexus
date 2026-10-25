@@ -143,8 +143,8 @@ def prefetch(archives: list[Archive], temporary: Path) -> None:
 
 
 def prepare(cache: Path, temporary_root: Path) -> None:
-    # Only the three observed standard-runner controls are supported. Native
-    # APT inherits their values; unknown/custom controls retain the old path.
+    # Native APT inherits observed controls without changing their values.
+    # Unknown/custom controls retain the old path.
     # Request key names only, never proxy credentials or other configuration values.
     policy = capture(["apt-config", "dump", "--format", "%f%n"])
     known_keys = (
@@ -158,6 +158,7 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         "Max-Age",
         "No-Store",
         "User-Agent",
+        "User-Agent-Non-Interactive",
         "AllowRedirect",
         "CaInfo",
         "Verify-Peer",
@@ -217,6 +218,11 @@ def prepare(cache: Path, temporary_root: Path) -> None:
         for protocol in ("http", "https")
         for key in ("Timeout", "Pipeline-Depth", "No-Cache")
     }
+    # APT 2.8.1 methods/http.cc reads this exact direct field via ConfigFindB
+    # and selects its non-interactive marker from the HTTP method's systemd
+    # unit context. apt-helper uses that same acquire method and existing
+    # configuration; never synthesize or override the User-Agent header here.
+    supported.add("Acquire::http::User-Agent-Non-Interactive")
     transport_keys = [
         line
         for line in policy.stdout.splitlines()

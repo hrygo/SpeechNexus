@@ -38,8 +38,15 @@ def _origin(url: str) -> tuple[str, str | None, int]:
 
 
 class _FixedObjectHTTP(urllib3.PoolManager):
-    def __init__(self, endpoint: str, context: ssl.SSLContext | None) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        context: ssl.SSLContext | None,
+        *,
+        allowed_methods: frozenset[str] = frozenset({"HEAD", "GET"}),
+    ) -> None:
         self._origin = _origin(endpoint)
+        self._allowed_methods = allowed_methods
         super().__init__(
             num_pools=1,
             maxsize=4,
@@ -50,7 +57,7 @@ class _FixedObjectHTTP(urllib3.PoolManager):
         )
 
     def urlopen(self, method: str, url: str, *args: Any, **kwargs: Any) -> BaseHTTPResponse:
-        if _origin(url) != self._origin or method not in {"HEAD", "GET"}:
+        if _origin(url) != self._origin or method not in self._allowed_methods:
             raise ExecutionInputError("execution_input_origin_rejected")
         kwargs["pool_timeout"] = 3
         kwargs["redirect"] = False
@@ -60,7 +67,7 @@ class _FixedObjectHTTP(urllib3.PoolManager):
         kwargs["decode_content"] = False
         response = super().urlopen(method, url, *args, **kwargs)
         rejected = response.status != 200
-        if rejected or method == "HEAD":
+        if rejected or method in {"HEAD", "PUT"}:
             # HEAD consumers use headers only; they must not retain a connection
             # after preloading is disabled. Never drain/decode an error response.
             try:
@@ -227,7 +234,10 @@ class MinioExecutionInputs:
                 total = 0
                 while True:
                     check()
-                    chunk = response.read(
+                    # Return available bytes after one underlying read, rather
+                    # than waiting to fill 64 KiB while a slow peer keeps the
+                    # socket alive. Recheck cancel/deadline between reads.
+                    chunk = response.read1(
                         min(_CHUNK_BYTES, reference.byte_length - total + 1),
                         decode_content=False,
                     )

@@ -46,7 +46,7 @@ class Response:
         self.closed = self.released = False
         self.fail_close = False
 
-    def read(self, amount: int, *, decode_content: bool) -> bytes:
+    def read1(self, amount: int, *, decode_content: bool) -> bytes:
         assert not decode_content
         return self.stream.read(amount)
 
@@ -95,6 +95,29 @@ def test_fixed_version_full_digest_eof_and_spool_lifetime(adapter: Any, tmp_path
         version_id="v1",
         request_headers={"Accept-Encoding": "identity"},
     )
+
+
+def test_partial_body_returns_to_cancellation_check_without_filling_a_chunk(
+    adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    value, _, response = adapter
+    stopped = False
+    reads = 0
+
+    def read1(amount: int, *, decode_content: bool) -> bytes:
+        nonlocal stopped, reads
+        assert not decode_content and amount > 0
+        reads += 1
+        stopped = True
+        return BODY[:1]
+
+    monkeypatch.setattr(response, "read1", read1)
+    with (
+        pytest.raises(ExecutionInputError, match="execution_input_cancelled"),
+        value.open_verified(reference(), limits=LIMITS, cancelled=lambda: stopped),
+    ):
+        pytest.fail("partial cancelled input must not reach the consumer")
+    assert reads == 1 and response.closed and response.released
 
 
 def test_downstream_failure_keeps_its_identity_and_closes_spool(adapter: Any) -> None:

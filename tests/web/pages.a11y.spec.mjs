@@ -40,6 +40,10 @@ for (const app of apps) {
           await page
             .locator("html")
             .evaluate((node, value) => (node.dataset.theme = value), theme.explicit);
+        await expect(page.locator("html")).toHaveCSS(
+          "color-scheme",
+          theme.explicit ?? theme.system,
+        );
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
         const motion = await page.locator(".status-dot").evaluate((node) => {
           const s = getComputedStyle(node);
@@ -68,6 +72,10 @@ for (const app of apps) {
       test(`${app.name} ${theme}: ${name} and reduced motion`, async ({ page }, info) => {
         await page.emulateMedia({ colorScheme: theme, ...media, reducedMotion: "reduce" });
         await page.goto(`http://127.0.0.1:${app.port}`);
+        await expect(page.locator("html")).toHaveCSS(
+          "color-scheme",
+          media.forcedColors === "active" ? "light dark" : theme,
+        );
         await scan(page, info);
         await semanticContrast(page, info);
         const motion = await page.locator(".status-dot").evaluate((node) => {

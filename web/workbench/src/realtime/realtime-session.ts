@@ -347,19 +347,20 @@ export class RealtimeController {
           socket.readyState === 1 &&
           !!stream,
       );
-      const result = await stream.command(value);
-      identity(
-        !this.#disposed &&
-          this.#active &&
-          epoch === this.#epoch &&
-          this.#socket === socket &&
-          socket.readyState === 1,
-      );
-      const text = JSON.stringify(result.event),
-        bytes = new TextEncoder().encode(text).byteLength;
-      // Five seconds of 24kHz PCM16, including Base64/envelope overhead. No unbounded send queue.
-      identity(socket.bufferedAmount + bytes <= (5 * 24000 * 2 * 4) / 3);
-      socket.send(text);
+      await stream.command(value, (text) => {
+        identity(
+          !this.#disposed &&
+            this.#active &&
+            epoch === this.#epoch &&
+            this.#socket === socket &&
+            this.#stream === stream &&
+            socket.readyState === 1,
+        );
+        const bytes = new TextEncoder().encode(text).byteLength;
+        // Five seconds of 24kHz PCM16, including Base64/envelope overhead. No unbounded send queue.
+        identity(socket.bufferedAmount + bytes <= (5 * 24000 * 2 * 4) / 3);
+        socket.send(text);
+      });
       this.#publish({ stream: stream.getSnapshot() });
     };
     const task = this.#queue.then(run);

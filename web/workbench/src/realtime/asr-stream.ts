@@ -287,7 +287,8 @@ export class AsrStream {
     next.segments[index] = row;
     return row;
   }
-  async command(input: unknown) {
+  /** Validate, enqueue synchronously, then commit local send facts; this is not a server ACK. */
+  async command(input: unknown, send: (wire: string) => void = () => {}) {
     const event = parse("RealtimeEvent", input);
     check(CLIENT_TYPES.has(event.type));
     const hash = await fingerprint(event);
@@ -296,6 +297,7 @@ export class AsrStream {
       if (old) {
         check(old === hash, "idempotency_conflict");
         check(this.#s.phase !== "disconnected" && this.#s.phase !== "closed");
+        send(JSON.stringify(event));
         return { event, duplicate: true };
       }
     }
@@ -327,6 +329,9 @@ export class AsrStream {
     }
     if (event.event_id) {
       check(this.#commands.size < COMMAND_LIMIT, "realtime_capacity");
+    }
+    send(JSON.stringify(event));
+    if (event.event_id) {
       this.#commands.set(event.event_id, hash);
     }
     next.uncommitted = uncommitted;

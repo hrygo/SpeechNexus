@@ -11,7 +11,7 @@ import {
 import type { RealtimeSocket } from "./realtime-session";
 import type { TtsJournal, TtsRecord } from "./tts-journal";
 import { TtsStream, ttsCheck, type TtsSnapshot } from "./tts-stream";
-import { openTtsPlayback, type TtsPlayback } from "./tts-playback";
+import { openTtsPlayback, PlaybackCleanupError, type TtsPlayback } from "./tts-playback";
 
 export type TtsControllerSnapshot = {
   record: TtsRecord;
@@ -22,7 +22,15 @@ export type TtsControllerSnapshot = {
   connecting: boolean;
   starting: boolean;
   blocked: boolean;
-  problem: "storage" | "unknown" | "rejected" | "read_failed" | "protocol" | "playback" | null;
+  problem:
+    | "storage"
+    | "unknown"
+    | "rejected"
+    | "read_failed"
+    | "protocol"
+    | "playback"
+    | "playback_cleanup"
+    | null;
 };
 type Dependencies = { socket: (url: URL) => RealtimeSocket; playback: typeof openTtsPlayback };
 const released = (s: RealtimeSession) =>
@@ -38,6 +46,8 @@ export class TtsController {
   #socket: RealtimeSocket | null = null;
   #stream: TtsStream | null = null;
   #playback: TtsPlayback | null = null;
+  #stopping: Promise<void> | null = null;
+  #cleanupFailed = false;
   #abort: AbortController | null = null;
   #generation = 0;
   #reads = 0;
@@ -78,6 +88,8 @@ export class TtsController {
   #publish(change: Partial<TtsControllerSnapshot>) {
     if (this.#disposed) return;
     this.#s = freeze({ ...this.#s, ...change });
+    if (this.#cleanupFailed && this.#s.problem !== "storage")
+      this.#s = freeze({ ...this.#s, problem: "playback_cleanup" });
     this.#listeners.forEach((f) => f());
   }
   #persist(record: TtsRecord) {
@@ -103,6 +115,10 @@ export class TtsController {
   async create(request: RealtimeRequest) {
     if (
       this.#locked() ||
+      this.#s.starting ||
+      this.#playback ||
+      this.#stopping ||
+      this.#cleanupFailed ||
       this.#s.connecting ||
       (this.#s.record.session && (!this.#s.current || !released(this.#s.current)))
     )
@@ -299,6 +315,9 @@ export class TtsController {
     if (
       this.#locked() ||
       this.#s.starting ||
+      this.#playback ||
+      this.#stopping ||
+      this.#cleanupFailed ||
       !this.#stream ||
       this.#stream.getSnapshot().phase !== "active"
     )
@@ -306,9 +325,6 @@ export class TtsController {
     const old = this.#stream.getSnapshot().utterance;
     if (old && (!old.done || !["complete", "not_required"].includes(old.done.cleanup_state)))
       return;
-    if (this.#playback && this.#playback.snapshot().rendered !== this.#playback.snapshot().received)
-      return;
-    this.#stopPlayback();
     const generation = this.#generation,
       abort = (this.#abort = new AbortController());
     this.#publish({ starting: true });
@@ -319,6 +335,7 @@ export class TtsController {
         generation,
         abort.signal,
       );
+      this.#playback = playback;
       if (
         this.#disposed ||
         !this.#active ||
@@ -326,10 +343,9 @@ export class TtsController {
         this.#abort !== abort ||
         generation !== this.#generation
       ) {
-        playback.stop();
+        await this.#stopPlayback();
         return;
       }
-      this.#playback = playback;
       this.#send({ type: "nexus.tts.start", event_id: crypto.randomUUID(), utterance_id: id });
       this.#timer = setInterval(() => {
         const p = this.#playback;
@@ -339,14 +355,17 @@ export class TtsController {
         if (state.state === "failed") this.#fail("playback");
         const u = this.#stream?.getSnapshot().utterance;
         if (u?.done && state.rendered === state.received) {
-          this.#stopPlayback();
+          void this.#stopPlayback();
         }
       }, 50);
       this.#publish({ playback: playback.snapshot() });
-    } catch {
-      if (!abort.signal.aborted && !this.#disposed) {
+    } catch (error) {
+      if (error instanceof PlaybackCleanupError) {
+        this.#cleanupFailed = true;
+        this.#publish({ playback: { state: "failed", received: 0, rendered: 0 } });
+      } else if (!abort.signal.aborted && !this.#disposed) {
         this.#publish({ problem: "playback" });
-        this.#stopPlayback();
+        void this.#stopPlayback();
       }
     } finally {
       clearTimeout(timeout);
@@ -383,7 +402,7 @@ export class TtsController {
       this.#command("finish_text");
   }
   cancel() {
-    this.#stopPlayback();
+    void this.#stopPlayback();
     const u = this.#s.stream?.utterance;
     if (u && u.phase !== "terminal" && u.phase !== "cancelling") this.#command("cancel");
   }
@@ -412,16 +431,37 @@ export class TtsController {
       clearInterval(this.#timer);
       this.#timer = null;
     }
-    if (this.#playback) {
-      const p = this.#playback;
-      this.#playback = null;
-      p.stop();
-      this.#publish({ playback: { ...p.snapshot(), state: "stopped" } });
+    if (this.#stopping) return this.#stopping;
+    const p = this.#playback;
+    if (!p) return Promise.resolve();
+    let closing: Promise<void>;
+    try {
+      closing = p.stop();
+    } catch {
+      closing = Promise.reject(new PlaybackCleanupError());
     }
+    this.#publish({ playback: p.snapshot() });
+    const stopping = closing
+      .then(() => {
+        ttsCheck(p.snapshot().state === "stopped");
+        if (this.#playback !== p) return;
+        this.#playback = null;
+        this.#publish({ playback: p.snapshot() });
+      })
+      .catch(() => {
+        if (this.#playback !== p) return;
+        this.#cleanupFailed = true;
+        this.#publish({ playback: { ...p.snapshot(), state: "failed" } });
+      })
+      .finally(() => {
+        if (this.#stopping === stopping) this.#stopping = null;
+      });
+    this.#stopping = stopping;
+    return stopping;
   }
   #drop() {
     ++this.#generation;
-    this.#stopPlayback();
+    void this.#stopPlayback();
     if (this.#handshake) {
       clearTimeout(this.#handshake);
       this.#handshake = null;

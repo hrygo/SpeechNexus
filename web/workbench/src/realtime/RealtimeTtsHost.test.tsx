@@ -4,7 +4,96 @@ import RealtimeTtsHost from "./RealtimeTtsHost";
 import { TtsController } from "./tts-session";
 import { TtsJournal, ttsJournalKey } from "./tts-journal";
 import { storage } from "./realtime-fixtures";
-import { ttsRequest, ttsSession } from "./tts-fixtures";
+import { ttsEvent, ttsReady, ttsRequest, ttsSession, ttsStarted } from "./tts-fixtures";
+import type { TtsPlayback } from "./tts-playback";
+
+it.each(["resolve", "reject"] as const)(
+  "allows stopping local audio after remote done and shows cleanup %s honestly",
+  async (outcome) => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    let state: ReturnType<TtsPlayback["snapshot"]>["state"] = "running";
+    const closing = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    const socket = Object.assign(new EventTarget(), {
+      readyState: 1,
+      bufferedAmount: 0,
+      send: vi.fn(),
+      close: vi.fn(),
+    });
+    const playback: TtsPlayback = {
+      push: vi.fn(),
+      snapshot: () => ({ state, received: 3, rendered: 0 }),
+      stop: vi.fn(() => {
+        state = "closing";
+        return closing.then(
+          () => {
+            state = "stopped";
+          },
+          (error: unknown) => {
+            state = "failed";
+            throw error;
+          },
+        );
+      }),
+    };
+    const c = new TtsController(
+      {
+        create: vi.fn().mockResolvedValue(ttsSession()),
+        current: vi.fn().mockResolvedValue(ttsSession()),
+        cancel: vi.fn(),
+      },
+      new TtsJournal(storage()),
+      { socket: () => socket, playback: vi.fn().mockResolvedValue(playback) },
+    );
+    const message = async (value: unknown) => {
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) }));
+      await c.settled();
+    };
+    await c.create(ttsRequest());
+    await c.connect();
+    await message(ttsReady());
+    await c.start("utterance-1");
+    await message(ttsStarted());
+    await message(
+      ttsEvent(
+        "nexus.operation.done",
+        { kind: "tts", status: "cancelled", cleanup_state: "complete" },
+        3,
+      ),
+    );
+    render(<RealtimeTtsHost controller={c} />);
+    const start = screen.getByRole("button", { name: "开始一轮配音" });
+    expect(start).toBeDisabled();
+    const stop = screen.getByRole("button", { name: "停止本轮播放" });
+    expect(stop).toBeEnabled();
+    fireEvent.click(stop);
+    expect(screen.getByTestId("tts-playback-state")).toHaveTextContent("正在停止");
+    expect(start).toBeDisabled();
+    expect(stop).toBeDisabled();
+    // Local stop after a terminal event must not create a second remote cancellation.
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    if (outcome === "resolve") {
+      await act(async () => {
+        resolve();
+        await closing;
+      });
+      await waitFor(() => expect(start).toBeEnabled());
+      expect(screen.getByTestId("tts-playback-state")).toHaveTextContent("stopped");
+    } else {
+      await act(async () => {
+        reject(Error("synthetic cleanup failure"));
+        await closing.catch(() => {});
+      });
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("尚未确认停止"));
+      expect(start).toBeDisabled();
+      expect(screen.getByTestId("tts-playback-state")).not.toHaveTextContent("stopped");
+    }
+    c.dispose();
+  },
+);
 
 it("I2 re-enables explicit original-key replay after hidden/visible without automatic replay or playback", async () => {
   const s = storage(),

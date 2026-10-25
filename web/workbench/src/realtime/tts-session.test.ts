@@ -5,6 +5,7 @@ import { storage } from "./realtime-fixtures";
 import { ttsEvent, ttsPcm, ttsReady, ttsRequest, ttsSession, ttsStarted } from "./tts-fixtures";
 import type { RealtimeClient } from "./realtime-client";
 import type { RealtimeSocket } from "./realtime-session";
+import { PlaybackCleanupError } from "./tts-playback";
 
 class Socket extends EventTarget implements RealtimeSocket {
   readyState = 1;
@@ -21,7 +22,7 @@ class Socket extends EventTarget implements RealtimeSocket {
     this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) }));
   }
 }
-function fixture() {
+function fixture(closing = Promise.resolve()) {
   const s = storage(),
     socket = new Socket(),
     client = {
@@ -33,14 +34,31 @@ function fixture() {
     };
   let rendered = 0,
     received = 0;
-  const stop = vi.fn(),
+  let state: "running" | "closing" | "stopped" | "failed" = "running";
+  let stopped: Promise<void> | undefined;
+  const stop = vi.fn(() => {
+      if (!stopped) {
+        state = "closing";
+        stopped = closing.then(
+          () => {
+            state = "stopped";
+          },
+          (error: unknown) => {
+            state = "failed";
+            throw error;
+          },
+        );
+        void stopped.catch(() => {});
+      }
+      return stopped;
+    }),
     push = vi.fn((_start: number, samples: Float32Array) => {
       received += samples.length;
     });
   const playback = {
     push,
     stop,
-    snapshot: () => ({ state: "running" as const, received, rendered }),
+    snapshot: () => ({ state, received, rendered }),
   };
   const open = vi.fn(() => Promise.resolve(playback));
   const c = new TtsController(client, new TtsJournal(s), { socket: () => socket, playback: open });
@@ -57,8 +75,8 @@ function fixture() {
     },
   };
 }
-async function connected() {
-  const f = fixture();
+async function connected(closing?: Promise<void>) {
+  const f = fixture(closing);
   await f.c.create(ttsRequest());
   await f.c.connect();
   f.socket.message(ttsReady());
@@ -67,6 +85,67 @@ async function connected() {
   return f;
 }
 describe("TTS controller intent and playback ownership", () => {
+  it("retains a cleanup failure during initialization and cannot start another context", async () => {
+    const f = await connected();
+    f.open.mockRejectedValueOnce(new PlaybackCleanupError());
+    await f.c.start("utterance-1");
+    expect(f.c.getSnapshot()).toMatchObject({
+      playback: { state: "failed" },
+      problem: "playback_cleanup",
+      starting: false,
+    });
+    await f.c.refresh();
+    await f.c.start("utterance-1");
+    expect(f.open).toHaveBeenCalledTimes(1);
+    expect(f.socket.sent).toHaveLength(0);
+    expect(f.c.getSnapshot().problem).toBe("playback_cleanup");
+    f.c.dispose();
+  });
+  it.each(["resolve", "reject"] as const)(
+    "retains local cleanup facts after remote completion (%s)",
+    async (outcome) => {
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const closing = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      const f = await connected(closing);
+      await f.c.start("utterance-1");
+      f.socket.message(ttsStarted());
+      await f.c.settled();
+      f.c.cancel();
+      f.socket.message(
+        ttsEvent(
+          "nexus.operation.done",
+          {
+            kind: "tts",
+            status: "cancelled",
+            cleanup_state: "complete",
+          },
+          3,
+        ),
+      );
+      await f.c.settled();
+      expect.soft(f.c.getSnapshot().playback?.state).toBe("closing");
+      await f.c.start("utterance-2");
+      expect.soft(f.open).toHaveBeenCalledTimes(1);
+      if (outcome === "resolve") {
+        resolve();
+        await vi.waitFor(() => expect(f.c.getSnapshot().playback?.state).toBe("stopped"));
+        await f.c.start("utterance-2");
+        expect(f.open).toHaveBeenCalledTimes(2);
+      } else {
+        reject(Error("synthetic close failure"));
+        await vi.waitFor(() => expect(f.c.getSnapshot().playback?.state).toBe("failed"));
+        await f.c.refresh();
+        await f.c.start("utterance-2");
+        expect(f.open).toHaveBeenCalledTimes(1);
+        expect(f.c.getSnapshot().problem).toBe("playback_cleanup");
+      }
+      f.c.dispose();
+    },
+  );
   it("I1 immediately stops and sends cancel while start acknowledgement is delayed", async () => {
     const f = await connected();
     await f.c.start("utterance-1");

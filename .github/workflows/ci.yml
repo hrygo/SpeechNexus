@@ -34,6 +34,16 @@ jobs:
       - name: Verify routing boundaries without installing project dependencies
         run: python3 -m unittest discover -s tests/ci -v
 
+      - name: Set up Node.js for dependency-free design checks
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify design token guardrails without installing project dependencies
+        run: |
+          node --test tests/ci/design-tokens.test.mjs
+          node scripts/dev-env/validate-design-tokens.mjs
+
       - name: Route the exact checked-out diff
         id: route
         env:
@@ -421,6 +431,24 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Install Chromium headless shell for accessibility checks
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      - name: Check rendered accessibility and contrast
+        id: a11y
+        run: pnpm test:a11y
+
+      - name: Preserve accessibility evidence
+        if: ${{ !cancelled() && (steps.a11y.outcome == 'success' || steps.a11y.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: web-accessibility-evidence
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
 
   deployment:
     name: Deployment configuration

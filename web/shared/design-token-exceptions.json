@@ -1,0 +1,26 @@
+{
+  "web/admin/index.html": {
+    "reason": "Bootstrap theme-color metadata uses literal colors before document CSS loads.",
+    "sha256": "2dd0969bd0178e80f8756d751d81ddba254a33228b89be18fdbbc1a1e06ad112"
+  },
+  "web/workbench/index.html": {
+    "reason": "Bootstrap theme-color metadata uses literal colors before document CSS loads.",
+    "sha256": "c37ec88b2d70c1c1f3885e6311fe49f985fde37efc5bd331ae9a9fc0b8584697"
+  },
+  "web/admin/public/favicon.svg": {
+    "reason": "Standalone brand asset cannot inherit document CSS variables; preserve reviewed artwork.",
+    "sha256": "9e1c3c85074612ffda742eb5d63bb9e178b88887f613688ce08cbb76473feade"
+  },
+  "web/workbench/public/favicon.svg": {
+    "reason": "Standalone brand asset cannot inherit document CSS variables; preserve reviewed artwork.",
+    "sha256": "255caba4a04a45a6728966b32a63e6ee7f8023c85103dd1c9eea72819bec0041"
+  },
+  "web/shared/src/assets/brand-banner.svg": {
+    "reason": "Standalone brand asset cannot inherit document CSS variables; preserve reviewed artwork.",
+    "sha256": "896a6d40fd57e84ff392a7e072e89a75b4e146e0942081008b405fb0c7c0eae3"
+  },
+  "web/shared/src/assets/brand-mark.svg": {
+    "reason": "Standalone brand asset cannot inherit document CSS variables; preserve reviewed artwork.",
+    "sha256": "d5ed3534adcddac8e62ab426dc2e87f27f6a2c0ec39bef116f392b282e17c6f8"
+  }
+}

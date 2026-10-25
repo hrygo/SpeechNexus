@@ -1,62 +1,61 @@
 <!-- speechnexus-implementation:PROGRAM:v1 -->
 # SpeechNexus 三团队整体实施跟踪
 
-总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。快照：2026-10-25T10:16:47+08:00（Asia/Shanghai，本轮核对38条规划issue）。
-GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源；本矩阵是可刷新的快照。
+总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本次深度复盘：2026-10-25（Asia/Shanghai）。
+冻结主干：360bb81fa173e9c235abafcb2c10cb2ecc47380b；issue正文、唯一状态标签和实际AC证据为事实来源。
+原规划38条；新增#142阶段任务、#149交接项单列，合计40条非PR issue，不改变25主包/6 Gate分母。
 
-**工作包完成：0/25；验收 Gate 通过：0/6。** Epic/检查项不混入工作包完成率；duplicate/not_planned 等非完成关闭不计成果，前置未通过的误关 Gate 不计通过。
+**工作包完整验收：0/25；Gate放行：0/6。** 21个主包in-progress，4个planned（A05/A06/B05/B07）。
+步骤完成、组件合入、本机未提交实现与业务/拓扑资格分开；不把PR/测试/文件数量换算产品完成率。
 
 ## 指挥与环境
 
 | 团队 | 环境 | 主责 |
 | --- | --- | --- |
-| A | 云开发环境 | 平台/协调/迁移/公开 API；代码和接口集成 |
-| B | MegaCube GPU | 网关/控制器/模型/真实资格；GPU 排队与隔离 Linux 集成拓扑 |
-| C | MacBook | workbench 后端/Web/浏览器媒体/高级业务与体验 |
+| A | 云开发环境 | 平台/协调/迁移/公开API；共享契约、生成与串行集成 |
+| B | MegaCube GPU | 网关/控制器/模型/真实资格；GPU排队与隔离Linux拓扑 |
+| C | MacBook | workbench后端/Web/浏览器媒体/高级业务与体验 |
 
-用户统一派工与关口放行；每轮共同 integration_base_sha，三队返回证据，A 汇总。代码/制品经确定版本交接，不共享本地目录；提交/推送与运行态遵循具体任务授权。
+用户统一派工与Gate放行。按同一integration_base_sha交付制品、契约/生成器及具名证据，不共享本地业务目录。
+PG为正式数据库，InnoDB为共享协调对照；停止与释放双证据后才由A原事务退预算一次。
 
 ## 当前派工入口
 
-2026-10-25 已核对全部 38 条规划 issue；25 工作包均 open，21 in-progress、4 planned
-（A05/A06/B05/B07），Gate 仍为 0/6。底层分段交付不等于完整产品验收；各队最新 issue 是
-当前事实来源。详细依赖、验收与历史处理见[现实复盘与新阶段目标](2026-10-25-team-a-realignment.md)。
+**先闭合一条可恢复的真实文件ASR公开链路，再沿同一协议接CustomVoice TTS。**
+详细组件PR/完整SHA/验证与剩余AC见[深度复盘](2026-10-25-team-a-realignment.md)；
+A范围与下一最小单元见[团队A目标](2026-10-23-team-a-goal.md)，不重做已交付首批生成/Job-outbox。
 
 | 团队 | 当前可证事实 | 下一交接与真实缺口 |
 | --- | --- | --- |
-| A | 共同 main `a2f8400`；#137复盘/阶段目标已管理合入，既有文本 Asset/Workspace、协调窄事务、草稿/默认快照与同源门禁已分段交付 | **A-CONFIG-01/P1a** 正在实现完整生命周期意图与只读可信证据消费边界；未配置/错配事实保持不可用。真实权威生产者、持久发布/CAS、实际HTTP、最终参数与完整文件链路仍待 |
-| B | B00/B01/B02/B03/B04/B06 in-progress，B05/B07 planned；#130 固定输入与 #132 原生 ASR 取消/CI 分流已交付；原命令驱动 ASR 单元独立准备交付 | 主线 #28/#30：可恢复的公开文件 ASR/TTS；本轮接原参数/对象/媒体/识别，真实引擎持久接收、停止/释放、最终发布及 A/C 消费仍待。worker 草稿留在原树，不计交付；A 不操作 B 硬件 |
-| C | #40/#41 作者报告真实 runtime/PG/本机模型/浏览器纪要；#43 真实 sweeper/重启账本重放 | base `4b08c396…` 的本地制品仍未提交/推送，尚未入共同 main；助手需要公开 `speech_job_id` 和已发布音色，目标环境与联合验收仍待。A 仅分析，不代改 C issue |
+| A | 协调原事务/未知恢复、文本Asset/Workspace、Profile/Binding草稿与默认快照HTTP已合入；#139仅P1a原意图/只读证据边界 | 下一最小单元建议为真实音频AssetInspector接线；与B冻结权威Binding/参数，接完整业务Job/准入、制品/Operation/receipt与公开下载。Profile可信生产者/持久发布/CAS/最终参数仍待 |
+| B | #140原命令/参数消费与#147私有ASR结果核验已合入360bb81；合后CI40165031760全14项成功，4003非集成/81.88%，1246集成通过+22既有跳过 | #142下一单元：冻结完整结果回执元数据/storage_version、原身份持久登记/查询，再接真实执行/恢复。输入HEAD状态头总期限仍缺；不能只放开非空staging观察，不能把测试识别器计为真实GPU资格 |
+| C | #35–43作者报告真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放和章节/单元登记；导出worker默认关闭预接线 | base4b08c396的改动未提交/推送/集成；需可获取版本、迁移owner片段、组合根与method+path生产消费者清单。真实助手/公开SpeechJob/已发布音色和目标资格仍待；A不改C issue |
 
-B 当前阶段验收见[团队 B 目标](2026-10-23-team-b-goal.md#新阶段目标交付可恢复的真实文件语音闭环)。
-本轮 `codex/b03-file-command-asr` 同步 main `78b0528`（含 #138/#139），复用机器契约和原消费者；
-没有新增业务路由/预算权威，不把合成识别端口或单元回归当作真实引擎/完整集群资格。
+B组件边界见[私有结果交接](../architecture/file-asr-results.md)与[团队B目标](2026-10-23-team-b-goal.md)。
+C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再沿用“只剩三个”的旧统计。
+作者后续已补项目name改名和音色单修订调用，称已绑定直接消费者缺口归零；name外字段、声音真实成功/表单联动仍缺。
+仅书籍页表单另有本机键盘/360px证据，不扩大为全站/读屏/Linux资格；逐项链接与验证方式见深度复盘。
+A00在当前main仍缺四项runtime绑定：generateRenderUnit仅#141候选；
+downloadSavedAsset/downloadBookExport二进制与streamExportEvents SSE仍待，不据静态类型或单条样例消项。
 
-A #133/#134 的私有原子快照存储与显式四表 producer HTTP 已管理合入并完成合后 CI，0011已占用。
-#135 CI审计在944ab54闭环；#136仅发布/激活契约前置已按受审e62c59c合入a8ea85b，
-合前/合后13项成功366/310秒；3732非集成/81.47%、1243集成passed与22既有跳过分列。
-合前六ZIP字节数/SHA256/精确测试合并来源和完整互斥union已核验。绿色契约不代表持久发布、
-默认指针、最终参数或真实资格，五分钟CI反馈目标也尚未稳定达到。
+#141补齐`generateRenderUnit`的两个runtime DTO及JSON HTTP入口，沿用既有Workbench源契约。
+原14文件实现与样例保留；另三个binary/SSE、实际C路由、公开SpeechJob与音色资格仍需各自证据。
+旧CI40159242336仅证明原base/head组合。用户现已要求推进团队A PR合并，
+本单元正同步最新main并重新验证；既有自动审核拒绝作为历史记录保留，不视为已合并或整包验收。
 
-A #19–#26 已统一当前目标，拆开已交付与待验收；管理端已进一步精简正文，历史通过原PR/CI、
-issue修订和本地快照追溯，不混入当前待办。整理时保留B并发交接。A05/A06保持planned，其余A为in-progress，
-父包/Gate保持open。每轮仍由用户放行跨队Gate与正式发布。
+文件ASR路线：真实ready音频 + 固定权威配置 → 完整业务Job/原子准入 → 唯一真实外发 →
+B持久结果回执与可信停止 → A发布/下载 → SDK/C消费。
+Profile可省略；无Profile仍需权威Binding与显式默认，不从草稿/示例或引擎未声明行为补值。
+A-CONFIG-01保留为配置工作流，#139不等于P1整体；音色发布也不由Profile发布替代。
 
-文件 ASR 路线为：真实音频 Asset 与权威有效配置 → 完整业务命令/持久 Job →
-实际准入/唯一外发 → B真实执行/可信停止 → 制品/Operation/receipt → 标准SDK与C消费。
-AsrJobCreate 的 profile 可省略，不能把预设发布当全部请求的强制前置；无profile也必须固定
-权威Binding与显式默认。当前只实现文本Asset检查，音频AssetInspector是明确前置交接。
+| 具名阶段/交接 | 归属与当前状态 | 解除条件 |
+| --- | --- | --- |
+| #142真实文件ASR/TTS | B03 #30的阶段子任务，in-progress；关联A #21/#22/#23与C #37 | 真实持久执行/唯一回执、A发布、SDK/C同版正常及故障证据；不先等待父包全关闭 |
+| #149助手上游输入 | A提供/C06接收，planned；关联A04/A06/B05 | 真实可查询SpeechJob + 已发布声音 + 取消/未知/停止对账；不把默认关闭页面当成功，不前移为G1前置 |
 
-A00按C反馈核对四项runtime入口：本单元补`generateRenderUnit`的JSON入口；
-downloadBookExport、downloadSavedAsset、streamExportEvents仍未选择，现HTTP投影JSON-only。
-三个binary/SSE入口的真实消费者需独立串行推进，不扩大#136的历史交付范围。
-
-P1a只准备私有原意图、固定目标和证据观察，不写数据库或注册新路由；观察快照不授予提交权限。
-源/生成器/双锁/迁移保持，测试provider不作为真实资格；原结果优先与事务内重检留在P2。
-
-A00独立补齐`generateRenderUnit`的两个runtime DTO及JSON HTTP入口，沿用原Workbench源契约。
-同源正负例和原键HTTP消费者只证明协议消费；实际C路由/公开speech Job/已发布音色仍需各自证据。
-其余三个binary/SSE入口继续排队，不能据该JSON入口消项。
+#143–#148已补CI路由、Token与真实页面门禁；[CI范围](../architecture/ci-validation.md)保留完整与轻量边界。
+文档16秒、完整285/706秒等为各次观测；主干合后292秒、pytest233.51秒，不承诺持续五分钟或完整WCAG。
+源码、生成、锁、迁移、组合根与main写入串行；建议稳定评审窗口后再落无关main变更，保留保护及最新组合证据。
 
 ## 六阶段 Epic 与独立关口
 
@@ -174,4 +173,4 @@ python3 scripts/dev-env/refresh-implementation-tracker.py
 
 仓库编排材料：[整体计划](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-three-team-delivery-plan.md)、[首轮指令](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-agent-team-startup-briefs.md)、[编排清单](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-implementation-issues.json)和[刷新脚本](https://github.com/hrygo/SpeechNexus/blob/main/scripts/dev-env/refresh-implementation-tracker.py)。三队从包含这些材料的同一集成版本启动；远端 issue 正文也提供自包含任务范围。后续刷新产生的总控正文由维护者核对后显式更新。
 
-代码事实基准 `390f121`；实际开发从总指挥指定集成 SHA 开始。创建 issue/原有契约/测试原型不代表新实施完成。
+原规划代码事实基准 `390f121` 保留为历史时点；本次现实基线见页首，实施从用户指定集成 SHA 开始。创建 issue、契约或测试原型不代表业务已实现。

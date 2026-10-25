@@ -227,7 +227,10 @@ class MinioExecutionInputs:
                 total = 0
                 while True:
                     check()
-                    chunk = response.read(
+                    # Return available bytes after one underlying read, rather
+                    # than waiting to fill 64 KiB while a slow peer keeps the
+                    # socket alive. Recheck cancel/deadline between reads.
+                    chunk = response.read1(
                         min(_CHUNK_BYTES, reference.byte_length - total + 1),
                         decode_content=False,
                     )

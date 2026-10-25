@@ -47,7 +47,7 @@ SpeechNexus 希望服务于三类需求：
 
 语音底座已冻结 P0 契约：OpenAI Audio 兼容子集，以及音色、持久任务和场景预设等 `nexus` 增强接口，适合接入已有应用、SDK 或 MCP 调用方。标准 OpenAI SDK 可将 `base_url` 指向部署的 `/v1`；实时接口支持 `model` 直连的仅转写兼容模式和预创建的 nexus 会话，两者都只覆盖明确声明的事件子集。
 
-当前提供 `/healthz`、`/readyz`，以及配置后可用的 Asset 上传、元数据、内容下载和共享 Workspace GET/游标列表接口；首批检查实际 UTF-8 文本，音频检查待 B03 接入，另有显式独立 writer 配置后可用的[预设草稿 POST / 固定 revision GET](docs/architecture/profile-drafts.md)，以及独立 writer 的[模型绑定草稿 POST / 固定 GET](docs/architecture/model-binding-drafts.md)，均支持原键重放与未知结果区分；发布、激活与默认选择仍待实施。其他语音与工作台路由继续实施。新资产默认保留 7 天，可由部署配置或上传时显式 TTL 覆盖；已有资产到期时间不随默认值变化。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
+当前提供 `/healthz`、`/readyz`，以及配置后可用的 Asset 上传、元数据、内容下载和共享 Workspace GET/游标列表接口；首批检查实际 UTF-8 文本，音频检查待 B03 接入，另有显式独立 writer 配置后可用的[预设草稿 POST / 固定 revision GET](docs/architecture/profile-drafts.md)，以及独立 writer 的[模型绑定草稿 POST / 固定 GET](docs/architecture/model-binding-drafts.md)，均支持原键重放与未知结果区分；显式四表 writer 另支持[绑定默认值声明与固定快照 GET](docs/architecture/binding-defaults-producer.md)。发布、激活与默认选择仍待实施。其他语音与工作台路由继续实施。新资产默认保留 7 天，可由部署配置或上传时显式 TTL 覆盖；已有资产到期时间不随默认值变化。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
 
 契约修复补全了规范执行命令、同步幂等恢复、严格 receipt 与数据删除生命周期；范围及升级边界见 [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。这些业务协议尚未实现为运行时路由。
 

@@ -3,11 +3,15 @@
 from typing import Any
 
 from speechnexus_contracts.admin import parse
+from speechnexus_contracts.binding_defaults_http import (
+    validate_response as validate_defaults_response,
+)
 from speechnexus_contracts.binding_http import validate_response
 from starlette.responses import JSONResponse
 
 CREATE = "createModelBindingDraft"
 READ = "getModelBindingRevision"
+READ_DEFAULTS = "getModelBindingParameterDefaults"
 ERRORS = {
     "invalid_binding_request": (400, "invalid_request_error", "Invalid binding request."),
     "invalid_binding_definition": (422, "invalid_request_error", "Invalid binding definition."),
@@ -31,6 +35,11 @@ ERRORS = {
     "binding_media_unsupported": (415, "invalid_request_error", "Binding creation requires JSON."),
     "binding_ingress_full": (429, "rate_limit_error", "Binding receive capacity is full."),
     "binding_not_found": (404, "not_found_error", "The fixed binding revision was not found."),
+    "binding_defaults_not_found": (
+        404,
+        "not_found_error",
+        "The fixed binding declaration was not found.",
+    ),
     "idempotency_conflict": (
         409,
         "invalid_request_error",
@@ -55,6 +64,7 @@ def binding_error(
     *,
     operation: str | None,
     allow: str | None = None,
+    producer: bool = False,
 ) -> JSONResponse:
     if code not in ERRORS:
         code = "binding_result_unknown" if operation == CREATE else "binding_unavailable"
@@ -79,7 +89,12 @@ def binding_error(
         )
     )
     if operation is not None:
-        validate_response(operation, status, {"body": body, "headers": headers})
+        validate = (
+            validate_defaults_response
+            if operation == READ_DEFAULTS or (operation == CREATE and producer)
+            else validate_response
+        )
+        validate(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)
 
 

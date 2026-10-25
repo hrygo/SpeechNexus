@@ -1,19 +1,43 @@
-# Binding default snapshot producer contract
+# Binding default snapshot producer HTTP
 
 `binding-defaults-producer.openapi.yaml` version `0.1.0.dev0` is a separate
-**contract-only capability profile** for explicit parameter declarations and a
+capability profile for explicit parameter declarations and a
 fixed snapshot read. Snapshot `1.0.0` and ModelBinding response bodies remain
 unchanged. Legacy admin `0.1.0.dev3` and its implemented `binding` HTTP surface
-remain unchanged: they do not admit the new input or advertise the future GET.
+remain unchanged: legacy mode does not admit the new input or advertise the snapshot GET.
 An in-process [atomic storage port](model-binding-drafts.md#atomic-default-declarations)
-now implements new-revision persistence and original-key recovery. Producer HTTP
-wiring and its controlled writer lifecycle require their own acceptance.
+implements new-revision persistence and original-key recovery. Explicit producer
+mode now wires that port through real HTTP and a controlled four-table writer.
 
 The producer request references each original field directly from the canonical
 admin `ModelBindingCreateRequest` property. It retains that request's required
 fields and closure, adding only optional `parameter_defaults`. No second set of
 field types, bounds or defaults is maintained. The generated producer surface
-is not included by the current application's operational OpenAPI composition.
+enters the operational OpenAPI only in producer mode, where the corresponding
+handlers are registered; the legacy fixed parent GET is also retained.
+
+## Explicit writer mode and lifecycle
+
+Set `SPEECHNEXUS_BINDING_DEFAULTS_WRITER_DATABASE_URL` for an API process only
+after separately applying 0011 and provisioning the declared minimum four-table
+role. It is mutually exclusive with `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL`.
+Blank/absent settings do not fall back to the bootstrap or general DB identity.
+Legacy three-table mode and its input validation remain supported independently.
+Compose passes both optional values through without filling either credential.
+
+`BindingDefaultsRuntime` shares the controlled lifecycle implementation with the
+legacy writer, using its own explicit allowed-table set. Before exposing a provider
+it verifies SESSION_USER and CURRENT_USER, non-owner identity, exact table and
+column privileges and absence of unrelated speech authority. Startup never grants
+privileges or applies DDL; failure and shutdown close its pool and remove diagnostic
+filters. Configuration conflicts fail before either writer starts.
+
+Both fixed reads use strict no-body GET framing. Creation uses the same bounded
+receive settings and keeps its private permit through an owned transaction even
+when the HTTP caller cancels. Neither a permit nor cancellation changes a compute
+lease or budget. The route validates the complete producer intent and checks the
+returned parent/snapshot facts before confirming success. Snapshot GET checks the
+fixed parent identity, revision ID, version and creation time.
 
 ## Explicit input on a new binding revision
 
@@ -69,7 +93,7 @@ Read failure never authorizes reallocating a parent, replacing defaults or
 releasing budgets. Publication/activation and the final merged parameter policy
 remain separate registry/application acceptance.
 
-## Consumable artifacts and remaining implementation
+## Consumable artifacts and evidence scope
 
 The `binding_defaults_producer` profile exposes `BindingDefaultsCreateRequest`.
 Its distinct `binding_defaults` HTTP surface selects `createModelBindingDraft`
@@ -91,11 +115,16 @@ existing same-namespace name collisions still fail closed, including boolean
 versus numeric constants. The external objects and request fields refer to their
 canonical source. Existing operational paths and negative-input tests remain.
 
-This unit changes no runtime validator, lock, storage migration, database role,
-actual route or UI capability. Synthetic loopback tests qualify consumer behavior,
-not a product writer. The existing product draft request remains the implemented
-baseline. Atomic snapshot storage, complete intent recovery, parent matching and
-actual new field/GET handling need real isolated database and HTTP tests before
-this producer profile becomes ready. The five existing comparison modes retain
-their declared source scope; source syntax/drift checks for this new profile do
-not establish complete protocol compatibility or deployment qualification.
+The runtime validators, generator, locks and source versions are unchanged. The
+HTTP module selects the existing producer validator for POST/snapshot GET and the
+existing legacy validator for the fixed parent GET; it maintains no wire copies.
+The operational component namespaces remain disjoint and all references resolve.
+
+Isolated PG tests exercise the actual four-table writer, lifecycle/role refusal,
+old history, restart, replay/conflict, committed reply loss/read pressure, keyless
+uncertainty, cancellation, corrupt/missing facts and real TCP Python/TypeScript
+consumers. InnoDB storage behavior reuses the separate atomic-port evidence; it
+does not represent a supported product DB. Neither synthetic fixture values nor
+these API tests establish an engine's defaults, publication, quality or physical
+cluster qualification. Published registry/parameter resolution remain separate.
+Existing structural comparison modes retain their declared finite scope.

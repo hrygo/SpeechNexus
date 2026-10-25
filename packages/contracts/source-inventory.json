@@ -4,7 +4,7 @@
     "version": "0.1.0.dev3"
   },
   "binding-defaults-producer.openapi.yaml": {
-    "sha256": "a04ad64b537f6a08dd030c01b7e61207214b96b1d87b4a3dc3466a1fb1cd5222",
+    "sha256": "2c04b7c49db62ea24f5ca768de68574d24fba542bed36b842a1b63e446d5900a",
     "version": "0.1.0.dev0"
   },
   "binding-parameter-defaults.schema.json": {

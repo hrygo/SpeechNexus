@@ -4,8 +4,9 @@ This A00/A02 unit defines a standalone `BindingParameterDefaultsSnapshot` format
 and same-source Python/TypeScript validators. It supplies the missing declaration
 format for the product's binding defaults → published profile → allowed overrides
 merge order. An in-process atomic draft registry now stores explicit declarations;
-producer HTTP, published retrieval and parameter resolution remain separate
-implementation units. This format creates no engine capability or qualification.
+the explicit producer HTTP mode exposes those fixed facts. Published retrieval
+and parameter resolution remain separate implementation units. This format
+creates no engine capability or qualification.
 
 ## Explicit declaration and fixed identity
 
@@ -73,12 +74,13 @@ Before enabling a registry producer:
 
 The schema checks field types and individual domains. It does not perform a
 registry lookup, validate producer authority, negotiate segment budgets or prove
-cross-resource/merged-parameter compatibility. Storage transactions, publication
-CAS/default pointers and actual engine/capacity/quality evidence still require
-separate implementation and acceptance. The standalone format defines no operation. The separate
+cross-resource/merged-parameter compatibility. Atomic draft storage and the
+explicit producer HTTP mode implement the declaration path. Publication CAS/default
+pointers and actual engine/capacity/quality evidence still require separate
+implementation and acceptance. The standalone format defines no operation. The separate
 [producer HTTP contract](binding-defaults-producer.md) declares explicit input and
 fixed lookup. The [atomic draft adapter](model-binding-drafts.md#atomic-default-declarations)
-implements persistence; actual route support remains separate acceptance.
+implements persistence; the explicit producer HTTP mode now serves fixed lookup.
 
 ## Consumers and compatibility evidence
 

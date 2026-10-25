@@ -47,6 +47,8 @@ NODE_CONTRACT_TESTS = (
     "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
     "tests/integration/test_profile_http.py::"
     "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
+    "tests/integration/test_binding_defaults_http.py::"
+    "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
     *(
         "tests/integration/test_binding_defaults_storage.py::"
         "test_atomic_parent_snapshot_original_replay_restart_and_fixed_projection"

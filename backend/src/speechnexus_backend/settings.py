@@ -62,12 +62,18 @@ class Settings(BaseSettings):
     profile_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
     binding_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    binding_defaults_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
     binding_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
     binding_receive_concurrency: int = Field(default=4, ge=1, le=4)
     binding_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     binding_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
-    @field_validator("profile_writer_database_url", "binding_writer_database_url", mode="before")
+    @field_validator(
+        "profile_writer_database_url",
+        "binding_writer_database_url",
+        "binding_defaults_writer_database_url",
+        mode="before",
+    )
     @classmethod
     def empty_profile_writer_is_disabled(cls, value: Any) -> Any:
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
@@ -75,6 +81,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def asset_credentials_are_paired(self) -> Self:
+        if (
+            self.binding_writer_database_url is not None
+            and self.binding_defaults_writer_database_url is not None
+        ):
+            raise ValueError("Configure one explicit binding writer mode")
         if (self.object_storage_access_key is None) != (self.object_storage_secret_key is None):
             raise ValueError("Configure both object-storage keys together")
         for host in self.asset_allowed_hosts:

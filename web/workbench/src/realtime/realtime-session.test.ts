@@ -240,6 +240,43 @@ describe("realtime session original intent and media ownership", () => {
       ),
     ).rejects.toThrow();
     expect(f.socket.sent).toHaveLength(0);
+    await f.c.close("abort");
+    expect(f.c.getSnapshot().stream).toMatchObject({
+      sent: 0,
+      accepted: 0,
+      credit: 24000,
+      uncommitted: 0,
+    });
+    f.c.dispose();
+  });
+  it("keeps the actual sent watermark when socket.send throws before enqueueing", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    vi.spyOn(f.socket, "send").mockImplementationOnce(() => {
+      throw new Error("synthetic send failure");
+    });
+    await expect(
+      f.options!.onFrame(
+        {
+          token: "capture-demo",
+          sampleRate: 24000,
+          startSample: 0,
+          samples: new Float32Array(2400),
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow();
+    expect(f.socket.sent).toHaveLength(0);
+    await f.c.close("abort");
+    expect(f.c.getSnapshot().stream).toMatchObject({
+      sent: 0,
+      accepted: 0,
+      credit: 24000,
+      uncommitted: 0,
+    });
+    expect(
+      f.c.getSnapshot().stream?.gaps.every((gap) => gap.span === null || gap.span.end === 0),
+    ).toBe(true);
     f.c.dispose();
   });
   it("stops the microphone but keeps the socket for drain results and pending cleanup", async () => {

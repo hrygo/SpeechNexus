@@ -28,12 +28,13 @@ PROBES = {
 }
 
 
-async def run_probe(name: str, output: Path) -> dict[str, Any]:
+async def run_probe(name: str, output: Path, *arguments: str) -> dict[str, Any]:
     process = await asyncio.create_subprocess_exec(
         "node",
         PROBES[name],
         "--output",
         str(output),
+        *arguments,
         cwd=ROOT,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
@@ -90,3 +91,17 @@ async def test_the_synthetic_tts_producer_is_rendered_without_loss() -> None:
     # The strong property: every sample the synthetic producer delivered was rendered locally.
     assert result["received"] == 48000, result
     assert result["rendered"] == result["received"], result
+
+
+@pytest.mark.parametrize("mode", ["delayed", "rejected"])
+async def test_tts_native_cleanup_is_observed_after_remote_done(mode: str) -> None:
+    result = await run_probe("tts", output_dir(f"tts-cleanup-{mode}"), "--cleanup-mode", mode)
+    assert result["ok"] is True, result
+    assert result["cleanup_mode"] == mode, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["native_close_fault_injection"] is True, result
+    assert result["physical_device"] is False, result
+    assert 0 <= result["stopped_at"] < result["received"] == 48000, result
+    assert result["close_calls"] == 1, result
+    assert result["remote_cancel_commands"] == 0, result
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result

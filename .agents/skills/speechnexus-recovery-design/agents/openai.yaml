@@ -1,0 +1,4 @@
+interface:
+  display_name: "SpeechNexus 故障恢复设计"
+  short_description: "围绕事实所有权与提交边界设计 SpeechNexus 的重放、取消和恢复验证"
+  default_prompt: "使用 $speechnexus-recovery-design 分析当前写入或执行链路，设计故障后的恢复行为和验证场景。"

@@ -34,7 +34,10 @@ it("aborts a cancelled download and returns keyboard focus to the action", async
 
 it("aborts the old identity on unmount and never reports a late save", async () => {
   let owner: AbortSignal | undefined;
-  let resolve: ((blob: Blob) => void) | undefined;
+  let resolve!: (blob: Blob) => void;
+  const pending = new Promise<Blob>((done) => {
+    resolve = done;
+  });
   const view = render(
     <ContentDownload
       identity="asset-demo"
@@ -42,9 +45,7 @@ it("aborts the old identity on unmount and never reports a late save", async () 
       label="校验并下载副本"
       load={(signal) => {
         owner = signal;
-        return new Promise<Blob>((done) => {
-          resolve = done;
-        });
+        return pending;
       }}
     />,
   );
@@ -52,7 +53,8 @@ it("aborts the old identity on unmount and never reports a late save", async () 
   view.unmount();
   expect(owner?.aborted).toBe(true);
   await act(async () => {
-    resolve!(new Blob(["synthetic"]));
+    resolve(new Blob(["synthetic"]));
+    await pending;
   });
   expect(screen.queryByRole("status")).toBeNull();
 });

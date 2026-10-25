@@ -20,11 +20,15 @@ from tests.fake.vad import ScriptedVadModel
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_asr_results import results
-from tests.integration.test_gateway_frozen_inputs import LIMITS, upload_command
+from tests.integration.test_gateway_frozen_inputs import (
+    LIMITS,
+    seed_file_asr_attempt,
+    upload_command,
+)
 from tests.integration.test_gateway_frozen_inputs import object_store as object_store
 from tests.integration.test_gateway_recovery import Ledger
 from tests.integration.test_gateway_stop_evidence import counters, new_pool
-from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
+from tests.integration.test_gateway_submit_ledger import identity_for
 from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
 from tests.unit.gateway.test_file_asr_command import CapturingRecognizer
@@ -53,37 +57,7 @@ TOKEN = "synthetic-file-worker-component-token"
 
 
 def original(foundation: Foundation, admin: Minio, bucket: str) -> SubmitRequest:
-    seed_second_attempt(foundation)
-    # The shared storage fixture is a TTS realtime reservation. A file-ASR
-    # consumer must use a consistent ASR pool, instance and lease identity,
-    # rather than bypassing its target validation to reuse that reservation.
-    db = foundation.database
-    db.query(
-        "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
-        "VALUES ('asr-batch', 'batch', 'active')"
-    )
-    db.query(
-        "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, pool_id, "
-        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
-        "loading_policy, config_digest, instance_state, max_slots, held_slots) "
-        "SELECT 'instance-file-asr', instance_generation, host_node_id, 'asr-batch', "
-        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
-        "loading_policy, config_digest, instance_state, max_slots, held_slots "
-        "FROM engine_instances WHERE instance_id = 'instance-test'"
-    )
-    db.query(
-        "INSERT INTO runtime_instance_heads "
-        "(instance_id, current_generation, generation_high_water) "
-        "VALUES ('instance-file-asr', 1, 1)"
-    )
-    db.query(
-        "UPDATE admission_attempts SET service_class = 'batch' "
-        "WHERE operation_id = 'operation-test' AND attempt_id = 'attempt-alt'"
-    )
-    db.query(
-        "UPDATE admission_leases SET pool_id = 'asr-batch', instance_id = 'instance-file-asr' "
-        "WHERE operation_id = 'operation-test' AND attempt_id = 'attempt-alt'"
-    )
+    seed_file_asr_attempt(foundation)
     command, _ = upload_command(admin, bucket)
     command["audio"]["storage"]["workspace_id"] = "workspace-test"
     command["parameters"]["max_segment_ms"] = 1000

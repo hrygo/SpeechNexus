@@ -1,6 +1,7 @@
 import { createValidatedClient } from "../../../../packages/contracts/src/workbench-http";
 import { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
 import { checkDeletion, targetKey } from "../deletions/deletion-plan";
+import { verifiedDownload } from "./download-content";
 
 export { parse, type Contracts } from "../../../../packages/contracts/src/workbench";
 
@@ -421,6 +422,21 @@ export class WorkbenchClient {
     return value;
   }
 
+  async downloadSavedAsset(asset: Contracts["SavedAsset"], signal?: AbortSignal) {
+    const pin = parse("SavedAsset", asset);
+    const deadline = AbortSignal.timeout(120_000);
+    const bounded = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const reply = await this.#api.GET("/v1/workbench/saved-assets/{asset_id}/content", {
+      params: { path: { asset_id: pin.id } },
+      parseAs: "stream",
+      signal: bounded,
+    });
+    if (!reply.response.ok)
+      throw new WorkbenchResponseError(reply.response.status, parse("ErrorResponse", reply.error));
+    identity(reply.data !== undefined && reply.data !== null);
+    return verifiedDownload(reply.response, reply.data, pin, bounded);
+  }
+
   /**
    * The deployment's teleprompter state is scoped to one project and records the script
    * revision, the visible position and the manual takeover — not the script text. A 404
@@ -640,6 +656,27 @@ export class WorkbenchClient {
     );
     identity(value.id === exportId);
     return value;
+  }
+
+  async downloadBookExport(job: Contracts["ExportJob"], signal?: AbortSignal) {
+    const pin = parse("ExportJob", job);
+    identity(
+      pin.status === "succeeded" &&
+        pin.artifact != null &&
+        pin.artifact.export_id === pin.id &&
+        pin.artifact.manifest_revision === pin.manifest_revision,
+    );
+    const deadline = AbortSignal.timeout(120_000);
+    const bounded = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const reply = await this.#api.GET("/v1/workbench/exports/{export_id}/content", {
+      params: { path: { export_id: pin.id } },
+      parseAs: "stream",
+      signal: bounded,
+    });
+    if (!reply.response.ok)
+      throw new WorkbenchResponseError(reply.response.status, parse("ErrorResponse", reply.error));
+    identity(reply.data !== undefined && reply.data !== null);
+    return verifiedDownload(reply.response, reply.data, pin.artifact, bounded);
   }
 
   async cancelBookExport(exportId: string, key: string) {

@@ -3018,6 +3018,40 @@
           "schema": "HttpResponse_downloadSavedAsset_404",
           "headers": {},
           "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadSavedAsset_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadSavedAsset_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadSavedAsset_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadSavedAsset_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadSavedAsset_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadSavedAsset_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
         }
       }
     },
@@ -3072,6 +3106,40 @@
         "410": {
           "schema": "HttpResponse_downloadBookExport_410",
           "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadBookExport_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadBookExport_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadBookExport_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadBookExport_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadBookExport_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadBookExport_503",
+          "headers": {
+            "retry-after": "integer"
+          },
           "json": true
         }
       }
@@ -3572,6 +3640,12 @@
     "HttpResponse_downloadSavedAsset_206",
     "HttpResponse_downloadSavedAsset_401",
     "HttpResponse_downloadSavedAsset_404",
+    "HttpResponse_downloadSavedAsset_400",
+    "HttpResponse_downloadSavedAsset_408",
+    "HttpResponse_downloadSavedAsset_413",
+    "HttpResponse_downloadSavedAsset_416",
+    "HttpResponse_downloadSavedAsset_500",
+    "HttpResponse_downloadSavedAsset_503",
     "HttpRequest_downloadBookExport",
     "HttpResponse_downloadBookExport_200",
     "HttpResponse_downloadBookExport_206",
@@ -3579,6 +3653,12 @@
     "HttpResponse_downloadBookExport_404",
     "HttpResponse_downloadBookExport_409",
     "HttpResponse_downloadBookExport_410",
+    "HttpResponse_downloadBookExport_400",
+    "HttpResponse_downloadBookExport_408",
+    "HttpResponse_downloadBookExport_413",
+    "HttpResponse_downloadBookExport_416",
+    "HttpResponse_downloadBookExport_500",
+    "HttpResponse_downloadBookExport_503",
     "HttpRequest_streamExportEvents",
     "HttpResponse_streamExportEvents_200",
     "HttpEvent_streamExportEvents",
@@ -16179,6 +16259,112 @@
       },
       "required": ["body"]
     },
+    "HttpResponse_downloadSavedAsset_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadSavedAsset_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_downloadBookExport": {
       "type": "object",
       "additionalProperties": false,
@@ -16323,6 +16509,112 @@
         "headers": {
           "type": "object",
           "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadBookExport_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
           "required": [],
           "additionalProperties": true
         },

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from psycopg.types.json import Jsonb
 
+from speechnexus_backend.workbench.application.downloads import DownloadContent, DownloadError
 from speechnexus_backend.workbench.application.exports import ExportJobStore
 from speechnexus_backend.workbench.application.versions import (
     IdempotencyConflictError,
@@ -323,6 +324,25 @@ class PostgresExports(ExportJobStore):
                 raise ResourceNotFoundError
             await self._project(base, row.project_id, workspace_id, lock=False)
             return row.domain()
+
+    async def download_content(self, *, export_id: str, workspace_id: str) -> DownloadContent:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            row = await self._row(base, export_id)
+            if row is None:
+                raise ResourceNotFoundError
+            await self._project(base, row.project_id, workspace_id, lock=False)
+            job = row.domain()
+            if job.status == "expired":
+                raise DownloadError("download_expired")
+            if job.status != "succeeded":
+                raise DownloadError("download_not_ready")
+            assert job.artifact is not None
+            return DownloadContent(
+                f"{row.project_id}/exports/{job.id}/{job.artifact.id}",
+                job.artifact.bytes,
+                job.artifact.sha256,
+            )
 
     async def cancel_export(self, *, export_id: str, workspace_id: str) -> tuple[ExportJob, bool]:
         async with self._versions.transaction() as base:

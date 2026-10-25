@@ -18,6 +18,7 @@ from speechnexus_backend.workbench.app import create_app
 from speechnexus_backend.workbench.application.assistant import WorkbenchAssistant
 from speechnexus_backend.workbench.application.books import WorkbenchBooks
 from speechnexus_backend.workbench.application.deletions import WorkbenchDeletions
+from speechnexus_backend.workbench.application.downloads import WorkbenchDownloads
 from speechnexus_backend.workbench.application.export_worker import ExportProducer, ExportWorker
 from speechnexus_backend.workbench.application.exports import WorkbenchExports
 from speechnexus_backend.workbench.application.meetings import WorkbenchMeetings
@@ -34,7 +35,10 @@ from speechnexus_backend.workbench.infrastructure.export_media_validation import
     ExportMediaValidator,
     ExportValidationLimits,
 )
-from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
+from speechnexus_backend.workbench.infrastructure.minio_object_zone import (
+    MinioDownloadReader,
+    MinioObjectZone,
+)
 from speechnexus_backend.workbench.infrastructure.openai_text_llm import (
     OpenAiTextLlm,
 )
@@ -48,6 +52,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_deletion_cleanup impo
 from speechnexus_backend.workbench.infrastructure.postgres_deletions import (
     PostgresDeletionUnitOfWork,
 )
+from speechnexus_backend.workbench.infrastructure.postgres_downloads import PostgresDownloads
 from speechnexus_backend.workbench.infrastructure.postgres_exports import PostgresExports
 from speechnexus_backend.workbench.infrastructure.postgres_meetings import PostgresMeetings
 from speechnexus_backend.workbench.infrastructure.postgres_minutes_tasks import (
@@ -578,6 +583,18 @@ def create_runtime_app(
         meetings=WorkbenchMeetings(PostgresMeetings(versions), llm),
         teleprompter=WorkbenchTeleprompter(PostgresTeleprompter(versions)),
         saved_assets=saved_assets,
+        downloads=None
+        if objects is None
+        else WorkbenchDownloads(
+            PostgresDownloads(versions),
+            MinioDownloadReader(
+                objects,
+                max_bytes=settings.download_max_bytes,
+                timeout_seconds=settings.download_timeout_seconds,
+            ),
+            max_active=settings.download_max_active,
+        ),
+        download_timeout_seconds=settings.download_timeout_seconds,
         voices=voices,
         books=WorkbenchBooks(PostgresBooks(versions)),
         # The same deployment-configured intranet LLM serves the assistant; with none

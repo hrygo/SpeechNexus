@@ -64,9 +64,13 @@ afterEach(() => {
 });
 
 describe("book export panel", () => {
-  it("starts a pinned export and shows published evidence without a download link", async () => {
+  it("offers a verified download only after the pinned export succeeds", async () => {
     vi.useFakeTimers();
-    const { create, read } = setup();
+    const { client, create, read } = setup();
+    const download = vi
+      .spyOn(client, "downloadBookExport")
+      .mockRejectedValue(new Error("synthetic unavailable"));
+    expect(screen.queryByRole("button", { name: "校验并下载导出" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -81,9 +85,13 @@ describe("book export panel", () => {
     });
     expect(screen.getByText(/产物已发布/)).toBeTruthy();
     expect(screen.getByText(`sha256:${"ab".repeat(32)}`)).toBeTruthy();
-    // Nothing offers a download while the download operation is not served.
-    expect(screen.queryByRole("link")).toBeNull();
-    expect(screen.getByText(/下载入口尚未接入/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "校验并下载导出" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(download).toHaveBeenCalledOnce();
+    expect(download.mock.calls[0]![0].artifact).toEqual(artifact);
+    expect(screen.getByRole("alert").textContent).toContain("下载未完成");
   });
 
   it("asks for cancellation and keeps the accepted answer", async () => {

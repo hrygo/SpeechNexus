@@ -153,11 +153,28 @@ async def test_a_copy_written_from_the_base_is_read_back_over_http_without_refet
             assert saved["sha256"] == DIGEST and saved["bytes"] == len(CONTENT)
             assert saved["source_artifact_id"] == ARTIFACT
             reads_after_save = state.reads
+            # The source is now offline: a committed copy must still be independently readable.
+            server.close()
+            await server.wait_closed()
 
             read = await client.get(f"/v1/workbench/saved-assets/{saved['id']}")
             assert read.status_code == 200, read.text
             # The read-back is the workbench's own record: the base is not asked again.
             assert read.json() == saved
+            assert state.reads == reads_after_save
+
+            path = f"/v1/workbench/saved-assets/{saved['id']}/content"
+            content = await client.get(path)
+            assert content.status_code == 200, content.text
+            assert content.content == CONTENT
+            assert content.headers["etag"] == '"' + DIGEST + '"'
+            assert content.headers["content-length"] == str(len(CONTENT))
+            for header, expected in [("bytes=0-3", CONTENT[:4]), ("bytes=-3", CONTENT[-3:])]:
+                partial = await client.get(path, headers={"Range": header})
+                assert partial.status_code == 206 and partial.content == expected
+            outside = await client.get(path, headers={"Range": f"bytes={len(CONTENT)}-"})
+            assert outside.status_code == 416
+            assert outside.headers["content-range"] == f"bytes */{len(CONTENT)}"
             assert state.reads == reads_after_save
 
             missing = await client.get("/v1/workbench/saved-assets/asset_saved_unknown")

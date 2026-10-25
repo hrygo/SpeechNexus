@@ -7,6 +7,7 @@ import {
   type ExportFormat,
 } from "./book-export";
 import "./books.css";
+import { ContentDownload } from "./ContentDownload";
 
 const problems: Record<BookExportProblem, string> = {
   storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
@@ -61,7 +62,7 @@ export function BookExportPanel({
       <h2>有声书导出</h2>
       <p>
         导出固定当前书目修订 <code>{book.casting_revision}</code>（{book.title}
-        ）。导出的内容由服务端生成并发布到对象区；本页只读取作业状态。
+        ）。导出的内容由服务端生成并发布到对象区，完成后可校验并下载。
       </p>
       <div className="books-panel">
         <form
@@ -140,9 +141,13 @@ export function BookExportPanel({
                 <p>
                   摘要 <code>{artifact.sha256}</code>。
                 </p>
-                <p>
-                  下载入口尚未接入：下载操作已在契约中冻结，但当前服务端尚未提供，因此本页不提供下载链接。
-                </p>
+                <ContentDownload
+                  key={job.id + artifact.sha256}
+                  identity={job.id + artifact.sha256}
+                  filename={`${job.id}.${job.format}`}
+                  label="校验并下载导出"
+                  load={(signal) => client.downloadBookExport(job, signal)}
+                />
               </div>
             )}
             {job.status === "failed" && failure !== null && (

@@ -316,10 +316,14 @@ const download = await client.GET("/v1/workbench/saved-assets/{asset_id}/content
 Success returns the original ReadableStream, with no clone/read/buffering in
 validation. Empty content can yield null/undefined as in openapi-fetch. The
 caller owns a bounded reader, deadline and cancellation; the JSON limit does
-not limit binary downloads. Declared JSON errors remain bounded: saved assets keep 401/404; book export
-also keeps 409/410. The
-source leaves Content-Range optional on 206 and declares no 416; validation
-retains that scope and does not check actual range selection, media or digest.
+not limit binary downloads. Workbench source `0.1.0.dev1` additionally declares
+400/408/413/416/500/503 JSON failures on both download operations; saved assets keep
+401/404 and book export also keeps 409/410. Strict `dev0` clients must regenerate
+before the new producer is deployed. The source leaves Content-Range optional on
+206 for existing consumers and adds the `bytes */size` shape on 416. Validation
+does not check actual range selection or digest. The production C routes and Web
+consumer add those behavioral checks; their limits and evidence scope are documented
+in [committed content downloads](../../docs/architecture/workbench-content-downloads.md).
 New binary constraints fail generation until implemented.
 
 For `streamExportEvents`, use `parseAs: "stream"` as well. The middleware checks

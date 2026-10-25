@@ -11,8 +11,7 @@ for (const status of [200, 206, 401, 404, 409, 410, 416]) {
     params: { path: { export_id: "export-" + status }, header: { Range: "bytes=0-3" } },
     parseAs: "stream",
   };
-  if (status === 416) await assert.rejects(client.GET(path, options));
-  else {
+  {
     const result = await client.GET(path, options);
     assert.equal(result.response.status, status);
     if (status === 200 || status === 206) {

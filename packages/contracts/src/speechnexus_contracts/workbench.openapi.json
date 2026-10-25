@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus workbench API",
-    "version": "0.1.0.dev0",
+    "version": "0.1.0.dev1",
     "description": "Optional application layer for projects, transcripts, meetings, assistant\nturns, teleprompter state, audiobook rendering, saved copies, and exports.\n\nThis API is not OpenAI-compatible and never replaces the public speech API.\nIt calls the speech base through public Job/Artifact APIs and keeps its own\nrecords, staging, outbox, and export artifacts. Every workspace is shared in\nP0; no route establishes a user identity or personal private space.\n\nThe project/transcript HTTP boundary uses 400 malformed_request or\ninvalid_request for rejected syntax/parameters, 408 request_timeout for\nbody intake deadlines, 413 request_too_large for bounded request intake,\nand 415 unsupported_media_type for non-UTF-8 JSON writes. Version and\nidempotency conflicts are 409 revision_conflict / idempotency_conflict;\ninvalid_change is 422. Speech import failures retain source_invalid /\nsource_unsupported (422), source_too_large (413), source_expired (410),\nand source_unavailable (503). Absent/deleted resources, including original\ncreate-key replays after deletion, return 404 resource_not_found.\nDisabled workbench/storage use 503 workbench_unavailable / store_unavailable.\nUncertain commits use 503 outcome_unknown; preserve the original key and\nnever automatically create a new intent. Unexpected application or output\nvalidation failures use 500 internal_error.\nMeeting routes use the same bounded intake and storage errors. Their\nworkspace is the server-configured default; clients cannot select it.\nUnavailable meeting storage uses 503 meetings_unavailable. A source or\naudio-save mode without an installed adapter returns 422\nmeeting_source_unsupported. Minutes creation uses 503 llm_disabled,\n422 llm_profile_mismatch / llm_invalid_input, and 409\nllm_source_not_sealed / llm_source_changed / minutes_conflict.\nProvider/source failures use 503 llm_unavailable / llm_invalid_response /\nllm_source_unavailable. Optional Idempotency-Key pins the original\naccepted create/seal/202 snapshot; GET returns current state. Keep the\noriginal key after uncertain outcomes; a request without a key creates\na new intent and must never be automatically retried.\nLists use descending (created_at, id) live keyset pagination. Cursors are\nopaque and bound to deployment, resource kind and parent scope; malformed,\naltered or mismatched tokens return 400 invalid_cursor, never silently\nrestart from page one. Changing limit is allowed; newer insertions require\na new first-page read. has_more is true exactly when next_cursor is non-null.\nAll three deletion operations accept optional workspace_id, defaulting to\nthe configured deployment workspace; this is query scope, not identity.\nOnly project/transcript deletion graphs are currently implemented; other\nworkbench kinds return 422 deletion_resource_unsupported. Foreign owners\nreturn 422 deletion_owner_mismatch. Incomplete confirmations return 422\ndeletion_confirmation_mismatch; changed/expired plans or blocking dependencies\nreturn 409 deletion_plan_changed / deletion_plan_expired /\ndeletion_dependency_conflict. Acceptance returns queued intent, not cleanup\ncompletion; same-key replay preserves that original acceptance snapshot.\nV2 status and render-unit paths expose approved Minutes configuration and\nexplicit fixed model bindings. V1 schemas remain strict; v1 render creation\nis unavailable without a binding and returns 503 workbench_unavailable\nwithout writing a partial unit. Clients must explicitly select v2.\nErrors contain no request\ncontent or internal diagnostics and never imply rollback or remote stop.\n"
   },
   "security": [
@@ -3044,6 +3044,7 @@
       "get": {
         "tags": ["saved-assets"],
         "operationId": "downloadSavedAsset",
+        "description": "Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes */size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.",
         "summary": "Download a saved project asset",
         "parameters": [
           {
@@ -3100,6 +3101,24 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -3108,6 +3127,7 @@
       "get": {
         "tags": ["exports"],
         "operationId": "downloadBookExport",
+        "description": "Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes */size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.",
         "summary": "Download a completed export artifact",
         "parameters": [
           {
@@ -3170,6 +3190,24 @@
           },
           "410": {
             "$ref": "#/components/responses/Gone"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -7316,6 +7354,25 @@
         "headers": {
           "Retry-After": {
             "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RangeNotSatisfiable": {
+        "description": "The single requested byte range cannot select content.",
+        "headers": {
+          "Content-Range": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
           }
         },
         "content": {

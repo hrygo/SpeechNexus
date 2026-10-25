@@ -1,0 +1,459 @@
+{
+  "description": "Synthetic octet arrays are test transport descriptors, not JSON wire bodies. Native adapters materialize bytes without decoding media.",
+  "examples": [
+    {
+      "id": "full",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "bytes"
+        },
+        "body": [
+          0,
+          255,
+          1
+        ]
+      }
+    },
+    {
+      "id": "partial",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes 0-1/3"
+        },
+        "body": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "id": "source-content-range-optional",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "empty",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": []
+      }
+    },
+    {
+      "id": "wrong-range",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes */3"
+        },
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "wrong-accept-ranges",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "none"
+        },
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "json-is-not-octets",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "data": "synthetic"
+        }
+      }
+    },
+    {
+      "id": "text-is-not-native-binary",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": "synthetic"
+      }
+    },
+    {
+      "id": "missing-body",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "missing",
+      "valid": false,
+      "value": {
+        "headers": {}
+      }
+    },
+    {
+      "id": "undeclared-created",
+      "operation": "downloadSavedAsset",
+      "status": 201,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "undeclared-range-error",
+      "operation": "downloadSavedAsset",
+      "status": 416,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "unauthorized",
+      "operation": "downloadSavedAsset",
+      "status": 401,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "not-found",
+      "operation": "downloadSavedAsset",
+      "status": 404,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "invalid-error",
+      "operation": "downloadSavedAsset",
+      "status": 404,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "unexpected": true
+        }
+      }
+    },
+    {
+      "id": "book-full",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "bytes"
+        },
+        "body": [
+          0,
+          255,
+          1
+        ]
+      }
+    },
+    {
+      "id": "book-partial",
+      "operation": "downloadBookExport",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes 0-1/3"
+        },
+        "body": [
+          0,
+          255
+        ]
+      }
+    },
+    {
+      "id": "book-source-content-range-optional",
+      "operation": "downloadBookExport",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "book-empty",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": []
+      }
+    },
+    {
+      "id": "book-wrong-range",
+      "operation": "downloadBookExport",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes */3"
+        },
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "book-wrong-accept-ranges",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "none"
+        },
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "book-json-is-not-octets",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "data": "synthetic"
+        }
+      }
+    },
+    {
+      "id": "book-text-is-not-native-binary",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": "synthetic"
+      }
+    },
+    {
+      "id": "book-missing-body",
+      "operation": "downloadBookExport",
+      "status": 200,
+      "body_kind": "missing",
+      "valid": false,
+      "value": {
+        "headers": {}
+      }
+    },
+    {
+      "id": "book-undeclared-created",
+      "operation": "downloadBookExport",
+      "status": 201,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "book-undeclared-range-error",
+      "operation": "downloadBookExport",
+      "status": 416,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "book-unauthorized",
+      "operation": "downloadBookExport",
+      "status": 401,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "book-not-found",
+      "operation": "downloadBookExport",
+      "status": 404,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "book-invalid-error",
+      "operation": "downloadBookExport",
+      "status": 404,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "unexpected": true
+        }
+      }
+    },
+    {
+      "id": "book-json-409",
+      "operation": "downloadBookExport",
+      "status": 409,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "book-json-410",
+      "operation": "downloadBookExport",
+      "status": 410,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    }
+  ]
+}

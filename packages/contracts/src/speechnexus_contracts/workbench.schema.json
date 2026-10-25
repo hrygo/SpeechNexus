@@ -53,7 +53,8 @@
     "RenderUnitCreateRequestV2",
     "RenderUnitPatchV2",
     "RenderUnitListV2",
-    "RenderUnitGenerationAcceptedV2"
+    "RenderUnitGenerationAcceptedV2",
+    "ExportEvent"
   ],
   "$defs": {
     "ProjectCreateRequest": {
@@ -3480,6 +3481,337 @@
           "format": "date-time"
         }
       }
+    },
+    "ExportEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExportQueuedEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportProgressEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportSucceededEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportFailedEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportCancelledEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportArtifactPublishedEvent"
+        }
+      ],
+      "examples": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        },
+        {
+          "id": "2",
+          "type": "export.progress",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5
+          }
+        },
+        {
+          "id": "3",
+          "type": "export.succeeded",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:02Z",
+          "data": {
+            "status": "succeeded",
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        },
+        {
+          "id": "4",
+          "type": "export.failed",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:03Z",
+          "data": {
+            "status": "failed",
+            "error": {
+              "code": "export_failure",
+              "message": "synthetic export failure",
+              "retryable": false
+            }
+          }
+        },
+        {
+          "id": "5",
+          "type": "export.cancelled",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:04Z",
+          "data": {
+            "status": "cancelled"
+          }
+        },
+        {
+          "id": "6",
+          "type": "export.artifact_published",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:05Z",
+          "data": {
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        }
+      ]
+    },
+    "ExportQueuedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.queued"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportQueuedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportEventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "export_id", "occurred_at", "data"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventSequence"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "export.queued",
+            "export.progress",
+            "export.succeeded",
+            "export.failed",
+            "export.cancelled",
+            "export.artifact_published"
+          ]
+        },
+        "export_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "description": "Event-type-specific payload; see the concrete ExportEvent variant."
+        }
+      }
+    },
+    "EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_EventSequence"
+    },
+    "External_shared_identifiers_schema_json_EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision",
+      "description": "Monotonic decimal SSE event sequence used as Last-Event-ID."
+    },
+    "ExportQueuedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "queued"
+        }
+      }
+    },
+    "ExportProgressEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.progress"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportProgressEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportProgressEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "progress_completed", "progress_total"],
+      "properties": {
+        "status": {
+          "const": "running"
+        },
+        "progress_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "progress_total": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ExportSucceededEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.succeeded"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportSucceededEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportSucceededEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact"],
+      "properties": {
+        "status": {
+          "const": "succeeded"
+        },
+        "artifact": {
+          "$ref": "#/$defs/ExportArtifact"
+        }
+      }
+    },
+    "ExportFailedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.failed"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportFailedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportFailedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": {
+          "const": "failed"
+        },
+        "error": {
+          "$ref": "#/$defs/WorkbenchJobError"
+        }
+      }
+    },
+    "ExportCancelledEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.cancelled"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportCancelledEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportCancelledEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "cancelled"
+        }
+      }
+    },
+    "ExportArtifactPublishedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.artifact_published"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportArtifactPublishedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportArtifactPublishedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact"],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ExportArtifact"
+        }
+      }
     }
   },
   "anyOf": [
@@ -3635,6 +3967,9 @@
     },
     {
       "$ref": "#/$defs/RenderUnitGenerationAcceptedV2"
+    },
+    {
+      "$ref": "#/$defs/ExportEvent"
     }
   ]
 }

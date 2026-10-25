@@ -1,0 +1,630 @@
+{
+  "description": "Synthetic source-derived export events and bounded SSE transport cases. Ordered cases prove framing/resource/cursor checks, not the complete export business state machine.",
+  "events": [
+    {
+      "id": "1",
+      "type": "export.queued",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:00Z",
+      "data": {
+        "status": "queued"
+      }
+    },
+    {
+      "id": "2",
+      "type": "export.progress",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:01Z",
+      "data": {
+        "status": "running",
+        "progress_completed": 2,
+        "progress_total": 5
+      }
+    },
+    {
+      "id": "3",
+      "type": "export.succeeded",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:02Z",
+      "data": {
+        "status": "succeeded",
+        "artifact": {
+          "id": "export_artifact_demo",
+          "object": "nexus.export_artifact",
+          "export_id": "export_demo",
+          "manifest_revision": "3",
+          "media_type": "application/zip",
+          "bytes": 2048,
+          "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "created_at": "2026-10-23T00:00:02Z"
+        }
+      }
+    },
+    {
+      "id": "4",
+      "type": "export.failed",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:03Z",
+      "data": {
+        "status": "failed",
+        "error": {
+          "code": "export_failure",
+          "message": "synthetic export failure",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "id": "5",
+      "type": "export.cancelled",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:04Z",
+      "data": {
+        "status": "cancelled"
+      }
+    },
+    {
+      "id": "6",
+      "type": "export.artifact_published",
+      "export_id": "export_demo",
+      "occurred_at": "2026-10-23T00:00:05Z",
+      "data": {
+        "artifact": {
+          "id": "export_artifact_demo",
+          "object": "nexus.export_artifact",
+          "export_id": "export_demo",
+          "manifest_revision": "3",
+          "media_type": "application/zip",
+          "bytes": 2048,
+          "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "created_at": "2026-10-23T00:00:02Z"
+        }
+      }
+    }
+  ],
+  "streams": [
+    {
+      "id": "variant-export.queued",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "variant-export.progress",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 2\nevent: export.progress\ndata: {\"id\": \"2\", \"type\": \"export.progress\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:01Z\", \"data\": {\"status\": \"running\", \"progress_completed\": 2, \"progress_total\": 5}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "2",
+          "type": "export.progress",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "variant-export.succeeded",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 3\nevent: export.succeeded\ndata: {\"id\": \"3\", \"type\": \"export.succeeded\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:02Z\", \"data\": {\"status\": \"succeeded\", \"artifact\": {\"id\": \"export_artifact_demo\", \"object\": \"nexus.export_artifact\", \"export_id\": \"export_demo\", \"manifest_revision\": \"3\", \"media_type\": \"application/zip\", \"bytes\": 2048, \"sha256\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"created_at\": \"2026-10-23T00:00:02Z\"}}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "3",
+          "type": "export.succeeded",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:02Z",
+          "data": {
+            "status": "succeeded",
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "variant-export.failed",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 4\nevent: export.failed\ndata: {\"id\": \"4\", \"type\": \"export.failed\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:03Z\", \"data\": {\"status\": \"failed\", \"error\": {\"code\": \"export_failure\", \"message\": \"synthetic export failure\", \"retryable\": false}}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "4",
+          "type": "export.failed",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:03Z",
+          "data": {
+            "status": "failed",
+            "error": {
+              "code": "export_failure",
+              "message": "synthetic export failure",
+              "retryable": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "variant-export.cancelled",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 5\nevent: export.cancelled\ndata: {\"id\": \"5\", \"type\": \"export.cancelled\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:04Z\", \"data\": {\"status\": \"cancelled\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "5",
+          "type": "export.cancelled",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:04Z",
+          "data": {
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "id": "variant-export.artifact_published",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 6\nevent: export.artifact_published\ndata: {\"id\": \"6\", \"type\": \"export.artifact_published\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:05Z\", \"data\": {\"artifact\": {\"id\": \"export_artifact_demo\", \"object\": \"nexus.export_artifact\", \"export_id\": \"export_demo\", \"manifest_revision\": \"3\", \"media_type\": \"application/zip\", \"bytes\": 2048, \"sha256\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"created_at\": \"2026-10-23T00:00:02Z\"}}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "6",
+          "type": "export.artifact_published",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:05Z",
+          "data": {
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ordered",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\nid: 2\nevent: export.progress\ndata: {\"id\": \"2\", \"type\": \"export.progress\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:01Z\", \"data\": {\"status\": \"running\", \"progress_completed\": 2, \"progress_total\": 5}}\n\nid: 3\nevent: export.succeeded\ndata: {\"id\": \"3\", \"type\": \"export.succeeded\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:02Z\", \"data\": {\"status\": \"succeeded\", \"artifact\": {\"id\": \"export_artifact_demo\", \"object\": \"nexus.export_artifact\", \"export_id\": \"export_demo\", \"manifest_revision\": \"3\", \"media_type\": \"application/zip\", \"bytes\": 2048, \"sha256\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"created_at\": \"2026-10-23T00:00:02Z\"}}}\n\nid: 6\nevent: export.artifact_published\ndata: {\"id\": \"6\", \"type\": \"export.artifact_published\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:05Z\", \"data\": {\"artifact\": {\"id\": \"export_artifact_demo\", \"object\": \"nexus.export_artifact\", \"export_id\": \"export_demo\", \"manifest_revision\": \"3\", \"media_type\": \"application/zip\", \"bytes\": 2048, \"sha256\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"created_at\": \"2026-10-23T00:00:02Z\"}}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        },
+        {
+          "id": "2",
+          "type": "export.progress",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5
+          }
+        },
+        {
+          "id": "3",
+          "type": "export.succeeded",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:02Z",
+          "data": {
+            "status": "succeeded",
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        },
+        {
+          "id": "6",
+          "type": "export.artifact_published",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:05Z",
+          "data": {
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "CRLF",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "﻿: heartbeat\r\n\r\nid: 1\r\nevent: export.queued\r\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\r\n\r\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CR",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 1\revent: export.queued\rdata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\r\r",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "multiline-data-optional-metadata",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "data: {\ndata:   \"id\": \"1\",\ndata:   \"type\": \"export.queued\",\ndata:   \"export_id\": \"export_demo\",\ndata:   \"occurred_at\": \"2026-10-23T00:00:00Z\",\ndata:   \"data\": {\ndata:     \"status\": \"queued\"\ndata:   }\ndata: }\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "large-original-cursor",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 9007199254740994\nevent: export.queued\ndata: {\"id\": \"9007199254740994\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Last-Event-ID": "9007199254740993"
+        }
+      },
+      "expected": [
+        {
+          "id": "9007199254740994",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "unicode-chunk-boundaries",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": "id: 4\nevent: export.failed\ndata: {\"id\": \"4\", \"type\": \"export.failed\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:03Z\", \"data\": {\"status\": \"failed\", \"error\": {\"code\": \"export_failure\", \"message\": \"synthetic café 音频\", \"retryable\": false}}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "4",
+          "type": "export.failed",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:03Z",
+          "data": {
+            "status": "failed",
+            "error": {
+              "code": "export_failure",
+              "message": "synthetic café 音频",
+              "retryable": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "wrong-sse-id",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 2\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "wrong-sse-type",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.failed\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "wrong-resource",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"another_export\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "duplicate-sequence",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\nid: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "regressed-sequence",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 2\nevent: export.progress\ndata: {\"id\": \"2\", \"type\": \"export.progress\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:01Z\", \"data\": {\"status\": \"running\", \"progress_completed\": 2, \"progress_total\": 5}}\n\nid: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": [
+        {
+          "id": "2",
+          "type": "export.progress",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "before-original-cursor",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Last-Event-ID": "1"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "truncated-event",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}}",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "bad-json",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "data: {private-invalid-json\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "bad-utf8",
+      "valid": false,
+      "wire_kind": "octets",
+      "wire": [
+        255,
+        10,
+        10
+      ],
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "oversized-frame",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": ":xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n",
+      "max_event_bytes": 16,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "unexpected-field",
+      "valid": false,
+      "wire_kind": "utf8",
+      "wire": "id: 1\nevent: export.queued\ndata: {\"id\": \"1\", \"type\": \"export.queued\", \"export_id\": \"export_demo\", \"occurred_at\": \"2026-10-23T00:00:00Z\", \"data\": {\"status\": \"queued\"}, \"extra\": \"no\"}\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    },
+    {
+      "id": "empty-heartbeat",
+      "valid": true,
+      "wire_kind": "utf8",
+      "wire": ":heartbeat\n\n",
+      "max_event_bytes": 8192,
+      "request": {
+        "path": {
+          "export_id": "export_demo"
+        }
+      },
+      "expected": []
+    }
+  ]
+}

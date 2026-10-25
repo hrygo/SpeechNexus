@@ -3,7 +3,7 @@
 #   version:   0.86.0
 #   TypedDict flattening template: 1
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 type ExternalSharedIdentifiersSchemaJsonIdentifier = str
 
@@ -232,6 +232,28 @@ class AssistantTurnCreateRequest(TypedDict):
 
 type Language = str
 type AudioFormat = str
+type ExternalSharedIdentifiersSchemaJsonEventSequence = ExternalSharedIdentifiersSchemaJsonRevision
+
+
+class ExportQueuedEventData(TypedDict):
+    status: Literal["queued"]
+
+
+class ExportProgressEventData(TypedDict):
+    status: Literal["running"]
+    progress_completed: int
+    progress_total: int
+
+
+class ExportFailedEventData(TypedDict):
+    status: Literal["failed"]
+    error: WorkbenchJobError
+
+
+class ExportCancelledEventData(TypedDict):
+    status: Literal["cancelled"]
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -641,6 +663,18 @@ class RenderUnitGenerationAcceptedV2(TypedDict):
     accepted_at: str
 
 
+type EventSequence = ExternalSharedIdentifiersSchemaJsonEventSequence
+
+
+class ExportSucceededEventData(TypedDict):
+    status: Literal["succeeded"]
+    artifact: ExportArtifact
+
+
+class ExportArtifactPublishedEventData(TypedDict):
+    artifact: ExportArtifact
+
+
 class ProjectCreateRequest(TypedDict):
     workspace_id: NotRequired[Identifier]
     name: str
@@ -752,6 +786,61 @@ class VoiceList(TypedDict):
     next_cursor: str | None
 
 
+class ExportEventEnvelope(TypedDict):
+    id: EventSequence
+    type: Literal[
+        "export.queued",
+        "export.progress",
+        "export.succeeded",
+        "export.failed",
+        "export.cancelled",
+        "export.artifact_published",
+    ]
+    export_id: Identifier
+    occurred_at: str
+    data: dict[str, Any]
+
+
+class ExportProgressEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.progress"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportProgressEventData
+
+
+class ExportSucceededEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.succeeded"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportSucceededEventData
+
+
+class ExportFailedEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.failed"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportFailedEventData
+
+
+class ExportCancelledEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.cancelled"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportCancelledEventData
+
+
+class ExportArtifactPublishedEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.artifact_published"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportArtifactPublishedEventData
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -768,9 +857,27 @@ class RenderUnitGenerationAccepted(TypedDict):
     accepted_at: str
 
 
+class ExportQueuedEvent(TypedDict):
+    id: EventSequence
+    type: Literal["export.queued"]
+    export_id: Identifier
+    occurred_at: str
+    data: ExportQueuedEventData
+
+
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
     operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+type ExportEvent = (
+    ExportQueuedEvent
+    | ExportProgressEvent
+    | ExportSucceededEvent
+    | ExportFailedEvent
+    | ExportCancelledEvent
+    | ExportArtifactPublishedEvent
+)
 
 
 class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
@@ -857,4 +964,5 @@ type WorkbenchContracts = (
     | RenderUnitPatchV2
     | RenderUnitListV2
     | RenderUnitGenerationAcceptedV2
+    | ExportEvent
 )

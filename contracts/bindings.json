@@ -110,7 +110,8 @@
         "RenderUnitCreateRequestV2",
         "RenderUnitPatchV2",
         "RenderUnitListV2",
-        "RenderUnitGenerationAcceptedV2"
+        "RenderUnitGenerationAcceptedV2",
+        "ExportEvent"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -306,7 +307,10 @@
         "/v2/workbench/status",
         "/v2/workbench/chapters/{chapter_id}/render-units",
         "/v2/workbench/render-units/{unit_id}",
-        "/v2/workbench/render-units/{unit_id}/generations"
+        "/v2/workbench/render-units/{unit_id}/generations",
+        "/v1/workbench/saved-assets/{asset_id}/content",
+        "/v1/workbench/exports/{export_id}/content",
+        "/v1/workbench/exports/{export_id}/events"
       ]
     },
     "profile": {

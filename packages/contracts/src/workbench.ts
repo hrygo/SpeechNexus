@@ -57,6 +57,7 @@ export type Contracts = Pick<
   | "RenderUnitPatchV2"
   | "RenderUnitListV2"
   | "RenderUnitGenerationAcceptedV2"
+  | "ExportEvent"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

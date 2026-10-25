@@ -33,6 +33,8 @@ A范围与下一最小单元见[团队A目标](2026-10-23-team-a-goal.md)，不�
 
 B组件边界见[私有结果交接](../architecture/file-asr-results.md)与[团队B目标](2026-10-23-team-b-goal.md)。
 C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再沿用“只剩三个”的旧统计。
+作者后续已补项目name改名和音色单修订调用，称已绑定直接消费者缺口归零；name外字段、声音真实成功/表单联动仍缺。
+仅书籍页表单另有本机键盘/360px证据，不扩大为全站/读屏/Linux资格；逐项链接与验证方式见深度复盘。
 A00在当前main仍缺四项runtime绑定：generateRenderUnit仅#141候选；
 downloadSavedAsset/downloadBookExport二进制与streamExportEvents SSE仍待，不据静态类型或单条样例消项。
 

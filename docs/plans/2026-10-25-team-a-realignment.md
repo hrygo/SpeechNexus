@@ -53,14 +53,22 @@ date: 2026-10-25
 
 | 候选 | 已有作者证据 | 集成缺口与解除条件 |
 | --- | --- | --- |
-| C #35–#43 | base 4b08c396c0fe8fc43c7e85683e534befab6bb22b；真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放、章节/单元登记；导出worker默认关闭预接线 | 未提交/推送，无可评审新head，不计共同main。C提供可获取提交或完整补丁/摘要、迁移owner片段、组合根/HTTP注册与生产消费者清单，再同版复核；A不代改C issue或提交其本机代码 |
+| C #35–#43 | base 4b08c396c0fe8fc43c7e85683e534befab6bb22b；真实本地PG/HTTP/组合根、纪要本机模型/浏览器、删除重放、章节/单元登记；另有项目name改名、音色单修订读取和仅书籍页表单键盘/360px验证，范围如下；导出worker默认关闭预接线 | 未提交/推送，无可评审新head，不计共同main。C提供可获取提交或完整补丁/摘要、迁移owner片段、组合根/HTTP注册与生产消费者清单，再同版复核；A不代改C issue或提交其本机代码 |
 | B worker观察扩展 | #28/#30/#142报告原工作树候选与受控回归 | 未提交/集成候选没有可作为交付版本的新head；与#140/#147分开。B按真实执行链需要交付版本/回执与故障证据 |
 | A→C助手交接 #149 | planned，无该交接真实成功证据 | A04提供真实可查询Speech Job，A06/B05提供已发布声音，再由C验证同键/取消/超时；默认关闭页面或fake ID不消项，不前移为文件G1前置 |
 
-C最新[第69轮清点](https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393997645)已纠正旧统计：
-按method+path、排除测试文件后，“无直接Web调用”原始条目为6；识别等价消费后，
-getTranscriptRevision并非缺陷，章节/单元读取已有列表与实际HTTP覆盖，当前明确待补直接消费包括updateProject与getVoiceRevision。
-这是作者本地清点，不等于6个功能缺陷或共同主干验收。不能继续引用“只剩3个”，也不能与下方A00的4项runtime缺口相减。
+C的[第69轮清点](https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393997645)先按method+path、
+排除测试文件，再识别等价消费，修正了“只剩3个”的旧结论；getTranscriptRevision、getChapter、getRenderUnit已有等价消费。
+后续第71/72轮已补updateProject和getVoiceRevision的直接调用，作者报告“已绑定操作的生产消费者缺口归零”。
+这只是作者本地清点，不是独立审计、完整操作覆盖或同版业务验收；下列字段/分支仍有缺口，也不能与A00的4项未绑定runtime入口混算。
+
+| C作者新增候选 | 实际报告的验证 | 仍未覆盖 |
+| --- | --- | --- |
+| [updateProject name改名](https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6394069180) | 生产包+真实组合根/PG/Chromium改名，返回id/修订前进；失败保留原键，带外推进修订后旧修订得到409且不显示假成功 | 仅name；description/status归档未接。冲突由测试带外注入，未证明两个真实操作者并发 |
+| [getVoiceRevision](https://github.com/hrygo/SpeechNexus/issues/38#issuecomment-6394132788) | 客户端校验id/revision；成功及退役/禁用原因只有jsdom证据。真实浏览器仅证明503拒绝且不显示记录 | 无真实部署成功/退役/禁用链路；声音核对与新增单元表单未联动，仍依赖A06/B05，不证明已发布声音可用 |
+| [书籍页表单键盘/360px](https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6394187058) | 本机Chromium以Tab/Enter创建第二个单元、成功后焦点回首字段；360px无横向滚动，真实HTTP核对两个单元 | 仅书籍页新增表单、一档窄屏；读屏、200%缩放、高对比/焦点陷阱/aria-live未实测，不等于全站、Linux或目标拓扑资格 |
+
+以上仍是base4b08的未提交作者证据，与当前main/#150 CI不是同一SHA的验证。
 
 ## 原因、风险与应保留的工程成果
 

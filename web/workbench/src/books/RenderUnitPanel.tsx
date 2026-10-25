@@ -1,3 +1,5 @@
+import { unitJournal, type UnitCommand } from "./book-journal";
+import type { CommandJournal } from "../recovery/command-journal";
 import { useEffect, useRef, useState } from "react";
 import {
   WorkbenchResponseError,
@@ -12,6 +14,7 @@ const problems = {
   rejected: "请求被拒绝。请核对单元文本或声音后再重做。",
   missing: "该章节或单元已不可读取。",
   unknown: "结果尚未确认。请核对连接后按原键重试，不要重新创建。",
+  storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
 } as const;
 
 export type RenderUnitProblem = keyof typeof problems;
@@ -83,7 +86,7 @@ interface Draft {
   voiceRevision: string;
 }
 
-function draftOf(drafts: Record<string, Draft>, unit: Contracts["RenderUnit"]): Draft {
+function draftOf(drafts: Record<string, Draft>, unit: Contracts["RenderUnitV2"]): Draft {
   return (
     drafts[unit.id] ?? {
       text: unit.text,
@@ -97,19 +100,49 @@ function draftOf(drafts: Record<string, Draft>, unit: Contracts["RenderUnit"]): 
  * A unit is revised, never silently regenerated: the panel sends the pins the user
  * changed with the revision they saw, and a conflict is reported instead of retried.
  */
-export function RenderUnitPanel({
+function ChapterUnits({
   client,
   chapter,
 }: {
   client: WorkbenchClient;
   chapter: Contracts["Chapter"];
 }) {
-  const [units, setUnits] = useState<Contracts["RenderUnit"][]>([]);
+  const [units, setUnits] = useState<Contracts["RenderUnitV2"][]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [problem, setProblem] = useState<RenderUnitProblem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  const [recovery, setRecovery] = useState<{
+    journal: CommandJournal<UnitCommand> | null;
+    pending: UnitCommand | null;
+    rejected: boolean;
+    blocked: boolean;
+  }>(() => {
+    try {
+      const journal = unitJournal(chapter.id),
+        record = journal.load();
+      if (record.command && record.command.chapterId !== chapter.id)
+        throw new Error("Unit scope mismatch");
+      return { journal, pending: record.command, rejected: record.rejected, blocked: false };
+    } catch {
+      return { journal: null, pending: null, rejected: false, blocked: true };
+    }
+  });
+  const owner = useRef({ generation: 0, alive: true });
+  const flight = useRef(false);
+  useEffect(() => {
+    const current = owner.current,
+      generation = ++current.generation;
+    current.alive = true;
+    return () => {
+      queueMicrotask(() => {
+        if (current.generation === generation) current.alive = false;
+      });
+    };
+  }, []);
+  const locked = busy || recovery.pending !== null || recovery.blocked;
+
   const [voices, setVoices] = useState<Contracts["VoiceSummary"][] | null>(null);
   const [createProblem, setCreateProblem] = useState<RenderUnitProblem | null>(null);
   const [create, setCreate] = useState({
@@ -128,6 +161,9 @@ export function RenderUnitPanel({
   // A successful create clears the fields, which disables the submit button and would drop
   // keyboard focus to the document; it goes back to the first field instead.
   const firstField = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!busy && notice?.includes("已创建为修订")) firstField.current?.focus();
+  }, [busy, notice]);
   const [check, setCheck] = useState<{
     voiceId: string;
     revision: string;
@@ -141,7 +177,105 @@ export function RenderUnitPanel({
     busy: boolean;
   }>({ assetId: null, asset: null, problem: null, busy: false });
 
-  /** A new unit is a new intent: the key only rotates after the deployment accepts it. */
+  async function execute(command: UnitCommand, fresh: boolean): Promise<boolean> {
+    if (flight.current || (fresh && recovery.pending !== null)) return false;
+    const journal = recovery.journal;
+    try {
+      if (!journal) throw new Error("Recovery unavailable");
+      if (fresh) journal.begin(command);
+      else journal.save(journal.load());
+      setRecovery({ journal, pending: journal.load().command, rejected: false, blocked: false });
+    } catch {
+      setRecovery((r) => ({ ...r, blocked: true }));
+      setProblem("storage");
+      return false;
+    }
+    flight.current = true;
+    setBusy(true);
+    try {
+      const updated =
+        command.kind === "create"
+          ? await client.createRenderUnit(command.chapterId, command.body, command.key)
+          : await client.updateRenderUnit(command.unitId, command.body, command.key);
+      if (!owner.current.alive) return false;
+      if (
+        updated.chapter_id !== command.chapterId ||
+        (command.kind === "patch" && updated.id !== command.unitId)
+      )
+        throw new Error("Unit response scope mismatch");
+      try {
+        journal.clear();
+      } catch {
+        setRecovery((r) => ({ ...r, blocked: true }));
+        setProblem("storage");
+        return false;
+      }
+      setRecovery({ journal, pending: null, rejected: false, blocked: false });
+      setUnits((current) =>
+        command.kind === "create"
+          ? [...current.filter((item) => item.id !== updated.id), updated]
+          : current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      if (command.kind === "create") {
+        setCreateProblem(null);
+        setCreate((current) => ({ ...current, ordinal: "", text: "", key: crypto.randomUUID() }));
+        firstField.current?.focus();
+        setNotice(`单元 ${updated.ordinal + 1} 已创建为修订 ${updated.revision}。`);
+      } else {
+        setDrafts((current) => {
+          const next = { ...current };
+          delete next[command.unitId];
+          return next;
+        });
+        setNotice(
+          updated.revision === command.body.expected_revision
+            ? `单元 ${updated.id}：没有变化，未生成新的修订。`
+            : `单元 ${updated.id}：修订 ${command.body.expected_revision} → ${updated.revision}，状态 ${updated.status}，需要重新生成。`,
+        );
+      }
+      setProblem(null);
+      return true;
+    } catch (error) {
+      if (!owner.current.alive) return false;
+      const rejected =
+        error instanceof WorkbenchResponseError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![408, 429].includes(error.status);
+      try {
+        journal.failure(rejected);
+        const record = journal.load();
+        setRecovery({
+          journal,
+          pending: record.command,
+          rejected: record.rejected,
+          blocked: false,
+        });
+        const problem = record.uncertain ? "unknown" : problemOf(error);
+        if (command.kind === "create") setCreateProblem(problem);
+        else setProblem(problem);
+      } catch {
+        setRecovery((r) => ({ ...r, blocked: true }));
+        setProblem("storage");
+      }
+      return false;
+    } finally {
+      flight.current = false;
+      if (owner.current.alive) setBusy(false);
+    }
+  }
+  function dismissRejected() {
+    if (!recovery.rejected || busy || !recovery.journal) return;
+    try {
+      recovery.journal.clear();
+      setRecovery((r) => ({ ...r, pending: null, rejected: false, blocked: false }));
+      setCreateProblem(null);
+      setProblem(null);
+    } catch {
+      setRecovery((r) => ({ ...r, blocked: true }));
+      setProblem("storage");
+    }
+  }
   async function addUnit(input: {
     ordinal: number;
     text: string;
@@ -152,26 +286,21 @@ export function RenderUnitPanel({
     bindingRevision: string;
     key: string;
   }) {
-    try {
-      const created = await client.createRenderUnit(
-        chapter.id,
-        {
+    return execute(
+      {
+        kind: "create",
+        chapterId: chapter.id,
+        key: input.key,
+        body: {
           ordinal: input.ordinal,
           text: input.text,
           voice: { id: input.voiceId, revision: input.voiceRevision },
           model: input.model,
           model_binding: { id: input.bindingId, revision: input.bindingRevision },
         },
-        input.key,
-      );
-      setUnits((current) => [...current.filter((item) => item.id !== created.id), created]);
-      setCreateProblem(null);
-      setNotice(`单元 ${created.ordinal + 1} 已创建为修订 ${created.revision}。`);
-      return true;
-    } catch (error) {
-      setCreateProblem(problemOf(error));
-      return false;
-    }
+      },
+      true,
+    );
   }
 
   /** A pinned voice is only trusted after its own revision has been read. */
@@ -240,9 +369,9 @@ export function RenderUnitPanel({
     };
   }, [client, reload]);
 
-  async function redo(unit: Contracts["RenderUnit"]) {
+  async function redo(unit: Contracts["RenderUnitV2"]) {
     const draft = draftOf(drafts, unit);
-    const patch: Contracts["RenderUnitPatch"] = { expected_revision: unit.revision };
+    const patch: Contracts["RenderUnitPatchV2"] = { expected_revision: unit.revision };
     if (draft.text !== unit.text) patch.text = draft.text;
     if (draft.voiceId !== unit.voice.id || draft.voiceRevision !== unit.voice.revision) {
       patch.voice = { id: draft.voiceId, revision: draft.voiceRevision };
@@ -251,32 +380,45 @@ export function RenderUnitPanel({
       setNotice(`单元 ${unit.id}：没有变化，未提交重做。`);
       return;
     }
-    setBusy(true);
     setNotice(null);
-    try {
-      const updated = await client.updateRenderUnit(unit.id, patch, crypto.randomUUID());
-      setUnits((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setDrafts((current) => {
-        const next = { ...current };
-        delete next[unit.id];
-        return next;
-      });
-      setNotice(
-        updated.revision === unit.revision
-          ? `单元 ${unit.id}：没有变化，未生成新的修订。`
-          : `单元 ${unit.id}：修订 ${unit.revision} → ${updated.revision}，状态 ${updated.status}，需要重新生成。`,
-      );
-      setProblem(null);
-    } catch (error) {
-      setProblem(problemOf(error));
-    } finally {
-      setBusy(false);
-    }
+    await execute(
+      {
+        kind: "patch",
+        chapterId: chapter.id,
+        unitId: unit.id,
+        body: patch,
+        key: crypto.randomUUID(),
+      },
+      true,
+    );
   }
 
   return (
     <section className="books-units" aria-label="渲染单元">
       <h3>渲染单元</h3>
+      {(recovery.pending || recovery.blocked) && (
+        <aside aria-label="单元原请求恢复">
+          <p>
+            {recovery.blocked
+              ? problems.storage
+              : "原请求已保存在此标签页。不会自动重放，结果未知时不能更换意图。"}
+          </p>
+          {recovery.pending && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void execute(recovery.pending!, false)}
+            >
+              按原键重放单元请求
+            </button>
+          )}
+          {recovery.rejected && (
+            <button type="button" disabled={busy} onClick={dismissRejected}>
+              结束已拒绝单元请求
+            </button>
+          )}
+        </aside>
+      )}
       {problem !== null && (
         <p className="books-problem" role="alert">
           {problems[problem]}
@@ -342,132 +484,123 @@ export function RenderUnitPanel({
         aria-label="新增渲染单元"
         onSubmit={(event) => {
           event.preventDefault();
-          setBusy(true);
-          void (async () => {
-            const accepted = await addUnit({
-              ordinal: Number(create.ordinal),
-              text: create.text,
-              voiceId: create.voiceId,
-              voiceRevision: create.voiceRevision,
-              model: create.model,
-              bindingId: create.bindingId,
-              bindingRevision: create.bindingRevision,
-              key: create.key,
-            });
-            if (accepted) {
-              setCreate((current) => ({
-                ...current,
-                ordinal: "",
-                text: "",
-                key: crypto.randomUUID(),
-              }));
-              firstField.current?.focus();
-            }
-            setBusy(false);
-          })();
+          void addUnit({
+            ordinal: Number(create.ordinal),
+            text: create.text,
+            voiceId: create.voiceId,
+            voiceRevision: create.voiceRevision,
+            model: create.model,
+            bindingId: create.bindingId,
+            bindingRevision: create.bindingRevision,
+            key: create.key,
+          });
         }}
       >
-        <p>新增渲染单元（固定音色与模型版本；语音底座不可用时仍可登记引用，能否生成由部署决定）</p>
-        <label>
-          新单元序号
-          <input
-            ref={firstField}
-            type="number"
-            min={0}
-            required
-            value={create.ordinal}
-            onChange={(event) => setCreateField("ordinal", event.target.value)}
-          />
-        </label>
-        <label>
-          新单元文本
-          <textarea
-            required
-            value={create.text}
-            onChange={(event) => setCreateField("text", event.target.value)}
-          />
-        </label>
-        {voices !== null && voices.length > 0 && (
+        <fieldset disabled={locked}>
+          <p>
+            新增渲染单元（固定音色与模型版本；语音底座不可用时仍可登记引用，能否生成由部署决定）
+          </p>
           <label>
-            从已发布音色填入
-            <select
-              value=""
-              onChange={(event) => {
-                const pin = splitVoiceKey(event.target.value);
-                setCreate((current) => ({
-                  ...current,
-                  voiceId: pin.voiceId,
-                  voiceRevision: pin.voiceRevision,
-                }));
-              }}
-            >
-              <option value="">选择已发布音色</option>
-              {voices.map((voice) => (
-                <option
-                  key={voiceKey(voice.voice_id, voice.revision)}
-                  value={voiceKey(voice.voice_id, voice.revision)}
-                >
-                  {voice.display_name}（修订 {voice.revision}）
-                </option>
-              ))}
-            </select>
+            新单元序号
+            <input
+              ref={firstField}
+              type="number"
+              min={0}
+              required
+              value={create.ordinal}
+              onChange={(event) => setCreateField("ordinal", event.target.value)}
+            />
           </label>
-        )}
-        <label>
-          新单元音色 id
-          <input
-            required
-            value={create.voiceId}
-            onChange={(event) => setCreateField("voiceId", event.target.value)}
-          />
-        </label>
-        <label>
-          新单元音色修订
-          <input
-            required
-            value={create.voiceRevision}
-            onChange={(event) => setCreateField("voiceRevision", event.target.value)}
-          />
-        </label>
-        <label>
-          新单元模型
-          <input
-            required
-            value={create.model}
-            onChange={(event) => setCreateField("model", event.target.value)}
-          />
-        </label>
-        <label>
-          新单元绑定 id
-          <input
-            required
-            value={create.bindingId}
-            onChange={(event) => setCreateField("bindingId", event.target.value)}
-          />
-        </label>
-        <label>
-          新单元绑定修订
-          <input
-            required
-            value={create.bindingRevision}
-            onChange={(event) => setCreateField("bindingRevision", event.target.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={
-            busy ||
-            create.ordinal === "" ||
-            create.text === "" ||
-            create.voiceId === "" ||
-            create.voiceRevision === "" ||
-            create.model === "" ||
-            create.bindingId === "" ||
-            create.bindingRevision === ""
-          }
-        >
-          新增渲染单元
-        </button>
+          <label>
+            新单元文本
+            <textarea
+              required
+              value={create.text}
+              onChange={(event) => setCreateField("text", event.target.value)}
+            />
+          </label>
+          {voices !== null && voices.length > 0 && (
+            <label>
+              从已发布音色填入
+              <select
+                value=""
+                onChange={(event) => {
+                  const pin = splitVoiceKey(event.target.value);
+                  setCreate((current) => ({
+                    ...current,
+                    voiceId: pin.voiceId,
+                    voiceRevision: pin.voiceRevision,
+                  }));
+                }}
+              >
+                <option value="">选择已发布音色</option>
+                {voices.map((voice) => (
+                  <option
+                    key={voiceKey(voice.voice_id, voice.revision)}
+                    value={voiceKey(voice.voice_id, voice.revision)}
+                  >
+                    {voice.display_name}（修订 {voice.revision}）
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            新单元音色 id
+            <input
+              required
+              value={create.voiceId}
+              onChange={(event) => setCreateField("voiceId", event.target.value)}
+            />
+          </label>
+          <label>
+            新单元音色修订
+            <input
+              required
+              value={create.voiceRevision}
+              onChange={(event) => setCreateField("voiceRevision", event.target.value)}
+            />
+          </label>
+          <label>
+            新单元模型
+            <input
+              required
+              value={create.model}
+              onChange={(event) => setCreateField("model", event.target.value)}
+            />
+          </label>
+          <label>
+            新单元绑定 id
+            <input
+              required
+              value={create.bindingId}
+              onChange={(event) => setCreateField("bindingId", event.target.value)}
+            />
+          </label>
+          <label>
+            新单元绑定修订
+            <input
+              required
+              value={create.bindingRevision}
+              onChange={(event) => setCreateField("bindingRevision", event.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={
+              busy ||
+              create.ordinal === "" ||
+              create.text === "" ||
+              create.voiceId === "" ||
+              create.voiceRevision === "" ||
+              create.model === "" ||
+              create.bindingId === "" ||
+              create.bindingRevision === ""
+            }
+          >
+            新增渲染单元
+          </button>
+        </fieldset>
       </form>
       {createProblem !== null && (
         <p role="alert" aria-label="新增单元错误">
@@ -516,75 +649,77 @@ export function RenderUnitPanel({
                       )}
                     </div>
                   )}
-                  <label>
-                    {`${label} 文本`}
-                    <textarea
-                      value={draft.text}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [unit.id]: { ...draft, text: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {`${label} 已发布音色`}
-                    <select
-                      value={voiceKey(draft.voiceId, draft.voiceRevision)}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [unit.id]: { ...draft, ...splitVoiceKey(event.target.value) },
-                        }))
-                      }
-                    >
-                      <option value={voiceKey(draft.voiceId, draft.voiceRevision)}>
-                        {`当前固定：${voiceKey(draft.voiceId, draft.voiceRevision)}`}
-                      </option>
-                      {(voices ?? [])
-                        .filter(
-                          (voice) =>
-                            voiceKey(voice.voice_id, voice.revision) !==
-                            voiceKey(draft.voiceId, draft.voiceRevision),
-                        )
-                        .map((voice) => (
-                          <option
-                            key={voiceKey(voice.voice_id, voice.revision)}
-                            value={voiceKey(voice.voice_id, voice.revision)}
-                          >
-                            {`${voice.display_name}（${voice.voice_id}@${voice.revision}，${voice.status}）`}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <label>
-                    {`${label} 声音 ID`}
-                    <input
-                      value={draft.voiceId}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [unit.id]: { ...draft, voiceId: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {`${label} 声音修订`}
-                    <input
-                      value={draft.voiceRevision}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [unit.id]: { ...draft, voiceRevision: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <button type="button" disabled={busy} onClick={() => void redo(unit)}>
-                    {`重做${label}`}
-                  </button>
+                  <fieldset disabled={locked}>
+                    <label>
+                      {`${label} 文本`}
+                      <textarea
+                        value={draft.text}
+                        onChange={(event) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [unit.id]: { ...draft, text: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      {`${label} 已发布音色`}
+                      <select
+                        value={voiceKey(draft.voiceId, draft.voiceRevision)}
+                        onChange={(event) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [unit.id]: { ...draft, ...splitVoiceKey(event.target.value) },
+                          }))
+                        }
+                      >
+                        <option value={voiceKey(draft.voiceId, draft.voiceRevision)}>
+                          {`当前固定：${voiceKey(draft.voiceId, draft.voiceRevision)}`}
+                        </option>
+                        {(voices ?? [])
+                          .filter(
+                            (voice) =>
+                              voiceKey(voice.voice_id, voice.revision) !==
+                              voiceKey(draft.voiceId, draft.voiceRevision),
+                          )
+                          .map((voice) => (
+                            <option
+                              key={voiceKey(voice.voice_id, voice.revision)}
+                              value={voiceKey(voice.voice_id, voice.revision)}
+                            >
+                              {`${voice.display_name}（${voice.voice_id}@${voice.revision}，${voice.status}）`}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      {`${label} 声音 ID`}
+                      <input
+                        value={draft.voiceId}
+                        onChange={(event) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [unit.id]: { ...draft, voiceId: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      {`${label} 声音修订`}
+                      <input
+                        value={draft.voiceRevision}
+                        onChange={(event) =>
+                          setDrafts((current) => ({
+                            ...current,
+                            [unit.id]: { ...draft, voiceRevision: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <button type="button" disabled={busy} onClick={() => void redo(unit)}>
+                      {`重做${label}`}
+                    </button>
+                  </fieldset>
                 </li>
               );
             })}
@@ -594,4 +729,8 @@ export function RenderUnitPanel({
   );
 }
 
+/** A chapter owns its in-flight results and recovery record. Switching never reuses its state. */
+export function RenderUnitPanel(props: { client: WorkbenchClient; chapter: Contracts["Chapter"] }) {
+  return <ChapterUnits key={props.chapter.id} {...props} />;
+}
 export default RenderUnitPanel;

@@ -15,11 +15,26 @@ export function AssistantHost({
   const session = useMemo(() => new AssistantSession(workbench), [workbench]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [projects, setProjects] = useState<readonly Contracts["Project"][]>([]);
-  const [projectId, setProjectId] = useState("");
-  const [voiceKey, setVoiceKey] = useState("");
-  const [inputText, setInputText] = useState("");
-  const [key, setKey] = useState("");
+  const initial = session.getSnapshot().pending;
+  const [projectId, setProjectId] = useState(initial?.kind === "create" ? initial.projectId : "");
+  const [voiceKey, setVoiceKey] = useState(
+    initial?.kind === "create" ? `${initial.body.voice.id}@${initial.body.voice.revision}` : "",
+  );
+  const [inputText, setInputText] = useState(
+    initial?.kind === "create" ? initial.body.input_text : "",
+  );
+  const [key, setKey] = useState(initial?.key ?? "");
   const heading = useRef<HTMLHeadingElement>(null);
+  const owner = useRef({ generation: 0 });
+  useEffect(() => {
+    const currentOwner = owner.current;
+    const generation = ++currentOwner.generation;
+    return () => {
+      queueMicrotask(() => {
+        if (currentOwner.generation === generation) session.dispose();
+      });
+    };
+  }, [session]);
 
   useEffect(() => {
     if (!active) return;
@@ -32,7 +47,7 @@ export function AssistantHost({
     return () => controller.abort();
   }, [active, session, workbench]);
 
-  const locked = state.busy || state.watching;
+  const locked = state.busy || state.watching || state.pending !== null || state.blocked;
   const capability = designState(state.availability);
   const turn = state.turn;
   const requestKey = key.trim().length >= 8 ? key.trim() : "";
@@ -61,6 +76,24 @@ export function AssistantHost({
       </p>
       {state.problem !== null && <p role="alert">{problems[state.problem]}</p>}
 
+      {state.pending && (
+        <aside aria-label="助手原请求恢复">
+          <p>原请求已保存在此标签页。结果未确认前不能另建请求，也不会自动重放。</p>
+          {state.pending.kind === "create" && (
+            <p>
+              项目 {state.pending.projectId} · 请求键 {state.pending.key}
+            </p>
+          )}
+          <button type="button" disabled={state.busy} onClick={() => void session.replay()}>
+            按原键重放助手请求
+          </button>
+          {state.rejected && (
+            <button type="button" onClick={() => session.dismissRejected()}>
+              结束已拒绝助手请求
+            </button>
+          )}
+        </aside>
+      )}
       {state.availability === "available" && (
         <form
           aria-label="创建助手回合"
@@ -77,14 +110,24 @@ export function AssistantHost({
                 requestKey,
               )
               .then(() => {
-                setKey("");
-                setInputText("");
+                if (
+                  session.getSnapshot().pending === null &&
+                  !session.getSnapshot().blocked &&
+                  session.getSnapshot().problem === null
+                ) {
+                  setKey("");
+                  setInputText("");
+                }
               });
           }}
         >
           <label>
             项目
-            <select value={projectId} onChange={(event) => setProjectId(event.currentTarget.value)}>
+            <select
+              disabled={locked}
+              value={projectId}
+              onChange={(event) => setProjectId(event.currentTarget.value)}
+            >
               <option value="">请选择</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
@@ -95,7 +138,11 @@ export function AssistantHost({
           </label>
           <label>
             已发布音色
-            <select value={voiceKey} onChange={(event) => setVoiceKey(event.currentTarget.value)}>
+            <select
+              disabled={locked}
+              value={voiceKey}
+              onChange={(event) => setVoiceKey(event.currentTarget.value)}
+            >
               <option value="">请选择</option>
               {voices.map((voice) => (
                 <option
@@ -111,6 +158,7 @@ export function AssistantHost({
           <label>
             问题
             <textarea
+              disabled={locked}
               value={inputText}
               rows={4}
               maxLength={20000}
@@ -119,7 +167,11 @@ export function AssistantHost({
           </label>
           <label>
             请求键（8 位以上，重放沿用同一值）
-            <input value={key} onChange={(event) => setKey(event.currentTarget.value)} />
+            <input
+              disabled={locked}
+              value={key}
+              onChange={(event) => setKey(event.currentTarget.value)}
+            />
           </label>
           <button type="submit" disabled={submitDisabled}>
             提交回合

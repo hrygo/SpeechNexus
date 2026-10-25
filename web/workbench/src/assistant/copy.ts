@@ -22,6 +22,7 @@ export const availabilityCopy: Record<AssistantAvailability, string> = {
 };
 
 export const assistantProblems = {
+  storage: "恢复信息未能保存，已暂停提交。请修复浏览器存储后重试。",
   unavailable: "当前部署尚未启用工作台，或连接不可用。",
   unknown: "结果尚未确认。请核对连接后按原键重试，不要重新创建。",
   missing: "回合已不可读取。",

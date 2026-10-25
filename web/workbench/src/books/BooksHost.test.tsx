@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../tests/fixtures/contracts/workbench-http.json";
 import {
   WorkbenchClient,
@@ -85,7 +85,7 @@ function setup(
   const list = vi.spyOn(client, "books").mockResolvedValue(bookPage(listed));
   const chapters = vi.spyOn(client, "chapters").mockResolvedValue(chapterPage(listedChapters));
   const units = vi.spyOn(client, "renderUnits").mockResolvedValue(
-    parse("RenderUnitList", {
+    parse("RenderUnitListV2", {
       object: "nexus.list",
       data: [],
       has_more: false,
@@ -296,3 +296,5 @@ describe("books host", () => {
     expect(screen.queryByRole("list", { name: "书目列表" })).toBeNull();
   });
 });
+
+beforeEach(() => sessionStorage.clear());

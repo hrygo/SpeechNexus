@@ -20,19 +20,9 @@ PROBE_DIR = ROOT / "scripts" / "dev-env"
 DRIVER = PROBE_DIR / "workbench-pg-probe.py"
 
 # Probe -> (domain, why it is not gated yet). Removing an entry means gating the probe.
-# The three below were run by hand on 2026-10-25 and FAILED, so they are stale rather than merely
-# ungated: they must not be counted as evidence until someone repairs or retires them.
-NOT_GATED: dict[str, tuple[str, str]] = {
-    "workbench-manuscripts-probe.mjs": (
-        "C02 manuscripts against generated synthetic loopback",
-        "stale and partially repaired: the flow now verifies the catalogue and selects the "
-        "manuscript, and the uncertain save is replayed with the original key, but '核对当前版本' "
-        "stays disabled because the page remains busy; the run's own diagnostics prove it is not a "
-        "server-side rejection (no handler errors) and not a missing replay (two attempts with the "
-        "same key), so the cause is still unexplained; the gated real-runtime manuscripts probe is "
-        "the live evidence and performs the same step successfully",
-    ),
-}
+# The final debt was a sealed read fixture used for a manual create, which must return a draft.
+# Its repaired synthetic browser scenario now runs in test_workbench_orphan_probes.py.
+NOT_GATED: dict[str, tuple[str, str]] = {}
 
 
 def runner_text() -> str:
@@ -95,3 +85,13 @@ def test_the_gate_driver_names_the_promoted_probes() -> None:
     # The wrapper that runs the promoted probes must be part of the gate.
     assert "test_workbench_orphan_probes.py" in driver
     assert "test_workbench_realtime_synthetic_probes.py" in driver
+
+
+def test_every_promoted_probe_has_a_runtime_checked_pytest_consumer() -> None:
+    from tests.integration import test_workbench_orphan_probes as promoted
+
+    expected = promoted.PROBE_TESTS
+    assert set(expected.values()) == set(promoted.PROBES)
+    assert len(expected) == len(promoted.PROBES), "each probe needs its own consumer"
+    for name in expected:
+        assert name.startswith("test_") and callable(getattr(promoted, name, None)), name

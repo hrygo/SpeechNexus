@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, TypedDict
 
 import pytest
+from tests.integration.probe_execution import ObservedProbe, require_probe_execution
 from tests.integration.workbench_real_runtime import ROOT
 
 pytestmark = pytest.mark.integration
@@ -118,6 +120,32 @@ PROBES: dict[str, ProbeSpec] = {
         "screenshot": False,
         "result": "stdout",
     },
+    "manuscripts": {
+        "script": "scripts/dev-env/workbench-manuscripts-probe.mjs",
+        "output": "file",
+        "screenshot": False,
+        "result": "file",
+    },
+}
+
+# Keep expected invocations independent of script references and run_probe's implementation.
+# A test that fabricates a result after removing the subprocess call must fail at teardown.
+PROBE_TESTS = {
+    "test_the_capture_graph_probe_stays_on_a_synthetic_device": "capture",
+    "test_the_media_probe_stays_synthetic": "media",
+    "test_the_voice_creation_probe_replays_and_refuses_like_the_contract": "voice-create",
+    "test_the_admin_task_centre_probe_stays_synthetic": "admin-task-center",
+    "test_the_file_workflow_demo_probe_stays_synthetic": "file-demo",
+    "test_the_admin_workspaces_probe_stays_on_synthetic_http": "admin-workspaces",
+    "test_the_tts_workflow_probe_decodes_and_releases_like_the_contract": "tts",
+    "test_the_manuscripts_probe_creates_a_draft_and_keeps_original_recovery": "manuscripts",
+    "test_the_asset_reconcile_probe_stays_on_synthetic_loopback": "asset-reconcile",
+    "test_the_file_host_probe_verifies_downloaded_bytes_and_revokes_urls": "file-host",
+    "test_the_recovery_probe_keeps_original_intents_across_reloads": "recovery",
+    "test_the_task_events_probe_rereads_the_authoritative_state": "admin-task-events",
+    "test_the_task_recovery_probe_never_turns_unknown_into_success": "admin-task-recovery",
+    "test_the_manual_prompter_probe_stays_local_and_narrow_safe": "prompter",
+    "test_the_tts_host_probe_keeps_late_audio_and_url_revocation_honest": "tts-host",
 }
 
 # A probe that ever claims one of these is claiming live qualification it cannot have here.
@@ -136,6 +164,34 @@ def output_dir(name: str) -> Path:
 def read_json(path: Path) -> dict[str, Any]:
     payload: dict[str, Any] = json.loads(path.read_text())
     return payload
+
+
+@pytest.fixture(autouse=True)
+def require_actual_probe_invocation(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    name = PROBE_TESTS.get(request.node.name)
+    if name is None:
+        yield
+        return
+    observed: list[ObservedProbe] = []
+    create = asyncio.create_subprocess_exec
+
+    async def tracked(*command: str, **kwargs: Any) -> asyncio.subprocess.Process:
+        process = await create(*command, **kwargs)
+        observed.append(ObservedProbe(command, process))
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", tracked)
+    yield
+    evidence = require_probe_execution(PROBES[name]["script"], observed)
+    (output_dir(name) / "execution.json").write_text(
+        json.dumps(
+            {"kind": "subprocess-execution-only", "test_nodeid": request.node.nodeid, **evidence},
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 async def run_probe(name: str) -> dict[str, Any]:
@@ -316,6 +372,35 @@ def assert_quiet(payload: dict[str, Any]) -> None:
     for key in ("outboundRequests", "pageErrors", "pageOrHandlerErrors", "browserErrors"):
         if key in payload:
             assert payload[key] == 0, f"{key} must be zero: {payload[key]}"
+
+
+async def test_the_manuscripts_probe_creates_a_draft_and_keeps_original_recovery() -> None:
+    payload = await run_probe("manuscripts")
+    assert payload["production_ui"] is True
+    assert payload["synthetic_loopback"] is True
+    assert payload["monitored_contexts"] == 4
+    assert payload["mutation_requests"] == 7
+    assert payload["manual_create_status"] == "draft"
+    assert payload["manual_create_source_revision"] is None
+    for key in (
+        "generated_request_response_validation",
+        "original_key_refresh_replay",
+        "exact_unicode",
+        "explicit_conflict_rebase",
+        "immutable_history",
+        "unsaved_refresh_recovery",
+        "project_transcript_create",
+        "paging",
+        "corrupt_and_quota_fail_closed",
+        "disabled_service",
+        "keyboard_and_360px",
+        "fake_excluded",
+    ):
+        assert payload[key] is True, key
+    assert payload["outbound_requests"] == 0
+    assert payload["page_errors"] == 0
+    assert payload["handler_errors"] == []
+    assert payload["real_backend_or_model_qualification"] is False
 
 
 async def test_the_asset_reconcile_probe_stays_on_synthetic_loopback() -> None:

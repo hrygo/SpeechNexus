@@ -34,9 +34,12 @@ export async function collectRegions(selectors) {
     let text;
     let found = 0;
     while ((text = walker.nextNode())) {
-      if (!text.textContent.trim() || seen.has(text)) continue;
-      seen.add(text);
+      if (!text.textContent.trim()) continue;
       found++;
+      // Axe can report both a container and its inline descendants. A target
+      // still has text when another target already supplied its evidence.
+      if (seen.has(text)) continue;
+      seen.add(text);
       const parent = text.parentElement;
       const style = getComputedStyle(parent);
       let panel, influence;

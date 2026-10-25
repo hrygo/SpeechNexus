@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchClient, parse } from "../manuscripts/workbench-client";
 import { AssistantSession } from "./assistant-session";
 
 const VOICE = { id: "voice_demo", revision: "1" };
 
 function status(capability: "available" | "disabled" | "unavailable", workbenchEnabled = true) {
-  return parse("WorkbenchStatus", {
+  return parse("WorkbenchStatusV2", {
     object: "nexus.workbench_status",
     workbench_enabled: workbenchEnabled,
     llm_enabled: false,
@@ -190,3 +190,5 @@ describe("assistant session", () => {
     expect(session.getSnapshot().turn).toBeNull();
   });
 });
+
+beforeEach(() => sessionStorage.clear());

@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchClient, WorkbenchResponseError, parse } from "../manuscripts/workbench-client";
 import { BookExportPanel } from "./BookExportPanel";
 
@@ -51,12 +51,12 @@ function setup() {
   const cancel = vi
     .spyOn(client, "cancelBookExport")
     .mockResolvedValue(job({ status: "cancelling" }));
-  render(
+  const view = render(
     <StrictMode>
       <BookExportPanel client={client} book={book} pollMs={10} />
     </StrictMode>,
   );
-  return { client, create, read, cancel };
+  return { client, create, read, cancel, ...view };
 }
 
 afterEach(() => {
@@ -140,4 +140,62 @@ describe("book export panel", () => {
     expect(screen.getByText("unavailable")).toBeTruthy();
     expect(screen.getByText(/可重试/)).toBeTruthy();
   });
+});
+
+beforeEach(() => sessionStorage.clear());
+
+it("restores the exact export intent after commit reply loss even when the book revision changed", async () => {
+  const view = setup();
+  const committed = new Map<string, ReturnType<typeof job>>();
+  view.create.mockImplementation((_book, _body, key) => {
+    if (!committed.has(key)) {
+      committed.set(key, job());
+      return Promise.reject(new TypeError("synthetic lost reply"));
+    }
+    return Promise.resolve(committed.get(key)!);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
+  await screen.findByRole("alert");
+  expect(screen.getByLabelText("导出格式")).toBeDisabled();
+  view.unmount();
+  render(<BookExportPanel client={view.client} book={{ ...book, casting_revision: "9" }} />);
+  const replay = await screen.findByRole("button", { name: "按原键重放导出请求" });
+  expect(view.create).toHaveBeenCalledTimes(1);
+  fireEvent.click(replay);
+  await screen.findByText(/已完成 0 \/ 2/);
+  expect(view.create.mock.calls[1]).toEqual(view.create.mock.calls[0]);
+  expect(committed.size).toBe(1);
+});
+it("does not send an export before saving its private recovery intent", async () => {
+  const { create } = setup();
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("synthetic quota");
+  });
+  fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
+  await screen.findByRole("alert");
+  expect(create).not.toHaveBeenCalled();
+});
+
+it("keeps an export unknown after a later replay receives an ingress rejection", async () => {
+  const { create } = setup();
+  create.mockRejectedValueOnce(new TypeError("synthetic lost reply")).mockRejectedValueOnce(
+    new WorkbenchResponseError(409, {
+      error: {
+        code: "revision_conflict",
+        type: "invalid_request_error",
+        message: "synthetic ingress refusal",
+        param: null,
+        request_id: "request_demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "发起导出" }));
+  const replay = await screen.findByRole("button", { name: "按原键重放导出请求" });
+  await waitFor(() => expect(replay).not.toBeDisabled());
+  fireEvent.click(replay);
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+  expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+  expect(screen.queryByRole("button", { name: "结束已拒绝导出请求" })).toBeNull();
+  expect(screen.getByLabelText("导出格式")).toBeDisabled();
 });

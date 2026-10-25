@@ -1,3 +1,5 @@
+import { assistantJournal, type AssistantCommand } from "./assistant-journal";
+import type { CommandJournal, JournalStorage } from "../recovery/command-journal";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -14,7 +16,8 @@ import {
  * - unknown: the status has not been read yet.
  */
 export type AssistantAvailability = "unknown" | "available" | "disabled" | "unavailable";
-export type AssistantProblem = "missing" | "conflict" | "rejected" | "unavailable" | "unknown";
+export type AssistantProblem =
+  "missing" | "conflict" | "rejected" | "unavailable" | "unknown" | "storage";
 
 export interface AssistantState {
   readonly availability: AssistantAvailability;
@@ -23,6 +26,9 @@ export interface AssistantState {
   readonly busy: boolean;
   readonly problem: AssistantProblem | null;
   readonly watching: boolean;
+  readonly pending: AssistantCommand | null;
+  readonly rejected: boolean;
+  readonly blocked: boolean;
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
@@ -62,17 +68,33 @@ export class AssistantSession {
     busy: false,
     problem: null,
     watching: false,
+    pending: null,
+    rejected: false,
+    blocked: false,
   };
   #listeners = new Set<() => void>();
   #timer: ReturnType<typeof setTimeout> | null = null;
   #generation = 0;
   readonly #pollMs: number;
+  #journal: CommandJournal<AssistantCommand> | null = null;
 
   constructor(
     private readonly client: WorkbenchClient,
-    options: { pollMs?: number } = {},
+    options: { pollMs?: number; storage?: JournalStorage } = {},
   ) {
     this.#pollMs = options.pollMs ?? 1500;
+    try {
+      this.#journal = assistantJournal(options.storage);
+      const record = this.#journal.load();
+      this.#state = {
+        ...this.#state,
+        pending: record.command,
+        rejected: record.rejected,
+        problem: record.command ? (record.rejected ? "rejected" : "unknown") : null,
+      };
+    } catch {
+      this.#state = { ...this.#state, blocked: true, problem: "storage" };
+    }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -99,7 +121,11 @@ export class AssistantSession {
           : capability.status === "available"
             ? "unavailable"
             : capability.status;
-      this.#set({ availability, busy: false, problem: null });
+      this.#set({
+        availability,
+        busy: false,
+        problem: this.#state.blocked ? "storage" : this.#state.pending ? "unknown" : null,
+      });
     } catch (error) {
       if (generation !== this.#generation) return;
       this.#set({ availability: "unknown", busy: false, problem: problemOf(error) });
@@ -109,7 +135,11 @@ export class AssistantSession {
     try {
       const voices = await this.client.voices(signal);
       if (generation !== this.#generation) return;
-      this.#set({ voices, busy: false, problem: null });
+      this.#set({
+        voices,
+        busy: false,
+        problem: this.#state.blocked ? "storage" : this.#state.pending ? "unknown" : null,
+      });
     } catch (error) {
       if (generation !== this.#generation) return;
       // The capability stands; only the catalogue read failed.
@@ -124,40 +154,102 @@ export class AssistantSession {
   ): Promise<void> {
     const current = this.#state.turn;
     if (
+      this.#state.pending ||
       this.#state.availability !== "available" ||
       this.#state.busy ||
       (current !== null && !isTerminal(current.status))
     )
       return;
-    const generation = this.#generation;
-    this.#set({ busy: true, problem: null });
-    try {
-      const turn = await this.client.createAssistantTurn(projectId, body, key);
-      if (generation !== this.#generation) return;
-      this.#set({ turn, busy: false, problem: null });
-      this.#watch(turn);
-    } catch (error) {
-      if (generation !== this.#generation) return;
-      this.#set({ busy: false, problem: problemOf(error), watching: false });
-    }
+    await this.#begin({ kind: "create", projectId, body: structuredClone(body), key });
   }
 
   async cancel(key: string): Promise<void> {
     const current = this.#state.turn;
-    if (this.#state.busy || current === null || isTerminal(current.status)) return;
-    const generation = this.#generation;
-    this.#set({ busy: true, problem: null });
+    if (this.#state.pending || this.#state.busy || !current || isTerminal(current.status)) return;
+    await this.#begin({ kind: "cancel", turnId: current.id, key });
+  }
+  async #begin(command: AssistantCommand) {
     try {
-      const turn = await this.client.cancelAssistantTurn(current.id, key);
+      if (!this.#journal) throw new Error("Recovery unavailable");
+      this.#journal.begin(command);
+      this.#set({ pending: this.#journal.load().command, rejected: false, blocked: false });
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
+      return;
+    }
+    await this.replay();
+  }
+  async replay(): Promise<void> {
+    const command = this.#state.pending;
+    if (!command || this.#state.busy || !this.#journal) return;
+    try {
+      this.#journal.save(this.#journal.load());
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
+      return;
+    }
+    const generation = this.#generation;
+    this.#clear();
+    this.#set({ busy: true, blocked: false, problem: null, watching: false });
+    try {
+      const turn =
+        command.kind === "create"
+          ? await this.client.createAssistantTurn(command.projectId, command.body, command.key)
+          : await this.client.cancelAssistantTurn(command.turnId, command.key);
       if (generation !== this.#generation) return;
-      assert(turn.id === current.id && turn.project_id === current.project_id);
-      // A repeated cancellation is accepted without doing work.
-      assert(turn.playback_generation >= current.playback_generation);
-      this.#set({ turn, busy: false, problem: null });
+      if (command.kind === "create") {
+        assert(
+          turn.project_id === command.projectId && turn.input_text === command.body.input_text,
+        );
+        assert(
+          turn.voice.id === command.body.voice.id &&
+            turn.voice.revision === command.body.voice.revision,
+        );
+      } else {
+        assert(turn.id === command.turnId);
+        const current = this.#state.turn;
+        if (current)
+          assert(
+            turn.project_id === current.project_id &&
+              turn.playback_generation >= current.playback_generation,
+          );
+      }
+      this.#settled(turn);
+      try {
+        this.#journal.clear();
+      } catch {
+        this.#set({ busy: false, blocked: true, problem: "storage" });
+        return;
+      }
+      this.#set({ turn, pending: null, rejected: false, busy: false, problem: null });
       this.#watch(turn);
     } catch (error) {
       if (generation !== this.#generation) return;
-      this.#set({ busy: false, problem: problemOf(error), watching: false });
+      const rejected =
+        error instanceof WorkbenchResponseError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![408, 429].includes(error.status);
+      try {
+        this.#journal.failure(rejected);
+        const record = this.#journal.load();
+        this.#set({
+          busy: false,
+          rejected: record.rejected,
+          problem: record.uncertain ? "unknown" : problemOf(error),
+        });
+      } catch {
+        this.#set({ busy: false, blocked: true, problem: "storage" });
+      }
+    }
+  }
+  dismissRejected(): void {
+    if (!this.#state.rejected || this.#state.busy || !this.#journal) return;
+    try {
+      this.#journal.clear();
+      this.#set({ pending: null, rejected: false, problem: null, blocked: false });
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
     }
   }
 

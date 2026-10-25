@@ -1,3 +1,5 @@
+import { exportJournal, type ExportCommand } from "./book-journal";
+import type { CommandJournal, JournalStorage } from "../recovery/command-journal";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -5,13 +7,17 @@ import {
 } from "../manuscripts/workbench-client";
 
 export type ExportFormat = Contracts["ExportCreateRequest"]["format"];
-export type BookExportProblem = "unavailable" | "conflict" | "rejected" | "missing" | "unknown";
+export type BookExportProblem =
+  "unavailable" | "conflict" | "rejected" | "missing" | "unknown" | "storage";
 
 export interface BookExportState {
   readonly job: Contracts["ExportJob"] | null;
   readonly busy: boolean;
   readonly problem: BookExportProblem | null;
   readonly watching: boolean;
+  readonly pending: ExportCommand | null;
+  readonly rejected: boolean;
+  readonly blocked: boolean;
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "expired"]);
@@ -44,18 +50,40 @@ function problemOf(error: unknown): BookExportProblem {
  * changes again, and a late answer never overwrites a newer one.
  */
 export class BookExportSession {
-  #state: BookExportState = { job: null, busy: false, problem: null, watching: false };
+  #state: BookExportState = {
+    job: null,
+    busy: false,
+    problem: null,
+    watching: false,
+    pending: null,
+    rejected: false,
+    blocked: false,
+  };
   #listeners = new Set<() => void>();
   #timer: ReturnType<typeof setTimeout> | null = null;
   #generation = 0;
   readonly #pollMs: number;
+  #journal: CommandJournal<ExportCommand> | null = null;
 
   constructor(
     private readonly client: WorkbenchClient,
     private readonly book: Contracts["Book"],
-    options: { pollMs?: number } = {},
+    options: { pollMs?: number; storage?: JournalStorage } = {},
   ) {
     this.#pollMs = options.pollMs ?? 1500;
+    try {
+      this.#journal = exportJournal(book.id, options.storage);
+      const record = this.#journal.load();
+      if (record.command) assert(record.command.bookId === book.id);
+      this.#state = {
+        ...this.#state,
+        pending: record.command,
+        rejected: record.rejected,
+        problem: record.command ? "unknown" : null,
+      };
+    } catch {
+      this.#state = { ...this.#state, blocked: true, problem: "storage" };
+    }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -67,41 +95,105 @@ export class BookExportSession {
 
   async start(format: ExportFormat, key: string): Promise<void> {
     const current = this.#state.job;
-    if (this.#state.busy || (current !== null && !isTerminal(current.status))) return;
-    const generation = this.#generation;
-    this.#set({ busy: true, problem: null });
-    try {
-      const job = await this.client.createBookExport(
-        this.book.id,
-        { expected_casting_revision: this.book.casting_revision, format },
-        key,
-      );
-      if (generation !== this.#generation) return;
-      this.#set({ job, busy: false, problem: null });
-      this.#watch(job);
-    } catch (error) {
-      if (generation !== this.#generation) return;
-      this.#set({ busy: false, problem: problemOf(error), watching: false });
-    }
+    if (
+      this.#state.pending ||
+      this.#state.busy ||
+      (current !== null && !isTerminal(current.status))
+    )
+      return;
+    await this.#begin({
+      kind: "create",
+      bookId: this.book.id,
+      body: { expected_casting_revision: this.book.casting_revision, format },
+      key,
+    });
   }
 
   async cancel(key: string): Promise<void> {
     const current = this.#state.job;
-    if (this.#state.busy || current === null || isTerminal(current.status)) return;
-    const generation = this.#generation;
-    this.#set({ busy: true, problem: null });
+    if (this.#state.pending || this.#state.busy || !current || isTerminal(current.status)) return;
+    await this.#begin({ kind: "cancel", bookId: current.book_id, exportId: current.id, key });
+  }
+  async #begin(command: ExportCommand) {
     try {
-      const job = await this.client.cancelBookExport(current.id, key);
+      if (!this.#journal) throw new Error("Recovery unavailable");
+      this.#journal.begin(command);
+      this.#set({ pending: this.#journal.load().command, rejected: false, blocked: false });
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
+      return;
+    }
+    await this.replay();
+  }
+  async replay(): Promise<void> {
+    const command = this.#state.pending;
+    if (!command || this.#state.busy || !this.#journal) return;
+    try {
+      this.#journal.save(this.#journal.load());
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
+      return;
+    }
+    const generation = this.#generation;
+    this.#clear();
+    this.#set({ busy: true, blocked: false, problem: null, watching: false });
+    try {
+      const job =
+        command.kind === "create"
+          ? await this.client.createBookExport(command.bookId, command.body, command.key)
+          : await this.client.cancelBookExport(command.exportId, command.key);
       if (generation !== this.#generation) return;
-      assert(job.id === current.id && job.book_id === current.book_id);
-      assert(job.manifest_revision === current.manifest_revision && job.format === current.format);
-      // A repeated cancellation is accepted without doing work.
-      assert(BigInt(job.progress_completed) >= BigInt(current.progress_completed));
-      this.#set({ job, busy: false, problem: null });
+      assert(job.book_id === command.bookId);
+      if (command.kind === "create") {
+        assert(
+          job.manifest_revision === command.body.expected_casting_revision &&
+            job.format === command.body.format,
+        );
+      } else {
+        assert(job.id === command.exportId);
+        const current = this.#state.job;
+        if (current) {
+          assert(
+            job.manifest_revision === current.manifest_revision && job.format === current.format,
+          );
+          assert(BigInt(job.progress_completed) >= BigInt(current.progress_completed));
+        }
+      }
+      try {
+        this.#journal.clear();
+      } catch {
+        this.#set({ busy: false, blocked: true, problem: "storage" });
+        return;
+      }
+      this.#set({ job, pending: null, rejected: false, busy: false, problem: null });
       this.#watch(job);
     } catch (error) {
       if (generation !== this.#generation) return;
-      this.#set({ busy: false, problem: problemOf(error), watching: false });
+      const rejected =
+        error instanceof WorkbenchResponseError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![408, 429].includes(error.status);
+      try {
+        this.#journal.failure(rejected);
+        const record = this.#journal.load();
+        this.#set({
+          busy: false,
+          rejected: record.rejected,
+          problem: record.uncertain ? "unknown" : problemOf(error),
+        });
+      } catch {
+        this.#set({ busy: false, blocked: true, problem: "storage" });
+      }
+    }
+  }
+  dismissRejected(): void {
+    if (!this.#state.rejected || this.#state.busy || !this.#journal) return;
+    try {
+      this.#journal.clear();
+      this.#set({ pending: null, rejected: false, problem: null, blocked: false });
+    } catch {
+      this.#set({ blocked: true, problem: "storage" });
     }
   }
 

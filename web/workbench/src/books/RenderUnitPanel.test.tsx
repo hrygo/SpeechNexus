@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WorkbenchClient,
   WorkbenchResponseError,
@@ -8,8 +8,8 @@ import {
 } from "../manuscripts/workbench-client";
 import { RenderUnitPanel } from "./RenderUnitPanel";
 
-function unit(changes: Partial<Contracts["RenderUnit"]> = {}) {
-  return parse("RenderUnit", {
+function unit(changes: Partial<Contracts["RenderUnitV2"]> = {}) {
+  return parse("RenderUnitV2", {
     object: "nexus.render_unit",
     id: "unit_demo",
     chapter_id: "chapter_demo",
@@ -45,12 +45,12 @@ function emptyCatalogue() {
 }
 
 function setup(
-  units: Contracts["RenderUnit"][] = [unit()],
+  units: Contracts["RenderUnitV2"][] = [unit()],
   catalogue: () => Promise<Contracts["VoiceList"]> = () => Promise.resolve(emptyCatalogue()),
 ) {
   const client = new WorkbenchClient(vi.fn());
   const list = vi.spyOn(client, "renderUnits").mockResolvedValue(
-    parse("RenderUnitList", {
+    parse("RenderUnitListV2", {
       object: "nexus.list",
       data: units,
       has_more: false,
@@ -69,8 +69,8 @@ function setup(
       }),
     ),
   );
-  render(<RenderUnitPanel client={client} chapter={chapter} />);
-  return { client, list, update, voices };
+  const view = render(<RenderUnitPanel client={client} chapter={chapter} />);
+  return { client, list, update, voices, ...view };
 }
 
 describe("render unit panel", () => {
@@ -86,7 +86,7 @@ describe("render unit panel", () => {
 
     const empty = new WorkbenchClient(vi.fn());
     vi.spyOn(empty, "renderUnits").mockResolvedValue(
-      parse("RenderUnitList", {
+      parse("RenderUnitListV2", {
         object: "nexus.list",
         data: [],
         has_more: false,
@@ -344,7 +344,7 @@ it("keeps the new-unit key after a rejected creation so it can be replayed", asy
   fireEvent.change(screen.getByLabelText("新单元绑定修订"), { target: { value: "2" } });
   fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
   expect(await screen.findByRole("alert", { name: "新增单元错误" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  fireEvent.click(screen.getByRole("button", { name: "按原键重放单元请求" }));
   await screen.findByText("合成旁白单元");
   const keys = create.mock.calls.map((call) => call[2]);
   expect(keys).toHaveLength(2);
@@ -409,4 +409,109 @@ it("reports an unreadable saved copy instead of inventing its record", async () 
   const alert = await screen.findByRole("alert", { name: "单元 1 副本错误" });
   expect(alert).toHaveTextContent("已不可读取");
   expect(screen.queryByRole("status", { name: "单元 1 副本信息" })).toBeNull();
+});
+
+beforeEach(() => sessionStorage.clear());
+
+it("replays the original unit patch and key after a committed reply is lost and the panel remounts", async () => {
+  const view = setup();
+  const accepted = unit({ text: "合成改写", revision: "2", status: "stale" });
+  const committed = new Map<string, typeof accepted>();
+  view.update.mockImplementation((_id, _patch, key) => {
+    if (!committed.has(key)) {
+      committed.set(key, accepted);
+      return Promise.reject(new TypeError("synthetic lost reply"));
+    }
+    return Promise.resolve(committed.get(key)!);
+  });
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成改写" } });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  await screen.findByRole("alert");
+  view.unmount();
+  view.list.mockResolvedValue(
+    parse("RenderUnitListV2", {
+      object: "nexus.list",
+      data: [accepted],
+      has_more: false,
+      next_cursor: null,
+    }),
+  );
+  render(<RenderUnitPanel client={view.client} chapter={chapter} />);
+  const replay = await screen.findByRole("button", { name: "按原键重放单元请求" });
+  expect(view.update).toHaveBeenCalledTimes(1);
+  fireEvent.click(replay);
+  await waitFor(() => expect(view.update).toHaveBeenCalledTimes(2));
+  expect(view.update.mock.calls[1]).toEqual(view.update.mock.calls[0]);
+  expect(committed.size).toBe(1);
+});
+it("does not append a late unit creation to the chapter opened afterwards", async () => {
+  const view = setup([]);
+  let finish!: (result: Contracts["RenderUnitV2"]) => void;
+  vi.spyOn(view.client, "createRenderUnit").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await screen.findByText("该章节还没有渲染单元。");
+  for (const [label, value] of [
+    ["新单元序号", "0"],
+    ["新单元文本", "A章合成正文"],
+    ["新单元音色 id", "voice_demo"],
+    ["新单元音色修订", "1"],
+    ["新单元模型", "tts-quality"],
+    ["新单元绑定 id", "binding_demo"],
+    ["新单元绑定修订", "3"],
+  ]) {
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "新增渲染单元" }));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  view.rerender(
+    <RenderUnitPanel
+      client={view.client}
+      chapter={{ ...chapter, id: "chapter_other", title: "第二章" }}
+    />,
+  );
+  await waitFor(() => expect(view.list).toHaveBeenCalledWith("chapter_other"));
+  await act(async () => {
+    finish(unit({ id: "late_unit", text: "A章合成正文" }));
+    await Promise.resolve();
+  });
+  expect(screen.queryByRole("list", { name: "单元列表" })).toBeNull();
+});
+
+it("blocks a unit patch before external effects if its private storage fails", async () => {
+  const { update } = setup();
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成修改" } });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("synthetic quota");
+  });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  await screen.findByRole("alert");
+  expect(update).not.toHaveBeenCalled();
+});
+it("keeps the original unit patch after an unknown outcome followed by a 409", async () => {
+  const { update } = setup();
+  update.mockRejectedValueOnce(new TypeError("synthetic lost reply")).mockRejectedValueOnce(
+    new WorkbenchResponseError(409, {
+      error: {
+        code: "revision_conflict",
+        type: "invalid_request_error",
+        message: "synthetic ingress refusal",
+        param: null,
+        request_id: "request_demo",
+        retryable: false,
+      },
+    }),
+  );
+  fireEvent.change(await screen.findByLabelText("单元 1 文本"), { target: { value: "合成修改" } });
+  fireEvent.click(screen.getByRole("button", { name: "重做单元 1" }));
+  const replay = await screen.findByRole("button", { name: "按原键重放单元请求" });
+  await waitFor(() => expect(replay).not.toBeDisabled());
+  fireEvent.click(replay);
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+  expect(update.mock.calls[1]).toEqual(update.mock.calls[0]);
+  expect(screen.queryByRole("button", { name: "结束已拒绝单元请求" })).toBeNull();
+  expect(screen.getByRole("button", { name: "重做单元 1" })).toBeDisabled();
 });

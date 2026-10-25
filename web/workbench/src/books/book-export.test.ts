@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchClient, WorkbenchResponseError, parse } from "../manuscripts/workbench-client";
 import { BookExportSession, isTerminal } from "./book-export";
 
@@ -162,3 +162,5 @@ describe("book export session", () => {
     expect(isTerminal("running")).toBe(false);
   });
 });
+
+beforeEach(() => sessionStorage.clear());

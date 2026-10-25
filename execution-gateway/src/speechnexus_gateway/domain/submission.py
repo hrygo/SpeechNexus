@@ -18,12 +18,13 @@ from __future__ import annotations
 import hashlib
 import re
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
 from speechnexus_gateway.domain.canonical import JsonValue, canonical_json, command_digest
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 
 _DIGEST_PATTERN: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IDENTIFIER_PATTERN: Final = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
@@ -404,6 +405,24 @@ def verify_submit_eligibility(
         raise InstanceDrainingError("the instance generation head moved past this generation")
 
 
+def verify_result_eligibility(
+    identity: SubmissionIdentity,
+    facts: LeaseFacts,
+    *,
+    sealed_min_fencing_token: int | None,
+    now: datetime,
+) -> None:
+    """Existing work may finish while draining, but never across a stop or new generation."""
+    verify_submit_identity(identity, facts, sealed_min_fencing_token=sealed_min_fencing_token)
+    if facts.instance_state not in {EngineInstanceState.READY, EngineInstanceState.DRAINING}:
+        raise InstanceDrainingError("the result's instance is no longer executing work")
+    # Reuse all deadline, cleanup, generation and fencing rules. This conversion
+    # only permits completion during drain; no submit caller uses this function.
+    verify_submit_eligibility(
+        identity, replace(facts, instance_state=EngineInstanceState.READY), now=now
+    )
+
+
 def hard_output_ceiling_samples(
     *, max_output_audio_ms: int | None, sample_rate_hz: int | None
 ) -> int | None:
@@ -583,6 +602,7 @@ class SubmissionIntent:
     has_staging_output: bool = False
     version: int = field(default=1)
     has_output_intervals: bool = False
+    staging_result: ExecutionStagingResult | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.validate()
@@ -600,6 +620,7 @@ class SubmissionIntent:
             or self.terminated_at is not None
             or self.generated_pcm_samples != 0
             or self.has_staging_output
+            or self.staging_result is not None
             or self.has_output_intervals
             or type(self.version) is not int
             or self.version != 1
@@ -627,6 +648,13 @@ class SubmissionIntent:
             raise ValueError("generated samples contradict the frozen output budget")
         if type(self.has_staging_output) is not bool:
             raise ValueError("staging presence must be a boolean fact")
+        if self.staging_result is not None and (
+            not isinstance(self.staging_result, ExecutionStagingResult)
+            or not self.has_staging_output
+            or self.staging_result.request_digest != self.request_digest
+            or self.staging_result.reference.workspace_id != self.identity.workspace_id
+        ):
+            raise ValueError("staging receipt contradicts the original execution")
         if type(self.has_output_intervals) is not bool:
             raise ValueError("output interval presence must be a boolean fact")
         allowed = _CLEANUP_BY_STATE[self.execution_state]

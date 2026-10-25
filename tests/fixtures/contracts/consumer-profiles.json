@@ -8165,6 +8165,145 @@
           "disabled_reason": null
         }
       }
+    },
+    {
+      "id": "result-versioned",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": true,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 11
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "application/json"
+      }
+    },
+    {
+      "id": "result-null-version-rejected",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 11
+        },
+        "storage_version": "null",
+        "media_type": "application/json"
+      }
+    },
+    {
+      "id": "result-response-registered",
+      "profile": "execution",
+      "schema": "ExecutionStagingResultResponse",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-synthetic",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "staging_result": {
+          "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reference": {
+            "asset_or_artifact_id": "artifact-synthetic",
+            "workspace_id": "workspace-synthetic",
+            "storage_bucket": "synthetic-private",
+            "object_key": "private/synthetic/result.json",
+            "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "byte_length": 11
+          },
+          "storage_version": "synthetic-version",
+          "media_type": "application/json"
+        }
+      }
+    },
+    {
+      "id": "result-response-pending",
+      "profile": "execution",
+      "schema": "ExecutionStagingResultResponse",
+      "valid": true,
+      "value": {
+        "submit_intent_id": "intent-synthetic",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "staging_result": null
+      }
+    },
+    {
+      "id": "result-response-missing-receipt-field",
+      "profile": "execution",
+      "schema": "ExecutionStagingResultResponse",
+      "valid": false,
+      "value": {
+        "submit_intent_id": "intent-synthetic",
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "result-too-small",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 10
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "application/json"
+      }
+    },
+    {
+      "id": "result-too-large",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 4194305
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "application/json"
+      }
+    },
+    {
+      "id": "result-unqualified-media",
+      "profile": "execution",
+      "schema": "ExecutionStagingResult",
+      "valid": false,
+      "value": {
+        "request_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reference": {
+          "asset_or_artifact_id": "artifact-synthetic",
+          "workspace_id": "workspace-synthetic",
+          "storage_bucket": "synthetic-private",
+          "object_key": "private/synthetic/result.json",
+          "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byte_length": 11
+        },
+        "storage_version": "synthetic-version",
+        "media_type": "audio/wav"
+      }
     }
   ]
 }

@@ -4,6 +4,9 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
 
+from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.recovery import ExecutionObservationConflictError
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     ExecutionCleanupPendingError,
@@ -30,6 +33,7 @@ class ExecutionObservation:
     error_code: ExecutionErrorCode | None
     stop_evidence_kind: StopEvidenceKind
     observed_at: datetime
+    staging_reference: ExecutionObjectReference | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -59,6 +63,7 @@ class ExecutionObservation:
                 else intent.stop_evidence_kind
             ),
             intent.updated_at,
+            None if intent.staging_result is None else intent.staging_result.reference,
         )
 
 
@@ -66,8 +71,13 @@ class ExecutionObservation:
 class RecordExecutionObservation:
     observation: ExecutionObservation
     expected_version: int
+    staging_result: ExecutionStagingResult | None = None
 
     def __post_init__(self) -> None:
+        if self.staging_result is not None and not isinstance(
+            self.staging_result, ExecutionStagingResult
+        ):
+            raise InvalidExecutionRequestError("observation has an invalid result receipt")
         if type(self.expected_version) is not int or not 1 <= self.expected_version < 2**63:
             raise InvalidExecutionRequestError("observation needs a stored signed-64-bit version")
         contract_instant_text(self.observation.observed_at)
@@ -92,6 +102,40 @@ class RecordExecutionObservation:
             raise InvalidExecutionRequestError(
                 "observation changes frozen identity or output facts"
             )
+        result = self.staging_result
+        stored_reference = (
+            None if current.staging_result is None else current.staging_result.reference
+        )
+        if observed.staging_reference is not None and observed.staging_reference != (
+            stored_reference if result is None else result.reference
+        ):
+            raise InvalidExecutionRequestError("observation changes the registered result")
+        if result is not None:
+            if (
+                not isinstance(result, ExecutionStagingResult)
+                or result.request_digest != current.request_digest
+                or result.reference.workspace_id != current.identity.workspace_id
+                or current.output_stream_id is not None
+                or current.identity.sample_rate_hz is not None
+                or observed.engine_request_id != current.engine_request_id
+                or observed.dispatched_at != current.dispatched_at
+            ):
+                raise InvalidExecutionRequestError("result belongs to another original request")
+            if current.staging_result is not None:
+                if current.staging_result != result:
+                    raise ExecutionObservationConflictError("execution already has another result")
+                # Recover a lost response by original query, then replay at the
+                # current version without undoing a later cancel/stop.
+                return current
+            if (
+                current.execution_state is not ExecutionState.EXECUTING
+                or observed.execution_state is not ExecutionState.EXECUTING
+                or current.cleanup_state is not CleanupState.PENDING
+                or observed.cleanup_state is not CleanupState.PENDING
+                or current.has_staging_output
+                or at >= current.identity.deadline_at
+            ):
+                raise ExecutionCleanupPendingError("execution cannot register a new result")
         if observed.observed_at > at or observed.observed_at < current.updated_at:
             raise InvalidExecutionRequestError("observation contradicts the recorded time")
         dispatch = observed.dispatched_at
@@ -101,7 +145,11 @@ class RecordExecutionObservation:
             raise InvalidExecutionRequestError("dispatch time contradicts execution history")
         previous = ExecutionObservation.from_intent(current)
         # An unchanged fact at the current version is a no-op, not a heartbeat write.
-        if previous == replace(observed, observed_at=previous.observed_at):
+        if result is None and previous == replace(
+            observed,
+            observed_at=previous.observed_at,
+            staging_reference=previous.staging_reference,
+        ):
             return current
         if current.execution_state.is_terminal or observed.cleanup_state is CleanupState.COMPLETE:
             raise ExecutionCleanupPendingError("terminal facts require record_stop")
@@ -143,6 +191,9 @@ class RecordExecutionObservation:
         updated.dispatched_at = dispatch
         updated.engine_request_id = observed.engine_request_id
         updated.error_code = observed.error_code
+        if result is not None:
+            updated.staging_result = result
+            updated.has_staging_output = True
         try:
             updated._touch(at)
         except ValueError:

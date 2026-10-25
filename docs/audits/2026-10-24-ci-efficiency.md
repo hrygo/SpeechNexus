@@ -291,3 +291,82 @@ MinIO，服务启动成本高于 2 片。本轮以 2 秒安全余量换取约 1.
 优先满足 5 分钟反馈目标；`fail-fast: false` 保持失败时仍收集全部分片证据。
 如果后续需要回收 runner 分钟，应先降低单分片测试耗时或将服务初始化改为共享，
 不能通过减少测试集合或放宽完整性核验来提速。
+
+## 第六轮：Python 静态/契约与完整测试并行的独立核验
+
+2026-10-25，#134 的合前 CI 为 378 秒、合后为 310 秒，均超过 5 分钟反馈目标。
+团队 A 因此固定旧 main 做一次热点基准，并核对共享流水线的在途改动。团队 B 的
+[PR #132](https://github.com/hrygo/SpeechNexus/pull/132) 已包含所需拆分，随后在保留 #134 的
+组合上通过检查并合入 main；本轮由 A 独立核验并记录证据，不重复修改 workflow。
+
+### 相同触发方式的主干观测
+
+前后均取 `push` 到 main 的成功运行。整轮使用 Actions API 的 `created_at` 到
+`updated_at`，包含排队及收尾元数据；作业跨度使用 Jobs API 最早 `started_at` 到最晚
+`completed_at`，仍包含依赖间等待。pytest 时间取对应原始日志，三种口径不混用。
+
+| 项目 | 拆分前 #134 合后 | 拆分后 #132 合后 |
+| --- | ---: | ---: |
+| 精确 source | `a3611c21f2e29308374aadfd9bf0cbc63a9336b9` | `2bd6accd90cfa8fa709c4f8940766b5ae0ca061c` |
+| 成功运行 | [40149195131](https://github.com/hrygo/SpeechNexus/actions/runs/40149195131) | [40150282603](https://github.com/hrygo/SpeechNexus/actions/runs/40150282603) |
+| 全部成功作业 | 11 | 13 |
+| 整轮（含排队/收尾） | 310 秒 | 211 秒 |
+| 作业首启至末完成 | 307 秒 | 208 秒 |
+| Python 静态/契约/测试/构建作业 | 串行 301 秒 | 静态/契约 59 秒，测试/构建 161 秒，并行 |
+| pytest 步骤 | 221.83 秒 | 132.64 秒 |
+| 完整非集成通过 | 3566 | 3628 |
+| 覆盖率 | 81.27% | 81.45% |
+
+新 main 的两个 Python 作业实际都在 `01:21:04 UTC` 启动，分别在 `01:22:03`、
+`01:23:45` 结束，证明两条完整路径确实重叠执行。原名汇总随后用 3 秒完成，最终 Python
+汇总于 `01:24:32` 完成。另一次精确 PR 组合
+[40149862702](https://github.com/hrygo/SpeechNexus/actions/runs/40149862702)，受审 head
+`e526c02972638071f4feac87fab5d77f86c06122`、base 为上述 `a3611c2`，13 项成功，整轮
+258 秒、作业跨度 256 秒；静态/契约 85 秒、测试/构建 186 秒，pytest 159.01 秒。
+
+这两次新组合均在 5 分钟内。它们不是控制硬件、缓存与源码不变的 A/B 实验：#132 同时增加
+原生 ASR 回归，pytest 自身耗时也有波动。因此不能把 310→211 秒的全部差异归因于拆分，
+也不能用两次成功运行承诺后续每轮的上限。调度等待、容器初始化及最慢分片仍需按第五轮
+阈值继续观察。此前 #134 合前 378 秒及 pytest 225.65 秒保留为历史，不替换本表的合后口径。
+
+### 检查范围与失败传播保持
+
+- `python_checks` 执行完整非集成测试、coverage、媒体 smoke 与全部包构建；
+  `python_contracts` 执行原有生成漂移、兼容比较、格式/lint、类型、模块边界与契约校验。
+  两者使用同一源码和锁定依赖，既有 80% 覆盖率阈值保持。
+- `python_checks_gate` 保留原 `Python static checks and unit tests` 名称，以 `always()`
+  执行，只有两条路径都为 success 才成功。最终 `Python quality and tests` 同样要求此汇总
+  与完整双库聚合成功；失败、取消、跳过和缺失结果都不能通过。原保护名称保持。
+- A 对前后完整收集清单独立比较：旧 3566 项只发生一项明确改名——
+  `test_ci_checks_the_fetched_base_in_the_existing_python_job` 改为
+  `test_ci_checks_the_fetched_base_in_the_independent_contract_job`，仍检查真实 base 与对应
+  契约 job。除此之外旧项全部保留，净新增 62 项至 3628；收集结果不冒充执行结果。
+- 集成完整 nodeid 清单前后相同，共 1265 项，执行为 1243 passed、22 个既有 PG-only
+  参数在 MySQL 上不适用而跳过，无新增跳过。A 下载合后六个 ZIP，核验 API 字节数/SHA256、
+  报告精确 `2bd6acc` 来源，再运行仓库聚合器证明分片互斥且并集完整；最长分片 pytest
+  为 141.09 秒。清单摘要为
+  `sha256:c7d3b21d545afb0560813d638bce12dd97621ed6dd38f4bccb9498593b2cf5a9`。
+
+### 本地热点与本轮取舍
+
+本地固定 `a3611c21f2e29308374aadfd9bf0cbc63a9336b9`、干净 tracked tree，执行冻结依赖安装后
+只运行一次完整非集成基准：
+
+```bash
+uv run python -m pytest -m 'not integration' --cov --cov-report=term-missing --durations=30
+```
+
+结果为 3566 passed、1265 deselected、coverage 81.27%，pytest 174.24 秒，外层计时
+177.95 秒。最慢单项是实际资产路径移除检测 8.93 秒，其后 SDK 一致性 3.41 秒、结果范围
+比较 3.08 秒、SSE 严格性 2.64 秒；热点分散在有实质保护价值的契约回归中。这里的硬件与
+GitHub runner 不同，本地时间只用于定位热点，不换算成远端提速倍数。锁定输入摘要为：
+
+| 输入 | SHA256 |
+| --- | --- |
+| `uv.lock` | `2f99677b6d66269739010769c26074849cd43a6aae8ec96630bef6d7291bf053` |
+| `pnpm-lock.yaml` | `ed31ec5eebe7d6dccc2db86131cc13a36d3efc81f90a17ddaca0e3a3f35eeea6` |
+
+本轮沿用上文官方 `needs/if` 与依赖缓存实践，接受新增作业初始化和汇总的 runner 成本以缩短
+串行路径。暂不增加分片、`.venv` 缓存或全局 schema 缓存，不删测试、不放宽阈值、不加路径
+过滤。实现归 #132，A 本轮只交付可复核审计与跟踪更新；这些 CI、合成媒体与存储证据不代表
+真实引擎/物理多主机资格，A00、A02 与跨团队 Gate 仍按原验收保持开放。

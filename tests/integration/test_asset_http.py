@@ -214,6 +214,96 @@ def test_configured_runtime_rejects_owner_and_uses_actual_non_owner(assets: Asse
         runtime.close()
 
 
+@pytest.mark.parametrize("login_kind", ["superuser", "schema_owner", "noinherit_owner_member"])
+def test_asset_login_authority_cannot_hide_behind_restricted_startup_role(
+    assets: Assets,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    login_kind: str,
+) -> None:
+    import psycopg
+    from psycopg import sql
+
+    db = assets.db
+    original_owner = db.admin.info.user
+    login, owner = db.role + "_login", db.role + "_owner"
+    created_login = created_owner = False
+    runtime: AssetRuntime | None = None
+    calls: list[str] = []
+    try:
+        if login_kind == "superuser":
+            url, session = db.url, db.query("SELECT SESSION_USER AS name")[0]["name"]
+        else:
+            db.query(f"CREATE ROLE \"{login}\" LOGIN NOINHERIT PASSWORD 'synthetic_asset_owner'")
+            created_login = True
+            db.query(f'GRANT "{db.role}" TO "{login}"')
+            authority = login
+            if login_kind == "noinherit_owner_member":
+                db.query(f'CREATE ROLE "{owner}" NOLOGIN')
+                created_owner = True
+                db.query(f'GRANT "{owner}" TO "{login}"')
+                authority = owner
+            db.query(f'ALTER SCHEMA "{db.schema}" OWNER TO "{authority}"')
+            url = make_conninfo(db.url, user=login, password="synthetic_asset_owner")
+            session = login
+        url = make_conninfo(
+            url, options=f"-c role={db.role}", application_name="synthetic_asset_login_canary"
+        )
+        with psycopg.connect(url) as probe:
+            assert probe.execute("SELECT SESSION_USER, CURRENT_USER").fetchone() == (
+                session,
+                db.role,
+            )
+            probe.execute("SET ROLE NONE")
+            assert probe.execute("SELECT CURRENT_USER").fetchone() == (session,)
+            probe.execute("RESET ROLE")
+            assert probe.execute("SELECT CURRENT_USER").fetchone() == (db.role,)
+            if login_kind == "noinherit_owner_member":
+                assert probe.execute(
+                    "SELECT pg_has_role(%s::name,%s::name,'USAGE'), "
+                    "pg_has_role(%s::name,%s::name,'MEMBER')",
+                    (login, owner, login, owner),
+                ).fetchone() == (False, True)
+        runtime = AssetRuntime(
+            configuration(assets).model_copy(update={"database_url": SecretStr(url)})
+        )
+        check_namespace = runtime._metadata.check_namespace
+        check_objects = runtime._objects.check_writes_available
+
+        def namespace(*args: Any, **kw: Any) -> None:
+            calls.append("namespace")
+            check_namespace(*args, **kw)
+
+        def objects() -> None:
+            calls.append("objects")
+            check_objects()
+
+        monkeypatch.setattr(runtime._metadata, "check_namespace", namespace)
+        monkeypatch.setattr(runtime._objects, "check_writes_available", objects)
+        before = db.query("SELECT * FROM speech_asset_storage_authority")
+        with pytest.raises(AssetError, match="asset_runtime_role_rejected") as caught:
+            runtime.open()
+        assert runtime._pool.closed and calls == []
+        assert db.query("SELECT * FROM speech_asset_storage_authority") == before
+        assert db.query("SELECT * FROM speech_assets") == [] and assets.versions() == []
+        for secret in (url, "synthetic_asset_owner", "synthetic_asset_login_canary"):
+            assert secret not in str(caught.value) and secret not in caplog.text
+    finally:
+        if runtime is not None:
+            runtime.close()
+        if created_login:
+            db.admin.execute(
+                sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(
+                    sql.Identifier(db.schema), sql.Identifier(original_owner)
+                )
+            )
+            db.query(f'DROP OWNED BY "{login}"')
+            db.query(f'DROP ROLE "{login}"')
+        if created_owner:
+            db.query(f'DROP OWNED BY "{owner}"')
+            db.query(f'DROP ROLE "{owner}"')
+
+
 def test_installed_worker_replays_pinned_retention_ledger(assets: Assets) -> None:
     asset = assets.upload().asset
     assets.age(asset.asset_id)

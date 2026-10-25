@@ -74,6 +74,17 @@ describe("fixed text synthesis intent", () => {
             ...fixtures.examples.find((e) => e.id === "queued-job")!.value,
             kind,
             workspace_id: command.workspace_id,
+            ...(command.kind === "tts"
+              ? {
+                  effective_configuration: {
+                    models: { tts: { id: "model-tts-fixed", revision: "1" } },
+                    voice: command.voice,
+                    profile: command.profile ?? null,
+                    policy_revision: "1",
+                    catalog_revision: "1",
+                  },
+                }
+              : {}),
           }),
           { status: 202 },
         );

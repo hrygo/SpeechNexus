@@ -74,7 +74,24 @@ function setup(kind: "asr" | "tts", location: string | null = "/v1/nexus/assets/
       );
     if (path === "/v1/nexus/jobs")
       return Promise.resolve(
-        Response.json(parse("Job", { ...example("queued-job"), kind }), { status: 201 }),
+        Response.json(
+          parse("Job", {
+            ...example("queued-job"),
+            kind,
+            ...(kind === "tts"
+              ? {
+                  effective_configuration: {
+                    models: { tts: { id: "model-tts-fixed", revision: "1" } },
+                    voice: { id: selection.voiceId, revision: selection.voiceRevision },
+                    profile: { id: selection.profileId, revision: selection.profileRevision },
+                    policy_revision: "1",
+                    catalog_revision: "1",
+                  },
+                }
+              : {}),
+          }),
+          { status: 201 },
+        ),
       );
     return Promise.reject(new Error("Unexpected route"));
   });

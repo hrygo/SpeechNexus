@@ -57,7 +57,7 @@ jobs:
   python_checks:
     name: Python tests and build
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -136,7 +136,7 @@ jobs:
   python_contracts:
     name: Python static and contract checks
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -397,7 +397,7 @@ jobs:
   python_checks_gate:
     name: Python static checks and unit tests
     needs: [changes, python_checks, python_contracts]
-    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web') }}
+    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -438,6 +438,8 @@ jobs:
               checks=skipped; coordination=skipped; web=skipped; deployment=skipped ;;
             web)
               checks=success; coordination=skipped; web=success; deployment=skipped ;;
+            no-db)
+              checks=success; coordination=skipped; web=success; deployment=success ;;
             full)
               checks=success; coordination=success; web=success; deployment=success ;;
             *)
@@ -454,7 +456,7 @@ jobs:
   web:
     name: Web quality, tests, and build
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -515,7 +517,7 @@ jobs:
   deployment:
     name: Deployment configuration
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 

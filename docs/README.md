@@ -18,7 +18,7 @@
 | [执行回执登记与查询](architecture/execution-staging-results.md) | 原观察事务、固定版本私有回执、CAS/恢复、权限与只读查询；不发布或退预算 |
 | [原生 ASR 请求清理](../deploy/engines/vllm-asr-lifecycle/README.md) | 固定引擎插件、内部/子请求归属、在途提交保护与取消清理；不代表 GPU 停止证明 |
 | [受控 ASR 原生鉴权与代次](architecture/controlled-asr-generation.md) | 原生代次 key、批准模板检查、私有部署描述与文件命令目标校验 |
-| [文件 ASR 默认执行装配](architecture/file-asr-runtime.md) | 私有配置、正式工厂和原 worker/回执；真实模型、可信停止及公开链资格分别待验 |
+| [文件 ASR 默认执行装配](architecture/file-asr-runtime.md) | 私有配置、正式工厂和原 worker/回执；真实模型隔离实验已有，生产预算及公开链资格待验 |
 | [数据删除与依赖裁决](architecture/data-deletion.md)                                                 | 预检、明确级联、独立副本、异步清理和恢复账本                                    |
 | [精简分布式协调 Schema](architecture/distributed-coordination-schema.md)                            | 普通约束、当前指针、表所有权与历史原型隔离                                      |
 | [应用事务方案与契约](architecture/coordination-transactions.md)                                     | 程序职责、原子步骤、锁序、预算、幂等/未知恢复及业务编码交接                     |

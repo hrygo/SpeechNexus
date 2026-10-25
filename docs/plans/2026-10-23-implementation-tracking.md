@@ -25,7 +25,10 @@ GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源�
 固定镜像中间件验证未加载模型，不替代真实执行、网络隔离、停止/释放或公开发布资格。
 
 当前先推进 [#142](https://github.com/hrygo/SpeechNexus/issues/142) 的真实文件 ASR，再接 CustomVoice TTS。
-B 已有[默认文件工厂候选](../architecture/file-asr-runtime.md)，待精确版本 CI/集成；可信真实实例与停止仍待接线。
+B 的[默认文件工厂候选](../architecture/file-asr-runtime.md)已有精确代码 CI 及
+[真实 1.7B 隔离实验](../audits/2026-10-25-b03-default-real-asr-probe.md)：
+合成语音/静音、原身份重放/重启、私有结果和控制器停止有证据；尚未主线集成，
+A 的生产准入、可信终结/预算释放和公开链仍待接通。
 A 提供权威 binding/default、音频 Asset、完整 Job/准入和发布，
 SDK/C 消费同版公开结果。unknown 继续占用，只由 A 原事务凭匹配停止/释放双证据归还预算。
 详见[团队 B 目标](2026-10-23-team-b-goal.md)，不将组件全绿换算成业务 AC 或物理集群资格。

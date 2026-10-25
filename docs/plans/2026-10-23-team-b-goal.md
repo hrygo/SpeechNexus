@@ -17,8 +17,8 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 
 ## 当前对齐（2026-10-25）
 
-当前基线为已合入 #163 的 main `f239e2d62d1f016a540de11c369d1c899c17304d`，
-[合后 CI40201976264](https://github.com/hrygo/SpeechNexus/actions/runs/40201976264) 的
+当前远端 main 为 `7dc276a`，#162/#168 尚未集成。#163 集成时的
+[CI40201976264](https://github.com/hrygo/SpeechNexus/actions/runs/40201976264) 的
 14 项检查均成功，耗时 447 秒，五分钟优化目标仍未达到。#28/#29/#142 已同步集成事实，
 仍 open / in-progress；
 业务 AC、Gate 和 B00–B07 Goal 均不因组件合入自动通过。
@@ -26,12 +26,12 @@ B 独占网关侧事务端口 `seal_barrier`、`create_submit`、`mark_execution
 | 层级 | 已有成果 | 当前边界 |
 | --- | --- | --- |
 | 回执与输入 | [#152](https://github.com/hrygo/SpeechNexus/pull/152)、[#154](https://github.com/hrygo/SpeechNexus/pull/154) 已集成，复用原执行回执与固定版本对象 | 不授予模型、停止/释放或公开发布资格 |
-| 持久执行 | [#158](https://github.com/hrygo/SpeechNexus/pull/158) 已集成：接收确认提交后启动、原身份恢复、重启隔离和线程清理 | 仍需显式工厂装配；默认环境未接固定真实引擎 |
+| 持久执行 | [#158](https://github.com/hrygo/SpeechNexus/pull/158) 已集成；#168 默认工厂候选已有真实模型隔离实验 | #168 未集成，默认 Compose 未启用；A 的生产准入与公开链仍待接通 |
 | 工作台契约 | [#141](https://github.com/hrygo/SpeechNexus/pull/141) 已集成 | 机器协议不证明正式消费者或公开链已可用 |
-| B02 本轮 | #163 已集成累计期限/单次 POST 修复、原生鉴权与目标代次核验 | 回环 HTTP、fake Docker、固定镜像中间件和隔离存储验证，不改变真实模型或完整停止/释放资格 |
+| B02 本轮 | #163 已集成鉴权/预热；#168 候选的真实受控实例、两次预热与停止/清理已验证 | 固定 1 GiB cache 修正旧比例下的启动不足；持续 ready、完整终结/预算及容量资格仍待 |
 
 各 PR 保存对应候选的检查与报告；旧分支测试数量不转挂最新组合。
-本轮没有加载模型、使用私人语料或执行目标拓扑验收。#142 仍是 B03 阶段子任务；
+本轮加载真实 1.7B 和 CPU VAD，仅使用合成语料，未执行物理目标拓扑验收。#142 仍是 B03 阶段子任务；
 #149 是后续助手交接，不增加原 25 个主工作包的分母。
 
 真实模型分段成果继续有效：[ASR 生命周期](../audits/2026-10-24-b02-real-asr-controller-probe.md)、
@@ -88,12 +88,17 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 修前四项双库反例复现失败，修后五组 PG/InnoDB/MinIO 消费者回归 102 项通过、无跳过；
 私有 PG 确认停止。实际生产校验未放宽，精确候选 CI 与评审仍以 PR 当前状态为准。
 
-`codex/b-142-default-asr-runtime` 已在上述 main 上实现[配置驱动的默认文件 ASR 工厂](../architecture/file-asr-runtime.md)，
+`codex/b-142-default-asr-runtime` 已实现[配置驱动的默认文件 ASR 工厂](../architecture/file-asr-runtime.md)，
+当前已 rebase main `7dc276a`；真实实验执行于原 `997bd46`，网关与控制器源码未随 rebase 改变。
 装配既有 worker、固定代次识别器、CPU VAD 与对象输入/结果适配器，不再要求测试注入工厂。
 配置缺失保持不可用；结构、目标与上界错误在取得控制权限前拒绝，不生成权威 binding/default 或另一份预算。
-77 项针对性验证及六组 PG/InnoDB/真实 MinIO 回归 104 项通过、无跳过；
-默认入口覆盖真实回环 HTTP/对象读写、无语音、重放和重启，模型输出与 VAD 仍为替身。
-候选尚未主线集成，完整本机与精确版本 CI 待完成；真实实例、可信停止及 A/C 公开链分别取证。
+确定性定向 77 项及六组 PG/InnoDB/真实 MinIO 回归 104 项通过、无跳过；
+`997bd46` 的 CI40207417652 全绿，本机完整入口 6,168 项、85.59%，另 17 项浏览器通过。
+随后在同一代码上完成[默认真实 ASR 实验](../audits/2026-10-25-b03-default-real-asr-probe.md)：
+真实 1.7B/CPU VAD 经默认网关和隔离 PG/MinIO 写出语音/静音结果，重放/重启保留回执，
+各一个结果版本且成功推理计数不增加；预算不变。固定 cache 后两次预热 132.827 秒，
+控制器停止双事实及清理有证据，35B 保持运行；旧配置失败记录保留。
+关系准入为 fixture，不代表 A 的生产准入；候选未集成，完整终结/预算及 A/C 公开链仍待。
 
 [持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
@@ -117,8 +122,9 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 完整非集成 4112 项通过、覆盖率 81.75%，完整隔离 PG/InnoDB/MinIO 1320 项通过，
 22 项既有 PG-only adapter 的 InnoDB 参数组合不适用跳过，未计入通过。
 Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、集成 1 条警告。
-该修复已随 #163 完成精确版本 PR/合后 CI 与主线集成。下一步是固定可信引擎的实际装配与完整身份核验，
-再与 A 的发布/预算和 SDK/C 联验；真实引擎异常退出及目标拓扑资格保留未完成。
+该修复已随 #163 完成精确版本 PR/合后 CI 与主线集成。默认真实 ASR 实验现已补证；
+下一步将固定配置、私有回执及停止事实接到 A 的生产准入/发布/预算，再与 SDK/C 联验；
+真实故障恢复、持续就绪及目标拓扑资格保留未完成。
 
 原工作树 `codex/b03-worker-fence-observation` 的未提交观察草稿保持独立，
 不得与本单元拼成已交付版本；request cleanup/unfinished=0/EOF 均不证明 GPU 资源已释放。
@@ -126,8 +132,8 @@ Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、�
 | 工作包 | 唯一状态 | 本阶段及后续剩余 |
 | --- | --- | --- |
 | B00 #27 | in-progress | 首条权威配置/许可/版本锁与上界交接，随后逐能力停止/容量资格 |
-| B01 #28 | in-progress | 提交后执行组件已集成；默认真实装配、旧入口封锁和 A 预算闭环待完成 |
-| B02 #29 | in-progress | #163 的 warmup 修复、原生鉴权与目标代次校验已集成，PR/合后 CI 全绿；五组双库/MinIO 回归 102 项通过；默认真实装配、持续 ready、故障与 peak→steady/drain 联验待完成 |
+| B01 #28 | in-progress | 提交后执行组件已集成，默认真实装配候选已有隔离证据；主线接入、旧入口封锁和 A 预算闭环待完成 |
+| B02 #29 | in-progress | #163 已集成；#168 候选受控真实预热/停止与默认网关隔离实验已有；持续 ready、真实故障、peak→steady/drain 及 A 预算联验待完成 |
 | B03 #30 | in-progress | 先 #142 的 ASR→CustomVoice 公开链；随后 Base、长文本、时钟/重叠和完整参数矩阵 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |

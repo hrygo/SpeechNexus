@@ -90,6 +90,125 @@ async function connected(closing?: Promise<void>) {
   return f;
 }
 describe("realtime session original intent and media ownership", () => {
+  it("does not submit another cancellation on page suspension after authoritative remote release", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    await f.c.close("abort");
+    f.client.current.mockResolvedValue({
+      ...session(),
+      status: "closed",
+      cleanup_state: "complete",
+      connection_url: null,
+      closed_at: new Date().toISOString(),
+    });
+    await f.c.refresh();
+    f.c.suspend();
+    await flush();
+    expect(f.client.cancel).toHaveBeenCalledTimes(1);
+    expect(f.c.getSnapshot().record.pending).toBeNull();
+    f.c.dispose();
+  });
+  it("keeps explicit input selection local and passes it only to the capture owner", async () => {
+    const f = fixture();
+    await f.c.selectInputDevice("private-device-one");
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(f.client.create).not.toHaveBeenCalled();
+    await f.c.create(request());
+    await f.c.connect();
+    f.socket.message(created());
+    f.socket.message(ready());
+    await f.c.startCapture();
+    expect(f.options?.deviceId).toBe("private-device-one");
+    expect(f.client.create.mock.calls[0]?.[0]).toEqual(request());
+    expect(JSON.stringify(new RealtimeJournal(f.s).load())).not.toContain("private-device-one");
+    const reloaded = new RealtimeController(f.client, new RealtimeJournal(f.s));
+    expect(reloaded.getSnapshot().inputDeviceId).toBeNull();
+    reloaded.dispose();
+    f.c.dispose();
+  });
+  it("switches an active input through a gap and new session after both releases", async () => {
+    const closing = deferred<void>();
+    const f = await connected(closing.promise);
+    f.socket.message({
+      type: "conversation.item.input_audio_transcription.completed",
+      event_id: "final",
+      item_id: "item",
+      content_index: 0,
+      transcript: "保留正文",
+      usage: { type: "duration", seconds: 0.1 },
+    });
+    await flush();
+    await f.c.startCapture();
+    await f.c.selectInputDevice("private-device-two");
+    expect(f.options?.signal?.aborted).toBe(true);
+    expect(f.c.getSnapshot()).toMatchObject({
+      inputDeviceId: "private-device-two",
+      microphone: "stopping",
+      stream: { phase: "disconnected" },
+    });
+    expect(f.c.getSnapshot().stream?.gaps.some((g) => g.reason === "input_device_changed")).toBe(
+      true,
+    );
+    expect(f.c.getSnapshot().record.captions[0]?.text).toBe("保留正文");
+    expect(f.client.cancel.mock.calls[0]?.slice(0, 2)).toEqual(["session-demo", "abort"]);
+    await f.c.startCapture();
+    expect(f.capture).toHaveBeenCalledTimes(1);
+    f.client.current.mockResolvedValue({
+      ...session(),
+      status: "closed",
+      cleanup_state: "complete",
+      connection_url: null,
+      closed_at: new Date().toISOString(),
+    });
+    await f.c.refresh();
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(1);
+    closing.resolve();
+    await flush();
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(2);
+    expect(f.c.getSnapshot().inputDeviceId).toBe("private-device-two");
+    expect(f.c.getSnapshot().record.captions[0]?.text).toBe("保留正文");
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    f.c.dispose();
+  });
+  it("does not interrupt for unchanged selection and ignores selection during unknown submission", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    await f.c.selectInputDevice(null);
+    expect(f.socket.close).not.toHaveBeenCalled();
+    f.client.cancel.mockRejectedValueOnce(Error("unknown synthetic reply"));
+    await f.c.close("abort");
+    await f.c.selectInputDevice("must-not-apply");
+    expect(f.c.getSnapshot().inputDeviceId).toBeNull();
+    expect(f.c.getSnapshot().record.pending?.kind).toBe("cancel");
+    f.c.dispose();
+  });
+  it("switches while permission is pending without adopting the old device into the new input", async () => {
+    const f = await connected();
+    const opening = deferred<Awaited<ReturnType<typeof f.capture>>>();
+    f.capture.mockReturnValueOnce(opening.promise);
+    const starting = f.c.startCapture();
+    await f.c.selectInputDevice("next-device");
+    expect(f.c.getSnapshot().microphone).toBe("stopping");
+    opening.resolve({
+      token: "late",
+      sampleRate: 24000,
+      stopping: f.stopping,
+      closed: f.closed,
+      stop: f.stop,
+      snapshot: { state: "running", reason: undefined },
+    });
+    await starting;
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    expect(f.c.getSnapshot()).toMatchObject({
+      inputDeviceId: "next-device",
+      microphone: "idle",
+      stream: { phase: "disconnected" },
+    });
+    expect(f.capture).toHaveBeenCalledTimes(1);
+    f.c.dispose();
+  });
   it("observes a native interruption before its asynchronous resource release completes", async () => {
     const closing = deferred<void>();
     const f = await connected(closing.promise);

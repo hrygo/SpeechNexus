@@ -203,6 +203,10 @@ def parse(name: Literal["VoiceRevision"], value: Any) -> models.VoiceRevision: .
 
 
 @overload
+def parse(name: Literal["VoiceRevisionV2"], value: Any) -> models.VoiceRevisionV2: ...
+
+
+@overload
 def parse(name: Literal["WorkbenchStatusV2"], value: Any) -> models.WorkbenchStatusV2: ...
 
 

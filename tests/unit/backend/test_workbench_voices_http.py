@@ -1,5 +1,6 @@
 """The frozen voice operations answer as declared, with and without a speech base."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -130,6 +131,45 @@ async def test_a_pinned_revision_is_declared() -> None:
     assert body["model_binding"] == {"id": BINDING, "revision": "1"}
     assert body["published_at"].endswith("Z") and body["retired_at"] is None
     assert port.calls == [("get", VOICE, "2")]
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("length", [128, 129, 2000])
+async def test_complete_disabled_reason_uses_v2_without_breaking_v1(
+    version: str, length: int
+) -> None:
+    reason = "停" * length
+
+    class DisabledPort(Port):
+        async def get_revision(self, *, voice_id: str, revision: str) -> VoiceRevision:
+            return replace(
+                revision_value(), status="disabled", retired_at=NOW, disabled_reason=reason
+            )
+
+    response = await call(
+        build(WorkbenchVoices(DisabledPort())), f"/{version}/workbench/voices/{VOICE}/revisions/2"
+    )
+    if version == "v1" and length > 128:
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "voice_catalogue_unavailable"
+    else:
+        assert response.status_code == 200, response.text
+        assert response.json()["disabled_reason"] == reason
+        assert response.json()["retired_at"] == "2026-10-24T12:00:00Z"
+
+
+async def test_v2_oversized_get_body_is_a_declared_error_without_calling_the_base() -> None:
+    port = Port()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=build(WorkbenchVoices(port))),
+        base_url="http://workbench.test",
+    ) as client:
+        response = await client.request(
+            "GET", f"/v2/workbench/voices/{VOICE}/revisions/2", content=b"x" * (64 * 1024 + 1)
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["error"]["code"] == "request_too_large"
+    assert port.calls == []
 
 
 async def test_a_missing_revision_is_a_declared_not_found() -> None:

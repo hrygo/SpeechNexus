@@ -1,0 +1,1074 @@
+{
+  "examples": [
+    {
+      "id": "published",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "retired",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "retired",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "disabled",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "disabled",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": "合成绑定已停用"
+        }
+      }
+    },
+    {
+      "id": "disabled-reason-2000",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "disabled",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": "停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停"
+        }
+      }
+    },
+    {
+      "id": "disabled-reason-2001",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "disabled",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": "停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停"
+        }
+      }
+    },
+    {
+      "id": "missing-source",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "missing-validation",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "missing-capabilities",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "missing-resource_type",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "legacy-flattened",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null,
+          "languages": [
+            "zh-CN"
+          ],
+          "audio_formats": [
+            "wav"
+          ]
+        }
+      }
+    },
+    {
+      "id": "disabled-no-retirement",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "disabled",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": "合成绑定已停用"
+        }
+      }
+    },
+    {
+      "id": "disabled-no-reason",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "disabled",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "published-retirement",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "retired-with-reason",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "retired",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": "合成绑定已停用"
+        }
+      }
+    },
+    {
+      "id": "wrong-object",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "other.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "private-endpoint",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null,
+          "private_endpoint": "synthetic-private-field"
+        }
+      }
+    },
+    {
+      "id": "validation-not-passed",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "failed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "unknown-format",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "private-format"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "complete"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "unknown-mode",
+      "kind": "response",
+      "operation": "getVoiceRevision",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "resource_type": "voice_revision",
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "object": "nexus.voice_revision",
+          "status": "published",
+          "display_name": "合成旁白",
+          "source": {
+            "type": "designed",
+            "draft_id": "draft-demo-1",
+            "draft_revision": "1",
+            "source_asset_digest": null
+          },
+          "capabilities": {
+            "languages": [
+              "zh-CN"
+            ],
+            "audio_formats": [
+              "wav"
+            ],
+            "sample_rates_hz": [
+              24000
+            ],
+            "modes": [
+              "invented-mode"
+            ]
+          },
+          "validation": {
+            "validation_id": "validation-demo-1",
+            "status": "passed",
+            "checked_at": "2026-10-24T12:00:00Z"
+          },
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "list",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "voice-demo-1",
+              "revision": "2",
+              "display_name": "合成旁白",
+              "source_type": "designed",
+              "status": "published",
+              "languages": [
+                "zh-CN"
+              ],
+              "audio_formats": [
+                "wav"
+              ]
+            }
+          ],
+          "has_more": true,
+          "next_cursor": "base-cursor-2"
+        }
+      }
+    },
+    {
+      "id": "empty-list",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "object": "nexus.list",
+          "data": [],
+          "has_more": false,
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "id": "wrong-list-object",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "object": "other.list",
+          "data": [
+            {
+              "id": "voice-demo-1",
+              "revision": "2",
+              "display_name": "合成旁白",
+              "source_type": "designed",
+              "status": "published",
+              "languages": [
+                "zh-CN"
+              ],
+              "audio_formats": [
+                "wav"
+              ]
+            }
+          ],
+          "has_more": true,
+          "next_cursor": "base-cursor-2"
+        }
+      }
+    },
+    {
+      "id": "list-private-field",
+      "kind": "response",
+      "operation": "listVoices",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "object": "nexus.list",
+          "data": [
+            {
+              "id": "voice-demo-1",
+              "revision": "2",
+              "display_name": "合成旁白",
+              "source_type": "designed",
+              "status": "published",
+              "languages": [
+                "zh-CN"
+              ],
+              "audio_formats": [
+                "wav"
+              ]
+            }
+          ],
+          "has_more": true,
+          "next_cursor": "base-cursor-2",
+          "private_endpoint": "synthetic-private-field"
+        }
+      }
+    }
+  ]
+}

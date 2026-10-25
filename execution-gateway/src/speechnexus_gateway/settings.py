@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     control_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     recovery_config_file: Path | None = Field(default=None, repr=False)
     recovery_node_component_token: SecretStr | None = Field(default=None, repr=False)
+    file_asr_config_file: Path | None = Field(default=None, repr=False)
+    file_asr_object_access_key: SecretStr | None = Field(default=None, min_length=1, repr=False)
+    file_asr_object_secret_key: SecretStr | None = Field(default=None, min_length=1, repr=False)
 
     @model_validator(mode="after")
     def validate_control_configuration(self) -> Settings:
@@ -62,6 +65,20 @@ class Settings(BaseSettings):
                 )
             if self.recovery_node_component_token == self.component_token:
                 raise ValueError("recovery requires an independent node credential")
+        file_asr = (
+            self.file_asr_config_file,
+            self.file_asr_object_access_key,
+            self.file_asr_object_secret_key,
+        )
+        if any(value is not None for value in file_asr):
+            if not all(value is not None for value in file_asr):
+                raise ValueError("file ASR requires a configuration and both object credentials")
+            if (
+                not self.execution_control_enabled
+                or self.file_asr_config_file is None
+                or not self.file_asr_config_file.is_absolute()
+            ):
+                raise ValueError("file ASR requires owned control and an absolute configuration")
         return self
 
     @property

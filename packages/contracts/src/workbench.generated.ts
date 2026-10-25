@@ -726,6 +726,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v2/workbench/voices/{voice_id}/revisions/{revision}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get one immutable voice revision with its complete disable reason
+     * @description Reports one published revision exactly as the base holds it, including the model
+     *     binding the base pinned for it. An unknown, unpublished or discarded revision is
+     *     not found; the workbench never serves a draft as if it were published.
+     *     Unlike the frozen v1 projection, disabled_reason preserves up to 2000 characters.
+     */
+    get: operations["getVoiceRevisionV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v2/workbench/status": {
     parameters: {
       query?: never;
@@ -1424,6 +1447,21 @@ export interface components {
       audio_formats: string[];
     };
     VoiceRevision: {
+      voice_id: components["schemas"]["Identifier"];
+      revision: components["schemas"]["Revision"];
+      display_name: string;
+      /** @enum {string} */
+      status: "published" | "retired" | "disabled";
+      languages: string[];
+      audio_formats: string[];
+      model_binding: components["schemas"]["ResourceReference"];
+      /** Format: date-time */
+      published_at: string;
+      /** Format: date-time */
+      retired_at: string | null;
+      disabled_reason: string | null;
+    };
+    VoiceRevisionV2: {
       voice_id: components["schemas"]["Identifier"];
       revision: components["schemas"]["Revision"];
       display_name: string;
@@ -3593,6 +3631,39 @@ export interface operations {
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
       408: components["responses"]["RequestTimeout"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getVoiceRevisionV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        voice_id: components["parameters"]["VoiceIdPath"];
+        revision: components["parameters"]["RevisionPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable published voice revision. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceRevisionV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
       500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
     };

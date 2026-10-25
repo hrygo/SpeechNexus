@@ -8,8 +8,9 @@ date: 2026-10-24
 # 文件 ASR 原生识别接口
 
 本单元组合[文件媒体输入](file-asr-audio.md)、CPU VAD 和固定 vLLM 语音端点。
-已实现原生识别端口、HTTP adapter 和顺序文件消费者；公开文件 ASR 路由、持久 dispatch
-装配、调度准入、对象发布、交叠合并及辅助时间戳仍另行接入。
+已实现原生识别端口、HTTP adapter 和顺序文件消费者；
+[持久 worker 的默认装配](file-asr-runtime.md)可由私有部署配置启用，验证中的模型为替身。
+公开文件 ASR 链、真实模型默认运行、调度准入、对象发布、交叠合并及辅助时间戳仍分别验收。
 [原命令与对象核验输入](frozen-execution-inputs.md)已有独立端口与合成消费者验证，
 尚未接成完整真实执行服务。
 不能将原生入口直接注册成绕过租约、提交屏障或完整有效命令的业务路由。
@@ -43,7 +44,8 @@ finally:
 `consume_unpublished_segment` 是调用方职责示意；本单元没有结果存储或发布服务。
 迭代前必须已通过原执行身份、command digest、binding/generation/资格、租约和入口屏障校验，
 持久写入唯一 submit intent；接入者不能因为 HTTP adapter 可调用而跳过这些步骤。
-`EngineDispatchPort` 的生产装配和 A 的调度消费者仍未完成，本类本身没有幂等账本。
+本类经现有 worker 接入持久执行，默认部署须显式配置；A 的调度消费者与完整公开链仍待联验，
+本类本身没有幂等账本。
 
 无语音窗口返回 `no_speech=true`、空文本、空请求 ID，完全不调用 ASR。
 人声结果返回文本、源/模型半开样本区间、请求/引擎请求 ID、实际 completion token 数、

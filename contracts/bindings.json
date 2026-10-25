@@ -106,6 +106,7 @@
         "VoiceList",
         "VoiceSummary",
         "VoiceRevision",
+        "VoiceRevisionV2",
         "WorkbenchStatusV2",
         "RenderUnitV2",
         "RenderUnitCreateRequestV2",
@@ -239,6 +240,16 @@
     }
   },
   "http_surfaces": {
+    "voice_catalogue": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/voices",
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}"
+      ],
+      "operations": ["listVoices", "getVoiceRevision"]
+    },
     "admin": {
       "source": "admin-openapi.yaml",
       "validate": true,
@@ -305,6 +316,7 @@
         "/v1/workbench/exports/{export_id}/cancellations",
         "/v1/workbench/voices",
         "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+        "/v2/workbench/voices/{voice_id}/revisions/{revision}",
         "/v2/workbench/status",
         "/v2/workbench/chapters/{chapter_id}/render-units",
         "/v2/workbench/render-units/{unit_id}",

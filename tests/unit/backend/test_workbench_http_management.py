@@ -57,8 +57,13 @@ async def test_status_reports_configuration_and_full_schema_without_fictitious_c
         assert (await c.get("/v1/workbench/projects")).status_code == 503
         assert (await c.get("/v1/workbench/deletions/deletion-one")).status_code == 503
         schema = (await c.get("/openapi.json")).json()
-        # Both status versions, two voice reads and two public downloads stay mounted.
-        assert len([op for item in schema["paths"].values() for op in item.values()]) == 18
+        # Both status versions, three voice reads and two public downloads stay mounted.
+        assert len([op for item in schema["paths"].values() for op in item.values()]) == 19
+        voice_v2 = "/v2/workbench/voices/{voice_id}/revisions/{revision}"
+        assert schema["paths"][voice_v2]["get"]["operationId"] == "getVoiceRevisionV2"
+        unavailable_voice = await c.get(voice_v2.format(voice_id="voice-demo", revision="1"))
+        assert unavailable_voice.status_code == 503
+        assert unavailable_voice.json()["error"]["code"] == "voice_catalogue_unavailable"
         for path, operation in {
             "/v1/workbench/saved-assets/{asset_id}/content": "downloadSavedAsset",
             "/v1/workbench/exports/{export_id}/content": "downloadBookExport",

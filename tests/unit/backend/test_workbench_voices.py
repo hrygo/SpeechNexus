@@ -125,9 +125,11 @@ def test_a_summary_carries_the_bases_values_verbatim() -> None:
         {"status": "retired"},
         {"status": "published", "retired_at": NOW},
         {"status": "disabled"},
+        {"status": "disabled", "disabled_reason": "stopped"},
         {"status": "published", "disabled_reason": "stopped"},
         {"status": "retired", "retired_at": NOW, "disabled_reason": "stopped"},
         {"disabled_reason": ""},
+        {"status": "disabled", "retired_at": NOW, "disabled_reason": "停" * 2001},
     ],
 )
 def test_a_revision_rejects_an_inconsistent_lifecycle(changes: dict[str, object]) -> None:
@@ -137,9 +139,11 @@ def test_a_revision_rejects_an_inconsistent_lifecycle(changes: dict[str, object]
 
 def test_a_revision_accepts_retirement_and_disablement_with_their_evidence() -> None:
     retired = revision_value(status="retired", retired_at=NOW)
-    disabled = revision_value(status="disabled", disabled_reason="引擎不再提供该绑定")
+    disabled = revision_value(
+        status="disabled", retired_at=NOW, disabled_reason="引擎不再提供该绑定"
+    )
     assert retired.retired_at == NOW and retired.disabled_reason is None
-    assert disabled.disabled_reason == "引擎不再提供该绑定" and disabled.retired_at is None
+    assert disabled.disabled_reason == "引擎不再提供该绑定" and disabled.retired_at == NOW
 
 
 @pytest.mark.parametrize(

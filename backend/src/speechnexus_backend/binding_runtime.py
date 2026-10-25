@@ -5,8 +5,15 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from collections.abc import Callable
+
+from pydantic import SecretStr
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.infrastructure.binding_defaults_postgres import (
+    PostgresBindingDefaults,
+)
+from speechnexus_backend.speech.infrastructure.binding_defaults_schema import TABLE
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import PostgresBindingDrafts
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
@@ -27,13 +34,27 @@ class _PoolDiagnostics(logging.Filter):
         return True
 
 
-class BindingRuntime:
-    def __init__(self, settings: Settings) -> None:
-        if settings.binding_writer_database_url is None or settings.process_role != "api":
+_BINDING_TABLES = (
+    "speech_binding_families",
+    "speech_binding_revisions",
+    "speech_binding_commands",
+)
+
+
+class _BindingRuntime[T]:
+    def __init__(
+        self,
+        settings: Settings,
+        writer_url: SecretStr | None,
+        tables: tuple[str, ...],
+        new_provider: Callable[[SpeechPool, float], T],
+    ) -> None:
+        if writer_url is None or settings.process_role != "api":
             raise ValueError("Configure an explicit API binding writer identity")
         self._settings = settings
+        self._writer_url, self._tables, self._new_provider = writer_url, tables, new_provider
         self._pool: SpeechPool | None = None
-        self.provider: PostgresBindingDrafts | None = None
+        self.provider: T | None = None
         # Only this object's connection-pool lifetime is protected here. Binding
         # allocation/idempotency are coordinated by the existing PG transactions.
         self._lifetime = threading.Lock()
@@ -43,8 +64,7 @@ class BindingRuntime:
         with self._lifetime:
             if self.provider is not None:
                 raise ValueError("Binding writer is already open")
-            secret = self._settings.binding_writer_database_url
-            assert secret is not None
+            secret = self._writer_url
             pool_name = "speech-binding-" + uuid.uuid4().hex
             diagnostic = _PoolDiagnostics(pool_name)
             logger = logging.getLogger("psycopg.pool")
@@ -60,9 +80,8 @@ class BindingRuntime:
                 self._pool = pool
                 pool.open()
                 self._verify_principal(pool)
-                self.provider = PostgresBindingDrafts(
-                    pool,
-                    timeout_seconds=self._settings.binding_transaction_timeout_seconds,
+                self.provider = self._new_provider(
+                    pool, self._settings.binding_transaction_timeout_seconds
                 )
             except BaseException as error:
                 try:
@@ -109,21 +128,16 @@ class BindingRuntime:
             "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
-            "AND c.relname NOT IN ('speech_binding_families','speech_binding_revisions',"
-            "'speech_binding_commands') AND ("
+            "AND c.relname NOT IN (" + ",".join("%s" for _ in self._tables) + ") AND ("
             "pg_catalog.has_table_privilege(%s::name,c.oid,"
             "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
             "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
             "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
-            (schema, role, role),
+            (schema, *self._tables, role, role),
         ).fetchone()
         if extra is None or extra["forbidden"]:
             raise ValueError("Binding writer cannot hold other speech table privileges")
-        for table in (
-            "speech_binding_families",
-            "speech_binding_revisions",
-            "speech_binding_commands",
-        ):
+        for table in self._tables:
             name = f'"{schema}".{table}'
             row = connection.execute(
                 "SELECT pg_catalog.has_table_privilege(%s::name,%s,'SELECT') "
@@ -155,3 +169,23 @@ class BindingRuntime:
                 if self._diagnostics is not None:
                     logging.getLogger("psycopg.pool").removeFilter(self._diagnostics)
                     self._diagnostics = None
+
+
+class BindingRuntime(_BindingRuntime[PostgresBindingDrafts]):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(
+            settings,
+            settings.binding_writer_database_url,
+            _BINDING_TABLES,
+            lambda pool, seconds: PostgresBindingDrafts(pool, timeout_seconds=seconds),
+        )
+
+
+class BindingDefaultsRuntime(_BindingRuntime[PostgresBindingDefaults]):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(
+            settings,
+            settings.binding_defaults_writer_database_url,
+            (*_BINDING_TABLES, TABLE),
+            lambda pool, seconds: PostgresBindingDefaults(pool, timeout_seconds=seconds),
+        )

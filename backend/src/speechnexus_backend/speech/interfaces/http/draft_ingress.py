@@ -23,6 +23,7 @@ class DraftIngress:
         error: Callable[..., Response],
         create_operation: str,
         read_operation: str,
+        read_operations: tuple[str, ...] = (),
         max_bytes: int,
         concurrency: int,
         receive_timeout_seconds: float,
@@ -35,7 +36,7 @@ class DraftIngress:
         if not 0 < receive_timeout_seconds <= 30:
             raise ValueError("Draft receive deadline must be bounded")
         self._prefix, self._target, self._error = prefix, target, error
-        self._create, self._read = create_operation, read_operation
+        self._create, self._reads = create_operation, frozenset((read_operation, *read_operations))
         self._app, self._limit, self._timeout = app, max_bytes, receive_timeout_seconds
         self._enabled, self._slots = is_enabled, asyncio.Semaphore(concurrency)
         self._hosts, self._origins = frozenset(allowed_hosts), frozenset(allowed_origins)
@@ -71,7 +72,7 @@ class DraftIngress:
         if not self._enabled():
             await refuse("result_unknown" if operation == self._create else "unavailable")
             return
-        if operation == self._read:
+        if operation in self._reads:
             await self._app(scope, receive, send)
             return
         lengths, media = headers.getlist("content-length"), headers.getlist("content-type")

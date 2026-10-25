@@ -212,10 +212,11 @@ work. It does not attach defaults to existing revisions, add ModelBinding wire
 fields, write registry data or establish a published/default configuration.
 
 A separate [default producer profile](binding-defaults-producer.md) defines the
-future input and fixed snapshot lookup. It references the canonical fields above
+producer input and fixed snapshot lookup. It references the canonical fields above
 and leaves this implemented `binding` surface and its negative-input checks
 unchanged. The in-process atomic port below implements persistence; actual
-producer HTTP support remains pending.
+producer HTTP support is available through the explicit four-table mode described
+in that profile. Legacy three-table mode retains this original input/surface.
 
 ## Atomic default declarations
 
@@ -244,8 +245,9 @@ backfilled. The snapshot uses the accepted parent's creation time.
 The new provisioning declaration `binding_defaults_grants` extends the original
 three-table writer with SELECT/INSERT on the immutable snapshot table. It does
 not execute grants, change the existing writer's lifecycle, or broaden startup
-permissions. Runtime UPDATE/DELETE and coordination access remain denied. A future
-HTTP unit must explicitly validate and wire its controlled writer lifecycle.
+permissions. Runtime UPDATE/DELETE and coordination access remain denied. The
+explicit producer HTTP mode validates its controlled four-table lifecycle;
+the legacy three-table runtime still rejects snapshot privileges.
 
 Creation and recovery return the original parent/snapshot identities. Recovery is
 read-only and never allocates IDs. A lost or late committed reply, cancellation,
@@ -270,6 +272,7 @@ SQL solely to probe portability. Tests cover real lock waits, original rollback,
 commit reply loss/read pressure, cancellation, delayed committed replies, partial
 rollback, parent FK, permission refusal and migration preservation.
 
-Producer HTTP, published/default registry, merged parameter resolution and actual
+The opt-in [producer HTTP mode](binding-defaults-producer.md) now consumes this
+port. Published/default registry, merged parameter resolution and actual
 engine/quality evidence remain separate acceptance. This port neither publishes
 nor activates revisions and does not rewrite historical Jobs.

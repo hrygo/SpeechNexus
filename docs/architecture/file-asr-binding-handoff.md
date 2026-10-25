@@ -1,7 +1,7 @@
 ---
 title: "文件 ASR 固定制品与参数交接"
 status: active
-version: "0.1.0"
+version: "0.2.0"
 date: 2026-10-25
 ---
 
@@ -72,6 +72,48 @@ binding revision 与默认快照；B 提供 `artifact_set`、`engine`、支持�
 伪造一个已合格 manifest 或自行分配 `revision_id`。当前 draft/default API 不等于
 已发布配置解析或可运行默认装配。
 
+### 生成完整草稿注册请求
+
+[binding-definition.json](../../deploy/engines/file-asr-audio/binding-definition.json)
+固定本候选的 `asr_file` 支持域、执行配方和显式默认。
+默认模式继续输出原离线核验报告；增加 `--emit-binding-request` 后，工具先完整核验制品，
+再输出精确的 `BindingDefaultsCreateRequest`，可交给既有
+`POST /v1/nexus/admin/model-bindings`，不附报告 envelope 或本机路径：
+
+```bash
+uv run python scripts/dev-env/verify-file-asr-artifacts.py \
+  --model-root "$SPEECHNEXUS_ASR_MODEL_ROOT" \
+  --vad-file "$SPEECHNEXUS_VAD_MODEL_FILE" \
+  --emit-binding-request \
+  --binding-id "$SPEECHNEXUS_ASR_BINDING_ID" \
+  --logical-model "$SPEECHNEXUS_ASR_LOGICAL_MODEL" \
+  --capacity-manifest-id "$SPEECHNEXUS_ASR_CAPACITY_MANIFEST_ID" \
+  > .runtime/verification/file-asr-binding-request.json
+```
+
+后三项身份/引用必须由注册方明确提供；工具没有默认值，定义文件也不得预置它们。
+`capacity_manifest_id` 是现行配方契约要求的引用，离线工具不证明其存在或资格；
+不得填虚构值用于真实注册。注册方仍须核验完整资源范围、许可及发布条件。
+`release_tier=production` 是申请的目标等级，不是发布回执。
+工具不发 HTTP、不写数据库，也不分配 revision、snapshot 或 publication 身份；
+请求的 schema 和跨字段语义复用实际生产者的纯准备入口。
+
+配方只有现有 `asr_batch` 执行角色。CPU 解码和 VAD 是文件消费者内部工作，
+没有虚构独立可调度的 VAD 路由；完整 manifest 仍须覆盖它们的 CPU、内存、缓冲及 GPU 阶段，
+不能从单个 vLLM descriptor 推断配方已经具备容量资格。
+
+本候选声明 `auto` / `zh` / `en`、完整分段和 prompt，拒绝 rollback、词级时间戳、
+alignment 和 diarization。显式默认仅覆盖现行快照支持的字段；
+prompt、temperature 仍从完整有效命令读取，token/字节/内存上限及 VAD tuning
+仍由对应部署配置固定，不能认为该 JSON 已包含全部执行配置。
+默认的段期限不授予吞吐或冷启动资格，辅助期限也不会启用关闭的辅助阶段。
+
+注册时使用调用方持久保存的原幂等键和同一请求；重放不重建或改写默认参数。
+草稿响应的 `publication.capacity_manifest_id` 和 `qualification_report_id` 仍为 null，
+固定默认快照通过该 binding revision 的
+`GET /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/parameter-defaults`
+读取。后续发布和默认选择各自验收。
+
 `CommandFileAsr` 不读取引擎隐式默认：从原持久命令取 language、prompt、temperature、
 turn detection、分段和期限；部署必须显式提供 token/调用/输入/解码/结果上限及 VAD tuning。
 现有 `AsrPolicy` 的领域缺省 1024 tokens / 60 s 不会自动替调用方补齐这些装配参数。
@@ -119,3 +161,18 @@ turn detection、分段和期限；部署必须显式提供 token/调用/输入/
 接入顺序：A 核验并注册固定制品/配置 → 按原 manifest/资格选择可服务实例 →
 B 默认装配消费同一完整命令 → A 原子发布回执 → SDK/C 同版联验。
 这些分别是具名依赖，不要求整个 B00 先关闭，也不允许跨团队直接写表绕过。
+
+## 本次交接验证
+
+2026-10-25 在 main `e959c43` 上重放并验证本候选；此前 `5164b6a` 组合的同组回归也通过：
+
+- `tests/unit/test_file_asr_artifacts.py` 与
+  `tests/unit/gateway/test_file_asr_command.py` 共 122 项通过、无跳过，覆盖身份必填、
+  原核验输出兼容、禁止外部 I/O、错误定义及现有文件命令对声明默认的接收。
+- `tests/integration/test_file_asr_binding_handoff.py`、
+  `tests/integration/test_binding_defaults_http.py` 与
+  `tests/integration/test_binding_defaults_storage.py` 共 74 项通过、无跳过。
+  新交接用合成制品生成请求，经实际 PG HTTP producer 创建草稿、固定读、同键重放、
+  改默认冲突和应用重启；既有存储回归覆盖 PG/InnoDB 与 TypeScript 快照消费者。
+- 使用本项目一次性 Unix socket PG，结束后确认停止；没有加载模型或使用私人音频。
+  这不证明真实制品已权威注册、已发布、单请求释放、完整公开链或物理集群资格。

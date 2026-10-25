@@ -22,6 +22,21 @@ prove an instance/generation or stop. See the
 [binding and parameter handoff](../../../docs/architecture/file-asr-binding-handoff.md)
 for provenance, supported parameters, limits and remaining integration work.
 
+To emit the existing registry's complete `BindingDefaultsCreateRequest`, add
+`--emit-binding-request --binding-id "$SPEECHNEXUS_ASR_BINDING_ID"
+--logical-model "$SPEECHNEXUS_ASR_LOGICAL_MODEL"
+--capacity-manifest-id "$SPEECHNEXUS_ASR_CAPACITY_MANIFEST_ID"`.
+The caller must supply all three references; the tool verifies artifacts and
+validates the request through the actual producer's pure preparation boundary,
+without HTTP or database writes. The versioned
+[binding-definition.json](binding-definition.json) supplies supported parameters,
+the existing `asr_batch` recipe and explicit snapshot defaults. CPU decoding and
+VAD run inside that file consumer; the complete capacity manifest must still
+cover their resources. Its `production` tier is a requested target, not a
+publication or capacity qualification. Revision/snapshot identities are assigned
+by the registry. Prompt/temperature and deployment limits remain governed by
+their existing complete-command/configuration contracts.
+
 Recompile after an intentional dependency change:
 
 ```bash

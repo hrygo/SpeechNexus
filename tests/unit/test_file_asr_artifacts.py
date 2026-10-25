@@ -24,6 +24,16 @@ assert SPEC is not None and SPEC.loader is not None
 GATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GATE)
 PIN_PATH = ROOT / "deploy/engines/file-asr-audio/artifact-pin.json"
+DEFINITION_PATH = ROOT / "deploy/engines/file-asr-audio/binding-definition.json"
+REGISTRATION = (
+    "--emit-binding-request",
+    "--binding-id",
+    "asr-handoff-synthetic",
+    "--logical-model",
+    "asr-quality",
+    "--capacity-manifest-id",
+    "manifest-handoff-synthetic",
+)
 
 
 def fingerprint(content: bytes) -> dict[str, Any]:
@@ -136,6 +146,132 @@ def test_versioned_default_pin_is_valid_and_matches_repository_files() -> None:
             "digest": entry["digest"],
             "size_bytes": entry["size_bytes"],
         }
+
+
+def test_cli_emits_existing_create_contract_with_explicit_unallocated_references(
+    inputs: dict[str, Any],
+) -> None:
+    from speechnexus_contracts.binding_defaults_producer import parse
+
+    original = verify(inputs)
+    result = cli(inputs, *REGISTRATION)
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    body = json.loads(result.stdout)
+    parse("BindingDefaultsCreateRequest", body)
+    assert body["binding_id"] == "asr-handoff-synthetic"
+    assert body["logical_model"] == "asr-quality"
+    assert body["execution_recipe"]["capacity_manifest_id"] == "manifest-handoff-synthetic"
+    assert body["engine"] == original["engine"]
+    assert body["artifact_set"] == original["artifact_set"]
+    definition = json.loads(DEFINITION_PATH.read_text())
+    assert body["parameter_defaults"] == definition["parameter_defaults"]
+    assert body["release_tier"] == "production"  # A target, never a publication receipt.
+    assert not {"revision", "revision_id", "snapshot_id", "publication", "created_at"} & body.keys()
+    assert str(inputs["model_root"].parent) not in result.stdout
+    assert "qualification_report_id" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--emit-binding-request",),
+        ("--emit-binding-request", "--binding-id", "binding-test"),
+        ("--binding-id", "binding-test"),
+        ("--capacity-manifest-id", "manifest-test"),
+    ],
+)
+def test_cli_never_invents_missing_registration_identities(
+    inputs: dict[str, Any], arguments: tuple[str, ...]
+) -> None:
+    result = cli(inputs, *arguments)
+    assert result.returncode == 2 and not result.stdout
+    assert json.loads(result.stderr) == {"error": "invalid_arguments"}
+
+
+def test_binding_preparation_is_offline_and_does_not_change_verified_artifacts(
+    inputs: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = verify(inputs)
+    original = deepcopy(report)
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("binding preparation attempted external I/O")
+
+    monkeypatch.setattr(socket, "socket", forbidden)
+    monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    body = GATE.binding_request(
+        report,
+        binding_id="synthetic-binding",
+        logical_model="asr-quality",
+        capacity_manifest_id="synthetic-manifest",
+    )
+    body["artifact_set"][0]["artifact_id"] = "caller-changed-copy"
+    assert report == original
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing-defaults",
+        "allocated-identity",
+        "manifest-in-definition",
+        "incompatible-language",
+        "invalid-segment",
+        "short-segment",
+        "unsupported-rollback",
+        "unsupported-alignment",
+    ],
+)
+def test_binding_definition_reuses_actual_consumer_composition_checks(
+    inputs: dict[str, Any], tmp_path: Path, change: str
+) -> None:
+    definition = json.loads(DEFINITION_PATH.read_text())
+    defaults = definition["parameter_defaults"]["asr"]
+    if change == "missing-defaults":
+        definition.pop("parameter_defaults")
+    elif change == "allocated-identity":
+        definition["revision_id"] = "must-not-be-allocated"
+    elif change == "manifest-in-definition":
+        definition["execution_recipe"]["capacity_manifest_id"] = "must-be-caller-provided"
+    elif change == "incompatible-language":
+        defaults["language"] = "fr"
+    elif change == "invalid-segment":
+        defaults["max_segment_ms"] = 31000
+    elif change == "short-segment":
+        defaults.update(max_segment_ms=1000, preview_interval_ms=5000)
+    elif change == "unsupported-rollback":
+        defaults["rollback_tokens"] = 1
+    else:
+        defaults["alignment"] = "required"
+    file = tmp_path / "binding-definition.json"
+    file.write_text(json.dumps(definition))
+    with pytest.raises(GATE.VerificationError):
+        GATE.binding_request(
+            verify(inputs),
+            binding_id="synthetic-binding",
+            logical_model="asr-quality",
+            capacity_manifest_id="synthetic-manifest",
+            definition_path=file,
+        )
+
+
+@pytest.mark.parametrize("language", ["auto", "zh", "en"])
+def test_declared_defaults_are_accepted_by_existing_file_command_before_io(language: str) -> None:
+    from tests.fake.execution_command import command_example, original_request
+    from tests.unit.gateway.test_file_asr_command import CapturingRecognizer, Objects, consumer
+
+    definition = json.loads(DEFINITION_PATH.read_text())
+    assert language in definition["parameter_domains"]["asr"]["languages"]
+    command = command_example()
+    command["parameters"].update(definition["parameter_defaults"]["asr"])
+    command["parameters"].update(language=language, response_format="json")
+    request = original_request(command)
+    objects, recognizer = Objects(b""), CapturingRecognizer()
+    prepared = consumer(objects, recognizer, max_call_seconds=10).validate_request(request)
+    assert prepared.command == command
+    assert not objects.reads and not recognizer.requests
 
 
 def test_offline_verification_opens_no_socket_or_subprocess(

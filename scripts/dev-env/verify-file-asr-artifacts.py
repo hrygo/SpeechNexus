@@ -12,6 +12,7 @@ import stat
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -21,6 +22,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PIN = ROOT / "deploy/engines/file-asr-audio/artifact-pin.json"
+DEFAULT_DEFINITION = ROOT / "deploy/engines/file-asr-audio/binding-definition.json"
 MAX_DOCUMENT_BYTES = 256 * 1024
 CHUNK_BYTES = 1024 * 1024
 _NAME = r"^[A-Za-z0-9_.-]{1,128}$"
@@ -312,6 +314,61 @@ def verify(
     }
 
 
+def binding_request(
+    report: dict[str, Any],
+    *,
+    binding_id: str,
+    logical_model: str,
+    capacity_manifest_id: str,
+    definition_path: Path = DEFAULT_DEFINITION,
+) -> dict[str, Any]:
+    """Prepare an exact create input from verified artifacts; never POST or allocate IDs.
+
+    The caller retains authority for the family/model/manifest reference. The
+    registry still allocates revision and snapshot identities, and publication
+    must separately verify the referenced capacity and qualification evidence.
+    """
+    from speechnexus_contracts import ContractValidationError
+
+    from speechnexus_backend.speech.interfaces.binding_default_drafts import (
+        prepare_binding_defaults_draft,
+    )
+
+    with _directory(definition_path.parent) as parent, _regular(parent, definition_path.name) as fd:
+        try:
+            definition = _document(_read(fd, MAX_DOCUMENT_BYTES))
+        except ValueError, TypeError, RecursionError, OverflowError:
+            raise VerificationError("binding_definition_invalid") from None
+    if (
+        set(definition)
+        != {
+            "tasks",
+            "execution_recipe",
+            "parameter_domains",
+            "release_tier",
+            "parameter_defaults",
+        }
+        or not isinstance(definition["execution_recipe"], dict)
+        or "capacity_manifest_id" in definition["execution_recipe"]
+    ):
+        raise VerificationError("binding_definition_invalid")
+    request = {
+        **definition,
+        "binding_id": binding_id,
+        "logical_model": logical_model,
+        "engine": deepcopy(report["engine"]),
+        "artifact_set": deepcopy(report["artifact_set"]),
+    }
+    request["execution_recipe"]["capacity_manifest_id"] = capacity_manifest_id
+    try:
+        # Use the real consumer's schema AND composition/default checks. This
+        # pure preparation does no I/O; the validation identity is never stored.
+        prepare_binding_defaults_draft(request, "offline-file-asr-validation")
+    except ContractValidationError:
+        raise VerificationError("binding_request_invalid") from None
+    return request
+
+
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> Never:
         self.exit(2, '{"error":"invalid_arguments"}\n')
@@ -322,13 +379,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pin", type=Path, default=DEFAULT_PIN)
     parser.add_argument("--model-root", type=Path, required=True)
     parser.add_argument("--vad-file", type=Path, required=True)
+    parser.add_argument(
+        "--emit-binding-request",
+        action="store_true",
+        help="emit an offline BindingDefaultsCreateRequest instead of the integrity report",
+    )
+    parser.add_argument("--binding-id")
+    parser.add_argument("--logical-model")
+    parser.add_argument("--capacity-manifest-id")
     args = parser.parse_args(argv)
+    identities = (args.binding_id, args.logical_model, args.capacity_manifest_id)
+    if (args.emit_binding_request and not all(identities)) or (
+        not args.emit_binding_request and any(value is not None for value in identities)
+    ):
+        parser.error("binding request identities must be explicit")
     try:
         report = verify(pin_path=args.pin, model_root=args.model_root, vad_file=args.vad_file)
+        if args.emit_binding_request:
+            report = binding_request(
+                report,
+                binding_id=args.binding_id,
+                logical_model=args.logical_model,
+                capacity_manifest_id=args.capacity_manifest_id,
+            )
     except VerificationError as error:
         print(json.dumps({"error": str(error)}), file=sys.stderr)
         return 1
-    except OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError:
+    except OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, ImportError:
         print(json.dumps({"error": "verification_failed"}), file=sys.stderr)
         return 1
     print(json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=True))

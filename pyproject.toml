@@ -48,7 +48,8 @@ addopts = "-ra --strict-config --strict-markers"
 asyncio_mode = "auto"
 pythonpath = ["."]
 markers = [
-  "integration: requires explicitly configured isolated database/object-storage services",
+  "integration: deterministic checks with explicitly configured isolated database/object-storage services",
+  "qualification: requires an approved real model deployment; not routine integration evidence",
 ]
 
 [tool.coverage.run]

@@ -61,8 +61,8 @@ void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {
   body: meeting,
 });
 validateRequest("createMeeting", { path: { project_id: "project-demo" }, body: meeting });
-// @ts-expect-error Assistant HTTP entrypoints are delivered separately.
-validateRequest("createAssistantTurn", {});
+// @ts-expect-error Download entrypoints are not part of the selected HTTP surface.
+validateRequest("downloadSavedAsset", {});
 // @ts-expect-error The validated client exposes only the selected HTTP surface.
 void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/assistant-turns", {});
 // @ts-expect-error Public minutes DTOs do not expose C's private usage/task ledger.

@@ -1,0 +1,65 @@
+.deletions {
+  display: grid;
+  gap: 1.25rem;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.deletions header,
+.deletions section,
+.deletions aside {
+  min-width: 0;
+}
+.deletions header {
+  border-bottom: 1px solid var(--line-strong);
+}
+.deletions p {
+  line-height: 1.65;
+}
+.deletions button {
+  margin: 0.35rem 0.45rem 0.35rem 0;
+  min-height: 2.6rem;
+  max-width: 100%;
+  white-space: normal;
+}
+.deletions label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0.7rem 0;
+}
+.deletions select {
+  max-width: 100%;
+  min-width: 0;
+}
+.deletions input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+.deletions fieldset {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  padding: 1rem;
+}
+.deletions li {
+  margin-block: 0.5rem;
+}
+.deletions dl {
+  font-size: 0.9rem;
+}
+.deletions dd {
+  margin-inline-start: 1rem;
+  margin-block-end: 0.7rem;
+}
+.deletion-directory {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 1.5rem;
+}
+@media (max-width: 700px) {
+  .deletion-directory {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .deletions label:has(select) {
+    flex-direction: column;
+  }
+}

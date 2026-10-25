@@ -1,1 +1,1 @@
-"""Workbench use cases. Business workflows are not implemented before P0."""
+"""Workbench version use cases and ports; production adapters are not yet wired."""

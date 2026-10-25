@@ -300,6 +300,17 @@ implemented.
 - Resolve cross-file references against the containing contract file; do not
   rely on the current working directory.
 
+## Workbench HTTP version migration
+
+Strict v1 status/render responses retain their original fields. Approved Minutes
+configuration and explicitly pinned render bindings use additive `/v2/workbench`
+paths and generated `WorkbenchStatusV2` / `RenderUnitV2` types. V1 render creation
+returns the existing `503 workbench_unavailable` without writing a unit; v2
+requires the caller-selected binding. There is no automatic version fallback or
+binding default. Both generation operations remain contract declarations without
+production routes. See [ADR 0009](../docs/decisions/0009-workbench-explicit-binding-http-version.md)
+for the operation mapping, consumer migration and rollback boundary.
+
 ## Generated consumer bindings
 
 The first file-workflow consumer package is documented in

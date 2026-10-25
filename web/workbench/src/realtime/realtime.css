@@ -1,0 +1,98 @@
+.realtime-asr {
+  display: grid;
+  gap: var(--nexus-space-4);
+  min-width: 0;
+}
+.realtime-asr :is(button, input, textarea) {
+  min-height: 44px;
+  max-width: 100%;
+  padding: var(--nexus-space-3);
+  font: inherit;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--nexus-radius-sm);
+  background: var(--surface-strong);
+}
+.realtime-asr button {
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.realtime-asr button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.realtime-asr :is(button, input, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.realtime-asr fieldset {
+  padding: var(--nexus-space-4);
+  border: 1px solid var(--line-strong);
+}
+.realtime-asr p {
+  line-height: 1.65;
+}
+.realtime-asr header,
+.realtime-asr section {
+  min-width: 0;
+}
+.realtime-asr p,
+.realtime-asr dd,
+.realtime-asr li,
+.realtime-asr h4 {
+  overflow-wrap: anywhere;
+}
+.realtime-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--nexus-space-3);
+  margin-block: var(--nexus-space-3);
+}
+.realtime-asr label {
+  display: grid;
+  gap: var(--nexus-space-2);
+  min-width: 0;
+}
+.realtime-asr input,
+.realtime-asr textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.realtime-asr fieldset {
+  min-width: 0;
+}
+.realtime-asr textarea {
+  resize: vertical;
+}
+.realtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nexus-space-2);
+}
+.realtime-text {
+  white-space: pre-wrap;
+}
+.realtime-segment {
+  border-block-start: 1px solid var(--line-strong);
+  padding-block: var(--nexus-space-3);
+}
+.realtime-asr dl {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: var(--nexus-space-2);
+}
+.realtime-asr dd {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .realtime-fields,
+  .realtime-asr dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .realtime-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

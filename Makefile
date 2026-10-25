@@ -1,7 +1,7 @@
 .PHONY: install dev-bootstrap dev-up dev-down dev-status dev-check api-dev gateway-dev web-dev \
 	browser-install browser-smoke media-smoke contracts-check contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-sdk-test contracts-generate contracts-drift \
 	service-smoke stack-config mysql-service \
-	format lint typecheck test integration-test coordination-test python-build build verify
+	format lint typecheck test integration-test workbench-llm-qualification coordination-test python-build build verify
 
 install:
 	uv sync --locked --all-packages --all-groups
@@ -114,6 +114,13 @@ integration-test:
 		{ echo "Isolated MinIO endpoint and test keys are required" >&2; exit 2; }
 	./scripts/dev-env/minio-test-service.sh
 	uv run pytest -m integration tests/integration -q
+
+workbench-llm-qualification:
+	@test -n "$$SPEECHNEXUS_WORKBENCH_TEST_DSN" && test -n "$$SPEECHNEXUS_TEST_LLM_ENDPOINT" && test -n "$$SPEECHNEXUS_TEST_LLM_MODEL" || \
+		{ echo "An isolated Workbench PG and an approved real intranet LLM endpoint/model are required" >&2; exit 2; }
+	pnpm build
+	uv run pytest -m qualification tests/integration/test_workbench_minutes_live.py \
+		tests/integration/test_workbench_real_runtime_minutes_browser.py -q
 
 coordination-test:
 	@test -n "$$SPEECHNEXUS_TEST_DATABASE_URL" && test -n "$$SPEECHNEXUS_TEST_MYSQL_URL" || \

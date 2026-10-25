@@ -1,0 +1,23 @@
+.workspace-read {
+  overflow-wrap: anywhere;
+}
+.workspace-read ul {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--nexus-space-3);
+}
+.workspace-read li {
+  display: grid;
+  gap: var(--nexus-space-2);
+  border-bottom: 1px solid var(--line);
+  padding-block: var(--nexus-space-3);
+}
+.workspace-read dl {
+  display: grid;
+  grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
+  gap: var(--nexus-space-2);
+}
+.workspace-read dd {
+  margin: 0;
+}

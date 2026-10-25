@@ -10,7 +10,7 @@
 
 SpeechNexus 面向希望在自有 Linux 环境中部署语音能力的团队，围绕 **语音服务 API、AdminUI 和个人语音工作台**组织产品。它的目标是把语音识别、语音合成、音色创作和日常语音任务连接起来：开发者接入 API，使用者在浏览器中完成任务，维护者管理服务与资源。
 
-> **项目处于早期开发阶段。** 当前可启动 AdminUI 与工作台界面预览，并调用服务健康检查；转写、合成、音色创作和工作台业务尚未开放。下文介绍规划中的产品能力，真实模型与生产部署仍待验证。
+> **项目处于早期开发阶段。** 当前 AdminUI 工作空间读取与任务中心和工作台文件转写、文本配音页面已接入公开 API 消费，可调用服务健康与配置后的 Asset 接口；真实语音执行、模型质量和完整工作台业务仍待联调。下文介绍规划中的产品能力，真实模型与生产部署仍待验证。
 
 ## 产品定位
 
@@ -49,7 +49,25 @@ SpeechNexus 希望服务于三类需求：
 
 当前提供 `/healthz`、`/readyz`，以及配置后可用的 Asset 上传、元数据、内容下载和共享 Workspace GET/游标列表接口；首批检查实际 UTF-8 文本，音频检查待 B03 接入，另有显式独立 writer 配置后可用的[预设草稿 POST / 固定 revision GET](docs/architecture/profile-drafts.md)，以及独立 writer 的[模型绑定草稿 POST / 固定 GET](docs/architecture/model-binding-drafts.md)，均支持原键重放与未知结果区分；显式四表 writer 另支持[绑定默认值声明与固定快照 GET](docs/architecture/binding-defaults-producer.md)。发布、激活与默认选择仍待实施。其他语音与工作台路由继续实施。新资产默认保留 7 天，可由部署配置或上传时显式 TTL 覆盖；已有资产到期时间不随默认值变化。调用协议、兼容范围和示例见[语音接口设计](docs/architecture/speech-api.md)与[OpenAI 兼容与增强边界](docs/architecture/openai-compatibility.md)，机器契约见[contracts](contracts/README.md)。
 
-契约修复补全了规范执行命令、同步幂等恢复、严格 receipt 与数据删除生命周期；范围及升级边界见 [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。这些业务协议尚未实现为运行时路由。
+[工作台 C1 HTTP 单元](docs/plans/2026-10-24-team-c-c1-management-handoff.md)提供独立注入式工厂，覆盖项目/稿件版本、列表分页、配置状态及项目/稿件的版本化删除；已通过真实回环 HTTP 和隔离 PostgreSQL 验证。共享生产组合根、迁移、工作台页面及完整语音业务仍待集成。
+
+[项目与稿件工作台](docs/plans/2026-10-24-team-c-c1-editor-handoff.md)已提供正式页面消费者：项目/稿件创建与分页、历史版本校对、本标签页草稿和原键恢复、显式冲突处理。Web门禁及生产bundle的Chromium合成HTTP流程通过；真实生产装配与完整语音流程仍待交付。
+
+[Meeting/Minutes HTTP](docs/plans/2026-10-24-team-c-meeting-http-handoff.md)已在 C 自有工厂接通五项公开操作：持久会议记录、稿件原子封存、固定来源纪要入队/查询及原键恢复；删除预检与清理包含会议依赖。实际配置后工厂覆盖18项，未配置仍13项。真实 loopback/隔离 PG 使用合成内容与 LLM；实时采集、音频保存、实际 LLM 和共享生产装配仍待完成。
+
+[会议记录与纪要工作台](docs/plans/2026-10-24-team-c-meeting-ui-handoff.md)已接正式页面：项目/稿件选择、创建和按编号打开、精确校对封存、批准模板/模型发现、纪要状态与文本，以及本标签页草稿和原键恢复。生产 bundle 的真实 Chromium 连接 C HTTP 和隔离 PostgreSQL，验证了回复丢失、LLM 关闭后重放、过期隐藏和删除后草稿保留；LLM 使用 fake，不代表真实模型、设备或生产部署资格。
+
+[删除与恢复工作台](docs/plans/2026-10-24-team-c-deletion-ui-handoff.md)提供项目/稿件的普通与级联预检、完整范围确认、原键恢复和当前清理状态。生产bundle的Chromium已连接真实C HTTP/隔离PG验证回执丢失、存储屏障及物理清理；完整独立对象图、备份恢复与共享生产装配仍待完成，恢复不表示撤销删除。
+
+[实时字幕消费者](docs/plans/2026-10-24-team-c-realtime-asr-handoff.md)提供部署引用、显式准入/麦克风、credit有界输入、预览与最终正文/整体执行分层、原键和最终正文草稿恢复，以及断线缺口与清理查询。生产bundle Chromium已连接合成HTTP/WS和合成麦克风验证；公开生产实时服务、真实模型/设备、双工、会议持久接线及完整资格仍待完成，浏览器不保存PCM。
+
+[实时配音消费者](docs/plans/2026-10-24-team-c-realtime-tts-handoff.md)补充固定引用、文本追加/冻结/结束、有界PCM播放及独立生成/网络/渲染水位。生产bundle Chromium合成REST/WS与实际AudioWorklet已有验证；真实TTS服务、模型/物理设备和双工资格仍待联调。
+
+[音色创建任务入口](docs/plans/2026-10-24-team-c-voice-create-handoff.md)提供设计/样本克隆分开输入、已有参考素材的用途确认、持久Job和原键恢复；生产bundle Chromium使用合成公开HTTP验证。候选试听、复用校验、显式发布与真实声音创作尚待接入，创建Job不等于发布可复用声音。
+
+[独立工作台服务入口](docs/plans/2026-10-24-team-c-runtime-root-handoff.md)已装配真实 PostgreSQL 项目/稿件、版本化删除与会议保存/封存。显式环境配置及非 owner 运行角色通过只读启动检查后才接受请求；运行时不执行 DDL，LLM 关闭，无生产 fake。owner-only fresh schema 基线仍由 A 协调迁移顺序；对象区、清理/LLM/export worker、公开语音导入和完整生产部署尚待接入。
+
+契约修复补全了规范执行命令、同步幂等恢复、严格 receipt 与数据删除生命周期；范围及升级边界见 [ADR 0005](docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md)。这些业务协议尚未全部接入共享生产运行时。
 
 集群支持保持完整；[ADR 0006](docs/decisions/0006-cluster-coordination-and-storage-portability.md)确定不采用 etcd、以受控应用事务降低数据库绑定，PostgreSQL 为唯一正式交付数据库，MySQL/InnoDB 仅作关键协调验证。已交付[精简 DDL、应用事务方案与契约](docs/architecture/coordination-transactions.md)，共享测试在真实 PG/InnoDB 上验证协调原型；生产业务接入和完整集群故障资格仍待完成，进度见[重构计划](docs/plans/2026-10-23-cluster-coordination-refactor.md)。
 
@@ -118,11 +136,11 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -
 
 启动后访问：
 
-| 入口           | 地址                            | 当前可体验内容               |
-| -------------- | ------------------------------- | ---------------------------- |
-| AdminUI        | <http://127.0.0.1:8080>         | 管理端界面预览与能力状态说明 |
-| 个人语音工作台 | <http://127.0.0.1:8081>         | 工作台界面预览与任务范围说明 |
-| 语音服务       | <http://127.0.0.1:8000/healthz> | 服务存活检查                 |
+| 入口           | 地址                            | 当前可体验内容                                   |
+| -------------- | ------------------------------- | ------------------------------------------------ |
+| AdminUI        | <http://127.0.0.1:8080>         | 管理端界面预览与能力状态说明                     |
+| 个人语音工作台 | <http://127.0.0.1:8081>         | 文件转写与配音、恢复、结果下载（真实服务待联调） |
+| 语音服务       | <http://127.0.0.1:8000/healthz> | 服务存活检查                                     |
 
 当前启动过程不加载语音模型。可进一步检查基础依赖是否就绪：
 

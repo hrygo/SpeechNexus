@@ -289,7 +289,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get teleprompter state */
+    /**
+     * Get teleprompter state
+     * @description The state is scoped to one project. A 404 means the project is unknown or no
+     *     state has been saved yet; a missing state is not position zero and must not
+     *     be reported as a successful empty state.
+     */
     get: operations["getTeleprompterState"];
     /**
      * Update teleprompter position and manual takeover
@@ -311,7 +316,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * List project audiobooks
+     * @description Audiobooks are listed newest first. Reading order inside a book is carried
+     *     by explicit ordinals, not by this listing order.
+     */
+    get: operations["listBooks"];
     put?: never;
     /** Create an audiobook project */
     post: operations["createBook"];
@@ -345,7 +355,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * List book chapters
+     * @description Chapters are listed newest first. Reading order is carried by the explicit
+     *     chapter ordinal, not by this listing order.
+     */
+    get: operations["listChapters"];
     put?: never;
     /** Create a chapter */
     post: operations["createChapter"];
@@ -379,13 +394,21 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * List chapter render units
+     * @description Render units are listed newest first; the explicit unit ordinal carries
+     *     the position inside the chapter's render plan.
+     */
+    get: operations["listRenderUnits"];
     put?: never;
     /**
      * Create a fixed render unit
      * @description Pins text, voice, pronunciation, model, and profile revisions. The
      *     speech base only receives a bounded text unit Job; the workbench owns
      *     chapter and book composition.
+     *     This legacy version cannot express the required model binding. The
+     *     production boundary returns 503 workbench_unavailable without writes;
+     *     use createRenderUnitV2 with the caller-selected binding.
      */
     post: operations["createRenderUnit"];
     delete?: never;
@@ -650,6 +673,137 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/workbench/voices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List published voices visible to the deployment
+     * @description A read-through of the speech base's authoritative published voice catalogue.
+     *     Identity, revision number, status, source type and formats are the base's values
+     *     reported verbatim: the workbench neither renumbers a revision nor re-derives a
+     *     status, and it never designs, clones, validates, publishes or retires a voice on
+     *     the base's behalf. The cursor is the base's own opaque value and must be sent back
+     *     unchanged, so a workbench listing cursor is never accepted here.
+     */
+    get: operations["listVoices"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workbench/voices/{voice_id}/revisions/{revision}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get one immutable published voice revision
+     * @description Reports one published revision exactly as the base holds it, including the model
+     *     binding the base pinned for it. An unknown, unpublished or discarded revision is
+     *     not found; the workbench never serves a draft as if it were published.
+     */
+    get: operations["getVoiceRevision"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Report workbench feature availability */
+    get: operations["getWorkbenchStatusV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/chapters/{chapter_id}/render-units": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List chapter render units
+     * @description Render units are listed newest first; the explicit unit ordinal carries
+     *     the position inside the chapter's render plan.
+     */
+    get: operations["listRenderUnitsV2"];
+    put?: never;
+    /**
+     * Create a fixed render unit
+     * @description Pins text, voice, pronunciation, model, and profile revisions. The
+     *     speech base only receives a bounded text unit Job; the workbench owns
+     *     chapter and book composition.
+     */
+    post: operations["createRenderUnitV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v2/workbench/render-units/{unit_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a render unit */
+    get: operations["getRenderUnitV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update render-unit text or casting
+     * @description A changed text, voice, pronunciation, model, or profile creates a new
+     *     unit revision and marks dependent output stale. Unchanged units remain
+     *     reusable.
+     */
+    patch: operations["updateRenderUnitV2"];
+    trace?: never;
+  };
+  "/v2/workbench/render-units/{unit_id}/generations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit a speech Job for a render unit */
+    post: operations["generateRenderUnitV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -717,6 +871,27 @@ export interface components {
       /** @constant */
       object: "nexus.list";
       data: components["schemas"]["Project"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    RenderUnitList: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["RenderUnit"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    ChapterList: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["Chapter"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    BookList: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["Book"][];
       has_more: boolean;
       next_cursor: string | null;
     };
@@ -837,6 +1012,8 @@ export interface components {
     } & (unknown & unknown & unknown & unknown);
     MinutesCreateRequest: {
       template_revision: components["schemas"]["Revision"];
+      /** @description When supplied, a new intent requires this exact Meeting sealed revision; otherwise llm_source_changed. Accepted same-key same-body intents replay before current source/profile checks. Omission preserves legacy behavior. */
+      expected_source_revision?: components["schemas"]["Revision"];
       llm_model?: string;
     };
     AssistantTurn: {
@@ -1222,6 +1399,116 @@ export interface components {
     ExportArtifactPublishedEventData: {
       artifact: components["schemas"]["ExportArtifact"];
     };
+    VoiceList: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["VoiceSummary"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    VoiceSummary: {
+      voice_id: components["schemas"]["Identifier"];
+      revision: components["schemas"]["Revision"];
+      display_name: string;
+      /** @enum {string} */
+      source_type: "designed" | "cloned" | "builtin";
+      /** @enum {string} */
+      status: "published" | "retired" | "disabled";
+      languages: string[];
+      audio_formats: string[];
+    };
+    VoiceRevision: {
+      voice_id: components["schemas"]["Identifier"];
+      revision: components["schemas"]["Revision"];
+      display_name: string;
+      /** @enum {string} */
+      status: "published" | "retired" | "disabled";
+      languages: string[];
+      audio_formats: string[];
+      model_binding: components["schemas"]["ResourceReference"];
+      /** Format: date-time */
+      published_at: string;
+      /** Format: date-time */
+      retired_at: string | null;
+      disabled_reason: string | null;
+    };
+    WorkbenchStatusV2: {
+      /** @constant */
+      object: "nexus.workbench_status";
+      workbench_enabled: boolean;
+      /** @description True only when a deployment-approved intranet LLM is configured. */
+      llm_enabled: boolean;
+      /** @description Public approved Minutes profile. An absent or null profile disables new Minutes creation in consumers; never infer a template or model. Accepted intents remain replayable independently of the current profile. */
+      minutes_profile?: {
+        template_revision: components["schemas"]["Revision"];
+        llm_model: string;
+      } | null;
+      /**
+       * @description UI must localize this code as "all workspaces are shared within this deployment; no personal isolation is implied".
+       * @constant
+       */
+      shared_deployment_notice: "shared_deployment";
+      capabilities: {
+        /** @enum {string} */
+        name:
+          "transcription" | "meeting_minutes" | "assistant" | "teleprompter" | "audiobook_export";
+        /** @enum {string} */
+        status: "available" | "disabled" | "unavailable";
+      }[];
+    } & unknown;
+    RenderUnitV2: {
+      model_binding: components["schemas"]["ResourceReference"];
+      id: components["schemas"]["Identifier"];
+      /** @constant */
+      object: "nexus.render_unit";
+      chapter_id: components["schemas"]["Identifier"];
+      ordinal: number;
+      revision: components["schemas"]["Revision"];
+      text: string;
+      voice: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"] | null;
+      model: string;
+      profile?: components["schemas"]["ResourceReference"] | null;
+      /** @enum {string} */
+      status: "pending" | "generating" | "ready" | "stale" | "failed";
+      saved_asset_id?: components["schemas"]["Identifier"] | null;
+      speech_job_id?: components["schemas"]["Identifier"] | null;
+      source_artifact_id?: components["schemas"]["Identifier"] | null;
+      source_receipt_id?: components["schemas"]["Identifier"] | null;
+      /** Format: date-time */
+      updated_at: string;
+    } & (unknown & unknown & unknown & unknown & unknown);
+    RenderUnitCreateRequestV2: {
+      model_binding: components["schemas"]["ResourceReference"];
+      ordinal: number;
+      text: string;
+      voice: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"];
+      model: string;
+      profile?: components["schemas"]["ResourceReference"];
+    };
+    RenderUnitPatchV2: {
+      model_binding?: components["schemas"]["ResourceReference"];
+      expected_revision: components["schemas"]["Revision"];
+      text?: string;
+      voice?: components["schemas"]["ResourceReference"];
+      pronunciation?: components["schemas"]["ResourceReference"] | null;
+      model?: string;
+      profile?: components["schemas"]["ResourceReference"] | null;
+    };
+    RenderUnitListV2: {
+      /** @constant */
+      object: "nexus.list";
+      data: components["schemas"]["RenderUnitV2"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    RenderUnitGenerationAcceptedV2: {
+      render_unit: components["schemas"]["RenderUnitV2"];
+      speech_job_id: components["schemas"]["Identifier"];
+      /** Format: date-time */
+      accepted_at: string;
+    };
     /** @enum {string} */
     ErrorType:
       | "invalid_request_error"
@@ -1500,6 +1787,42 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description Request body receive deadline exceeded before application dispatch. */
+    RequestTimeout: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Request body or referenced source exceeds the configured bounded intake. */
+    PayloadTooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description This operation requires application/json with UTF-8 encoding. */
+    UnsupportedMediaType: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /** @description Unexpected application or response validation failure; no automatic mutation retry. */
+    InternalServerError: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Shared service credential required or invalid. */
     Unauthorized: {
       headers: {
@@ -1583,6 +1906,11 @@ export interface components {
     SavedAssetIdPath: components["schemas"]["Identifier"];
     ExportIdPath: components["schemas"]["Identifier"];
     Range: string;
+    VoiceIdPath: components["schemas"]["Identifier"];
+    /** @description Restricts the listing to voices carrying this language tag. */
+    LanguageQuery: string;
+    /** @description The speech base's own opaque catalogue cursor, returned unchanged. */
+    VoiceCursor: string;
   };
   requestBodies: never;
   headers: {
@@ -1618,7 +1946,12 @@ export interface operations {
           "application/json": components["schemas"]["WorkbenchStatus"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   listProjects: {
@@ -1646,7 +1979,11 @@ export interface operations {
           "application/json": components["schemas"]["ProjectList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -1678,8 +2015,14 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getProject: {
@@ -1705,8 +2048,13 @@ export interface operations {
           "application/json": components["schemas"]["Project"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   updateProject: {
@@ -1740,8 +2088,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   listTranscripts: {
@@ -1770,8 +2123,13 @@ export interface operations {
           "application/json": components["schemas"]["TranscriptList"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createTranscript: {
@@ -1805,8 +2163,14 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      410: components["responses"]["Gone"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getTranscript: {
@@ -1834,8 +2198,13 @@ export interface operations {
           "application/json": components["schemas"]["TranscriptView"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createTranscriptRevision: {
@@ -1869,8 +2238,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getTranscriptRevision: {
@@ -1897,8 +2271,13 @@ export interface operations {
           "application/json": components["schemas"]["TranscriptRevision"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createMeeting: {
@@ -1932,8 +2311,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getMeeting: {
@@ -1959,8 +2343,13 @@ export interface operations {
           "application/json": components["schemas"]["Meeting"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   sealMeeting: {
@@ -1994,8 +2383,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createMeetingMinutes: {
@@ -2029,8 +2423,12 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];
     };
   };
@@ -2058,8 +2456,13 @@ export interface operations {
           "application/json": components["schemas"]["MinutesJob"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createAssistantTurn: {
@@ -2188,8 +2591,13 @@ export interface operations {
           "application/json": components["schemas"]["TeleprompterState"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   updateTeleprompterState: {
@@ -2223,7 +2631,48 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listBooks: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        project_id: components["parameters"]["ProjectIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Audiobooks. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BookList"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createBook: {
@@ -2257,8 +2706,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getBook: {
@@ -2284,8 +2738,48 @@ export interface operations {
           "application/json": components["schemas"]["Book"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listChapters: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        book_id: components["parameters"]["BookIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Chapters. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChapterList"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createChapter: {
@@ -2319,8 +2813,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getChapter: {
@@ -2346,8 +2845,48 @@ export interface operations {
           "application/json": components["schemas"]["Chapter"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listRenderUnits: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        chapter_id: components["parameters"]["ChapterIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Render units. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitList"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   createRenderUnit: {
@@ -2381,8 +2920,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   getRenderUnit: {
@@ -2408,8 +2952,13 @@ export interface operations {
           "application/json": components["schemas"]["RenderUnit"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   updateRenderUnit: {
@@ -2443,8 +2992,13 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   generateRenderUnit: {
@@ -2506,8 +3060,13 @@ export interface operations {
           "application/json": components["schemas"]["SavedAsset"];
         };
       };
+      400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   saveProjectAsset: {
@@ -2541,9 +3100,14 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
       409: components["responses"]["Conflict"];
       410: components["responses"]["Gone"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   downloadSavedAsset: {
@@ -2762,7 +3326,9 @@ export interface operations {
   };
   workbenchCreateDeletionPlan: {
     parameters: {
-      query?: never;
+      query?: {
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+      };
       header: {
         "Idempotency-Key": string;
       };
@@ -2784,6 +3350,7 @@ export interface operations {
           "application/json": components["schemas"]["DeletionPlan"];
         };
       };
+      400: components["responses"]["BadRequest"];
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
@@ -2793,6 +3360,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      408: components["responses"]["RequestTimeout"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -2802,6 +3370,8 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
@@ -2811,11 +3381,15 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   workbenchCreateDeletion: {
     parameters: {
-      query?: never;
+      query?: {
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+      };
       header: {
         "Idempotency-Key": string;
       };
@@ -2837,6 +3411,7 @@ export interface operations {
           "application/json": components["schemas"]["Deletion"];
         };
       };
+      400: components["responses"]["BadRequest"];
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
@@ -2846,6 +3421,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      408: components["responses"]["RequestTimeout"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -2855,6 +3431,8 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
@@ -2864,11 +3442,15 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
     };
   };
   workbenchGetDeletion: {
     parameters: {
-      query?: never;
+      query?: {
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+      };
       header?: never;
       path: {
         deletion_id: components["schemas"]["Identifier"];
@@ -2886,6 +3468,7 @@ export interface operations {
           "application/json": components["schemas"]["Deletion"];
         };
       };
+      400: components["responses"]["BadRequest"];
       /** @description Target, plan or deletion resource not found. */
       404: {
         headers: {
@@ -2895,6 +3478,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      408: components["responses"]["RequestTimeout"];
       /** @description Dependency, revision, plan expiry or idempotency conflict. */
       409: {
         headers: {
@@ -2904,6 +3488,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      413: components["responses"]["PayloadTooLarge"];
       /** @description Invalid target owner or confirmation scope. */
       422: {
         headers: {
@@ -2913,6 +3498,287 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listVoices: {
+    parameters: {
+      query?: {
+        workspace_id?: components["parameters"]["WorkspaceIdQuery"];
+        /** @description Restricts the listing to voices carrying this language tag. */
+        language?: components["parameters"]["LanguageQuery"];
+        limit?: components["parameters"]["Limit"];
+        /** @description The speech base's own opaque catalogue cursor, returned unchanged. */
+        after?: components["parameters"]["VoiceCursor"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Published voice revisions. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceList"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestTimeout"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getVoiceRevision: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        voice_id: components["parameters"]["VoiceIdPath"];
+        revision: components["parameters"]["RevisionPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable published voice revision. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceRevision"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getWorkbenchStatusV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workbench status. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkbenchStatusV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listRenderUnitsV2: {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        chapter_id: components["parameters"]["ChapterIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Render units. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitListV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  createRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        chapter_id: components["parameters"]["ChapterIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitCreateRequestV2"];
+      };
+    };
+    responses: {
+      /** @description Render unit created. */
+      201: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  getRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Render unit. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  updateRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitPatchV2"];
+      };
+    };
+    responses: {
+      /** @description Updated render unit. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      409: components["responses"]["Conflict"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  generateRenderUnitV2: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderUnitGenerationRequest"];
+      };
+    };
+    responses: {
+      /** @description Speech Job submitted. */
+      202: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitGenerationAcceptedV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+      422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["TooManyRequests"];
     };
   };
 }

@@ -381,8 +381,10 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
             text=True,
             check=True,
         )
-        assert result.stdout in ("node_contracts=true\n", "node_contracts=false\n")
-        if result.stdout == "node_contracts=true\n":
+        values = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        assert set(values) == {"node_contracts", "browser"}
+        assert set(values.values()) <= {"true", "false"}
+        if values["node_contracts"] == "true":
             selected.append(index)
     assert selected == sorted({index for index in range(6) if GATE.partition(expected, index, 6)})
     assert 3 in selected
@@ -399,15 +401,143 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
     deps = next(
         step for step in steps if step["name"] == "Install locked contract runtime dependencies"
     )
-    for step in (node, deps):
-        assert step["if"] == "steps.integration_tools.outputs.node_contracts == 'true'"
+    activate = next(
+        step for step in steps if step["name"] == "Activate pnpm for integration consumers"
+    )
+    for step in (node, activate):
+        assert step["if"] == (
+            "steps.integration_tools.outputs.node_contracts == 'true' || "
+            "steps.integration_tools.outputs.browser == 'true'"
+        )
+    assert deps["if"] == (
+        "steps.integration_tools.outputs.node_contracts == 'true' && "
+        "steps.integration_tools.outputs.browser != 'true'"
+    )
+    assert "uv run python scripts/dev-env/integration-shards.py requirements" in choose["run"]
     assert node["with"]["node-version-file"] == ".nvmrc"
-    assert "pnpm@${PNPM_VERSION}" in deps["run"]
+    assert "pnpm@${PNPM_VERSION}" in activate["run"]
     assert (
         "--filter @speechnexus/contracts --prod install --frozen-lockfile --ignore-scripts"
         in deps["run"]
     )
-    assert steps.index(choose) < steps.index(node) < steps.index(deps)
+    assert steps.index(choose) < steps.index(node) < steps.index(activate) < steps.index(deps)
     assert steps.index(deps) < next(
         i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
     )
+
+
+def test_browser_consumers_get_locked_web_build_and_chromium_before_execution() -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
+        "integration_shards"
+    ]["steps"]
+    dependencies = next(
+        step
+        for step in steps
+        if step["name"] == "Install locked Web dependencies for browser consumers"
+    )
+    build = next(
+        step for step in steps if step["name"] == "Build actual Web bundles for browser consumers"
+    )
+    chromium = next(
+        step for step in steps if step["name"] == "Install Chromium for browser consumers"
+    )
+    for step in (dependencies, build, chromium):
+        assert step["if"] == "steps.integration_tools.outputs.browser == 'true'"
+        assert "continue-on-error" not in step
+    assert dependencies["run"] == "pnpm install --frozen-lockfile"
+    assert build["run"] == "pnpm build"
+    assert chromium["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    run = next(
+        i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
+    )
+    assert steps.index(dependencies) < steps.index(build) < steps.index(chromium) < run
+
+
+def test_requirement_collection_routes_real_parameterized_browser_nodeids(tmp_path: Path) -> None:
+    root, target, env = temp_project(tmp_path)
+    (root / "tests/integration/test_example_browser.py").write_text(
+        "import pytest\npytestmark = pytest.mark.integration\n"
+        '@pytest.mark.parametrize("dialect", ["postgresql", "mysql"])\n'
+        "def test_browser(dialect): pass\n"
+    )
+    nodeids = [
+        *(f"tests/integration/test_primary.py::test_primary[{i}]" for i in range(24)),
+        *(
+            f"tests/integration/test_gateway_submit_ledger.py::test_pg_only[{db}]"
+            for db in ("postgresql", "mysql")
+        ),
+        *(
+            f"tests/integration/test_example_browser.py::test_browser[{db}]"
+            for db in ("postgresql", "mysql")
+        ),
+    ]
+    for index in range(6):
+        result = subprocess.run(
+            [sys.executable, str(target), "requirements", "--index", str(index), "--count", "6"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        expected = GATE.tool_requirements(nodeids, index, 6)
+        assert result.stdout == "".join(
+            f"{name}={str(value).lower()}\n" for name, value in expected.items()
+        )
+
+
+@pytest.mark.parametrize("failure", ["collection-error", "partial-addopts"])
+def test_requirement_collection_cannot_claim_missing_dependencies_are_unneeded(
+    tmp_path: Path, failure: str
+) -> None:
+    root, target, env = temp_project(tmp_path)
+    if failure == "collection-error":
+        (root / "tests/integration/test_broken.py").write_text("def broken(\n")
+    else:
+        env["PYTEST_ADDOPTS"] = "-k nonexistent"
+    result = subprocess.run(
+        [sys.executable, str(target), "requirements", "--index", "0", "--count", "6"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+
+
+def test_every_shard_provisions_private_workbench_pg_without_replacing_dual_database_env() -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
+        "integration_shards"
+    ]["steps"]
+    run = next(step for step in steps if "Run a complete integration partition" in step["name"])
+    assert "uv run python scripts/dev-env/workbench-pg-probe.py" in run["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin" in run["run"]
+    assert '--integration-shard "${{ matrix.shard }}" --shard-count 6' in run["run"]
+    assert '--shard-report "$RUNNER_TEMP/integration-shard-${{ matrix.shard }}.json"' in run["run"]
+    assert '--output "$RUNNER_TEMP/workbench-pg-shard-${{ matrix.shard }}.json"' in run["run"]
+    assert "--collect-only" not in run["run"]
+    assert "if" not in run and "continue-on-error" not in run
+    assert run["env"] == {
+        "SPEECHNEXUS_TEST_DATABASE_URL": (
+            "postgresql://speechnexus:speechnexus_test@127.0.0.1:5432/speechnexus_test"
+        ),
+        "SPEECHNEXUS_TEST_MYSQL_URL": "mysql://root:speechnexus_test@127.0.0.1:3306/",
+        "SPEECHNEXUS_TEST_MINIO_ENDPOINT": "http://127.0.0.1:59000",
+        "SPEECHNEXUS_TEST_MINIO_ACCESS_KEY": "speechnexus_test",
+        "SPEECHNEXUS_TEST_MINIO_SECRET_KEY": "synthetic_asset_test_secret",
+    }
+    pg = next(step for step in steps if "private integration cluster" in step["name"])
+    assert "if" not in pg and "continue-on-error" not in pg
+    assert "test -x /usr/lib/postgresql/16/bin/initdb" in pg["run"]
+    assert "--no-install-recommends --yes postgresql-16" in pg["run"]
+    assert steps.index(pg) < steps.index(run)
+    evidence = next(
+        step for step in steps if step["name"] == "Preserve integration partition evidence"
+    )
+    assert evidence["with"]["path"].splitlines() == [
+        "${{ runner.temp }}/integration-shard-${{ matrix.shard }}.json",
+        "${{ runner.temp }}/workbench-pg-shard-${{ matrix.shard }}.json",
+    ]
+    assert evidence["with"]["if-no-files-found"] == "error"

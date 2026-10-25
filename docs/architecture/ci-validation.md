@@ -63,6 +63,33 @@ node scripts/dev-env/validate-design-tokens.mjs
 
 依据（2026-10-25）：[CSS Variables 的引用与 fallback 语义](https://www.w3.org/TR/css-variables-1/)、[DTCG 2025.10 格式与别名要求](https://www.designtokens.org/tr/2025.10/format/)。本门禁对未声明 fallback 的限制是项目策略，比浏览器 fallback 语义更严格。
 
+## Web 无障碍与颜色对比度
+
+Web／全量路由在现有受保护的 Web 作业中，构建后运行 `pnpm test:a11y`。使用锁定的 `@axe-core/playwright` 与现有 Playwright，只安装 Chromium headless shell；两个预览服务绑定 `127.0.0.1`，严格检查端口，不复用其他服务，不启动后端或模型。浏览器请求仅允许这两个回环端口。文档路由不安装浏览器。
+
+| 覆盖 | 门禁 |
+| --- | --- |
+| 两个实际构建入口 | 系统浅/深色、显式浅色覆盖深色系统、显式深色覆盖浅色系统，各测 320px／1280px；页面运行 WCAG 2.0/2.1/2.2 A/AA 适用规则与 axe best-practice，所有 violation 失败 |
+| 主题语义文字 | 每个页面情景检查 21 对前景／背景：主、次、弱化与强调文字 × 四种表面，三个能力状态，以及强调／警示色对。透明值在明确的 page 底色上合成，普通文本以 4.5:1 检查；每个探针必须产生明确通过证据，不允许 incomplete 或缺失 Token |
+| 键盘与焦点 | 首次 Tab 到可见跳转链接，Enter 后主内容真正获得焦点；焦点环可见、至少 2px，对三个基础表面达到 3:1。该项目策略不等于完整证明 WCAG 焦点区域／遮挡成功条件 |
+| 用户偏好 | 两入口分别在浅/深色下验证增强对比度、强制颜色和减少动效；状态动效最长 5 秒，减少动效时无无限循环；强制颜色测 UA 实际调整后的颜色 |
+| 门禁自证 | 故意注入无名称按钮、低对比度文字、失效跳转目标、隐藏焦点环和未审查的渐变文字，证明对应保护实际失败；亮度公式以已知色对和 4.5 临界值回归 |
+
+axe 无法自动判定原有渐变／玻璃背景上的部分文字。仅对测试中明确列出的现有位置，且原因限定为背景图像/渐变、实际前景与指定语义 Token 一致时，保留 `incomplete` 供人工复核；新增位置、前景漂移或其他无法判定原因均失败。独立色对探针覆盖固色表面及透明合成，但不替代真实渐变每个像素的对比度证明。不得把这些项目计为通过或扩展为整类忽略。
+
+成功和失败均上传 `web-accessibility-evidence`，保留 7 天；包含 HTML/JSON、逐情景 axe 与语义色对证据，桌面浅/深色截图，失败时额外保留截图和 trace。报告仅含合成页面。维护测试时同时维护其覆盖声明，不能使用全局关闭规则、自动重试或既有 violation 基线掩盖回归。
+
+本机复现：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm exec playwright install --only-shell chromium
+pnpm test:a11y
+```
+
+Linux CI 使用 `--with-deps` 安装浏览器系统依赖。本机须有对应浏览器前置条件；失败不改用 jsdom 伪装浏览器通过。自动门禁覆盖当前工程外壳，不能代替屏幕阅读器、人工键盘走查、缩放/复杂遮挡、所有非文本图形或后续业务流程验收。规范核验日期为 2026-10-25：[WCAG 2.2](https://www.w3.org/TR/WCAG22/)、[文本对比度](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)、[Playwright 自动与人工测试边界](https://playwright.dev/docs/accessibility-testing)。
+
 ## 轻量路径实测（2026-10-25）
 
 | 指标 | 原文档 PR | 新文档 PR |

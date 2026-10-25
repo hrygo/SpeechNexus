@@ -2,7 +2,8 @@
 # SpeechNexus 三团队整体实施跟踪
 
 总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本次深度复盘：2026-10-25（Asia/Shanghai）。
-冻结主干：360bb81fa173e9c235abafcb2c10cb2ecc47380b；issue正文、唯一状态标签和实际AC证据为事实来源。
+深度复盘证据快照：360bb81fa173e9c235abafcb2c10cb2ecc47380b；本单元集成基线：33233c8a42b284b627e891b32b1b28faeafb30e7。
+issue正文、唯一状态标签和实际AC证据为事实来源；旧快照测试不重新归因至新提交。
 原规划38条；新增#142阶段任务、#149交接项单列，合计40条非PR issue，不改变25主包/6 Gate分母。
 
 **工作包完整验收：0/25；Gate放行：0/6。** 21个主包in-progress，4个planned（A05/A06/B05/B07）。
@@ -38,10 +39,15 @@ C方法/路径清点和等价消费者与A runtime缺口分别核对，不能再
 A00在当前main仍缺四项runtime绑定：generateRenderUnit仅#141候选；
 downloadSavedAsset/downloadBookExport二进制与streamExportEvents SSE仍待，不据静态类型或单条样例消项。
 
+A02-INSPECT-01正在独立分支交付[私有音频检查执行边界](../architecture/audio-asset-inspection.md)：
+真实Linux隔离/资源上限、禁止派生、取消/超时kill与reap、未知停止保留原槽位；尚未装配公开上传或真实媒体。
+共享媒体制品/最小镜像及实际HTTP/PG/MinIO验收仍待，7天TTL/原键/固定版本不变，不据进程测试勾选A02音频AC。
+B的#152是未合入的结果回执候选，其A迁移/权限方案接收复核另待确认；本单元不执行其迁移或改变权限。
+
 #141保持未合并，head b840ea2d2f6f4b538cafbfe2355ac464a5cc7808，受检base7b042d5。
 CI40159242336的14项成功/3972单元/81.64%/1243集成通过+22既有跳过，仅适用于该旧组合。
 精确head复审通过，但管理端合并被自动安全审核拒绝，等待用户明确确认；本轮不重试、不改变其head或夹带实现。
-当前main360的组合尚未验证；若批准，仍须正常同步、审查新增量、取得新head必需检查，再由管理端处理。
+当前main33233c8的组合尚未验证；若批准，仍须正常同步、审查新增量、取得新head必需检查，再由管理端处理。
 
 文件ASR路线：真实ready音频 + 固定权威配置 → 完整业务Job/原子准入 → 唯一真实外发 →
 B持久结果回执与可信停止 → A发布/下载 → SDK/C消费。

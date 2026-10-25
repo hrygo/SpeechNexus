@@ -17,6 +17,11 @@ content creates a durable `rejected` fact and no object. ASR/voice inputs requir
 a real `AssetInspector`; the default inspector reports unavailable and creates
 neither fake audio facts nor a validation task without a consumer.
 
+The private [audio inspection process boundary](audio-asset-inspection.md) adds
+real Linux supervision and resource-limit tests, but is not installed in
+`AssetRuntime`. A shared media artifact/image, complete decode/result validation
+and actual HTTP/PG/MinIO acceptance remain prerequisites for audio `ready`.
+
 An optional idempotency key is scoped by the authoritative deployment/schema,
 asset operation and workspace. Its stored SHA-256 identifies the key without
 persisting the raw value. The request fingerprint fixes purpose, actual byte

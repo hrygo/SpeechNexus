@@ -94,6 +94,14 @@ jobs:
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
           pnpm install --frozen-lockfile
 
+      - name: Install Linux inspection sandbox
+        # Only this job executes the real Linux inspection-process tests. The
+        # package installs its Ubuntu user-namespace profile; never relax host
+        # sysctls or fall back to unsandboxed workers when namespaces fail.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
+
       - name: Run tests with coverage
         run: uv run pytest -m "not integration" --cov --cov-report=term-missing
 

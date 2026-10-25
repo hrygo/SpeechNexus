@@ -38,7 +38,7 @@
   overflow-wrap: anywhere;
 }
 .books-problem {
-  color: var(--danger, inherit);
+  color: var(--warning);
   font-weight: 600;
 }
 

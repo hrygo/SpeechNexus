@@ -30,6 +30,10 @@ from speechnexus_backend.workbench.application.versions import WorkbenchVersions
 from speechnexus_backend.workbench.application.voices import WorkbenchVoices
 from speechnexus_backend.workbench.domain.minutes_tasks import MinutesTaskConflictError
 from speechnexus_backend.workbench.infrastructure.deletion_codec import plan_digest
+from speechnexus_backend.workbench.infrastructure.export_media_validation import (
+    ExportMediaValidator,
+    ExportValidationLimits,
+)
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
 from speechnexus_backend.workbench.infrastructure.openai_text_llm import (
     OpenAiTextLlm,
@@ -458,10 +462,22 @@ def create_runtime_app(
     minutes = MinutesTasks(PostgresMinutesTasks(versions), llm)
     recovery = _deletion_recovery(settings, objects)
     # Export production stays inert until the deployment both asks for it and supplies a
-    # producer: the queue, its claim and its publish path are the workbench's, the bytes
-    # come from the speech generation boundary.
+    # producer: workbench assembly consumes saved audio and never invokes inference.
     exports = PostgresExports(versions)
-    export_worker = ExportWorker(exports, objects, export_producer)
+    export_worker = ExportWorker(
+        exports,
+        objects,
+        export_producer,
+        ExportMediaValidator(
+            ExportValidationLimits(
+                max_output_bytes=settings.export_max_output_bytes,
+                max_unpacked_bytes=settings.export_max_unpacked_bytes,
+                max_archive_entries=settings.export_max_archive_entries,
+                max_audio_seconds=settings.export_max_audio_seconds,
+                timeout_seconds=settings.export_validation_timeout_seconds,
+            )
+        ),
+    )
     # Deployment-derived capability states, in the contract's canonical order:
     # "disabled" means this deployment deliberately does not offer it,
     # "unavailable" means it is asked for but a required dependency is missing, and

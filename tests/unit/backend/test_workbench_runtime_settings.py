@@ -21,6 +21,31 @@ def configuration(**changes: Any) -> WorkbenchSettings:
     )
 
 
+def test_export_validation_has_explicit_execution_limits() -> None:
+    settings = configuration()
+    assert settings.export_max_output_bytes == 256 * 1024**2
+    assert settings.export_max_unpacked_bytes == 512 * 1024**2
+    assert settings.export_max_archive_entries == 1024
+    assert settings.export_max_audio_seconds == 36000
+    assert settings.export_validation_timeout_seconds == 30
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("export_max_output_bytes", 0),
+        ("export_max_unpacked_bytes", -1),
+        ("export_max_archive_entries", 0),
+        ("export_max_audio_seconds", float("inf")),
+        ("export_validation_timeout_seconds", float("nan")),
+    ],
+)
+def test_export_validation_limits_refuse_unbounded_configuration(field: str, value: Any) -> None:
+    with pytest.raises(ValidationError) as caught:
+        configuration(**{field: value})
+    assert all(error["type"] != "extra_forbidden" for error in caught.value.errors())
+
+
 def test_runtime_requires_configuration_and_never_reads_an_implicit_dotenv(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

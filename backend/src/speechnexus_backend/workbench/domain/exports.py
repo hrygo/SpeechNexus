@@ -21,6 +21,7 @@ _STATUSES = frozenset(
     {"queued", "running", "cancelling", "succeeded", "failed", "cancelled", "expired"}
 )
 _FORMATS = frozenset({"wav", "mp3", "zip"})
+_MEDIA_TYPES = {"wav": "audio/wav", "mp3": "audio/mpeg", "zip": "application/zip"}
 _IN_FLIGHT = frozenset({"queued", "running"})
 _FINISHED = frozenset({"succeeded", "failed", "cancelled", "expired"})
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
@@ -137,6 +138,8 @@ class ExportJob:
         _count(self.progress_total, "export progress total", minimum=1)
         if self.progress_completed > self.progress_total:
             raise ValueError("export progress exceeds its total")
+        if self.status == "succeeded" and self.progress_completed != self.progress_total:
+            raise ValueError("successful export requires complete progress")
         created = export_time(self.created_at, "export created_at")
         updated = export_time(self.updated_at, "export updated_at")
         if updated < created:
@@ -151,6 +154,8 @@ class ExportJob:
                 raise ValueError("artifact must belong to its own export")
             if self.artifact.manifest_revision != self.manifest_revision:
                 raise ValueError("artifact must pin its export manifest revision")
+            if self.artifact.media_type != _MEDIA_TYPES[self.format]:
+                raise ValueError("artifact media type must match its export format")
 
     @property
     def finished(self) -> bool:
@@ -215,12 +220,12 @@ class ExportJob:
     def complete(self, *, artifact: ExportArtifact, now: datetime) -> Self:
         if self.status != "running":
             raise ExportStateConflictError
-        # Completing the selection means every requested item was produced.
+        if self.progress_completed != self.progress_total:
+            raise ValueError("cannot complete an export with incomplete progress")
         return replace(
             self,
             status="succeeded",
             artifact=artifact,
-            progress_completed=self.progress_total,
             updated_at=self._moment(now),
         )
 

@@ -83,6 +83,8 @@ SpeechNexus 希望服务于三类需求：
 
 [原命令与核验文件输入](docs/architecture/frozen-execution-inputs.md)提供持久完整命令的只读核验、原提交路径的命令桥和版本固定的 MinIO 输入。隔离双库/对象存储测试已将合成文件接到现有媒体与识别消费者；真实引擎派发、完整参数映射、停止证明和最终发布仍待装配。
 
+[原生 ASR 请求清理插件](deploy/engines/vllm-asr-lifecycle/README.md)通过固定 vLLM 的正式插件入口，将内部/子请求登记与在途提交保护接入原生 serving，处理取消和流式响应断开后的清理。它默认不启用，不产生 GPU 停止或资源释放证明；真实模型生命周期、网关事实消费者与完整执行闭环仍待验收。
+
 [Job 认领](docs/architecture/production-jobs.md#worker-认领与当前权威查询)已提供带版本和到期条件的 worker 认领与只读当前权威查询；重新认领不授予再次提交引擎的权限，完整 worker 循环和制品发布 fencing 继续实施。
 
 [资产发布存储单元](docs/architecture/production-assets.md)已提供真实文本校验、PG/版本化 MinIO 发布、原身份恢复和保留期删除账本；已接公开上传/下载与独立维护入口；音频检查依赖 B03，Artifact、Operation/receipt 等后续接入。
@@ -152,15 +154,15 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yaml down
 
 ## 文档
 
-| 我想了解                   | 阅读入口                                             |
-| -------------------------- | ---------------------------------------------------- |
-| 产品范围与完整工作流       | [产品设计](docs/speechnexus-product-architecture.md) |
-| API 兼容范围与规划调用方式 | [语音接口设计](docs/architecture/speech-api.md)      |
-| 部署、端口与环境配置       | [部署说明](deploy/README.md)                         |
-| 本机开发与测试             | [开发环境](docs/development-environment.md)          |
-| 架构与工程实现             | [技术方案](docs/architecture/technical-blueprint.md) |
-| 全部设计与决策记录         | [文档索引](docs/README.md)                           |
-| 集群架构与单机 MVP | [集群就绪与部署决策](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
+| 我想了解                   | 阅读入口                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| 产品范围与完整工作流       | [产品设计](docs/speechnexus-product-architecture.md)                                        |
+| API 兼容范围与规划调用方式 | [语音接口设计](docs/architecture/speech-api.md)                                             |
+| 部署、端口与环境配置       | [部署说明](deploy/README.md)                                                                |
+| 本机开发与测试             | [开发环境](docs/development-environment.md)                                                 |
+| 架构与工程实现             | [技术方案](docs/architecture/technical-blueprint.md)                                        |
+| 全部设计与决策记录         | [文档索引](docs/README.md)                                                                  |
+| 集群架构与单机 MVP         | [集群就绪与部署决策](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
 
 ## 参与贡献
 

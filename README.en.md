@@ -83,6 +83,8 @@ The [trusted node stop source (Chinese)](docs/architecture/trusted-node-stop.md)
 
 [Original commands and verified file inputs (Chinese)](docs/architecture/frozen-execution-inputs.md) provide read-only verification of persisted complete requests, a command bridge for the original submission path, and version-pinned MinIO inputs. Isolated database/object-store tests connect synthetic files to the existing media and recognition consumers; real engine dispatch, complete parameter mapping, stop proof and final publication still require assembly.
 
+[Native ASR request cleanup (Chinese)](deploy/engines/vllm-asr-lifecycle/README.md) uses the pinned vLLM plugin entry point to register internal/child requests, protect pending submissions, and clean up after cancellation or streaming response disconnects in native serving. It is disabled by default and produces no GPU stop or resource-release proof; real model lifecycle, gateway fact consumers and the complete execution path still require acceptance.
+
 [Job claims (Chinese)](docs/architecture/production-jobs.md#worker-认领与当前权威查询) provide version/expiry-guarded worker acquisition and read-only current-authority queries. Reclaiming does not authorize engine redispatch; worker loops and artifact publication fencing remain separate work.
 
 The [asset publication storage unit](docs/architecture/production-assets.md) provides actual text validation, PG/versioned MinIO publication, original-identity recovery and retention deletion ledgers. Public upload/download routes and an independent maintenance entry point are connected; audio inspection depends on B03, while Artifact and Operation/receipt remain pending.
@@ -152,14 +154,14 @@ See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implem
 
 ## Documentation
 
-| I want to learn about                | Start here                                                                |
-| ------------------------------------ | ------------------------------------------------------------------------- |
-| Product scope and complete workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md)      |
-| API compatibility and planned usage  | [Speech API design (Chinese)](docs/architecture/speech-api.md)            |
-| Deployment, ports, and configuration | [Deployment guide](deploy/README.md)                                      |
-| Native development and testing       | [Development environment (Chinese)](docs/development-environment.md)      |
-| Architecture and implementation      | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md) |
-| All designs and decisions            | [Documentation index (Chinese)](docs/README.md)                           |
+| I want to learn about                    | Start here                                                                                                           |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Product scope and complete workflows     | [Product design (Chinese)](docs/speechnexus-product-architecture.md)                                                 |
+| API compatibility and planned usage      | [Speech API design (Chinese)](docs/architecture/speech-api.md)                                                       |
+| Deployment, ports, and configuration     | [Deployment guide](deploy/README.md)                                                                                 |
+| Native development and testing           | [Development environment (Chinese)](docs/development-environment.md)                                                 |
+| Architecture and implementation          | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md)                                            |
+| All designs and decisions                | [Documentation index (Chinese)](docs/README.md)                                                                      |
 | Cluster architecture and single-node MVP | [Cluster-ready deployment decision (Chinese)](docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) |
 
 ## Contributing

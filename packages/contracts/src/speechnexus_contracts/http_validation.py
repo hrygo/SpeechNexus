@@ -88,7 +88,20 @@ def validate_http_response(profile: str, operation: str, status: int, value: Any
     if type(status) is not int or str(status) not in operation_metadata["responses"]:
         raise ContractValidationError("Invalid HTTP response")
     metadata = operation_metadata["responses"][str(status)]
-    normalized = _normalize(value, {"headers": metadata["headers"]}, "Invalid HTTP response")
+    if metadata.get("binary"):
+        if not isinstance(value, dict) or not isinstance(
+            value.get("body"), (bytes, bytearray, memoryview)
+        ):
+            raise ContractValidationError("Invalid HTTP response")
+        # OpenAPI binary is an octet representation, not JSON text. Validate a
+        # schema placeholder only after checking the native transport type;
+        # never copy, decode, iterate or mutate the caller's payload.
+        value_for_validation = {**value, "body": ""}
+    else:
+        value_for_validation = value
+    normalized = _normalize(
+        value_for_validation, {"headers": metadata["headers"]}, "Invalid HTTP response"
+    )
     validator = _validators(f"{profile}-http.schema.json")[metadata["schema"]]
     if not validator.is_valid(normalized):
         raise ContractValidationError("Invalid HTTP response")

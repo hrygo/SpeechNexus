@@ -312,14 +312,31 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("HTTP validation currently supports scalar string/integer parameters")
         return str(kind)
 
-    def body(container: dict[str, Any], envelope: dict[str, Any], *, required: bool) -> None:
+    def body(
+        container: dict[str, Any],
+        envelope: dict[str, Any],
+        *,
+        required: bool,
+        binary_response: bool = False,
+    ) -> str | None:
         content = container.get("content", {})
         if content:
-            if set(content) != {"application/json"}:
-                raise ValueError("Validated transport profiles currently support JSON bodies")
-            envelope["properties"]["body"] = rebase(content["application/json"]["schema"])
+            if set(content) == {"application/json"}:
+                media_type = "application/json"
+            elif (
+                binary_response
+                and set(content) == {"application/octet-stream"}
+                and content["application/octet-stream"]["schema"]
+                == {"type": "string", "format": "binary"}
+            ):
+                media_type = "application/octet-stream"
+            else:
+                raise ValueError("Unsupported validated HTTP body representation")
+            envelope["properties"]["body"] = rebase(content[media_type]["schema"])
             if container.get("required", required):
                 envelope["required"].append("body")
+            return media_type
+        return None
 
     definitions = rebase(document["components"].get("schemas", {}))
     operations: dict[str, Any] = {}
@@ -398,7 +415,7 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                     "properties": {"headers": headers},
                     "required": ["headers"] if headers["required"] else [],
                 }
-                body(response, envelope, required=True)
+                media_type = body(response, envelope, required=True, binary_response=True)
                 response_name = "HttpResponse_" + name + "_" + status
                 if response_name in definitions:
                     raise ValueError("HTTP envelope collides with a component")
@@ -407,7 +424,8 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                 metadata["responses"][status] = {
                     "schema": response_name,
                     "headers": header_types,
-                    "json": bool(response.get("content")),
+                    "json": media_type == "application/json",
+                    **({"binary": True} if media_type == "application/octet-stream" else {}),
                 }
             operations[name] = metadata
     return {

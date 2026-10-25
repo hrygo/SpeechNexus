@@ -1,0 +1,197 @@
+{
+  "description": "Synthetic octet arrays are test transport descriptors, not JSON wire bodies. Native adapters materialize bytes without decoding media.",
+  "examples": [
+    {
+      "id": "full",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "bytes"
+        },
+        "body": [0, 255, 1]
+      }
+    },
+    {
+      "id": "partial",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes 0-1/3"
+        },
+        "body": [0, 255]
+      }
+    },
+    {
+      "id": "source-content-range-optional",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": [0]
+      }
+    },
+    {
+      "id": "empty",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": []
+      }
+    },
+    {
+      "id": "wrong-range",
+      "operation": "downloadSavedAsset",
+      "status": 206,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Content-Range": "bytes */3"
+        },
+        "body": [0]
+      }
+    },
+    {
+      "id": "wrong-accept-ranges",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {
+          "Accept-Ranges": "none"
+        },
+        "body": [0]
+      }
+    },
+    {
+      "id": "json-is-not-octets",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "data": "synthetic"
+        }
+      }
+    },
+    {
+      "id": "text-is-not-native-binary",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": "synthetic"
+      }
+    },
+    {
+      "id": "missing-body",
+      "operation": "downloadSavedAsset",
+      "status": 200,
+      "body_kind": "missing",
+      "valid": false,
+      "value": {
+        "headers": {}
+      }
+    },
+    {
+      "id": "undeclared-created",
+      "operation": "downloadSavedAsset",
+      "status": 201,
+      "body_kind": "bytes",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": [0]
+      }
+    },
+    {
+      "id": "undeclared-range-error",
+      "operation": "downloadSavedAsset",
+      "status": 416,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "unauthorized",
+      "operation": "downloadSavedAsset",
+      "status": 401,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "not-found",
+      "operation": "downloadSavedAsset",
+      "status": 404,
+      "body_kind": "json",
+      "valid": true,
+      "value": {
+        "headers": {},
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "invalid-error",
+      "operation": "downloadSavedAsset",
+      "status": 404,
+      "body_kind": "json",
+      "valid": false,
+      "value": {
+        "headers": {},
+        "body": {
+          "unexpected": true
+        }
+      }
+    }
+  ]
+}

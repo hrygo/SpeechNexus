@@ -17,5 +17,15 @@ const numericRevision: Contracts["RenderUnitGenerationRequest"] = { expected_uni
 void numericRevision;
 // @ts-expect-error source operation has no GET method
 void client.GET("/v1/workbench/render-units/{unit_id}/generations", {});
-// @ts-expect-error binary download is not selected in this JSON surface
-void client.GET("/v1/workbench/saved-assets/{asset_id}/content", {});
+const download = client.GET("/v1/workbench/saved-assets/{asset_id}/content", {
+  params: { path: { asset_id: "asset-demo" }, header: { Range: "bytes=0-3" } },
+  parseAs: "stream",
+});
+void download.then((result) => {
+  const stream: ReadableStream<Uint8Array> | null | undefined = result.data;
+  void stream;
+});
+// @ts-expect-error binary download declares GET only
+void client.POST("/v1/workbench/saved-assets/{asset_id}/content", {});
+// @ts-expect-error book download remains outside the selected runtime surface
+void client.GET("/v1/workbench/exports/{export_id}/content", {});

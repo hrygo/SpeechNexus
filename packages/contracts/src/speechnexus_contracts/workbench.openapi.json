@@ -1018,6 +1018,70 @@
           }
         }
       }
+    },
+    "/v1/workbench/saved-assets/{asset_id}/content": {
+      "get": {
+        "tags": ["saved-assets"],
+        "operationId": "downloadSavedAsset",
+        "summary": "Download a saved project asset",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SavedAssetIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/Range"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full content.",
+            "headers": {
+              "Accept-Ranges": {
+                "$ref": "#/components/headers/AcceptRanges"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial content.",
+            "headers": {
+              "Content-Range": {
+                "$ref": "#/components/headers/ContentRange"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1110,6 +1174,23 @@
         "schema": {
           "$ref": "#/components/schemas/Identifier"
         }
+      },
+      "SavedAssetIdPath": {
+        "name": "asset_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Identifier"
+        }
+      },
+      "Range": {
+        "name": "Range",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes=[0-9]*-[0-9]*$"
+        }
       }
     },
     "headers": {
@@ -1124,6 +1205,18 @@
         "schema": {
           "type": "integer",
           "minimum": 0
+        }
+      },
+      "AcceptRanges": {
+        "schema": {
+          "type": "string",
+          "const": "bytes"
+        }
+      },
+      "ContentRange": {
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
         }
       }
     },

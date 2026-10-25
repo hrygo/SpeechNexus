@@ -238,13 +238,13 @@ package does not register them in the speech backend.
 
 ### Workbench HTTP boundary
 
-`workbench-http` derives fifteen paths / eighteen operations from the source
+`workbench-http` derives seventeen paths / twenty operations from the source
 OpenAPI: status, project create/read/update/list, transcript create/read/list and
 revision create/read, deletion plan/create/read, meeting create/read/seal and
-minutes create/read. The packaged
+minutes create/read, render generation and saved-asset download. The packaged
 `workbench.openapi.json` is a closed contract for C's handlers and documentation;
 loading it does not start a server or register a route. It retains the original
-parameter/header requirements, per-status JSON response schemas and public
+parameter/header requirements, per-status JSON/binary response schemas and public
 errors. It does not change the default `workbench.createClient`.
 
 ```python
@@ -254,7 +254,7 @@ validate_request("listProjects", {"query": {"limit": "50"}})
 validate_response("listProjects", 200, {"headers": response_headers, "body": response_json})
 ```
 
-The envelope accepts optional `path`, `query`, `headers` maps and a JSON `body`
+The envelope accepts optional `path`, `query`, `headers` maps and a declared `body`
 when the operation declares one; responses contain optional headers and the
 declared body. Required parameters, body and statuses follow the actual route.
 For example, deletion's Idempotency-Key is required and may be one character,
@@ -284,7 +284,7 @@ const result = await client.POST("/v1/workbench/projects/{project_id}/transcript
 The client checks the final URL, query, headers and serialized JSON before
 fetching, then validates the actual response status, headers and JSON before
 returning it. Its explicit byte limit applies to actual UTF-8 bytes in each
-request/response, independently of Content-Length; overflow/invalid UTF-8/JSON
+JSON request/response, independently of Content-Length; overflow/invalid UTF-8/JSON
 cancels reading and returns a safe ContractValidationError. Callers choose a
 bound that covers their supported payloads and retain their own concurrency and
 timeouts. The client prohibits redirects and a different per-call deployment
@@ -293,8 +293,32 @@ or an unknown outcome. Declared errors keep their original status/body; this
 validation does not grant permission to repeat a write. Consumers that add their
 own middleware/fetch implementation must preserve these transport guarantees.
 
-Both languages consume `workbench-http.json`, including every declared response
-status. Python also checks these cases against the original source operations;
+For `downloadSavedAsset`, 200/206 are native binary rather than JSON. Python
+`validate_response` accepts bytes, bytearray or memoryview; validation never
+copies or decodes that payload. The TypeScript client requires `parseAs: "stream"`
+on this operation before I/O:
+
+```ts
+const download = await client.GET("/v1/workbench/saved-assets/{asset_id}/content", {
+  params: { path: { asset_id: savedAssetId }, header: { Range: "bytes=0-3" } },
+  parseAs: "stream",
+  signal: controller.signal,
+});
+```
+
+Success returns the original ReadableStream, with no clone/read/buffering in
+validation. Empty content can yield null/undefined as in openapi-fetch. The
+caller owns a bounded reader, deadline and cancellation; the JSON limit does
+not limit binary downloads. Declared 401/404 still parse bounded JSON. The
+source leaves Content-Range optional on 206 and declares no 416; validation
+retains that scope and does not check actual range selection, media or digest.
+New binary constraints fail generation until implemented. Book-export download
+and SSE remain unselected.
+
+Both languages consume `workbench-http.json` and `workbench-binary-http.json`,
+including every selected response status. The latter uses synthetic octet-array
+test descriptors materialized as native bytes, never JSON download wire bodies.
+Python also checks these cases against the original source operations;
 the TS mock transport covers rejection before network I/O, byte bounds, cancellation,
 unknown responses and no retries. A native loopback HTTP check also verifies a
 parsed reply and zero requests to a POST redirect target. Actual C handlers, their migrations and

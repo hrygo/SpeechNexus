@@ -23,7 +23,8 @@ export type HttpOperation =
   | "sealMeeting"
   | "createMeetingMinutes"
   | "getMeetingMinutes"
-  | "generateRenderUnit";
+  | "generateRenderUnit"
+  | "downloadSavedAsset";
 type HttpPaths = Pick<
   paths,
   | "/v1/workbench/status"
@@ -42,6 +43,7 @@ type HttpPaths = Pick<
   | "/v1/workbench/meetings/{meeting_id}/minutes"
   | "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}"
   | "/v1/workbench/render-units/{unit_id}/generations"
+  | "/v1/workbench/saved-assets/{asset_id}/content"
 >;
 const validator = createHttpValidator(bundle);
 export function validateRequest<T>(operation: HttpOperation, value: T): T {

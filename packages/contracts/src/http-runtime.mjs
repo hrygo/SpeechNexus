@@ -87,7 +87,22 @@ export function createHttpValidator(bundle) {
     }
     const meta = responses[status];
     try {
-      parse(meta.schema, normalize(value, { headers: meta.headers }, "Invalid HTTP response"));
+      let validationValue = value;
+      if (meta.binary) {
+        if (
+          !value ||
+          typeof value !== "object" ||
+          !(value.body instanceof Uint8Array || value.body instanceof ReadableStream)
+        )
+          throw new ContractValidationError("Invalid HTTP response");
+        // Only represent a checked native binary transport as a schema string.
+        // Payload bytes/streams remain untouched and unread.
+        validationValue = { ...value, body: "" };
+      }
+      parse(
+        meta.schema,
+        normalize(validationValue, { headers: meta.headers }, "Invalid HTTP response"),
+      );
     } catch (error) {
       if (!(error instanceof ContractValidationError)) throw error;
       throw new ContractValidationError("Invalid HTTP response");
@@ -106,9 +121,15 @@ export function createHttpValidator(bundle) {
       return entry;
     }
     return {
-      async onRequest({ request, schemaPath, params }) {
+      async onRequest({ request, schemaPath, params, options }) {
         if (request.redirect !== "error") throw new ContractValidationError("Invalid HTTP request");
         const [name, meta] = locate(schemaPath, request);
+        if (
+          Object.values(meta.responses).some((reply) => reply.binary) &&
+          options.parseAs !== "stream"
+        ) {
+          throw new ContractValidationError("Invalid HTTP request");
+        }
         // Headers has already merged case variants; reject ambiguous parameter input first.
         normalize({ headers: params.header }, { headers: {} }, "Invalid HTTP request");
         const actual = new URL(request.url);
@@ -133,11 +154,31 @@ export function createHttpValidator(bundle) {
         }
       },
       async onResponse({ request, schemaPath, response }) {
-        const [name] = locate(schemaPath, request);
-        validateResponse(name, response.status, {
-          headers: Object.fromEntries(response.headers),
-          ...(await boundedJson(response, maxJsonBytes, "Invalid HTTP response")),
-        });
+        const [name, meta] = locate(schemaPath, request);
+        try {
+          const reply = meta.responses[response.status];
+          if (!reply) throw new ContractValidationError("Invalid HTTP response");
+          if (reply.binary) {
+            if (
+              response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !==
+              "application/octet-stream"
+            ) {
+              throw new ContractValidationError("Invalid HTTP response");
+            }
+            validateResponse(name, response.status, {
+              headers: Object.fromEntries(response.headers),
+              body: response.body ?? new Uint8Array(0),
+            });
+          } else {
+            validateResponse(name, response.status, {
+              headers: Object.fromEntries(response.headers),
+              ...(await boundedJson(response, maxJsonBytes, "Invalid HTTP response")),
+            });
+          }
+        } catch (error) {
+          void response.body?.cancel().catch(() => {});
+          throw error;
+        }
       },
     };
   }

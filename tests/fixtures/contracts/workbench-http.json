@@ -4139,6 +4139,34 @@
       },
       "valid": false,
       "status": 503
+    },
+    {
+      "id": "saved-asset-download-range-valid",
+      "operation": "downloadSavedAsset",
+      "kind": "request",
+      "valid": true,
+      "value": {
+        "path": {
+          "asset_id": "asset-demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3"
+        }
+      }
+    },
+    {
+      "id": "saved-asset-download-range-invalid",
+      "operation": "downloadSavedAsset",
+      "kind": "request",
+      "valid": false,
+      "value": {
+        "path": {
+          "asset_id": "asset-demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3,8-9"
+        }
+      }
     }
   ]
 }

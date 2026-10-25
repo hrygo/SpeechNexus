@@ -5,7 +5,12 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
-from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.execution_results import (
+    ExecutionAudioStagingResult,
+    ExecutionStagingResult,
+    StagingResult,
+    result_matches_output,
+)
 from speechnexus_gateway.domain.recovery import ExecutionObservationConflictError
 from speechnexus_gateway.domain.submission import (
     CleanupState,
@@ -71,11 +76,11 @@ class ExecutionObservation:
 class RecordExecutionObservation:
     observation: ExecutionObservation
     expected_version: int
-    staging_result: ExecutionStagingResult | None = None
+    staging_result: StagingResult | None = None
 
     def __post_init__(self) -> None:
         if self.staging_result is not None and not isinstance(
-            self.staging_result, ExecutionStagingResult
+            self.staging_result, ExecutionStagingResult | ExecutionAudioStagingResult
         ):
             raise InvalidExecutionRequestError("observation has an invalid result receipt")
         if type(self.expected_version) is not int or not 1 <= self.expected_version < 2**63:
@@ -89,6 +94,22 @@ class RecordExecutionObservation:
         cls, intent: SubmissionIntent, *, expected_version: int
     ) -> RecordExecutionObservation:
         return cls(ExecutionObservation.from_intent(intent), expected_version)
+
+    def validate_audio_coverage(
+        self, *, sample_start: int | None, sample_end: int | None, sample_count: int
+    ) -> None:
+        """Under the submit lock, check nonoverlapping generated interval coverage.
+
+        The interval writer already enforces nonoverlap. Its aggregate must cover
+        [0, N), not merely have a max-end watermark of N. No meter is rewritten.
+        """
+        result = self.staging_result
+        if isinstance(result, ExecutionAudioStagingResult) and (
+            sample_start != 0
+            or sample_end != result.audio.source_pcm_samples
+            or sample_count != result.audio.source_pcm_samples
+        ):
+            raise InvalidExecutionRequestError("audio has incomplete generated sample coverage")
 
     def apply(self, current: SubmissionIntent, *, at: datetime) -> SubmissionIntent:
         observed = self.observation
@@ -112,11 +133,15 @@ class RecordExecutionObservation:
             raise InvalidExecutionRequestError("observation changes the registered result")
         if result is not None:
             if (
-                not isinstance(result, ExecutionStagingResult)
-                or result.request_digest != current.request_digest
+                result.request_digest != current.request_digest
                 or result.reference.workspace_id != current.identity.workspace_id
-                or current.output_stream_id is not None
-                or current.identity.sample_rate_hz is not None
+                or not result_matches_output(
+                    result,
+                    output_stream_id=current.output_stream_id,
+                    sample_rate_hz=current.identity.sample_rate_hz,
+                    generated_pcm_samples=current.generated_pcm_samples,
+                    has_output_intervals=current.has_output_intervals,
+                )
                 or observed.engine_request_id != current.engine_request_id
                 or observed.dispatched_at != current.dispatched_at
             ):

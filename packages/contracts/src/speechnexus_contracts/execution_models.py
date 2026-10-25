@@ -263,6 +263,28 @@ class ExecutionStagingResultResponse(TypedDict):
     staging_result: ExecutionStagingResult | None
 
 
+class ExecutionAudioMetadata(TypedDict):
+    sample_rate_hz: Literal[24000]
+    channels: Literal[1]
+    source_pcm_samples: int
+    duration_ms: int
+    source_pcm_digest: Sha256Digest
+
+
+class ExecutionAudioStagingResult(TypedDict):
+    request_digest: Sha256Digest
+    reference: ArtifactStorageReference
+    storage_version: str
+    media_type: Literal["audio/wav", "audio/pcm", "audio/mpeg"]
+    audio: ExecutionAudioMetadata
+
+
+class ExecutionAudioStagingResultResponse(TypedDict):
+    submit_intent_id: Identifier
+    request_digest: Sha256Digest
+    staging_result: ExecutionAudioStagingResult | None
+
+
 class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
     grapheme: str
     phonemes: str
@@ -529,4 +551,7 @@ type ExecutionContracts = (
     | DrainInstanceResponse
     | ExecutionStagingResult
     | ExecutionStagingResultResponse
+    | ExecutionAudioMetadata
+    | ExecutionAudioStagingResult
+    | ExecutionAudioStagingResultResponse
 )

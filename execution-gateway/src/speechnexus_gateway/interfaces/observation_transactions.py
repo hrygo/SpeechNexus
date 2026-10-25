@@ -6,8 +6,13 @@ from typing import Any
 from speechnexus_contracts.validation import validate_coordination
 
 from speechnexus_gateway.application.observe_execution import ExecutionObservationService
+from speechnexus_gateway.domain.canonical import canonical_json
 from speechnexus_gateway.domain.execution_inputs import ExecutionObjectReference
-from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.execution_results import (
+    ExecutionAudioStagingResult,
+    ExecutionStagingResult,
+    StagingResult,
+)
 from speechnexus_gateway.domain.observation import (
     ExecutionObservation,
     RecordExecutionObservation,
@@ -29,7 +34,14 @@ def observation_command(request: Any) -> RecordExecutionObservation:
     """Translate a validated boundary snapshot without importing DTOs into the domain."""
     value = request["observation"]
     watermark = value.get("output_watermark")
-    receipt = request.get("staging_result")
+    # The audio receipt is a separate optional property, so the legacy JSON
+    # receipt keeps its exact shape. Each property is parsed by its own strict
+    # reader; a value never silently changes meaning because of which key carried it.
+    json_receipt = request.get("staging_result")
+    audio_receipt = request.get("audio_staging_result")
+    if json_receipt is not None and audio_receipt is not None:
+        raise InvalidExecutionRequestError("observation carries two staging results")
+    receipt = json_receipt if json_receipt is not None else audio_receipt
     if receipt is not None and value.get("staging_artifact_ref") != receipt["reference"]:
         raise InvalidExecutionRequestError("observation and result reference disagree")
     if watermark is not None and watermark["sample_rate_hz"] != value["sample_rate_hz"]:
@@ -92,14 +104,17 @@ def observation_command(request: Any) -> RecordExecutionObservation:
         staging_result=(
             None
             if receipt is None
-            else ExecutionStagingResult(
-                request_digest=receipt["request_digest"],
-                reference=ExecutionObjectReference(**receipt["reference"]),
-                storage_version=receipt["storage_version"],
-                media_type=receipt["media_type"],
-            )
+            else _staging_result(receipt, is_audio=audio_receipt is not None)
         ),
     )
+
+
+def _staging_result(receipt: Any, *, is_audio: bool) -> StagingResult:
+    """Parse the receipt with the reader that matches the property that carried it."""
+    document = canonical_json(receipt)
+    if is_audio:
+        return ExecutionAudioStagingResult.from_document(document)
+    return ExecutionStagingResult.from_document(document)
 
 
 class ExecutionObservationBoundary:

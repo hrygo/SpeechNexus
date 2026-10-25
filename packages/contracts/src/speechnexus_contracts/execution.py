@@ -62,5 +62,21 @@ def parse(
 ) -> models.ExecutionStagingResultResponse: ...
 
 
+@overload
+def parse(name: Literal["ExecutionAudioMetadata"], value: Any) -> models.ExecutionAudioMetadata: ...
+
+
+@overload
+def parse(
+    name: Literal["ExecutionAudioStagingResult"], value: Any
+) -> models.ExecutionAudioStagingResult: ...
+
+
+@overload
+def parse(
+    name: Literal["ExecutionAudioStagingResultResponse"], value: Any
+) -> models.ExecutionAudioStagingResultResponse: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("execution", name, value)

@@ -1869,6 +1869,10 @@
         "staging_result": {
           "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionStagingResult",
           "description": "Trusted producer only. Register once while executing and eligible. Preserve expected_version CAS: after a lost response query the original identity; an exact receipt replay at the current version is read-only even after later stop. Mismatches conflict. Does not publish or change terminal/stop/budget facts."
+        },
+        "audio_staging_result": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionAudioStagingResult",
+          "description": "Trusted producer only. The audio receipt is a separate optional property so the JSON receipt above keeps its exact shape; send at most one of the two, never both. The same registration, expected_version CAS, original-identity replay and no terminal/stop/budget effect apply, and the receipt must match the original output stream and cover every generated sample."
         }
       }
     },

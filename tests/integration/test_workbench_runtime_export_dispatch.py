@@ -19,11 +19,14 @@ from minio import Minio
 from pydantic import SecretStr
 from tests.fake.export_media import synthetic_export_zip
 from tests.integration.test_workbench_exports_http import create, prepared
+from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
 
 from speechnexus_backend.workbench.application.export_worker import ProducedExport
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
+from speechnexus_backend.workbench.infrastructure.postgres_exports import PostgresExports
+from speechnexus_backend.workbench.infrastructure.postgres_versions import PostgresVersionUnitOfWork
 from speechnexus_backend.workbench.runtime import create_runtime_app
 
 pytestmark = pytest.mark.integration
@@ -81,11 +84,15 @@ def runtime_app(
     interval: float,
     producer: Any | None,
     max_output_bytes: int = 256 * 1024**2,
+    cleanup_interval_seconds: float = 5,
+    workspace_id: str = "workspace-runtime",
 ) -> Any:
     endpoint = os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"]
     settings = database.settings().model_copy(
         update={
             "export_interval_seconds": interval,
+            "cleanup_interval_seconds": cleanup_interval_seconds,
+            "workspace_id": workspace_id,
             "export_max_output_bytes": max_output_bytes,
             "object_endpoint": endpoint,
             "object_bucket": BUCKET,
@@ -149,6 +156,82 @@ async def test_the_serving_runtime_produces_a_queued_export(
     assert artifact["sha256"] == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
     assert finished["error"] is None
     assert objects.read(f"{project_id}/exports/{export['id']}/{artifact['id']}") == CONTENT
+
+
+@pytest.mark.parametrize("unavailable", ["expired", "deleted", "other-workspace"])
+async def test_download_visibility_is_checked_even_while_export_object_bytes_remain(
+    database: Database, objects: _Zone, unavailable: str
+) -> None:
+    async with serve(runtime_app(database, interval=0, producer=None)) as client:
+        export, book_id = await queue_one(client, f"download-{unavailable}")
+        path = f"/v1/workbench/exports/{export['id']}/content"
+        queued = await client.get(path)
+        assert queued.status_code == 409, queued.text
+        assert queued.json()["error"]["code"] == "download_not_ready"
+        assert "etag" not in queued.headers
+
+    # Only the runtime loop produces the real object. Retain it for visibility checks,
+    # independently of physical cleanup; no retention or deletion-time SLO is claimed.
+    async with serve(
+        runtime_app(database, interval=0.1, producer=_Bundle(), cleanup_interval_seconds=300)
+    ) as client:
+        finished = await settled(client, export["id"], "succeeded")
+        book = await client.get(f"/v1/workbench/books/{book_id}")
+        project_id = book.json()["project_id"]
+        original = await client.get(path)
+        assert original.status_code == 200 and original.content == CONTENT
+        key = f"{project_id}/exports/{export['id']}/{finished['artifact']['id']}"
+        if unavailable == "expired":
+            # Exercise the actual retention port/transaction, not a fake HTTP store.
+            uow = PostgresVersionUnitOfWork(
+                database.settings().database_url.get_secret_value(), schema=database.schema
+            )
+            await PostgresExports(uow).expire_export(export_id=export["id"])
+            response = await client.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 410, "download_expired"
+        elif unavailable == "deleted":
+            project = await client.get(f"/v1/workbench/projects/{project_id}")
+            plan = await client.post(
+                "/v1/workbench/deletion-plans",
+                json={
+                    "mode": "cascade",
+                    "target": {
+                        "owner": "workbench",
+                        "kind": "project",
+                        "resource": {
+                            "id": project_id,
+                            "revision": str(project.json()["metadata_revision"]),
+                        },
+                    },
+                },
+                headers={"Idempotency-Key": "export-download-delete-plan"},
+            )
+            assert plan.status_code == 200, plan.text
+            deleted = await client.post(
+                "/v1/workbench/deletions",
+                json=acceptance(plan.json()),
+                headers={"Idempotency-Key": "export-download-delete"},
+            )
+            assert deleted.status_code == 202, deleted.text
+            response = await client.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 404, "resource_not_found"
+        else:
+            async with serve(
+                runtime_app(
+                    database,
+                    interval=0,
+                    producer=None,
+                    cleanup_interval_seconds=300,
+                    workspace_id="workspace-other",
+                )
+            ) as other:
+                response = await other.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 404, "resource_not_found"
+        assert response.status_code == expected_status, response.text
+        assert response.json()["error"]["code"] == expected_code
+        assert response.headers["content-type"].startswith("application/json")
+        assert "etag" not in response.headers and "content-range" not in response.headers
+        assert objects.read(key) == CONTENT
 
 
 @pytest.mark.parametrize(

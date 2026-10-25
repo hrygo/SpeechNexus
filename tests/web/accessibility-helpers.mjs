@@ -1,26 +1,10 @@
+import { rasterContrast } from "./raster-contrast.mjs";
+import { contrastRatio } from "./contrast-math.mjs";
+export { contrastRatio } from "./contrast-math.mjs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect } from "@playwright/test";
 
 export const tags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
-
-// Existing text over the reviewed gradient/glass shell needs manual raster
-// review as well as the solid-surface semantic probes. New locations fail.
-const gradientText = [
-  [
-    ".brand > span, #page-title, .hero-status strong, .capability-card h2, .boundary-note p",
-    "--ink",
-  ],
-  [
-    ".hero-description, .hero-status small, .card-label, .capability-card p, footer > span",
-    "--muted",
-  ],
-  [".eyebrow, .airgap-badge", "--accent-text"],
-  [".boundary-label", "--warning"],
-  ...["ready", "contract", "planned"].map((state) => [
-    `.card-state[data-state="${state}"]`,
-    `--status-${state}-text`,
-  ]),
-];
 
 export async function scan(page, info) {
   const result = await new AxeBuilder({ page }).withTags(tags).analyze();
@@ -49,20 +33,11 @@ export async function scan(page, info) {
         ),
       ).toBe(true);
       expect(node.target).toHaveLength(1);
-      const matched = await page.locator(node.target[0]).evaluate((element, rules) => {
-        const match = rules.find(([selector]) => element.matches(selector));
-        if (!match) return false;
-        const probe = document.createElement("span");
-        probe.style.color = `var(${match[1]})`;
-        element.append(probe);
-        const equal = getComputedStyle(element).color === getComputedStyle(probe).color;
-        probe.remove();
-        return equal;
-      }, gradientText);
-      expect(matched, `Unreviewed gradient text or foreground drift: ${node.target[0]}`).toBe(true);
     }
   }
-  return result;
+  const targets = result.incomplete.flatMap((rule) => rule.nodes.map((node) => node.target[0]));
+  const raster = await rasterContrast(page, targets, info);
+  return { ...result, raster };
 }
 
 export async function semanticContrast(page, info) {
@@ -112,17 +87,6 @@ export async function semanticContrast(page, info) {
   } finally {
     await page.locator("#a11y-semantic-probes").evaluate((node) => node.remove());
   }
-}
-
-export function contrastRatio(a, b) {
-  const luminance = (rgb) =>
-    rgb
-      .map((v) => v / 255)
-      .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
-      .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-  const x = luminance(a),
-    y = luminance(b);
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
 export async function keyboardAndFocus(page) {

@@ -121,7 +121,7 @@ test("keyboard guard detects an invisible focus ring", async ({ page }) => {
   await expect(keyboardAndFocus(page)).rejects.toThrow();
 });
 
-test("new indeterminate gradient text requires explicit review", async ({ page }, info) => {
+test("new gradient text is measured without a selector exemption", async ({ page }, info) => {
   await page.goto("http://127.0.0.1:4173");
   await page.locator("main").evaluate((node) => {
     const text = document.createElement("p");
@@ -129,5 +129,6 @@ test("new indeterminate gradient text requires explicit review", async ({ page }
     text.textContent = "New gradient text";
     node.append(text);
   });
-  await expect(scan(page, info)).rejects.toThrow(/Unreviewed gradient/);
+  const result = await scan(page, info);
+  expect(result.raster.some((r) => r.target === "#unreviewed-gradient")).toBe(true);
 });

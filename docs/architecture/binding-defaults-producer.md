@@ -5,7 +5,9 @@
 fixed snapshot read. Snapshot `1.0.0` and ModelBinding response bodies remain
 unchanged. Legacy admin `0.1.0.dev3` and its implemented `binding` HTTP surface
 remain unchanged: they do not admit the new input or advertise the future GET.
-Actual persistence and producer HTTP wiring require their own acceptance.
+An in-process [atomic storage port](model-binding-drafts.md#atomic-default-declarations)
+now implements new-revision persistence and original-key recovery. Producer HTTP
+wiring and its controlled writer lifecycle require their own acceptance.
 
 The producer request references each original field directly from the canonical
 admin `ModelBindingCreateRequest` property. It retains that request's required

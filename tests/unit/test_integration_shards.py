@@ -355,7 +355,21 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
             if isinstance(node, ast.FunctionDef)
         }
         assert consumer in definitions
-    expected = tuple(f"{path.relative_to(ROOT)}::{consumer}[postgresql]" for path in paths)
+    snapshot_consumer = "test_atomic_parent_snapshot_original_replay_restart_and_fixed_projection"
+    snapshot_path = ROOT / "tests/integration/test_binding_defaults_storage.py"
+    assert snapshot_consumer in {
+        node.name
+        for node in ast.parse(snapshot_path.read_text()).body
+        if isinstance(node, ast.FunctionDef)
+    }
+    expected = (
+        *(f"{path.relative_to(ROOT)}::{consumer}[postgresql]" for path in paths),
+        *(
+            f"{snapshot_path.relative_to(ROOT)}::{snapshot_consumer}[{dialect}-parameters{case}]"
+            for dialect in ("postgresql", "mysql")
+            for case in range(2)
+        ),
+    )
     assert expected == GATE.NODE_CONTRACT_TESTS
     selected: list[int] = []
     for index in range(6):

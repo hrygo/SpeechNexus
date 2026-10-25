@@ -95,6 +95,8 @@ class PostgresBindingDrafts:
 
     def create(self, command: CreateBindingDraft) -> BindingDraftResult:
         check_command(command)
+        if command.parameter_defaults is not None:
+            raise ValueError("Default declarations require the atomic snapshot port")
         try:
             return self._run(
                 lambda cursor: create_draft(cursor, command, cursor.clock, self._new_identity)
@@ -104,6 +106,8 @@ class PostgresBindingDrafts:
 
     def recover(self, command: CreateBindingDraft) -> BindingDraftResult:
         check_command(command)
+        if command.parameter_defaults is not None:
+            raise ValueError("Default declarations require the atomic snapshot port")
         try:
             return self._run(lambda cursor: recover_draft(cursor, command), read_only=True)
         except BindingUnavailableError:

@@ -82,6 +82,10 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 不匹配或未绑定代次的真实 endpoint。固定镜像的无 GPU/无网络中间件检查覆盖缺 key、
 旧 key、新 key 和未鉴权 health；不加载模型，不替代默认真实装配或停止/预算联验。
 该候选的精确版本验证与集成以对应 PR 为准，#29/#142 及完整 Goal 仍未完成。
+[#163](https://github.com/hrygo/SpeechNexus/pull/163) 同时修正 ASR 集成样例及其 file-start
+消费者：generation 和 barrier 反例使用原执行身份，不再误改旧 TTS 目标。
+修前四项双库反例复现失败，修后五组 PG/InnoDB/MinIO 消费者回归 102 项通过、无跳过；
+私有 PG 确认停止。实际生产校验未放宽，精确候选 CI 与评审仍以 PR 当前状态为准。
 
 [持久文件执行计划](2026-10-25-b03-durable-file-runner.md)只复用原 `create_submit` 的唯一 INSERT。
 短 dispatch 仅准备本地接收身份；新接收观察确认提交且退出 ingress 后才启动长处理。
@@ -115,7 +119,7 @@ Ruff、mypy、7 条依赖边界及文档检查通过；保留非集成 9 条、�
 | --- | --- | --- |
 | B00 #27 | in-progress | 首条权威配置/许可/版本锁与上界交接，随后逐能力停止/容量资格 |
 | B01 #28 | in-progress | 提交后执行组件已集成；默认真实装配、旧入口封锁和 A 预算闭环待完成 |
-| B02 #29 | in-progress | warmup 累计期限/多 IP 重复 POST 修复已通过本机回归，待候选 CI/评审；持续 ready、generation、故障与 peak→steady/drain 联验待完成 |
+| B02 #29 | in-progress | #163 交付 warmup 修复、原生鉴权与目标代次校验候选；五组双库/MinIO 回归 102 项通过，精确 CI/评审以 PR 为准；默认真实装配、持续 ready、故障与 peak→steady/drain 联验待完成 |
 | B03 #30 | in-progress | 先 #142 的 ASR→CustomVoice 公开链；随后 Base、长文本、时钟/重叠和完整参数矩阵 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |

@@ -43,7 +43,8 @@ PG为正式数据库，InnoDB为共享协调对照；停止与释放双证据后
 独立 worktree 的项目 skill 候选不抵扣业务 AC。
 B 本轮继续补[受控 ASR 原生鉴权与代次检查](../architecture/controlled-asr-generation.md)：
 复用 #161 预热修复，派生原生 key、检查实际容器配置并在文件命令读取音频前核对目标；
-无 GPU 原生中间件验证不等于真实默认工厂、停止/预算或公开链已完成。精确候选和集成状态
+修正 ASR 样例及 file-start 的 generation/barrier 目标，五组双库/MinIO 消费者回归
+102 项通过、无跳过。无 GPU 原生中间件验证不等于真实默认工厂、停止/预算或公开链已完成。精确候选和集成状态
 以该单元 PR 和 #29/#142 为准，原 AC 继续保留。
 B00/B01/B02/B03/B04/B06 保持 in-progress，B05/B07 保持 planned，不把待集成子项扩为整包 blocked。
 

@@ -7,6 +7,7 @@ The execution owner must persist and authorize the execution before using it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -19,11 +20,17 @@ from speechnexus_contracts.execution import parse
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
 from speechnexus_gateway.application.file_asr import FileAsrTranscription
 from speechnexus_gateway.application.file_asr_audio import FileAsrAudio
+from speechnexus_gateway.application.file_asr_result import stage_file_asr_result
 from speechnexus_gateway.domain.asr import (
     AsrCallError,
     AsrFailure,
     AsrPolicy,
     AsrRecognizer,
+)
+from speechnexus_gateway.domain.asr_results import (
+    AsrResultStore,
+    StagedAsrResult,
+    validate_asr_result_limit,
 )
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputLimits
@@ -145,6 +152,60 @@ class CommandFileAsr:
             ) from None
         return snapshot, policy, vad, parameters["final_deadline_ms"] / 1000
 
+    def _execution_cancelled(
+        self,
+        request: SubmitRequest,
+        *,
+        cancelled: Callable[[], bool],
+        request_may_have_run: bool,
+    ) -> bool:
+        if self._now() >= request.identity.deadline_at:
+            raise AsrCallError(
+                AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=request_may_have_run
+            )
+        if self._recognizer.binding_revision_id != request.identity.binding_revision_id:
+            raise AsrCallError(
+                AsrFailure.RESPONSE_INVALID, request_may_have_run=request_may_have_run
+            )
+        return cancelled()
+
+    async def stage_result(
+        self,
+        request: SubmitRequest,
+        *,
+        store: AsrResultStore,
+        max_result_bytes: int,
+        cancelled: Callable[[], bool],
+    ) -> StagedAsrResult:
+        """Stage a complete private result outside the short submit handshake.
+
+        This receipt neither closes the execution nor proves stop/release. The
+        execution owner must durably record it and hand it to A's publisher.
+        """
+        validate_asr_result_limit(max_result_bytes)
+        snapshot, _, _, _ = self._resolve(request)
+        async with self.open(snapshot, cancelled=cancelled) as run:
+
+            def check() -> None:
+                if self._execution_cancelled(
+                    snapshot, cancelled=cancelled, request_may_have_run=run.has_dispatched
+                ):
+                    raise AsrCallError(
+                        AsrFailure.CANCELLED, request_may_have_run=run.has_dispatched
+                    )
+
+            check()
+            remaining = (snapshot.identity.deadline_at - self._now()).total_seconds()
+            try:
+                async with asyncio.timeout(remaining):
+                    return await stage_file_asr_result(
+                        snapshot, run, store=store, max_result_bytes=max_result_bytes, check=check
+                    )
+            except TimeoutError:
+                raise AsrCallError(
+                    AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=run.has_dispatched
+                ) from None
+
     @asynccontextmanager
     async def open(
         self, request: SubmitRequest, *, cancelled: Callable[[], bool]
@@ -159,17 +220,9 @@ class CommandFileAsr:
 
         def should_cancel() -> bool:
             may_have_run = transcription is not None and transcription.has_dispatched
-            if self._now() >= snapshot.identity.deadline_at:
-                raise AsrCallError(
-                    AsrFailure.DEADLINE_EXCEEDED,
-                    request_may_have_run=may_have_run,
-                )
-            if self._recognizer.binding_revision_id != snapshot.identity.binding_revision_id:
-                raise AsrCallError(
-                    AsrFailure.RESPONSE_INVALID,
-                    request_may_have_run=may_have_run,
-                )
-            return cancelled()
+            return self._execution_cancelled(
+                snapshot, cancelled=cancelled, request_may_have_run=may_have_run
+            )
 
         if should_cancel():
             raise AsrCallError(AsrFailure.CANCELLED, request_may_have_run=False)

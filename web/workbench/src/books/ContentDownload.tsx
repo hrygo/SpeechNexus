@@ -21,9 +21,17 @@ export function ContentDownload(props: Props) {
 
 function DownloadAction({ filename, label, load }: Omit<Props, "identity">) {
   const current = useRef<AbortController | null>(null);
+  const action = useRef<HTMLButtonElement | null>(null);
+  const restoreFocus = useRef(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(false);
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!busy && restoreFocus.current) {
+      restoreFocus.current = false;
+      action.current?.focus();
+    }
+  }, [busy]);
   useEffect(() => {
     return () => {
       current.current?.abort();
@@ -66,11 +74,18 @@ function DownloadAction({ filename, label, load }: Omit<Props, "identity">) {
   }
   return (
     <div>
-      <button type="button" disabled={busy} onClick={() => void download()}>
+      <button ref={action} type="button" disabled={busy} onClick={() => void download()}>
         {busy ? "正在校验下载…" : label}
       </button>
       {busy && (
-        <button type="button" onClick={() => current.current?.abort()}>
+        <button
+          type="button"
+          aria-label={`${label}，取消下载`}
+          onClick={() => {
+            restoreFocus.current = true;
+            current.current?.abort();
+          }}
+        >
           取消下载
         </button>
       )}

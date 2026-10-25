@@ -73,5 +73,6 @@ async def test_public_export_download_in_the_production_browser(
         assert process.returncode == 0, stderr.decode()[-3000:]
         result = json.loads(stdout.decode().splitlines()[-1])
         assert result["downloadedViaProductionUi"] is True
+        assert result["downloadActivatedByKeyboard"] is True
         assert result["bytes"] == len(CONTENT)
         assert result["downloadRequests"] == 1 and result["outbound"] == result["pageErrors"] == 0

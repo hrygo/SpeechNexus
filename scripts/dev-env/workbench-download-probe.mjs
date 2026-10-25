@@ -60,7 +60,8 @@ try {
   await expect(button).toBeVisible({ timeout: 30_000 });
   assert.equal(downloads.length, 0);
   const saving = page.waitForEvent("download");
-  await button.click();
+  await button.focus();
+  await button.press("Enter");
   const saved = await saving;
   assert.equal(await saved.failure(), null);
   assert.equal(saved.suggestedFilename(), `${accepted.id}.zip`);
@@ -75,6 +76,7 @@ try {
   await page.screenshot({ path: resolve(output, "download.png"), fullPage: true });
   const result = {
     downloadedViaProductionUi: true,
+    downloadActivatedByKeyboard: true,
     bytes: content.byteLength,
     sha256: values.sha256,
     downloadRequests: downloads.length,

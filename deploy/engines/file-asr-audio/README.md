@@ -5,6 +5,38 @@ This optional environment composes PyAV 19.0.2 and HTTPX 0.28.1 with the pinned
 resolved lock. It is not an enabled Compose service or a qualified runtime template.
 Ordinary gateway startup loads neither the media libraries nor the CPU model.
 
+The file-ASR 1.7B model, CPU VAD and repository runtime locks are enumerated in
+[artifact-pin.json](artifact-pin.json). Verify local files without network access,
+Docker, GPU use or model loading:
+
+```bash
+uv run python scripts/dev-env/verify-file-asr-artifacts.py \
+  --model-root "$SPEECHNEXUS_ASR_MODEL_ROOT" \
+  --vad-file "$SPEECHNEXUS_VAD_MODEL_FILE"
+```
+
+Its JSON `artifact_set` and `engine` reuse the existing ModelBinding contract.
+The result verifies a local snapshot against a trusted pin; it does not register
+or publish a binding, inspect a running image, grant capacity qualification, or
+prove an instance/generation or stop. See the
+[binding and parameter handoff](../../../docs/architecture/file-asr-binding-handoff.md)
+for provenance, supported parameters, limits and remaining integration work.
+
+To emit the existing registry's complete `BindingDefaultsCreateRequest`, add
+`--emit-binding-request --binding-id "$SPEECHNEXUS_ASR_BINDING_ID"
+--logical-model "$SPEECHNEXUS_ASR_LOGICAL_MODEL"
+--capacity-manifest-id "$SPEECHNEXUS_ASR_CAPACITY_MANIFEST_ID"`.
+The caller must supply all three references; the tool verifies artifacts and
+validates the request through the actual producer's pure preparation boundary,
+without HTTP or database writes. The versioned
+[binding-definition.json](binding-definition.json) supplies supported parameters,
+the existing `asr_batch` recipe and explicit snapshot defaults. CPU decoding and
+VAD run inside that file consumer; the complete capacity manifest must still
+cover their resources. Its `production` tier is a requested target, not a
+publication or capacity qualification. Revision/snapshot identities are assigned
+by the registry. Prompt/temperature and deployment limits remain governed by
+their existing complete-command/configuration contracts.
+
 Recompile after an intentional dependency change:
 
 ```bash

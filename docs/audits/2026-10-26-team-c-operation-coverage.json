@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
-  "scope": "workbench HTTP surface only; other surfaces and behavioural AC review are separate units",
+  "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
   "contract_sha256": "4aed45a368374ea2900738a0a8e98442b004ab745810cda56a2b611a9437e1b2",
-  "audited_head": "e10c54d609be5eafb46acd7e594e1c219c7299b6",
+  "audited_head": "e2fee58799f25f131cc4d63c0d0efdfcb61fe7ca",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -152,6 +152,7 @@
         "web/workbench/src/meetings/meeting-journal.ts"
       ],
       "tests": [
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/meeting-client.test.ts",
         "web/workbench/src/meetings/meeting-session.test.ts"
       ],
@@ -218,6 +219,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -256,6 +258,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-journal.test.ts",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -345,14 +350,10 @@
       "consumers": [
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
-      "tests": [],
-      "status": "test_pending",
-      "pending": {
-        "owner": "C",
-        "artifact": "助手轮次读取、提词状态读取与保存的行为断言（含失败/恢复）",
-        "unblock_condition": "为 assistant-session/teleprompter-state 的对应分支补正负例与恢复用例，覆盖身份、修订冲突与持久化拒绝",
-        "impact": "消费者存在但无行为用例，AC-03 的测试腿缺失"
-      }
+      "tests": [
+        "web/workbench/src/assistant/assistant-session.test.ts"
+      ],
+      "status": "bound"
     },
     {
       "id": "getBook",
@@ -367,6 +368,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -384,6 +386,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/BookExportPanel.test.tsx",
+        "web/workbench/src/books/book-export.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
         "web/workbench/src/manuscripts/workbench-download-client.test.ts"
       ],
@@ -441,7 +445,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
-        "web/workbench/src/meetings/meeting-client.test.ts"
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
       ],
       "status": "bound"
     },
@@ -459,7 +465,12 @@
       ],
       "tests": [
         "web/workbench/src/deletions/DeletionHost.test.tsx",
-        "web/workbench/src/deletions/deletion-session.test.ts"
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-journal.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
       ],
       "status": "bound"
     },
@@ -514,6 +525,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-download-client.test.ts"
       ],
       "status": "bound"
@@ -530,14 +542,10 @@
       "consumers": [
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
-      "tests": [],
-      "status": "test_pending",
-      "pending": {
-        "owner": "C",
-        "artifact": "助手轮次读取、提词状态读取与保存的行为断言（含失败/恢复）",
-        "unblock_condition": "为 assistant-session/teleprompter-state 的对应分支补正负例与恢复用例，覆盖身份、修订冲突与持久化拒绝",
-        "impact": "消费者存在但无行为用例，AC-03 的测试腿缺失"
-      }
+      "tests": [
+        "web/workbench/src/teleprompter/teleprompter-state.test.ts"
+      ],
+      "status": "bound"
     },
     {
       "id": "getTranscript",
@@ -557,7 +565,9 @@
         "web/workbench/src/manuscripts/editor-journal.test.ts",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
-        "web/workbench/src/meetings/meeting-journal.test.ts"
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-journal.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
       ],
       "status": "bound"
     },
@@ -612,6 +622,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/file-workflow/tts-task.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -648,14 +660,21 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/assistant/assistant-session.test.ts",
+        "web/workbench/src/books/ContentDownload.test.tsx",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/deletions/DeletionHost.test.tsx",
         "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/manuscripts/FixedTranscriptDownload.test.tsx",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/MeetingNavigation.test.tsx",
-        "web/workbench/src/meetings/meeting-session.test.ts"
+        "web/workbench/src/meetings/meeting-session.test.ts",
+        "web/workbench/src/realtime/InputDevicePicker.test.tsx",
+        "web/workbench/src/teleprompter/TeleprompterPanel.test.tsx"
       ],
       "status": "bound"
     },
@@ -672,6 +691,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -689,6 +709,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -706,7 +727,11 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
         "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
         "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
         "web/workbench/src/manuscripts/editor-session.test.ts",
         "web/workbench/src/manuscripts/workbench-client.test.ts",
@@ -750,6 +775,8 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -791,6 +818,9 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/assistant/assistant-session.test.ts",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -905,6 +935,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -921,14 +952,10 @@
       "consumers": [
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
-      "tests": [],
-      "status": "test_pending",
-      "pending": {
-        "owner": "C",
-        "artifact": "助手轮次读取、提词状态读取与保存的行为断言（含失败/恢复）",
-        "unblock_condition": "为 assistant-session/teleprompter-state 的对应分支补正负例与恢复用例，覆盖身份、修订冲突与持久化拒绝",
-        "impact": "消费者存在但无行为用例，AC-03 的测试腿缺失"
-      }
+      "tests": [
+        "web/workbench/src/teleprompter/teleprompter-state.test.ts"
+      ],
+      "status": "bound"
     },
     {
       "id": "workbenchCreateDeletion",
@@ -984,7 +1011,8 @@
       ],
       "tests": [
         "web/workbench/src/deletions/DeletionHost.test.tsx",
-        "web/workbench/src/deletions/deletion-core.test.ts"
+        "web/workbench/src/deletions/deletion-core.test.ts",
+        "web/workbench/src/deletions/deletion-session.test.ts"
       ],
       "status": "bound"
     }

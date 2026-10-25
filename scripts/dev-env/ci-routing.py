@@ -13,6 +13,7 @@ from typing import Literal
 
 Mode = Literal["docs", "web", "full"]
 _ROOT_PROSE = {"AGENTS.md", "README.md", "README.en.md"}
+_SKILL_DOCUMENT_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
 _WEB_SUFFIXES = {".ts", ".tsx", ".css", ".html", ".svg", ".png", ".webp", ".jpg", ".woff2"}
 
 
@@ -30,9 +31,18 @@ def classify(paths: Sequence[str]) -> Mode:
             or path.as_posix() != name
         ):
             return "full"
-        if name in _ROOT_PROSE or (name.startswith("docs/") and path.suffix == ".md"):
-            continue
         parts = path.parts
+        skill_document = (
+            len(parts) >= 4
+            and parts[:2] == (".agents", "skills")
+            and path.suffix in _SKILL_DOCUMENT_SUFFIXES
+        )
+        if (
+            name in _ROOT_PROSE
+            or (name.startswith("docs/") and path.suffix == ".md")
+            or skill_document
+        ):
+            continue
         web_source = (
             len(parts) >= 3
             and parts[0] == "web"
@@ -75,7 +85,7 @@ def detect_route(event: str, base: str, cwd: Path) -> tuple[Mode, str]:
     ]
     mode = classify(paths)
     reasons = {
-        "docs": "Only approved prose changed; heavy application checks are out of scope.",
+        "docs": "Only prose or skill documents/metadata changed; heavy checks are out of scope.",
         "web": "Web sources changed; retain Python consumer/unit checks and the complete Web lane.",
         "full": "Shared, unknown, executable or empty changes require every verification lane.",
     }

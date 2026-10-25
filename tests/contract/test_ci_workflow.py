@@ -35,6 +35,18 @@ _EXPECTED = {
 }
 
 
+def test_design_token_guard_runs_before_routing_without_dependency_install() -> None:
+    steps = _WORKFLOW["jobs"]["changes"]["steps"]
+    guard = next(
+        s for s in steps if "node --test tests/ci/design-tokens.test.mjs" in s.get("run", "")
+    )
+    assert "node scripts/dev-env/validate-design-tokens.mjs" in guard["run"]
+    assert "if" not in guard and "continue-on-error" not in guard
+    assert steps.index(guard) < next(i for i, s in enumerate(steps) if s.get("id") == "route")
+    assert any(s.get("with", {}).get("node-version-file") == ".nvmrc" for s in steps)
+    assert not any("install" in s.get("run", "") for s in steps)
+
+
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],

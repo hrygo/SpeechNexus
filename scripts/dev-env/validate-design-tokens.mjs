@@ -4,10 +4,9 @@
  * SpeechNexus Design Token & Architectural Boundary Validator
  *
  * This script enforces:
- * 1. Exact Token Parity: Every CSS variable referenced in tokens.json and tokens/index.ts
- *    must have an exact declaration (--var-name:) in styles.css (no substring false positives).
- * 2. No Hardcoded Colors: Intercepts raw hex (#...), rgb/rgba(...), hsl/hsla(...), or oklch(...)
- *    literals in TSX/TS components (including brand-mark.tsx and tokens/index.ts).
+ * 1. Registry shape, primitive value parity, CSS reference closure and same-rule alias cycles.
+ * 2. Color literals in Web scripts, CSS, HTML and SVG; raw shared custom properties
+ *    and explicitly hash-pinned static assets have narrow, reviewed exemptions.
  * 3. Architectural Copy Guard: Forbids misleading "private/admin-only" terms in shared deployment.
  * 4. Capability Tri-State Integrity: Restricts states to "ready" | "contract" | "planned"
  *    (supporting both string attributes and JSX expression containers).
@@ -16,8 +15,17 @@
  *    or scripts across web HTML, CSS, SVG, and TS/TSX files (allowing only W3C XML namespaces).
  */
 
+import {
+  withoutComments,
+  references,
+  declarations,
+  hardcodedColors,
+  validateRegistry,
+  aliasCycles,
+} from "./design-token-integrity.mjs";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,26 +47,12 @@ const ALLOWED_EXTERNAL_URLS = new Set([
   "http://www.w3.org/1999/xlink",
 ]);
 
-// Only styles.css and tokens.json define raw primitive color values; all TS/TSX files must use CSS variables
-const EXEMPT_COLOR_FILES = new Set([
-  path.join(repoRoot, "web/shared/src/ui/styles.css"),
-  path.join(repoRoot, "web/shared/src/tokens/tokens.json"),
-]);
-
 export function extractDefinedCssVariables(cssContent) {
-  const definedVars = new Set();
-  for (const match of cssContent.matchAll(/(--[a-zA-Z0-9_-]+)\s*:/g)) {
-    definedVars.add(match[1]);
-  }
-  return definedVars;
+  return new Set(declarations(cssContent).map((match) => match[1]));
 }
 
 export function extractReferencedCssVariables(content) {
-  const referencedVars = new Set();
-  for (const match of content.matchAll(/var\((--[a-zA-Z0-9_-]+)\)/g)) {
-    referencedVars.add(match[1]);
-  }
-  return referencedVars;
+  return references(content);
 }
 
 export function validateSourceLine(
@@ -82,26 +76,15 @@ export function validateSourceLine(
     }
   }
 
-  if (isMarkupOrStyleOnly) {
-    return violations;
-  }
-
-  // Rule 2: Hardcoded Color Literals (#hex, rgb, rgba, hsl, hsla, oklch)
-  if (!isExemptColorFile && !isTestFile) {
-    const isHref = /href\s*=\s*["']#/.test(line);
-
-    if (!isHref && !isComment) {
-      const hexMatch = /#([0-9a-fA-F]{3,8})\b/.exec(line);
-      const funcColorMatch = /\b(rgba?|hsla?|oklch)\s*\(/i.exec(line);
-      const matchedLiteral = hexMatch ? hexMatch[0] : funcColorMatch ? funcColorMatch[0] : null;
-      if (matchedLiteral) {
-        violations.push({
-          rule: "no-hardcoded-color",
-          message: `Hardcoded color '${matchedLiteral}' detected. Components must use design tokens (--nexus-* or semantic CSS variables).`,
-        });
-      }
+  if (!isExemptColorFile && !isTestFile && !isComment) {
+    for (const color of hardcodedColors(line)) {
+      violations.push({
+        rule: "no-hardcoded-color",
+        message: `Hardcoded color '${color}' detected. Use design tokens.`,
+      });
     }
   }
+  if (isMarkupOrStyleOnly) return violations;
 
   // Rule 3: Architectural Boundary Copy Guard
   if (!isTestFile) {
@@ -179,55 +162,100 @@ export function runValidation(rootDir = repoRoot) {
   const tokensJsonContent = fs.readFileSync(tokensJsonPath, "utf-8");
   const tokensTsContent = fs.readFileSync(tokensTsPath, "utf-8");
 
-  const jsonVars = extractReferencedCssVariables(tokensJsonContent);
-  const tsVars = extractReferencedCssVariables(tokensTsContent);
-
-  // Check 1a: Every CSS variable referenced in tokens.json and tokens/index.ts must exist in styles.css
-  for (const [tokenFile, varSet] of [
-    [tokensJsonPath, jsonVars],
-    [tokensTsPath, tsVars],
-  ]) {
-    for (const cssVar of varSet) {
-      if (!definedCssVars.has(cssVar)) {
-        errors.push({
-          file: tokenFile,
-          line: 1,
-          message: `Token references CSS variable '${cssVar}', but it is not declared in styles.css.`,
-          snippet: cssVar,
-        });
-      }
-    }
+  const { registered, errors: registryErrors } = validateRegistry(tokensJsonContent, stylesContent);
+  for (const message of registryErrors) errors.push({ file: tokensJsonPath, line: 1, message });
+  const tsVars = references(withoutComments(tokensTsContent, { script: true }));
+  for (const cssVar of registered) {
+    if (!definedCssVars.has(cssVar))
+      errors.push({
+        file: tokensJsonPath,
+        line: 1,
+        message: `Token references undefined CSS variable '${cssVar}'.`,
+      });
   }
-
-  // Check 1b: Every token variable exported in tokens/index.ts must also be registered in tokens.json
   for (const tsVar of tsVars) {
-    if (!tsVar.startsWith("--nexus-color-") && !jsonVars.has(tsVar)) {
+    if (!registered.has(tsVar))
       errors.push({
         file: tokensTsPath,
         line: 1,
-        message: `Token '${tsVar}' in tokens/index.ts is missing from the W3C DTCG registry (tokens.json).`,
-        snippet: tsVar,
+        message: `Token '${tsVar}' is missing from the project registry (tokens.json).`,
       });
-    }
   }
 
   // Check 2-6: Scan all web source and asset files
   const webRoot = path.join(rootDir, "web");
-  const files = getFilesRecursively(webRoot, /\.(tsx?|css|html|svg)$/);
+  const files = getFilesRecursively(webRoot, /\.([cm]?[jt]sx?|css|html|svg)$/);
+  const exceptionPath = path.join(rootDir, "web/shared/design-token-exceptions.json");
+  const exceptions = fs.existsSync(exceptionPath)
+    ? JSON.parse(fs.readFileSync(exceptionPath, "utf8"))
+    : {};
+  for (const [name, entry] of Object.entries(exceptions)) {
+    const target = path.resolve(rootDir, name);
+    if (
+      !name.startsWith("web/") ||
+      path.relative(rootDir, target).startsWith("..") ||
+      !entry.reason ||
+      !/^[a-f0-9]{64}$/.test(entry.sha256 ?? "") ||
+      !fs.existsSync(target)
+    ) {
+      errors.push({
+        file: exceptionPath,
+        line: 1,
+        message: `Invalid design token exception '${name}'.`,
+      });
+    } else if (
+      createHash("sha256").update(fs.readFileSync(target)).digest("hex") !== entry.sha256
+    ) {
+      errors.push({
+        file: target,
+        line: 1,
+        message:
+          "Design token exception content changed; review its literals and update the pinned hash.",
+      });
+    }
+  }
 
   for (const file of files) {
-    const content = fs.readFileSync(file, "utf-8");
+    const isScript = /\.[cm]?[jt]sx?$/.test(file);
+    const content = withoutComments(fs.readFileSync(file, "utf-8"), { script: isScript });
     const lines = content.split("\n");
-    const isExemptColorFile = EXEMPT_COLOR_FILES.has(file);
-    const isTestFile = file.includes(".test.");
+    const isTestFile = /(?:\.test\.|\.spec\.|[/\\]__tests__[/\\])/.test(file);
+    if (isTestFile) continue;
+    const isPalette = file === stylesPath;
+    const isCss = file.endsWith(".css");
     const isMarkupOrStyleOnly = /\.(html|svg)$/.test(file);
+    if (isCss) {
+      for (const cycle of aliasCycles(content))
+        errors.push({ file, line: 1, message: `CSS alias cycle: ${cycle}` });
+    }
+    for (const cssVar of references(content)) {
+      if (!definedCssVars.has(cssVar))
+        errors.push({
+          file,
+          line: content.slice(0, content.indexOf(cssVar)).split("\n").length,
+          message: `Undefined CSS variable '${cssVar}'.`,
+        });
+    }
+    const approvedAsset = Object.hasOwn(
+      exceptions,
+      path.relative(rootDir, file).split(path.sep).join("/"),
+    );
+    for (const color of approvedAsset
+      ? []
+      : hardcodedColors(content, { css: isCss, palette: isPalette })) {
+      errors.push({
+        file,
+        line: content.slice(0, content.indexOf(color)).split("\n").length,
+        message: `Hardcoded color '${color}' detected. Use design tokens; raw values belong in shared CSS custom properties.`,
+      });
+    }
 
     for (let i = 0; i < lines.length; i++) {
       const lineNum = i + 1;
       const line = lines[i];
 
       const violations = validateSourceLine(line, {
-        isExemptColorFile,
+        isExemptColorFile: true,
         isTestFile,
         isMarkupOrStyleOnly,
       });

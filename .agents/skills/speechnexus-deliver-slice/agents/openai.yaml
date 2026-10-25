@@ -1,0 +1,4 @@
+interface:
+  display_name: "SpeechNexus 业务切片交付"
+  short_description: "从契约、正式装配、消费者和行为证据收口 SpeechNexus 业务切片"
+  default_prompt: "使用 $speechnexus-deliver-slice 推进当前业务切片，定位链路缺口并按验收条件完成实施与验证。"

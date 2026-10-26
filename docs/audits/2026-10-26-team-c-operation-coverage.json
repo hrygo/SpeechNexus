@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
-  "contract_sha256": "d94b94b84d74e93afbce44c894ee95510ea2d573150ab33be4b123296127f9fc",
-  "audited_head": "beb9c7d923e20950dd693cb2638f442b841d47aa",
+  "contract_sha256": "e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9",
+  "audited_head": "15173b1aba73a19c1079e72e96d870043394554b",
   "operations": [
     {
       "id": "cancelAssistantTurn",

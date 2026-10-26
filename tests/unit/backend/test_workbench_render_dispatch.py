@@ -50,6 +50,15 @@ class _Store:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.conflict = False
 
+    async def create_unit(self, **kw: Any) -> RenderUnit:
+        raise AssertionError("dispatch never creates a unit")
+
+    async def list_units(self, **kw: Any) -> tuple[Any, ...] | None:
+        raise AssertionError("dispatch never lists units")
+
+    async def update_unit(self, **kw: Any) -> RenderUnit:
+        raise AssertionError("dispatch never revises a unit")
+
     async def get_unit(self, *, unit_id: str, workspace_id: str) -> RenderUnit:
         self.calls.append(("get", {"unit_id": unit_id}))
         return self.current

@@ -55,11 +55,13 @@ class Units:
         self.completed: list[dict[str, Any]] = []
         self.failed: list[dict[str, Any]] = []
         self.unsaved: tuple[RenderUnit, ...] = ()
+        self.unsaved_limit: int | None = None
 
     async def generating_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]:
         return (self.current,)
 
     async def unsaved_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]:
+        self.unsaved_limit = limit
         return self.unsaved
 
     async def complete_unit(self, **arguments: Any) -> RenderUnit:
@@ -230,3 +232,13 @@ async def test_a_transient_copy_failure_is_retried_on_the_next_pass() -> None:
     await reconciler.restore_copies(workspace_id=WORKSPACE)
     await reconciler.restore_copies(workspace_id=WORKSPACE)
     assert len(copies.attempts) == 2
+
+
+async def test_restore_copies_forwards_its_bounded_limit() -> None:
+    ready = ready_with_source()
+    units, copies = Units(ready), Copies()
+    units.unsaved = (ready,)
+    await RenderReconciler(units, Jobs(RenderJobOutcome("pending")), copies).restore_copies(
+        workspace_id=WORKSPACE, limit=3
+    )
+    assert units.unsaved_limit == 3

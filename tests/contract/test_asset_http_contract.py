@@ -40,6 +40,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/admin/profiles/{profile_id}/revisions/{revision}",
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
+        "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",
     }
     for path in PATHS:
         assert actual["paths"][path] == document["paths"][path]

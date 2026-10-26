@@ -177,15 +177,14 @@ def test_a_warmup_template_loads_its_bounded_request(tmp_path: Path) -> None:
     assert readiness.warmup.max_response_bytes == 65536
 
 
-def test_deployed_template_file_preserves_native_auth_opt_in(tmp_path: Path) -> None:
+@pytest.mark.parametrize("path", ["/v1/audio/transcriptions", "/v1/audio/speech"])
+def test_deployed_template_file_preserves_native_auth_opt_in(tmp_path: Path, path: str) -> None:
+    readiness = _warmup_readiness()
+    readiness["warmup"]["path"] = path
     templates = load_approved_templates(
         _write(
             tmp_path,
-            {
-                "templates": [
-                    _template(readiness=_warmup_readiness(), engine_auth="vllm_api_key_v1")
-                ]
-            },
+            {"templates": [_template(readiness=readiness, engine_auth="vllm_api_key_v1")]},
         )
     )
     assert templates[0].engine_auth is EngineAuthKind.VLLM_API_KEY_V1

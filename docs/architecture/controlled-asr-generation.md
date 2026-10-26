@@ -37,7 +37,9 @@ HMAC key 是根密钥的原始 32 字节，输出为 64 位小写十六进制。
 ## 生产者：受限控制器
 
 获准模板显式设置 `engine_auth: "vllm_api_key_v1"`；省略时维持既有非鉴权模板行为。
-此模式要求明确 argv，以及 `/v1/audio/transcriptions` 的 `http_warmup_ok`。拒绝
+此模式要求明确 argv，以及 `/v1/audio/transcriptions`（ASR）或 `/v1/audio/speech`（TTS）的
+`http_warmup_ok`。TTS 复用相同代次凭据、实际配置核对和有界预热，不新增认证模式；
+新 TTS 模板须先升级控制器，旧控制器仍拒绝该预热路径。拒绝
 `--api-key`、相关缩写/下划线拼法、配置文件、root-path 和 middleware 覆盖；
 固定镜像中 CLI api-key 会优先于 `VLLM_API_KEY`，不能允许模板静默换掉凭据。
 

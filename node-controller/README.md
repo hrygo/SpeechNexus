@@ -60,6 +60,12 @@ unified peak reservation. This is not proof of GPU allocation isolation or
 qualification for a lower steady budget. Discovered containers whose resource
 settings differ are quarantined and remain stoppable.
 
+Native `vllm_api_key_v1` templates require explicit argv and bounded authenticated
+warmup on `/v1/audio/transcriptions` or `/v1/audio/speech`. Both use the same
+generation-scoped credential and actual image/argv/environment/identity checks.
+Upgrade the controller before installing a TTS warmup template; older controllers
+reject that path. Health-only readiness cannot enable this authentication mode.
+
 Synthetic container/HTTP probes verify only the paths recorded in the
 [controller design](../docs/architecture/node-controller.md). Real engine,
 scheduler-budget, warmup, recovery and physical-cluster qualification require

@@ -1,9 +1,10 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。新负责人从[项目完整交接](audits/2026-10-26-project-handoff.md)接管，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[项目经理基线](plans/2026-10-26-project-manager-baseline.md)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [项目经理接管基线](plans/2026-10-26-project-manager-baseline.md) | 当前组合、能力/缺口、决策队列、三队协作、证据接收与安全清理 |
 | [Agent 工作指南](agent-guide.md) | 根/目录规则、项目技能、任务入口与交付边界 |
 | [Agent 验证指南](agent-verification.md) | 按改动选择检查、锁定依赖、隔离服务前置与证据范围 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |

@@ -1,22 +1,26 @@
 # Audio Asset inspection boundary
 
-This A02 unit supplies a **private Linux process supervisor**, not an audio
-decoder or a public upload implementation. `AssetRuntime` still installs
-`TextAssetInspector`; audio inspection remains unavailable. Existing public
-Asset identities, original-key recovery, object versions and the deployment's
-seven-day default retention are unchanged. No schema, lock, migration or grant
-is changed by this unit.
+A02 now supplies the private Linux process supervisor, a separately packaged
+media decoder/inspection command, a generated success-receipt contract and a
+narrow `ProcessAudioAssetInspector` consumer. `AssetRuntime` still installs
+`TextAssetInspector`; public audio inspection remains unavailable. Existing
+public Asset identities, original-key recovery, object versions and the
+deployment's seven-day default retention are unchanged. The media extraction
+adds a workspace dependency and private schema, with no public HTTP, migration
+or grant change.
 
 The acceptance target is [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)
 AC1/AC2 and the [file ASR roadmap](../plans/2026-10-25-team-a-realignment.md).
-Public `ready` will require the later decoder, result validation and actual
-HTTP/PG/MinIO acceptance below. A successful command is not a media fact.
+Public `ready` still requires approved deployment/composition, public error
+mapping and actual HTTP/PG/MinIO acceptance below. A successful command alone
+is not a media fact.
 
 ## Independent deployment and reuse
 
-The current reusable implementation is B's
-`execution-gateway/src/speechnexus_gateway/infrastructure/pyav_audio.py`, with
-`domain/media.py` and the [bounded media interface](file-asr-audio.md).
+The shared implementation lives in `packages/media`; B's original
+`execution-gateway/src/speechnexus_gateway/infrastructure/pyav_audio.py` and
+`domain/media.py` remain compatibility exports. Its behavior follows the
+[bounded media interface](file-asr-audio.md).
 The backend and gateway are independent deployments under `pyproject.toml`'s
 import boundary. The backend must not import gateway modules or run its VAD,
 recognizer, engine client, deployment controller or GPU runtime.
@@ -27,13 +31,28 @@ The source inventory is frozen at integration base
 has blob `12684eb017b0dfdcc36a694f891cfdbc0ad51b37`. These identify reuse inputs,
 not a published shared package or acceptance of that decoder in this sandbox.
 
-The next shared change must agree a separately distributed media kernel and a
-small inspection entrypoint with B. A owns packaging/consumer integration; B
+The A-MEDIA-EXTRACT-01 source candidate includes a separately distributed media
+kernel and a small inspection entrypoint; B acceptance remains pending. It is
+described in the [media kernel handoff](../plans/2026-10-26-a02-media-kernel-handoff.md):
+`packages/media` relocates these exact native types and codec; the old gateway
+imports re-export the same objects. Its private inspection command currently
+admits PCM WAV and explicitly described raw PCM only. Broader codec support
+does not establish full-container inspection qualification.
+A owns packaging/consumer integration; B
 retains codec semantics and qualification. The extraction must record the exact
 source revision and source mapping, preserve existing B consumers/tests, and
 serially update any shared dependency locks. Do not copy the decoder into A or
-silently depend on the whole gateway wheel. The shared artifact does not exist
-in this unit; neither its source nor B's implementation is modified here.
+silently depend on the whole gateway wheel. The original supervisor unit did
+not include the shared artifact. The extraction is a PR candidate, not
+a published or jointly accepted deployment image; B must confirm compatibility
+before shared integration. AssetRuntime still installs TextAssetInspector.
+
+The same PR candidate adds the canonical private success receipt and
+`ProcessAudioAssetInspector`, described in the
+[receipt handoff](../plans/2026-10-26-a02-audio-receipt-handoff.md). It validates
+the generated contract, original input digest/length, exact sample clock and
+cancellation before exposing media facts. Default composition remains unchanged;
+this is not HTTP, storage, restart or public-ready acceptance.
 
 The inspection image must contain the pinned shared artifact, its native
 dependencies, an explicitly configured Python interpreter, the inspection

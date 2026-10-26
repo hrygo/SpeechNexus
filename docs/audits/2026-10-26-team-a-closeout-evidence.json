@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-26",
+  "timezone": "Asia/Shanghai",
+  "source_base": "54daef6ae4792b69a0e5e8645b09240ff715082e",
+  "extraction_source": "230031043a76ac6c2d04ee6bb2fe93ca38f991c5",
+  "branch": "codex/team-a-final-handoff",
+  "qualification": "local component/contract validation only; no public chain, model, storage or target-topology qualification",
+  "checks": [
+    {
+      "command": "uv run pytest -q tests/contract tests/unit/test_assets.py tests/unit/test_assets_postgres.py tests/unit/backend/test_audio_asset_inspector.py tests/unit/media tests/unit/gateway --no-cov --tb=short",
+      "passed": 4395,
+      "skipped": 0,
+      "log_sha256": "4a68f412c60581fb69ccfb44bce23d95e2f02e314e83f528208bf779827610fc"
+    },
+    {
+      "command": "pnpm --filter @speechnexus/contracts typecheck; pnpm --filter @speechnexus/contracts test",
+      "passed": 1987,
+      "skipped": 0,
+      "log_sha256": "18c057ab16244a27e83c2b0c8b620891fd5dbe603fafe3a37ebfded2d8f86db0"
+    },
+    {
+      "command": "make contracts-check contracts-drift",
+      "canonical_files": 33,
+      "result": "passed"
+    },
+    {
+      "command": "uv run ruff check .; uv run ruff format --check .; uv run mypy; uv run lint-imports",
+      "formatted_files": 1131,
+      "typed_files": 854,
+      "kept_import_contracts": 8,
+      "result": "passed"
+    },
+    {
+      "command": "CONTRACT_BASE_REF=54daef6ae4792b69a0e5e8645b09240ff715082e make contracts-compat contracts-http-changes contracts-speech-changes contracts-coordination-requests contracts-coordination-results contracts-realtime-changes",
+      "result": "passed"
+    },
+    {
+      "command": "uv build --all-packages --out-dir .runtime/team-a-final-handoff/dist; make stack-config",
+      "result": "passed"
+    }
+  ],
+  "wheel_verification": {
+    "wheels": {
+      "speechnexus_backend-0.1.0.dev0-py3-none-any.whl": "9b75318606bf962dc9da629793420e958997680c0160f1c80e9892ca33b79c7c",
+      "speechnexus_contracts-0.1.0.dev0-py3-none-any.whl": "7b22a7c0e2c421c6fbe6987a30790ada8346152ac689ac73ed99a49aed0699d7",
+      "speechnexus_execution_gateway-0.1.0.dev0-py3-none-any.whl": "116f02830662d9b53b94a7cdaf1db5cc34f604cff8ea5eb13984ebea378f0033",
+      "speechnexus_media-0.1.0.dev0-py3-none-any.whl": "b693cee7cfc009576f7e040561c2a0abac2ef3702f5e5c8b1841eb59a404a00f",
+      "speechnexus_node_controller-0.1.0.dev0-py3-none-any.whl": "2a7de8a6639d2bcf138f80df21b8424d65fb422cd796d5af7248aa5079faa391"
+    },
+    "actual_decode_samples": 4800,
+    "valid_receipt": true,
+    "wrong_digest_rejected": true,
+    "service_imports_denied": true,
+    "imports_from_wheels_only": true
+  },
+  "originals": "/workspace/.speech-nexus-team-a-evidence/2026-10-26-final-handoff/",
+  "runtime_changes": "none; default AssetRuntime remains TextAssetInspector",
+  "acceptance": {
+    "public_chains_verified": 0,
+    "public_chains_target": 2,
+    "fault_matrix": "not fully run",
+    "real_chain_invariant_baseline": "unknown"
+  }
+}

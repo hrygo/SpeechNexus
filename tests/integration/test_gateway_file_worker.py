@@ -39,11 +39,12 @@ from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.canonical import JsonValue, command_digest
-from speechnexus_gateway.domain.file_execution import FileExecutionLedger
+from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
 from speechnexus_gateway.domain.media import AudioDecodeLimits
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import ExecutionState, SubmissionIntent, SubmitRequest
 from speechnexus_gateway.domain.vad import VadPolicy
+from speechnexus_gateway.file_asr_runtime import AsrFileStage
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
@@ -82,7 +83,7 @@ def factory(
     bucket: str,
     request: SubmitRequest,
     recognizer: CapturingRecognizer,
-) -> Callable[[GatewayIngress, FileExecutionLedger], FileExecutionWorker]:
+) -> Callable[[GatewayIngress, FileExecutionLedger], FileExecutionWorker[Any]]:
     recognizer.binding_revision_id = request.identity.binding_revision_id
     execution = CommandFileAsr(
         inputs=FileExecutionInputs(inputs),
@@ -97,14 +98,14 @@ def factory(
     )
     store = results(bucket)
 
-    def build(ingress: GatewayIngress, ledger: FileExecutionLedger) -> FileExecutionWorker:
+    def build(ingress: GatewayIngress, ledger: FileExecutionLedger) -> FileExecutionWorker[Any]:
         return FileExecutionWorker(
             ingress=ingress,
             ledger=ledger,
-            execution=execution,
+            execution=AsrFileStage(execution, 1024),
             results=store,
-            max_result_bytes=1024,
-            max_command_bytes=16384,
+            limits=FileExecutionLimits(1024, 16384, 1, 10),
+            engine_request_prefix="file-asr",
         )
 
     return build
@@ -227,7 +228,9 @@ async def test_worker_recovers_actual_commits_after_lost_ack_without_repeating_w
     fault_finished = Event()
     lost_commits = 0
 
-    def with_fault(ingress: GatewayIngress, ledger: FileExecutionLedger) -> FileExecutionWorker:
+    def with_fault(
+        ingress: GatewayIngress, ledger: FileExecutionLedger
+    ) -> FileExecutionWorker[Any]:
         assert isinstance(ledger, PostgresSubmissionLedger)
         record = ledger.record_execution_observation
         pool = ledger._pool

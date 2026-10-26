@@ -13,20 +13,27 @@ from speechnexus_gateway.app import _close_control, create_app
 from speechnexus_gateway.application.barrier_control import GatewayBarrierService
 from speechnexus_gateway.application.instance_drain import InstanceDrainService
 from speechnexus_gateway.application.query_execution import ExecutionQueryService
+from speechnexus_gateway.domain.file_execution import FileExecutionLimits
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
 from tests.fake.execution import InMemorySubmissionLedger, fake_ingress
 from tests.unit.gateway.test_barrier_http import settings_for
 from tests.unit.gateway.test_file_execution_worker import Pipeline, Results
 
 
-def runtime(**options: Any) -> FileExecutionWorker:
+def runtime(**options: Any) -> FileExecutionWorker[Results]:
+    limits = FileExecutionLimits(
+        1024,
+        16384,
+        options.pop("max_pending", 1),
+        options.pop("shutdown_seconds", 10),
+    )
     return FileExecutionWorker(
         ingress=fake_ingress(),
         ledger=InMemorySubmissionLedger(),
         execution=Pipeline(),
         results=Results(),
-        max_result_bytes=1024,
-        max_command_bytes=16384,
+        limits=limits,
+        engine_request_prefix="file-asr",
         **options,
     )
 
@@ -45,7 +52,7 @@ async def test_cancelled_startup_joins_before_releasing_authority(
             entered.set()
             assert release.wait(3), "the test must release its startup operation"
 
-    class GatedWorker(FileExecutionWorker):
+    class GatedWorker(FileExecutionWorker[Results]):
         def open(self) -> None:
             try:
                 gate("open")
@@ -64,8 +71,8 @@ async def test_cancelled_startup_joins_before_releasing_authority(
         ledger=ledger,
         execution=Pipeline(),
         results=Results(),
-        max_result_bytes=1024,
-        max_command_bytes=16384,
+        limits=FileExecutionLimits(1024, 16384, 1, 10),
+        engine_request_prefix="file-asr",
     )
 
     def build(_: Any) -> tuple[Any, ...]:
@@ -81,7 +88,7 @@ async def test_cancelled_startup_joins_before_releasing_authority(
             ledger,
         )
 
-    def factory(*_: Any) -> FileExecutionWorker:
+    def factory(*_: Any) -> FileExecutionWorker[Results]:
         gate("factory")
         return worker
 

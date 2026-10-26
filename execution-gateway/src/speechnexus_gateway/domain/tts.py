@@ -20,6 +20,7 @@ from speechnexus_gateway.domain.canonical import command_digest
 TTS_RECIPE_VERSION = "file-tts-1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _LANGUAGE = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}")
+_TARGET_IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]")
 
 MAX_TTS_TEXT_CHARS = 4096
 MAX_TTS_TEXT_BYTES = 16384
@@ -100,6 +101,35 @@ class TtsDeliveryFormat(StrEnum):
     @property
     def media_type(self) -> str:
         return {"wav": "audio/wav", "mp3": "audio/mpeg", "pcm": "audio/pcm"}[self.value]
+
+
+@dataclass(frozen=True, slots=True)
+class TtsExecutionTarget:
+    """The admitted batch-TTS engine target, independent of transport and vendor types."""
+
+    host_node_id: str
+    gateway_id: str
+    pool_id: str
+    instance_id: str
+    instance_generation: int
+    binding_revision_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            any(
+                type(value) is not str or _TARGET_IDENTIFIER.fullmatch(value) is None
+                for value in (
+                    self.host_node_id,
+                    self.gateway_id,
+                    self.instance_id,
+                    self.binding_revision_id,
+                )
+            )
+            or self.pool_id != "tts-batch"
+            or type(self.instance_generation) is not int
+            or not 1 <= self.instance_generation <= 2**63 - 1
+        ):
+            raise ValueError("invalid configured file TTS execution target")
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +306,10 @@ class TtsSynthesizer(Protocol):
 
     @property
     def binding_revision_id(self) -> str: ...
+
+    def validate_execution_target(self, target: TtsExecutionTarget) -> None:
+        """Reject an unmatched node, generation or binding before any engine call."""
+        ...
 
     async def synthesize(
         self,

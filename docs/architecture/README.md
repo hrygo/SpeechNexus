@@ -18,7 +18,8 @@
 - [文件 ASR 有界媒体输入](file-asr-audio.md)：受控二进制流、五种格式、源时钟/尾部、文件 VAD 组合及尚未接入的外发/发布。
 - [文件 ASR 原生识别接口](file-asr-recognition.md)：固定内网 vLLM、请求/终态/token 校验、无语音零外发和源/模型样本关联。
 - [文件 ASR 默认执行装配](file-asr-runtime.md)：私有配置、默认工厂、原 worker 与结果回执；真实模型、可信停止和公开链资格分别待验。
-- [文件 TTS 原生合成接口](file-tts.md)：固定内网 `/v1/audio/speech`、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码；公开路由、音色发布与 Base/VoiceDesign 仍待装配。
+- [文件 TTS 原生合成接口](file-tts.md)：固定内网 `/v1/audio/speech`、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码。
+- [文件 TTS 默认执行装配](file-tts-runtime.md)：私有配置、受控 generation、原命令 worker、生成区间与音频回执；公开路由、真实模型与可信停止仍待交付。
 - [工作台导出发布前完整性检查](workbench-export-integrity.md)：持久进度、真实媒体解码、归档限额与取消复核；完整单元清单、续作和真实质量仍待交付。
 - [生产协调存储基线](production-coordination-storage.md)：包内 `0002_coordination`、15 表、A/B 最小权限、升级回滚与迁移互斥证据；事务实现另行验收。
 - [完整准入的私有命令存储](production-admission-storage.md)：`0007` 的 operation 权威、原业务/准入请求、独立摘要与正文 tombstone 约束；独立准入已消费，实际业务/调度仍待接入。

@@ -27,6 +27,7 @@ from speechnexus_gateway.domain.tts import (
     TtsCallError,
     TtsDeliveryEncoder,
     TtsDeliveryFormat,
+    TtsExecutionTarget,
     TtsFailure,
     TtsPolicy,
     TtsRequest,
@@ -90,12 +91,15 @@ class CommandFileTts:
                 raise ValueError
             identity = snapshot.identity
             if (
-                snapshot.output_stream_id is not None
-                or identity.sample_rate_hz is not None
+                snapshot.output_stream_id is None
+                or identity.sample_rate_hz != self._binding_policy.sample_rate_hz
+                or identity.max_output_audio_ms is None
+                or identity.max_output_audio_ms > self._binding_policy.max_audio_ms
                 or identity.binding_revision_id != self._synthesizer.binding_revision_id
                 or identity.policy_revision_id != self._binding_policy.config_revision
             ):
                 raise ValueError
+            self._validate_target(snapshot)
             resources = command["resources"]
             voice = resources["voice"]
             if (
@@ -144,6 +148,19 @@ class CommandFileTts:
             ) from None
         return snapshot, frozen, policy, delivery
 
+    def _validate_target(self, request: SubmitRequest) -> None:
+        identity = request.identity
+        self._synthesizer.validate_execution_target(
+            TtsExecutionTarget(
+                host_node_id=identity.host_node_id,
+                gateway_id=identity.gateway_id,
+                pool_id=identity.pool_id,
+                instance_id=identity.instance_id,
+                instance_generation=identity.instance_generation,
+                binding_revision_id=identity.binding_revision_id,
+            )
+        )
+
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         """Freeze the supported command before accepting work; no external I/O."""
         snapshot, _, _, _ = self._resolve(request)
@@ -166,6 +183,12 @@ class CommandFileTts:
             dispatched = bool(holder) and holder[0].has_dispatched
             if self._now() >= snapshot.identity.deadline_at:
                 raise TtsCallError(TtsFailure.DEADLINE_EXCEEDED, request_may_have_run=dispatched)
+            try:
+                self._validate_target(snapshot)
+            except ValueError:
+                raise TtsCallError(
+                    TtsFailure.RESPONSE_INVALID, request_may_have_run=dispatched
+                ) from None
             return cancelled()
 
         synthesis = FileTtsSynthesis(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import uuid
 from collections.abc import Callable
@@ -10,17 +11,21 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.domain.asr_results import (
-    AsrResultStore,
-    StagedAsrResult,
+from speechnexus_gateway.domain.execution_results import (
+    ExecutionAudioStagingResult,
+    StagingResult,
 )
-from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 from speechnexus_gateway.domain.file_execution import (
-    FileAsrExecution,
+    FileCommandExecution,
     FileExecutionLedger,
     FileExecutionLimits,
 )
 from speechnexus_gateway.domain.observation import ExecutionObservation, RecordExecutionObservation
+from speechnexus_gateway.domain.output_intervals import (
+    AppendInterval,
+    MeterKind,
+    OutputIntervalRecord,
+)
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
@@ -46,7 +51,10 @@ class _Preparation:
     task: asyncio.Task[None] | None = None
 
 
-class FileExecutionWorker:
+_PREFIX = re.compile(r"[a-z][a-z0-9-]{0,31}")
+
+
+class FileExecutionWorker[StoreT]:
     """A process-local executor, backed exclusively by the original submission ledger.
 
     Dispatch prepares no I/O. The submit service alone calls start after confirming
@@ -59,23 +67,22 @@ class FileExecutionWorker:
         *,
         ingress: GatewayIngress,
         ledger: FileExecutionLedger,
-        execution: FileAsrExecution,
-        results: AsrResultStore,
-        max_result_bytes: int,
-        max_command_bytes: int,
-        max_pending: int = 1,
-        shutdown_seconds: float = 10,
+        execution: FileCommandExecution[StoreT],
+        results: StoreT,
+        limits: FileExecutionLimits,
+        engine_request_prefix: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        FileExecutionLimits(max_result_bytes, max_command_bytes, max_pending, shutdown_seconds)
+        if _PREFIX.fullmatch(engine_request_prefix) is None:
+            raise ValueError("file work requires a bounded engine request prefix")
         self._ingress = ingress
         self._ledger = ledger
         self._execution = execution
         self._results = results
-        self._result_bytes = max_result_bytes
-        self._command_bytes = max_command_bytes
-        self._max_pending = max_pending
-        self._shutdown_seconds = shutdown_seconds
+        self._command_bytes = limits.max_command_bytes
+        self._max_pending = limits.max_pending
+        self._shutdown_seconds = limits.shutdown_seconds
+        self._engine_request_prefix = engine_request_prefix
         self._now = now
         self._lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
@@ -160,7 +167,7 @@ class FileExecutionWorker:
                 or request.identity.submit_intent_id in self._preparations
             ):
                 return DispatchOutcome(DispatchResult.NOT_SENT, at)
-            ticket = _Preparation(frozen, "file-asr-" + uuid.uuid4().hex, at)
+            ticket = _Preparation(frozen, self._engine_request_prefix + "-" + uuid.uuid4().hex, at)
             self._preparations[request.identity.submit_intent_id] = ticket
         return DispatchOutcome(DispatchResult.ACKNOWLEDGED, at, ticket.engine_request_id)
 
@@ -249,7 +256,6 @@ class FileExecutionWorker:
             receipt = await self._execution.stage_result(
                 ticket.request,
                 store=self._results,
-                max_result_bytes=self._result_bytes,
                 cancelled=ticket.cancelled.is_set,
             )
             await self._database(lambda: self._register(intent, receipt, ticket.cancelled))
@@ -265,11 +271,8 @@ class FileExecutionWorker:
                     self._accepting = False
 
     def _register(
-        self, accepted: SubmissionIntent, receipt: StagedAsrResult, cancelled: threading.Event
+        self, accepted: SubmissionIntent, result: StagingResult, cancelled: threading.Event
     ) -> None:
-        result = ExecutionStagingResult(
-            receipt.request_digest, receipt.reference, receipt.storage_version
-        )
         key = accepted.identity.submit_intent_id
         for _ in range(3):
             current = self._ledger.get(key)
@@ -286,6 +289,8 @@ class FileExecutionWorker:
                 return
             if cancelled.is_set():
                 raise ExecutionCleanupPendingError("cancelled file result cannot be registered")
+            if isinstance(result, ExecutionAudioStagingResult):
+                current = self._append_audio_interval(current, result)
             observed = replace(
                 ExecutionObservation.from_intent(current),
                 observed_at=max(current.updated_at, self._now()),
@@ -310,6 +315,31 @@ class FileExecutionWorker:
                     return
                 raise
         raise SubmissionOutcomeUnknownError("the original result registration needs reconciliation")
+
+    def _append_audio_interval(
+        self, current: SubmissionIntent, result: ExecutionAudioStagingResult
+    ) -> SubmissionIntent:
+        """Record the complete generated range before registering its private receipt."""
+        if (
+            current.output_stream_id is None
+            or current.engine_request_id is None
+            or current.identity.sample_rate_hz != result.audio.sample_rate_hz
+        ):
+            raise SubmissionOutcomeUnknownError("the audio result has no matching output stream")
+        return self._ledger.append_interval(
+            OutputIntervalRecord(
+                AppendInterval(
+                    interval_id="generated-" + current.engine_request_id,
+                    submit_intent_id=current.identity.submit_intent_id,
+                    output_stream_id=current.output_stream_id,
+                    sample_rate_hz=result.audio.sample_rate_hz,
+                    meter_kind=MeterKind.GENERATED,
+                    sample_start=0,
+                    sample_end=result.audio.source_pcm_samples,
+                ),
+                current.identity,
+            )
+        ).intent
 
     def _quarantine(self, key: str, *, cancelled: bool) -> None:
         current = self._ledger.get(key)

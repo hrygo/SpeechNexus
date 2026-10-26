@@ -48,6 +48,7 @@ def configured(tmp_path: Path, path: Path) -> Settings:
         "pending-bound",
         "shutdown-bound",
         "result-bound",
+        "result-too-large",
         "command-bound",
         "tokens-bound",
         "call-bound",
@@ -99,6 +100,8 @@ def test_invalid_deployment_refuses_before_authority_or_model_activation(
             "input-bound": ("input_limits", "memory_bytes", 1000001),
         }[change]
         (document[group] if group else document)[key] = value
+    elif change == "result-too-large":
+        document["worker_limits"]["max_result_bytes"] = 4 * 1024 * 1024 + 1
     elif change == "model-sha":
         document["vad_model_sha256"] = "not-a-digest"
     elif change == "model-path":

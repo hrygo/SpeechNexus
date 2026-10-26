@@ -19,10 +19,11 @@ from speechnexus_gateway.application.abort_execution import (
 from speechnexus_gateway.application.command_dispatch import OriginalCommandDispatch
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.asr_results import (
-    AsrResultStore,
     PreparedAsrResult,
     StagedAsrResult,
 )
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.file_execution import FileExecutionLimits
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
@@ -63,10 +64,9 @@ class Pipeline:
         self,
         request: SubmitRequest,
         *,
-        store: AsrResultStore,
-        max_result_bytes: int,
+        store: Results,
         cancelled: Callable[[], bool],
-    ) -> StagedAsrResult:
+    ) -> ExecutionStagingResult:
         self.calls += 1
         self.before_stage()
         self.started.set()
@@ -74,12 +74,14 @@ class Pipeline:
             if cancelled():
                 raise asyncio.CancelledError
             await asyncio.sleep(0.002)
-        assert max_result_bytes == 1024
-        return await store.stage(
+        receipt = await store.stage(
             PreparedAsrResult(
                 request.identity.workspace_id, request.request_digest, b'{"text":""}'
             ),
             cancelled=cancelled,
+        )
+        return ExecutionStagingResult(
+            receipt.request_digest, receipt.reference, receipt.storage_version
         )
 
 
@@ -99,9 +101,8 @@ def configured(
         ledger=ledger,
         execution=pipeline,
         results=results,
-        max_result_bytes=1024,
-        max_command_bytes=16384,
-        max_pending=max_pending,
+        limits=FileExecutionLimits(1024, 16384, max_pending, 10),
+        engine_request_prefix="file-asr",
     )
     worker.open()
     submit = SubmitExecutionService(

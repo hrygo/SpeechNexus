@@ -27,6 +27,9 @@ from tests.unit.test_file_asr_artifacts import (
 from tests.unit.test_file_asr_artifacts import (
     inputs as inputs,
 )
+from tests.unit.test_file_tts_artifacts import REGISTRATION as TTS_REGISTRATION
+from tests.unit.test_file_tts_artifacts import cli as tts_cli
+from tests.unit.test_file_tts_artifacts import tts_inputs as tts_inputs
 
 pytestmark = [
     pytest.mark.integration,
@@ -34,14 +37,22 @@ pytestmark = [
 ]
 
 
-def test_emitted_binding_and_defaults_have_one_original_identity_across_replay_and_restart(
-    producer_db: DefaultsHTTPDatabase, inputs: dict[str, Any]
-) -> None:
-    emitted = cli(inputs, *REGISTRATION)
+@pytest.fixture(params=["asr", "tts"])
+def handoff(request: pytest.FixtureRequest) -> tuple[dict[str, Any], str]:
+    if request.param == "tts":
+        emitted = tts_cli(request.getfixturevalue("tts_inputs"), *TTS_REGISTRATION)
+    else:
+        emitted = cli(request.getfixturevalue("inputs"), *REGISTRATION)
     assert emitted.returncode == 0, emitted.stderr
-    request = json.loads(emitted.stdout)
+    return json.loads(emitted.stdout), request.param
+
+
+def test_emitted_binding_and_defaults_have_one_original_identity_across_replay_and_restart(
+    producer_db: DefaultsHTTPDatabase, handoff: tuple[dict[str, Any], str]
+) -> None:
+    request, section = handoff
     path = "/v1/nexus/admin/model-bindings"
-    headers = {"Idempotency-Key": "original-file-asr-handoff"}
+    headers = {"Idempotency-Key": f"original-file-{section}-handoff"}
     with TestClient(producer_db.app()) as client:
         response = client.post(path, json=request, headers=headers)
         assert response.status_code == 201, response.text
@@ -63,8 +74,11 @@ def test_emitted_binding_and_defaults_have_one_original_identity_across_replay_a
         assert snapshot["parameters"] == request["parameter_defaults"]
         before = producer_db.snapshot()
         assert client.post(path, json=request, headers=headers).json() == original
-        changed = json.loads(emitted.stdout)
-        changed["parameter_defaults"]["asr"]["final_deadline_ms"] = 9000
+        changed = json.loads(json.dumps(request))
+        if section == "asr":
+            changed["parameter_defaults"]["asr"]["final_deadline_ms"] = 9000
+        else:
+            changed["parameter_defaults"]["tts"]["speed"] = 1.5
         conflict = client.post(path, json=changed, headers=headers)
         assert conflict.status_code == 409
         assert conflict.json()["error"]["code"] == "idempotency_conflict"

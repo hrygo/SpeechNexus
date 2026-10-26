@@ -1,0 +1,74 @@
+{
+  "kind": "vllm_omni",
+  "image": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+  "version": "0.32.0rc1",
+  "commit": "gda572cddb",
+  "source_commit": "da572cddb38383deae9caef33b8d490e292ef071",
+  "vllm_version": "0.32.0",
+  "python_version": "3.12.3",
+  "distribution_count": 338,
+  "distribution_inventory_digest": "sha256:ff8e66b178f6d6a6f97b1029758259c38b0c9af8272673deb23343139ae18049",
+  "source_files": [
+    {
+      "file": "vllm_omni/entrypoints/openai/api_server.py",
+      "digest": "sha256:70f9f0d93a6505f0560f77a0183bf58a0329d3e5f5e518ff771c688f7e78dea5",
+      "size_bytes": 135051
+    },
+    {
+      "file": "vllm_omni/entrypoints/openai/serving_speech.py",
+      "digest": "sha256:bb3376c35d68dfbcd2bad79d8c23bf114bf0fa539dd0548b9b02829ca3abc6bf",
+      "size_bytes": 144123
+    },
+    {
+      "file": "vllm_omni/entrypoints/openai/protocol/audio.py",
+      "digest": "sha256:283367b3d7e7ac849e956aa506fef8727bfdab87fadd60e97606c5c33a49e77c",
+      "size_bytes": 29150
+    },
+    {
+      "file": "vllm_omni/model_executor/stage_input_processors/qwen3_tts.py",
+      "digest": "sha256:7103497209589ed18ccc5e7d69b962b00b02731f68d5c71269bb286d8c67e1e7",
+      "size_bytes": 35512
+    },
+    {
+      "file": "vllm_omni/model_executor/models/qwen3_tts/qwen3_tts_talker.py",
+      "digest": "sha256:b6b0dbdd790643657af022843d37266b437068a18667239468640dde9072657c",
+      "size_bytes": 87034
+    },
+    {
+      "file": "vllm_omni/model_executor/models/qwen3_tts/qwen3_tts_code2wav.py",
+      "digest": "sha256:6edf1185ead255f5432568d8188a8605f9bbaf25a3455ef690b2325170923f16",
+      "size_bytes": 46209
+    },
+    {
+      "file": "vllm_omni/model_executor/models/qwen3_tts/qwen3_tts_tokenizer.py",
+      "digest": "sha256:aa0fcb86c9af5eb80ff7af992199aece3093e45b8869330b4c7fd1220525b1d4",
+      "size_bytes": 13312
+    },
+    {
+      "file": "vllm_omni/model_executor/models/qwen3_tts/pipeline.py",
+      "digest": "sha256:88cc9292ee33a51350bdab7466f02f0ec1352072d77df06b1d130b998ee04087",
+      "size_bytes": 4531
+    },
+    {
+      "file": "vllm_omni/model_executor/models/qwen3_tts/talker_sampler.py",
+      "digest": "sha256:0f7e1acf38c709b24e5dba2f357029ae7d223420430ef31ff31c6e1543b81b86",
+      "size_bytes": 10846
+    },
+    {
+      "file": "vllm_omni/deploy/qwen3_tts.yaml",
+      "digest": "sha256:5a70f815a743f9814b55ebfa98094da1ffed58ef4eb73a3f8dbbf84879332649",
+      "size_bytes": 7366
+    },
+    {
+      "file": "vllm_omni/entrypoints/cli/serve.py",
+      "digest": "sha256:7eb4ee7f9434b396ddd781bfe5bf31b0c177005aa6c667ae12fdfd0a17822134",
+      "size_bytes": 66933
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "source_file": "LICENSE",
+    "digest": "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "size_bytes": 11357
+  }
+}

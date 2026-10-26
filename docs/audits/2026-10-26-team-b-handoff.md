@@ -1,7 +1,7 @@
 ---
 title: "团队 B 收尾与负责人交接"
 status: active
-version: "1.1.0"
+version: "1.2.0"
 date: 2026-10-26
 ---
 
@@ -59,7 +59,7 @@ TTS #218 的资格、准入及 runtime stop 意图生产者仍为 fixture；实�
 | B00 #27 | in-progress | 全候选模型/许可/资源 manifest、权威 binding 与逐能力资格 |
 | B01 #28 | in-progress | 生产 submit/observe/abort/恢复、真实故障、单请求停止与生产预算链 |
 | B02 #29 | in-progress | 正式 readiness、持续监控、controller 重启、多代竞争、peak→steady/drain |
-| B03 #30 / #142 | in-progress | 正式 ASR/TTS 公开链、完整参数矩阵、长文本、Base 与同版联合验收 |
+| B03 #30 / #142 | in-progress | 请求级音频上限修复、正式 ASR/TTS 公开链、完整参数矩阵、长文本、Base 与同版联合验收 |
 | B04 #31 | in-progress | 真实 PCM/WS、credit/背压、流式 ASR/TTS 和双工完整配方 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、声音材料恢复和显式发布 |
 | B06 #33 | in-progress | 实时 VAD、词级对齐、匿名分人及逐绑定质量资格 |
@@ -70,6 +70,8 @@ A 的权威配置、音频 Asset ready、完整 Job/准入/runtime 意图/发布
 私有成功回执与窄消费者（固定 head `b7e65f4`）；尚未合入 main，
 B 尚未完成实际网关兼容接收。各方存在可独立推进的事项，不能把整个工作包统称为阻塞。
 固定模型卡与引擎许可证来源不等于全部依赖再分发许可已经审核通过。
+
+**请求级音频上限仍有已确认缺陷。** [#220 审查](https://github.com/hrygo/SpeechNexus/pull/220#pullrequestreview-5649783664)指出，#203 只检查请求上限不高于 binding，传入合成器的 `TtsPolicy.max_audio_ms/max_pcm_bytes` 未按更紧请求收紧。项目经理在 `a663c6c` 的真实命令/策略/结果链配合合成引擎替身复现：请求 `max_output_audio_ms=100`，实际 policy 仍为 `600000` ms / `8388608` bytes，链内接受并返回 200 ms 音频。该合成反例不代表真实模型或公开发布已验，但足以确认参数未兑现；#219、正常合成与取消零结果均未修复本项。此问题与下面的指令字符上限分别处理，剩余工作继续跟踪 #30/#142。
 
 ### TTS 指令长度：保留调查，不宣布修复
 
@@ -105,6 +107,8 @@ C 回执采纳外发前持久身份、原键恢复、Job/有效配置与版本�
 
 ## 现场清理与私有证据保留
 
+本节数量、摘要校验和删除事实为 **B 收尾执行方报告**。项目经理本次已核对仓库报告和公共 CI，尚未取得这些私有归档字节；接收方仍须按 manifest 核验，不能将作者自检写成管理方已验收。
+
 - 收尾检查没有发现遗留 ASR/TTS 实验容器；三个受保护服务为
   `cube-ccba-qwen36-35b-nvfp4`、`qwenpaw-embedding`、`qwenpaw-reranker`。
   本轮不停止或重启它们，不清理同机其他项目的容器、存储或网络。
@@ -133,7 +137,7 @@ tar -xzf "$SPEECHNEXUS_B_HANDOFF_ROOT/skills-worktree-wip.tar.gz" \
   -C "$SPEECHNEXUS_B_RESTORE_DIR"
 ```
 
-其中 `SPEECHNEXUS_B_HANDOFF_ROOT` 指向已核验归档目录，
+其中 `SPEECHNEXUS_B_HANDOFF_ROOT` 指向 B 报告已核验、接收方仍待核验的归档目录，
 `SPEECHNEXUS_B_RESTORE_DIR` 必须是新的恢复目录。
 `skills-worktree.patch` 用于审阅，tar 已含修改后文件，不再重复应用 patch。
 私有探针恢复也使用独立目录，先核验归档摘要，不导入共享数据库或覆盖运行配置。

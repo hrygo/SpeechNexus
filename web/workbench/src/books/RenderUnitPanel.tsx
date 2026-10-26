@@ -228,6 +228,12 @@ function ChapterUnits({
     problem: keyof typeof saveProblems | null;
   }>({ unitId: null, problem: null });
   const saveKeys = useRef(new Map<string, string>());
+  const [history, setHistory] = useState<{
+    unitId: string;
+    items: Contracts["RenderUnitGenerationListV2"]["data"];
+    hasMore: boolean;
+    problem: "unavailable" | null;
+  } | null>(null);
   const [copy, setCopy] = useState<{
     assetId: string | null;
     asset: Contracts["SavedAsset"] | null;
@@ -436,6 +442,21 @@ function ChapterUnits({
   }
 
   /** Read-back is explicit: the copy is fetched only when the operator asks for it. */
+  async function showHistory(target: Contracts["RenderUnitV2"]) {
+    setHistory({ unitId: target.id, items: [], hasMore: false, problem: null });
+    try {
+      const list = await client.renderUnitGenerations(target.id);
+      setHistory({
+        unitId: target.id,
+        items: list.data,
+        hasMore: list.has_more,
+        problem: null,
+      });
+    } catch {
+      setHistory({ unitId: target.id, items: [], hasMore: false, problem: "unavailable" });
+    }
+  }
+
   async function readCopy(assetId: string) {
     setCopy({ assetId, asset: null, problem: null, busy: true });
     try {
@@ -799,6 +820,32 @@ function ChapterUnits({
                         <p role="alert" aria-label={`${label} 副本错误`}>
                           {copyProblems[copy.problem]}
                         </p>
+                      )}
+                    </div>
+                  )}
+                  <button type="button" disabled={locked} onClick={() => void showHistory(unit)}>
+                    {`${label} 生成历史`}
+                  </button>
+                  {history !== null && history.unitId === unit.id && (
+                    <div aria-label={`${label} 生成历史`}>
+                      {history.problem !== null ? (
+                        <p role="alert" aria-label={`${label} 生成历史错误`}>
+                          {problems[history.problem]}
+                        </p>
+                      ) : history.items.length === 0 ? (
+                        <p className="books-status">尚无生成记录。</p>
+                      ) : (
+                        <>
+                          <ol aria-label={`${label} 生成记录`}>
+                            {history.items.map((item) => (
+                              <li key={item.id}>
+                                修订 {item.revision} · 作业 {item.job_id} · 依赖{" "}
+                                {item.dependencies_sha256.slice(0, 23)}…
+                              </li>
+                            ))}
+                          </ol>
+                          {history.hasMore && <p className="books-status">仅显示最近记录。</p>}
+                        </>
                       )}
                     </div>
                   )}

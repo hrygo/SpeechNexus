@@ -55,6 +55,8 @@
     "RenderUnitPatchV2",
     "RenderUnitListV2",
     "RenderUnitGenerationAcceptedV2",
+    "RenderGenerationV2",
+    "RenderUnitGenerationListV2",
     "ExportEvent"
   ],
   "$defs": {
@@ -3550,6 +3552,47 @@
         }
       }
     },
+    "RenderGenerationV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "job_id", "dependencies_sha256", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "dependencies_sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      }
+    },
+    "RenderUnitGenerationListV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "unit_id", "data", "has_more"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RenderGenerationV2"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      }
+    },
     "ExportEvent": {
       "oneOf": [
         {
@@ -4038,6 +4081,12 @@
     },
     {
       "$ref": "#/$defs/RenderUnitGenerationAcceptedV2"
+    },
+    {
+      "$ref": "#/$defs/RenderGenerationV2"
+    },
+    {
+      "$ref": "#/$defs/RenderUnitGenerationListV2"
     },
     {
       "$ref": "#/$defs/ExportEvent"

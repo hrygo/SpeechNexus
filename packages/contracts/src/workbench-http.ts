@@ -52,6 +52,7 @@ export type HttpOperation =
   | "createRenderUnitV2"
   | "getRenderUnitV2"
   | "updateRenderUnitV2"
+  | "listRenderUnitGenerationsV2"
   | "generateRenderUnitV2"
   | "downloadSavedAsset"
   | "downloadBookExport"

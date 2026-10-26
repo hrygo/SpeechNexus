@@ -4,7 +4,11 @@ from typing import Any, Literal
 
 from speechnexus_contracts.workbench import parse
 
-from speechnexus_backend.workbench.domain.render_units import RenderUnit, RevisionPin
+from speechnexus_backend.workbench.domain.render_units import (
+    RenderGeneration,
+    RenderUnit,
+    RevisionPin,
+)
 from speechnexus_backend.workbench.interfaces.version_views import _time
 
 
@@ -41,5 +45,33 @@ def render_unit_payload(value: RenderUnit, *, version: Literal[1, 2] = 2) -> Any
             "source_artifact_id": None if value.source is None else value.source.artifact_id,
             "source_receipt_id": None if value.source is None else value.source.receipt_id,
             "updated_at": _time(value.updated_at),
+        },
+    )
+
+
+def render_generations_payload(
+    unit_id: str,
+    generations: tuple[RenderGeneration, ...],
+    *,
+    has_more: bool,
+) -> Any:
+    """Newest-first history; the unit id keeps the page from mixing two units."""
+    if not unit_id:
+        raise ValueError("invalid workbench render unit identity")
+    return parse(
+        "RenderUnitGenerationListV2",
+        {
+            "object": "nexus.list",
+            "unit_id": unit_id,
+            "data": [
+                {
+                    "id": item.id,
+                    "job_id": item.job_id,
+                    "dependencies_sha256": item.dependencies_sha256,
+                    "revision": str(item.revision),
+                }
+                for item in generations
+            ],
+            "has_more": has_more,
         },
     )

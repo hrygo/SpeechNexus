@@ -115,6 +115,8 @@
         "RenderUnitPatchV2",
         "RenderUnitListV2",
         "RenderUnitGenerationAcceptedV2",
+        "RenderGenerationV2",
+        "RenderUnitGenerationListV2",
         "ExportEvent"
       ],
       "schema_refs": {

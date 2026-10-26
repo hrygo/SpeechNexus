@@ -638,6 +638,17 @@ export class WorkbenchClient {
     return value;
   }
 
+  async renderUnitGenerations(unitId: string, limit = 20) {
+    const value = result(
+      "RenderUnitGenerationListV2",
+      await this.#api.GET("/v2/workbench/render-units/{unit_id}/generations", {
+        params: { path: { unit_id: unitId }, query: { limit } },
+      }),
+    );
+    identity(value.unit_id === unitId);
+    return value;
+  }
+
   async updateRenderUnit(unitId: string, body: Contracts["RenderUnitPatchV2"], key: string) {
     const value = result(
       "RenderUnitV2",

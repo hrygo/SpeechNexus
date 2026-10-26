@@ -823,7 +823,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * Read the recorded generation attempts of a render unit
+     * @description Returns the unit's recorded dispatch attempts, newest first. A unit that was
+     *     never dispatched returns an empty list. The history is read from durable
+     *     attempt rows, so a restart cannot lose an attempt. `has_more` reports that
+     *     older attempts exist beyond `limit`.
+     */
+    get: operations["listRenderUnitGenerationsV2"];
     put?: never;
     /**
      * Submit a speech Job for a render unit
@@ -1566,6 +1573,19 @@ export interface components {
       speech_job_id: components["schemas"]["Identifier"];
       /** Format: date-time */
       accepted_at: string;
+    };
+    RenderGenerationV2: {
+      id: components["schemas"]["Identifier"];
+      job_id: components["schemas"]["Identifier"];
+      dependencies_sha256: components["schemas"]["Sha256Digest"];
+      revision: components["schemas"]["Revision"];
+    };
+    RenderUnitGenerationListV2: {
+      /** @constant */
+      object: "nexus.list";
+      unit_id: components["schemas"]["Identifier"];
+      data: components["schemas"]["RenderGenerationV2"][];
+      has_more: boolean;
     };
     /** @enum {string} */
     ErrorType:
@@ -3866,6 +3886,41 @@ export interface operations {
       409: components["responses"]["Conflict"];
       413: components["responses"]["PayloadTooLarge"];
       415: components["responses"]["UnsupportedMediaType"];
+      422: components["responses"]["UnprocessableEntity"];
+      500: components["responses"]["InternalServerError"];
+      503: components["responses"]["ServiceUnavailable"];
+    };
+  };
+  listRenderUnitGenerationsV2: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+      };
+      path: {
+        unit_id: components["parameters"]["RenderUnitIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Recorded generation attempts. */
+      200: {
+        headers: {
+          "X-Request-ID": components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RenderUnitGenerationListV2"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      404: components["responses"]["NotFound"];
+      408: components["responses"]["RequestTimeout"];
+      413: components["responses"]["PayloadTooLarge"];
       422: components["responses"]["UnprocessableEntity"];
       500: components["responses"]["InternalServerError"];
       503: components["responses"]["ServiceUnavailable"];

@@ -2148,9 +2148,6 @@ paths:
       responses:
         "200":
           description: Recorded generation attempts.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:

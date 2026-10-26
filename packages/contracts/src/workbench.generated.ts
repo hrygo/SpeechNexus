@@ -3903,7 +3903,6 @@ export interface operations {
       /** @description Recorded generation attempts. */
       200: {
         headers: {
-          "X-Request-ID": components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {

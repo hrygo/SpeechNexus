@@ -2999,9 +2999,7 @@
       "responses": {
         "200": {
           "schema": "HttpResponse_listRenderUnitGenerationsV2_200",
-          "headers": {
-            "x-request-id": "string"
-          },
+          "headers": {},
           "json": true
         },
         "400": {
@@ -16458,11 +16456,7 @@
       "properties": {
         "headers": {
           "type": "object",
-          "properties": {
-            "x-request-id": {
-              "type": "string"
-            }
-          },
+          "properties": {},
           "required": [],
           "additionalProperties": true
         },

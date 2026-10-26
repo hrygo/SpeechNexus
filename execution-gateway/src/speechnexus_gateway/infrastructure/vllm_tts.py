@@ -5,20 +5,25 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 import struct
 from collections.abc import Callable
+from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any
 
 from speechnexus_gateway.domain.tts import (
     TtsAudio,
     TtsCallError,
     TtsEngineFormat,
+    TtsExecutionTarget,
     TtsFailure,
     TtsPolicy,
     TtsRequest,
 )
 from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
+    load_controlled_endpoint_descriptor,
 )
 
 _MEDIA_TYPES = {TtsEngineFormat.WAV: "audio/wav", TtsEngineFormat.PCM: "audio/pcm"}
@@ -26,8 +31,39 @@ _MAX_ENVELOPE_BYTES = 65536
 _MAX_WAV_CHUNKS = 32
 
 
+@dataclass(frozen=True, slots=True)
 class VllmTtsEndpoint(PrivateEngineEndpoint):
     """A configured private IP literal for the fixed vLLM-Omni speech endpoint."""
+
+    execution_target: TtsExecutionTarget | None = None
+
+    def __post_init__(self) -> None:
+        PrivateEngineEndpoint.__post_init__(self)
+        if self.execution_target is not None and (
+            self.execution_target.binding_revision_id != self.binding_revision_id
+            or self.bearer_token is None
+            or re.fullmatch(r"[0-9a-f]{64}", self.bearer_token) is None
+        ):
+            raise ValueError("a controlled TTS target requires its native generation credential")
+
+
+def load_controlled_tts_endpoint(path: Path) -> VllmTtsEndpoint:
+    """Read one private, bounded deployment descriptor; caller input cannot select it."""
+    try:
+        descriptor = load_controlled_endpoint_descriptor(path)
+        target = descriptor.target
+        if set(target) != {item.name for item in fields(TtsExecutionTarget)}:
+            raise ValueError
+        return VllmTtsEndpoint(
+            address=descriptor.address,
+            port=descriptor.port,
+            served_model=descriptor.served_model,
+            binding_revision_id=target["binding_revision_id"],
+            bearer_token=descriptor.bearer_token,
+            execution_target=TtsExecutionTarget(**target),
+        )
+    except OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError:
+        raise ValueError("invalid private controlled TTS deployment descriptor") from None
 
 
 def _invalid(*, audio_bytes: int | None = None) -> TtsCallError:
@@ -126,6 +162,10 @@ class VllmTtsSynthesizer:
     @property
     def binding_revision_id(self) -> str:
         return self._endpoint.binding_revision_id
+
+    def validate_execution_target(self, target: TtsExecutionTarget) -> None:
+        if self._endpoint.execution_target is None or self._endpoint.execution_target != target:
+            raise ValueError("configured native TTS generation does not match the admitted target")
 
     async def synthesize(
         self,

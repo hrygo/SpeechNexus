@@ -9,8 +9,9 @@ date: 2026-10-24
 
 本单元把已复核的 vLLM-Omni `/v1/audio/speech` 能力做成网关原生端口：冻结文本与音色策略、
 固定私网端点、结构化校验引擎音频、并把规范化 PCM16 有界编码为交付格式。
-公开 `/v1/audio/speech` 路由、持久 dispatch 装配、调度准入、对象发布、音色发布
-以及 Base/VoiceDesign 仍另行接入；不能把适配器直接注册成绕过租约和提交屏障的业务路由。
+持久 dispatch 装配见[文件 TTS 默认执行装配](file-tts-runtime.md)。公开
+`/v1/audio/speech` 路由、调度准入、对象发布、音色发布以及 Base/VoiceDesign 仍另行接入；
+不能把适配器直接注册成绕过租约和提交屏障的业务路由。
 
 ## 端口和结果
 
@@ -58,8 +59,8 @@ PCM 字节数、时长和交付载荷。文本与音频载荷不进入 `repr`；
 调用方须通过原 B 区间端口登记实际生成样本，再调用原观察事务登记回执。
 新音频查询、完整区间检查、升级顺序及回退边界见
 [执行回执](execution-staging-results.md)和 [ADR 0010](../decisions/0010-private-audio-receipt-compatibility.md)。
-原命令消费见下文 `CommandFileTts`；默认部署工厂与 A 的公开发布链仍未装配，
-组件接线不能替代公开闭环。
+原命令消费见下文 `CommandFileTts`；默认部署工厂见[文件 TTS 默认执行装配](file-tts-runtime.md)。
+A 的公开发布链仍未装配，组件接线不能替代公开闭环。
 
 staging 本地稳定错误为 `tts_result_invalid`、`tts_result_cancelled`、
 `tts_result_deadline_exceeded`、`tts_result_storage_unknown`、
@@ -97,7 +98,10 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 
 `CommandFileTts` 把已持久化的原 `SubmitExecutionRequest` 冻结成一次合成：校验 command digest
 与总长度、`kind=tts`/`task_kind=tts_file`/`stage_role=tts_connector`、binding/policy revision、
-非空 `voice_revision_id`，以及 `text` 非空且 `text_stream` 为空。它只接受
+非空 `voice_revision_id`、匹配的 node/gateway/pool/instance/generation target，以及
+`text` 非空且 `text_stream` 为空。原请求还必须带有非空 `output_stream_id`、
+`max_output_audio_ms` 和等于 binding 的 24 kHz `sample_rate_hz`；这三个事实用于生成区间
+和硬输出上界，缺失或越界不会进入合成。它只接受
 `text_commit_mode=explicit`、`audio_delivery=complete`、无 pronunciation revision、
 `voice_kind=builtin` 且无 voice material/词表/发音资源，并要求文本长度不超过命令声明的
 `planner.max_chars`：本单元只做单段完整交付，长文本切分属于后续单元，不会被静默截断。
@@ -106,7 +110,8 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 决定交付格式（wav/mp3/pcm），引擎格式、采样率与各项上限仍来自批准 binding。
 `validate_request` 只做无 I/O 的冻结检查；`synthesize` 至多一次引擎调用；
 `stage_result` 复用私有 staging 回执。三者都不写终止状态、不发布制品、不签发停止或释放证据；
-执行身份、准入、计量与对外发布仍由 A 的原事务负责。
+持久 worker 在登记音频回执前，先通过原区间端口写入完整生成范围 `[0, source_pcm_samples)`；
+覆盖缺口或越过冻结上界时隔离并保留占用。执行身份、准入、计量与对外发布仍由 A 的原事务负责。
 
 ## 私有 HTTP 和结构校验
 

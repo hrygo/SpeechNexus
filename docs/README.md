@@ -43,6 +43,7 @@
 | [文件 ASR 原生识别接口](architecture/file-asr-recognition.md) | 固定内网 ASR、VAD 门禁、SSE 完成/截断判定、源时钟及未装配的持久执行边界 |
 | [文件 ASR 固定制品与参数交接](architecture/file-asr-binding-handoff.md) | 1.7B/VAD/引擎锁定、离线校验、原命令参数与 A 配置/发布的接入边界 |
 | [文件 TTS 原生合成接口](architecture/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
+| [文件 TTS 默认执行装配](architecture/file-tts-runtime.md) | 私有配置、受控 generation、原命令 worker、生成区间与音频回执；实际模型和公开链待验 |
 | [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 0.6B/1.7B、真实录音、无语音零外发、真实截断负例与同片段重复测量 |
 | [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 1.7B CustomVoice 经适配器的 WAV/MP3 交付、24→16 kHz 解码与 0.6B ASR 回环、停止与清理证据 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |

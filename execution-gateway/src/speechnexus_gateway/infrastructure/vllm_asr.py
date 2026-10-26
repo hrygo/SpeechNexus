@@ -6,10 +6,8 @@ import asyncio
 import importlib
 import io
 import json
-import os
 import re
 import secrets
-import stat
 import wave
 from collections.abc import Callable
 from dataclasses import dataclass, fields
@@ -26,6 +24,7 @@ from speechnexus_gateway.domain.asr import (
 )
 from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
+    load_controlled_endpoint_descriptor,
 )
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
@@ -54,33 +53,16 @@ class VllmAsrEndpoint(PrivateEngineEndpoint):
 def load_controlled_asr_endpoint(path: Path) -> VllmAsrEndpoint:
     """Read one private, bounded deployment descriptor; caller input cannot select it."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(descriptor, "rb") as source:
-            metadata = os.fstat(source.fileno())
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
-                raise ValueError
-            payload = source.read(16385)
-        if len(payload) > 16384:
-            raise ValueError
-        document = json.loads(payload, object_pairs_hook=_unique_object, parse_constant=_nonfinite)
-        if (
-            not isinstance(document, dict)
-            or set(document)
-            != {"protocol", "target", "address", "port", "served_model", "bearer_token"}
-            or document["protocol"] != "vllm_api_key_v1"
-        ):
-            raise ValueError
-        target = document["target"]
-        if not isinstance(target, dict) or set(target) != {
-            item.name for item in fields(AsrExecutionTarget)
-        }:
+        descriptor = load_controlled_endpoint_descriptor(path)
+        target = descriptor.target
+        if set(target) != {item.name for item in fields(AsrExecutionTarget)}:
             raise ValueError
         return VllmAsrEndpoint(
-            address=document["address"],
-            port=document["port"],
-            served_model=document["served_model"],
+            address=descriptor.address,
+            port=descriptor.port,
+            served_model=descriptor.served_model,
             binding_revision_id=target["binding_revision_id"],
-            bearer_token=document["bearer_token"],
+            bearer_token=descriptor.bearer_token,
             execution_target=AsrExecutionTarget(**target),
         )
     except OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError:

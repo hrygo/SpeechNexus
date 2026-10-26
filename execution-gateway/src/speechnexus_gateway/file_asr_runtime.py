@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import ssl
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Literal
@@ -15,9 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.asr import AsrPolicy
+from speechnexus_gateway.domain.asr_results import AsrResultStore, validate_asr_result_limit
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputLimits
+from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
 from speechnexus_gateway.domain.media import AudioDecodeLimits
+from speechnexus_gateway.domain.submission import SubmitRequest
 from speechnexus_gateway.domain.vad import VadPolicy
 from speechnexus_gateway.infrastructure.asr_results_minio import MinioAsrResults
 from speechnexus_gateway.infrastructure.execution_objects_minio import MinioExecutionInputs
@@ -30,6 +33,13 @@ from speechnexus_gateway.infrastructure.vllm_asr import (
     load_controlled_asr_endpoint,
 )
 from speechnexus_gateway.interfaces.file_asr_command import CommandFileAsr
+from speechnexus_gateway.private_deployment import (
+    absolute_path,
+    explicit_fields,
+    nonfinite,
+    private_file,
+    unique_pairs,
+)
 from speechnexus_gateway.settings import Settings
 
 
@@ -62,49 +72,6 @@ class _Deployment(_PrivateConfiguration):
     max_call_seconds: float
 
 
-def _absolute(value: str) -> Path:
-    path = Path(value)
-    if not path.is_absolute() or "\x00" in value:
-        raise ValueError
-    return path
-
-
-def _private_file(path: Path, limit: int) -> bytes:
-    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
-    with os.fdopen(descriptor, "rb") as source:
-        info = os.fstat(source.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or info.st_mode & 0o077
-            or not 0 < info.st_size <= limit
-        ):
-            raise ValueError
-        content = source.read(limit + 1)
-        if not 0 < len(content) <= limit:
-            raise ValueError
-        return content
-
-
-def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError
-        result[key] = value
-    return result
-
-
-def _nonfinite(_: str) -> Any:
-    raise ValueError
-
-
-def _explicit(value: dict[str, Any], names: set[str]) -> dict[str, Any]:
-    if set(value) != names:
-        raise ValueError
-    return value
-
-
 @dataclass(frozen=True, slots=True, repr=False)
 class FileAsrConfiguration:
     """A startup snapshot; does not create bindings, admit work or attest stop."""
@@ -121,29 +88,62 @@ class FileAsrConfiguration:
     max_completion_tokens: int
     max_call_seconds: float
 
-    def build(self, ingress: GatewayIngress, ledger: FileExecutionLedger) -> FileExecutionWorker:
-        execution = CommandFileAsr(
-            inputs=FileExecutionInputs(self.objects),
-            decoder=PyAvAudioDecoder(),
-            vad_model=SileroOnnxCpuModel(
-                model_path=self.model_path, expected_sha256=self.model_sha256
+    def execution(self) -> AsrFileStage:
+        return AsrFileStage(
+            CommandFileAsr(
+                inputs=FileExecutionInputs(self.objects),
+                decoder=PyAvAudioDecoder(),
+                vad_model=SileroOnnxCpuModel(
+                    model_path=self.model_path, expected_sha256=self.model_sha256
+                ),
+                recognizer=VllmAsrRecognizer(self.endpoint),
+                vad_tuning=self.vad,
+                max_completion_tokens=self.max_completion_tokens,
+                max_call_seconds=self.max_call_seconds,
+                input_limits=self.inputs,
+                decode_limits=self.decode,
             ),
-            recognizer=VllmAsrRecognizer(self.endpoint),
-            vad_tuning=self.vad,
-            max_completion_tokens=self.max_completion_tokens,
-            max_call_seconds=self.max_call_seconds,
-            input_limits=self.inputs,
-            decode_limits=self.decode,
+            self.worker.max_result_bytes,
         )
+
+    def build(
+        self, ingress: GatewayIngress, ledger: FileExecutionLedger
+    ) -> FileExecutionWorker[AsrResultStore]:
         return FileExecutionWorker(
             ingress=ingress,
             ledger=ledger,
-            execution=execution,
+            execution=self.execution(),
             results=self.results,
-            max_result_bytes=self.worker.max_result_bytes,
-            max_command_bytes=self.worker.max_command_bytes,
-            max_pending=self.worker.max_pending,
-            shutdown_seconds=self.worker.shutdown_seconds,
+            limits=self.worker,
+            engine_request_prefix="file-asr",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AsrFileStage:
+    """Adapt the ASR JSON receipt and its per-call byte budget to the file lane."""
+
+    command: CommandFileAsr
+    max_result_bytes: int
+
+    def validate_request(self, request: SubmitRequest) -> SubmitRequest:
+        return self.command.validate_request(request)
+
+    async def stage_result(
+        self,
+        request: SubmitRequest,
+        *,
+        store: AsrResultStore,
+        cancelled: Callable[[], bool],
+    ) -> ExecutionStagingResult:
+        receipt = await self.command.stage_result(
+            request,
+            store=store,
+            max_result_bytes=self.max_result_bytes,
+            cancelled=cancelled,
+        )
+        return ExecutionStagingResult(
+            receipt.request_digest, receipt.reference, receipt.storage_version
         )
 
 
@@ -155,33 +155,36 @@ def load_file_asr_configuration(settings: Settings) -> FileAsrConfiguration | No
     try:
         deployment = _Deployment.model_validate(
             json.loads(
-                _private_file(path, 65536),
-                object_pairs_hook=_unique,
-                parse_constant=_nonfinite,
+                private_file(path, 65536),
+                object_pairs_hook=unique_pairs,
+                parse_constant=nonfinite,
             )
         )
         vad = VadPolicy(
-            **_explicit(deployment.vad_tuning, {item.name for item in fields(VadPolicy)})
+            **explicit_fields(deployment.vad_tuning, {item.name for item in fields(VadPolicy)})
         )
         inputs = ExecutionInputLimits(
-            **_explicit(
+            **explicit_fields(
                 deployment.input_limits, {item.name for item in fields(ExecutionInputLimits)}
             )
         )
         decode = AudioDecodeLimits(
-            **_explicit(deployment.decode_limits, {item.name for item in fields(AudioDecodeLimits)})
+            **explicit_fields(
+                deployment.decode_limits, {item.name for item in fields(AudioDecodeLimits)}
+            )
         )
         worker = FileExecutionLimits(
-            **_explicit(
+            **explicit_fields(
                 deployment.worker_limits, {item.name for item in fields(FileExecutionLimits)}
             )
         )
+        validate_asr_result_limit(worker.max_result_bytes)
         AsrPolicy(
             vad.config_revision,
             max_completion_tokens=deployment.max_completion_tokens,
             timeout_seconds=deployment.max_call_seconds,
         )
-        endpoint = load_controlled_asr_endpoint(_absolute(deployment.controlled_endpoint_file))
+        endpoint = load_controlled_asr_endpoint(absolute_path(deployment.controlled_endpoint_file))
         target = endpoint.execution_target
         if (
             target is None
@@ -189,7 +192,7 @@ def load_file_asr_configuration(settings: Settings) -> FileAsrConfiguration | No
             or target.gateway_id != settings.gateway_id
         ):
             raise ValueError
-        model_path = _absolute(deployment.vad_model_file)
+        model_path = absolute_path(deployment.vad_model_file)
         model_info = model_path.stat()
         if (
             not stat.S_ISREG(model_info.st_mode)
@@ -201,7 +204,7 @@ def load_file_asr_configuration(settings: Settings) -> FileAsrConfiguration | No
             None
             if ca_file is None
             else ssl.create_default_context(
-                cadata=_private_file(_absolute(ca_file), 262144).decode("ascii")
+                cadata=private_file(absolute_path(ca_file), 262144).decode("ascii")
             )
         )
         access_key = settings.file_asr_object_access_key
@@ -213,7 +216,7 @@ def load_file_asr_configuration(settings: Settings) -> FileAsrConfiguration | No
             bucket=deployment.objects.input_bucket,
             access_key=access_key.get_secret_value(),
             secret_key=secret_key.get_secret_value(),
-            spool_directory=_absolute(deployment.objects.spool_directory),
+            spool_directory=absolute_path(deployment.objects.spool_directory),
             ssl_context=context,
         )
         results = MinioAsrResults(

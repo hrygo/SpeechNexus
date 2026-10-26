@@ -15,6 +15,7 @@ from speechnexus_gateway.domain.tts import (
     TtsDeliveryError,
     TtsDeliveryFailure,
     TtsDeliveryFormat,
+    TtsExecutionTarget,
     TtsFailure,
     TtsPolicy,
     TtsRequest,
@@ -109,6 +110,9 @@ class FakeSynthesizer:
         self.error = error
         self.binding_revision_id = binding_revision_id
         self.calls: list[TtsPolicy] = []
+
+    def validate_execution_target(self, target: TtsExecutionTarget) -> None:
+        assert target.pool_id == "tts-batch"
 
     async def synthesize(
         self,

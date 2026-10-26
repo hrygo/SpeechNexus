@@ -20,6 +20,7 @@ from speechnexus_gateway.domain.tts import (
     TtsCallError,
     TtsDelivery,
     TtsDeliveryFormat,
+    TtsExecutionTarget,
     TtsFailure,
     TtsPolicy,
     TtsRequest,
@@ -34,10 +35,22 @@ BINDING = TtsPolicy("policy-tts", "Vivian")
 
 
 class Synthesizer:
-    def __init__(self, *, error: TtsCallError | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        error: TtsCallError | None = None,
+        target: TtsExecutionTarget | None = None,
+    ) -> None:
         self.binding_revision_id = "binding-tts"
         self.error = error
+        self.target = target or TtsExecutionTarget(
+            "node-tts", "gateway-tts", "tts-batch", "instance-tts", 1, "binding-tts"
+        )
         self.calls: list[tuple[TtsRequest, TtsPolicy]] = []
+
+    def validate_execution_target(self, target: TtsExecutionTarget) -> None:
+        if target != self.target:
+            raise ValueError("synthetic target mismatch")
 
     async def synthesize(
         self,
@@ -111,10 +124,11 @@ def tts_request(
             fencing_token=1,
             command_digest=command_digest(value),
             deadline_at=datetime.now(UTC).replace(microsecond=0) + deadline,
-            max_output_audio_ms=None,
-            sample_rate_hz=None,
+            max_output_audio_ms=60000,
+            sample_rate_hz=24000,
         ),
         command=value,
+        output_stream_id="stream-tts",
     )
 
 
@@ -290,3 +304,45 @@ def test_identity_mismatches_are_rejected() -> None:
     ):
         with pytest.raises(InvalidExecutionRequestError):
             runner.validate_request(tampered)
+
+
+def test_audio_identity_is_required() -> None:
+    runner, engine, _ = build()
+    request = tts_request()
+    tampered = replace(
+        request,
+        identity=replace(request.identity, max_output_audio_ms=None, sample_rate_hz=None),
+        output_stream_id=None,
+    )
+    with pytest.raises(InvalidExecutionRequestError):
+        runner.validate_request(tampered)
+    assert engine.calls == []
+
+
+def test_audio_clock_and_ceiling_must_match_the_binding() -> None:
+    runner, engine, _ = build()
+    request = tts_request()
+    for tampered in (
+        replace(
+            request,
+            identity=replace(request.identity, sample_rate_hz=16000),
+        ),
+        replace(
+            request,
+            identity=replace(request.identity, max_output_audio_ms=600001),
+        ),
+    ):
+        with pytest.raises(InvalidExecutionRequestError):
+            runner.validate_request(tampered)
+    assert engine.calls == []
+
+
+def test_admitted_target_must_match_the_configured_generation() -> None:
+    engine = Synthesizer(
+        target=TtsExecutionTarget(
+            "node-other", "gateway-tts", "tts-batch", "instance-tts", 1, "binding-tts"
+        )
+    )
+    runner, _, _ = build(synthesizer=engine)
+    with pytest.raises(InvalidExecutionRequestError):
+        runner.validate_request(tts_request())

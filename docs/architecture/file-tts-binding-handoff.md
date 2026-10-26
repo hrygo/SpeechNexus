@@ -1,7 +1,7 @@
 ---
 title: "文件 CustomVoice 固定制品与参数交接"
 status: active
-version: "0.1.0"
+version: "0.1.1"
 date: 2026-10-26
 ---
 
@@ -124,12 +124,19 @@ A 负责权威注册、资格校验、发布/激活与默认选择，B 提供固
 | 输入/输出 | 命令长度、`max_pcm_bytes`、`max_audio_ms`、HTTP 总期限、交付字节预算、worker 容量和关闭期限全部显式提供；见[默认装配](file-tts-runtime.md) |
 | 硬输出上界 | 原身份 `max_output_audio_ms` 不超过策略，源时钟为 24 kHz；先完整区间，后音频回执 |
 | 控制器 | 批准模板、固定镜像/argv/挂载、代次 key 和受保护 `/v1/audio/speech` 两次有界预热；health-only 不算 ready |
-| 指令长度 | 固定版本默认 pipeline 声明 500 字符，公共命令允许 2000；批准模板必须显式设置 `--tts-max-instructions-length 2000` 并核对实际 argv。既有短指令实验不能证明 2000 字符已验收 |
+| 指令长度 | 固定版本默认 pipeline 声明 500 codepoints；Nexus overrides 上限 2000，标准 speech 请求及内部执行命令上限均为 4096。模板目标 2000 的实际 argv、请求校验消费者及各入口映射/准入语义均须验证，不能只加 `--tts-max-instructions-length 2000` 就认定已支持；不得静默截断 2001–4096。既有短指令实验不能证明上界已验收 |
 | 生成预算 | 模型 `generation_config.json` 的 `max_new_tokens=8192` 不等于最终引擎上限；固定 `qwen3_tts.yaml` 的 talker `max_tokens=4096`、code2wav 65536，serving ceiling 和 pipeline constraints 仍生效 |
 
 模型配置的温度 0.9、top-k 50、top-p 1.0、repetition penalty 1.05 及引擎阶段配置随
 制品/源码固定。网关不暴露任意 TTS sampling overrides，不能假设客户端能改这些值，
 也不能只据模型文件判断最终采样参数。改变部署配置或参数上界须形成新配置身份并重验。
+
+指令长度分别来自 [TTS overrides](../../contracts/shared/speech-overrides.schema.json)、
+[标准 speech 请求](../../contracts/speech-openapi.yaml)和
+[内部执行命令](../../contracts/internal/execution-command.schema.json)。
+截至本轮收尾，只确认 serving 计算/缓存长度配置；是否传到 adapter 的实际校验尚待核实。
+没有变更公共契约或产品实现，也没有完成 2000/4096 边界真实合成与超限拒绝实验。
+该缺口及旧排期停止执行的安排见[负责人交接](../audits/2026-10-26-team-b-handoff.md)。
 
 manifest 仍须覆盖 GPU、CPU 编码、响应与结果缓冲等全部资源。旧实验的 16 GiB cgroup
 上限及 `gpu-memory-utilization=0.06` 不授予隔离或峰值/稳态资格。

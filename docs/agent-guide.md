@@ -22,6 +22,7 @@
 | 任务 | 入口 |
 | --- | --- |
 | 当前能力、启动入口 | [README.md](../README.md)、[README.en.md](../README.en.md) |
+| 项目统筹、接管、跨团队排期或验收 | [项目经理工作约定](project-manager-guide.md) |
 | 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |
 | 模块边界与依赖方向 | [工程目录说明](architecture/repository-layout.md) |

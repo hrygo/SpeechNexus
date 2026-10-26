@@ -20,6 +20,7 @@ from speechnexus_backend.workbench.domain.render_units import (
     RenderUnit,
     RevisionPin,
 )
+from speechnexus_backend.workbench.domain.versions import InvalidVersionChangeError
 
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
 WORKSPACE = "workspace-demo"
@@ -130,8 +131,10 @@ class Copies:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.saved: list[dict[str, Any]] = []
+        self.attempts: list[dict[str, Any]] = []
 
     async def save_copy(self, **arguments: Any) -> str:
+        self.attempts.append(arguments)
         if self.error is not None:
             raise self.error
         self.saved.append(arguments)
@@ -207,3 +210,23 @@ async def test_restore_copies_without_a_port_is_a_no_op() -> None:
         )
         == ()
     )
+
+
+async def test_a_rejected_copy_is_not_retried_forever() -> None:
+    ready = ready_with_source()
+    units, copies = Units(ready), Copies(InvalidVersionChangeError("source is gone"))
+    units.unsaved = (ready,)
+    reconciler = RenderReconciler(units, Jobs(RenderJobOutcome("pending")), copies)
+    assert await reconciler.restore_copies(workspace_id=WORKSPACE) == ()
+    assert await reconciler.restore_copies(workspace_id=WORKSPACE) == ()
+    assert len(copies.attempts) == 1
+
+
+async def test_a_transient_copy_failure_is_retried_on_the_next_pass() -> None:
+    ready = ready_with_source()
+    units, copies = Units(ready), Copies(ObjectZoneError())
+    units.unsaved = (ready,)
+    reconciler = RenderReconciler(units, Jobs(RenderJobOutcome("pending")), copies)
+    await reconciler.restore_copies(workspace_id=WORKSPACE)
+    await reconciler.restore_copies(workspace_id=WORKSPACE)
+    assert len(copies.attempts) == 2

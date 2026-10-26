@@ -29,6 +29,18 @@ from speechnexus_gateway.infrastructure.private_engine_endpoint import (
 _MEDIA_TYPES = {TtsEngineFormat.WAV: "audio/wav", TtsEngineFormat.PCM: "audio/pcm"}
 _MAX_ENVELOPE_BYTES = 65536
 _MAX_WAV_CHUNKS = 32
+_VLLM_LANGUAGES = {
+    "zh": "Chinese",
+    "en": "English",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "es": "Spanish",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +134,13 @@ def _wav_pcm(payload: bytes, *, sample_rate_hz: int, max_pcm_bytes: int) -> byte
     return data
 
 
+def _engine_language(tag: str) -> str:
+    """Translate the public BCP47 language domain to this vendor's fixed values."""
+
+    primary = tag.split("-", 1)[0].lower()
+    return _VLLM_LANGUAGES.get(primary, tag)
+
+
 def _request_body(request: TtsRequest, policy: TtsPolicy, endpoint: VllmTtsEndpoint) -> bytes:
     document: dict[str, Any] = {
         "model": endpoint.served_model,
@@ -135,7 +154,7 @@ def _request_body(request: TtsRequest, policy: TtsPolicy, endpoint: VllmTtsEndpo
     if policy.instructions:
         document["instructions"] = policy.instructions
     if policy.language is not None:
-        document["language"] = policy.language
+        document["language"] = _engine_language(policy.language)
     if policy.seed is not None:
         document["seed"] = policy.seed
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(

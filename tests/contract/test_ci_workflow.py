@@ -83,6 +83,28 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
 
 
+def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() -> None:
+    job = _WORKFLOW["jobs"]["coordination"]
+    assert _WORKFLOW["permissions"] == {"contents": "read"}
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert job["timeout-minutes"] == 2
+    assert set(job["needs"]) == {"changes", "integration_shards"}
+    step = next(s for s in job["steps"] if "download-integration-evidence.py" in s.get("run", ""))
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "CI_REPOSITORY": "${{ github.repository }}",
+        "CI_RUN_ID": "${{ github.run_id }}",
+    }
+    assert '--repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID"' in step["run"]
+    assert '--count 6 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    assert not any("actions/download-artifact@" in s.get("uses", "") for s in job["steps"])
+    assert "if" not in step and "continue-on-error" not in step
+    check = job["steps"][job["steps"].index(step) + 1]
+    assert "scripts/dev-env/integration-shards.py check" in check["run"]
+    assert '--count 6 --head "$(git rev-parse HEAD)"' in check["run"]
+    assert "if" not in check and "continue-on-error" not in check
+
+
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],
@@ -99,7 +121,7 @@ def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 def test_protected_status_never_passes_missing_evidence(
     mode: str, checks: str, coordination: str
 ) -> None:
-    assert _GATE["name"] == "Python quality and tests"
+    assert _GATE["name"] == "Gate: required checks for this change"
     assert set(_GATE["needs"]) == {
         "changes",
         "python_checks_gate",
@@ -145,7 +167,7 @@ def test_missing_or_invalid_routing_cannot_authorize_a_merge(mode: str, routing:
 @pytest.mark.parametrize("contracts", ["success", "failure", "skipped", "cancelled", ""])
 def test_original_python_status_requires_both_complete_lanes(checks: str, contracts: str) -> None:
     gate = _WORKFLOW["jobs"]["python_checks_gate"]
-    assert gate["name"] == "Python static checks and unit tests"
+    assert gate["name"] == "Gate: Python execution and static checks"
     assert set(gate["needs"]) == {"changes", "python_checks", "python_contracts"}
     assert "always()" in gate["if"] and "needs.changes.outputs.mode" in gate["if"]
     step = gate["steps"][0]
@@ -204,8 +226,8 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     assert expected <= contract_commands
     assert not expected.intersection(execution_commands)
     coverage = next(step for step in execution["steps"] if step.get("id") == "coverage")
-    assert "uv run python scripts/dev-env/workbench-pg-probe.py" in coverage["run"]
-    assert "--pg-bin /usr/lib/postgresql/16/bin --full-coverage" in coverage["run"]
+    assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin --workers 2" in coverage["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-coverage.json"' in coverage["run"]
     assert coverage["run"] not in contract_commands
     assert "--cov-fail-under" not in coverage["run"]
@@ -227,9 +249,12 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     )
     assert "steps.coverage.outcome == 'success'" in artifact["if"]
     assert "steps.coverage.outcome == 'failure'" in artifact["if"]
-    assert artifact["with"]["path"] == "${{ runner.temp }}/workbench-pg-coverage.json"
+    assert artifact["with"]["path"].splitlines() == [
+        "${{ runner.temp }}/workbench-pg-coverage.json",
+        "${{ runner.temp }}/workbench-pg-coverage-parts/",
+    ]
     assert artifact["with"]["if-no-files-found"] == "error"
-    # The full single-suite coverage requirement remains in the original config.
+    # Both workers use the full roots; the combined gate retains the original policy.
     import tomllib
 
     config = tomllib.loads((_ROOT / "pyproject.toml").read_text())

@@ -94,6 +94,25 @@ jobs:
           npm install --global --allow-scripts=pnpm pnpm@${PNPM_VERSION}
           pnpm install --frozen-lockfile
 
+      - name: Install Linux inspection sandbox
+        # Only this job executes the real Linux inspection-process tests. The
+        # bubblewrap package supplies the executable, not an enabled AppArmor
+        # profile. The following separately bounded, approved step loads only
+        # the pinned official two rules on this disposable job VM.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
+
+      - name: Load approved official inspection rules on this temporary VM
+        run: python3 scripts/dev-env/ci-inspection-profile.py load
+
+      - name: Verify inspection startup before complete regression
+        # Fail the same required job early on an unusable native dependency.
+        # The complete coverage run remains unchanged after this real probe.
+        run: >-
+          uv run pytest -q
+          tests/unit/backend/test_audio_inspection_process.py::test_real_worker_sees_only_readonly_input_and_no_host_environment
+
       - name: Ensure PostgreSQL 16 tools for the private coverage cluster
         run: |
           if [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
@@ -125,6 +144,85 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Report read-only sandbox startup context
+        if: failure()
+        run: |
+          bwrap --version
+          python3 - <<'PY'
+          import json
+          import os
+          import platform
+          import re
+          import subprocess
+          from pathlib import Path
+          result = {"kernel": platform.release(), "uid": os.getuid()}
+          for label, path in {
+              "lsm_context": "/proc/self/attr/current",
+              "userns_limit": "/proc/sys/user/max_user_namespaces",
+              "unprivileged_userns": "/proc/sys/kernel/unprivileged_userns_clone",
+              "apparmor_userns_restriction": "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+          }.items():
+              try:
+                  result[label] = Path(path).read_text().strip()[:160]
+              except OSError as error:
+                  result[label] = f"unavailable(errno={error.errno})"
+          packages = subprocess.run(
+              ["dpkg-query", "-W", "-f=${binary:Package} ${Version} ${db:Status-Status}\n",
+               "bubblewrap", "apparmor", "apparmor-profiles"],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          result["packages"] = {"returncode": packages.returncode,
+                                "stdout": packages.stdout[:1600], "stderr": packages.stderr[:400]}
+          result["parser_present"] = Path("/usr/sbin/apparmor_parser").is_file()
+          result["local_overrides"] = {
+              name: Path("/etc/apparmor.d/local", name).exists()
+              for name in ("bwrap-userns-restrict", "unpriv_bwrap")
+          }
+          # Read-only audit using the runner's existing sudo access. No parser,
+          # profile loading, service restart or security setting change.
+          audit = subprocess.run(
+              ["sudo", "-n", "/usr/sbin/aa-status", "--json"],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          result["profile_audit"] = {"returncode": audit.returncode}
+          if audit.returncode == 0:
+              try:
+                  profiles = json.loads(audit.stdout).get("profiles")
+                  if not isinstance(profiles, dict):
+                      raise ValueError("Unknown status schema")
+                  result["profile_audit"]["format"] = "profiles_dict"
+                  result["profile_audit"]["bwrap"] = {
+                      name: mode for name, mode in profiles.items() if "bwrap" in name
+                  }
+              except (ValueError, AttributeError):
+                  result["profile_audit"]["format"] = "unavailable"
+          else:
+              result["profile_audit"]["stderr"] = audit.stderr[:400]
+          # Read only recent kernel denials. Emit fixed audit fields for bwrap,
+          # never unrelated journal lines or arbitrary command/path arguments.
+          kernel_audit = subprocess.run(
+              ["sudo", "-n", "journalctl", "--dmesg", "--since=-5min", "-n", "80",
+               "--no-pager", "--output=short-iso", '--grep=apparmor="DENIED"'],
+              capture_output=True, text=True, check=False, timeout=5,
+          )
+          fields = ("apparmor", "operation", "profile", "comm", "pid", "error",
+                    "capability", "capname", "requested_mask", "denied_mask")
+          denials = []
+          for line in kernel_audit.stdout.splitlines():
+              if "bwrap" not in line or 'apparmor="DENIED"' not in line:
+                  continue
+              entry = {"timestamp": line.split(maxsplit=1)[0][:40]}
+              for field in fields:
+                  match = re.search(r'\b' + field + r'=("[^"]*"|\S+)', line)
+                  if match:
+                      entry[field] = match.group(1).strip('"')[:120]
+              denials.append(entry)
+          result["recent_bwrap_kernel_denials"] = {
+              "returncode": kernel_audit.returncode, "records": denials[:16],
+          }
+          print(json.dumps(result, sort_keys=True))
+          PY
+
       - name: Verify media toolchain
         run: uv run python scripts/dev-env/media-smoke.py
 
@@ -132,6 +230,22 @@ jobs:
         run: |
           uv build --all-packages --out-dir dist/python
           uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
+
+      - name: Remove only new inspection rules after owned processes stop
+        if: always()
+        run: python3 scripts/dev-env/ci-inspection-profile.py cleanup
+
+      - name: Preserve inspection policy identity and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: inspection-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/speech-inspection-profile/receipt.json
+            ${{ runner.temp }}/speech-inspection-profile/bwrap-userns-restrict
+            ${{ runner.temp }}/speech-inspection-profile/load-consumed
+          if-no-files-found: error
+          retention-days: 7
 
   python_contracts:
     name: Python static and contract checks

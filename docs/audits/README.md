@@ -1,5 +1,7 @@
 # SpeechNexus 审查记录
 
+- [2026-10-26 团队 C 收尾 issue 核对](2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
+
 审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
 
 - [2026-10-26 B03 默认文件 TTS 真实探针](2026-10-26-b03-default-real-tts-probe.md)：默认 `file_tts_v1`、真实 1.7B CustomVoice、隔离 PG/MinIO、语言边界修复、生成区间、重启重放与预算边界。

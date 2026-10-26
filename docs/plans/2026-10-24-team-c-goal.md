@@ -1,23 +1,25 @@
 ---
 title: "SpeechNexus 团队 C 执行目标"
-status: active
-version: "0.2.0"
+status: superseded
+version: "0.3.0"
 date: 2026-10-24
 ---
 
 # SpeechNexus 团队 C 执行目标
 
+2026-10-26 收尾：本文件转为历史目标，后续工作由新负责人重新安排。[当前交接](2026-10-26-team-c-final-handoff.md)汇总已集成范围、待审 PR、风险与证据；以下原范围和 AC 保留，历史接力顺序不再自动执行。
+
 ## 目标与范围
 
-依据[三团队实施计划](2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，持续完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
+依据[三团队实施计划](2026-10-23-three-team-delivery-plan.md)、[首轮任务卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)，原目标为完成 C00–C08。范围包括工作台后端和独立 schema/对象区/迁移、AdminUI 和 Workbench、浏览器媒体、音色工作室、会议/提词、内网 LLM/助手、有声书及独立保存/导出、业务删除恢复与应用交付资格。
 
-本文件定义持续执行范围，不证明产品能力已实现或 Codex 原生 Goal 已完成。应用目标状态以工具返回为准，工作包和 Gate 状态以具名验收证据为准。
+本文件保留原执行范围，不证明产品能力已实现或 Codex 原生 Goal 已完成。应用目标状态以工具返回为准，工作包和 Gate 状态以具名验收证据为准。
 
-## 当前进展与下一执行顺序（2026-10-24 更新）
+## 历史进展与原执行顺序（2026-10-24）
 
-完整 C00–C08 范围及退出条件保持不变。用户已要求持续推进；本次原生 Goal 查询仍返回 `blocked`，当前工具不支持修改其正文或恢复为 active。本文件的 `status: active` 表示持续执行文档的有效状态，不代表原生 Goal 已恢复。当前仍有可独立完成的修复工作，不能把外部依赖待交付解释为所有工作均被阻塞。
+以下是 2026-10-24 的阶段记录：当时用户要求持续推进，原生 Goal 查询返回 `blocked`，文档曾为 `active`；两者不等同。现行文档状态为 `superseded`，不据此改变原生 Goal 或判定任何工作包/Gate 完成。
 
-当前工作基线为 `4b08c396c0fe8fc43c7e85683e534befab6bb22b`。上一轮累计交付包为 338 路径（其 SHA-256 见上一轮 manifest），随后独立入口单元交付 347 路径累计包；本轮服务端提词持久化在该 347 路径之上新增 16 个文件、修改 14 个文件，最终 **363 路径**。当前累计补丁、逐文件哈希与 `git apply` 校验见 `.runtime/team-c/team-c-current.manifest.json`；为避免包内哈希自指，本文件不内联当前补丁哈希，最终哈希只写入 C 的九个跟踪 issue。保留全部现有及并行改动，未经明确授权不提交、推送或发送新跨 chat 消息。
+该阶段工作基线为 `4b08c396c0fe8fc43c7e85683e534befab6bb22b`。上一轮累计交付包为 338 路径（其 SHA-256 见上一轮 manifest），随后独立入口单元交付 347 路径累计包；本轮服务端提词持久化在该 347 路径之上新增 16 个文件、修改 14 个文件，最终 **363 路径**。当前累计补丁、逐文件哈希与 `git apply` 校验见 `.runtime/team-c/team-c-current.manifest.json`；为避免包内哈希自指，本文件不内联当前补丁哈希，最终哈希只写入 C 的九个跟踪 issue。保留全部现有及并行改动，未经明确授权不提交、推送或发送新跨 chat 消息。
 
 已具名取证的阶段进展：
 
@@ -114,7 +116,9 @@ date: 2026-10-24
 
 [C07 固定依赖与局部失效](2026-10-24-team-c-c07-render-handoff.md)补充固定稿件/声音/模型等版本、显式生成代次、A→B→A拒绝复活和仅目标单元/角色失效；领域源引用不授予保存/导出资格，真实持久化、公开接线、独立副本/质量确认/导出与实际资格继续推进。
 
-## 首轮与接力
+## 历史首轮与接力
+
+以下为当时的接力安排，供追溯，不再自动执行。
 
 [a98b2bb 集成核验](2026-10-24-team-c-a98-integration-handoff.md)记录本地已吸收 #65–#68 且保留全部团队 C 改动；该条保留原时点事实，历史单元基线保持原记录。
 
@@ -131,7 +135,7 @@ date: 2026-10-24
 [7cd18879集成](2026-10-24-team-c-7cd-integration-handoff.md)保留该历史单元事实，当时本地base为该SHA：安全吸收#77/#79的Meeting/Minutes及公开realtime生成入口，连同#80文件媒体准备与#81租约隔离代码；237旧C文件中232字节不变，5个交集保留双方语义，生成物由A现行流水线重建，357条HTTP样例。当时Python2735、隔离PG269、Web1150及Chromium合成流程通过，累计238文件。C2/C3解析依赖在当时交付，后续Meeting/Minutes handlers、页面及实时消费者见较新交接；共享生产root/迁移、Artifact导入/下载、独立副本/恢复、设备/Linux/GPU及完整真实资格继续推进，Goal/Gate未关闭。
 
 
-[Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)接通当前五项持久业务：Meeting创建/封存/读取与Minutes入队/读取；原键返回原接受快照，GET返回当前任务。Meeting依赖纳入项目/稿件删除预检、完整确认与清理，未知LLM执行仍阻断清理。C工厂显式装配18项，默认13项；会议页面/实时采集、save_audio保存、真实LLM、生产root/迁移及完整C00–C08资格继续，Goal active。
+[Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)接通当前五项持久业务：Meeting创建/封存/读取与Minutes入队/读取；原键返回原接受快照，GET返回当前任务。Meeting依赖纳入项目/稿件删除预检、完整确认与清理，未知LLM执行仍阻断清理。C工厂显式装配18项，默认13项；会议页面/实时采集、save_audio保存、真实LLM、生产root/迁移及完整C00–C08资格继续，当时 Goal 文档为 active；现已转为 superseded。
 
 1. 核对当前共同 `integration_base_sha`、工作区改动和各队具名制品；使用短分支，公共文件按维护者串行集成。暂以本地基线开展的独立单元，须在联合联调前对齐总指挥指定 SHA。
 2. 从 C00 #35 起步：消费 A00 发布的边界类型/客户端/事件 validator；完成项目和稿件版本、独立存储边界、开发 fake 及错误场景。生成器未交付时推进不依赖 DTO 的领域规则与界面状态，不手写替代生成产物。

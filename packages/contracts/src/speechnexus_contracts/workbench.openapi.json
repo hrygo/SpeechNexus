@@ -3039,7 +3039,6 @@
         "tags": ["audiobooks"],
         "operationId": "listRenderUnitGenerationsV2",
         "summary": "Read the recorded generation attempts of a render unit",
-        "description": "Returns the unit's recorded dispatch attempts, newest first. A unit that was\nnever dispatched returns an empty list. The history is read from durable\nattempt rows, so a restart cannot lose an attempt. `has_more` reports that\nolder attempts exist beyond `limit`.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/RenderUnitIdPath"

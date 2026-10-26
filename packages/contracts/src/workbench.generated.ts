@@ -823,13 +823,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Read the recorded generation attempts of a render unit
-     * @description Returns the unit's recorded dispatch attempts, newest first. A unit that was
-     *     never dispatched returns an empty list. The history is read from durable
-     *     attempt rows, so a restart cannot lose an attempt. `has_more` reports that
-     *     older attempts exist beyond `limit`.
-     */
+    /** Read the recorded generation attempts of a render unit */
     get: operations["listRenderUnitGenerationsV2"];
     put?: never;
     /**

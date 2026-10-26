@@ -19,7 +19,7 @@ env:
 
 jobs:
   changes:
-    name: CI scope and lightweight checks
+    name: "Scope routing and CI / design-token checks"
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -55,7 +55,7 @@ jobs:
             --output="$GITHUB_OUTPUT" --summary="$GITHUB_STEP_SUMMARY"
 
   python_checks:
-    name: Python tests and build
+    name: "Python: tests, coverage and package build"
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
@@ -124,7 +124,7 @@ jobs:
       - name: Start isolated versioned object storage for coverage
         run: ./scripts/dev-env/minio-test-service.sh
 
-      - name: Run all unit, contract and CI tests with real Workbench PG coverage
+      - name: Run Python unit, contract, CI and Workbench PG tests with combined coverage
         id: coverage
         env:
           SPEECHNEXUS_TEST_MINIO_ENDPOINT: http://127.0.0.1:59000
@@ -250,7 +250,7 @@ jobs:
           retention-days: 7
 
   python_contracts:
-    name: Python static and contract checks
+    name: "Python: lint, types and contract compatibility"
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
@@ -328,23 +328,23 @@ jobs:
           CONTRACT_BASE_REF: origin/${{ github.base_ref }}
         run: make contracts-realtime-changes
 
-      - name: Check formatting
+      - name: Check Python formatting with Ruff
         run: uv run ruff format --check .
 
-      - name: Lint
+      - name: Lint Python with Ruff
         run: uv run ruff check .
 
-      - name: Type check
+      - name: Check Python types with mypy
         run: uv run mypy
 
-      - name: Enforce module dependency direction
+      - name: Check Python module dependency boundaries
         run: uv run lint-imports
 
-      - name: Validate contracts
+      - name: Validate API and event schemas
         run: uv run python scripts/dev-env/validate-contracts.py
 
   integration_shards:
-    name: PostgreSQL/InnoDB shard ${{ matrix.shard }}
+    name: "Integration ${{ matrix.shard }}: ${{ matrix.shard >= 4 && 'Web + PG/MySQL/MinIO' || 'PG/MySQL/MinIO' }}"
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
@@ -476,7 +476,7 @@ jobs:
 
   # Full scope still requires actual execution and a complete, disjoint inventory.
   coordination:
-    name: PostgreSQL and InnoDB integration
+    name: "Gate: six-shard integration evidence"
     needs: [changes, integration_shards]
     if: ${{ always() && needs.changes.result == 'success' && needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
@@ -500,33 +500,32 @@ jobs:
           persist-credentials: false
 
       - name: Download integration partition evidence
-        # Use the public REST transport; the runtime client hung after successful downloads.
-        # Keep the pinned action, current repository/run, and strict digest validation.
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
-          pattern: integration-shard-*
-          path: ${{ runner.temp }}/integration-shards
-          merge-multiple: true
-          digest-mismatch: error
+        # The Node action hung after successful downloads in both client modes.
+        # Bound CLI processes; verify archive digests before reading expected files.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REPOSITORY: ${{ github.repository }}
+          CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 scripts/dev-env/download-integration-evidence.py \
+            --repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID" \
+            --count 6 --output "$RUNNER_TEMP/integration-shards"
 
-      - name: Require the complete integration collection exactly once
+      - name: Verify same-commit collection, partition coverage and actual test outcomes
         run: |
           python3 scripts/dev-env/integration-shards.py check \
             --count 6 --head "$(git rev-parse HEAD)" \
             --reports-dir "$RUNNER_TEMP/integration-shards"
 
-  # Preserve the original protected status while independent read-only checks overlap.
+  # Require both Python execution and independent static/contract checks.
   python_checks_gate:
-    name: Python static checks and unit tests
+    name: "Gate: Python execution and static checks"
     needs: [changes, python_checks, python_contracts]
     if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Require complete Python execution and contract evidence
+      - name: Require Python test/build and static/contract jobs to succeed
         env:
           CHECKS_RESULT: ${{ needs.python_checks.result }}
           CONTRACTS_RESULT: ${{ needs.python_contracts.result }}
@@ -536,16 +535,16 @@ jobs:
             exit 1
           fi
 
-  # Keep protected names stable. Only a successful explicit route can make a
-  # lane inapplicable; unexpected skipping, failure or cancellation cannot pass.
+  # Branch protection must use this gate's display name. Only a successful route
+  # can make a lane inapplicable; unexpected skipping or failure cannot pass.
   python:
-    name: Python quality and tests
+    name: "Gate: required checks for this change"
     needs: [changes, python_checks_gate, coordination, web, deployment]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Require every result selected by the verified scope
+      - name: Require successful routing and every applicable CI result
         env:
           MODE: ${{ needs.changes.outputs.mode }}
           ROUTING_RESULT: ${{ needs.changes.result }}
@@ -579,7 +578,7 @@ jobs:
           echo "Verified scope=$MODE; inapplicable lanes are not application-test evidence."
 
   web:
-    name: Web quality, tests, and build
+    name: "Web: lint, types, tests, build and accessibility"
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
@@ -606,19 +605,19 @@ jobs:
       - name: Verify OpenAI JavaScript SDK contract parity
         run: pnpm test:contracts-sdk
 
-      - name: Check formatting
+      - name: Check Web and configuration formatting with Prettier
         run: pnpm format:check
 
-      - name: Lint
+      - name: Lint Web code and validate design tokens
         run: pnpm lint
 
-      - name: Type check
+      - name: Check workspace TypeScript types
         run: pnpm typecheck
 
-      - name: Test
+      - name: Run workspace unit and component tests
         run: pnpm test
 
-      - name: Build
+      - name: Build workspace packages and Web applications
         run: pnpm build
 
       - name: Install Chromium headless shell for accessibility checks
@@ -640,7 +639,7 @@ jobs:
           retention-days: 7
 
   deployment:
-    name: Deployment configuration
+    name: "Compose: configuration validation"
     needs: [changes]
     if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
@@ -652,7 +651,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate Compose configuration
+      - name: Validate Compose configuration without starting services
         run: |
           docker compose \
             --env-file deploy/compose.env.example \

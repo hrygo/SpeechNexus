@@ -83,23 +83,21 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
 
 
-def test_integration_evidence_uses_same_run_rest_download_with_read_only_access() -> None:
+def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() -> None:
     job = _WORKFLOW["jobs"]["coordination"]
     assert _WORKFLOW["permissions"] == {"contents": "read"}
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert job["timeout-minutes"] == 2
     assert set(job["needs"]) == {"changes", "integration_shards"}
-    step = next(s for s in job["steps"] if "actions/download-artifact@" in s.get("uses", ""))
-    assert step["uses"] == "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
-    assert step["with"] == {
-        "github-token": "${{ github.token }}",
-        "repository": "${{ github.repository }}",
-        "run-id": "${{ github.run_id }}",
-        "pattern": "integration-shard-*",
-        "path": "${{ runner.temp }}/integration-shards",
-        "merge-multiple": True,
-        "digest-mismatch": "error",
+    step = next(s for s in job["steps"] if "download-integration-evidence.py" in s.get("run", ""))
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "CI_REPOSITORY": "${{ github.repository }}",
+        "CI_RUN_ID": "${{ github.run_id }}",
     }
+    assert '--repository "$CI_REPOSITORY" --run-id "$CI_RUN_ID"' in step["run"]
+    assert '--count 6 --output "$RUNNER_TEMP/integration-shards"' in step["run"]
+    assert not any("actions/download-artifact@" in s.get("uses", "") for s in job["steps"])
     assert "if" not in step and "continue-on-error" not in step
     check = job["steps"][job["steps"].index(step) + 1]
     assert "scripts/dev-env/integration-shards.py check" in check["run"]
@@ -123,7 +121,7 @@ def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 def test_protected_status_never_passes_missing_evidence(
     mode: str, checks: str, coordination: str
 ) -> None:
-    assert _GATE["name"] == "Python quality and tests"
+    assert _GATE["name"] == "Gate: required checks for this change"
     assert set(_GATE["needs"]) == {
         "changes",
         "python_checks_gate",
@@ -169,7 +167,7 @@ def test_missing_or_invalid_routing_cannot_authorize_a_merge(mode: str, routing:
 @pytest.mark.parametrize("contracts", ["success", "failure", "skipped", "cancelled", ""])
 def test_original_python_status_requires_both_complete_lanes(checks: str, contracts: str) -> None:
     gate = _WORKFLOW["jobs"]["python_checks_gate"]
-    assert gate["name"] == "Python static checks and unit tests"
+    assert gate["name"] == "Gate: Python execution and static checks"
     assert set(gate["needs"]) == {"changes", "python_checks", "python_contracts"}
     assert "always()" in gate["if"] and "needs.changes.outputs.mode" in gate["if"]
     step = gate["steps"][0]

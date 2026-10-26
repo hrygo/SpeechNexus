@@ -23,7 +23,23 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 ## 必需检查与证据
 
-保留 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration` 三个受保护检查名。作业级条件让不适用项明确显示 skipped；最终 Python 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
+三个受保护检查为 `Gate: required checks for this change`、`Web: lint, types, tests, build and accessibility`、`Compose: configuration validation`。它们分别替代原 `Python quality and tests`、`Web quality, tests, and build`、`Deployment configuration`；变更显示名称时必须同步 `main` 的 required status checks，并保持 GitHub Actions app 绑定及其他保护策略。迁移时先确认新名称在当前提交实际通过，再替换保护列表，不将缺失检查视为通过。
+
+作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
+
+显示名称区分执行、证据验收和最终合并门禁；内部 job ID、依赖、命令、范围与超时不随改名改变：
+
+| job ID | Actions 显示名称 | 实际职责 |
+| --- | --- | --- |
+| `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
+| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 测试，合并覆盖率、媒体工具链及 Python 包构建 |
+| `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
+| `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；后两片额外运行浏览器与 Node HTTP 消费者 |
+| `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
+| `python_checks_gate` | `Gate: Python execution and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
+| `python` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
+| `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、真实浏览器无障碍与对比度 |
+| `deployment` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。
 
@@ -95,7 +111,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 ## 整体耗时与实施决策（2026-10-26）
 
-整轮完成时间取决于最晚结束的依赖分支，不能把并行作业的节省秒数相加。现有 `changes` 完成后，Python 测试、静态契约、Web、部署及六个集成分片并发；集成证据汇总随后运行，最终 Python 必需检查核对所有适用结果。全量包含 14 个作业，作业间排队与作业内执行分别考虑。
+整轮完成时间取决于最晚结束的依赖分支，不能把并行作业的节省秒数相加。现有 `changes` 完成后，Python 测试、静态契约、Web、部署及六个集成分片并发；集成证据汇总随后运行，最终 CI 必需检查核对所有适用结果。全量包含 14 个作业，作业间排队与作业内执行分别考虑。
 
 | 分支／步骤 | 12 次历史执行中位数 | 统筹判断与处理 |
 | --- | ---: | --- |
@@ -105,7 +121,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 | Web | 206.5 秒 | 测试 57 秒、实际无障碍检查 58 秒、构建 11 秒、Chromium 准备 19 秒；在该样本中已有余量，保留完整检查与现有并发度 |
 | Python 静态与契约 | 81.5 秒 | 漂移检查 19 秒、mypy 19 秒、契约校验 10 秒；与测试并行，继续独立失败，不拆更多作业 |
 | 部署配置 | 5.5 秒 | 保留独立检查 |
-| 集成汇总／Python 中间与最终门禁 | 7.5／3／3 秒 | 执行本身小；保留同提交证据汇总及既有受保护检查名 |
+| 集成汇总／Python 中间与最终门禁 | 7.5／3／3 秒 | 执行本身小；保留同提交证据汇总与原有合并约束；显示名迁移见上文 |
 
 各行或子步骤中位数不能直接相加还原某次运行；Web/静态子步骤来自同批原始 jobs 数据。实际服务集成测试覆盖真实 PostgreSQL／InnoDB 的事务、并发锁、租约/预算、幂等重放、恢复与 outbox，以及 MinIO 对象版本、删除和 HTTP/Node/浏览器消费者。模型与执行引擎按各测试的显式 fake/合成边界提供；它验证基础设施和生产装配的正确性，不等于真实语音模型或内网 LLM 部署资格。
 
@@ -149,7 +165,11 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 集成汇总另遇下载动作退出异常：作业 `121668563675` 的六份 artifact 均约六秒下载完成，SHA-256 全匹配，并输出 `Download artifact has finished successfully`，进程随后不退出，耗尽原两分钟预算。仅重试汇总与后续门禁一次，作业 `121671154056` 在同一位置复现；未因此重跑业务分片。日志把故障定位到下载动作完成后的进程退出，尚未确定其具体未释放资源。
 
-工作流保留官方固定版本 v8.0.2，使用其 `github-token` 输入选择公开 REST 路径，并显式固定当前 `github.repository` / `github.run_id`，避免继续走本轮卡住的默认运行时客户端。仅汇总作业增加 `actions: read`，全局仍为 `contents: read`；继续要求摘要不匹配即失败、六片成功、同提交完整互斥集合与实际结果，超时仍为两分钟。官方源码确认该输入切换客户端，公开路径仍计算并比较下载摘要；是否消除托管退出异常必须由新提交实测确认，不能以配置回归代替。依据：[固定版本输入](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/action.yml)、[客户端路径选择](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/client.ts)、[公开路径摘要校验](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/download/download-artifact.ts)，核验日期 2026-10-26。
+曾尝试固定 v8.0.2 的 `github-token` 公开 REST 路径并限定当前仓库/运行；[运行 40353154527](https://github.com/hrygo/SpeechNexus/actions/runs/40353154527) 的六份文件同样全部成功、摘要匹配，仍在完成日志后挂住。因此 REST 接线没有解决退出异常，不能作为有效修复；故障发生于下载动作完成后的进程生命周期，具体未释放资源未确定。
+
+正式汇总改用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断，只接受精确的六个分片名称；三个并发下载进程各限 15 秒，令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限。全部下载及归档校验成功后才发布报告目录，既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时仍为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
+
+本机只读取上述已结束运行的六份历史制品（单份 27,782–47,262 bytes），全部大小及 SHA-256 匹配，正常退出；继续运行原检查器，确认 **1807 collected / 1785 passed / 22 existing PG-only parameters skipped**，同一合并提交 `2d755ce473c000e7fc613b2fa712b7cf77c4c683`。这验证了真实 API、归档格式和证据检查链，没有重跑数据库或业务测试；Linux 托管效果仍需新提交验收。新增 12 项小型合成检查覆盖缺片、重复、错误运行、摘要、大小、过期、分页截断、路径与超时；超限回归通过缩小测试内限制实现，不构造大文件。
 
 ## 路由维护
 

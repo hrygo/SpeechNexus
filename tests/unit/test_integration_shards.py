@@ -417,14 +417,14 @@ def test_environment_cannot_silently_select_a_partial_or_unconfigured_suite(
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
-def test_protected_gate_keeps_original_names_and_fails_on_missing_execution(result: str) -> None:
+def test_integration_gate_names_describe_evidence_and_reject_missing_execution(result: str) -> None:
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     assert {
-        "Python static checks and unit tests",
-        "PostgreSQL and InnoDB integration",
-        "Python quality and tests",
-        "Web quality, tests, and build",
-        "Deployment configuration",
+        "Gate: Python execution and static checks",
+        "Gate: six-shard integration evidence",
+        "Gate: required checks for this change",
+        "Web: lint, types, tests, build and accessibility",
+        "Compose: configuration validation",
     } <= {job["name"] for job in jobs.values()}
     shards = jobs["integration_shards"]
     assert shards["strategy"] == {

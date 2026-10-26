@@ -11,7 +11,14 @@ from typing import Any
 import pytest
 
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
-from speechnexus_gateway.domain.asr import AsrAudio, AsrCallError, AsrFailure, AsrPolicy, AsrText
+from speechnexus_gateway.domain.asr import (
+    AsrAudio,
+    AsrCallError,
+    AsrFailure,
+    AsrPolicy,
+    AsrRecognizer,
+    AsrText,
+)
 from speechnexus_gateway.domain.execution_inputs import (
     ExecutionInputLimits,
     ExecutionObjectReference,
@@ -95,7 +102,7 @@ def setup() -> tuple[SubmitRequest, Objects, CapturingRecognizer]:
     return original_request(command), Objects(payload), CapturingRecognizer()
 
 
-def consumer(objects: Objects, recognizer: CapturingRecognizer, **kwargs: Any) -> CommandFileAsr:
+def consumer(objects: Objects, recognizer: AsrRecognizer, **kwargs: Any) -> CommandFileAsr:
     return CommandFileAsr(
         inputs=FileExecutionInputs(objects),
         decoder=PyAvAudioDecoder(),

@@ -71,15 +71,26 @@ let phase = "queued",
   uploadsInMode = 0,
   loseCreate = true;
 let contentDelay = 0;
+let effectiveFault = null;
 const uploads = [],
   creates = [],
   cursors = [],
   errors = [];
 function job() {
+  const effective = {
+    models: { tts: { id: "model-tts-fixed", revision: "7" } },
+    voice: { id: "voice-demo", revision: "1" },
+    profile: { id: "profile-demo", revision: "2" },
+    policy_revision: "1",
+    catalog_revision: "1",
+  };
+  if (effectiveFault === "voice") delete effective.voice;
+  if (effectiveFault === "model") effective.models.tts.revision = "8";
   return parse("Job", {
     ...example("queued-job"),
     kind: "tts",
     status: phase,
+    effective_configuration: effective,
     ...(phase === "succeeded"
       ? {
           cleanup_state: "complete",
@@ -292,6 +303,27 @@ try {
   assert.equal(creates.length, 2);
   assert.deepEqual(creates[0], creates[1]);
   assert.equal(creates[0].key, original.createKey);
+  const confirmed = await raw();
+  assert.equal(JSON.parse(confirmed).effectiveModelKey, JSON.stringify(["model-tts-fixed", "7"]));
+  await expect(page.getByText("model-tts-fixed@7", { exact: true })).toBeVisible();
+  await expect(page.getByText("voice-demo@1", { exact: true })).toBeVisible();
+  await expect(page.getByText("profile-demo@2", { exact: true })).toBeVisible();
+  for (const fault of ["voice", "model"]) {
+    effectiveFault = fault;
+    await button("读取原状态").click();
+    await expect(page.getByText("读取失败，请重新读取。", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("file-job-status")).toHaveText("queued");
+    assert.equal(await raw(), confirmed);
+  }
+  // The confirmed model revision must survive reload, rather than trusting a new snapshot.
+  await reloadTts();
+  await button("读取原状态").click();
+  await expect(page.getByText("读取失败，请重新读取。", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("file-job-status")).toHaveText("尚未确认");
+  assert.equal(await raw(), confirmed);
+  effectiveFault = null;
+  await button("读取原状态").click();
+  await expect(page.getByText("model-tts-fixed@7", { exact: true })).toBeVisible();
   phase = "succeeded";
   await button("连接任务事件").click();
   await expect(page.getByTestId("file-job-status")).toHaveText("succeeded");
@@ -426,6 +458,8 @@ try {
     audio_bytes: audio.length,
     audio_duration_seconds: 1,
     original_keys_and_versions: true,
+    effective_resource_mismatch_rejected: true,
+    model_revision_pinned_across_reload: true,
     refresh_read_only: true,
     hint_and_original_input_recovery: true,
     native_wav_preview_and_download: true,

@@ -3,6 +3,7 @@ import { RealtimeController, type RealtimeSocket } from "./realtime-session";
 import { RealtimeJournal, realtimeJournalKey } from "./realtime-journal";
 import { request, session, storage, created, ready, event } from "./realtime-fixtures";
 import type { MicrophoneCaptureOptions } from "../media/microphone-capture";
+import { CaptureError } from "../media/microphone-capture";
 import type { RealtimeClient } from "./realtime-client";
 
 class Socket extends EventTarget implements RealtimeSocket {
@@ -22,12 +23,14 @@ class Socket extends EventTarget implements RealtimeSocket {
 }
 function deferred<T>() {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((r, no) => {
     resolve = r;
+    reject = no;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
-function fixture() {
+function fixture(closing?: Promise<void>) {
   const s = storage(),
     socket = new Socket();
   const client = {
@@ -37,10 +40,12 @@ function fixture() {
       .fn<RealtimeClient["cancel"]>()
       .mockResolvedValue({ ...session(), status: "draining", cleanup_state: "pending" }),
   };
-  const done = deferred<void>(),
+  const ending = deferred<void>(),
+    done = deferred<void>(),
     stop = vi.fn(() => {
-      done.resolve();
-      return Promise.resolve();
+      ending.resolve();
+      if (!closing) done.resolve();
+      return closing ?? done.promise;
     });
   let options: MicrophoneCaptureOptions | undefined;
   const capture = vi.fn((o: MicrophoneCaptureOptions) => {
@@ -48,7 +53,8 @@ function fixture() {
     return Promise.resolve({
       token: "capture-demo",
       sampleRate: 24000,
-      closed: done.promise,
+      stopping: ending.promise,
+      closed: closing ?? done.promise,
       stop,
       snapshot: { state: "running" as const, reason: undefined },
     });
@@ -64,6 +70,9 @@ function fixture() {
     c,
     capture,
     stop,
+    closed: closing ?? done.promise,
+    stopping: ending.promise,
+    interrupt: () => ending.resolve(),
     get options() {
       return options;
     },
@@ -72,8 +81,8 @@ function fixture() {
 const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 };
-async function connected() {
-  const f = fixture();
+async function connected(closing?: Promise<void>) {
+  const f = fixture(closing);
   await f.c.create(request());
   await f.c.connect();
   f.socket.message(created());
@@ -81,6 +90,226 @@ async function connected() {
   return f;
 }
 describe("realtime session original intent and media ownership", () => {
+  it("does not submit another cancellation on page suspension after authoritative remote release", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    await f.c.close("abort");
+    f.client.current.mockResolvedValue({
+      ...session(),
+      status: "closed",
+      cleanup_state: "complete",
+      connection_url: null,
+      closed_at: new Date().toISOString(),
+    });
+    await f.c.refresh();
+    f.c.suspend();
+    await flush();
+    expect(f.client.cancel).toHaveBeenCalledTimes(1);
+    expect(f.c.getSnapshot().record.pending).toBeNull();
+    f.c.dispose();
+  });
+  it("keeps explicit input selection local and passes it only to the capture owner", async () => {
+    const f = fixture();
+    await f.c.selectInputDevice("private-device-one");
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(f.client.create).not.toHaveBeenCalled();
+    await f.c.create(request());
+    await f.c.connect();
+    f.socket.message(created());
+    f.socket.message(ready());
+    await f.c.startCapture();
+    expect(f.options?.deviceId).toBe("private-device-one");
+    expect(f.client.create.mock.calls[0]?.[0]).toEqual(request());
+    expect(JSON.stringify(new RealtimeJournal(f.s).load())).not.toContain("private-device-one");
+    const reloaded = new RealtimeController(f.client, new RealtimeJournal(f.s));
+    expect(reloaded.getSnapshot().inputDeviceId).toBeNull();
+    reloaded.dispose();
+    f.c.dispose();
+  });
+  it("switches an active input through a gap and new session after both releases", async () => {
+    const closing = deferred<void>();
+    const f = await connected(closing.promise);
+    f.socket.message({
+      type: "conversation.item.input_audio_transcription.completed",
+      event_id: "final",
+      item_id: "item",
+      content_index: 0,
+      transcript: "保留正文",
+      usage: { type: "duration", seconds: 0.1 },
+    });
+    await flush();
+    await f.c.startCapture();
+    await f.c.selectInputDevice("private-device-two");
+    expect(f.options?.signal?.aborted).toBe(true);
+    expect(f.c.getSnapshot()).toMatchObject({
+      inputDeviceId: "private-device-two",
+      microphone: "stopping",
+      stream: { phase: "disconnected" },
+    });
+    expect(f.c.getSnapshot().stream?.gaps.some((g) => g.reason === "input_device_changed")).toBe(
+      true,
+    );
+    expect(f.c.getSnapshot().record.captions[0]?.text).toBe("保留正文");
+    expect(f.client.cancel.mock.calls[0]?.slice(0, 2)).toEqual(["session-demo", "abort"]);
+    await f.c.startCapture();
+    expect(f.capture).toHaveBeenCalledTimes(1);
+    f.client.current.mockResolvedValue({
+      ...session(),
+      status: "closed",
+      cleanup_state: "complete",
+      connection_url: null,
+      closed_at: new Date().toISOString(),
+    });
+    await f.c.refresh();
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(1);
+    closing.resolve();
+    await flush();
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(2);
+    expect(f.c.getSnapshot().inputDeviceId).toBe("private-device-two");
+    expect(f.c.getSnapshot().record.captions[0]?.text).toBe("保留正文");
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    f.c.dispose();
+  });
+  it("does not interrupt for unchanged selection and ignores selection during unknown submission", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    await f.c.selectInputDevice(null);
+    expect(f.socket.close).not.toHaveBeenCalled();
+    f.client.cancel.mockRejectedValueOnce(Error("unknown synthetic reply"));
+    await f.c.close("abort");
+    await f.c.selectInputDevice("must-not-apply");
+    expect(f.c.getSnapshot().inputDeviceId).toBeNull();
+    expect(f.c.getSnapshot().record.pending?.kind).toBe("cancel");
+    f.c.dispose();
+  });
+  it("switches while permission is pending without adopting the old device into the new input", async () => {
+    const f = await connected();
+    const opening = deferred<Awaited<ReturnType<typeof f.capture>>>();
+    f.capture.mockReturnValueOnce(opening.promise);
+    const starting = f.c.startCapture();
+    await f.c.selectInputDevice("next-device");
+    expect(f.c.getSnapshot().microphone).toBe("stopping");
+    opening.resolve({
+      token: "late",
+      sampleRate: 24000,
+      stopping: f.stopping,
+      closed: f.closed,
+      stop: f.stop,
+      snapshot: { state: "running", reason: undefined },
+    });
+    await starting;
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    expect(f.c.getSnapshot()).toMatchObject({
+      inputDeviceId: "next-device",
+      microphone: "idle",
+      stream: { phase: "disconnected" },
+    });
+    expect(f.capture).toHaveBeenCalledTimes(1);
+    f.c.dispose();
+  });
+  it("observes a native interruption before its asynchronous resource release completes", async () => {
+    const closing = deferred<void>();
+    const f = await connected(closing.promise);
+    await f.c.startCapture();
+    f.interrupt();
+    await flush();
+    expect.soft(f.c.getSnapshot().microphone).toBe("stopping");
+    expect.soft(f.client.cancel).toHaveBeenCalledTimes(1);
+    closing.reject(new CaptureError("capture_cleanup_failed"));
+    await flush();
+    expect(f.c.getSnapshot()).toMatchObject({ microphone: "failed", problem: "capture_cleanup" });
+    f.c.dispose();
+  });
+  it("retains initialization cleanup failure even after its generation was cancelled", async () => {
+    const f = await connected();
+    const opening = deferred<Awaited<ReturnType<typeof f.capture>>>();
+    f.capture.mockReturnValueOnce(opening.promise);
+    const starting = f.c.startCapture();
+    await f.c.close("abort");
+    expect(f.c.getSnapshot().microphone).toBe("stopping");
+    opening.reject(new CaptureError("capture_cleanup_failed"));
+    await starting;
+    await f.c.refresh();
+    expect(f.c.getSnapshot()).toMatchObject({ microphone: "failed", problem: "capture_cleanup" });
+    expect(f.capture).toHaveBeenCalledTimes(1);
+    f.c.dispose();
+  });
+  it("retains a late acquired device until its own close confirmation", async () => {
+    const closing = deferred<void>();
+    const f = await connected(closing.promise);
+    const opening = deferred<Awaited<ReturnType<typeof f.capture>>>();
+    f.capture.mockReturnValueOnce(opening.promise);
+    const starting = f.c.startCapture();
+    await f.c.close("abort");
+    f.client.current.mockResolvedValue({
+      ...session(),
+      status: "closed",
+      cleanup_state: "complete",
+      connection_url: null,
+      closed_at: new Date().toISOString(),
+    });
+    await f.c.refresh();
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(1);
+    opening.resolve({
+      token: "late",
+      sampleRate: 24000,
+      stopping: f.stopping,
+      closed: closing.promise,
+      stop: f.stop,
+      snapshot: { state: "running", reason: undefined },
+    });
+    await flush();
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    expect(f.c.getSnapshot().microphone).toBe("stopping");
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(1);
+    closing.resolve();
+    await starting;
+    expect(f.c.getSnapshot().microphone).toBe("idle");
+    await f.c.create(request());
+    expect(f.client.create).toHaveBeenCalledTimes(2);
+    f.c.dispose();
+  });
+  it.each(["resolve", "reject"] as const)(
+    "retains capture ownership until local cleanup %s despite remote completion",
+    async (outcome) => {
+      const closing = deferred<void>();
+      const f = await connected(closing.promise);
+      await f.c.startCapture();
+      const complete = {
+        ...session(),
+        status: "closed" as const,
+        cleanup_state: "complete" as const,
+        connection_url: null,
+        closed_at: new Date().toISOString(),
+      };
+      f.client.current.mockResolvedValue(complete);
+      await f.c.close("abort");
+      await f.c.refresh();
+      expect.soft(f.c.getSnapshot().microphone).toBe("stopping");
+      await f.c.create(request());
+      expect.soft(f.client.create).toHaveBeenCalledTimes(1);
+      if (outcome === "resolve") {
+        closing.resolve();
+        await vi.waitFor(() => expect(f.c.getSnapshot().microphone).toBe("idle"));
+        await f.c.create(request());
+        expect(f.client.create).toHaveBeenCalledTimes(2);
+      } else {
+        closing.reject(Error("synthetic close failure"));
+        await vi.waitFor(() => expect(f.c.getSnapshot().microphone).toBe("failed"));
+        await f.c.refresh();
+        await f.c.create(request());
+        expect(f.client.create).toHaveBeenCalledTimes(1);
+        expect(f.c.getSnapshot().problem).toBe("capture_cleanup");
+      }
+      expect(f.stop).toHaveBeenCalledTimes(1);
+      expect(f.client.cancel).toHaveBeenCalledTimes(1);
+      f.c.dispose();
+    },
+  );
   it("I1 ignores queued or repeated empty commits without aborting accepted work", async () => {
     const f = await connected();
     await f.c.startCapture();
@@ -240,6 +469,43 @@ describe("realtime session original intent and media ownership", () => {
       ),
     ).rejects.toThrow();
     expect(f.socket.sent).toHaveLength(0);
+    await f.c.close("abort");
+    expect(f.c.getSnapshot().stream).toMatchObject({
+      sent: 0,
+      accepted: 0,
+      credit: 24000,
+      uncommitted: 0,
+    });
+    f.c.dispose();
+  });
+  it("keeps the actual sent watermark when socket.send throws before enqueueing", async () => {
+    const f = await connected();
+    await f.c.startCapture();
+    vi.spyOn(f.socket, "send").mockImplementationOnce(() => {
+      throw new Error("synthetic send failure");
+    });
+    await expect(
+      f.options!.onFrame(
+        {
+          token: "capture-demo",
+          sampleRate: 24000,
+          startSample: 0,
+          samples: new Float32Array(2400),
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow();
+    expect(f.socket.sent).toHaveLength(0);
+    await f.c.close("abort");
+    expect(f.c.getSnapshot().stream).toMatchObject({
+      sent: 0,
+      accepted: 0,
+      credit: 24000,
+      uncommitted: 0,
+    });
+    expect(
+      f.c.getSnapshot().stream?.gaps.every((gap) => gap.span === null || gap.span.end === 0),
+    ).toBe(true);
     f.c.dispose();
   });
   it("stops the microphone but keeps the socket for drain results and pending cleanup", async () => {
@@ -329,7 +595,8 @@ describe("realtime session original intent and media ownership", () => {
     late.resolve({
       token: "late",
       sampleRate: 24000,
-      closed: new Promise(() => undefined),
+      stopping: f.stopping,
+      closed: f.closed,
       stop: f.stop,
       snapshot: { state: "running", reason: undefined },
     });

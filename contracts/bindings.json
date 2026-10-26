@@ -10,9 +10,12 @@
     "AssetUploadRequest",
     "Asset",
     "Artifact",
+    "Transcription",
     "Operation",
     "OperationCancellation",
-    "ErrorResponse"
+    "ErrorResponse",
+    "PronunciationCreateRequest",
+    "PronunciationRevision"
   ],
   "coordination": {
     "version": "1.0.0",
@@ -105,12 +108,14 @@
         "VoiceList",
         "VoiceSummary",
         "VoiceRevision",
+        "VoiceRevisionV2",
         "WorkbenchStatusV2",
         "RenderUnitV2",
         "RenderUnitCreateRequestV2",
         "RenderUnitPatchV2",
         "RenderUnitListV2",
-        "RenderUnitGenerationAcceptedV2"
+        "RenderUnitGenerationAcceptedV2",
+        "ExportEvent"
       ],
       "schema_refs": {
         "DeletionPlanRequest": "shared/deletion.schema.json#/$defs/DeletionPlanRequest",
@@ -132,7 +137,10 @@
         "DrainInstanceRequest",
         "DrainInstanceResponse",
         "ExecutionStagingResult",
-        "ExecutionStagingResultResponse"
+        "ExecutionStagingResultResponse",
+        "ExecutionAudioMetadata",
+        "ExecutionAudioStagingResult",
+        "ExecutionAudioStagingResultResponse"
       ]
     },
     "runtime": {
@@ -237,6 +245,25 @@
     }
   },
   "http_surfaces": {
+    "pronunciation_read": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}"
+      ],
+      "operations": ["getPronunciationRevision"]
+    },
+    "voice_catalogue": {
+      "source": "speech-openapi.yaml",
+      "validate": true,
+      "typescript_source": "speech",
+      "paths": [
+        "/v1/nexus/voices",
+        "/v1/nexus/voices/{voice_id}/revisions/{revision}"
+      ],
+      "operations": ["listVoices", "getVoiceRevision"]
+    },
     "admin": {
       "source": "admin-openapi.yaml",
       "validate": true,
@@ -303,10 +330,14 @@
         "/v1/workbench/exports/{export_id}/cancellations",
         "/v1/workbench/voices",
         "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+        "/v2/workbench/voices/{voice_id}/revisions/{revision}",
         "/v2/workbench/status",
         "/v2/workbench/chapters/{chapter_id}/render-units",
         "/v2/workbench/render-units/{unit_id}",
-        "/v2/workbench/render-units/{unit_id}/generations"
+        "/v2/workbench/render-units/{unit_id}/generations",
+        "/v1/workbench/saved-assets/{asset_id}/content",
+        "/v1/workbench/exports/{export_id}/content",
+        "/v1/workbench/exports/{export_id}/events"
       ]
     },
     "profile": {
@@ -352,5 +383,8 @@
         "getModelBindingParameterDefaults"
       ]
     }
+  },
+  "schema_refs": {
+    "PronunciationRevision": "voice-resource.schema.json#/$defs/PronunciationRevision"
   }
 }

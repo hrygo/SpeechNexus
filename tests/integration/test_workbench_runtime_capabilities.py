@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 import pytest
 from pydantic import SecretStr
+from tests.fake.export_media import synthetic_export_zip
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
 
@@ -26,7 +27,11 @@ LLM_MODEL = "synthetic-local-model"
 
 class _Bundle:
     async def produce_export(self, job: Any, *, report: Any) -> ProducedExport:
-        return ProducedExport(content=b"synthetic\n", media_type="application/zip")
+        for completed in range(1, job.progress_total + 1):
+            await report(completed)
+        return ProducedExport(
+            content=synthetic_export_zip(chapters=job.progress_total), media_type="application/zip"
+        )
 
 
 async def status_of(client: httpx.AsyncClient) -> dict[str, Any]:

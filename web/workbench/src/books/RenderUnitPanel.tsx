@@ -1,6 +1,6 @@
 import { unitJournal, type UnitCommand } from "./book-journal";
 import type { CommandJournal } from "../recovery/command-journal";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   WorkbenchResponseError,
   type Contracts,
@@ -161,7 +161,10 @@ function ChapterUnits({
   // A successful create clears the fields, which disables the submit button and would drop
   // keyboard focus to the document; it goes back to the first field instead.
   const firstField = useRef<HTMLInputElement>(null);
-  useEffect(() => {
+  // Focus must move in the same commit that re-enables the fieldset: the success path calls
+  // focus() while the form is still disabled, so deferring to a passive effect can leave focus
+  // on the document until a later task and lose the keyboard position.
+  useLayoutEffect(() => {
     if (!busy && notice?.includes("已创建为修订")) firstField.current?.focus();
   }, [busy, notice]);
   const [check, setCheck] = useState<{
@@ -637,10 +640,19 @@ function ChapterUnits({
                         {`${label} 读取副本`}
                       </button>
                       {copy.assetId === unit.saved_asset_id && copy.asset !== null && (
-                        <p role="status" aria-label={`${label} 副本信息`}>
-                          {copy.asset.media_type} · {copy.asset.bytes} 字节 · {copy.asset.sha256} ·
-                          来源 {copy.asset.source_artifact_id}
-                        </p>
+                        <div>
+                          <p role="status" aria-label={`${label} 副本信息`}>
+                            {copy.asset.media_type} · {copy.asset.bytes} 字节 · {copy.asset.sha256}{" "}
+                            · 来源 {copy.asset.source_artifact_id}
+                          </p>
+                          <ContentDownload
+                            key={copy.asset.id + copy.asset.sha256}
+                            identity={copy.asset.id + copy.asset.sha256}
+                            filename={`${copy.asset.id}.${copy.asset.media_type === "audio/wav" ? "wav" : copy.asset.media_type === "audio/mpeg" ? "mp3" : "bin"}`}
+                            label={`${label} 校验并下载副本`}
+                            load={(signal) => client.downloadSavedAsset(copy.asset!, signal)}
+                          />
+                        </div>
                       )}
                       {copy.assetId === unit.saved_asset_id && copy.problem !== null && (
                         <p role="alert" aria-label={`${label} 副本错误`}>
@@ -734,3 +746,4 @@ export function RenderUnitPanel(props: { client: WorkbenchClient; chapter: Contr
   return <ChapterUnits key={props.chapter.id} {...props} />;
 }
 export default RenderUnitPanel;
+import { ContentDownload } from "./ContentDownload";

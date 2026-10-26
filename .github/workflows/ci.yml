@@ -57,7 +57,7 @@ jobs:
   python_checks:
     name: Python tests and build
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -231,7 +231,7 @@ jobs:
   python_contracts:
     name: Python static and contract checks
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -300,6 +300,12 @@ jobs:
         env:
           CONTRACT_BASE_REF: origin/${{ github.base_ref }}
         run: make contracts-coordination-results
+
+      - name: Check declared realtime runtime constraints
+        if: github.event_name == 'pull_request'
+        env:
+          CONTRACT_BASE_REF: origin/${{ github.base_ref }}
+        run: make contracts-realtime-changes
 
       - name: Check formatting
         run: uv run ruff format --check .
@@ -411,7 +417,7 @@ jobs:
 
       - name: Install Chromium for browser consumers
         if: steps.integration_tools.outputs.browser == 'true'
-        run: pnpm exec playwright install --with-deps --only-shell chromium
+        run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Start isolated versioned object storage
         run: ./scripts/dev-env/minio-test-service.sh
@@ -486,7 +492,7 @@ jobs:
   python_checks_gate:
     name: Python static checks and unit tests
     needs: [changes, python_checks, python_contracts]
-    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web') }}
+    if: ${{ always() && needs.changes.result == 'success' && (needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -527,6 +533,8 @@ jobs:
               checks=skipped; coordination=skipped; web=skipped; deployment=skipped ;;
             web)
               checks=success; coordination=skipped; web=success; deployment=skipped ;;
+            no-db)
+              checks=success; coordination=skipped; web=success; deployment=success ;;
             full)
               checks=success; coordination=success; web=success; deployment=success ;;
             *)
@@ -543,7 +551,7 @@ jobs:
   web:
     name: Web quality, tests, and build
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -584,7 +592,7 @@ jobs:
         run: pnpm build
 
       - name: Install Chromium headless shell for accessibility checks
-        run: pnpm exec playwright install --with-deps --only-shell chromium
+        run: python3 scripts/dev-env/prepare-ci-browser.py
 
       - name: Check rendered accessibility and contrast
         id: a11y
@@ -604,7 +612,7 @@ jobs:
   deployment:
     name: Deployment configuration
     needs: [changes]
-    if: ${{ needs.changes.outputs.mode == 'full' }}
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 

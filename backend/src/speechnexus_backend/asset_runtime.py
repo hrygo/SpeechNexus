@@ -42,18 +42,30 @@ class AssetRuntime:
             # This is an owner/DDL guard, not a full deployment privilege audit.
             with self._pool.connection() as connection:
                 connection.execute("SET LOCAL statement_timeout = '3s'")
-                row = connection.execute(
-                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s, 'CREATE') "
-                    "OR pg_catalog.pg_has_role(d.datdba, 'USAGE') OR EXISTS ("
-                    "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                    "ON n.oid = c.relnamespace WHERE n.nspname = %s "
-                    "AND pg_catalog.pg_has_role(c.relowner, 'USAGE')) AS forbidden "
-                    "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                    "WHERE r.rolname = CURRENT_USER AND d.datname = CURRENT_DATABASE()",
-                    (self._schema, self._schema),
+                identities = connection.execute(
+                    "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
                 ).fetchone()
-                if row is None or row["forbidden"]:
+                if identities is None:
                     raise AssetError("asset_runtime_role_rejected")
+                # A libpq startup role can hide the login's authority. Inspect
+                # both names without RESET ROLE (which restores that startup
+                # role). MEMBER also sees switchable NOINHERIT owner roles.
+                for role in dict.fromkeys((identities["login"], identities["effective"])):
+                    row = connection.execute(
+                        "SELECT r.rolsuper OR "
+                        "pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+                        "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
+                        "SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname=%s "
+                        "AND pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER')) OR EXISTS ("
+                        "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+                        "ON n.oid = c.relnamespace WHERE n.nspname = %s "
+                        "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+                        "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+                        "WHERE r.rolname = %s AND d.datname = CURRENT_DATABASE()",
+                        (role, self._schema, role, self._schema, role, self._schema, role, role),
+                    ).fetchone()
+                    if row is None or row["forbidden"]:
+                        raise AssetError("asset_runtime_role_rejected")
             # S3 checks and original-identity reconciliation occur after the
             # short role-check transaction has released its connection.
             try:

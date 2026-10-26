@@ -4,6 +4,8 @@
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [Agent 工作指南](agent-guide.md) | 根/目录规则、项目技能、任务入口与交付边界 |
+| [Agent 验证指南](agent-verification.md) | 按改动选择检查、锁定依赖、隔离服务前置与证据范围 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [工程目录与依赖边界](architecture/repository-layout.md)                                             | Python / Web workspace、模块方向、契约生命周期、测试层级与部署入口              |
@@ -15,6 +17,8 @@
 | [文件 ASR 私有结果](architecture/file-asr-results.md) | 完整正文有界汇总、固定版本对象写入与读回核验；持久登记与公开发布边界 |
 | [执行回执登记与查询](architecture/execution-staging-results.md) | 原观察事务、固定版本私有回执、CAS/恢复、权限与只读查询；不发布或退预算 |
 | [原生 ASR 请求清理](../deploy/engines/vllm-asr-lifecycle/README.md) | 固定引擎插件、内部/子请求归属、在途提交保护与取消清理；不代表 GPU 停止证明 |
+| [受控 ASR 原生鉴权与代次](architecture/controlled-asr-generation.md) | 原生代次 key、批准模板检查、私有部署描述与文件命令目标校验 |
+| [文件 ASR 默认执行装配](architecture/file-asr-runtime.md) | 私有配置、正式工厂和原 worker/回执；真实模型隔离实验已有，生产预算及公开链资格待验 |
 | [数据删除与依赖裁决](architecture/data-deletion.md)                                                 | 预检、明确级联、独立副本、异步清理和恢复账本                                    |
 | [精简分布式协调 Schema](architecture/distributed-coordination-schema.md)                            | 普通约束、当前指针、表所有权与历史原型隔离                                      |
 | [应用事务方案与契约](architecture/coordination-transactions.md)                                     | 程序职责、原子步骤、锁序、预算、幂等/未知恢复及业务编码交接                     |
@@ -37,6 +41,7 @@
 | [文件 ASR 有界媒体输入](architecture/file-asr-audio.md) | 五种格式解码/重采样、源样本时钟、文件 VAD 组合与接入边界 |
 | [B03 有界媒体与真实录音输入探针](audits/2026-10-24-b03-bounded-audio-probe.md) | 合成媒体、两段授权录音及尾部处理实测；不代表识别质量或完整服务 |
 | [文件 ASR 原生识别接口](architecture/file-asr-recognition.md) | 固定内网 ASR、VAD 门禁、SSE 完成/截断判定、源时钟及未装配的持久执行边界 |
+| [文件 ASR 固定制品与参数交接](architecture/file-asr-binding-handoff.md) | 1.7B/VAD/引擎锁定、离线校验、原命令参数与 A 配置/发布的接入边界 |
 | [文件 TTS 原生合成接口](architecture/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
 | [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 0.6B/1.7B、真实录音、无语音零外发、真实截断负例与同片段重复测量 |
 | [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 1.7B CustomVoice 经适配器的 WAV/MP3 交付、24→16 kHz 解码与 0.6B ASR 回环、停止与清理证据 |

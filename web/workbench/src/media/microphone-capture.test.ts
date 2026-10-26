@@ -100,6 +100,23 @@ function pcm(
 }
 
 describe("owned microphone lifecycle", () => {
+  it("notifies native interruption immediately without implying context release", async () => {
+    const { track, options } = fixture();
+    const session = await createMicrophoneCapture(options);
+    const closing = deferred<void>();
+    Context.instances[0]!.close.mockImplementationOnce(() => closing.promise);
+    track.dispatchEvent(new Event("mute"));
+    expect.soft(session.stopping).toBeInstanceOf(Promise);
+    await session.stopping;
+    expect(session.snapshot.state).toBe("stopping");
+    const closed = vi.fn();
+    void session.closed.then(closed, closed);
+    await Promise.resolve();
+    expect(closed).not.toHaveBeenCalled();
+    closing.resolve();
+    await session.closed;
+    expect(session.snapshot).toEqual({ state: "failed", reason: "capture_muted" });
+  });
   it("owns tracks/context, requests audio only and stops every resource once", async () => {
     const { track, getUserMedia, options } = fixture();
     const session = await createMicrophoneCapture(options);
@@ -118,6 +135,96 @@ describe("owned microphone lifecycle", () => {
     expect(node.disconnect).toHaveBeenCalledTimes(1);
     expect(node.port.close).toHaveBeenCalledTimes(1);
     expect(node.port.onmessage).toBeNull();
+  });
+
+  it("confirms stopped only after the native context close resolves", async () => {
+    const { track, options } = fixture();
+    const session = await createMicrophoneCapture(options);
+    const context = Context.instances[0]!;
+    const node = Node.instances[0]!;
+    const closing = deferred<void>();
+    context.close.mockImplementationOnce(async () => {
+      await closing.promise;
+      context.state = "closed";
+    });
+    const stopSettled = vi.fn();
+    const closedSettled = vi.fn();
+    const stopping = session.stop();
+    void stopping.then(stopSettled, stopSettled);
+    void session.closed.then(closedSettled, closedSettled);
+    await Promise.resolve();
+
+    expect(track.readyState).toBe("ended");
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(context.source.disconnect).toHaveBeenCalledTimes(1);
+    expect(node.disconnect).toHaveBeenCalledTimes(1);
+    expect(node.port.close).toHaveBeenCalledTimes(1);
+    expect(node.port.onmessage).toBeNull();
+    expect(stopSettled).not.toHaveBeenCalled();
+    expect(closedSettled).not.toHaveBeenCalled();
+    expect.soft(session.snapshot.state).toBe("stopping");
+
+    closing.resolve();
+    await stopping;
+    await session.closed;
+    expect(context.state).toBe("closed");
+    expect(session.snapshot).toEqual({ state: "stopped", reason: undefined });
+  });
+
+  it("reports a delayed native close failure without confirming stopped", async () => {
+    const { track, options } = fixture();
+    const session = await createMicrophoneCapture(options);
+    const context = Context.instances[0]!;
+    const closing = deferred<void>();
+    context.close.mockImplementationOnce(() => closing.promise);
+    const stopSettled = vi.fn();
+    const closedSettled = vi.fn();
+    const stopping = session.stop();
+    void stopping.then(stopSettled, stopSettled);
+    void session.closed.then(closedSettled, closedSettled);
+    await Promise.resolve();
+
+    expect(track.readyState).toBe("ended");
+    expect(Node.instances[0]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(stopSettled).not.toHaveBeenCalled();
+    expect(closedSettled).not.toHaveBeenCalled();
+    expect.soft(session.snapshot.state).toBe("stopping");
+
+    closing.reject(new Error("synthetic delayed close failure"));
+    await expect(stopping).rejects.toMatchObject({ code: "capture_cleanup_failed" });
+    await expect(session.closed).rejects.toMatchObject({ code: "capture_cleanup_failed" });
+    expect(session.snapshot).toEqual({ state: "failed", reason: "capture_cleanup_failed" });
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(context.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one pending cleanup confirmation across repeated stop calls", async () => {
+    const { track, options } = fixture();
+    const session = await createMicrophoneCapture(options);
+    const context = Context.instances[0]!;
+    const closing = deferred<void>();
+    context.close.mockImplementationOnce(() => closing.promise);
+    const first = session.stop();
+    const second = session.stop();
+    const firstSettled = vi.fn();
+    const secondSettled = vi.fn();
+    void first.then(firstSettled, firstSettled);
+    void second.then(secondSettled, secondSettled);
+    await Promise.resolve();
+
+    expect(first).toBe(session.closed);
+    expect(second).toBe(first);
+    expect(firstSettled).not.toHaveBeenCalled();
+    expect(secondSettled).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledTimes(1);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(Node.instances[0]?.disconnect).toHaveBeenCalledTimes(1);
+    expect.soft(session.snapshot.state).toBe("stopping");
+
+    closing.resolve();
+    await Promise.all([first, second, session.closed]);
+    expect(session.snapshot.state).toBe("stopped");
+    expect(context.close).toHaveBeenCalledTimes(1);
   });
 
   it("returns permission denial without retaining an AudioContext or exposing browser details", async () => {
@@ -159,6 +266,54 @@ describe("owned microphone lifecycle", () => {
       pending.resolve();
       expect(track.stop).toHaveBeenCalledTimes(1);
       expect(Node.instances).toHaveLength(0);
+    },
+  );
+
+  it.each(["resolve", "reject"])(
+    "awaits owned context cleanup on startup abort when close will %s",
+    async (outcome) => {
+      const { track, stream, options } = fixture();
+      const adopted = vi.spyOn(stream, "getAudioTracks");
+      const loading = deferred<void>();
+      Context.loading = loading.promise;
+      const abort = new AbortController();
+      const starting = createMicrophoneCapture({ ...options, signal: abort.signal });
+      let startupSettled = false;
+      const startupOutcome = starting.then(
+        () => {
+          startupSettled = true;
+          return undefined;
+        },
+        (error: unknown) => {
+          startupSettled = true;
+          return error;
+        },
+      );
+      await vi.waitFor(() => expect(adopted).toHaveBeenCalledTimes(1));
+      const context = Context.instances[0]!;
+      const closing = deferred<void>();
+      context.close.mockImplementationOnce(() => closing.promise);
+
+      abort.abort();
+      await vi.waitFor(() => expect(context.close).toHaveBeenCalledTimes(1));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(track.readyState).toBe("ended");
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(Node.instances).toHaveLength(0);
+      expect.soft(startupSettled).toBe(false);
+
+      if (outcome === "resolve") closing.resolve();
+      else closing.reject(new Error("synthetic startup close failure"));
+      expect(await startupOutcome).toMatchObject({
+        code: outcome === "resolve" ? "capture_cancelled" : "capture_cleanup_failed",
+      });
+      loading.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(Node.instances).toHaveLength(0);
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(context.close).toHaveBeenCalledTimes(1);
     },
   );
 

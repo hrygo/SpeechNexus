@@ -15,7 +15,11 @@ import {
   type RealtimeJournal,
   type RealtimeRecord,
 } from "./realtime-journal";
-import { createMicrophoneCapture, type MicrophoneCapture } from "../media/microphone-capture";
+import {
+  CaptureError,
+  createMicrophoneCapture,
+  type MicrophoneCapture,
+} from "../media/microphone-capture";
 import { encodePcm } from "./pcm";
 
 export interface RealtimeSocket extends EventTarget {
@@ -36,8 +40,17 @@ export type RealtimeSnapshot = {
   blocked: boolean;
   connecting: boolean;
   committing: boolean;
-  microphone: "idle" | "starting" | "running";
-  problem: "storage" | "unknown" | "rejected" | "read_failed" | "protocol" | "capture" | null;
+  inputDeviceId: string | null;
+  microphone: "idle" | "starting" | "running" | "stopping" | "failed";
+  problem:
+    | "storage"
+    | "unknown"
+    | "rejected"
+    | "read_failed"
+    | "protocol"
+    | "capture"
+    | "capture_cleanup"
+    | null;
 };
 const terminal = (s: RealtimeSession) => ["closed", "failed", "expired"].includes(s.status);
 /** Owns one socket/device generation. A refresh never reconnects or replays microphone input. */
@@ -54,6 +67,10 @@ export class RealtimeController {
   #device: MicrophoneCapture | null = null;
   #captureAbort: AbortController | null = null;
   #captureGeneration = 0;
+  #capturePending = false;
+  #captureRelease: Promise<void> | null = null;
+  #captureStopRequested = false;
+  #captureCleanupFailed = false;
   #queue = Promise.resolve();
   #handshake: ReturnType<typeof setTimeout> | null = null;
   readonly #dependencies: Dependencies;
@@ -71,6 +88,7 @@ export class RealtimeController {
       blocked: false,
       connecting: false,
       committing: false,
+      inputDeviceId: null,
       microphone: "idle",
       problem: record.pending ? "unknown" : null,
     });
@@ -90,6 +108,12 @@ export class RealtimeController {
   #publish(change: Partial<RealtimeSnapshot>) {
     if (this.#disposed) return;
     this.#state = freeze({ ...this.#state, ...change });
+    if (this.#captureCleanupFailed)
+      this.#state = freeze({
+        ...this.#state,
+        microphone: "failed",
+        problem: this.#state.problem === "storage" ? "storage" : "capture_cleanup",
+      });
     this.#listeners.forEach((f) => f());
   }
   #persist(record: RealtimeRecord) {
@@ -122,7 +146,17 @@ export class RealtimeController {
     this.#publish({ problem: null, current: null });
   }
   async create(input: RealtimeRequest) {
-    if (!this.#idle() || !this.#active || this.#state.record.pending || this.#socket) return;
+    if (
+      !this.#idle() ||
+      !this.#active ||
+      this.#state.record.pending ||
+      this.#socket ||
+      this.#capturePending ||
+      this.#device ||
+      this.#captureCleanupFailed ||
+      this.#state.microphone !== "idle"
+    )
+      return;
     if (this.#state.record.session) {
       const current = this.#state.current;
       if (
@@ -347,24 +381,42 @@ export class RealtimeController {
           socket.readyState === 1 &&
           !!stream,
       );
-      const result = await stream.command(value);
-      identity(
-        !this.#disposed &&
-          this.#active &&
-          epoch === this.#epoch &&
-          this.#socket === socket &&
-          socket.readyState === 1,
-      );
-      const text = JSON.stringify(result.event),
-        bytes = new TextEncoder().encode(text).byteLength;
-      // Five seconds of 24kHz PCM16, including Base64/envelope overhead. No unbounded send queue.
-      identity(socket.bufferedAmount + bytes <= (5 * 24000 * 2 * 4) / 3);
-      socket.send(text);
+      await stream.command(value, (text) => {
+        identity(
+          !this.#disposed &&
+            this.#active &&
+            epoch === this.#epoch &&
+            this.#socket === socket &&
+            this.#stream === stream &&
+            socket.readyState === 1,
+        );
+        const bytes = new TextEncoder().encode(text).byteLength;
+        // Five seconds of 24kHz PCM16, including Base64/envelope overhead. No unbounded send queue.
+        identity(socket.bufferedAmount + bytes <= (5 * 24000 * 2 * 4) / 3);
+        socket.send(text);
+      });
       this.#publish({ stream: stream.getSnapshot() });
     };
     const task = this.#queue.then(run);
     this.#queue = task.catch(() => undefined);
     return task;
+  }
+  async selectInputDevice(inputDeviceId: string | null) {
+    if (
+      !this.#idle() ||
+      !this.#active ||
+      this.#state.record.pending ||
+      this.#state.microphone === "stopping" ||
+      this.#captureCleanupFailed ||
+      inputDeviceId === this.#state.inputDeviceId ||
+      inputDeviceId === ""
+    )
+      return;
+    this.#publish({ inputDeviceId });
+    if (this.#socket || this.#capturePending || this.#device || this.#state.connecting) {
+      this.#drop("input_device_changed");
+      await this.close("abort");
+    }
   }
   async startCapture() {
     const stream = this.#stream?.getSnapshot();
@@ -372,6 +424,9 @@ export class RealtimeController {
       !this.#idle() ||
       !this.#active ||
       this.#state.microphone !== "idle" ||
+      this.#capturePending ||
+      this.#device ||
+      this.#captureCleanupFailed ||
       stream?.phase !== "active" ||
       this.#state.record.session?.status === "draining" ||
       !stream.limits ||
@@ -383,6 +438,7 @@ export class RealtimeController {
       captureGeneration = ++this.#captureGeneration,
       abort = new AbortController();
     this.#captureAbort = abort;
+    this.#capturePending = true;
     this.#publish({ microphone: "starting", problem: null });
     const frameSamples = Math.min(2400, Math.floor(stream.limits.max_input_chunk_ms * 24));
     let through = 0;
@@ -392,6 +448,7 @@ export class RealtimeController {
         frameSamples,
         maxPendingFrames: Math.min(20, Math.max(2, Math.floor(24000 / frameSamples))),
         signal: abort.signal,
+        ...(this.#state.inputDeviceId ? { deviceId: this.#state.inputDeviceId } : {}),
         onFrame: async (frame, signal) => {
           identity(
             !signal.aborted &&
@@ -424,44 +481,77 @@ export class RealtimeController {
           through += frame.samples.length;
         },
       });
+      this.#ownCapture(capture);
       if (
         this.#disposed ||
         abort.signal.aborted ||
         captureGeneration !== this.#captureGeneration ||
         epoch !== this.#epoch
       ) {
-        await capture.stop();
+        await this.#stopDevice();
         return;
       }
-      this.#device = capture;
       this.#publish({ microphone: "running" });
-      void capture.closed.then(
-        () => {
-          if (this.#device === capture) {
-            this.#device = null;
-            this.#publish({ microphone: "idle" });
-            if (capture.snapshot.reason || capture.snapshot.state === "failed") {
-              this.#publish({ problem: "capture" });
-              this.#drop("capture_interrupted");
-              void this.close("abort");
-            }
-          }
-        },
-        () => {
-          if (this.#device === capture) {
-            this.#publish({ problem: "capture" });
-            this.#drop("capture_cleanup_failed");
-            void this.close("abort");
-          }
-        },
-      );
-    } catch {
-      if (!this.#disposed && captureGeneration === this.#captureGeneration) {
+    } catch (error) {
+      if (error instanceof CaptureError && error.code === "capture_cleanup_failed") {
+        this.#captureReleaseFailed();
+      } else if (!this.#disposed && captureGeneration === this.#captureGeneration) {
         this.#publish({ microphone: "idle", problem: "capture" });
         this.#drop("capture_failed");
         void this.close("abort");
       }
+    } finally {
+      this.#capturePending = false;
+      if (!this.#device && this.#captureAbort === abort) this.#captureAbort = null;
+      if (!this.#device && !this.#captureCleanupFailed) this.#publish({ microphone: "idle" });
     }
+  }
+  #ownCapture(capture: MicrophoneCapture) {
+    this.#device = capture;
+    this.#captureStopRequested = false;
+    void capture.stopping.then(() => {
+      if (this.#device !== capture) return;
+      this.#publish({ microphone: "stopping" });
+      if (!this.#captureStopRequested) {
+        this.#publish({ problem: "capture" });
+        this.#drop("capture_interrupted");
+        void this.close("abort");
+      }
+    });
+    this.#captureRelease = capture.closed.then(
+      () => {
+        if (this.#device !== capture) return;
+        const interrupted =
+          !this.#captureStopRequested &&
+          (capture.snapshot.reason || capture.snapshot.state === "failed");
+        this.#device = null;
+        this.#captureAbort = null;
+        this.#captureRelease = null;
+        this.#publish({ microphone: "idle" });
+        if (interrupted) {
+          this.#publish({ problem: "capture" });
+          this.#drop("capture_interrupted");
+          void this.close("abort");
+        }
+      },
+      () => {
+        if (this.#device === capture) this.#captureReleaseFailed();
+      },
+    );
+  }
+  #captureReleaseFailed() {
+    if (this.#captureCleanupFailed) return;
+    this.#captureCleanupFailed = true;
+    this.#publish({ microphone: "failed", problem: "capture_cleanup" });
+    this.#drop("capture_cleanup_failed");
+    const current = this.#state.current;
+    if (
+      current &&
+      terminal(current) &&
+      ["complete", "not_required"].includes(current.cleanup_state)
+    )
+      return;
+    void this.close("abort");
   }
   async commit() {
     if (
@@ -488,7 +578,7 @@ export class RealtimeController {
   }
   #drop(reason: string) {
     ++this.#epoch;
-    this.#stopDevice();
+    void this.#stopDevice();
     if (this.#handshake) {
       clearTimeout(this.#handshake);
       this.#handshake = null;
@@ -504,31 +594,40 @@ export class RealtimeController {
     this.#stream?.disconnect(reason);
     this.#publish({
       connecting: false,
-      microphone: "idle",
       stream: this.#stream?.getSnapshot() ?? null,
     });
   }
   #stopDevice() {
     ++this.#captureGeneration;
+    const requested = this.#captureStopRequested;
+    this.#captureStopRequested = true;
     this.#captureAbort?.abort();
-    this.#captureAbort = null;
     const device = this.#device;
-    this.#device = null;
-    if (device)
-      void device.stop().catch(() => {
-        this.#publish({ problem: "capture" });
-      });
-    this.#publish({ microphone: "idle" });
+    if (!this.#captureCleanupFailed) {
+      this.#publish({ microphone: device || this.#capturePending ? "stopping" : "idle" });
+      if (device && !requested) {
+        try {
+          void device.stop().catch(() => this.#captureReleaseFailed());
+        } catch {
+          this.#captureReleaseFailed();
+        }
+      }
+    }
+    return this.#captureRelease ?? Promise.resolve();
   }
   async close(mode: CancelMode) {
     if (mode === "abort") this.#drop("abort_requested");
-    else this.#stopDevice();
+    else void this.#stopDevice();
     const session = this.#state.record.session;
+    const current = this.#state.current;
     if (
       !this.#idle() ||
       !session ||
       this.#state.record.pending ||
       terminal(session) ||
+      (current &&
+        terminal(current) &&
+        ["complete", "not_required"].includes(current.cleanup_state)) ||
       (session.status === "draining" && mode === "drain")
     )
       return;

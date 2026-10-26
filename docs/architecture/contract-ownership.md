@@ -5,6 +5,10 @@
 测试核对 18 端口、18 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
 矩阵描述目标归属，不证明端口已实现。生产事务进度继续在 A01/B00–B06 跟踪。
 
+冻结 main `7dc276a` 的实际端口、7 类查询、正式消费者及双库证据见
+[2026-10-25 取证快照](../audits/2026-10-25-coordination-port-evidence.md)。
+该报告分别记录 adapter/统一结果/业务装配与剩余验收，不改变此处的机器所有权。
+
 ## 契约生产者与消费者
 
 | 契约                                 | 实现/事实所有者             | 消费者                            | 交接状态                                          |
@@ -28,6 +32,10 @@ A02 的 `0009_profile_drafts` 另加三个 speech 配置私有表：
 `speech_profile_families`、`speech_profile_revisions`、`speech_profile_commands`。
 它们只支持不可变草稿分配/原键恢复，不扩共享协调端口，不授权 B/C 写入；
 见[草稿端口与迁移边界](profile-drafts.md)。
+
+`0013_profile_lifecycle_intents` 追加 A 私有 `speech_profile_lifecycle_intents`，
+仅保存完整原命令，不写发布结果/默认指针、不扩共享协调端口或 B/C 权限；
+见[私有生命周期意图账本](profile-lifecycle-intents.md)。
 
 | 端口                                                  | 主责           | 权威写入范围                                                             |
 | ----------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |

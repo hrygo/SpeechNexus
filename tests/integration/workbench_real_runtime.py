@@ -26,6 +26,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from tests.integration.test_workbench_runtime import Database
 
+from speechnexus_backend.workbench.application.export_worker import ExportProducer
 from speechnexus_backend.workbench.runtime import create_runtime_app
 from speechnexus_backend.workbench.runtime_settings import WorkbenchSettings
 
@@ -74,9 +75,11 @@ class Tier:
         *,
         fault_suffixes: frozenset[str] = frozenset(),
         bundle: str = "web/workbench/dist",
+        export_producer: ExportProducer | None = None,
         **overrides: Any,
     ) -> None:
         self._bundle = bundle
+        self._export_producer = export_producer
         self._front_sock, front_port = bind()
         self.origin = f"http://127.0.0.1:{front_port}"
         self._settings = settings_for(database, origin=self.origin, **overrides)
@@ -93,7 +96,7 @@ class Tier:
         sock, port = bind()
         server = uvicorn.Server(
             uvicorn.Config(
-                create_runtime_app(self._settings),
+                create_runtime_app(self._settings, export_producer=self._export_producer),
                 log_level="error",
                 access_log=False,
                 lifespan="on",
@@ -134,7 +137,8 @@ class Tier:
             headers={
                 name: value
                 for name, value in request.headers.items()
-                if name.lower() in {"accept", "content-type", "idempotency-key", "origin"}
+                if name.lower()
+                in {"accept", "content-type", "idempotency-key", "origin", "range", "x-request-id"}
             },
         )
         if committed and path not in self.lost and forwarded.status_code in {200, 202}:
@@ -148,7 +152,15 @@ class Tier:
             headers={
                 name: value
                 for name, value in forwarded.headers.items()
-                if name.lower() in {"content-type", "cache-control"}
+                if name.lower()
+                in {
+                    "content-type",
+                    "cache-control",
+                    "etag",
+                    "accept-ranges",
+                    "content-range",
+                    "x-request-id",
+                }
             },
         )
 

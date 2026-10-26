@@ -112,6 +112,14 @@ role able to create persistent objects in the authority schema. It does not
 install migrations, grants, a bucket, versioning or an object policy. This
 startup guard is not the complete deployment privilege audit.
 
+The guard checks both the session login and effective role before namespace
+reconciliation or object-storage probes. A restricted libpq startup role must
+not hide a privileged login; owner-role membership is checked even with
+NOINHERIT. It does not change roles or grants, and rejected startup closes the
+owned pool. The PG/MinIO regressions exercise these actual startup identities,
+zero namespace/object side effects on rejection, and an ordinary non-owner
+runtime's successful asset read.
+
 Supply both `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` and
 `SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` for the configured private, versioned
 bucket. With neither key, business endpoints return a stable 503 and operational

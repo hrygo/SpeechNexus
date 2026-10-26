@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -20,17 +22,28 @@ from speechnexus_gateway.domain.vad import (
     VadError,
 )
 
+MAX_VAD_MODEL_BYTES = 16 * 1024 * 1024
+
 
 class SileroOnnxCpuModel:
     def __init__(self, *, model_path: Path, expected_sha256: str) -> None:
         if re.fullmatch(r"[a-f0-9]{64}", expected_sha256) is None:
             raise VadError("a pinned model SHA-256 is required")
         try:
-            with model_path.open("rb") as source:
-                document = source.read(16 * 1024 * 1024 + 1)
+            # Preserve ordinary model-volume symlinks; the opened target must be
+            # regular and its exact bytes must match the approved digest.
+            descriptor = os.open(model_path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+            with os.fdopen(descriptor, "rb") as source:
+                metadata = os.fstat(source.fileno())
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or not 0 < metadata.st_size <= MAX_VAD_MODEL_BYTES
+                ):
+                    raise VadError("invalid local VAD model")
+                document = source.read(MAX_VAD_MODEL_BYTES + 1)
         except OSError:
             raise VadError("cannot read the local VAD model") from None
-        if not 0 < len(document) <= 16 * 1024 * 1024:
+        if not 0 < len(document) <= MAX_VAD_MODEL_BYTES:
             raise VadError("invalid local VAD model")
         if hashlib.sha256(document).hexdigest() != expected_sha256:
             raise VadError("VAD model digest mismatch")

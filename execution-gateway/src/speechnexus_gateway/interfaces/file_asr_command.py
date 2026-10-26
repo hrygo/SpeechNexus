@@ -23,6 +23,7 @@ from speechnexus_gateway.application.file_asr_audio import FileAsrAudio
 from speechnexus_gateway.application.file_asr_result import stage_file_asr_result
 from speechnexus_gateway.domain.asr import (
     AsrCallError,
+    AsrExecutionTarget,
     AsrFailure,
     AsrPolicy,
     AsrRecognizer,
@@ -110,6 +111,7 @@ class CommandFileAsr:
                 or snapshot.output_stream_id is not None
             ):
                 raise ValueError
+            self._validate_target(snapshot)
             parameters = command["parameters"]
             if (
                 parameters["turn_detection"]["mode"] != "server_vad"
@@ -152,6 +154,19 @@ class CommandFileAsr:
             ) from None
         return snapshot, policy, vad, parameters["final_deadline_ms"] / 1000
 
+    def _validate_target(self, request: SubmitRequest) -> None:
+        identity = request.identity
+        self._recognizer.validate_execution_target(
+            AsrExecutionTarget(
+                host_node_id=identity.host_node_id,
+                gateway_id=identity.gateway_id,
+                pool_id=identity.pool_id,
+                instance_id=identity.instance_id,
+                instance_generation=identity.instance_generation,
+                binding_revision_id=identity.binding_revision_id,
+            )
+        )
+
     def _execution_cancelled(
         self,
         request: SubmitRequest,
@@ -167,6 +182,12 @@ class CommandFileAsr:
             raise AsrCallError(
                 AsrFailure.RESPONSE_INVALID, request_may_have_run=request_may_have_run
             )
+        try:
+            self._validate_target(request)
+        except ValueError:
+            raise AsrCallError(
+                AsrFailure.RESPONSE_INVALID, request_may_have_run=request_may_have_run
+            ) from None
         return cancelled()
 
     async def stage_result(

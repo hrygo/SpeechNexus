@@ -132,15 +132,11 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 
 该拓扑不是生产交付。生产前仍需确定入口委托、Host / Origin 策略、TLS、对象存储凭据、数据库迁移、备份恢复、模型绑定、容量 manifest、监控与发布资格。
 
-## 7. 每次实现的最小门禁
+## 7. 按改动选择验证
 
-```bash
-uv sync --locked --all-packages --all-groups
-pnpm install --frozen-lockfile
-make verify
-```
+检查命令与隔离前置统一见 [Agent 验证指南](../agent-verification.md)，以根 `Makefile`、`package.json` 与 CI 核验实际入口。文档仅检查链接、命令、声明及 diff；Python、Web、契约和持久化分别运行适用检查。依赖缺失或 lockfile 变化且任务需要时才锁定安装；相关改动、失败或未解疑点才扩大验证。
 
-只改文档时至少运行链接和格式相关检查；只改 Web 时至少运行 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build`；只改 Python 时至少运行 Ruff、mypy、import-linter 与 pytest。涉及持久化或调度时增加隔离 PostgreSQL / MinIO 集成测试；当前协调 DDL 的双库行为门禁为 `make integration-test` 与 `make coordination-test`，必须同时设置指向本项目隔离测试库的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，缺任一变量直接失败，且只配置一个时共享事务用例按失败处理。
+`make verify` 是包含环境检查与项目测试服务启动的完整本机入口，运行前须满足 Linux ARM64、用户级 systemd 等前置及隔离条件。协调事务或 DDL/权限变更保留 `make coordination-test` 与 `make integration-test` 双库门禁；缺服务、配置或宿主条件就报告未验证范围，不改向共享实例，也不以跳过或单库代替验收。
 
 ## 8. 后续工程交接
 

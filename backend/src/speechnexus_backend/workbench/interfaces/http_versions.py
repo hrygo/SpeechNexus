@@ -58,6 +58,19 @@ OPERATIONS = frozenset(
 
 # Stable codes/messages; neither request data nor exception details enter an error.
 ERRORS = {
+    "range_not_satisfiable": (
+        416,
+        "invalid_request_error",
+        "Requested byte range is not satisfiable.",
+    ),
+    "download_not_ready": (409, "invalid_request_error", "Export content is not ready."),
+    "download_expired": (410, "invalid_request_error", "Export content has expired."),
+    "download_too_large": (
+        413,
+        "invalid_request_error",
+        "Content exceeds the deployment download limit.",
+    ),
+    "download_unavailable": (503, "service_unavailable_error", "Download content is unavailable."),
     "meetings_unavailable": (503, "service_unavailable_error", "Meetings are unavailable."),
     "meeting_source_unsupported": (
         422,
@@ -130,11 +143,23 @@ ERRORS = {
         "Mutation outcome is unknown. Preserve the original idempotency key; "
         "do not create a new intent.",
     ),
+    "render_attempt_conflict": (
+        409,
+        "invalid_request_error",
+        "A render attempt is already running for this unit.",
+    ),
+    "render_submission_rejected": (
+        422,
+        "invalid_request_error",
+        "The pinned render unit cannot be dispatched as a speech Job.",
+    ),
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }
 
 
-def _error(code: str, rid: str, operation: str | None) -> JSONResponse:
+def _error(
+    code: str, rid: str, operation: str | None, *, content_range: str | None = None
+) -> JSONResponse:
     status, kind, message = ERRORS[code]
     body = parse(
         "ErrorResponse",
@@ -150,6 +175,8 @@ def _error(code: str, rid: str, operation: str | None) -> JSONResponse:
         },
     )
     headers = {"X-Request-ID": rid, "Cache-Control": "no-store", "X-Should-Retry": "false"}
+    if content_range is not None:
+        headers["Content-Range"] = content_range
     if operation is not None:
         validate_response(operation, status, {"body": body, "headers": headers})
     return JSONResponse(body, status_code=status, headers=headers)

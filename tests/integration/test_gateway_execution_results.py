@@ -364,7 +364,7 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
     sandbox.upgrade()
     sandbox.upgrade()
     after = sandbox.admin.execute("SELECT * FROM submit_intents").fetchall()
-    assert sandbox.version() == "0012_execution_results"
+    assert sandbox.version() == "0014_pronunciation_drafts"
     assert after[0].pop("staging_result_document") is None
     assert after == before
     # An unreadable old receipt is still history: migration must not discard it.
@@ -374,7 +374,7 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
         sandbox.config.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match=r"history.*preservation"):
             migration.downgrade(sandbox.config, "0011_binding_parameter_defaults")
-    assert sandbox.version() == "0012_execution_results"
+    assert sandbox.version() == "0014_pronunciation_drafts"
     assert sandbox.admin.execute("SELECT * FROM submit_intents").fetchall() == preserved
 
 
@@ -429,5 +429,5 @@ def test_downgrade_waits_for_in_flight_result_and_preserves_committed_receipt(
             pending.result(timeout=5)
     assert recovery_ledger.get(saved.identity.submit_intent_id) == saved
     assert db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0012_execution_results"}
+        {"version_num": "0014_pronunciation_drafts"}
     ]

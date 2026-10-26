@@ -44,6 +44,9 @@ class WorkbenchSettings(BaseSettings):
         default="saved", pattern=r"^[a-z0-9][a-z0-9-_]*(/[a-z0-9][a-z0-9-_]*)*$"
     )
     saved_asset_deadline_seconds: float = Field(default=300, gt=0, le=900)
+    download_max_bytes: int = Field(default=256 * 1024**2, ge=1, le=2**40)
+    download_max_active: int = Field(default=2, ge=1, le=32)
+    download_timeout_seconds: float = Field(default=120, gt=0, le=900)
     # The intranet text LLM is deployment configuration, never a client choice. Absent
     # means the assistant and new Minutes stay off. Only a loopback or private endpoint
     # is accepted, so the workbench cannot be pointed at a public cloud service, and the
@@ -71,10 +74,16 @@ class WorkbenchSettings(BaseSettings):
     # How often a serving instance looks for queued Minutes work; the queue itself is
     # the durable record, so an idle or restarted instance owes nothing extra.
     minutes_interval_seconds: float = Field(default=5, gt=0, le=300)
-    # Zero keeps export production off. The workbench owns the export queue and its
-    # publish path, but the producer belongs to the speech generation boundary, so an
-    # unconfigured deployment must never claim queued exports it cannot finish.
+    # Zero keeps export production off. Workbench export assembly consumes saved
+    # audio through an injected producer; it never invokes speech generation.
+    # An unconfigured deployment must not claim work it cannot finish.
     export_interval_seconds: float = Field(default=0, ge=0, le=300)
+    # Execution safety limits, not model/quality or deployment qualifications.
+    export_max_output_bytes: int = Field(default=256 * 1024**2, ge=1, le=2**40)
+    export_max_unpacked_bytes: int = Field(default=512 * 1024**2, ge=1, le=2**40)
+    export_max_archive_entries: int = Field(default=1024, ge=1, le=100_000)
+    export_max_audio_seconds: float = Field(default=36000, gt=0, le=604800)
+    export_validation_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
     @staticmethod
     def _explicit_host(value: str) -> bool:
@@ -213,7 +222,15 @@ class WorkbenchSettings(BaseSettings):
             raise ValueError("cursor key must contain 32 to 4096 UTF-8 bytes")
         return value
 
-    @field_validator("max_connections", "max_json_bytes", "body_timeout_seconds", mode="before")
+    @field_validator(
+        "max_connections",
+        "max_json_bytes",
+        "body_timeout_seconds",
+        "download_max_bytes",
+        "download_max_active",
+        "download_timeout_seconds",
+        mode="before",
+    )
     @classmethod
     def reject_bool_limits(cls, value: object) -> object:
         if isinstance(value, bool):

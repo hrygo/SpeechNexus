@@ -3,6 +3,8 @@ import { parse } from "../../../../packages/contracts/src/realtime";
 import { RealtimeClient } from "./realtime-client";
 import { RealtimeJournal, type RealtimeStorage } from "./realtime-journal";
 import { RealtimeController, type RealtimeSnapshot } from "./realtime-session";
+import InputDevicePicker from "./InputDevicePicker";
+import { useRealtimeFocus } from "./useRealtimeFocus";
 import "./realtime.css";
 
 const problems: Record<NonNullable<RealtimeSnapshot["problem"]>, string> = {
@@ -12,6 +14,15 @@ const problems: Record<NonNullable<RealtimeSnapshot["problem"]>, string> = {
   read_failed: "当前会话状态尚未确认。请刷新读取；旧回执不能证明当前状态。",
   protocol: "实时消息不符合约定，已停止采集。已确认正文保留，清理状态请重新读取。",
   capture: "麦克风采集已中断或不可用。已停止本次输入，已确认正文仍可复制。",
+  capture_cleanup:
+    "本地采集资源释放未确认，已阻断新会话与采集。请关闭此浏览器标签页；服务端清理状态仍需单独读取。",
+};
+const microphoneNames: Record<RealtimeSnapshot["microphone"], string> = {
+  idle: "已停止",
+  starting: "正在请求设备",
+  running: "采集中",
+  stopping: "正在停止，等待本地资源释放",
+  failed: "本地资源释放未确认",
 };
 const cleanupNames = {
   not_required: "无需清理",
@@ -53,8 +64,8 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
     [model, setModel] = useState(r.request?.models.asr?.id ?? ""),
     [modelRevision, setModelRevision] = useState(r.request?.models.asr?.revision ?? "");
   const [invalid, setInvalid] = useState(false);
-  const heading = useRef<HTMLHeadingElement>(null),
-    lifecycle = useRef({ generation: 0 });
+  const { root, heading } = useRealtimeFocus(active);
+  const lifecycle = useRef({ generation: 0 });
   useEffect(() => {
     const owner = lifecycle.current,
       generation = ++owner.generation;
@@ -74,12 +85,13 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
   }, [controller]);
   useEffect(() => {
     controller.setActive(active);
-    if (active) heading.current?.focus();
-  }, [active, controller]);
+    if (active && !document.hidden) heading.current?.focus();
+  }, [active, controller, heading]);
   const locked = s.busy || s.blocked || !!r.pending;
   const canCreate =
     !locked &&
     !s.connecting &&
+    s.microphone === "idle" &&
     (!r.session ||
       (!!s.current &&
         ["closed", "failed", "expired"].includes(s.current.status) &&
@@ -92,7 +104,7 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
     s.microphone === "idle";
   const draft = r.captions.map((c) => c.text).join("\n");
   return (
-    <section className="realtime-asr" aria-label="实时字幕工作台" aria-busy={s.busy}>
+    <section ref={root} className="realtime-asr" aria-label="实时字幕工作台" aria-busy={s.busy}>
       <header>
         <h2 ref={heading} tabIndex={-1}>
           实时字幕
@@ -197,6 +209,16 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
           <button type="submit">创建实时会话</button>
         </fieldset>
       </form>
+      {active && (
+        <InputDevicePicker
+          value={s.inputDeviceId}
+          disabled={locked || s.microphone === "stopping" || s.microphone === "failed"}
+          onSelect={(id) => {
+            void controller.selectInputDevice(id);
+            heading.current?.focus();
+          }}
+        />
+      )}
       {r.session && (
         <section aria-label="会话与清理事实">
           <h3>会话与清理事实</h3>
@@ -223,13 +245,7 @@ function ActiveHost({ controller, active }: { controller: RealtimeController; ac
                   : "尚未连接"}
             </dd>
             <dt>麦克风</dt>
-            <dd>
-              {s.microphone === "running"
-                ? "采集中"
-                : s.microphone === "starting"
-                  ? "正在请求设备"
-                  : "已停止"}
-            </dd>
+            <dd data-testid="asr-microphone-state">{microphoneNames[s.microphone]}</dd>
           </dl>
           <div className="realtime-actions">
             <button

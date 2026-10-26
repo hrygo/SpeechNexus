@@ -6,6 +6,11 @@ It contains no business rules, database adapter, server route, or engine.
 Do not import it from any domain package. Interfaces translate validated DTOs
 into their own application/domain values.
 
+The file boundary also exposes the existing public `Transcription` schema for
+consumers of staged file-ASR JSON. This generates validation/types from the
+speech source without changing its wire format. See
+[transcript import and text export](../../docs/architecture/transcript-import-and-text-export.md).
+
 Profile draft consumers can parse `ProfileRevisionCreateRequest` through the
 `admin` namespace and the complete `ScenarioProfileRevision` through Python
 `speechnexus_contracts.scenario_profiles` / TypeScript
@@ -38,6 +43,13 @@ uv run pytest tests/contract/test_generated_bindings.py -q
 pnpm --filter @speechnexus/contracts typecheck
 pnpm --filter @speechnexus/contracts test
 ```
+
+OpenAPI TypeScript generation uses the locked compiler and a response-header
+AST adapter: a referenced Header Object is optional unless its resolved source
+declares `required: true`. This also covers external response/header aliases.
+The adapter preserves header value types and mandatory inline headers; it does
+not rewrite source schemas or runtime validation. Compile-time consumers cover
+omitted optional headers, required controls and invalid values.
 
 Inputs are `contracts/bindings.json`, the speech OpenAPI and its local reference
 closure. The generator refuses references outside `contracts/` and remote URIs.
@@ -241,10 +253,11 @@ package does not register them in the speech backend.
 `workbench-http` derives its reviewed v1/v2 paths and operations from the source
 OpenAPI: status, project create/read/update/list, transcript create/read/list and
 revision create/read, deletion plan/create/read, meeting create/read/seal and
-minutes create/read. The packaged
+minutes create/read, render generation, saved-asset/book-export downloads and
+export SSE. The existing C v1/v2 JSON selection remains available. The packaged
 `workbench.openapi.json` is a closed contract for C's handlers and documentation;
 loading it does not start a server or register a route. It retains the original
-parameter/header requirements, per-status JSON response schemas and public
+parameter/header requirements, per-status JSON/binary response schemas and public
 errors. It does not change the default `workbench.createClient`.
 
 ```python
@@ -254,7 +267,7 @@ validate_request("listProjects", {"query": {"limit": "50"}})
 validate_response("listProjects", 200, {"headers": response_headers, "body": response_json})
 ```
 
-The envelope accepts optional `path`, `query`, `headers` maps and a JSON `body`
+The envelope accepts optional `path`, `query`, `headers` maps and a declared `body`
 when the operation declares one; responses contain optional headers and the
 declared body. Required parameters, body and statuses follow the actual route.
 For example, deletion's Idempotency-Key is required and may be one character,
@@ -284,7 +297,7 @@ const result = await client.POST("/v1/workbench/projects/{project_id}/transcript
 The client checks the final URL, query, headers and serialized JSON before
 fetching, then validates the actual response status, headers and JSON before
 returning it. Its explicit byte limit applies to actual UTF-8 bytes in each
-request/response, independently of Content-Length; overflow/invalid UTF-8/JSON
+JSON request/response, independently of Content-Length; overflow/invalid UTF-8/JSON
 cancels reading and returns a safe ContractValidationError. Callers choose a
 bound that covers their supported payloads and retain their own concurrency and
 timeouts. The client prohibits redirects and a different per-call deployment
@@ -293,11 +306,99 @@ or an unknown outcome. Declared errors keep their original status/body; this
 validation does not grant permission to repeat a write. Consumers that add their
 own middleware/fetch implementation must preserve these transport guarantees.
 
-Both languages consume `workbench-http.json`, including every declared response
-status. Python also checks these cases against the original source operations;
+For `downloadSavedAsset` and `downloadBookExport`, 200/206 are native binary
+rather than JSON. Python
+`validate_response` accepts bytes, bytearray or memoryview; validation never
+copies or decodes that payload. The TypeScript client requires `parseAs: "stream"`
+on these operations before I/O:
+
+```ts
+const download = await client.GET("/v1/workbench/saved-assets/{asset_id}/content", {
+  params: { path: { asset_id: savedAssetId }, header: { Range: "bytes=0-3" } },
+  parseAs: "stream",
+  signal: controller.signal,
+});
+```
+
+Success returns the original ReadableStream, with no clone/read/buffering in
+validation. Empty content can yield null/undefined as in openapi-fetch. The
+caller owns a bounded reader, deadline and cancellation; the JSON limit does
+not limit binary downloads. Workbench source `0.1.0.dev1` additionally declares
+400/408/413/416/500/503 JSON failures on both download operations; saved assets keep
+401/404 and book export also keeps 409/410. Strict `dev0` clients must regenerate
+before the new producer is deployed. The source leaves Content-Range optional on
+206 for existing consumers and adds the `bytes */size` shape on 416. Validation
+does not check actual range selection or digest. The production C routes and Web
+consumer add those behavioral checks; their limits and evidence scope are documented
+in [committed content downloads](../../docs/architecture/workbench-content-downloads.md).
+New binary constraints fail generation until implemented.
+
+For `streamExportEvents`, use `parseAs: "stream"` as well. The middleware checks
+the actual SSE status/media/headers without reading the body. Its 401/404/410
+errors remain bounded JSON. The independently generated `ExportEvent` union is
+available through `workbench.parse` and the HTTP `validateEvent` entrypoint.
+Use the incremental helper to validate actual frames, not only metadata:
+
+```ts
+import { readEvents } from "@speechnexus/contracts/workbench-http";
+const request = {
+  path: { export_id: exportId },
+  headers: { "Last-Event-ID": originalCursor },
+};
+const response = await client.GET("/v1/workbench/exports/{export_id}/events", {
+  params: { path: request.path, header: request.headers },
+  parseAs: "stream",
+  signal: controller.signal,
+});
+if (response.data) {
+  for await (const event of readEvents("streamExportEvents", response.data, request, 65536)) {
+    // Consume event first; retain only a verified cursor for a later read.
+    lastVerifiedCursor = event.id;
+    if (shouldStopReading) break; // cancels this reader, not the export job
+  }
+}
+```
+
+Python is transport independent. Validate the original request before I/O;
+callers own their HTTP client's fixed deployment, redirect policy, timeout,
+actual media check and response context. Pass the same original request and
+native byte iterator to the generated helper, and close both on early exit:
+
+```python
+from contextlib import closing
+from speechnexus_contracts.workbench_http import iter_events
+
+with closing(
+    iter_events("streamExportEvents", response.iter_bytes(), request, max_event_bytes=65536)
+) as events:
+    for event in events:
+        last_verified_cursor = event["id"]
+        if should_stop_reading:
+            break
+```
+
+The helper never buffers a complete stream. Its mandatory positive safe byte
+budget covers one pending frame including metadata/comments; CR reserves a
+possible following LF. UTF-8 chunks, LF/CRLF/CR, BOM, comments and multiline data
+are supported. Payloads must satisfy the original event union and export id;
+optional SSE id/event fields must match the payload, and ids must increase after
+the original cursor. Decimal ids are compared without Number rounding. Invalid,
+oversized or incomplete events raise a fixed error and do not advance the last
+yielded cursor. No payload or transport exception details enter that error.
+EOF does not establish export success; 410 and reconnection decisions belong
+to the caller. The helpers do not retry, post cancellation or release resources.
+Their ordered examples protect framing/identity, not the entire export business
+state machine.
+
+Both languages consume `workbench-http.json`, `workbench-binary-http.json` and
+`workbench-sse.json`,
+including every selected response status. The latter uses synthetic octet-array
+test descriptors materialized as native bytes, never JSON download wire bodies.
+Python also checks these cases against the original source operations;
 the TS mock transport covers rejection before network I/O, byte bounds, cancellation,
-unknown responses and no retries. A native loopback HTTP check also verifies a
-parsed reply and zero requests to a POST redirect target. Actual C handlers, their migrations and
+unknown responses and no retries. Native loopback HTTP checks verify before-EOF binary/event consumption, reader
+cancellation closing the socket, exact Range/cursor forwarding, explicit resume,
+truncated-stream rejection, declared 410 and redirect refusal. Actual C handlers, their migrations and
 target-network/browser qualification remain C's versioned integration work.
 
 ### Meeting and minutes projection
@@ -464,6 +565,23 @@ never publishes the unimplemented speech paths in its OpenAPI. Schema default
 annotations stay optional in TypeScript (`--default-non-nullable false`) and
 never cause runtime default insertion. Generated files remain drift-protected.
 
+## Voice catalogue read HTTP contract
+
+The opt-in `voice-catalogue-http` entrypoint selects only `listVoices` and
+`getVoiceRevision` from the existing speech source. Python imports
+`speechnexus_contracts.voice_catalogue_http`; TypeScript imports
+`@speechnexus/contracts/voice-catalogue-http`. Both validate complete public
+revisions, including nested capabilities and lifecycle provenance; neither grants
+publication or retirement methods. Shared positive/negative examples live in
+`tests/fixtures/contracts/voice-catalogue-http.json`.
+
+The running workbench adapter consumes this validator before mapping the C
+projection and checks exact requested voice/revision identity separately.
+Workbench source `0.1.0.dev2` adds `getVoiceRevisionV2` / `VoiceRevisionV2` for
+the public 2000-character disable reason; v1 remains at its frozen 128-character
+bound. Deploy the v2 C route before the updated formal Web consumer. See
+[mapping, upgrade and evidence limits](../../docs/architecture/workbench-voice-catalogue.md).
+
 ## Workspace read HTTP contract
 
 The opt-in `admin-http` surface selects `listWorkspaces` and `getWorkspace`
@@ -503,3 +621,25 @@ paths. V1 keeps its strict original schemas; the production boundary refuses v1
 render creation with `503 workbench_unavailable` and performs no write.
 `generateRenderUnit` / `generateRenderUnitV2` are validated contract declarations,
 not registered production operations. See [ADR 0009](../../docs/decisions/0009-workbench-explicit-binding-http-version.md).
+
+### Pronunciation draft inputs and immutable revisions
+
+The root Python/TypeScript `parse` exports include `PronunciationCreateRequest`
+and `PronunciationRevision`. The latter follows the canonical external
+`voice-resource.schema.json` definition through `bindings.schema_refs`; no wire
+copy or independent default is added. Shared `file-workflow.json` examples cover
+explicit draft/published values, omitted defaults and negative identity/type
+cases. Parser support does not mean the public pronunciation routes or TTS
+consumption are implemented; the [private draft component](../../docs/architecture/pronunciation-drafts.md)
+selects explicit `publish: false` only.
+
+The opt-in `pronunciation-read-http` export selects only the fixed-revision GET.
+Python imports `speechnexus_contracts.pronunciation_read_http`; TypeScript imports
+`@speechnexus/contracts/pronunciation-read-http`. Both distinguish confirmed
+`404 pronunciation_not_found` from `503 pronunciation_unavailable` and validate
+the declared retry/cache headers without creating an Operation or retrying.
+The 200 representation follows the actual external source. Consumers still
+compare its ID/revision against their requested identity. Shared examples and
+synthetic native TCP tests cover protocol consumption; no public pronunciation
+route or qualification is established. See the [read contract and upgrade
+boundary](../../docs/architecture/pronunciation-read-contract.md).

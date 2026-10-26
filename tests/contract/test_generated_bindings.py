@@ -27,7 +27,15 @@ def test_generated_python_preserves_source_validation(example: dict[str, Any]) -
     from referencing import Registry
 
     source = document(ROOT / "contracts/speech-openapi.yaml")
-    source["$ref"] = f"#/components/schemas/{example['schema']}"
+    manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
+    reference = manifest.get("schema_refs", {}).get(
+        example["schema"], f"#/components/schemas/{example['schema']}"
+    )
+    target, separator, fragment = reference.partition("#")
+    assert separator, "Runtime aliases must preserve the actual source pointer"
+    source["$ref"] = (
+        (ROOT / "contracts" / target).as_uri() + "#" + fragment if target else "#" + fragment
+    )
     original = Draft202012Validator(
         source, registry=cast(Any, Registry)(retrieve=retrieve), format_checker=FormatChecker()
     )

@@ -1,9 +1,8 @@
 """The serving runtime owns export production: claim, produce, publish, settle.
 
-Only the producer is a test double. It stands in for the speech generation boundary,
-which the workbench consumes over its contract and does not implement. The queue, its
-claim, the publish path and the dispatch loop are the real ones, over disposable
-PostgreSQL and the real object zone.
+The producer is a test-only saved-audio assembler using decodable synthetic audio.
+It invokes no inference. The queue, claim, validator, publication and dispatch loop
+are production paths over disposable PostgreSQL and the real object zone.
 """
 
 from __future__ import annotations
@@ -18,16 +17,20 @@ import httpx
 import pytest
 from minio import Minio
 from pydantic import SecretStr
+from tests.fake.export_media import synthetic_export_zip
 from tests.integration.test_workbench_exports_http import create, prepared
+from tests.integration.test_workbench_http_management import acceptance
 from tests.integration.test_workbench_runtime import Database, serve
 from tests.integration.test_workbench_runtime import database as database
 
 from speechnexus_backend.workbench.application.export_worker import ProducedExport
 from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
+from speechnexus_backend.workbench.infrastructure.postgres_exports import PostgresExports
+from speechnexus_backend.workbench.infrastructure.postgres_versions import PostgresVersionUnitOfWork
 from speechnexus_backend.workbench.runtime import create_runtime_app
 
 pytestmark = pytest.mark.integration
-CONTENT = b"synthetic runtime export bundle\n" * 4
+CONTENT = synthetic_export_zip(chapters=1)
 BUCKET = "speechnexus-workbench-runtime-exports"
 DEADLINE = 20.0
 
@@ -75,11 +78,22 @@ def objects() -> Iterator[_Zone]:
         zone.close()
 
 
-def runtime_app(database: Database, *, interval: float, producer: Any | None) -> Any:
+def runtime_app(
+    database: Database,
+    *,
+    interval: float,
+    producer: Any | None,
+    max_output_bytes: int = 256 * 1024**2,
+    cleanup_interval_seconds: float = 5,
+    workspace_id: str = "workspace-runtime",
+) -> Any:
     endpoint = os.environ["SPEECHNEXUS_TEST_MINIO_ENDPOINT"]
     settings = database.settings().model_copy(
         update={
             "export_interval_seconds": interval,
+            "cleanup_interval_seconds": cleanup_interval_seconds,
+            "workspace_id": workspace_id,
+            "export_max_output_bytes": max_output_bytes,
             "object_endpoint": endpoint,
             "object_bucket": BUCKET,
             "object_prefix": "exports",
@@ -126,6 +140,13 @@ async def test_the_serving_runtime_produces_a_queued_export(
         assert export["status"] == "queued" and export["artifact"] is None
         # No test calls the worker: the serving runtime's own loop must settle it.
         finished = await settled(client, export["id"], "succeeded")
+        path = f"/v1/workbench/exports/{export['id']}/content"
+        downloaded = await client.get(path)
+        assert downloaded.status_code == 200 and downloaded.content == CONTENT
+        assert downloaded.headers["etag"] == '"sha256:' + hashlib.sha256(CONTENT).hexdigest() + '"'
+        partial = await client.get(path, headers={"Range": "bytes=1-4"})
+        assert partial.status_code == 206 and partial.content == CONTENT[1:5]
+        assert partial.headers["content-range"] == f"bytes 1-4/{len(CONTENT)}"
 
     assert finished["progress_completed"] == finished["progress_total"] == 1
     artifact = finished["artifact"]
@@ -135,6 +156,112 @@ async def test_the_serving_runtime_produces_a_queued_export(
     assert artifact["sha256"] == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
     assert finished["error"] is None
     assert objects.read(f"{project_id}/exports/{export['id']}/{artifact['id']}") == CONTENT
+
+
+@pytest.mark.parametrize("unavailable", ["expired", "deleted", "other-workspace"])
+async def test_download_visibility_is_checked_even_while_export_object_bytes_remain(
+    database: Database, objects: _Zone, unavailable: str
+) -> None:
+    async with serve(runtime_app(database, interval=0, producer=None)) as client:
+        export, book_id = await queue_one(client, f"download-{unavailable}")
+        path = f"/v1/workbench/exports/{export['id']}/content"
+        queued = await client.get(path)
+        assert queued.status_code == 409, queued.text
+        assert queued.json()["error"]["code"] == "download_not_ready"
+        assert "etag" not in queued.headers
+
+    # Only the runtime loop produces the real object. Retain it for visibility checks,
+    # independently of physical cleanup; no retention or deletion-time SLO is claimed.
+    async with serve(
+        runtime_app(database, interval=0.1, producer=_Bundle(), cleanup_interval_seconds=300)
+    ) as client:
+        finished = await settled(client, export["id"], "succeeded")
+        book = await client.get(f"/v1/workbench/books/{book_id}")
+        project_id = book.json()["project_id"]
+        original = await client.get(path)
+        assert original.status_code == 200 and original.content == CONTENT
+        key = f"{project_id}/exports/{export['id']}/{finished['artifact']['id']}"
+        if unavailable == "expired":
+            # Exercise the actual retention port/transaction, not a fake HTTP store.
+            uow = PostgresVersionUnitOfWork(
+                database.settings().database_url.get_secret_value(), schema=database.schema
+            )
+            await PostgresExports(uow).expire_export(export_id=export["id"])
+            response = await client.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 410, "download_expired"
+        elif unavailable == "deleted":
+            project = await client.get(f"/v1/workbench/projects/{project_id}")
+            plan = await client.post(
+                "/v1/workbench/deletion-plans",
+                json={
+                    "mode": "cascade",
+                    "target": {
+                        "owner": "workbench",
+                        "kind": "project",
+                        "resource": {
+                            "id": project_id,
+                            "revision": str(project.json()["metadata_revision"]),
+                        },
+                    },
+                },
+                headers={"Idempotency-Key": "export-download-delete-plan"},
+            )
+            assert plan.status_code == 200, plan.text
+            deleted = await client.post(
+                "/v1/workbench/deletions",
+                json=acceptance(plan.json()),
+                headers={"Idempotency-Key": "export-download-delete"},
+            )
+            assert deleted.status_code == 202, deleted.text
+            response = await client.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 404, "resource_not_found"
+        else:
+            async with serve(
+                runtime_app(
+                    database,
+                    interval=0,
+                    producer=None,
+                    cleanup_interval_seconds=300,
+                    workspace_id="workspace-other",
+                )
+            ) as other:
+                response = await other.get(path, headers={"Range": "bytes=0-3"})
+            expected_status, expected_code = 404, "resource_not_found"
+        assert response.status_code == expected_status, response.text
+        assert response.json()["error"]["code"] == expected_code
+        assert response.headers["content-type"].startswith("application/json")
+        assert "etag" not in response.headers and "content-range" not in response.headers
+        assert objects.read(key) == CONTENT
+
+
+@pytest.mark.parametrize(
+    ("content", "max_output_bytes"),
+    [(b"synthetic invalid archive", 1_000_000), (CONTENT, len(CONTENT) - 1)],
+    ids=["invalid-media", "configured-output-limit"],
+)
+async def test_the_runtime_rejects_invalid_or_over_budget_media_before_publication(
+    database: Database, objects: _Zone, content: bytes, max_output_bytes: int
+) -> None:
+    class InvalidBundle(_Bundle):
+        async def produce_export(self, job: Any, *, report: Any) -> ProducedExport:
+            await report(1)
+            return ProducedExport(content=content, media_type="application/zip")
+
+    app = runtime_app(
+        database, interval=0.2, producer=InvalidBundle(), max_output_bytes=max_output_bytes
+    )
+    async with serve(app) as client:
+        export, book_id = await queue_one(client, "runtime-invalid")
+        owned_book = await client.get(f"/v1/workbench/books/{book_id}")
+        assert owned_book.status_code == 200
+        project_id = owned_book.json()["project_id"]
+        failed = await settled(client, export["id"], "failed")
+    assert failed["artifact"] is None and failed["error"]["code"] == "unavailable"
+    assert failed["progress_completed"] == failed["progress_total"] == 1
+    assert (
+        list(objects.client.list_objects(BUCKET, prefix=f"exports/{project_id}/", recursive=True))
+        == []
+    )
 
 
 async def test_an_unconfigured_runtime_leaves_queued_exports_alone(

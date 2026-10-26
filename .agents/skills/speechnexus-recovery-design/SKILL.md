@@ -18,6 +18,8 @@ description: "设计或审查 SpeechNexus 持久写入与异步执行的故障�
 
 按需从 [AGENTS.md](../../../AGENTS.md)、[契约索引](../../../contracts/README.md)和[事务设计](../../../docs/architecture/coordination-transactions.md)定位当前定义；涉及执行命令看[执行命令](../../../docs/architecture/execution-command.md)，涉及资源释放看[运行治理](../../../docs/architecture/runtime-governance.md)，涉及删除看[删除生命周期](../../../docs/architecture/data-deletion.md)。不把文档的“设计要求”表述成“当前实现已支持”。
 
+本技能负责恢复决定与故障窗口。实际改变机器契约时结合 [speechnexus-contract-change](../speechnexus-contract-change/SKILL.md)；改变协调事务端口、锁序、预算或 DDL/权限时结合 [speechnexus-coordination-change](../speechnexus-coordination-change/SKILL.md) 完成落地验证。现有协议和事务未变的客户端恢复修正不加载整套数据库流程；已完成的推演与共同检查直接复用。
+
 ## 沿故障窗口选择动作
 
 用[故障推演表](references/failure-windows.md)展开相关窗口；只分析本次会改变的路径。
@@ -42,8 +44,8 @@ description: "设计或审查 SpeechNexus 持久写入与异步执行的故障�
 
 使用现有隔离测试入口和合成数据；需要真实持久化时验证真实事务结果，模型、目标拓扑和物理设备资格另记。测试脚本、日志和公开错误只保留必要元信息，不泄露原命令正文或业务内容。
 
-交付一个与任务规模匹配的恢复决定：事实/窗口、允许动作、禁止副作用、验证结果及剩余未知。技能不要求每次写新计划，也不新增用户确认步骤；既有授权边界继续生效。
+交付一个与任务规模匹配的恢复决定：事实/窗口、允许动作、禁止副作用、验证结果及剩余未知。已有授权持续有效，计划记录按任务复杂度选择。
 
-## 保持技能耐用
+## 事实来源
 
-协议字段、状态机和事务入口从当前源头读取；示例只用于故障推理，不成为新的协议副本。发现契约或实现变化时核对引用并复测 [evals/evals.json](evals/evals.json) 中相关行为；实测记录放忽略目录，不固化当前测试数量、运行端点或版本。
+协议字段和状态语义以当前机器契约为准，事务入口从生产实现定位。示例用于故障推理，不构成独立协议定义。

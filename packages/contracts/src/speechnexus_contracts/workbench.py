@@ -203,6 +203,10 @@ def parse(name: Literal["VoiceRevision"], value: Any) -> models.VoiceRevision: .
 
 
 @overload
+def parse(name: Literal["VoiceRevisionV2"], value: Any) -> models.VoiceRevisionV2: ...
+
+
+@overload
 def parse(name: Literal["WorkbenchStatusV2"], value: Any) -> models.WorkbenchStatusV2: ...
 
 
@@ -228,6 +232,10 @@ def parse(name: Literal["RenderUnitListV2"], value: Any) -> models.RenderUnitLis
 def parse(
     name: Literal["RenderUnitGenerationAcceptedV2"], value: Any
 ) -> models.RenderUnitGenerationAcceptedV2: ...
+
+
+@overload
+def parse(name: Literal["ExportEvent"], value: Any) -> models.ExportEvent: ...
 
 
 def parse(name: str, value: Any) -> Any:

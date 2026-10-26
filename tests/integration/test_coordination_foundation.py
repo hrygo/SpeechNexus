@@ -217,7 +217,15 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         else set()
     )
     profile_tables = (
-        {"speech_profile_families", "speech_profile_revisions", "speech_profile_commands"}
+        {
+            "speech_profile_families",
+            "speech_profile_revisions",
+            "speech_profile_commands",
+            "speech_profile_lifecycle_intents",
+            "speech_pronunciation_families",
+            "speech_pronunciation_revisions",
+            "speech_pronunciation_commands",
+        }
         if db.dialect == "postgresql"
         else set()
     )
@@ -478,7 +486,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0012_execution_results"
+    assert sandbox.version() == "0014_pronunciation_drafts"
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -545,7 +553,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0012_execution_results"
+        assert sandbox.version() == "0014_pronunciation_drafts"
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

@@ -16,7 +16,7 @@
     "version": null
   },
   "internal/coordination-transactions.schema.json": {
-    "sha256": "551da2db3e9f87012928270fda839c1b9fd382f7109be00f557f6d7a0f4e3f49",
+    "sha256": "af7c8b8852db7ace68355fb0cb71c251b1fc1c3485bae5c409a04cad83311a33",
     "version": null
   },
   "internal/execution-command.schema.json": {
@@ -24,7 +24,7 @@
     "version": null
   },
   "internal/execution-control.openapi.yaml": {
-    "sha256": "ac425efb32382c4b132722ed4c105755f326290e866114bd7013ef40bb43b976",
+    "sha256": "f934456531fdb2b7200838ea451f8e260aceec38f67c575e3838797eb7bd6c16",
     "version": "0.4.0.dev0"
   },
   "internal/execution-stream.schema.json": {
@@ -116,7 +116,7 @@
     "version": null
   },
   "speech-openapi.yaml": {
-    "sha256": "4d23aa17372e8133ea2a7e7cc56dceeb5ab9fe3f56217269d20f5e7259eac848",
+    "sha256": "a1ae98580413fd151b977c8fb7111abb5515d1fc1cf715d7917581a57ae9e554",
     "version": "0.1.0.dev0"
   },
   "voice-resource.schema.json": {
@@ -124,7 +124,7 @@
     "version": null
   },
   "workbench-openapi.yaml": {
-    "sha256": "744e7d6c427d6477474d90de37061aa61d186b68e819c1e18d6ab0a82ec05607",
-    "version": "0.1.0.dev0"
+    "sha256": "0eebe6622eafb07ace8885bc768f022f0cebfbc90854c6f9f8201c9f27db2b6d",
+    "version": "0.1.0.dev2"
   }
 }

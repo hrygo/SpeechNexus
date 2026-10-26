@@ -23,6 +23,7 @@ from speechnexus_gateway.application.readiness import (
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
+from speechnexus_gateway.file_asr_runtime import load_file_asr_configuration
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
@@ -211,7 +212,11 @@ def create_app(
         raise ValueError("injected execution control still requires explicit control configuration")
     if barrier_control is not None and resolved_settings.recovery_config_file is not None:
         raise ValueError("configured recovery requires the default control lifespan")
-    if file_execution_factory is not None and (
+    if file_execution_factory is not None and resolved_settings.file_asr_config_file is not None:
+        raise ValueError("configured file ASR cannot be mixed with an injected factory")
+    if (
+        file_execution_factory is not None or resolved_settings.file_asr_config_file is not None
+    ) and (
         not resolved_settings.execution_control_enabled
         or any(
             service is not None
@@ -225,6 +230,9 @@ def create_app(
         )
     ):
         raise ValueError("file execution requires the default owned control lifespan")
+    configuration = load_file_asr_configuration(resolved_settings)
+    if configuration is not None:
+        file_execution_factory = configuration.build
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

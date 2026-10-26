@@ -18,6 +18,7 @@ from speechnexus_backend.workbench.app import create_app
 from speechnexus_backend.workbench.application.assistant import WorkbenchAssistant
 from speechnexus_backend.workbench.application.books import WorkbenchBooks
 from speechnexus_backend.workbench.application.deletions import WorkbenchDeletions
+from speechnexus_backend.workbench.application.downloads import WorkbenchDownloads
 from speechnexus_backend.workbench.application.export_worker import ExportProducer, ExportWorker
 from speechnexus_backend.workbench.application.exports import WorkbenchExports
 from speechnexus_backend.workbench.application.meetings import WorkbenchMeetings
@@ -30,7 +31,14 @@ from speechnexus_backend.workbench.application.versions import WorkbenchVersions
 from speechnexus_backend.workbench.application.voices import WorkbenchVoices
 from speechnexus_backend.workbench.domain.minutes_tasks import MinutesTaskConflictError
 from speechnexus_backend.workbench.infrastructure.deletion_codec import plan_digest
-from speechnexus_backend.workbench.infrastructure.minio_object_zone import MinioObjectZone
+from speechnexus_backend.workbench.infrastructure.export_media_validation import (
+    ExportMediaValidator,
+    ExportValidationLimits,
+)
+from speechnexus_backend.workbench.infrastructure.minio_object_zone import (
+    MinioDownloadReader,
+    MinioObjectZone,
+)
 from speechnexus_backend.workbench.infrastructure.openai_text_llm import (
     OpenAiTextLlm,
 )
@@ -44,6 +52,7 @@ from speechnexus_backend.workbench.infrastructure.postgres_deletion_cleanup impo
 from speechnexus_backend.workbench.infrastructure.postgres_deletions import (
     PostgresDeletionUnitOfWork,
 )
+from speechnexus_backend.workbench.infrastructure.postgres_downloads import PostgresDownloads
 from speechnexus_backend.workbench.infrastructure.postgres_exports import PostgresExports
 from speechnexus_backend.workbench.infrastructure.postgres_meetings import PostgresMeetings
 from speechnexus_backend.workbench.infrastructure.postgres_minutes_tasks import (
@@ -62,6 +71,9 @@ from speechnexus_backend.workbench.infrastructure.postgres_teleprompter import (
 from speechnexus_backend.workbench.infrastructure.postgres_versions import PostgresVersionUnitOfWork
 from speechnexus_backend.workbench.infrastructure.public_artifact_source import (
     PublicArtifactSource,
+)
+from speechnexus_backend.workbench.infrastructure.public_speech_render_jobs import (
+    PublicSpeechRenderJobs,
 )
 from speechnexus_backend.workbench.infrastructure.public_voice_catalogue import (
     PublicVoiceCatalogue,
@@ -359,7 +371,8 @@ async def _sweep_deletions(recovery: WorkbenchRecovery, interval: float) -> None
         try:
             await recovery.run()
         except Exception:
-            _log.exception("deletion sweep failed; the ledger still records what is owed")
+            # Adapter exceptions can contain content, SQL or private endpoints.
+            _log.error("deletion sweep failed; the ledger still records what is owed")
 
 
 async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> None:
@@ -367,7 +380,7 @@ async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> No
     try:
         queued = await minutes.queued_ids(workspace_id, limit=_MINUTES_BATCH)
     except Exception:
-        _log.exception("minutes queue could not be read; the next pass retries")
+        _log.error("minutes queue could not be read; the next pass retries")
         return
     for task_id in queued:
         try:
@@ -378,7 +391,7 @@ async def _dispatch_minutes_once(minutes: MinutesTasks, workspace_id: str) -> No
             # Another instance holds the claim; the queue still records one outcome.
             _log.info("minutes task %s is claimed elsewhere", task_id)
         except Exception:
-            _log.exception("minutes task %s did not finish in this pass", task_id)
+            _log.error("minutes task %s did not finish in this pass", task_id)
 
 
 async def _dispatch_minutes(minutes: MinutesTasks, workspace_id: str, interval: float) -> None:
@@ -457,10 +470,22 @@ def create_runtime_app(
     minutes = MinutesTasks(PostgresMinutesTasks(versions), llm)
     recovery = _deletion_recovery(settings, objects)
     # Export production stays inert until the deployment both asks for it and supplies a
-    # producer: the queue, its claim and its publish path are the workbench's, the bytes
-    # come from the speech generation boundary.
+    # producer: workbench assembly consumes saved audio and never invokes inference.
     exports = PostgresExports(versions)
-    export_worker = ExportWorker(exports, objects, export_producer)
+    export_worker = ExportWorker(
+        exports,
+        objects,
+        export_producer,
+        ExportMediaValidator(
+            ExportValidationLimits(
+                max_output_bytes=settings.export_max_output_bytes,
+                max_unpacked_bytes=settings.export_max_unpacked_bytes,
+                max_archive_entries=settings.export_max_archive_entries,
+                max_audio_seconds=settings.export_max_audio_seconds,
+                timeout_seconds=settings.export_validation_timeout_seconds,
+            )
+        ),
+    )
     # Deployment-derived capability states, in the contract's canonical order:
     # "disabled" means this deployment deliberately does not offer it,
     # "unavailable" means it is asked for but a required dependency is missing, and
@@ -561,6 +586,18 @@ def create_runtime_app(
         meetings=WorkbenchMeetings(PostgresMeetings(versions), llm),
         teleprompter=WorkbenchTeleprompter(PostgresTeleprompter(versions)),
         saved_assets=saved_assets,
+        downloads=None
+        if objects is None
+        else WorkbenchDownloads(
+            PostgresDownloads(versions),
+            MinioDownloadReader(
+                objects,
+                max_bytes=settings.download_max_bytes,
+                timeout_seconds=settings.download_timeout_seconds,
+            ),
+            max_active=settings.download_max_active,
+        ),
+        download_timeout_seconds=settings.download_timeout_seconds,
         voices=voices,
         books=WorkbenchBooks(PostgresBooks(versions)),
         # The same deployment-configured intranet LLM serves the assistant; with none
@@ -568,7 +605,10 @@ def create_runtime_app(
         assistant=WorkbenchAssistant(PostgresAssistantTurns(versions), llm),
         exports=WorkbenchExports(exports),
         capabilities=capabilities,
-        render_units=WorkbenchRenderUnits(PostgresRenderUnits(versions)),
+        render_units=WorkbenchRenderUnits(
+            PostgresRenderUnits(versions),
+            None if client is None else PublicSpeechRenderJobs(client),
+        ),
         default_workspace_id=settings.workspace_id,
         deployment_id=settings.deployment_id,
         cursor_key=settings.cursor_key.get_secret_value().encode("utf-8"),

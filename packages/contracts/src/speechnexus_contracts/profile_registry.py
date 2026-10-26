@@ -16,5 +16,15 @@ PROFILES = frozenset(
     )
 )
 HTTP_PROFILES = frozenset(
-    ("admin", "runtime", "workbench", "profile", "profile_lifecycle", "binding", "binding_defaults")
+    (
+        "pronunciation_read",
+        "voice_catalogue",
+        "admin",
+        "runtime",
+        "workbench",
+        "profile",
+        "profile_lifecycle",
+        "binding",
+        "binding_defaults",
+    )
 )

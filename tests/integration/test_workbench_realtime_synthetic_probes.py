@@ -28,12 +28,13 @@ PROBES = {
 }
 
 
-async def run_probe(name: str, output: Path) -> dict[str, Any]:
+async def run_probe(name: str, output: Path, *arguments: str) -> dict[str, Any]:
     process = await asyncio.create_subprocess_exec(
         "node",
         PROBES[name],
         "--output",
         str(output),
+        *arguments,
         cwd=ROOT,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
@@ -90,3 +91,64 @@ async def test_the_synthetic_tts_producer_is_rendered_without_loss() -> None:
     # The strong property: every sample the synthetic producer delivered was rendered locally.
     assert result["received"] == 48000, result
     assert result["rendered"] == result["received"], result
+
+
+@pytest.mark.parametrize("mode", ["delayed", "rejected"])
+async def test_tts_native_cleanup_is_observed_after_remote_done(mode: str) -> None:
+    result = await run_probe("tts", output_dir(f"tts-cleanup-{mode}"), "--cleanup-mode", mode)
+    assert result["ok"] is True, result
+    assert result["cleanup_mode"] == mode, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["native_close_fault_injection"] is True, result
+    assert result["physical_device"] is False, result
+    assert 0 <= result["stopped_at"] < result["received"] == 48000, result
+    assert result["close_calls"] == 1, result
+    assert result["remote_cancel_commands"] == 0, result
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result
+
+
+@pytest.mark.parametrize("mode", ["delayed", "rejected"])
+@pytest.mark.parametrize("stop_kind", ["abort", "interruption"])
+async def test_capture_cleanup_is_observed_after_remote_session_release(
+    mode: str, stop_kind: str
+) -> None:
+    result = await run_probe(
+        "asr",
+        output_dir(f"asr-cleanup-{stop_kind}-{mode}"),
+        "--cleanup-mode",
+        mode,
+        "--stop-kind",
+        stop_kind,
+    )
+    assert result["passed"] is True, result
+    assert result["cleanup_mode"] == mode, result
+    assert result["stop_kind"] == stop_kind, result
+    assert result["synthetic_microphone"] is True, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["native_close_fault_injection"] is True, result
+    assert result["physical_device"] is False, result
+    assert result["sent_at_stop"] > 0, result
+    assert result["close_calls"] == 1, result
+    assert result["no_late_audio_sent"] is True, result
+    assert result["no_redundant_remote_cancel"] is True, result
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result
+
+
+async def test_input_device_switch_keeps_new_capture_explicit() -> None:
+    result = await run_probe("asr", output_dir("asr-device-switch"), "--device-switch")
+    assert result["passed"] is True, result
+    assert result["device_switch"] is True, result
+    assert result["actual_audio_worklet"] is True, result
+    assert result["synthetic_microphone"] is True, result
+    assert result["physical_device"] is False, result
+    assert result["sessions"] == result["capture_requests"] == 2, result
+    for fact in (
+        "explicit_restart",
+        "original_cancel_replay",
+        "local_device_metadata_only",
+        "old_audio_stopped",
+        "confirmed_text_preserved",
+        "keyboard_switch_and_start",
+    ):
+        assert result[fact] is True, (fact, result)
+    assert result["errors"] == result["serverErrors"] == result["outbound"] == [], result

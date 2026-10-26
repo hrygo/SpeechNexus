@@ -13246,6 +13246,251 @@
           "accepted_at": "2026-10-25T00:00:00Z"
         }
       }
+    },
+    {
+      "id": "saved-asset-download-range-valid",
+      "operation": "downloadSavedAsset",
+      "kind": "request",
+      "valid": true,
+      "value": {
+        "path": {
+          "asset_id": "asset-demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3"
+        }
+      }
+    },
+    {
+      "id": "saved-asset-download-range-invalid",
+      "operation": "downloadSavedAsset",
+      "kind": "request",
+      "valid": false,
+      "value": {
+        "path": {
+          "asset_id": "asset-demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3,8-9"
+        }
+      }
+    },
+    {
+      "id": "downloadBookExport-request",
+      "kind": "request",
+      "operation": "downloadBookExport",
+      "valid": true,
+      "value": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Range": "bytes=0-3"
+        }
+      }
+    },
+    {
+      "id": "downloadBookExport-invalid-request",
+      "kind": "request",
+      "operation": "downloadBookExport",
+      "valid": false,
+      "value": {
+        "path": {
+          "export_id": 1
+        }
+      }
+    },
+    {
+      "id": "streamExportEvents-request",
+      "kind": "request",
+      "operation": "streamExportEvents",
+      "valid": true,
+      "value": {
+        "path": {
+          "export_id": "export_demo"
+        },
+        "headers": {
+          "Last-Event-ID": "9007199254740993"
+        }
+      }
+    },
+    {
+      "id": "streamExportEvents-invalid-request",
+      "kind": "request",
+      "operation": "streamExportEvents",
+      "valid": false,
+      "value": {
+        "path": {
+          "export_id": 1
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-401",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 401,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-404",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 404,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-json-410",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 410,
+      "valid": true,
+      "value": {
+        "body": {
+          "error": {
+            "code": "revision_conflict",
+            "type": "invalid_request_error",
+            "message": "Synthetic conflict.",
+            "param": null,
+            "request_id": "request-demo",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "export-sse-invalid-json-error",
+      "kind": "response",
+      "operation": "streamExportEvents",
+      "status": 410,
+      "valid": false,
+      "value": {
+        "body": {}
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2-request-valid",
+      "kind": "request",
+      "operation": "getVoiceRevisionV2",
+      "valid": true,
+      "value": {
+        "path": {
+          "voice_id": "voice-demo-1",
+          "revision": "2"
+        },
+        "query": {}
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2-request-invalid",
+      "kind": "request",
+      "operation": "getVoiceRevisionV2",
+      "valid": false,
+      "value": {
+        "path": {
+          "voice_id": "voice-demo-1",
+          "revision": "02"
+        },
+        "query": {}
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2-response-valid",
+      "kind": "response",
+      "operation": "getVoiceRevisionV2",
+      "status": 200,
+      "valid": true,
+      "value": {
+        "body": {
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "display_name": "合成旁白",
+          "status": "disabled",
+          "languages": [
+            "zh-CN"
+          ],
+          "audio_formats": [
+            "wav"
+          ],
+          "model_binding": {
+            "id": "binding-demo-1",
+            "revision": "1"
+          },
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": "2026-10-25T08:00:00Z",
+          "disabled_reason": "停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停停"
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2-response-invalid",
+      "kind": "response",
+      "operation": "getVoiceRevisionV2",
+      "status": 200,
+      "valid": false,
+      "value": {
+        "body": {
+          "voice_id": "voice-demo-1",
+          "revision": "2",
+          "display_name": "合成旁白",
+          "status": "published",
+          "languages": [
+            "zh-CN"
+          ],
+          "audio_formats": [
+            "wav"
+          ],
+          "published_at": "2026-10-24T12:00:00Z",
+          "retired_at": null,
+          "disabled_reason": null
+        }
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2-response-declared-413",
+      "kind": "response",
+      "operation": "getVoiceRevisionV2",
+      "status": 413,
+      "value": {
+        "headers": {
+          "X-Request-ID": "synthetic-request"
+        },
+        "body": {
+          "error": {
+            "code": "invalid_request",
+            "type": "invalid_request_error",
+            "message": "Synthetic request rejected.",
+            "param": null,
+            "request_id": "synthetic-request",
+            "retryable": false
+          }
+        }
+      },
+      "valid": true
     }
   ]
 }

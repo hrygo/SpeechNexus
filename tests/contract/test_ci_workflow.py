@@ -32,6 +32,12 @@ _EXPECTED = {
         "WEB_RESULT": "success",
         "DEPLOYMENT_RESULT": "success",
     },
+    "no-db": {
+        "CHECKS_RESULT": "success",
+        "COORDINATION_RESULT": "skipped",
+        "WEB_RESULT": "success",
+        "DEPLOYMENT_RESULT": "success",
+    },
 }
 
 
@@ -50,10 +56,10 @@ def test_design_token_guard_runs_before_routing_without_dependency_install() -> 
 def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
     steps = _WORKFLOW["jobs"]["web"]["steps"]
     build = next(i for i, s in enumerate(steps) if s.get("run") == "pnpm build")
-    install = next(i for i, s in enumerate(steps) if "playwright install" in s.get("run", ""))
+    install = next(i for i, s in enumerate(steps) if "prepare-ci-browser.py" in s.get("run", ""))
     check = next(i for i, s in enumerate(steps) if s.get("id") == "a11y")
     assert build < install < check
-    assert steps[install]["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    assert steps[install]["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     assert steps[check]["run"] == "pnpm test:a11y"
     assert "continue-on-error" not in steps[check] and "if" not in steps[check]
     artifact = next(
@@ -66,6 +72,17 @@ def test_accessibility_checks_run_in_protected_web_lane_after_build() -> None:
     assert not any("playwright" in s.get("run", "") for s in _WORKFLOW["jobs"]["changes"]["steps"])
 
 
+def test_browser_preparation_keeps_partition_selection_and_original_budgets() -> None:
+    jobs = _WORKFLOW["jobs"]
+    shards = jobs["integration_shards"]
+    install = next(s for s in shards["steps"] if "prepare-ci-browser.py" in s.get("run", ""))
+    assert install["if"] == "steps.integration_tools.outputs.browser == 'true'"
+    assert install["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
+    assert "continue-on-error" not in install
+    assert shards["timeout-minutes"] == jobs["web"]["timeout-minutes"] == 10
+    assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
+
+
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],
@@ -76,7 +93,7 @@ def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full"])
+@pytest.mark.parametrize("mode", list(_EXPECTED))
 @pytest.mark.parametrize("checks", _STATES)
 @pytest.mark.parametrize("coordination", _STATES)
 def test_protected_status_never_passes_missing_evidence(
@@ -105,7 +122,7 @@ def test_protected_status_never_passes_missing_evidence(
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full"])
+@pytest.mark.parametrize("mode", list(_EXPECTED))
 @pytest.mark.parametrize("lane", ["WEB_RESULT", "DEPLOYMENT_RESULT"])
 @pytest.mark.parametrize("state", _STATES)
 def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
@@ -116,7 +133,7 @@ def test_final_gate_requires_the_web_and_deployment_results_for_its_scope(
     assert (result.returncode == 0) is (states == _EXPECTED[mode])
 
 
-@pytest.mark.parametrize("mode", ["docs", "web", "full", "", "unknown"])
+@pytest.mark.parametrize("mode", [*_EXPECTED, "", "unknown"])
 @pytest.mark.parametrize("routing", _STATES)
 def test_missing_or_invalid_routing_cannot_authorize_a_merge(mode: str, routing: str) -> None:
     states = _EXPECTED.get(mode, _EXPECTED["full"])
@@ -153,7 +170,8 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
         assert job["needs"] == ["changes"]
         assert (
             job["if"]
-            == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' }}"
+            == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'web' "
+            "|| needs.changes.outputs.mode == 'no-db' }}"
         )
         steps = job["steps"]
         assert any(
@@ -174,6 +192,7 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
         "make contracts-speech-changes",
         "make contracts-coordination-requests",
         "make contracts-coordination-results",
+        "make contracts-realtime-changes",
         "uv run python scripts/dev-env/validate-contracts.py",
         "uv run ruff format --check .",
         "uv run ruff check .",
@@ -232,5 +251,8 @@ def test_required_workflow_is_never_filtered_out_and_classification_is_lightweig
     assert "uv sync" not in commands and "pnpm install" not in commands
     assert "services" not in routing and "needs" not in routing
     assert jobs["integration_shards"]["if"] == "${{ needs.changes.outputs.mode == 'full' }}"
-    assert jobs["deployment"]["if"] == "${{ needs.changes.outputs.mode == 'full' }}"
+    assert (
+        jobs["deployment"]["if"]
+        == "${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'no-db' }}"
+    )
     assert jobs["web"]["if"] == jobs["python_checks"]["if"]

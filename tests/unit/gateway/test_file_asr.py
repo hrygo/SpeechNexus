@@ -14,6 +14,7 @@ from speechnexus_gateway.application.file_asr_audio import FileAsrAudio
 from speechnexus_gateway.domain.asr import (
     AsrAudio,
     AsrCallError,
+    AsrExecutionTarget,
     AsrFailure,
     AsrPolicy,
     AsrText,
@@ -29,6 +30,10 @@ POLICY = AsrPolicy("config-1")
 
 class Recognizer:
     binding_revision_id = "binding-1"
+
+    def validate_execution_target(self, target: AsrExecutionTarget) -> None:
+        if target.binding_revision_id != self.binding_revision_id:
+            raise ValueError("synthetic binding mismatch")
 
     def __init__(self) -> None:
         self.requests: list[AsrAudio] = []

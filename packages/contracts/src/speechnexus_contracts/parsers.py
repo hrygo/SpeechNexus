@@ -14,6 +14,9 @@ from .models import (
     JobList,
     Operation,
     OperationCancellation,
+    PronunciationCreateRequest,
+    PronunciationRevision,
+    Transcription,
 )
 
 
@@ -50,6 +53,10 @@ def parse(name: Literal["Artifact"], value: Any) -> Artifact: ...
 
 
 @overload
+def parse(name: Literal["Transcription"], value: Any) -> Transcription: ...
+
+
+@overload
 def parse(name: Literal["Operation"], value: Any) -> Operation: ...
 
 
@@ -59,6 +66,16 @@ def parse(name: Literal["OperationCancellation"], value: Any) -> OperationCancel
 
 @overload
 def parse(name: Literal["ErrorResponse"], value: Any) -> ErrorResponse: ...
+
+
+@overload
+def parse(
+    name: Literal["PronunciationCreateRequest"], value: Any
+) -> PronunciationCreateRequest: ...
+
+
+@overload
+def parse(name: Literal["PronunciationRevision"], value: Any) -> PronunciationRevision: ...
 
 
 def parse(name: str, value: Any) -> Any:

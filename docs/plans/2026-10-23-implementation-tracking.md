@@ -1,78 +1,26 @@
 <!-- speechnexus-implementation:PROGRAM:v1 -->
 # SpeechNexus 三团队整体实施跟踪
 
-总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。本次状态复核：2026-10-25 08:39 UTC（北京时间 16:39）。
-冻结主干：33233c8a42b284b627e891b32b1b28faeafb30e7；issue正文、唯一状态标签和实际AC证据为事实来源。
-原规划38条；新增#142阶段任务、#149交接项单列，合计40条非PR issue，不改变25主包/6 Gate分母。
+总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。快照：2026-10-26T08:43:09+08:00（Asia/Shanghai，实时读取 GitHub）。
+GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源；本矩阵是可刷新的快照。
 
-**工作包完整验收：0/25；Gate放行：0/6。** 21个主包in-progress，4个planned（A05/A06/B05/B07）。
-步骤完成、组件合入、本机未提交实现与业务/拓扑资格分开；不把PR/测试/文件数量换算产品完成率。
+**工作包完成：0/25；验收 Gate 通过：0/6。** Epic/检查项不混入工作包完成率；duplicate/not_planned 等非完成关闭不计成果，前置未通过的误关 Gate 不计通过。
 
 ## 指挥与环境
 
 | 团队 | 环境 | 主责 |
 | --- | --- | --- |
-| A | 云开发环境 | 平台/协调/迁移/公开API；共享契约、生成与串行集成 |
-| B | MegaCube GPU | 网关/控制器/模型/真实资格；GPU排队与隔离Linux拓扑 |
-| C | MacBook | workbench后端/Web/浏览器媒体/高级业务与体验 |
+| A | 云开发环境 | 平台/协调/迁移/公开 API；代码和接口集成 |
+| B | MegaCube GPU | 网关/控制器/模型/真实资格；GPU 排队与隔离 Linux 集成拓扑 |
+| C | MacBook | workbench 后端/Web/浏览器媒体/高级业务与体验 |
 
-用户统一派工与Gate放行。按同一integration_base_sha交付制品、契约/生成器及具名证据，不共享本地业务目录。
-PG为正式数据库，InnoDB为共享协调对照；停止与释放双证据后才由A原事务退预算一次。
+用户统一派工与关口放行；每轮共同 integration_base_sha，三队返回证据，A 汇总。代码/制品经确定版本交接，不共享本地目录；提交/推送与运行态遵循具体任务授权。
 
 ## 当前派工入口
 
-**先闭合一条可恢复的真实文件 ASR 公开链路，再沿同一协议接 CustomVoice TTS。**
-本次回读全部 40 条非 PR issue、5 个开放 PR、精确 head 检查和当前本地候选；
-40 条均 open 且各有唯一 status。主干[CI40168289503](https://github.com/hrygo/SpeechNexus/actions/runs/40168289503)
-14 项成功，当前尚无公开语音业务/物理集群联合验收。
-历史组件说明见[原复盘](2026-10-25-team-a-realignment.md)，最新 B 事实和终审缺口见
-[团队 B 目标](2026-10-23-team-b-goal.md)；历史测试不改挂到本轮草稿。
+当前没有标记为可开工的工作包，请先核对依赖和状态标签。
 
-| 团队 | 当前可证事实 | 下一交接与真实缺口 |
-| --- | --- | --- |
-| A | 协调原事务/未知恢复、文本 Asset/Workspace、草稿及默认快照 HTTP 已合入；#139 只交付 P1a 原意图/只读边界。#155远端6e7a39a提交独立音频检查进程候选，CI40183062936仍因AppArmor拒绝失败 | A 修复当前 CI 后仍需共享媒体/镜像与真实音频 ready；接权威配置、完整业务 Job/准入、Artifact/Operation/receipt 和公开发布下载。监督器存在不等于媒体已检验 |
-| B | #140/#147 已合入；#152 回执登记与 #154 异步输入已依次集成，PR/合后 CI 均成功；#158 交付提交后文件执行组件与双消费者/确认丢失回归 | #158 的最新组合与集成事实以该 PR 为准；继续接固定真实 ASR、可信停止/释放及 A/C 同版公开链，再接 CustomVoice；替身不构成模型资格 |
-| C | 已提交 [PR #153](https://github.com/hrygo/SpeechNexus/pull/153)，head `6d3d092`，可获取候选；已有作者本机 PG/浏览器/LLM 等分层记录 | 与 main 有冲突，该 head 没有 checks/status/PR workflow；同步并保留最新 A/B 增量、取得新 head CI、迁移/组合根与 method+path 消费者核验，再接真实语音；不再称“未提交” |
-
-#152 的 `0012_execution_results` 与列权限已按用户授权完成 A 范围串行接收，
-合入 `ef16d71`；#154 随后合入 `0832074`，各自精确 PR 与合后 CI 均成功。
-#158 的提交后文件执行组件覆盖独立消费者对同一原 intent 的实际入口竞争、
-真实接收/结果 commit 确认丢失及线程创建失败清理；生命周期、双库与对象回归的
-精确版本、CI 和报告见 [PR #158](https://github.com/hrygo/SpeechNexus/pull/158)。
-识别/VAD 仍为替身，默认固定真实引擎、可信停止/释放、A 发布与公开链路资格仍待。
-独立 worktree 的项目 skill 候选不抵扣业务 AC。
-B00/B01/B02/B03/B04/B06 保持 in-progress，B05/B07 保持 planned，不把待集成子项扩为整包 blocked。
-
-A00 的 [#141](https://github.com/hrygo/SpeechNexus/pull/141) 已合入主干 `a7f4d46`，
-补齐 `generateRenderUnit` 两个 runtime DTO 和 JSON HTTP 入口，沿用既有 Workbench 源契约。
-另三个 downloadSavedAsset/downloadBookExport binary、streamExportEvents SSE 入口、
-实际 C 路由、公开 SpeechJob 和音色资格仍需各自证据；旧 CI 只适用于原 base/head 组合。
-
-A02-INSPECT-01的实际payload pidfd、外层回收、身份引用并发保护和未知停止保留槽位已有本地证据。
-同秒同bwrap PID的内核记录显示unprivileged_userns拒绝net_admin/setpcap。
-用户已批准一次、单台临时CI Python job VM的官方双规则实验，护栏在独立手动实验分支准备，尚未触发。
-不授权长期CI自动加载，不改生产/本机策略；共享媒体/镜像、真实HTTP/PG/MinIO与跨generation停止仍待。
-7天TTL/原键/固定版本不变，AssetRuntime仍是文本检查器。
-
-文件 ASR 路线：真实 ready 音频 + 权威 binding/显式默认 → 完整持久 Job/原子准入 →
-原 intent 唯一真实执行 → B 私有结果回执/可信停止 → A 发布/下载 → SDK/C 消费。
-无 Profile 合法，但草稿/示例/引擎隐式默认不能充当权威配置。A 原事务唯一退预算，
-取消/EOF/请求消失不作停止证明；unknown 保留占用。不新增预算或结果权威、不采用 etcd，Redis 非权威。
-
-| 具名阶段/交接 | 归属与当前状态 | 解除条件 |
-| --- | --- | --- |
-| #142 真实文件 ASR/TTS | B03 #30 的阶段子任务，in-progress；关联 A #21/#22/#23 与 C #37 | 固定模型/镜像/许可和配置、真实持久执行/唯一回执、可信停止/预算、A 发布、SDK/C 同版正常及故障证据；先 ASR 后 CustomVoice |
-| #149 助手上游输入 | A 提供/C06 接收，planned；关联 A04/A06/B05 | 可查询真实 SpeechJob + 已发布声音 + 取消/unknown/停止对账；默认关闭和合成 ID 不算成功，不前移为 G1 前置 |
-
-先集成可审计组件并继续独立的配置/runner 工作，避免共同版本债务扩大；
-不等待所有底层探针穷尽再装配业务，也不跳过真实故障验证。
-实时、VoiceDesign/Base/克隆、对齐/分人、删除/恢复、MCP/完整 SDK、混合负载/长时和物理集群仍在原范围。
-只有一个 GPU 主机不降低集群要求，逻辑竞争与物理多主机分别出证。
-
-CI 继续以五分钟为优化目标；#154 为 242 秒、#152 为 334 秒（含排队），
-前者本次达标，后者未达。保留必需检查和完整适用集合，历史失败/跳过据实记录；
-[CI 范围](../architecture/ci-validation.md)及轻量路径不能用来证明新 Python/迁移候选已全量验证。
-本次只核对状态、交接记录和文档，没有重新运行模型、业务质量或目标拓扑验收。
+首轮默认 A00/B00/C00；B00 真实探针仍受环境/制品/语料/窗口约束。B01/B02/C01/C02/C04 的 fake/调查子项可先行，不能据此标整个包 ready 或已实施。
 
 ## 六阶段 Epic 与独立关口
 
@@ -190,4 +138,4 @@ python3 scripts/dev-env/refresh-implementation-tracker.py
 
 仓库编排材料：[整体计划](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-three-team-delivery-plan.md)、[首轮指令](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-agent-team-startup-briefs.md)、[编排清单](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-implementation-issues.json)和[刷新脚本](https://github.com/hrygo/SpeechNexus/blob/main/scripts/dev-env/refresh-implementation-tracker.py)。三队从包含这些材料的同一集成版本启动；远端 issue 正文也提供自包含任务范围。后续刷新产生的总控正文由维护者核对后显式更新。
 
-原规划代码事实基准 `390f121` 保留为历史时点；本次现实基线见页首，实施从用户指定集成 SHA 开始。创建 issue、契约或测试原型不代表业务已实现。
+代码事实基准 `390f121`；实际开发从总指挥指定集成 SHA 开始。创建 issue/原有契约/测试原型不代表新实施完成。

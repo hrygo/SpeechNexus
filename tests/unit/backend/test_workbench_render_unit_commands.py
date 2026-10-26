@@ -43,6 +43,10 @@ class _Store:
         self.calls.append(("get", {"unit_id": unit_id}))
         return cast(RenderUnit, None)
 
+    async def start_unit(self, **kw: Any) -> RenderUnit:
+        self.calls.append(("start", dict(kw)))
+        return cast(RenderUnit, None)
+
     async def update_unit(
         self,
         *,

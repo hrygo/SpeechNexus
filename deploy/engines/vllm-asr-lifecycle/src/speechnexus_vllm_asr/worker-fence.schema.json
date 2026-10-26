@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:speechnexus:engine-worker-fence:v1",
+  "description": "Engine-private worker observations. No response is execution termination or capacity-release evidence. The future producer must separately establish sealed submissions, core acceptance/order, scheduler and batch completion, transfer completion, and deployment identity.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "nonce", "request_ids"],
+      "properties": {
+        "protocol": { "const": "worker-fence.v1" },
+        "nonce": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32,
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "request_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        }
+      },
+      "description": "Exact internal request IDs, never external IDs or patterns. Canonical JSON is limited to 524288 UTF-8 bytes by the method boundary. A fresh nonce binds one observation attempt; it is not authentication."
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "nonce",
+        "request_set_digest",
+        "worker_rank",
+        "state",
+        "request_state_entries",
+        "persistent_batch_entries",
+        "prompt_logprob_entries",
+        "execution_step_pending",
+        "transport_work_pending",
+        "cuda_synchronized",
+        "release_evidence"
+      ],
+      "properties": {
+        "protocol": { "const": "worker-fence.v1" },
+        "nonce": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32,
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "request_set_digest": {
+          "type": "string",
+          "minLength": 71,
+          "maxLength": 71,
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA-256 of sorted request IDs encoded as compact UTF-8 JSON with ensure_ascii=false."
+        },
+        "worker_rank": { "type": ["integer", "null"], "minimum": 0, "maximum": 4095 },
+        "state": { "enum": ["pending", "observed", "unsupported", "failed"] },
+        "request_state_entries": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "persistent_batch_entries": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "prompt_logprob_entries": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "execution_step_pending": { "type": ["boolean", "null"] },
+        "transport_work_pending": { "type": ["boolean", "null"] },
+        "cuda_synchronized": { "type": "boolean" },
+        "release_evidence": {
+          "const": false,
+          "description": "Always false, including observed. Worker-local absence and GPU synchronization do not establish core acceptance, scheduler resource accounting, transfer completion or instance generation."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "enum": ["pending", "observed"] } } },
+          "then": {
+            "properties": {
+              "worker_rank": { "type": "integer" },
+              "request_state_entries": { "type": "integer" },
+              "persistent_batch_entries": { "type": "integer" },
+              "prompt_logprob_entries": { "type": "integer" },
+              "execution_step_pending": { "type": "boolean" },
+              "transport_work_pending": { "type": "boolean" }
+            }
+          },
+          "else": {
+            "properties": {
+              "request_state_entries": { "type": "null" },
+              "persistent_batch_entries": { "type": "null" },
+              "prompt_logprob_entries": { "type": "null" },
+              "execution_step_pending": { "type": "null" },
+              "transport_work_pending": { "type": "null" },
+              "cuda_synchronized": { "const": false }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "observed" } } },
+          "then": {
+            "properties": {
+              "request_state_entries": { "const": 0 },
+              "persistent_batch_entries": { "const": 0 },
+              "prompt_logprob_entries": { "const": 0 },
+              "execution_step_pending": { "const": false },
+              "transport_work_pending": { "const": false },
+              "cuda_synchronized": { "const": true }
+            }
+          },
+          "else": { "properties": { "cuda_synchronized": { "const": false } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "pending" } } },
+          "then": {
+            "anyOf": [
+              { "properties": { "request_state_entries": { "minimum": 1 } } },
+              { "properties": { "persistent_batch_entries": { "minimum": 1 } } },
+              { "properties": { "prompt_logprob_entries": { "minimum": 1 } } },
+              { "properties": { "execution_step_pending": { "const": true } } },
+              { "properties": { "transport_work_pending": { "const": true } } }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

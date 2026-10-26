@@ -88,6 +88,42 @@ class PathRoutingTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(ROUTER.classify(["README.md", path]), "full")
 
+    def test_standalone_engines_skip_only_database_checks(self) -> None:
+        for path in (
+            "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr/plugin.py",
+            "deploy/engines/vllm-asr-lifecycle/pyproject.toml",
+            "deploy/engines/cpu-vad/requirements.txt",
+            "tests/unit/gateway/test_native_asr_scope.py",
+            "tests/unit/gateway/test_worker_fence.py",
+        ):
+            for paths in (
+                [path],
+                ["README.md", path, "web/workbench/src/App.tsx"],
+                ["web/workbench/src/App.tsx", path, "README.md"],
+            ):
+                with self.subTest(paths=paths):
+                    self.assertEqual(ROUTER.classify(paths), "no-db")
+
+    def test_engine_changes_cannot_hide_database_or_shared_inputs(self) -> None:
+        engine = "deploy/engines/vllm-asr-lifecycle/worker-pin.json"
+        for path in (
+            "backend/src/module.py",
+            "tests/unit/gateway/test_file_asr_command.py",
+            "tests/support/coordination.py",
+            "tests/integration/test_gateway_file_worker.py",
+            "contracts/internal/execution-command.schema.json",
+            "uv.lock",
+            "pnpm-lock.yaml",
+            ".github/workflows/ci.yml",
+            "deploy/engines/../compose.yaml",
+            "deploy/engines.py",
+            "deploy/engines/unknown.py",
+            "deploy/engines/new-engine/module.py",
+        ):
+            for paths in ([engine, path], [path, engine]):
+                with self.subTest(paths=paths):
+                    self.assertEqual(ROUTER.classify(paths), "full")
+
     def test_empty_and_noncanonical_paths_do_not_authorize_skips(self) -> None:
         for paths in ([], [""], ["/docs/a.md"], ["docs/../backend/a.md"], ["docs\\a.md"]):
             with self.subTest(paths=paths):
@@ -163,6 +199,22 @@ class GitRoutingTests(unittest.TestCase):
         self.commit()
         mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
         self.assertEqual(mode, "full")
+
+    def test_rename_shared_source_into_engine_still_requires_databases(self) -> None:
+        self.write("deploy/engines/cpu-vad/README.md", "# Engine\n")
+        self.git("mv", "backend/module.py", "deploy/engines/cpu-vad/module.py")
+        self.commit()
+        mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
+        self.assertEqual(mode, "full")
+
+    def test_real_engine_diff_skips_databases_but_main_stays_full(self) -> None:
+        self.write("deploy/engines/cpu-vad/module.py", "value = 2\n")
+        self.commit()
+        mode, _ = ROUTER.detect_route("pull_request", self.base, self.root)
+        self.assertEqual(mode, "no-db")
+        for event in ("push", "workflow_dispatch"):
+            mode, _ = ROUTER.detect_route(event, self.base, self.root)
+            self.assertEqual(mode, "full")
 
     def test_main_manual_unknown_events_and_empty_diff_are_full(self) -> None:
         self.write("README.md", "# Updated\n")

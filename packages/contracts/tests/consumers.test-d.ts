@@ -61,9 +61,10 @@ void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/meetings", {
   body: meeting,
 });
 validateRequest("createMeeting", { path: { project_id: "project-demo" }, body: meeting });
-// @ts-expect-error Download entrypoints are not part of the selected HTTP surface.
-validateRequest("downloadSavedAsset", {});
-// @ts-expect-error The validated client exposes only the selected HTTP surface.
+validateRequest("downloadSavedAsset", { path: { asset_id: "asset-demo" } });
+// @ts-expect-error Unreviewed operations cannot enter the selected HTTP surface.
+validateRequest("downloadUnknownAsset", {});
+// @ts-expect-error The selected operation still requires its source parameters/body.
 void validatedWorkbench.POST("/v1/workbench/projects/{project_id}/assistant-turns", {});
 // @ts-expect-error Public minutes DTOs do not expose C's private usage/task ledger.
 void parseWorkbench("MinutesJob", wire).usage;

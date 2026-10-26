@@ -32,6 +32,8 @@ const jobSample = (id) => {
   if (!tts) return value;
   value.kind = "tts";
   value.effective_configuration.models = { tts: { id: "tts-quality", revision: "1" } };
+  value.effective_configuration.voice = { id: "voice-demo", revision: "1" };
+  value.effective_configuration.profile = { id: "profile-demo", revision: "2" };
   if (value.result) {
     value.artifacts = value.artifacts.map((artifact) => ({
       ...artifact,

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     log_level: Literal["debug", "info", "warning", "error", "critical"] = "info"
 
     component_token: SecretStr = Field(min_length=16)
+    engine_auth_root_key: SecretStr | None = None
     approved_templates_file: Path
     intent_store_path: Path
     docker_socket_path: Path = Path("/var/run/docker.sock")

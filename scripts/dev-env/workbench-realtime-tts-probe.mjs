@@ -9,8 +9,12 @@ import { chromium, expect } from "@playwright/test";
 import { parse as rest } from "../../packages/contracts/src/realtime.ts";
 import { parse as event } from "../../packages/contracts/src/realtime_events.ts";
 
-const { values } = parseArgs({ options: { output: { type: "string" } } });
+const { values } = parseArgs({
+  options: { output: { type: "string" }, "cleanup-mode": { type: "string" } },
+});
 assert(values.output);
+const cleanupMode = values["cleanup-mode"];
+assert(cleanupMode === undefined || ["delayed", "rejected"].includes(cleanupMode));
 const output = resolve(values.output),
   dist = resolve("web/workbench/dist");
 await mkdir(output, { recursive: true });
@@ -318,7 +322,7 @@ const browser = await chromium.launch({
 });
 const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
 const page = await context.newPage();
-await context.addInitScript(() => {
+await context.addInitScript((cleanupMode) => {
   window.__ttsContexts = [];
   const Native = window.AudioContext;
   window.AudioContext = class extends Native {
@@ -326,8 +330,18 @@ await context.addInitScript(() => {
       super(...args);
       window.__ttsContexts.push(this);
     }
+    close() {
+      if (!cleanupMode) return super.close();
+      window.__ttsCloseCalls = (window.__ttsCloseCalls ?? 0) + 1;
+      return new Promise((resolve, reject) => {
+        window.__ttsReleaseClose = () => {
+          if (cleanupMode === "rejected") reject(new Error("Synthetic close rejection"));
+          else super.close().then(resolve, reject);
+        };
+      });
+    }
   };
-});
+}, cleanupMode);
 await context.route("**/*", (route) => {
   const url = new URL(route.request().url());
   if (url.origin !== origin) {
@@ -337,6 +351,42 @@ await context.route("**/*", (route) => {
   return route.continue();
 });
 page.on("pageerror", (e) => errors.push(e.message));
+const focusChecks = [];
+const usableFocus = async (checkpoint) => {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((name) => {
+          const host = document.querySelector(`[aria-label="${name}"]`),
+            focused = document.activeElement;
+          return (
+            !!host?.contains(focused) &&
+            focused instanceof HTMLElement &&
+            focused.matches("button, input, textarea, select, a[href], [tabindex]") &&
+            !focused.matches(":disabled, [aria-disabled='true']") &&
+            focused.getClientRects().length > 0 &&
+            getComputedStyle(focused).visibility !== "hidden"
+          );
+        }, "实时配音工作台"),
+      { message: `usable keyboard focus after ${checkpoint}` },
+    )
+    .toBe(true);
+  focusChecks.push({
+    checkpoint,
+    ...(await page.evaluate(() => ({
+      tag: document.activeElement.tagName,
+      disabled: document.activeElement.matches(":disabled"),
+    }))),
+  });
+};
+const activate = async (name) => {
+  const button = page.getByRole("button", { name, exact: true });
+  await expect(button).toBeEnabled();
+  await button.focus();
+  await expect(button).toBeFocused();
+  await page.keyboard.press("Enter");
+  await usableFocus(name);
+};
 try {
   await page.goto(origin);
   await page.getByRole("button", { name: "实时配音", exact: true }).click();
@@ -346,7 +396,7 @@ try {
   await page.getByLabel("TTS model revision", { exact: true }).fill("1");
   await page.getByLabel("Voice ID", { exact: false }).fill(voice.id);
   await page.getByLabel("Voice revision", { exact: true }).fill("1");
-  await page.getByRole("button", { name: "创建实时配音会话", exact: true }).click();
+  await activate("创建实时配音会话");
   await expect(page.getByRole("alert")).toContainText("请求结果尚未确认");
   await page.reload();
   await page.getByRole("button", { name: "实时配音", exact: true }).click();
@@ -359,114 +409,170 @@ try {
     delete document.hidden;
   });
   assert.equal(writes.length, 1);
-  await page.getByRole("button", { name: "按原键重放", exact: true }).click();
+  await activate("按原键重放");
   await expect(page.getByRole("button", { name: "连接配音会话", exact: true })).toBeEnabled();
   assert.equal(writes[0].key, writes[1].key);
   assert.deepEqual(writes[0].body, writes[1].body);
-  await page.getByRole("button", { name: "连接配音会话", exact: true }).click();
+  await activate("连接配音会话");
   await expect(page.getByTestId("tts-phase")).toHaveText("握手完成");
-  await page.getByRole("button", { name: "开始一轮配音", exact: true }).click();
+  await activate("开始一轮配音");
   await expect(page.getByRole("button", { name: "取消本轮并停止播放" })).toBeEnabled();
   const text = "<script>合成配音</script>\nUnicode 😀";
   await page.getByLabel("待追加文本", { exact: true }).fill(text);
-  await page.getByRole("button", { name: "追加这段文本", exact: true }).click();
+  await activate("追加这段文本");
   await expect(page.getByRole("button", { name: "冻结已确认前缀" })).toBeEnabled();
-  await page.getByRole("button", { name: "冻结已确认前缀" }).click();
-  await page.getByRole("button", { name: "结束文本输入" }).click();
+  await activate("冻结已确认前缀");
+  await activate("结束文本输入");
   await expect(page.getByTestId("tts-received")).toHaveText("48000");
   await expect(page.getByText("succeeded / complete", { exact: true })).toBeVisible();
   const before = Number(await page.getByTestId("tts-rendered").innerText());
   assert(before < 48000);
-  await expect(page.getByTestId("tts-rendered")).toHaveText("48000");
-  await expect
-    .poll(() => page.evaluate(() => window.__ttsContexts.every((c) => c.state === "closed")))
-    .toBe(true);
-  assert.equal(commands.filter((c) => c.type === "nexus.tts.append_text")[0].text, text);
-  await expect(
-    page.getByRole("region", { name: "配音事实" }).getByText(text, { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "开始一轮配音", exact: true }).click();
-  await expect(page.getByRole("button", { name: "取消本轮并停止播放" })).toBeEnabled();
-  await page.getByRole("button", { name: "取消本轮并停止播放" }).click();
-  await expect(page.getByText("cancelled / complete", { exact: true })).toBeVisible();
-  assert.equal(sessions.get("session-1").cancelBeforeStarted, true);
-  await expect(page.getByTestId("tts-received")).toHaveText("0");
-  await page.getByRole("button", { name: "开始一轮配音", exact: true }).click();
-  const drainText = "排空前已接收的文本";
-  await page.getByRole("textbox", { name: "待追加文本", exact: true }).fill(drainText);
-  await page.getByRole("button", { name: "追加这段文本", exact: true }).click();
-  await expect(page.getByRole("button", { name: "冻结已确认前缀" })).toBeEnabled();
-  await page.getByRole("button", { name: "排空并关闭", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("请求结果尚未确认");
-  await page.getByRole("button", { name: "按原键重放", exact: true }).click();
-  await expect(page.getByRole("button", { name: "按原键重放", exact: true })).toBeDisabled();
-  assert.equal(writes[2].key, writes[3].key);
-  assert.deepEqual(writes[2].body, writes[3].body);
-  await expect(page.getByTestId("tts-phase")).toHaveText("排空中，可结束已接受的文本");
-  await expect(page.getByRole("button", { name: "开始一轮配音", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "追加这段文本", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "冻结已确认前缀" }).click();
-  await page.getByRole("button", { name: "结束文本输入" }).click();
-  await expect(page.getByTestId("tts-received")).toHaveText("48000");
-  await expect(page.getByTestId("tts-rendered")).toHaveText("48000");
-  await expect(page.getByText("succeeded / complete", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "查询当前清理状态" }).click();
-  await expect(page.getByText("draining / pending", { exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 360, height: 900 });
-  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.screenshot({ path: resolve(output, "tts-360.png"), fullPage: true });
-  await page.getByRole("button", { name: "文件转写", exact: true }).click();
-  await expect
-    .poll(() => page.evaluate(() => window.__ttsContexts.every((c) => c.state === "closed")))
-    .toBe(true);
-  await page.getByRole("button", { name: "实时配音", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "待追加文本", exact: true })).toHaveValue(
-    drainText,
-  );
-  await page.getByRole("textbox", { name: "待追加文本", exact: true }).focus();
-  await page.keyboard.press("Shift+Tab");
-  assert(await page.evaluate(() => document.activeElement?.tagName !== "BODY"));
-  assert.deepEqual(outbound, []);
-  assert.deepEqual(errors, []);
-  assert.deepEqual(serverErrors, []);
-  await writeFile(
-    resolve(output, "result.json"),
-    JSON.stringify(
-      {
-        browser: browser.version(),
-        synthetic_rest_ws: true,
-        production_bundle: true,
-        actual_audio_worklet: true,
-        physical_device: false,
+  if (cleanupMode) {
+    // Real AudioContext/Worklet, with only the native close boundary delayed or rejected.
+    const stop = page.getByRole("button", { name: "停止本轮播放", exact: true });
+    await expect(stop).toBeEnabled();
+    await stop.focus();
+    await page.keyboard.press("Enter");
+    await usableFocus("停止本轮播放");
+    await expect(page.getByTestId("tts-playback-state")).toContainText("正在停止");
+    await expect(stop).toBeDisabled();
+    await expect(page.getByRole("button", { name: "开始一轮配音", exact: true })).toBeDisabled();
+    assert.equal(commands.filter((c) => c.type === "nexus.tts.cancel").length, 0);
+    assert.equal(await page.evaluate(() => window.__ttsCloseCalls), 1);
+    assert.equal(await page.evaluate(() => window.__ttsContexts[0].state), "running");
+    const stoppedAt = Number(await page.getByTestId("tts-rendered").innerText());
+    assert(stoppedAt < 48000);
+    await activate("查询当前清理状态");
+    await expect(page.getByTestId("tts-playback-state")).toContainText("正在停止");
+    await page.evaluate(() => window.__ttsReleaseClose());
+    if (cleanupMode === "delayed") {
+      await expect(page.getByTestId("tts-playback-state")).toHaveText("stopped");
+      await expect(page.getByRole("button", { name: "开始一轮配音", exact: true })).toBeEnabled();
+      assert.equal(await page.evaluate(() => window.__ttsContexts[0].state), "closed");
+    } else {
+      await expect(page.getByRole("alert")).toContainText("尚未确认停止");
+      await activate("查询当前清理状态");
+      await expect(page.getByRole("alert")).toContainText("尚未确认停止");
+      await expect(page.getByRole("button", { name: "开始一轮配音", exact: true })).toBeDisabled();
+      assert.equal(await page.evaluate(() => window.__ttsContexts[0].state), "running");
+    }
+    assert.equal(Number(await page.getByTestId("tts-rendered").innerText()), stoppedAt);
+    assert.equal(await page.evaluate(() => window.__ttsCloseCalls), 1);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(serverErrors, []);
+    assert.deepEqual(outbound, []);
+    await page.screenshot({ path: resolve(output, "cleanup.png"), fullPage: true });
+    const result = {
+      ok: true,
+      cleanup_mode: cleanupMode,
+      browser: browser.version(),
+      synthetic_rest_ws: true,
+      production_bundle: true,
+      actual_audio_worklet: true,
+      native_close_fault_injection: true,
+      physical_device: false,
+      stopped_at: stoppedAt,
+      received: 48000,
+      close_calls: 1,
+      remote_cancel_commands: 0,
+      errors,
+      serverErrors,
+      outbound,
+    };
+    await writeFile(resolve(output, "result.json"), JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(result));
+  } else {
+    await expect(page.getByTestId("tts-rendered")).toHaveText("48000");
+    await expect
+      .poll(() => page.evaluate(() => window.__ttsContexts.every((c) => c.state === "closed")))
+      .toBe(true);
+    assert.equal(commands.filter((c) => c.type === "nexus.tts.append_text")[0].text, text);
+    await expect(
+      page.getByRole("region", { name: "配音事实" }).getByText(text, { exact: true }),
+    ).toBeVisible();
+    await activate("开始一轮配音");
+    await expect(page.getByRole("button", { name: "取消本轮并停止播放" })).toBeEnabled();
+    await activate("取消本轮并停止播放");
+    await expect(page.getByText("cancelled / complete", { exact: true })).toBeVisible();
+    assert.equal(sessions.get("session-1").cancelBeforeStarted, true);
+    await expect(page.getByTestId("tts-received")).toHaveText("0");
+    await activate("开始一轮配音");
+    const drainText = "排空前已接收的文本";
+    await page.getByRole("textbox", { name: "待追加文本", exact: true }).fill(drainText);
+    await activate("追加这段文本");
+    await expect(page.getByRole("button", { name: "冻结已确认前缀" })).toBeEnabled();
+    await activate("排空并关闭");
+    await expect(page.getByRole("alert")).toContainText("请求结果尚未确认");
+    await activate("按原键重放");
+    await expect(page.getByRole("button", { name: "按原键重放", exact: true })).toBeDisabled();
+    assert.equal(writes[2].key, writes[3].key);
+    assert.deepEqual(writes[2].body, writes[3].body);
+    await expect(page.getByTestId("tts-phase")).toHaveText("排空中，可结束已接受的文本");
+    await expect(page.getByRole("button", { name: "开始一轮配音", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "追加这段文本", exact: true })).toBeDisabled();
+    await activate("冻结已确认前缀");
+    await activate("结束文本输入");
+    await expect(page.getByTestId("tts-received")).toHaveText("48000");
+    await expect(page.getByTestId("tts-rendered")).toHaveText("48000");
+    await expect(page.getByText("succeeded / complete", { exact: true })).toBeVisible();
+    await activate("查询当前清理状态");
+    await expect(page.getByText("draining / pending", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 360, height: 900 });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.screenshot({ path: resolve(output, "tts-360.png"), fullPage: true });
+    await page.getByRole("button", { name: "文件转写", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.__ttsContexts.every((c) => c.state === "closed")))
+      .toBe(true);
+    await page.getByRole("button", { name: "实时配音", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "待追加文本", exact: true })).toHaveValue(
+      drainText,
+    );
+    await page.getByRole("textbox", { name: "待追加文本", exact: true }).focus();
+    await page.keyboard.press("Shift+Tab");
+    assert(await page.evaluate(() => document.activeElement?.tagName !== "BODY"));
+    assert.deepEqual(outbound, []);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(serverErrors, []);
+    await writeFile(
+      resolve(output, "result.json"),
+      JSON.stringify(
+        {
+          browser: browser.version(),
+          synthetic_rest_ws: true,
+          production_bundle: true,
+          actual_audio_worklet: true,
+          physical_device: false,
+          sessions: sessions.size,
+          writes,
+          commands: commands.map(({ audio, ...c }) => c),
+          received: 48000,
+          rendered: 48000,
+          rendered_at_generation_done: before,
+          hidden_visible_dom_fault_injection: true,
+          cancel_before_started: true,
+          finish_after_drain: true,
+          utterances: 3,
+          total_samples_rendered: 96000,
+          errors,
+          outbound,
+          serverErrors,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      JSON.stringify({
+        ok: true,
+        output,
         sessions: sessions.size,
-        writes,
-        commands: commands.map(({ audio, ...c }) => c),
+        writes: writes.length,
         received: 48000,
         rendered: 48000,
-        rendered_at_generation_done: before,
-        hidden_visible_dom_fault_injection: true,
-        cancel_before_started: true,
-        finish_after_drain: true,
-        utterances: 3,
-        total_samples_rendered: 96000,
-        errors,
-        outbound,
-        serverErrors,
-      },
-      null,
-      2,
-    ),
-  );
-  console.log(
-    JSON.stringify({
-      ok: true,
-      output,
-      sessions: sessions.size,
-      writes: writes.length,
-      received: 48000,
-      rendered: 48000,
-    }),
-  );
+      }),
+    );
+  }
 } catch (error) {
   await writeFile(
     resolve(output, "failure.json"),
@@ -493,6 +599,7 @@ try {
   );
   throw error;
 } finally {
+  await writeFile(resolve(output, "keyboard-focus.json"), JSON.stringify(focusChecks, null, 2));
   await context.close();
   await browser.close();
   for (const ws of wss.clients) ws.terminate();

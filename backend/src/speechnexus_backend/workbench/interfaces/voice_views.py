@@ -40,7 +40,7 @@ def voice_revision_payload(value: VoiceRevision) -> Any:
     if type(value) is not VoiceRevision:
         raise ValueError("invalid workbench voice revision")
     return parse(
-        "VoiceRevision",
+        "VoiceRevisionV2",
         {
             "voice_id": value.voice_id,
             "revision": value.revision,

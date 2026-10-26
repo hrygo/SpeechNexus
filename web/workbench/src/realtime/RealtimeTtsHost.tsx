@@ -4,6 +4,7 @@ import { RealtimeClient } from "./realtime-client";
 import type { RealtimeStorage } from "./realtime-journal";
 import { TtsJournal } from "./tts-journal";
 import { TtsController, type TtsControllerSnapshot } from "./tts-session";
+import { useRealtimeFocus } from "./useRealtimeFocus";
 import "./realtime.css";
 
 const problems: Record<NonNullable<TtsControllerSnapshot["problem"]>, string> = {
@@ -13,6 +14,8 @@ const problems: Record<NonNullable<TtsControllerSnapshot["problem"]>, string> = 
   read_failed: "当前会话事实读取失败，请重新查询。",
   protocol: "实时消息或发送不符合约定，已停止本地链路。请查询清理状态。",
   playback: "本地播放不可用或已中断，请查询会话后重新开始。",
+  playback_cleanup:
+    "本地播放资源释放失败，尚未确认停止，已阻断新的播放。请关闭此页面以释放资源；服务端清理状态仍需另行查询。",
 };
 function initialize(storage?: RealtimeStorage) {
   try {
@@ -35,8 +38,8 @@ function Content({ controller: c, active }: { controller: TtsController; active:
     [modelRev, setModelRev] = useState(r.request?.models.tts?.revision ?? ""),
     [voice, setVoice] = useState(r.request?.voice?.id ?? ""),
     [voiceRev, setVoiceRev] = useState(r.request?.voice?.revision ?? "");
+  const { root, heading } = useRealtimeFocus(active);
   const [invalid, setInvalid] = useState(false),
-    heading = useRef<HTMLHeadingElement>(null),
     life = useRef({ generation: 0 });
   useEffect(() => {
     const owner = life.current,
@@ -57,8 +60,8 @@ function Content({ controller: c, active }: { controller: TtsController; active:
   }, [active, c]);
   useEffect(() => {
     void c.setActive(active && !document.hidden);
-    if (active) heading.current?.focus();
-  }, [active, c]);
+    if (active && !document.hidden) heading.current?.focus();
+  }, [active, c, heading]);
   const locked = s.busy || s.blocked || !!r.pending || !active;
   const released =
     s.current &&
@@ -69,13 +72,13 @@ function Content({ controller: c, active }: { controller: TtsController; active:
     !s.starting &&
     s.stream?.phase === "active" &&
     (!u || (!!u.done && ["complete", "not_required"].includes(u.done.cleanup_state))) &&
-    (!s.playback || s.playback.received === s.playback.rendered || s.playback.state === "stopped");
+    (!s.playback || s.playback.state === "stopped");
   const accepting =
     !locked &&
     u?.phase === "accepting" &&
     (s.stream?.phase === "active" || s.stream?.phase === "draining");
   return (
-    <section className="realtime-asr" aria-label="实时配音工作台">
+    <section ref={root} className="realtime-asr" aria-label="实时配音工作台">
       <header>
         <h2 ref={heading} tabIndex={-1}>
           实时配音
@@ -107,7 +110,15 @@ function Content({ controller: c, active }: { controller: TtsController; active:
           }
         }}
       >
-        <fieldset disabled={locked || s.connecting || (!!r.session && !released)}>
+        <fieldset
+          disabled={
+            locked ||
+            s.connecting ||
+            s.starting ||
+            (!!s.playback && s.playback.state !== "stopped") ||
+            (!!r.session && !released)
+          }
+        >
           <legend>部署引用</legend>
           <div className="realtime-fields">
             <label>
@@ -200,10 +211,14 @@ function Content({ controller: c, active }: { controller: TtsController; active:
           结束文本输入
         </button>
         <button
-          disabled={locked || !u || u.phase === "terminal" || u.phase === "cancelling"}
+          disabled={
+            !active ||
+            (s.playback?.state !== "running" &&
+              (locked || !u || u.phase === "terminal" || u.phase === "cancelling"))
+          }
           onClick={() => c.cancel()}
         >
-          取消本轮并停止播放
+          {u?.phase === "terminal" ? "停止本轮播放" : "取消本轮并停止播放"}
         </button>
       </div>
       <section aria-label="配音事实">
@@ -247,7 +262,13 @@ function Content({ controller: c, active }: { controller: TtsController; active:
           <dt>实际渲染样本</dt>
           <dd data-testid="tts-rendered">{s.playback?.rendered ?? 0}</dd>
           <dt>本地播放</dt>
-          <dd>{s.playback?.state ?? "尚未启动"}</dd>
+          <dd data-testid="tts-playback-state">
+            {s.playback?.state === "closing"
+              ? "正在停止，等待本地资源释放"
+              : s.playback?.state === "failed"
+                ? "本地播放失败，停止状态待确认"
+                : (s.playback?.state ?? "尚未启动")}
+          </dd>
         </dl>
         {u && <p className="realtime-text">{u.text || "本轮尚未追加文本"}</p>}
         <p>

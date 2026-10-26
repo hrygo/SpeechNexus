@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import traces from "../../../../tests/fixtures/contracts/transcription-sequences.json";
 import { AsrStream } from "./asr-stream";
 import { encodePcm } from "./pcm";
@@ -28,6 +28,70 @@ describe("shared standard ASR semantic traces", () => {
   });
 });
 describe("nexus ASR independent text, execution and input facts", () => {
+  it.each(["input_audio_buffer.commit", "input_audio_buffer.clear", "nexus.session.close"])(
+    "a rejected %s preserves buffered input, phase and the original command identity",
+    async (type) => {
+      const stream = new AsrStream({ sessionId: "session-demo", mode: "nexus" });
+      stream.receive(created());
+      stream.receive(ready());
+      await stream.command({
+        type: "input_audio_buffer.append",
+        event_id: "audio",
+        audio: encodePcm(new Float32Array(2400)),
+      });
+      const before = stream.getSnapshot();
+      const command = {
+        type,
+        event_id: "rejected-command",
+        ...(type === "nexus.session.close" ? { mode: "drain" } : {}),
+      };
+      await expect(
+        stream.command(command, () => {
+          throw Error("send rejected");
+        }),
+      ).rejects.toThrow("send rejected");
+      expect(stream.getSnapshot()).toBe(before);
+      const retry = await stream.command(command, () => {});
+      expect(retry.duplicate).toBe(false);
+      expect(stream.getSnapshot()).toMatchObject(
+        type === "nexus.session.close"
+          ? { phase: "draining", uncommitted: 2400 }
+          : { phase: "active", uncommitted: 0 },
+      );
+    },
+  );
+  it("commits no samples, credit or command identity when the transport rejects a command", async () => {
+    const s = new AsrStream({ sessionId: "session-demo", mode: "nexus" });
+    s.receive(created());
+    s.receive(ready());
+    const before = s.getSnapshot();
+    const append = {
+      type: "input_audio_buffer.append",
+      event_id: "send-failure",
+      audio: encodePcm(new Float32Array(2400)),
+    };
+    const send = vi.fn(() => {
+      throw new Error("synthetic transport rejection");
+    });
+    await expect(s.command(append, send)).rejects.toThrow("synthetic transport rejection");
+    expect(s.getSnapshot()).toBe(before);
+    const accepted: string[] = [];
+    await s.command(append, (wire) => {
+      expect(s.getSnapshot()).toBe(before);
+      accepted.push(wire);
+    });
+    expect(accepted.map((wire) => JSON.parse(wire) as unknown)).toEqual([append]);
+    expect(s.getSnapshot()).toMatchObject({
+      sent: 2400,
+      credit: 21600,
+      accepted: 0,
+      uncommitted: 2400,
+    });
+    const after = s.getSnapshot();
+    await s.command(append, (wire) => accepted.push(wire));
+    expect(s.getSnapshot()).toBe(after);
+    expect(accepted).toHaveLength(2);
+  });
   it("I2 resolves delayed committed predecessors and rejects a cyclic input order", () => {
     const s = new AsrStream({ sessionId: "session-demo", mode: "nexus" });
     s.receive(created());

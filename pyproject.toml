@@ -75,6 +75,7 @@ src = ["backend/src", "execution-gateway/src", "node-controller/src", "tests"]
 [tool.ruff.per-file-target-version]
 # These lightweight entry points use the runner's system Python, without uv.
 "scripts/dev-env/ci-routing.py" = "py312"
+"scripts/dev-env/prepare-ci-browser.py" = "py312"
 "tests/ci/*.py" = "py312"
 
 [tool.ruff.lint]

@@ -453,6 +453,56 @@ class PostgresRenderUnits(RenderUnitStore):
                 await self._generations(base, unit_id), saved_asset_id=row.saved_copy_id
             )
 
+    async def start_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        expected_revision: int,
+        job_id: str,
+        generation_id: str,
+    ) -> RenderUnit:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            row = await self._unit_row(base, unit_id)
+            if row is None:
+                raise ResourceNotFoundError
+            await self._project(base, row.project_id, workspace_id, lock=True)
+            current = row.unit(
+                await self._generations(base, unit_id), saved_asset_id=row.saved_copy_id
+            )
+            now = await base.now()
+            started = current.start(
+                expected_revision=expected_revision,
+                job_id=job_id,
+                generation_id=generation_id,
+                now=now,
+            )
+            generation = started.generations[-1]
+            await base._execute(
+                """
+                UPDATE {s}.render_units SET revision = %s, status = %s, updated_at = %s
+                WHERE id = %s
+            """,
+                (started.revision, started.status, started.updated_at, unit_id),
+            )
+            await base._execute(
+                """
+                INSERT INTO {s}.render_unit_generations
+                    (id, unit_id, job_id, dependencies_sha256, revision, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+                (
+                    generation.id,
+                    unit_id,
+                    generation.job_id,
+                    generation.dependencies_sha256,
+                    generation.revision,
+                    now,
+                ),
+            )
+            return started
+
     async def update_unit(
         self,
         *,

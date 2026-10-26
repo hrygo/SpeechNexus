@@ -72,6 +72,7 @@ WORKBENCH_RUNTIME_TESTS = (
     "tests/integration/test_workbench_runtime_export_dispatch.py",
     "tests/integration/test_workbench_runtime_capabilities.py",
     "tests/integration/test_workbench_runtime_saved_assets_http.py",
+    "tests/integration/test_workbench_runtime_voice_catalogue.py",
 )
 
 
@@ -333,6 +334,11 @@ def main() -> int:
             command.append("tests/integration/test_workbench_real_runtime_assistant_browser.py")
             # The AdminUI diagnostics page against the same real runtime.
             command.append("tests/integration/test_admin_diagnostics_browser.py")
+            # Profile drafts use the real A-owned composition/SQL with transport fault injection.
+            command.append("tests/integration/test_admin_profiles_browser.py")
+            env["SPEECHNEXUS_ADMIN_PROFILES_OUTPUT"] = str(
+                args.output.resolve().parent / (args.output.stem + "-admin-profiles")
+            )
             # The deployment teleprompter state consumed by the production bundle.
             command.append(
                 "tests/integration/test_workbench_real_runtime_prompter_state_browser.py"
@@ -340,6 +346,12 @@ def main() -> int:
             # The audiobook flow: a chapter created in the production bundle, verified over HTTP.
             command.append(
                 "tests/integration/test_workbench_real_runtime_chapter_create_browser.py"
+            )
+            # Public committed-content download through the production Web consumer.
+            command.append("tests/integration/test_workbench_real_runtime_download_browser.py")
+            # Native public voice catalogue -> actual C runtime -> production consumer.
+            command.append(
+                "tests/integration/test_workbench_real_runtime_voice_catalogue_browser.py"
             )
             # The realtime tab must not open the microphone before a session is connected.
             command.append(

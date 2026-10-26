@@ -1637,6 +1637,7 @@ name = "speechnexus-backend"
 version = "0.1.0.dev0"
 source = { editable = "backend" }
 dependencies = [
+    { name = "av" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "minio" },
@@ -1658,6 +1659,7 @@ migrations = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", marker = "extra == 'migrations'", specifier = ">=1.18,<2" },
+    { name = "av", specifier = ">=19,<20" },
     { name = "fastapi", specifier = ">=0.159.1,<0.160" },
     { name = "httpx", specifier = ">=0.28.1,<0.29" },
     { name = "minio", specifier = ">=7.2.20,<8" },

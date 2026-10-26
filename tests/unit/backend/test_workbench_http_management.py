@@ -57,8 +57,24 @@ async def test_status_reports_configuration_and_full_schema_without_fictitious_c
         assert (await c.get("/v1/workbench/projects")).status_code == 503
         assert (await c.get("/v1/workbench/deletions/deletion-one")).status_code == 503
         schema = (await c.get("/openapi.json")).json()
-        # Includes both status versions and the two always-mounted voice reads.
-        assert len([op for item in schema["paths"].values() for op in item.values()]) == 16
+        # Both status versions, three voice reads and two public downloads stay mounted.
+        assert len([op for item in schema["paths"].values() for op in item.values()]) == 19
+        voice_v2 = "/v2/workbench/voices/{voice_id}/revisions/{revision}"
+        assert schema["paths"][voice_v2]["get"]["operationId"] == "getVoiceRevisionV2"
+        unavailable_voice = await c.get(voice_v2.format(voice_id="voice-demo", revision="1"))
+        assert unavailable_voice.status_code == 503
+        assert unavailable_voice.json()["error"]["code"] == "voice_catalogue_unavailable"
+        for path, operation in {
+            "/v1/workbench/saved-assets/{asset_id}/content": "downloadSavedAsset",
+            "/v1/workbench/exports/{export_id}/content": "downloadBookExport",
+        }.items():
+            declared = schema["paths"][path]["get"]
+            assert declared["operationId"] == operation
+            assert "416" in declared["responses"]
+            actual = path.format(asset_id="asset-demo", export_id="export-demo")
+            unavailable = await c.get(actual)
+            assert unavailable.status_code == 503
+            assert unavailable.json()["error"]["code"] == "download_unavailable"
         for path in ["/docs", "/redoc", "/docs/oauth2-redirect"]:
             assert (await c.get(path)).status_code == 404
 

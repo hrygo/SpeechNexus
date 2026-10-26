@@ -52,6 +52,11 @@ NODE_CONTRACT_TESTS = (
     "tests/integration/test_binding_defaults_http.py::"
     "test_generated_typescript_client_consumes_actual_loopback_http[postgresql]",
     *(
+        "tests/integration/test_pronunciation_drafts.py::"
+        f"test_auto_id_fixed_read_append_replay_and_real_typescript_consumer[{dialect}]"
+        for dialect in ("postgresql", "mysql")
+    ),
+    *(
         "tests/integration/test_binding_defaults_storage.py::"
         "test_atomic_parent_snapshot_original_replay_restart_and_fixed_projection"
         f"[{dialect}-parameters{case}]"

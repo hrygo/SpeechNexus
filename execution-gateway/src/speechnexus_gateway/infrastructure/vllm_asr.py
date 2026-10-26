@@ -6,15 +6,20 @@ import asyncio
 import importlib
 import io
 import json
+import os
 import re
 import secrets
+import stat
 import wave
 from collections.abc import Callable
+from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any
 
 from speechnexus_gateway.domain.asr import (
     AsrAudio,
     AsrCallError,
+    AsrExecutionTarget,
     AsrFailure,
     AsrPolicy,
     AsrText,
@@ -30,8 +35,56 @@ _MAX_TEXT_BYTES = 65536
 _MAX_EVENTS = 8192
 
 
+@dataclass(frozen=True, slots=True)
 class VllmAsrEndpoint(PrivateEngineEndpoint):
     """A configured private IP literal for the fixed vLLM ASR endpoint."""
+
+    execution_target: AsrExecutionTarget | None = None
+
+    def __post_init__(self) -> None:
+        PrivateEngineEndpoint.__post_init__(self)
+        if self.execution_target is not None and (
+            self.execution_target.binding_revision_id != self.binding_revision_id
+            or self.bearer_token is None
+            or re.fullmatch(r"[0-9a-f]{64}", self.bearer_token) is None
+        ):
+            raise ValueError("a controlled ASR target requires its native generation credential")
+
+
+def load_controlled_asr_endpoint(path: Path) -> VllmAsrEndpoint:
+    """Read one private, bounded deployment descriptor; caller input cannot select it."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+                raise ValueError
+            payload = source.read(16385)
+        if len(payload) > 16384:
+            raise ValueError
+        document = json.loads(payload, object_pairs_hook=_unique_object, parse_constant=_nonfinite)
+        if (
+            not isinstance(document, dict)
+            or set(document)
+            != {"protocol", "target", "address", "port", "served_model", "bearer_token"}
+            or document["protocol"] != "vllm_api_key_v1"
+        ):
+            raise ValueError
+        target = document["target"]
+        if not isinstance(target, dict) or set(target) != {
+            item.name for item in fields(AsrExecutionTarget)
+        }:
+            raise ValueError
+        return VllmAsrEndpoint(
+            address=document["address"],
+            port=document["port"],
+            served_model=document["served_model"],
+            binding_revision_id=target["binding_revision_id"],
+            bearer_token=document["bearer_token"],
+            execution_target=AsrExecutionTarget(**target),
+        )
+    except OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError:
+        raise ValueError("invalid private controlled ASR deployment descriptor") from None
 
 
 def _invalid() -> AsrCallError:
@@ -234,6 +287,10 @@ class VllmAsrRecognizer:
     @property
     def binding_revision_id(self) -> str:
         return self._endpoint.binding_revision_id
+
+    def validate_execution_target(self, target: AsrExecutionTarget) -> None:
+        if self._endpoint.execution_target is None or self._endpoint.execution_target != target:
+            raise ValueError("configured native ASR generation does not match the admitted target")
 
     async def transcribe(
         self, audio: AsrAudio, policy: AsrPolicy, *, cancelled: Callable[[], bool]

@@ -1,4 +1,4 @@
-"""Two generated read-only HTTP operations over the base's published voice catalogue."""
+"""Generated read-only HTTP operations over the base's published voice catalogue."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -25,7 +25,7 @@ from speechnexus_backend.workbench.interfaces.voice_views import (
     voice_revision_payload,
 )
 
-OPERATIONS = frozenset({"listVoices", "getVoiceRevision"})
+OPERATIONS = frozenset({"listVoices", "getVoiceRevision", "getVoiceRevisionV2"})
 
 
 def create_voice_router(
@@ -61,9 +61,14 @@ def create_voice_router(
                     after=query.get("after"),
                 )
             )
-        return 200, voice_revision_payload(
+        body = voice_revision_payload(
             await service.get_revision(voice_id=path["voice_id"], revision=path["revision"])
         )
+        # v1 remains a frozen 128-character projection for already deployed validators.
+        # v2 preserves the complete public reason, including valid 129..2000 characters.
+        if operation == "getVoiceRevision" and len(body["disabled_reason"] or "") > 128:
+            raise VoiceCatalogueUnavailableError
+        return 200, body
 
     def endpoint(operation: str, has_body: bool) -> Callable[[Request], Awaitable[Response]]:
         async def handle(request: Request) -> Response:

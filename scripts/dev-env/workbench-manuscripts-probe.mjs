@@ -7,11 +7,20 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { createHttpValidator } from "../../packages/contracts/src/http-runtime.mjs";
+import { parse as parseSpeech } from "../../packages/contracts/src/runtime.mjs";
 
 const { values } = parseArgs({
   options: { output: { type: "string" }, screenshot: { type: "string" } },
 });
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const speechFixtures = JSON.parse(
+  await readFile(resolve(root, "tests/fixtures/contracts/file-workflow.json"), "utf8"),
+);
+const speechJob = parseSpeech(
+  "Job",
+  speechFixtures.examples.find((e) => e.id === "succeeded-job").value,
+);
+const speechOriginal = "  合成 ASR e\u0301 😀\n ";
 const workbench = resolve(root, "web/workbench");
 const examples = JSON.parse(
   await readFile(resolve(root, "tests/fixtures/contracts/workbench-http.json"), "utf8"),
@@ -60,6 +69,7 @@ let enabled = true,
   loseRevision = true,
   requests = 0,
   sequence = 0;
+let loseSpeechImport = true;
 const key = "speechnexus.workbench.manuscripts.v1";
 function error(code) {
   return {
@@ -104,6 +114,10 @@ function externalRevision(text) {
 const middleware = (vite) => {
   vite.middlewares.use(async (req, res, next) => {
     const url = new URL(req.url, "http://127.0.0.1");
+    if (req.method === "GET" && url.pathname === "/v1/nexus/jobs/job-demo") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify(speechJob));
+    }
     if (!url.pathname.startsWith("/v1/") && url.pathname !== "/v2/workbench/status") return next();
     requests++;
     let operation;
@@ -162,17 +176,25 @@ const middleware = (vite) => {
           const id = `transcript-created-${++sequence}`;
           // A read example may be sealed; a manual create must return its draft original.
           const created = sample("createTranscript");
+          const speech = body.source.kind === "speech_artifact";
+          if (speech) {
+            assert.equal(body.source.artifact_id, speechJob.result.transcript_artifact_id);
+            assert.equal(body.source.receipt_id, speechJob.result.receipt_id);
+          }
           const metadata = {
             ...created.transcript,
             id,
             project_id: path.project_id,
             display_name: body.display_name,
+            source_artifact_id: speech ? body.source.artifact_id : null,
+            source_receipt_id: speech ? body.source.receipt_id : null,
           };
           const revision = {
             ...created.revision,
             id: `revision-${id}-1`,
             transcript_id: id,
-            text: body.source.text,
+            text: speech ? speechOriginal : body.source.text,
+            status: speech ? "sealed" : "draft",
           };
           transcripts.set(id, metadata);
           versions.set(id, [revision]);
@@ -258,6 +280,15 @@ try {
           loseRevision = false;
           // Commit and read the server response, then drop it at the browser boundary.
           // Socket destruction alone may trigger Chromium's transparent transport retry.
+          await route.fetch({ maxRetries: 0, maxRedirects: 0 });
+          await route.abort("failed");
+        } else if (
+          loseSpeechImport &&
+          route.request().method() === "POST" &&
+          new URL(route.request().url()).pathname.endsWith("/transcripts") &&
+          route.request().postDataJSON()?.source?.kind === "speech_artifact"
+        ) {
+          loseSpeechImport = false;
           await route.fetch({ maxRetries: 0, maxRedirects: 0 });
           await route.abort("failed");
         } else await route.continue();
@@ -370,6 +401,64 @@ try {
     await page.screenshot({ path: resolve(values.screenshot), fullPage: true });
   }
   // A new context with corrupt recovery must not even contact the API.
+  const asrContext = await context();
+  await asrContext.addInitScript(() => {
+    if (location.protocol === "http:")
+      sessionStorage.setItem(
+        "speechnexus.workbench.asr-task.v1",
+        JSON.stringify({
+          version: 1,
+          model: "asr-quality",
+          assetId: "asset-demo",
+          workspaceId: "ws-default",
+          createKey: "9f712fc4-943f-4171-b910-9132c44927a2",
+          cancelKey: "9f712fc4-943f-4171-b910-9132c44927a2",
+          jobId: "job-demo",
+          pending: null,
+          operationId: null,
+          cursor: null,
+        }),
+      );
+  });
+  const asrPage = await asrContext.newPage();
+  await asrPage.goto(origin);
+  await asrPage.getByRole("button", { name: "读取原状态", exact: true }).click();
+  await asrPage.getByRole("button", { name: "导入到项目稿件", exact: true }).click();
+  await asrPage.getByRole("button", { name: "合成项目", exact: true }).click();
+  await asrPage.getByLabel("稿件名称").fill("合成语音导入");
+  await asrPage.getByRole("button", { name: "导入语音原稿", exact: true }).click();
+  await expect(asrPage.getByRole("alert")).toContainText("提交结果尚未确认");
+  await expect(asrPage.getByRole("button", { name: "按原键重放", exact: true })).toBeVisible();
+  const importBeforeReload = mutations.filter((m) => m.body?.source?.kind === "speech_artifact");
+  assert.equal(importBeforeReload.length, 1);
+  await asrPage.reload();
+  await choose(asrPage);
+  await expect(asrPage.getByRole("group", { name: "待导入语音原稿" })).toContainText(
+    "artifact-demo",
+  );
+  assert.equal(mutations.filter((m) => m.body?.source?.kind === "speech_artifact").length, 1);
+  await asrPage.getByRole("button", { name: "按原键重放", exact: true }).click();
+  await expect(asrPage.getByLabel("校对草稿")).toHaveValue(speechOriginal);
+  const imported = [...transcripts.values()].filter((t) => t.display_name === "合成语音导入");
+  assert.equal(imported.length, 1);
+  const importAttempts = mutations.filter((m) => m.body?.source?.kind === "speech_artifact");
+  assert.equal(importAttempts.length, 2);
+  assert.deepEqual(importAttempts[1], importAttempts[0]);
+  const correction = "\ufeff合成校对 e\u0301 😀\n";
+  await asrPage.getByLabel("校对草稿").fill(correction);
+  await asrPage.getByRole("button", { name: "保存新修订", exact: true }).click();
+  await expect(asrPage.getByText("保存基线版本 2", { exact: false })).toBeVisible();
+  await asrPage.getByLabel("校对草稿").fill("未保存草稿不能进入固定版本导出");
+  const downloaded = asrPage.waitForEvent("download");
+  await asrPage.getByRole("button", { name: "下载固定版本 TXT", exact: true }).click();
+  const file = await downloaded;
+  assert.equal(file.suggestedFilename(), "transcript-r2.txt");
+  assert.deepEqual(await readFile(await file.path()), Buffer.from(correction));
+  assert.equal(versions.get(imported[0].id)[0].status, "sealed");
+  assert.equal(versions.get(imported[0].id)[0].text, speechOriginal);
+  await asrPage.setViewportSize({ width: 360, height: 800 });
+  assert(await asrPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // A new context with corrupt recovery must not even contact the API.
   const corrupt = await context();
   await corrupt.addInitScript((name) => {
     if (location.protocol === "http:") sessionStorage.setItem(name, "{");
@@ -430,6 +519,9 @@ try {
     immutable_history: true,
     unsaved_refresh_recovery: true,
     project_transcript_create: true,
+    asr_result_import_and_original_key_recovery: true,
+    sealed_original_and_independent_correction: true,
+    fixed_revision_txt_native_download: true,
     manual_create_status: createdOriginal.status,
     manual_create_source_revision: createdOriginal.source_revision,
     paging: true,

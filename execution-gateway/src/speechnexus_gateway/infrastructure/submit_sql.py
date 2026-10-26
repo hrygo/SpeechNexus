@@ -14,7 +14,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Protocol
 
-from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
+from speechnexus_gateway.domain.execution_results import staging_result_from_document
 from speechnexus_gateway.domain.submission import (
     CleanupState,
     EngineInstanceState,
@@ -587,7 +587,7 @@ def lock_submit_intent(
 def _intent_from_row(row: dict[str, Any]) -> SubmissionIntent:
     try:
         document = row.get("staging_result_document")
-        result = None if document is None else ExecutionStagingResult.from_document(document)
+        result = None if document is None else staging_result_from_document(document)
         if result is not None and result.reference.object_key != row["staging_output_object_key"]:
             raise ValueError("stored result pointer disagrees with the receipt")
         sample_rate_hz = row["sample_rate_hz"]

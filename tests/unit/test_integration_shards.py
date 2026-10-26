@@ -364,8 +364,19 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
         for node in ast.parse(snapshot_path.read_text()).body
         if isinstance(node, ast.FunctionDef)
     }
+    pronunciation_consumer = "test_auto_id_fixed_read_append_replay_and_real_typescript_consumer"
+    pronunciation_path = ROOT / "tests/integration/test_pronunciation_drafts.py"
+    assert pronunciation_consumer in {
+        node.name
+        for node in ast.parse(pronunciation_path.read_text()).body
+        if isinstance(node, ast.FunctionDef)
+    }
     expected = (
         *(f"{path.relative_to(ROOT)}::{consumer}[postgresql]" for path in paths),
+        *(
+            f"{pronunciation_path.relative_to(ROOT)}::{pronunciation_consumer}[{dialect}]"
+            for dialect in ("postgresql", "mysql")
+        ),
         *(
             f"{snapshot_path.relative_to(ROOT)}::{snapshot_consumer}[{dialect}-parameters{case}]"
             for dialect in ("postgresql", "mysql")
@@ -446,7 +457,7 @@ def test_browser_consumers_get_locked_web_build_and_chromium_before_execution() 
         assert "continue-on-error" not in step
     assert dependencies["run"] == "pnpm install --frozen-lockfile"
     assert build["run"] == "pnpm build"
-    assert chromium["run"] == "pnpm exec playwright install --with-deps --only-shell chromium"
+    assert chromium["run"] == "python3 scripts/dev-env/prepare-ci-browser.py"
     run = next(
         i for i, step in enumerate(steps) if "Run a complete integration partition" in step["name"]
     )

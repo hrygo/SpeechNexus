@@ -1,23 +1,41 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { FileTaskSession } from "./file-task-session";
+import type { FileContracts } from "./speech-file-client";
 
 import { canFinishTask } from "./file-task-policy";
 
 type Snapshot = ReturnType<FileTaskSession["getSnapshot"]>;
+export type ImportTranscript = (
+  result: Extract<NonNullable<FileContracts["Job"]["result"]>, { kind: "asr" }>,
+) => void;
 
 export function FileTaskPanel({
   session,
   onNew,
   savedAssetId,
   result,
+  onImportTranscript,
 }: {
   session: FileTaskSession;
   onNew: () => void;
   savedAssetId: string | null;
   result?: ReactNode;
+  onImportTranscript?: ImportTranscript | undefined;
 }) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const job = state.job;
+  const asrResult = job?.kind === "asr" && job.result?.kind === "asr" ? job.result : null;
+  const canImport =
+    !!asrResult &&
+    job?.status === "succeeded" &&
+    !state.busy &&
+    !state.unknown &&
+    job.artifacts.some(
+      (artifact) =>
+        artifact.artifact_id === asrResult.transcript_artifact_id &&
+        artifact.receipt_id === asrResult.receipt_id &&
+        artifact.kind === "transcript",
+    );
   const [prepared, setPrepared] = useState<Snapshot["job"]>(undefined);
   const [preparingNew, setPreparingNew] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState("");
@@ -84,6 +102,28 @@ export function FileTaskPanel({
         <dd>{job?.id ?? "尚未确认"}</dd>
         <dt>任务状态</dt>
         <dd data-testid="file-job-status">{job?.status ?? "尚未确认"}</dd>
+        {job?.kind === "tts" && (
+          <>
+            <dt>实际模型修订</dt>
+            <dd>
+              {job.effective_configuration.models.tts
+                ? `${job.effective_configuration.models.tts.id}@${job.effective_configuration.models.tts.revision}`
+                : "尚未确认"}
+            </dd>
+            <dt>实际声音修订</dt>
+            <dd>
+              {job.effective_configuration.voice
+                ? `${job.effective_configuration.voice.id}@${job.effective_configuration.voice.revision}`
+                : "尚未确认"}
+            </dd>
+            <dt>实际参数修订</dt>
+            <dd>
+              {job.effective_configuration.profile
+                ? `${job.effective_configuration.profile.id}@${job.effective_configuration.profile.revision}`
+                : "尚未确认"}
+            </dd>
+          </>
+        )}
         <dt>资源清理</dt>
         <dd>{job?.cleanup_state ?? "尚无证据"}</dd>
         <dt>原执行</dt>
@@ -172,6 +212,17 @@ export function FileTaskPanel({
       {result ?? (
         <section aria-label="原始转写制品">
           <h3>原始转写制品</h3>
+          {onImportTranscript && asrResult && (
+            <button
+              type="button"
+              disabled={!canImport}
+              onClick={() => {
+                if (canImport) onImportTranscript(asrResult);
+              }}
+            >
+              导入到项目稿件
+            </button>
+          )}
           <p>下载本任务已提交的原始 JSON，单个制品上限 16 MiB。</p>
           {!job?.artifacts.length && <p>尚无已提交制品。</p>}
           {job?.artifacts

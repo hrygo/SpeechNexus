@@ -13,15 +13,17 @@ from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.asr_results import (
     AsrResultStore,
     StagedAsrResult,
-    validate_asr_result_limit,
 )
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
-from speechnexus_gateway.domain.file_execution import FileAsrExecution, FileExecutionLedger
+from speechnexus_gateway.domain.file_execution import (
+    FileAsrExecution,
+    FileExecutionLedger,
+    FileExecutionLimits,
+)
 from speechnexus_gateway.domain.observation import ExecutionObservation, RecordExecutionObservation
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.recovery import MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
-    MAX_ORIGINAL_COMMAND_BYTES,
     DispatchResult,
     EngineObservedState,
     ExecutionCleanupPendingError,
@@ -65,16 +67,7 @@ class FileExecutionWorker:
         shutdown_seconds: float = 10,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        validate_asr_result_limit(max_result_bytes)
-        if (
-            type(max_command_bytes) is not int
-            or not 1 <= max_command_bytes <= MAX_ORIGINAL_COMMAND_BYTES
-        ):
-            raise ValueError("file work requires an explicit original-command byte budget")
-        if type(max_pending) is not int or not 1 <= max_pending <= 64:
-            raise ValueError("file work requires a bounded local preparation count")
-        if not 0 < shutdown_seconds <= 30:
-            raise ValueError("file worker shutdown requires a bounded wait")
+        FileExecutionLimits(max_result_bytes, max_command_bytes, max_pending, shutdown_seconds)
         self._ingress = ingress
         self._ledger = ledger
         self._execution = execution
@@ -206,7 +199,16 @@ class FileExecutionWorker:
         task = asyncio.create_task(self._run(ticket, intent))
         ticket.task = task
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(lambda completed: self._finished(ticket, completed))
+
+    def _finished(self, ticket: _Preparation, task: asyncio.Task[None]) -> None:
+        # A task cancelled before its first step never enters _run at all.
+        # Completion also follows the join of any already-started DB writer.
+        key = ticket.request.identity.submit_intent_id
+        with self._lock:
+            if self._preparations.get(key) is ticket:
+                del self._preparations[key]
+        self._tasks.discard(task)
 
     def _check_start(self, intent: SubmissionIntent) -> None:
         # Only the new-commit callback reaches this point. This short read/check
@@ -261,10 +263,6 @@ class FileExecutionWorker:
                 # or private command/content is logged or reported as success.
                 with self._lock:
                     self._accepting = False
-        finally:
-            with self._lock:
-                if self._preparations.get(key) is ticket:
-                    del self._preparations[key]
 
     def _register(
         self, accepted: SubmissionIntent, receipt: StagedAsrResult, cancelled: threading.Event

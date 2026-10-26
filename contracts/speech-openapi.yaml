@@ -471,6 +471,20 @@ paths:
       tags: [voices]
       operationId: getPronunciationRevision
       summary: Get one immutable pronunciation-set revision
+      description: |
+        Reads the exact requested revision; the returned status does not
+        itself grant publication, execution, or pronunciation qualification.
+        Only a confirmed missing revision returns 404 pronunciation_not_found.
+        Unreadable metadata returns 503 pronunciation_unavailable with
+        retryable: true, not 404. Both replies are non-cacheable and carry the
+        matching X-Should-Retry value. Neither fabricates an Operation or
+        authorizes allocating a replacement revision. A caller may explicitly
+        repeat the same fixed GET; there is no implicit client retry.
+
+        Invalid path/header/query values or a request body return 400.
+        Host/Origin rejection (403), unsupported method (405 with Allow: GET),
+        and local read capacity (429) concern this HTTP attempt, not the
+        resource's publication or execution state.
       parameters:
         - name: pronunciation_id
           in: path
@@ -489,10 +503,20 @@ paths:
             application/json:
               schema:
                 $ref: "./voice-resource.schema.json#/$defs/PronunciationRevision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/PronunciationReadForbidden"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/PronunciationReadNotFound"
+        "405":
+          $ref: "#/components/responses/PronunciationReadMethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PronunciationReadUnavailable"
   /v1/nexus/jobs:
     post:
       tags: [jobs]
@@ -1864,6 +1888,84 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    PronunciationReadForbidden:
+      description: The configured Host/Origin policy rejected this fixed read.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PronunciationReadMethodNotAllowed:
+      description: This fixed pronunciation-revision path accepts GET only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PronunciationReadNotFound:
+      description: The fixed revision is confirmed missing; unavailable metadata is not absence.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: no-store
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "false"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        const: pronunciation_not_found
+                      type:
+                        const: not_found_error
+                      retryable:
+                        const: false
+                      nexus: false
+    PronunciationReadUnavailable:
+      description: |
+        Fixed metadata cannot currently be established. Repeat only the same
+        fixed GET; this is neither a missing resource nor an execution result.
+      headers:
+        Cache-Control:
+          required: true
+          schema:
+            type: string
+            const: no-store
+        X-Should-Retry:
+          required: true
+          schema:
+            type: string
+            const: "true"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - properties:
+                  error:
+                    properties:
+                      code:
+                        const: pronunciation_unavailable
+                      type:
+                        const: service_unavailable_error
+                      retryable:
+                        const: true
+                      nexus: false
     GatewayTimeout:
       description: Operation deadline exceeded; coordinate the original intent before retrying.
       content:

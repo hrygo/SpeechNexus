@@ -2592,6 +2592,67 @@
         }
       }
     },
+    "getVoiceRevisionV2": {
+      "path": "/v2/workbench/voices/{voice_id}/revisions/{revision}",
+      "method": "get",
+      "request": "HttpRequest_getVoiceRevisionV2",
+      "parameters": {
+        "path": {
+          "voice_id": "string",
+          "revision": "string"
+        },
+        "query": {},
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_getVoiceRevisionV2_200",
+          "headers": {
+            "x-request-id": "string"
+          },
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_getVoiceRevisionV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_getVoiceRevisionV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_getVoiceRevisionV2_404",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_getVoiceRevisionV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_getVoiceRevisionV2_413",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_getVoiceRevisionV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_getVoiceRevisionV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
     "getWorkbenchStatusV2": {
       "path": "/v2/workbench/status",
       "method": "get",
@@ -2972,6 +3033,220 @@
           "headers": {
             "retry-after": "integer"
           },
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_generateRenderUnitV2_503",
+          "headers": {},
+          "json": true
+        }
+      }
+    },
+    "downloadSavedAsset": {
+      "path": "/v1/workbench/saved-assets/{asset_id}/content",
+      "method": "get",
+      "request": "HttpRequest_downloadSavedAsset",
+      "parameters": {
+        "path": {
+          "asset_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "range": "string",
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_downloadSavedAsset_200",
+          "headers": {
+            "accept-ranges": "string",
+            "x-request-id": "string"
+          },
+          "json": false,
+          "binary": true
+        },
+        "206": {
+          "schema": "HttpResponse_downloadSavedAsset_206",
+          "headers": {
+            "content-range": "string",
+            "x-request-id": "string"
+          },
+          "json": false,
+          "binary": true
+        },
+        "401": {
+          "schema": "HttpResponse_downloadSavedAsset_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_downloadSavedAsset_404",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadSavedAsset_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadSavedAsset_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadSavedAsset_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadSavedAsset_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadSavedAsset_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadSavedAsset_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
+    "downloadBookExport": {
+      "path": "/v1/workbench/exports/{export_id}/content",
+      "method": "get",
+      "request": "HttpRequest_downloadBookExport",
+      "parameters": {
+        "path": {
+          "export_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "range": "string",
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_downloadBookExport_200",
+          "headers": {
+            "accept-ranges": "string",
+            "x-request-id": "string"
+          },
+          "json": false,
+          "binary": true
+        },
+        "206": {
+          "schema": "HttpResponse_downloadBookExport_206",
+          "headers": {
+            "content-range": "string",
+            "x-request-id": "string"
+          },
+          "json": false,
+          "binary": true
+        },
+        "401": {
+          "schema": "HttpResponse_downloadBookExport_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_downloadBookExport_404",
+          "headers": {},
+          "json": true
+        },
+        "409": {
+          "schema": "HttpResponse_downloadBookExport_409",
+          "headers": {},
+          "json": true
+        },
+        "410": {
+          "schema": "HttpResponse_downloadBookExport_410",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_downloadBookExport_400",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_downloadBookExport_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_downloadBookExport_413",
+          "headers": {},
+          "json": true
+        },
+        "416": {
+          "schema": "HttpResponse_downloadBookExport_416",
+          "headers": {
+            "content-range": "string"
+          },
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_downloadBookExport_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_downloadBookExport_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
+    "streamExportEvents": {
+      "path": "/v1/workbench/exports/{export_id}/events",
+      "method": "get",
+      "request": "HttpRequest_streamExportEvents",
+      "parameters": {
+        "path": {
+          "export_id": "string"
+        },
+        "query": {},
+        "headers": {
+          "last-event-id": "string",
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_streamExportEvents_200",
+          "headers": {
+            "x-request-id": "string",
+            "cache-control": "string"
+          },
+          "json": false,
+          "event": "HttpEvent_streamExportEvents"
+        },
+        "401": {
+          "schema": "HttpResponse_streamExportEvents_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_streamExportEvents_404",
+          "headers": {},
+          "json": true
+        },
+        "410": {
+          "schema": "HttpResponse_streamExportEvents_410",
+          "headers": {},
           "json": true
         }
       }
@@ -3368,6 +3643,15 @@
     "HttpResponse_getVoiceRevision_408",
     "HttpResponse_getVoiceRevision_500",
     "HttpResponse_getVoiceRevision_503",
+    "HttpRequest_getVoiceRevisionV2",
+    "HttpResponse_getVoiceRevisionV2_200",
+    "HttpResponse_getVoiceRevisionV2_400",
+    "HttpResponse_getVoiceRevisionV2_401",
+    "HttpResponse_getVoiceRevisionV2_404",
+    "HttpResponse_getVoiceRevisionV2_408",
+    "HttpResponse_getVoiceRevisionV2_413",
+    "HttpResponse_getVoiceRevisionV2_500",
+    "HttpResponse_getVoiceRevisionV2_503",
     "HttpRequest_getWorkbenchStatusV2",
     "HttpResponse_getWorkbenchStatusV2_200",
     "HttpResponse_getWorkbenchStatusV2_401",
@@ -3425,7 +3709,38 @@
     "HttpResponse_generateRenderUnitV2_404",
     "HttpResponse_generateRenderUnitV2_409",
     "HttpResponse_generateRenderUnitV2_422",
-    "HttpResponse_generateRenderUnitV2_429"
+    "HttpResponse_generateRenderUnitV2_429",
+    "HttpResponse_generateRenderUnitV2_503",
+    "HttpRequest_downloadSavedAsset",
+    "HttpResponse_downloadSavedAsset_200",
+    "HttpResponse_downloadSavedAsset_206",
+    "HttpResponse_downloadSavedAsset_401",
+    "HttpResponse_downloadSavedAsset_404",
+    "HttpResponse_downloadSavedAsset_400",
+    "HttpResponse_downloadSavedAsset_408",
+    "HttpResponse_downloadSavedAsset_413",
+    "HttpResponse_downloadSavedAsset_416",
+    "HttpResponse_downloadSavedAsset_500",
+    "HttpResponse_downloadSavedAsset_503",
+    "HttpRequest_downloadBookExport",
+    "HttpResponse_downloadBookExport_200",
+    "HttpResponse_downloadBookExport_206",
+    "HttpResponse_downloadBookExport_401",
+    "HttpResponse_downloadBookExport_404",
+    "HttpResponse_downloadBookExport_409",
+    "HttpResponse_downloadBookExport_410",
+    "HttpResponse_downloadBookExport_400",
+    "HttpResponse_downloadBookExport_408",
+    "HttpResponse_downloadBookExport_413",
+    "HttpResponse_downloadBookExport_416",
+    "HttpResponse_downloadBookExport_500",
+    "HttpResponse_downloadBookExport_503",
+    "HttpRequest_streamExportEvents",
+    "HttpResponse_streamExportEvents_200",
+    "HttpEvent_streamExportEvents",
+    "HttpResponse_streamExportEvents_401",
+    "HttpResponse_streamExportEvents_404",
+    "HttpResponse_streamExportEvents_410"
   ],
   "$defs": {
     "WorkbenchStatus": {
@@ -6408,6 +6723,73 @@
         }
       }
     },
+    "VoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_id",
+        "revision",
+        "display_name",
+        "status",
+        "languages",
+        "audio_formats",
+        "model_binding",
+        "published_at",
+        "retired_at",
+        "disabled_reason"
+      ],
+      "properties": {
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "retired", "disabled"]
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "audio_formats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "model_binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "disabled_reason": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        }
+      }
+    },
     "WorkbenchStatusV2": {
       "type": "object",
       "additionalProperties": false,
@@ -6838,6 +7220,348 @@
         "accepted_at": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_EventSequence"
+    },
+    "External_shared_identifiers_schema_json_EventSequence": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision",
+      "description": "Monotonic decimal SSE event sequence used as Last-Event-ID."
+    },
+    "ExportEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExportQueuedEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportProgressEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportSucceededEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportFailedEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportCancelledEvent"
+        },
+        {
+          "$ref": "#/$defs/ExportArtifactPublishedEvent"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "type",
+        "mapping": {
+          "export.queued": "#/components/schemas/ExportQueuedEvent",
+          "export.progress": "#/components/schemas/ExportProgressEvent",
+          "export.succeeded": "#/components/schemas/ExportSucceededEvent",
+          "export.failed": "#/components/schemas/ExportFailedEvent",
+          "export.cancelled": "#/components/schemas/ExportCancelledEvent",
+          "export.artifact_published": "#/components/schemas/ExportArtifactPublishedEvent"
+        }
+      },
+      "examples": [
+        {
+          "id": "1",
+          "type": "export.queued",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:00Z",
+          "data": {
+            "status": "queued"
+          }
+        },
+        {
+          "id": "2",
+          "type": "export.progress",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:01Z",
+          "data": {
+            "status": "running",
+            "progress_completed": 2,
+            "progress_total": 5
+          }
+        },
+        {
+          "id": "3",
+          "type": "export.succeeded",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:02Z",
+          "data": {
+            "status": "succeeded",
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        },
+        {
+          "id": "4",
+          "type": "export.failed",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:03Z",
+          "data": {
+            "status": "failed",
+            "error": {
+              "code": "export_failure",
+              "message": "synthetic export failure",
+              "retryable": false
+            }
+          }
+        },
+        {
+          "id": "5",
+          "type": "export.cancelled",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:04Z",
+          "data": {
+            "status": "cancelled"
+          }
+        },
+        {
+          "id": "6",
+          "type": "export.artifact_published",
+          "export_id": "export_demo",
+          "occurred_at": "2026-10-23T00:00:05Z",
+          "data": {
+            "artifact": {
+              "id": "export_artifact_demo",
+              "object": "nexus.export_artifact",
+              "export_id": "export_demo",
+              "manifest_revision": "3",
+              "media_type": "application/zip",
+              "bytes": 2048,
+              "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "created_at": "2026-10-23T00:00:02Z"
+            }
+          }
+        }
+      ]
+    },
+    "ExportQueuedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.queued"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportQueuedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportEventEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "export_id", "occurred_at", "data"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventSequence"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "export.queued",
+            "export.progress",
+            "export.succeeded",
+            "export.failed",
+            "export.cancelled",
+            "export.artifact_published"
+          ]
+        },
+        "export_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "description": "Event-type-specific payload; see the concrete ExportEvent variant."
+        }
+      }
+    },
+    "ExportQueuedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "queued"
+        }
+      }
+    },
+    "ExportProgressEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.progress"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportProgressEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportProgressEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "progress_completed", "progress_total"],
+      "properties": {
+        "status": {
+          "const": "running"
+        },
+        "progress_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "progress_total": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ExportSucceededEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.succeeded"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportSucceededEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportSucceededEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact"],
+      "properties": {
+        "status": {
+          "const": "succeeded"
+        },
+        "artifact": {
+          "$ref": "#/$defs/ExportArtifact"
+        }
+      }
+    },
+    "ExportFailedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.failed"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportFailedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportFailedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": {
+          "const": "failed"
+        },
+        "error": {
+          "$ref": "#/$defs/WorkbenchJobError"
+        }
+      }
+    },
+    "ExportCancelledEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.cancelled"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportCancelledEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportCancelledEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "cancelled"
+        }
+      }
+    },
+    "ExportArtifactPublishedEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExportEventEnvelope"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "export.artifact_published"
+            },
+            "data": {
+              "$ref": "#/$defs/ExportArtifactPublishedEventData"
+            }
+          },
+          "required": ["type", "data"]
+        }
+      ]
+    },
+    "ExportArtifactPublishedEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact"],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ExportArtifact"
         }
       }
     },
@@ -14429,6 +15153,181 @@
       },
       "required": ["body"]
     },
+    "HttpRequest_getVoiceRevisionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "voice_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "revision": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": ["voice_id", "revision"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_getVoiceRevisionV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/VoiceRevisionV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_getVoiceRevisionV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
     "HttpRequest_getWorkbenchStatusV2": {
       "type": "object",
       "additionalProperties": false,
@@ -15548,6 +16447,621 @@
               "minimum": 0
             }
           },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_downloadSavedAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "asset_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["asset_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "range": {
+              "type": "string",
+              "pattern": "^bytes=[0-9]*-[0-9]*$"
+            },
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_downloadSavedAsset_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "accept-ranges": {
+              "type": "string",
+              "const": "bytes"
+            },
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "string",
+          "format": "binary"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_206": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
+            },
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "string",
+          "format": "binary"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadSavedAsset_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadSavedAsset_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_downloadBookExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "export_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["export_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "range": {
+              "type": "string",
+              "pattern": "^bytes=[0-9]*-[0-9]*$"
+            },
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_downloadBookExport_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "accept-ranges": {
+              "type": "string",
+              "const": "bytes"
+            },
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "string",
+          "format": "binary"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_206": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
+            },
+            "x-request-id": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "string",
+          "format": "binary"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_409": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_410": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_416": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-range": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
+          },
+          "required": ["content-range"],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["headers", "body"]
+    },
+    "HttpResponse_downloadBookExport_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_downloadBookExport_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_streamExportEvents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "export_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["export_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "last-event-id": {
+              "$ref": "#/$defs/EventSequence"
+            },
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_streamExportEvents_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string"
+            },
+            "cache-control": {
+              "type": "string",
+              "const": "no-cache"
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpEvent_streamExportEvents": {
+      "$ref": "#/$defs/ExportEvent"
+    },
+    "HttpResponse_streamExportEvents_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_streamExportEvents_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_streamExportEvents_410": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
           "required": [],
           "additionalProperties": true
         },

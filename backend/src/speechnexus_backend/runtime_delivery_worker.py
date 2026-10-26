@@ -111,18 +111,33 @@ class RuntimeDeliveryRuntime:
                 "SELECT set_config('statement_timeout',%s,true)",
                 (str(max(1, int(self.settings.storage_timeout_seconds * 1000))),),
             )
-            row = connection.execute(
-                "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s,'CREATE') "
-                "OR pg_catalog.pg_has_role(d.datdba,'USAGE') OR EXISTS ("
-                "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
-                "ON n.oid=c.relnamespace WHERE n.nspname=%s "
-                "AND pg_catalog.pg_has_role(c.relowner,'USAGE')) AS forbidden "
-                "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                "WHERE r.rolname=CURRENT_USER AND d.datname=CURRENT_DATABASE()",
-                (self.settings.database_schema, self.settings.database_schema),
+            identities = connection.execute(
+                "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
             ).fetchone()
-            if row is None or row["forbidden"]:
+            if identities is None:
                 raise ValueError("Delivery runtime requires a non-owner role without DDL")
+            # A startup role can hide the login's authority. RESET ROLE restores
+            # that startup role; inspect both names without changing roles/grants.
+            for role in dict.fromkeys((identities["login"], identities["effective"])):
+                row = connection.execute(
+                    "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+                    "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
+                    "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+                    "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+                    "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+                    "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+                    "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
+                    (
+                        role,
+                        self.settings.database_schema,
+                        role,
+                        self.settings.database_schema,
+                        role,
+                        role,
+                    ),
+                ).fetchone()
+                if row is None or row["forbidden"]:
+                    raise ValueError("Delivery runtime requires a non-owner role without DDL")
             connection.execute("SELECT event_id FROM runtime_intent_deliveries LIMIT 0")
 
     async def __aenter__(self) -> Self:

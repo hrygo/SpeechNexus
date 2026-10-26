@@ -101,8 +101,9 @@ function validate(value: unknown): EditorRecord {
       check(project !== null && project.id === pending.projectId);
       check(
         body.display_name === forms.transcriptName &&
-          body.source.kind === "manual" &&
-          body.source.text === forms.newText,
+          (body.source.kind === "manual"
+            ? body.source.text === forms.newText
+            : forms.newText === ""),
       );
     } else if (pending.kind === "revise") {
       fields(pending, ["kind", "key", "transcriptId", "body"]);

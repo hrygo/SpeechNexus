@@ -61,13 +61,47 @@ pytestmark = pytest.mark.integration
 LIMITS = ExecutionInputLimits(1000000, 1024, 10)
 
 
+def seed_file_asr_attempt(foundation: Foundation) -> None:
+    """Give file consumers one coherent persisted ASR target, not a TTS reservation."""
+    seed_second_attempt(foundation)
+    db = foundation.database
+    db.query(
+        "INSERT INTO resource_pools (pool_id, service_class, pool_state) "
+        "VALUES ('asr-batch', 'batch', 'active')"
+    )
+    db.query(
+        "INSERT INTO engine_instances (instance_id, instance_generation, host_node_id, pool_id, "
+        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
+        "loading_policy, config_digest, instance_state, max_slots, held_slots) "
+        "SELECT 'instance-file-asr', instance_generation, host_node_id, 'asr-batch', "
+        "gateway_id, binding_revision_id, manifest_id, approved_template_id, management_mode, "
+        "loading_policy, config_digest, instance_state, max_slots, held_slots "
+        "FROM engine_instances WHERE instance_id = 'instance-test'"
+    )
+    db.query(
+        "INSERT INTO runtime_instance_heads "
+        "(instance_id, current_generation, generation_high_water) "
+        "VALUES ('instance-file-asr', 1, 1)"
+    )
+    db.query(
+        "UPDATE admission_attempts SET service_class = 'batch' "
+        "WHERE operation_id = 'operation-test' AND attempt_id = 'attempt-alt'"
+    )
+    db.query(
+        "UPDATE admission_leases SET pool_id = 'asr-batch', instance_id = 'instance-file-asr' "
+        "WHERE operation_id = 'operation-test' AND attempt_id = 'attempt-alt'"
+    )
+
+
 def persist(
     foundation: Foundation, ledger: Ledger, command: dict[str, Any] | None = None
 ) -> tuple[SubmitRequest, SubmissionIntent]:
-    seed_second_attempt(foundation)
     value = command_example() if command is None else command
     emits_audio = value["kind"] == "tts"
-    if not emits_audio:
+    if emits_audio:
+        seed_second_attempt(foundation)
+    else:
+        seed_file_asr_attempt(foundation)
         value["audio"]["storage"]["workspace_id"] = "workspace-test"
     identity = replace(
         identity_for(
@@ -76,6 +110,8 @@ def persist(
             sample_rate_hz=24000 if emits_audio else None,
             max_output_audio_ms=2000 if emits_audio else None,
         ),
+        pool_id="tts-realtime" if emits_audio else "asr-batch",
+        instance_id="instance-test" if emits_audio else "instance-file-asr",
         command_digest=command_digest(cast(JsonValue, value)),
     )
     request = SubmitRequest(

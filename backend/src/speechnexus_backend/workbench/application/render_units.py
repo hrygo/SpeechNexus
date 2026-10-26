@@ -6,7 +6,9 @@ idempotency and how a chapter resolves to its owning project.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Protocol
+from uuid import uuid4
 
 from speechnexus_backend.workbench.application.listings import (
     ListingPage,
@@ -15,8 +17,15 @@ from speechnexus_backend.workbench.application.listings import (
     validate_listing,
 )
 from speechnexus_backend.workbench.application.versions import ResourceNotFoundError
-from speechnexus_backend.workbench.domain.render_units import RenderUnit, RenderUnitSummary
-from speechnexus_backend.workbench.domain.versions import InvalidVersionChangeError
+from speechnexus_backend.workbench.domain.render_units import (
+    RenderAttemptConflictError,
+    RenderUnit,
+    RenderUnitSummary,
+)
+from speechnexus_backend.workbench.domain.versions import (
+    InvalidVersionChangeError,
+    RevisionConflictError,
+)
 
 
 def _key(key: str | None) -> None:
@@ -24,6 +33,28 @@ def _key(key: str | None) -> None:
         return
     if not 8 <= len(key) <= 128:
         raise InvalidVersionChangeError("invalid workbench request key")
+
+
+class RenderDispatchUnavailableError(Exception):
+    """No public speech job producer is configured; the attempt never starts."""
+
+
+class RenderSubmissionUnknownError(Exception):
+    """The Job submission may have succeeded; only the original key can recover it."""
+
+
+class RenderSubmissionConflictError(Exception):
+    """The same key names a different submission intent."""
+
+
+class RenderSubmissionRejectedError(Exception):
+    """The pinned unit cannot be expressed as a valid public speech Job."""
+
+
+class RenderJobPort(Protocol):
+    """Public speech job submission; the port returns the durable job identity."""
+
+    async def submit(self, *, unit: RenderUnit, key: str | None, reference: str) -> str: ...
 
 
 class RenderUnitStore(Protocol):
@@ -64,12 +95,69 @@ class RenderUnitStore(Protocol):
         model_binding_revision: int | None = None,
     ) -> RenderUnit: ...
 
+    async def start_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        expected_revision: int,
+        job_id: str,
+        generation_id: str,
+    ) -> RenderUnit: ...
+
 
 class WorkbenchRenderUnits:
     """A revise is refused before any transaction opens when nothing changes."""
 
-    def __init__(self, units: RenderUnitStore) -> None:
+    def __init__(self, units: RenderUnitStore, jobs: RenderJobPort | None = None) -> None:
         self._units = units
+        self._jobs = jobs
+
+    async def start_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        expected_revision: int,
+        key: str | None = None,
+    ) -> tuple[RenderUnit, str]:
+        """Submit one pinned attempt and record it; a replayed key returns that attempt."""
+        _key(key)
+        if self._jobs is None:
+            raise RenderDispatchUnavailableError
+        unit = await self._units.get_unit(unit_id=unit_id, workspace_id=workspace_id)
+        reference = (
+            f"gen:{uuid4().hex}"
+            if key is None
+            else "gen:" + hashlib.sha256(f"{unit.id}\n{key}".encode()).hexdigest()[:48]
+        )
+        # A recorded attempt is the original result. Replaying its key returns that
+        # attempt even though starting it advanced the unit revision.
+        recorded = next(
+            (generation for generation in unit.generations if generation.id == reference), None
+        )
+        if recorded is not None:
+            return unit, recorded.job_id
+        if unit.revision != expected_revision:
+            raise RevisionConflictError(expected_revision, unit.revision)
+        job_id = await self._jobs.submit(unit=unit, key=key, reference=reference)
+        try:
+            started = await self._units.start_unit(
+                unit_id=unit_id,
+                workspace_id=workspace_id,
+                expected_revision=expected_revision,
+                job_id=job_id,
+                generation_id=reference,
+            )
+        except RenderAttemptConflictError:
+            current = await self._units.get_unit(unit_id=unit_id, workspace_id=workspace_id)
+            if any(
+                generation.id == reference and generation.job_id == job_id
+                for generation in current.generations
+            ):
+                return current, job_id
+            raise
+        return started, job_id
 
     async def create_unit(
         self,

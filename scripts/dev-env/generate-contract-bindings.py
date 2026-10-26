@@ -25,6 +25,20 @@ CONTRACTS = ROOT / "contracts"
 PACKAGE = ROOT / "packages/contracts"
 
 
+def generate_typescript_types(source: Path, output: Path) -> None:
+    """Use the locked compiler and its resolved Header Objects for presence."""
+    subprocess.run(
+        [
+            "node",
+            str(ROOT / "scripts/dev-env/normalize-typescript-headers.mjs"),
+            str(source),
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+
 def flatten_typed_dicts(path: Path) -> None:
     """Flatten allOf field refinement for mutable TypedDicts (template revision 1).
 
@@ -312,14 +326,41 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("HTTP validation currently supports scalar string/integer parameters")
         return str(kind)
 
-    def body(container: dict[str, Any], envelope: dict[str, Any], *, required: bool) -> None:
+    def body(
+        container: dict[str, Any],
+        envelope: dict[str, Any],
+        *,
+        required: bool,
+        binary_response: bool = False,
+    ) -> str | None:
         content = container.get("content", {})
         if content:
-            if set(content) != {"application/json"}:
-                raise ValueError("Validated transport profiles currently support JSON bodies")
-            envelope["properties"]["body"] = rebase(content["application/json"]["schema"])
+            if set(content) == {"application/json"}:
+                media_type = "application/json"
+            elif (
+                binary_response
+                and set(content) == {"application/octet-stream"}
+                and content["application/octet-stream"]["schema"]
+                == {"type": "string", "format": "binary"}
+            ):
+                media_type = "application/octet-stream"
+            elif (
+                binary_response
+                and set(content) == {"text/event-stream"}
+                and content["text/event-stream"].get("schema") == {"type": "string"}
+                and set(content["text/event-stream"].get("x-sse-event-schema", {})) == {"$ref"}
+                and content["text/event-stream"]["x-sse-event-schema"]["$ref"].startswith(
+                    "#/components/schemas/"
+                )
+            ):
+                media_type = "text/event-stream"
+            else:
+                raise ValueError("Unsupported validated HTTP body representation")
+            envelope["properties"]["body"] = rebase(content[media_type]["schema"])
             if container.get("required", required):
                 envelope["required"].append("body")
+            return media_type
+        return None
 
     definitions = rebase(document["components"].get("schemas", {}))
     operations: dict[str, Any] = {}
@@ -398,7 +439,7 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                     "properties": {"headers": headers},
                     "required": ["headers"] if headers["required"] else [],
                 }
-                body(response, envelope, required=True)
+                media_type = body(response, envelope, required=True, binary_response=True)
                 response_name = "HttpResponse_" + name + "_" + status
                 if response_name in definitions:
                     raise ValueError("HTTP envelope collides with a component")
@@ -407,8 +448,18 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
                 metadata["responses"][status] = {
                     "schema": response_name,
                     "headers": header_types,
-                    "json": bool(response.get("content")),
+                    "json": media_type == "application/json",
+                    **({"binary": True} if media_type == "application/octet-stream" else {}),
                 }
+                if media_type == "text/event-stream":
+                    event_name = "HttpEvent_" + name
+                    if event_name in definitions:
+                        raise ValueError("HTTP event collides with a component")
+                    definitions[event_name] = rebase(
+                        response["content"][media_type]["x-sse-event-schema"]
+                    )
+                    entrypoints.append(event_name)
+                    metadata["responses"][status]["event"] = event_name
             operations[name] = metadata
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -421,13 +472,26 @@ def bundle_http_validation(document: dict[str, Any]) -> dict[str, Any]:
 def generate_http_profile(name: str, config: dict[str, Any], destination: Path) -> list[Path]:
     document = bundle_http_surface(config)
     bundle = bundle_http_validation(document)
+    events = {
+        operation: bundle["$defs"][reply["event"]]["$ref"].removeprefix("#/$defs/")
+        for operation, metadata in bundle["x-nexus-http-operations"].items()
+        for reply in metadata["responses"].values()
+        if "event" in reply
+    }
     python = destination / "src/speechnexus_contracts"
     schema = python / f"{name}-http.schema.json"
     schema.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n")
     wrapper = python / f"{name}_http.py"
+    event_imports = (
+        "from collections.abc import Iterable, Generator\n"
+        "from .http_validation import validate_http_event, iter_http_events\n"
+        if events
+        else ""
+    )
     wrapper.write_text(
         '"""Generated HTTP validation entrypoints; do not edit."""\n'
-        "from typing import Any\n"
+        + event_imports
+        + "from typing import Any\n"
         "from .http_validation import "
         "contract_for, validate_http_request, validate_http_response\n\n"
         "def contract() -> dict[str, Any]:\n"
@@ -437,6 +501,17 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         "def validate_response(operation: str, status: int, value: Any) -> Any:\n"
         f"    return validate_http_response({name!r}, operation, status, value)\n"
     )
+    if events:
+        with wrapper.open("a") as stream:
+            stream.write(
+                "\n"
+                "def validate_event(operation: str, value: Any) -> Any:\n"
+                f"    return validate_http_event({name!r}, operation, value)\n\n"
+                "def iter_events(operation: str, chunks: Iterable[bytes], request: Any, "
+                "*, max_event_bytes: int) -> Generator[Any]:\n"
+                f"    return iter_http_events({name!r}, operation, chunks, request, "
+                "max_event_bytes=max_event_bytes)\n"
+            )
     types = destination / f"src/{name}-http.ts"
     types_source = config.get("typescript_source", name)
     if "operations" in config:
@@ -464,7 +539,8 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         'import { createHttpValidator } from "./http-runtime.mjs";\n'
         f'import bundle from "./speechnexus_contracts/{name}-http.schema.json" '
         'with { type: "json" };\n'
-        f'import type {{ paths }} from "./{types_source}.generated";\n'
+        f"import type {{ {'paths, components' if events else 'paths'} }} "
+        f'from "./{types_source}.generated";\n'
         'export { ContractValidationError } from "./errors.mjs";\n'
         "export type HttpOperation = "
         + " | ".join(json.dumps(n) for n in bundle["x-nexus-http-operations"])
@@ -483,6 +559,24 @@ def generate_http_profile(name: str, config: dict[str, Any], destination: Path) 
         "  client.use(validator.middleware(baseUrl, maxJsonBytes));\n"
         "  return client;\n}\n"
     )
+    if events:
+        with types.open("a") as stream:
+            stream.write(
+                "export type HttpEvents = {\n"
+                + "".join(
+                    f'  {json.dumps(operation)}: components["schemas"][{json.dumps(schema)}];\n'
+                    for operation, schema in events.items()
+                )
+                + "};\n"
+                "export function validateEvent<K extends keyof HttpEvents>("
+                "operation: K, value: unknown): HttpEvents[K] {\n"
+                "  return validator.validateEvent(operation, value) as HttpEvents[K];\n}\n"
+                "export function readEvents<K extends keyof HttpEvents>("
+                "operation: K, source: ReadableStream<Uint8Array>, request: unknown, "
+                "maxEventBytes: number): AsyncIterable<HttpEvents[K]> {\n"
+                "  return validator.readEvents(operation, source, request, maxEventBytes) "
+                "as AsyncIterable<HttpEvents[K]>;\n}\n"
+            )
     return [path.relative_to(destination) for path in (schema, wrapper, types)]
 
 
@@ -564,20 +658,7 @@ def generate_profile(name: str, config: dict[str, Any], destination: Path) -> li
         if types_name != "speech" or config["source"] != "speech-openapi.yaml":
             raise ValueError("Shared TypeScript types must use the canonical speech source")
     else:
-        subprocess.run(
-            [
-                "pnpm",
-                "exec",
-                "openapi-typescript",
-                str(source),
-                "--output",
-                str(types),
-                "--default-non-nullable",
-                "false",
-            ],
-            cwd=ROOT,
-            check=True,
-        )
+        generate_typescript_types(source, types)
     script = (
         "// Generated from contracts/bindings.json; do not edit.\n"
         'import { createProfileParser } from "./profile-runtime.mjs";\n'
@@ -772,19 +853,8 @@ def generate(destination: Path) -> list[Path]:
         cwd=ROOT,
         capture_output=True,
     )
-    subprocess.run(
-        [
-            "pnpm",
-            "exec",
-            "openapi-typescript",
-            str(CONTRACTS / manifest["source"]),
-            "--output",
-            str(destination / "src/speech.generated.ts"),
-            "--default-non-nullable",
-            "false",
-        ],
-        cwd=ROOT,
-        check=True,
+    generate_typescript_types(
+        CONTRACTS / manifest["source"], destination / "src/speech.generated.ts"
     )
     (destination / "src/file.generated.ts").write_text(
         "// Generated from contracts/bindings.json; do not edit.\n"

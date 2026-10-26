@@ -1,0 +1,1020 @@
+{
+  "version": "1.0.0",
+  "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
+  "contract": "contracts/workbench-openapi.yaml",
+  "contract_sha256": "0eebe6622eafb07ace8885bc768f022f0cebfbc90854c6f9f8201c9f27db2b6d",
+  "audited_head": "8d2e33da31a0df5f7b3be66876da52543416ed0e",
+  "operations": [
+    {
+      "id": "cancelAssistantTurn",
+      "method": "post",
+      "path": "/v1/workbench/assistant-turns/{turn_id}/cancellations",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/assistant/assistant-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/assistant-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "cancelBookExport",
+      "method": "post",
+      "path": "/v1/workbench/exports/{export_id}/cancellations",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/books/book-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BookExportPanel.test.tsx",
+        "web/workbench/src/books/book-export.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createAssistantTurn",
+      "method": "post",
+      "path": "/v1/workbench/projects/{project_id}/assistant-turns",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/assistant/assistant-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/assistant/assistant-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createBook",
+      "method": "post",
+      "path": "/v1/workbench/projects/{project_id}/books",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createBookExport",
+      "method": "post",
+      "path": "/v1/workbench/books/{book_id}/exports",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/books/book-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BookExportPanel.test.tsx",
+        "web/workbench/src/books/book-export.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createChapter",
+      "method": "post",
+      "path": "/v1/workbench/books/{book_id}/chapters",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createMeeting",
+      "method": "post",
+      "path": "/v1/workbench/projects/{project_id}/meetings",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts",
+        "web/workbench/src/meetings/meeting-journal.ts"
+      ],
+      "tests": [
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createMeetingMinutes",
+      "method": "post",
+      "path": "/v1/workbench/meetings/{meeting_id}/minutes",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts",
+        "web/workbench/src/meetings/meeting-journal.ts"
+      ],
+      "tests": [
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createProject",
+      "method": "post",
+      "path": "/v1/workbench/projects",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/editor-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-journal.test.ts",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/MeetingNavigation.test.tsx",
+        "web/workbench/src/meetings/meeting-journal.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createRenderUnit",
+      "method": "post",
+      "path": "/v1/workbench/chapters/{chapter_id}/render-units",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "createRenderUnitV2",
+      "method": "post",
+      "path": "/v2/workbench/chapters/{chapter_id}/render-units",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/books/book-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createTranscript",
+      "method": "post",
+      "path": "/v1/workbench/projects/{project_id}/transcripts",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/editor-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "createTranscriptRevision",
+      "method": "post",
+      "path": "/v1/workbench/transcripts/{transcript_id}/revisions",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/editor-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-journal.test.ts",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "downloadBookExport",
+      "method": "get",
+      "path": "/v1/workbench/exports/{export_id}/content",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BookExportPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-download-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "downloadSavedAsset",
+      "method": "get",
+      "path": "/v1/workbench/saved-assets/{asset_id}/content",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/manuscripts/workbench-download-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "generateRenderUnit",
+      "method": "post",
+      "path": "/v1/workbench/render-units/{unit_id}/generations",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "有声书生成触发与单元轮询的正式页面消费者（C07/T09）",
+        "unblock_condition": "先冻结生成单元状态机、固定清单/检查点与版本关联语义，再由 RenderUnitPanel/BooksHost 接入发起生成、轮询终态与失败恢复，页面不自创接口",
+        "impact": "页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过"
+      }
+    },
+    {
+      "id": "generateRenderUnitV2",
+      "method": "post",
+      "path": "/v2/workbench/render-units/{unit_id}/generations",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "RenderUnitPanel/BooksHost 的生成触发、v2 轮询与未知结果恢复（C07/T09）",
+        "unblock_condition": "生产路由、store 生成记录与公开 speech Job 适配器已在后端就绪；接入页面消费前须完成真实 speech 端点/凭据联调，并按原 Idempotency-Key 重放未知结果",
+        "impact": "后端可提交并记录固定版本生成，但页面仍不能发起或读取生成；真实 speech 投递与生成终态回写未验证；C07/T09 未通过"
+      }
+    },
+    {
+      "id": "getAssistantTurn",
+      "method": "get",
+      "path": "/v1/workbench/assistant-turns/{turn_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/assistant-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getBook",
+      "method": "get",
+      "path": "/v1/workbench/books/{book_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getBookExport",
+      "method": "get",
+      "path": "/v1/workbench/exports/{export_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BookExportPanel.test.tsx",
+        "web/workbench/src/books/book-export.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/manuscripts/workbench-download-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getChapter",
+      "method": "get",
+      "path": "/v1/workbench/chapters/{chapter_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "单章读取/单修订读取的使用决定或退役（C07/C02）",
+        "unblock_condition": "核对页面是否应直接读取单章或单修订（当前分别由章节列表与 getTranscript 的 revision 查询覆盖）；保留则补消费者，退役需契约 owner 授权",
+        "impact": "无生产消费者；当前页面行为不受影响，但声明操作缺处置，AC-03 未通过"
+      }
+    },
+    {
+      "id": "getMeeting",
+      "method": "get",
+      "path": "/v1/workbench/meetings/{meeting_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts",
+        "web/workbench/src/meetings/meeting-session.ts"
+      ],
+      "tests": [
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getMeetingMinutes",
+      "method": "get",
+      "path": "/v1/workbench/meetings/{meeting_id}/minutes/{minutes_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getProject",
+      "method": "get",
+      "path": "/v1/workbench/projects/{project_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-journal.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getRenderUnit",
+      "method": "get",
+      "path": "/v1/workbench/render-units/{unit_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "getRenderUnitV2",
+      "method": "get",
+      "path": "/v2/workbench/render-units/{unit_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "有声书生成触发与单元轮询的正式页面消费者（C07/T09）",
+        "unblock_condition": "先冻结生成单元状态机、固定清单/检查点与版本关联语义，再由 RenderUnitPanel/BooksHost 接入发起生成、轮询终态与失败恢复，页面不自创接口",
+        "impact": "页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过"
+      }
+    },
+    {
+      "id": "getSavedAsset",
+      "method": "get",
+      "path": "/v1/workbench/saved-assets/{asset_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-download-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getTeleprompterState",
+      "method": "get",
+      "path": "/v1/workbench/projects/{project_id}/teleprompter",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/teleprompter/teleprompter-state.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getTranscript",
+      "method": "get",
+      "path": "/v1/workbench/transcripts/{transcript_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/manuscripts/FixedTranscriptDownload.test.tsx",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-journal.test.ts",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/meeting-journal.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getTranscriptRevision",
+      "method": "get",
+      "path": "/v1/workbench/transcripts/{transcript_id}/revisions/{revision}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "单章读取/单修订读取的使用决定或退役（C07/C02）",
+        "unblock_condition": "核对页面是否应直接读取单章或单修订（当前分别由章节列表与 getTranscript 的 revision 查询覆盖）；保留则补消费者，退役需契约 owner 授权",
+        "impact": "无生产消费者；当前页面行为不受影响，但声明操作缺处置，AC-03 未通过"
+      }
+    },
+    {
+      "id": "getVoiceRevision",
+      "method": "get",
+      "path": "/v1/workbench/voices/{voice_id}/revisions/{revision}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "getVoiceRevisionV2",
+      "method": "get",
+      "path": "/v2/workbench/voices/{voice_id}/revisions/{revision}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/file-workflow/tts-task.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "getWorkbenchStatus",
+      "method": "get",
+      "path": "/v1/workbench/status",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "getWorkbenchStatusV2",
+      "method": "get",
+      "path": "/v2/workbench/status",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/assistant/assistant-session.test.ts",
+        "web/workbench/src/books/ContentDownload.test.tsx",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/manuscripts/FixedTranscriptDownload.test.tsx",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/MeetingNavigation.test.tsx",
+        "web/workbench/src/meetings/meeting-session.test.ts",
+        "web/workbench/src/realtime/InputDevicePicker.test.tsx",
+        "web/workbench/src/teleprompter/TeleprompterPanel.test.tsx"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listBooks",
+      "method": "get",
+      "path": "/v1/workbench/projects/{project_id}/books",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listChapters",
+      "method": "get",
+      "path": "/v1/workbench/books/{book_id}/chapters",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listProjects",
+      "method": "get",
+      "path": "/v1/workbench/projects",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/MeetingNavigation.test.tsx",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listRenderUnits",
+      "method": "get",
+      "path": "/v1/workbench/chapters/{chapter_id}/render-units",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "listRenderUnitsV2",
+      "method": "get",
+      "path": "/v2/workbench/chapters/{chapter_id}/render-units",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listTranscripts",
+      "method": "get",
+      "path": "/v1/workbench/projects/{project_id}/transcripts",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-session.test.ts",
+        "web/workbench/src/manuscripts/ManuscriptHost.test.tsx",
+        "web/workbench/src/manuscripts/editor-session.test.ts",
+        "web/workbench/src/manuscripts/workbench-client.test.ts",
+        "web/workbench/src/meetings/MeetingHost.test.tsx",
+        "web/workbench/src/meetings/MeetingNavigation.test.tsx",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listVoices",
+      "method": "get",
+      "path": "/v1/workbench/voices",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/assistant/AssistantHost.test.tsx",
+        "web/workbench/src/assistant/assistant-session.test.ts",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "saveProjectAsset",
+      "method": "post",
+      "path": "/v1/workbench/projects/{project_id}/saved-assets",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "sealMeeting",
+      "method": "post",
+      "path": "/v1/workbench/meetings/{meeting_id}/seal",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts",
+        "web/workbench/src/meetings/meeting-journal.ts"
+      ],
+      "tests": [
+        "web/workbench/src/meetings/meeting-client.test.ts",
+        "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "streamExportEvents",
+      "method": "get",
+      "path": "/v1/workbench/exports/{export_id}/events",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C",
+        "artifact": "导出进度 SSE 正式消费者（T09/AC-08）",
+        "unblock_condition": "导出面板改为消费 streamExportEvents，按原游标恢复并去重；不得以轮询冒充 SSE 覆盖",
+        "impact": "导出进度仅靠轮询 getBookExport；SSE 的续读/410/去重语义无正式消费者，AC-08 未通过"
+      }
+    },
+    {
+      "id": "updateProject",
+      "method": "patch",
+      "path": "/v1/workbench/projects/{project_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "updateRenderUnit",
+      "method": "patch",
+      "path": "/v1/workbench/render-units/{unit_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "consumer_pending",
+      "pending": {
+        "owner": "C（契约 owner 协作）",
+        "artifact": "v1/v2 兼容与退役决定（C00/AC1 契约维护）",
+        "unblock_condition": "契约 owner 明确 v1 保留窗口：登记旧客户端消费者，或按授权流程退役；决定前保留声明与绑定",
+        "impact": "正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖"
+      }
+    },
+    {
+      "id": "updateRenderUnitV2",
+      "method": "patch",
+      "path": "/v2/workbench/render-units/{unit_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/books/book-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
+        "web/workbench/src/manuscripts/workbench-client.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "updateTeleprompterState",
+      "method": "put",
+      "path": "/v1/workbench/projects/{project_id}/teleprompter",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/teleprompter/teleprompter-state.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "workbenchCreateDeletion",
+      "method": "post",
+      "path": "/v1/workbench/deletions",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/deletions/deletion-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-core.test.ts",
+        "web/workbench/src/deletions/deletion-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "workbenchCreateDeletionPlan",
+      "method": "post",
+      "path": "/v1/workbench/deletion-plans",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/deletions/deletion-journal.ts",
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-core.test.ts",
+        "web/workbench/src/deletions/deletion-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "workbenchGetDeletion",
+      "method": "get",
+      "path": "/v1/workbench/deletions/{deletion_id}",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/deletions/DeletionHost.test.tsx",
+        "web/workbench/src/deletions/deletion-core.test.ts",
+        "web/workbench/src/deletions/deletion-session.test.ts"
+      ],
+      "status": "bound"
+    }
+  ]
+}

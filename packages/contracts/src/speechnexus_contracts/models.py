@@ -140,6 +140,30 @@ class JobExpiredEventData(TypedDict):
 type AssetPurpose = Literal["asr_input", "voice_reference", "text_input"]
 type AssetStatus = Literal["staging", "ready", "rejected", "expired", "deleted"]
 type ArtifactStatus = Literal["ready", "expired", "deleted"]
+
+
+class Language(TypedDict):
+    code: str
+
+
+class TranscriptionLogprob(TypedDict):
+    token: NotRequired[str | None]
+    bytes: NotRequired[list[float] | None]
+    logprob: NotRequired[float | None]
+
+
+class ExternalSharedPublicAudioSchemaJsonUsageDuration(TypedDict):
+    type: Literal["duration"]
+    seconds: float
+
+
+class ExternalSharedPublicAudioSchemaJsonUsageTokens(TypedDict):
+    type: Literal["tokens"]
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 type ExternalSharedLanguageSchemaJsonLanguageTag = str
 type ExternalSharedSpeechOverridesSchemaJsonSeed = int | None
 type ExternalSharedSpeechOverridesSchemaJsonSpeed = float
@@ -287,6 +311,7 @@ type ExternalSharedErrorsSchemaJsonErrorType = Literal[
     "api_error",
     "service_unavailable_error",
 ]
+type ExternalVoiceResourceSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -452,6 +477,10 @@ class Artifact(TypedDict):
     expires_at: NotRequired[str | None]
 
 
+type UsageDuration = ExternalSharedPublicAudioSchemaJsonUsageDuration
+type UsageTokens = ExternalSharedPublicAudioSchemaJsonUsageTokens
+
+
 class ExternalSharedReceiptsSchemaJsonPublicExecutionFacts(TypedDict):
     language: NotRequired[ExternalSharedLanguageSchemaJsonLanguageTag]
     seed: NotRequired[ExternalSharedSpeechOverridesSchemaJsonSeed]
@@ -497,6 +526,24 @@ class OperationCancellation(TypedDict):
     cancellation_requested_at: str
 
 
+class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
+    grapheme: str
+    phonemes: str
+    language: NotRequired[ExternalVoiceResourceSchemaJsonLanguageTag]
+
+
+class ExternalVoiceResourceSchemaJsonPronunciationRevision(TypedDict):
+    resource_type: Literal["pronunciation_revision"]
+    id: ExternalVoiceResourceSchemaJsonIdentifier
+    revision: ExternalVoiceResourceSchemaJsonRevision
+    object: Literal["nexus.pronunciation_revision"]
+    status: Literal["draft", "published", "retired"]
+    encoding: Literal["pinyin", "ipa"]
+    entries: list[ExternalVoiceResourceSchemaJsonPronunciationEntry]
+    created_at: str
+
+
+type PronunciationRevision = ExternalVoiceResourceSchemaJsonPronunciationRevision
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 type AsrOverrides = ExternalSharedSpeechOverridesSchemaJsonAsrOverrides
 type TtsOverrides = ExternalSharedSpeechOverridesSchemaJsonTtsOverrides
@@ -662,6 +709,9 @@ class JobCancellation(TypedDict):
     operations: list[OperationReference]
 
 
+type TranscriptionUsage = UsageDuration | UsageTokens
+
+
 class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
     receipt_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     request_id: NotRequired[str | None]
@@ -675,6 +725,14 @@ class ExternalSharedReceiptsSchemaJsonExecutionReceipt(TypedDict):
 class ExternalSharedErrorsSchemaJsonOperationRecovery(TypedDict):
     operation_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     receipt: NotRequired[ExternalSharedReceiptsSchemaJsonExecutionReceipt]
+
+
+class PronunciationCreateRequest(TypedDict):
+    id: NotRequired[Identifier]
+    expected_revision: NotRequired[Revision]
+    encoding: Literal["pinyin", "ipa"]
+    entries: list[ExternalVoiceResourceSchemaJsonPronunciationEntry]
+    publish: NotRequired[bool]
 
 
 class JobOverrides(TypedDict):
@@ -711,6 +769,13 @@ class ArtifactPublishedEvent(TypedDict):
     job_id: Identifier
     occurred_at: str
     data: ArtifactPublishedEventData
+
+
+class Transcription(TypedDict):
+    text: str
+    languages: NotRequired[list[Language]]
+    logprobs: NotRequired[list[TranscriptionLogprob]]
+    usage: NotRequired[TranscriptionUsage]
 
 
 type ExecutionReceipt = ExternalSharedReceiptsSchemaJsonExecutionReceipt
@@ -916,7 +981,10 @@ type FileContract = (
     | AssetUploadRequest
     | Asset
     | Artifact
+    | Transcription
     | Operation
     | OperationCancellation
     | ErrorResponse
+    | PronunciationCreateRequest
+    | PronunciationRevision
 )

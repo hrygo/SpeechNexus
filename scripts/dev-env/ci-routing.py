@@ -11,10 +11,17 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-Mode = Literal["docs", "web", "full"]
+Mode = Literal["docs", "web", "no-db", "full"]
 _ROOT_PROSE = {"AGENTS.md", "README.md", "README.en.md"}
 _SKILL_DOCUMENT_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
 _WEB_SUFFIXES = {".ts", ".tsx", ".css", ".html", ".svg", ".png", ".webp", ".jpg", ".woff2"}
+# These standalone engine packages are built/tested by the Python and deployment
+# lanes. Integration fixtures do not consume them. Shared gateway code remains full.
+_ENGINE_PACKAGES = {"cpu-vad", "file-asr-audio", "vllm-asr-lifecycle"}
+_ENGINE_TESTS = {
+    "tests/unit/gateway/test_native_asr_scope.py",
+    "tests/unit/gateway/test_worker_fence.py",
+}
 
 
 def classify(paths: Sequence[str]) -> Mode:
@@ -43,6 +50,12 @@ def classify(paths: Sequence[str]) -> Mode:
             or skill_document
         ):
             continue
+        engine_source = (
+            len(parts) >= 4 and parts[:2] == ("deploy", "engines") and parts[2] in _ENGINE_PACKAGES
+        )
+        if engine_source or name in _ENGINE_TESTS:
+            mode = "no-db"
+            continue
         web_source = (
             len(parts) >= 3
             and parts[0] == "web"
@@ -55,7 +68,8 @@ def classify(paths: Sequence[str]) -> Mode:
             )
         )
         if web_source and path.suffix in _WEB_SUFFIXES:
-            mode = "web"
+            if mode != "no-db":
+                mode = "web"
         else:
             return "full"
     return mode
@@ -87,6 +101,9 @@ def detect_route(event: str, base: str, cwd: Path) -> tuple[Mode, str]:
     reasons = {
         "docs": "Only prose or skill documents/metadata changed; heavy checks are out of scope.",
         "web": "Web sources changed; retain Python consumer/unit checks and the complete Web lane.",
+        "no-db": (
+            "Standalone engines changed; retain Python/Web/deployment checks, without DB shards."
+        ),
         "full": "Shared, unknown, executable or empty changes require every verification lane.",
     }
     return mode, reasons[mode]

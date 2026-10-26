@@ -20,11 +20,15 @@ from tests.fake.vad import ScriptedVadModel
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_asr_results import results
-from tests.integration.test_gateway_frozen_inputs import LIMITS, upload_command
+from tests.integration.test_gateway_frozen_inputs import (
+    LIMITS,
+    seed_file_asr_attempt,
+    upload_command,
+)
 from tests.integration.test_gateway_frozen_inputs import object_store as object_store
 from tests.integration.test_gateway_recovery import Ledger
 from tests.integration.test_gateway_stop_evidence import counters, new_pool
-from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
+from tests.integration.test_gateway_submit_ledger import identity_for
 from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
 from tests.unit.gateway.test_file_asr_command import CapturingRecognizer
@@ -53,7 +57,7 @@ TOKEN = "synthetic-file-worker-component-token"
 
 
 def original(foundation: Foundation, admin: Minio, bucket: str) -> SubmitRequest:
-    seed_second_attempt(foundation)
+    seed_file_asr_attempt(foundation)
     command, _ = upload_command(admin, bucket)
     command["audio"]["storage"]["workspace_id"] = "workspace-test"
     command["parameters"]["max_segment_ms"] = 1000
@@ -65,6 +69,8 @@ def original(foundation: Foundation, admin: Minio, bucket: str) -> SubmitRequest
                 sample_rate_hz=None,
                 max_output_audio_ms=None,
             ),
+            pool_id="asr-batch",
+            instance_id="instance-file-asr",
             command_digest=command_digest(cast(JsonValue, command)),
         ),
         command=cast(JsonValue, command),

@@ -372,7 +372,7 @@ def test_migration_repeat_and_refused_downgrade_preserve_profile_history(
         engine.dispose()
     assert profiles.snapshot() == before
     assert profiles.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0012_execution_results"}
+        {"version_num": "0014_pronunciation_drafts"}
     ]
 
 

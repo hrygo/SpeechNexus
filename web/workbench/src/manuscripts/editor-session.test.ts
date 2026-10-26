@@ -93,6 +93,48 @@ async function selected() {
 }
 
 describe("manuscript editor lifecycle", () => {
+  it("imports a speech original and replays the exact durable source after a lost reply", async () => {
+    const f = setup();
+    await f.session.start();
+    await f.session.selectProject("project-demo");
+    f.session.form("transcriptName", "语音原稿");
+    f.createTranscript.mockRejectedValueOnce(new Error("lost reply"));
+    const source = {
+      kind: "speech_artifact",
+      artifact_id: "artifact-source",
+      receipt_id: "receipt-source",
+    } as const;
+    await f.session.createTranscript(source);
+    expect(f.session.getSnapshot().record.pending).toMatchObject({ body: { source } });
+    expect(f.session.getSnapshot().problem).toBe("unknown");
+    const original = f.createTranscript.mock.calls[0];
+    expect(original?.[1]).toEqual({ display_name: "语音原稿", source });
+    f.session.dispose();
+    const restored = new EditorSession(f.client, new EditorJournal(f.storage));
+    await restored.start();
+    expect(f.createTranscript).toHaveBeenCalledTimes(1);
+    await restored.replay();
+    expect(f.createTranscript.mock.calls[1]).toEqual(original);
+    expect(restored.getSnapshot().record.pending).toBeNull();
+    restored.dispose();
+  });
+
+  it("does not discard a manual input when importing a speech source", async () => {
+    const f = setup();
+    await f.session.start();
+    await f.session.selectProject("project-demo");
+    f.session.form("transcriptName", "语音原稿");
+    f.session.form("newText", "未保存的手工正文");
+    await f.session.createTranscript({
+      kind: "speech_artifact",
+      artifact_id: "a",
+      receipt_id: "r",
+    });
+    expect(f.createTranscript).not.toHaveBeenCalled();
+    expect(f.session.getSnapshot().problem).toBe("unsaved");
+    expect(f.session.getSnapshot().record.forms.newText).toBe("未保存的手工正文");
+    f.session.dispose();
+  });
   it("discovers actual facts and selects authoritative text without mutations", async () => {
     const f = await selected();
     const s = f.session.getSnapshot();

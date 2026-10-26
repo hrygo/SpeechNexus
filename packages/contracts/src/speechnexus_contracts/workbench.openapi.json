@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SpeechNexus workbench API",
-    "version": "0.1.0.dev0",
+    "version": "0.1.0.dev2",
     "description": "Optional application layer for projects, transcripts, meetings, assistant\nturns, teleprompter state, audiobook rendering, saved copies, and exports.\n\nThis API is not OpenAI-compatible and never replaces the public speech API.\nIt calls the speech base through public Job/Artifact APIs and keeps its own\nrecords, staging, outbox, and export artifacts. Every workspace is shared in\nP0; no route establishes a user identity or personal private space.\n\nThe project/transcript HTTP boundary uses 400 malformed_request or\ninvalid_request for rejected syntax/parameters, 408 request_timeout for\nbody intake deadlines, 413 request_too_large for bounded request intake,\nand 415 unsupported_media_type for non-UTF-8 JSON writes. Version and\nidempotency conflicts are 409 revision_conflict / idempotency_conflict;\ninvalid_change is 422. Speech import failures retain source_invalid /\nsource_unsupported (422), source_too_large (413), source_expired (410),\nand source_unavailable (503). Absent/deleted resources, including original\ncreate-key replays after deletion, return 404 resource_not_found.\nDisabled workbench/storage use 503 workbench_unavailable / store_unavailable.\nUncertain commits use 503 outcome_unknown; preserve the original key and\nnever automatically create a new intent. Unexpected application or output\nvalidation failures use 500 internal_error.\nMeeting routes use the same bounded intake and storage errors. Their\nworkspace is the server-configured default; clients cannot select it.\nUnavailable meeting storage uses 503 meetings_unavailable. A source or\naudio-save mode without an installed adapter returns 422\nmeeting_source_unsupported. Minutes creation uses 503 llm_disabled,\n422 llm_profile_mismatch / llm_invalid_input, and 409\nllm_source_not_sealed / llm_source_changed / minutes_conflict.\nProvider/source failures use 503 llm_unavailable / llm_invalid_response /\nllm_source_unavailable. Optional Idempotency-Key pins the original\naccepted create/seal/202 snapshot; GET returns current state. Keep the\noriginal key after uncertain outcomes; a request without a key creates\na new intent and must never be automatically retried.\nLists use descending (created_at, id) live keyset pagination. Cursors are\nopaque and bound to deployment, resource kind and parent scope; malformed,\naltered or mismatched tokens return 400 invalid_cursor, never silently\nrestart from page one. Changing limit is allowed; newer insertions require\na new first-page read. has_more is true exactly when next_cursor is non-null.\nAll three deletion operations accept optional workspace_id, defaulting to\nthe configured deployment workspace; this is query scope, not identity.\nOnly project/transcript deletion graphs are currently implemented; other\nworkbench kinds return 422 deletion_resource_unsupported. Foreign owners\nreturn 422 deletion_owner_mismatch. Incomplete confirmations return 422\ndeletion_confirmation_mismatch; changed/expired plans or blocking dependencies\nreturn 409 deletion_plan_changed / deletion_plan_expired /\ndeletion_dependency_conflict. Acceptance returns queued intent, not cleanup\ncompletion; same-key replay preserves that original acceptance snapshot.\nV2 status and render-unit paths expose approved Minutes configuration and\nexplicit fixed model bindings. V1 schemas remain strict; v1 render creation\nis unavailable without a binding and returns 503 workbench_unavailable\nwithout writing a partial unit. Clients must explicitly select v2.\nErrors contain no request\ncontent or internal diagnostics and never imply rollback or remote stop.\n"
   },
   "security": [
@@ -2663,6 +2663,63 @@
         }
       }
     },
+    "/v2/workbench/voices/{voice_id}/revisions/{revision}": {
+      "get": {
+        "tags": ["voices"],
+        "operationId": "getVoiceRevisionV2",
+        "summary": "Get one immutable voice revision with its complete disable reason",
+        "description": "Reports one published revision exactly as the base holds it, including the model\nbinding the base pinned for it. An unknown, unpublished or discarded revision is\nnot found; the workbench never serves a draft as if it were published.\nUnlike the frozen v1 projection, disabled_reason preserves up to 2000 characters.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/VoiceIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Immutable published voice revision.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRevisionV2"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/v2/workbench/status": {
       "get": {
         "tags": ["status"],
@@ -2982,6 +3039,7 @@
         "tags": ["audiobooks"],
         "operationId": "generateRenderUnitV2",
         "summary": "Submit a speech Job for a render unit",
+        "description": "Creates one speech Job for the unit's fixed revision and records the\nattempt before returning 202. A changed unit revision or an attempt that\nis already running returns 409. An identical Idempotency-Key replay\nreturns the original accepted result; a changed intent under the same key\nreturns 409 `idempotency_conflict`.\n\nAn unreadable or uncertain Job submission returns 503 `outcome_unknown`.\nThat response does not prove that no Job was created. Only a caller\nretaining the original Idempotency-Key may replay this same POST with the\nsame path, body and key to recover the original accepted result; no\nautomatic retry, new key or query-by-key resource is provided. Keyless\nsubmissions have no promised recovery.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/RenderUnitIdPath"
@@ -3036,6 +3094,239 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/RenderDispatchUnknown"
+          }
+        }
+      }
+    },
+    "/v1/workbench/saved-assets/{asset_id}/content": {
+      "get": {
+        "tags": ["saved-assets"],
+        "operationId": "downloadSavedAsset",
+        "description": "Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes */size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.",
+        "summary": "Download a saved project asset",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SavedAssetIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/Range"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full content.",
+            "headers": {
+              "Accept-Ranges": {
+                "$ref": "#/components/headers/AcceptRanges"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial content.",
+            "headers": {
+              "Content-Range": {
+                "$ref": "#/components/headers/ContentRange"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/workbench/exports/{export_id}/content": {
+      "get": {
+        "tags": ["exports"],
+        "operationId": "downloadBookExport",
+        "description": "Reads only the workbench's committed immutable copy, never the speech source. Validates its complete stored byte count and SHA-256 before sending content. Supports one closed, open-ended or suffix byte range; malformed/empty ranges return 400, unsatisfiable ranges return 416 with Content-Range bytes */size. Successful replies include Content-Length, Accept-Ranges bytes and a strong ETag equal to the quoted stored SHA-256. 206 includes Content-Range. Unavailable storage, verification or local download capacity returns 503; content beyond the deployment's bounded download limit returns 413. The source's lifetime does not expire an independently committed saved copy. A non-completed export returns 409; an expired export returns 410.",
+        "summary": "Download a completed export artifact",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ExportIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/Range"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full export content.",
+            "headers": {
+              "Accept-Ranges": {
+                "$ref": "#/components/headers/AcceptRanges"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial export content.",
+            "headers": {
+              "Content-Range": {
+                "$ref": "#/components/headers/ContentRange"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "416": {
+            "$ref": "#/components/responses/RangeNotSatisfiable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/workbench/exports/{export_id}/events": {
+      "get": {
+        "tags": ["exports"],
+        "operationId": "streamExportEvents",
+        "summary": "Stream export events with SSE",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ExportIdPath"
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EventSequence"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent event stream.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-sse-event-schema": {
+                  "$ref": "#/components/schemas/ExportEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
           }
         }
       }
@@ -3200,6 +3491,15 @@
         "schema": {
           "$ref": "#/components/schemas/Identifier"
         }
+      },
+      "Range": {
+        "name": "Range",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes=[0-9]*-[0-9]*$"
+        }
       }
     },
     "headers": {
@@ -3214,6 +3514,18 @@
         "schema": {
           "type": "integer",
           "minimum": 0
+        }
+      },
+      "AcceptRanges": {
+        "schema": {
+          "type": "string",
+          "const": "bytes"
+        }
+      },
+      "ContentRange": {
+        "schema": {
+          "type": "string",
+          "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"
         }
       }
     },
@@ -6206,6 +6518,73 @@
           }
         }
       },
+      "VoiceRevisionV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voice_id",
+          "revision",
+          "display_name",
+          "status",
+          "languages",
+          "audio_formats",
+          "model_binding",
+          "published_at",
+          "retired_at",
+          "disabled_reason"
+        ],
+        "properties": {
+          "voice_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Revision"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "type": "string",
+            "enum": ["published", "retired", "disabled"]
+          },
+          "languages": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 35
+            }
+          },
+          "audio_formats": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "model_binding": {
+            "$ref": "#/components/schemas/ResourceReference"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retired_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "disabled_reason": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        }
+      },
       "WorkbenchStatusV2": {
         "type": "object",
         "additionalProperties": false,
@@ -6638,6 +7017,348 @@
             "format": "date-time"
           }
         }
+      },
+      "EventSequence": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_EventSequence"
+      },
+      "External_shared_identifiers_schema_json_EventSequence": {
+        "$ref": "#/components/schemas/External_shared_identifiers_schema_json_Revision",
+        "description": "Monotonic decimal SSE event sequence used as Last-Event-ID."
+      },
+      "ExportEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ExportQueuedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ExportProgressEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ExportSucceededEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ExportFailedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ExportCancelledEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ExportArtifactPublishedEvent"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "export.queued": "#/components/schemas/ExportQueuedEvent",
+            "export.progress": "#/components/schemas/ExportProgressEvent",
+            "export.succeeded": "#/components/schemas/ExportSucceededEvent",
+            "export.failed": "#/components/schemas/ExportFailedEvent",
+            "export.cancelled": "#/components/schemas/ExportCancelledEvent",
+            "export.artifact_published": "#/components/schemas/ExportArtifactPublishedEvent"
+          }
+        },
+        "examples": [
+          {
+            "id": "1",
+            "type": "export.queued",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:00Z",
+            "data": {
+              "status": "queued"
+            }
+          },
+          {
+            "id": "2",
+            "type": "export.progress",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:01Z",
+            "data": {
+              "status": "running",
+              "progress_completed": 2,
+              "progress_total": 5
+            }
+          },
+          {
+            "id": "3",
+            "type": "export.succeeded",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:02Z",
+            "data": {
+              "status": "succeeded",
+              "artifact": {
+                "id": "export_artifact_demo",
+                "object": "nexus.export_artifact",
+                "export_id": "export_demo",
+                "manifest_revision": "3",
+                "media_type": "application/zip",
+                "bytes": 2048,
+                "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "created_at": "2026-10-23T00:00:02Z"
+              }
+            }
+          },
+          {
+            "id": "4",
+            "type": "export.failed",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:03Z",
+            "data": {
+              "status": "failed",
+              "error": {
+                "code": "export_failure",
+                "message": "synthetic export failure",
+                "retryable": false
+              }
+            }
+          },
+          {
+            "id": "5",
+            "type": "export.cancelled",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:04Z",
+            "data": {
+              "status": "cancelled"
+            }
+          },
+          {
+            "id": "6",
+            "type": "export.artifact_published",
+            "export_id": "export_demo",
+            "occurred_at": "2026-10-23T00:00:05Z",
+            "data": {
+              "artifact": {
+                "id": "export_artifact_demo",
+                "object": "nexus.export_artifact",
+                "export_id": "export_demo",
+                "manifest_revision": "3",
+                "media_type": "application/zip",
+                "bytes": 2048,
+                "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "created_at": "2026-10-23T00:00:02Z"
+              }
+            }
+          }
+        ]
+      },
+      "ExportQueuedEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.queued"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportQueuedEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportEventEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "export_id", "occurred_at", "data"],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/EventSequence"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "export.queued",
+              "export.progress",
+              "export.succeeded",
+              "export.failed",
+              "export.cancelled",
+              "export.artifact_published"
+            ]
+          },
+          "export_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "description": "Event-type-specific payload; see the concrete ExportEvent variant."
+          }
+        }
+      },
+      "ExportQueuedEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "const": "queued"
+          }
+        }
+      },
+      "ExportProgressEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.progress"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportProgressEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportProgressEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "progress_completed", "progress_total"],
+        "properties": {
+          "status": {
+            "const": "running"
+          },
+          "progress_completed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "progress_total": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ExportSucceededEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.succeeded"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportSucceededEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportSucceededEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "artifact"],
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/ExportArtifact"
+          }
+        }
+      },
+      "ExportFailedEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.failed"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportFailedEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportFailedEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "error"],
+        "properties": {
+          "status": {
+            "const": "failed"
+          },
+          "error": {
+            "$ref": "#/components/schemas/WorkbenchJobError"
+          }
+        }
+      },
+      "ExportCancelledEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.cancelled"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportCancelledEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportCancelledEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          }
+        }
+      },
+      "ExportArtifactPublishedEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExportEventEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "export.artifact_published"
+              },
+              "data": {
+                "$ref": "#/components/schemas/ExportArtifactPublishedEventData"
+              }
+            },
+            "required": ["type", "data"]
+          }
+        ]
+      },
+      "ExportArtifactPublishedEventData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact"],
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ExportArtifact"
+          }
+        }
       }
     },
     "responses": {
@@ -6761,6 +7482,35 @@
         "headers": {
           "Retry-After": {
             "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RenderDispatchUnknown": {
+        "description": "The render dispatch outcome is unknown: a speech Job may already exist.\nPreserve the original Idempotency-Key and replay the same POST to recover\nthe original result. This is not proof that no Job was created.\n",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RangeNotSatisfiable": {
+        "description": "The single requested byte range cannot select content.",
+        "headers": {
+          "Content-Range": {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^bytes \\*/[0-9]+$"
+            }
           }
         },
         "content": {

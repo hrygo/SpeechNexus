@@ -56,6 +56,15 @@ Nexus fields are included throughout this mode. Boolean reference targets retain
 the sibling intersection: true leaves adjacent constraints effective, false stays
 unsatisfiable, and annotation-only edits do not change acceptance.
 
+Literal comparisons distinguish JSON booleans from numbers, including nested
+`const`/`enum` values, defaults and composed constraints. Equal JSON numbers such
+as `1` and `1.0` remain equivalent at value-comparison sites; the existing exact
+subtree proof for response intersections stays conservative. Literal objects are
+data: keys such as `description`, `$ref` or `properties.nexus` inside them are not
+interpreted as schema annotations, references or extension exclusions. The
+OpenAI policy still excludes schema properties named `nexus`, including when
+checking overlapping constraints beside a reference.
+
 The policy selection, not a mutable global path list, separates this mode from
 the OpenAI standard gate. Original OpenAI regression cases continue to use its
 existing defaults. The new regressions include all four path namespaces,
@@ -108,3 +117,11 @@ other documents. Existing source validation, examples and consumer tests remain
 necessary. The general schema/serialization/status/media/security/WS and real
 qualification limits above apply to this mode too. CI runs it as an explicit
 step in the same Python job; no status name, partition or runtime permission changes.
+
+## Separate realtime runtime selection
+
+The [declared realtime constraint check](realtime-contract-change-checks.md)
+compares the public event root, all declared members, PCM and the generated
+transcription projection with a conservative constraint-identity policy. It
+leaves the five checks above unchanged; its result does not extend HTTP/OpenAI
+compatibility promises or establish event timing/real consumer qualification.

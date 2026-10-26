@@ -54,6 +54,43 @@ handler 和关闭的请求日志；不兼容时初始化失败。不要依赖未
 `wait_closed` 仅观测这些本地清理动作。core abort 消息发出、collector 关闭、SSE 结束、请求
 数量为零或实例暂停都不能单独证明 GPU 停止与资源释放。
 
+## 显式 worker 扩展与观察契约
+
+部署模板可以另行将 `worker_extension_cls` 配置为
+`speechnexus_vllm_asr.worker_fence.WorkerFenceExtension`。这是 vLLM 的正式 mixin 入口；
+安装 wheel 或启用 endpoint plugin 都不会自动配置该扩展。它仅增加
+`speechnexus_observe_worker_fence`，不覆盖 worker 原方法，不新增 HTTP 路由。
+沿用镜像已经安装的 `jsonschema>=4.23,<5`；派生镜像仍离线 `--no-deps --no-index` 安装，
+依赖不满足时构建/验证失败，不在线升级固定运行时。
+
+源机器契约是 wheel 内 `worker-fence.schema.json`，请求和响应直接使用它校验。
+请求采用 `worker-fence.v1`、32 位小写十六进制 nonce 和 1–4096 个不重复的实际 internal ID；
+单 ID 上限 1024 字符，整个紧凑 JSON 上限 524288 UTF-8 字节。调用方每次生成新 nonce。
+worker 返回相同 nonce、排序 ID 集合摘要及实际 rank，不回传 ID、模型内容或路径。
+`validate_response` 校验协议、结构、nonce 和摘要；未来的组合消费者还必须核对全部预期 rank、
+实例/generation 与原核心执行，不能只接受某一个 worker 的响应。
+
+该扩展首次使用时验证独立 `worker-pin.json` 的固定版本与 21 个源码摘要。原生 GPUModelRunner
+之外的布局返回 unsupported；未知状态、源码差异和同步异常不能产生成功观察。
+它只统计原 IDs 在 worker request state、persistent batch、prompt logprob state 中的项数。
+仍有这些项、未结束模型步骤或 PP send handle 时返回 pending，不修改它们。
+否则对实际 worker device 同步 GPU，再重读状态；只有两次检查都允许完成才返回 observed。
+此同步可能等待同一 worker 上的其他在途 GPU 工作，不取消其他请求，也不暂停整个实例。
+有界等待由未来的引擎内调用方管理；超时不能取消 native RPC 或推断同步完成。
+
+**任何状态的 `release_evidence` 都是 false，包括 observed。** 它没有核实原核心接收、提交
+顺序、尚未消费的批次/输出、调度器 KV/encoder 资源、connector 或部署代次；未知 ID 也可能
+仅表现为 worker 没有可见状态。此响应不能转换成网关停止证据、资源释放证明或直接退预算。
+不要求共享 encoder cache、模型权重和 CUDA allocator 回到空闲前的显存数值。
+async、TP/PP/DP 和 connector 的完整组合资格仍由后续生产者联合取证，不能据本观察自动放行。
+上游、布局或观察语义变化要重验源码 pin；改变字段或含义使用新协议版本，旧响应不兼容时拒绝。
+
+确定性正负例、fake worker 与响应绑定回归：
+
+```bash
+uv run pytest tests/unit/gateway/test_worker_fence.py tests/unit/gateway/test_native_asr_scope.py -q
+```
+
 ## 验证与后续
 
 确定性测试覆盖可能已接受但回执未返的 add、回执异常、分段/语言检测、部分 n>1 fanout、

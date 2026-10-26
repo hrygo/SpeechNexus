@@ -22,8 +22,14 @@ consumes VAD candidates through a fixed vLLM endpoint and verifies terminal iden
 finish reason and token usage. Both ASR models were exercised on authorized local inputs.
 The authenticated submit, abort and instance-drain HTTP routes are served: without an engine
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
-instance generation without claiming a stop. Durable ASR/TTS dispatch, public VAD integration
-and physical cluster qualification remain pending.
+instance generation without claiming a stop.
+The [default file-ASR composition](../docs/architecture/file-asr-runtime.md) can now connect
+the existing durable worker through an explicit private deployment file and separate object
+credentials. It validates configuration before acquiring control resources, loads the pinned
+CPU VAD during the owned lifespan, and reuses the original intent/result ledger. Missing
+configuration keeps engine submission unavailable. PG/MinIO/native TCP integration uses scripted
+VAD and recognition output; real default-model operation, trusted stop/release, public publication,
+TTS, public VAD integration and physical cluster qualification remain pending.
 The [checkpoint-backed node source](../docs/architecture/trusted-node-stop.md)
 can now supply the existing recovery sweep with whole-instance stop facts over
 fixed, verified TLS. Missing or conflicting proof keeps execution unknown; gateway

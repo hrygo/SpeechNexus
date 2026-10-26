@@ -7,7 +7,6 @@ generation guard.
 
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -18,6 +17,7 @@ from speechnexus_backend.workbench.domain.render_units import (
     RenderSource,
     RenderUnit,
 )
+from speechnexus_backend.workbench.domain.versions import InvalidVersionChangeError
 
 type RenderJobState = Literal["pending", "succeeded", "failed", "expired", "cancelled"]
 
@@ -78,6 +78,9 @@ class RenderReconciler:
         self._units = units
         self._jobs = jobs
         self._copies = copies
+        # A copy rejected because the source is gone can never succeed; keep the
+        # decision process-local and never drop the unit's durable pending row.
+        self._permanent_copy_errors: set[tuple[str, str, str]] = set()
 
     async def settle(self, *, workspace_id: str, limit: int = 20) -> tuple[SettledAttempt, ...]:
         settled: list[SettledAttempt] = []
@@ -107,12 +110,18 @@ class RenderReconciler:
                         source=source,
                     )
                     if self._copies is not None:
-                        # The unit is already ready; a copy failure is reported by the
-                        # page's explicit save instead of un-settling the unit.
-                        with suppress(Exception):
-                            await self._copies.save_copy(
-                                workspace_id=workspace_id, unit=unit, source=source
-                            )
+                        # The unit is already ready; a transient copy failure is retried
+                        # by restore_copies, and the page's explicit save stays available.
+                        key = (unit.id, source.artifact_id, source.receipt_id)
+                        if key not in self._permanent_copy_errors:
+                            try:
+                                await self._copies.save_copy(
+                                    workspace_id=workspace_id, unit=unit, source=source
+                                )
+                            except InvalidVersionChangeError:
+                                self._permanent_copy_errors.add(key)
+                            except Exception:
+                                pass
                 elif outcome.state in {"failed", "expired", "cancelled"}:
                     await self._units.fail_unit(
                         unit_id=unit.id,
@@ -140,8 +149,14 @@ class RenderReconciler:
             source = unit.source
             if source is None:
                 continue
+            key = (unit.id, source.artifact_id, source.receipt_id)
+            if key in self._permanent_copy_errors:
+                continue
             try:
                 await self._copies.save_copy(workspace_id=workspace_id, unit=unit, source=source)
+            except InvalidVersionChangeError:
+                self._permanent_copy_errors.add(key)
+                continue
             except Exception:
                 continue
             restored.append(unit.id)

@@ -82,10 +82,30 @@ def check_count(count: int) -> None:
         raise ValueError("Shard count must be within 1..16")
 
 
+def requires_browser(nodeid: str) -> bool:
+    module = nodeid.split("::", 1)[0]
+    return module.endswith("_browser.py") or module in BROWSER_PROBE_MODULES
+
+
 def partition(nodeids: Sequence[str], index: int, count: int) -> list[str]:
     check_count(count)
     if type(index) is not int or not 0 <= index < count:
         raise ValueError("Shard index is outside the partition")
+    web = {
+        nodeid for nodeid in nodeids if requires_browser(nodeid) or nodeid in NODE_CONTRACT_TESTS
+    }
+    if count > 1 and web and len(web) < len(nodeids):
+        # Keep six isolated DB lanes, but prepare Web/Chromium in only two.
+        # A single resource class still uses every lane. Requirements, execution
+        # and evidence verification all derive this split from the full inventory.
+        ordinary_count = count - max(1, count // 3)
+        if index < ordinary_count:
+            nodeids = [nodeid for nodeid in nodeids if nodeid not in web]
+            count = ordinary_count
+        else:
+            nodeids = sorted(web)
+            index -= ordinary_count
+            count -= ordinary_count
     return sorted(
         nodeid
         for nodeid in nodeids
@@ -97,11 +117,7 @@ def tool_requirements(nodeids: Sequence[str], index: int, count: int) -> dict[st
     selected = partition(nodeids, index, count)
     return {
         "node_contracts": bool(set(selected).intersection(NODE_CONTRACT_TESTS)),
-        "browser": any(
-            nodeid.split("::", 1)[0].endswith("_browser.py")
-            or nodeid.split("::", 1)[0] in BROWSER_PROBE_MODULES
-            for nodeid in selected
-        ),
+        "browser": any(requires_browser(nodeid) for nodeid in selected),
     }
 
 
@@ -326,7 +342,7 @@ def run_shard(args: argparse.Namespace) -> int:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
 
-    options = ["-m", "integration", "tests/integration", "-q"]
+    options = ["-m", "integration", "tests/integration", "-q", "--durations=20"]
     if args.collect_only:
         options.append("--collect-only")
     return int(pytest.main(options, plugins=[ShardPlugin()]))

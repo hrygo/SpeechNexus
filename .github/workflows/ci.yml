@@ -131,8 +131,8 @@ jobs:
           SPEECHNEXUS_TEST_MINIO_ACCESS_KEY: speechnexus_test
           SPEECHNEXUS_TEST_MINIO_SECRET_KEY: synthetic_asset_test_secret
         run: |
-          uv run python scripts/dev-env/workbench-pg-probe.py \
-            --pg-bin /usr/lib/postgresql/16/bin --full-coverage \
+          uv run python scripts/dev-env/python-coverage.py run \
+            --pg-bin /usr/lib/postgresql/16/bin --workers 2 \
             --output "$RUNNER_TEMP/workbench-pg-coverage.json"
 
       - name: Preserve full coverage execution evidence
@@ -140,7 +140,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: workbench-pg-full-coverage
-          path: ${{ runner.temp }}/workbench-pg-coverage.json
+          path: |
+            ${{ runner.temp }}/workbench-pg-coverage.json
+            ${{ runner.temp }}/workbench-pg-coverage-parts/
           if-no-files-found: error
           retention-days: 7
 
@@ -351,6 +353,8 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
+        # The canonical partitioner groups Web consumers into two lanes and
+        # ordinary DB cases into four; tools still follow the actual collection.
         shard: [0, 1, 2, 3, 4, 5]
     services:
       postgres:

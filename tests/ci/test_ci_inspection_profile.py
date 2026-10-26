@@ -288,7 +288,8 @@ class PolicyTests(unittest.TestCase):
             "if: always()\n        run: python3 scripts/dev-env/ci-inspection-profile.py cleanup",
             execution,
         )
-        self.assertIn("--full-coverage", execution)
+        self.assertIn("scripts/dev-env/python-coverage.py run", execution)
+        self.assertIn("--workers 2", execution)
         self.assertIn("media-smoke.py", execution)
         self.assertIn("uv build --all-packages", execution)
         self.assertIn("Verify inspection startup before complete regression", execution)

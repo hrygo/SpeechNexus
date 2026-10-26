@@ -52,6 +52,7 @@ def test_full_coverage_combines_original_python_gate_and_all_real_pg_tests(tmp_p
     for path in DRIVER.WORKBENCH_PG_TESTS + DRIVER.WORKBENCH_RUNTIME_TESTS:
         assert command.count(path) == 1
     assert "--cov" in command and "--cov-report=term-missing" in command
+    assert "--durations=20" in command
     assert f"--cov-report=json:{tmp_path / 'cov.json'}" in command
     assert not any(
         argument.startswith(("--cov=", "--cov-fail-under", "--cov-omit")) for argument in command
@@ -76,6 +77,97 @@ def test_plain_probe_and_optional_runtime_still_run_without_coverage() -> None:
 def test_command_api_rejects_conflicting_modes() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         DRIVER.build_pytest_command(coverage=True, full_coverage=True)
+
+
+def test_python_coverage_fragment_keeps_canonical_roots_and_combines_before_gate(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "worker.json"
+    command = DRIVER.build_pytest_command(
+        full_coverage=True, coverage_index=1, coverage_count=2, coverage_report=report
+    )
+    canonical = DRIVER.build_pytest_command(full_coverage=True)
+    assert command[:3] == [
+        DRIVER.sys.executable,
+        str(ROOT / "scripts/dev-env/python-coverage.py"),
+        "worker",
+    ]
+    assert command[3:10] == ["--index", "1", "--count", "2", "--report", str(report), "--"]
+    assert command[10:] == [*canonical[3:], "--cov-fail-under=0"]
+    args = DRIVER.parse_arguments(
+        [
+            "--pg-bin",
+            "/synthetic/pg/bin",
+            "--full-coverage",
+            "--python-shard",
+            "1",
+            "--python-shard-count",
+            "2",
+            "--python-shard-report",
+            str(report),
+            "--output",
+            str(tmp_path / "postgres.json"),
+        ]
+    )
+    assert args.python_shard == 1 and args.python_shard_count == 2
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--python-shard", "0"],
+        ["--python-shard-count", "2"],
+        ["--python-shard-report", "worker.json"],
+        [
+            "--full-coverage",
+            "--python-shard",
+            "0",
+            "--python-shard-count",
+            "3",
+            "--python-shard-report",
+            "worker.json",
+            "--output",
+            "postgres.json",
+        ],
+        [
+            "--full-coverage",
+            "--python-shard",
+            "0",
+            "--python-shard-count",
+            "2",
+            "--python-shard-report",
+            "worker.json",
+        ],
+        [
+            "--full-coverage",
+            "--python-shard",
+            "0",
+            "--python-shard-count",
+            "2",
+            "--python-shard-report",
+            "worker.json",
+            "--output",
+            "worker.json",
+        ],
+        [
+            "--full-coverage",
+            "--python-shard",
+            "0",
+            "--python-shard-count",
+            "2",
+            "--python-shard-report",
+            "worker.json",
+            "--output",
+            "postgres.json",
+            "--browser",
+        ],
+    ],
+)
+def test_python_coverage_fragment_rejects_incomplete_or_conflicting_selection(
+    flags: list[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        DRIVER.parse_arguments(["--pg-bin", "/synthetic/pg/bin", *flags])
 
 
 def test_full_coverage_requires_complete_explicit_object_storage() -> None:

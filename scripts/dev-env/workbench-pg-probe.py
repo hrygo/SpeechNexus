@@ -82,8 +82,11 @@ def build_pytest_command(
     full_coverage: bool = False,
     workbench_runtime: bool = False,
     coverage_output: Path | None = None,
+    coverage_index: int | None = None,
+    coverage_count: int | None = None,
+    coverage_report: Path | None = None,
 ) -> list[str]:
-    """One pytest process; the full gate uses the repository's global source/80% policy."""
+    """Keep the canonical full roots; optional fragments qualify only after combination."""
     if coverage and full_coverage:
         raise ValueError("coverage modes are mutually exclusive")
     paths = list(WORKBENCH_PG_TESTS)
@@ -108,9 +111,37 @@ def build_pytest_command(
     elif full_coverage:
         # No -m filter: the explicitly named PostgreSQL modules carry integration markers.
         # Bare --cov keeps every configured source and the default global fail_under=80.
-        command.extend(["--cov", "--cov-report=term-missing"])
+        command.extend(["--cov", "--cov-report=term-missing", "--durations=20"])
     if (coverage or full_coverage) and coverage_output is not None:
         command.append(f"--cov-report=json:{coverage_output}")
+    if coverage_index is not None:
+        if (
+            not full_coverage
+            or type(coverage_count) is not int
+            or coverage_count not in (1, 2)
+            or type(coverage_index) is not int
+            or not 0 <= coverage_index < coverage_count
+            or coverage_report is None
+        ):
+            raise ValueError(
+                "coverage partitions require full coverage and an exact identity/report"
+            )
+        return [
+            sys.executable,
+            str(ROOT / "scripts/dev-env/python-coverage.py"),
+            "worker",
+            "--index",
+            str(coverage_index),
+            "--count",
+            str(coverage_count),
+            "--report",
+            str(coverage_report),
+            "--",
+            *command[3:],
+            "--cov-fail-under=0",
+        ]
+    if coverage_count is not None or coverage_report is not None:
+        raise ValueError("coverage partition metadata requires an index")
     return command
 
 
@@ -187,6 +218,9 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--shard-count", type=int, metavar="COUNT")
     parser.add_argument("--shard-report", type=Path, metavar="PATH")
+    parser.add_argument("--python-shard", type=int)
+    parser.add_argument("--python-shard-count", type=int)
+    parser.add_argument("--python-shard-report", type=Path)
     parser.add_argument(
         "--workbench-runtime",
         action="store_true",
@@ -209,6 +243,22 @@ def argument_parser() -> argparse.ArgumentParser:
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argument_parser()
     args = parser.parse_args(argv)
+    if args.python_shard is not None:
+        if args.workbench_runtime or args.browser or args.admin_workspaces:
+            parser.error("Python coverage partitions cannot add optional probe selections")
+        try:
+            build_pytest_command(
+                full_coverage=args.full_coverage,
+                coverage_index=args.python_shard,
+                coverage_count=args.python_shard_count,
+                coverage_report=args.python_shard_report,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        if args.output is None or args.output.resolve() == args.python_shard_report.resolve():
+            parser.error("Python coverage partitions require an independent lifecycle --output")
+    elif args.python_shard_count is not None or args.python_shard_report is not None:
+        parser.error("Python coverage partition metadata requires --python-shard")
     shard = args.integration_shard is not None
     if shard:
         if args.shard_count is None or args.shard_report is None:
@@ -322,6 +372,9 @@ def main() -> int:
                 full_coverage=args.full_coverage,
                 workbench_runtime=args.workbench_runtime,
                 coverage_output=cluster / "coverage.json",
+                coverage_index=args.python_shard,
+                coverage_count=args.python_shard_count,
+                coverage_report=args.python_shard_report,
             )
         if args.browser:
             command.append("tests/integration/test_workbench_meeting_browser.py")
@@ -379,7 +432,11 @@ def main() -> int:
         if args.coverage or args.full_coverage:
             env["COVERAGE_FILE"] = str(cluster / ".coverage")
             result["coverage_mode"] = (
-                "full-python-and-workbench-pg" if args.full_coverage else "scoped-c"
+                "full-python-coverage-fragment"
+                if args.python_shard is not None
+                else "full-python-and-workbench-pg"
+                if args.full_coverage
+                else "scoped-c"
             )
             result["coverage_log"] = str((cluster / "coverage.json").relative_to(ROOT))
         tests = subprocess.run(

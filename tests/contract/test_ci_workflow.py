@@ -204,8 +204,8 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     assert expected <= contract_commands
     assert not expected.intersection(execution_commands)
     coverage = next(step for step in execution["steps"] if step.get("id") == "coverage")
-    assert "uv run python scripts/dev-env/workbench-pg-probe.py" in coverage["run"]
-    assert "--pg-bin /usr/lib/postgresql/16/bin --full-coverage" in coverage["run"]
+    assert "uv run python scripts/dev-env/python-coverage.py run" in coverage["run"]
+    assert "--pg-bin /usr/lib/postgresql/16/bin --workers 2" in coverage["run"]
     assert '--output "$RUNNER_TEMP/workbench-pg-coverage.json"' in coverage["run"]
     assert coverage["run"] not in contract_commands
     assert "--cov-fail-under" not in coverage["run"]
@@ -227,9 +227,12 @@ def test_full_coverage_and_every_contract_check_run_independently_on_the_same_so
     )
     assert "steps.coverage.outcome == 'success'" in artifact["if"]
     assert "steps.coverage.outcome == 'failure'" in artifact["if"]
-    assert artifact["with"]["path"] == "${{ runner.temp }}/workbench-pg-coverage.json"
+    assert artifact["with"]["path"].splitlines() == [
+        "${{ runner.temp }}/workbench-pg-coverage.json",
+        "${{ runner.temp }}/workbench-pg-coverage-parts/",
+    ]
     assert artifact["with"]["if-no-files-found"] == "error"
-    # The full single-suite coverage requirement remains in the original config.
+    # Both workers use the full roots; the combined gate retains the original policy.
     import tomllib
 
     config = tomllib.loads((_ROOT / "pyproject.toml").read_text())

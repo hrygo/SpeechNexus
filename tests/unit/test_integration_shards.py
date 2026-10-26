@@ -1,6 +1,7 @@
 """A missing test/result/shard cannot masquerade as a successful integration gate."""
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,21 +29,27 @@ NODEIDS = sorted(
 )
 
 
-def reports(directory: Path) -> list[Path]:
+def reports(directory: Path, nodeids: list[str] = NODEIDS, count: int = 2) -> list[Path]:
     directory.mkdir(exist_ok=True)
     result = []
-    for index in range(2):
-        selected = GATE.partition(NODEIDS, index, 2)
+    for index in range(count):
+        selected = GATE.partition(nodeids, index, count)
         data = {
             "version": 1,
             "source_head": HEAD,
             "shard_index": index,
-            "shard_count": 2,
-            "collection_digest": GATE.collection_digest(NODEIDS),
-            "collection": NODEIDS,
+            "shard_count": count,
+            "collection_digest": GATE.collection_digest(nodeids),
+            "collection": nodeids,
             "selected": selected,
             "outcomes": {
-                nodeid: "skipped" if nodeid.endswith("[mysql]") else "passed" for nodeid in selected
+                nodeid: (
+                    "skipped"
+                    if nodeid.startswith("tests/integration/test_gateway_submit_ledger.py::")
+                    and nodeid.endswith("[mysql]")
+                    else "passed"
+                )
+                for nodeid in selected
             },
             "exit_code": 0,
             "executed": True,
@@ -58,6 +65,64 @@ def test_stable_assignment_does_not_depend_on_python_hash_randomization() -> Non
     ids = [f"tests/integration/test_demo.py::test_{i}" for i in range(4)]
     assert GATE.partition(ids, 0, 2) == [ids[0], ids[2], ids[3]]
     assert GATE.partition(list(reversed(ids)), 1, 2) == [ids[1]]
+
+
+def resource_nodeids() -> tuple[list[str], list[str]]:
+    ordinary = [f"tests/integration/test_demo.py::test_{i}" for i in range(240)]
+    web = [f"tests/integration/test_example_browser.py::test_{i}" for i in range(40)]
+    web.extend(f"{module}::test_synthetic_probe" for module in GATE.BROWSER_PROBE_MODULES)
+    web.extend(GATE.NODE_CONTRACT_TESTS)
+    return sorted(ordinary), sorted(web)
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 6, 16])
+def test_resource_partitions_keep_tools_together_and_execute_the_complete_union(count: int) -> None:
+    ordinary, web = resource_nodeids()
+    full = sorted(ordinary + web)
+    observed: list[str] = []
+    web_count = max(1, count // 3)
+    for index in range(count):
+        selected = GATE.partition(full, index, count)
+        assert selected == GATE.partition(list(reversed(full)), index, count)
+        assert selected  # This fixture has enough cases to exercise every lane.
+        if count > 1:
+            assert set(selected) <= set(ordinary if index < count - web_count else web)
+        observed.extend(selected)
+    assert sorted(observed) == full
+    assert len(observed) == len(set(observed))
+    if count == 6:
+        needs = [GATE.tool_requirements(full, index, count) for index in range(count)]
+        assert [index for index, tools in enumerate(needs) if tools["browser"]] == [4, 5]
+        assert [index for index, tools in enumerate(needs) if tools["node_contracts"]] == [4, 5]
+
+
+@pytest.mark.parametrize("web_only", [False, True])
+def test_resource_partition_uses_every_lane_for_a_single_tool_class(web_only: bool) -> None:
+    ordinary, web = resource_nodeids()
+    full = web if web_only else ordinary
+    for index in range(6):
+        assert GATE.partition(full, index, 6) == sorted(
+            nodeid
+            for nodeid in full
+            if int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % 6 == index
+        )
+
+
+def test_resource_partition_evidence_rejects_the_previous_mixed_assignment(tmp_path: Path) -> None:
+    ordinary, web = resource_nodeids()
+    full = sorted(ordinary + web)
+    paths = reports(tmp_path, full, 6)
+    assert GATE.verify_reports(paths, source_head=HEAD, count=6).passed == len(full)
+    data = json.loads(paths[0].read_text())
+    data["selected"] = sorted(
+        nodeid
+        for nodeid in full
+        if int.from_bytes(hashlib.sha256(nodeid.encode()).digest(), "big") % 6 == 0
+    )
+    data["outcomes"] = dict.fromkeys(data["selected"], "passed")
+    paths[0].write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="different partition"):
+        GATE.verify_reports(paths, source_head=HEAD, count=6)
 
 
 def test_complete_union_reports_skips_separately_from_passes(tmp_path: Path) -> None:
@@ -280,6 +345,43 @@ def test_real_runner_does_not_hide_failure_or_mistake_collection_for_execution(
     assert failed_report["exit_code"] == 1
 
 
+def test_resource_partition_runner_records_the_complete_synthetic_execution(tmp_path: Path) -> None:
+    root, target, env = temp_project(tmp_path)
+    (root / "tests/integration/test_example_browser.py").write_text(
+        "import pytest\npytestmark = pytest.mark.integration\n"
+        '@pytest.mark.parametrize("index", range(24))\n'
+        "def test_browser(index): pass\n"
+    )
+    paths = []
+    for index in range(6):
+        report = tmp_path / f"integration-shard-{index}.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(target),
+                "run",
+                "--index",
+                str(index),
+                "--count",
+                "6",
+                "--report",
+                str(report),
+            ],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        data = json.loads(report.read_text())
+        assert all(GATE.requires_browser(nodeid) == (index >= 4) for nodeid in data["selected"])
+        paths.append(report)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    evidence = GATE.verify_reports(paths, source_head=head, count=6)
+    assert evidence.collected == 50 and evidence.passed == 49 and len(evidence.skipped) == 1
+
+
 @pytest.mark.parametrize("setting", ["PYTEST_ADDOPTS", "missing-database"])
 def test_environment_cannot_silently_select_a_partial_or_unconfigured_suite(
     tmp_path: Path, setting: str
@@ -392,21 +494,34 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
         ),
     )
     assert expected == GATE.NODE_CONTRACT_TESTS
+    # One fresh process collects the real parameterized inventory. Starting a
+    # complete collection once per lane previously repeated the same work six times.
+    inventory = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, runpy, sys; gate = runpy.run_path(sys.argv[1]); "
+            "print(json.dumps(gate['collect_integration_nodeids']()))",
+            str(SCRIPT),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    nodeids = json.loads(inventory.stdout)
+    assert set(expected) <= set(nodeids)
     selected: list[int] = []
+    observed: list[str] = []
     for index in range(6):
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT), "requirements", "--index", str(index), "--count", "6"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        values = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        values = GATE.tool_requirements(nodeids, index, 6)
         assert set(values) == {"node_contracts", "browser"}
-        assert set(values.values()) <= {"true", "false"}
-        if values["node_contracts"] == "true":
+        assert all(type(value) is bool for value in values.values())
+        observed.extend(GATE.partition(nodeids, index, 6))
+        if values["node_contracts"]:
             selected.append(index)
-    assert selected == sorted({index for index in range(6) if GATE.partition(expected, index, 6)})
-    assert 3 in selected
+    assert sorted(observed) == nodeids
+    assert selected == [4, 5]
     steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
         "integration_shards"
     ]["steps"]

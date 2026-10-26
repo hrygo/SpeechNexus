@@ -3039,6 +3039,7 @@
         "tags": ["audiobooks"],
         "operationId": "generateRenderUnitV2",
         "summary": "Submit a speech Job for a render unit",
+        "description": "Creates one speech Job for the unit's fixed revision and records the\nattempt before returning 202. A changed unit revision or an attempt that\nis already running returns 409. An identical Idempotency-Key replay\nreturns the original accepted result; a changed intent under the same key\nreturns 409 `idempotency_conflict`.\n\nAn unreadable or uncertain Job submission returns 503 `outcome_unknown`.\nThat response does not prove that no Job was created. Only a caller\nretaining the original Idempotency-Key may replay this same POST with the\nsame path, body and key to recover the original accepted result; no\nautomatic retry, new key or query-by-key resource is provided. Keyless\nsubmissions have no promised recovery.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/RenderUnitIdPath"
@@ -3093,6 +3094,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/RenderDispatchUnknown"
           }
         }
       }
@@ -7480,6 +7484,16 @@
             "$ref": "#/components/headers/RetryAfter"
           }
         },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RenderDispatchUnknown": {
+        "description": "The render dispatch outcome is unknown: a speech Job may already exist.\nPreserve the original Idempotency-Key and replay the same POST to recover\nthe original result. This is not proof that no Job was created.\n",
         "content": {
           "application/json": {
             "schema": {

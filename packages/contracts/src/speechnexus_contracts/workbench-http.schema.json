@@ -3034,6 +3034,11 @@
             "retry-after": "integer"
           },
           "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_generateRenderUnitV2_503",
+          "headers": {},
+          "json": true
         }
       }
     },
@@ -3705,6 +3710,7 @@
     "HttpResponse_generateRenderUnitV2_409",
     "HttpResponse_generateRenderUnitV2_422",
     "HttpResponse_generateRenderUnitV2_429",
+    "HttpResponse_generateRenderUnitV2_503",
     "HttpRequest_downloadSavedAsset",
     "HttpResponse_downloadSavedAsset_200",
     "HttpResponse_downloadSavedAsset_206",
@@ -16441,6 +16447,22 @@
               "minimum": 0
             }
           },
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_generateRenderUnitV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
           "required": [],
           "additionalProperties": true
         },

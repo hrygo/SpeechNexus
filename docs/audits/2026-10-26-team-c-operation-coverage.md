@@ -29,7 +29,7 @@ make operation-coverage-check
 | --- | --- | --- | --- |
 | `createRenderUnit` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |
 | `generateRenderUnit` | consumer_pending | 有声书生成触发与单元轮询的正式页面消费者（C07/T09） | 页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过 |
-| `generateRenderUnitV2` | consumer_pending | 有声书生成触发与单元轮询的正式页面消费者（C07/T09） | 页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过 |
+| `generateRenderUnitV2` | consumer_pending | RenderUnitPanel/BooksHost 的生成触发、v2 轮询与未知结果恢复（C07/T09） | 后端可提交并记录固定版本生成，但页面仍不能发起或读取生成；真实 speech 投递与生成终态回写未验证；C07/T09 未通过 |
 | `getChapter` | consumer_pending | 单章读取/单修订读取的使用决定或退役（C07/C02） | 无生产消费者；当前页面行为不受影响，但声明操作缺处置，AC-03 未通过 |
 | `getRenderUnit` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |
 | `getRenderUnitV2` | consumer_pending | 有声书生成触发与单元轮询的正式页面消费者（C07/T09） | 页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过 |

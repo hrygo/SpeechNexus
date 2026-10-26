@@ -72,6 +72,9 @@ from speechnexus_backend.workbench.infrastructure.postgres_versions import Postg
 from speechnexus_backend.workbench.infrastructure.public_artifact_source import (
     PublicArtifactSource,
 )
+from speechnexus_backend.workbench.infrastructure.public_speech_render_jobs import (
+    PublicSpeechRenderJobs,
+)
 from speechnexus_backend.workbench.infrastructure.public_voice_catalogue import (
     PublicVoiceCatalogue,
 )
@@ -602,7 +605,10 @@ def create_runtime_app(
         assistant=WorkbenchAssistant(PostgresAssistantTurns(versions), llm),
         exports=WorkbenchExports(exports),
         capabilities=capabilities,
-        render_units=WorkbenchRenderUnits(PostgresRenderUnits(versions)),
+        render_units=WorkbenchRenderUnits(
+            PostgresRenderUnits(versions),
+            None if client is None else PublicSpeechRenderJobs(client),
+        ),
         default_workspace_id=settings.workspace_id,
         deployment_id=settings.deployment_id,
         cursor_key=settings.cursor_key.get_secret_value().encode("utf-8"),

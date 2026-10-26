@@ -2134,6 +2134,19 @@ paths:
       tags: [audiobooks]
       operationId: generateRenderUnitV2
       summary: Submit a speech Job for a render unit
+      description: |
+        Creates one speech Job for the unit's fixed revision and records the
+        attempt before returning 202. A changed unit revision or an attempt that
+        is already running returns 409. An identical Idempotency-Key replay
+        returns the original accepted result; a changed intent under the same key
+        returns 409 `idempotency_conflict`.
+
+        An unreadable or uncertain Job submission returns 503 `outcome_unknown`.
+        That response does not prove that no Job was created. Only a caller
+        retaining the original Idempotency-Key may replay this same POST with the
+        same path, body and key to recover the original accepted result; no
+        automatic retry, new key or query-by-key resource is provided. Keyless
+        submissions have no promised recovery.
       parameters:
         - $ref: "#/components/parameters/RenderUnitIdPath"
         - $ref: "#/components/parameters/XRequestId"
@@ -2166,6 +2179,8 @@ paths:
           $ref: "#/components/responses/UnprocessableEntity"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/RenderDispatchUnknown"
 components:
   securitySchemes:
     SharedServiceKey:
@@ -2407,6 +2422,15 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     Gone:
       description: Event history or content expired.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RenderDispatchUnknown:
+      description: |
+        The render dispatch outcome is unknown: a speech Job may already exist.
+        Preserve the original Idempotency-Key and replay the same POST to recover
+        the original result. This is not proof that no Job was created.
       content:
         application/json:
           schema:

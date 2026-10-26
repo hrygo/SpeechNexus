@@ -1,13 +1,13 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.3.8"
-date: 2026-10-24
+version: "0.4.0"
+date: 2026-10-26
 ---
 
 # SpeechNexus 工程目录与依赖边界
 
-本文记录仓库初始化后的实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准；P0 的公共语音、实时事件、工作台、预设、音色、管理面和内部绑定 / 实例 / 资格机器契约已交付，但对应业务路由与运行时行为仍待实现。
+本文记录实际工程布局、依赖方向与扩展入口。产品语义仍以[主设计](../speechnexus-product-architecture.md)为准。2026-10-26 接管核对：契约、协调事务、部分业务 HTTP、独立工作台及真实文件执行组件已有实现；公开音频 ready、完整 Job/准入/发布和 SDK/页面真实两链仍未同版验收。当前组合与缺口见[项目经理基线](../plans/2026-10-26-project-manager-baseline.md)，不能由目录存在或健康检查推断完整能力。
 
 ## 1. 工作区布局
 
@@ -32,15 +32,18 @@ date: 2026-10-24
 │       ├── app.py               ASGI 组合根
 │       ├── settings.py          严格环境配置
 │       ├── speech/
-│       │   ├── domain/          领域策略与状态机（待 P0）
-│       │   ├── application/     用例与端口（当前仅运营 readiness）
+│       │   ├── domain/          领域策略、身份与状态机
+│       │   ├── application/     资产、配置、协调、准入等用例与端口
 │       │   ├── interfaces/      REST / WS / MCP 投影
 │       │   └── infrastructure/  PG / 对象存储 / outbox adapter
-│       └── workbench/           可选工作台应用模块
+│       └── workbench/           可选工作台及独立 ASGI runtime
 ├── execution-gateway/           独立引擎执行网关
 │   └── src/speechnexus_gateway/
 ├── node-controller/              受限节点控制器（批准模板的实例生命周期）
 │   └── src/speechnexus_node_controller/
+├── packages/
+│   ├── contracts/              同源契约、校验器与生成消费者
+│   └── media/                  原生媒体类型/decoder 与私有有界检查
 ├── web/
 │   ├── admin/                   AdminUI Vite 应用
 │   ├── workbench/               个人语音工作台 Vite 应用
@@ -57,21 +60,23 @@ date: 2026-10-24
 └── docs/                       产品、架构、计划与验收记录
 ```
 
-`backend/speech` 与 `backend/workbench` 是同一后端部署中的明确模块边界。分离模块不表示必须拆成两个数据库或两个进程；首期只要求工作台不向语音核心反向写入，也不让底座依赖工作台业务。
+`backend/speech` 与 `backend/workbench` 是同一 Python 包中的明确模块边界；工作台已有独立 `workbench/runtime.py` ASGI 工厂及自有 PG adapter。模块分离不要求另建数据库，但 schema/对象区与写入所有权分开；工作台不向语音核心反向写入，也不让底座依赖工作台业务。
 
 ## 2. Python 工作区
 
-根 `pyproject.toml` 是虚拟 `uv` workspace，成员为 `backend`、`execution-gateway`、`node-controller` 与 `packages/contracts`。成员使用 `src/` 布局、独立包名与 `py.typed` 标记，已实现进程入口的成员声明独立入口点：
+根 `pyproject.toml` 是虚拟 `uv` workspace，成员为 `backend`、`execution-gateway`、`node-controller`、`packages/contracts` 与 `packages/media`。成员使用 `src/` 布局、独立包名与 `py.typed` 标记，已实现进程入口的成员声明独立入口点：
 
 | 包 | 入口 | 当前职责 |
 | --- | --- | --- |
-| `speechnexus-backend` | `speechnexus-api` | 语音底座 HTTP 外壳；`/healthz`、`/readyz` |
-| `speechnexus-execution-gateway` | `speechnexus-gateway` | 持久提交/停止/未知隔离/执行观察、受信正文清理与输出区间事务、控制库就绪检查；显式配置后提供认证 HTTP 屏障、只读执行查询与宿主进程独占；真实计量采集/消费、删除许可、引擎和 submit/abort 路由待实现 |
+| `speechnexus-backend` | `speechnexus-api` | Workspace、文本 Asset、配置/绑定草稿 HTTP、词典固定 revision GET 和健康检查；私有词典草稿不代表公开创建，完整语音 Job/实时/发布链仍缺 |
+| `speechnexus-execution-gateway` | `speechnexus-gateway` | 持久提交/停止/未知隔离/执行观察、认证内部 HTTP、输出区间及文件 ASR/TTS 默认工厂；生产准入/公开发布、单请求释放和完整资格仍待 |
 | `speechnexus-node-controller` | `speechnexus-node-controller` | 受限节点控制器的意图、generation / fencing、drain 与停止证据规则，本地持久意图与容器 daemon adapter，`/healthz`、`/readyz` 与 `internal/runtime-control` 路由；部署单元待集成 |
+| `speechnexus-contracts` | 库 | 机器契约和生成 Python/TS 消费者，固定源码与生成清单共同识别预发布版本 |
+| `speechnexus-media` | 库 / 私有检查命令 | 原生媒体类型、decoder 和私有有界检查；不授予公开 ready、Job、发布或停止权限 |
 
 网关另提供 [CPU VAD 原生接口](cpu-vad.md)，实现会话隔离和有界切段；固定 ONNX CPU
-adapter 的 vendor 依赖由 `deploy/engines/cpu-vad/` 独立锁定。默认启动不加载模型，公开实时链路
-与实际 ASR 外发尚未接入。
+adapter 的 vendor 依赖由 `deploy/engines/cpu-vad/` 独立锁定。默认启动不加载模型；文件 ASR
+已有显式配置的默认工厂与隔离真实执行证据，默认 Compose 未启用，公开实时链仍待接入。
 
 依赖图由 `import-linter` 检查：
 

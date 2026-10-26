@@ -1,21 +1,21 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.2.4"
-date: 2026-10-23
+version: "0.3.0"
+date: 2026-10-26
 ---
 
 # SpeechNexus 整体技术方案
 
 本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义仍由语音协议及后续机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-**当前产品运行时仅包含工程骨架、运营健康检查与两个 Web 外壳。** 已交付的契约和测试原型另行列明；下文业务控制、生产迁移、调度、音色、LLM 和观测路径仍待实现，模型选型不等于运行资格。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+**2026-10-26 核验：当前已有部分生产事务/HTTP、独立工作台、默认关闭的内网 LLM 接线，以及真实文件 ASR/CustomVoice 的隔离执行证据；公开音频 ready→Job/准入→执行→发布→SDK/页面两链仍未同版验收。** 本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现和风险统一见[项目经理基线](../plans/2026-10-26-project-manager-baseline.md)。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
 MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)；
 目标 DDL、[应用事务方案与契约](coordination-transactions.md)及双库测试原型已交付，
-旧 PG 独立兜底测试另存历史 fixture。生产协调用例与完整集群故障资格仍待实施。
+旧 PG 独立兜底测试另存历史 fixture。生产协调已有分段实现与证据地图，完整业务装配和集群故障资格仍待完成；按 ADR 0007 的退出条件判断旧原型，不按目录或测试数量推定验收。
 
 ## 1. 技术基线与职责
 
@@ -77,7 +77,7 @@ flowchart LR
 
 ## 3. 契约与类型生成
 
-P0 机器契约已按以下文件交付；它们冻结协议形状与样例，但业务路由、运行时行为和真实模型资格仍待实现。公共、管理与内部契约分别维护，不用空文件冒充已冻结协议。
+P0 机器契约已按以下文件交付；它们冻结协议形状与样例，不代替完整业务链与目标部署资格。部分业务路由/运行时已有实现及隔离真实执行，未接入范围按当前基线核对。公共、管理与内部契约分别维护，不用空文件冒充已冻结协议。
 
 | 交接契约 | 生产者 / 消费者与职责 |
 | --- | --- |
@@ -232,7 +232,7 @@ P1-B 的“首轮延迟达标”必须先冻结同一套测量口径，再附实
 
 质量阈值应按首批普通话 / 中英混说与代表性噪声、数字、专名、说话人和音色语料冻结。先建立对照基线再锁阈值，不因暂缺真实测量就编造 CER / WER / DER 或音色相似度指标。默认确定性测试使用 fake、合成或获准公开材料，不使用私人音频。
 
-P0 机器契约与协调 DDL 已交付并通过仓库门禁，但业务路由、完整迁移体系、控制器实现和真实模型测试仍待落地。实现时按仓库门禁验证，并分别提交实现证据与部署资格。
+P0 机器契约与协调 DDL 已交付；业务路由、控制器和真实模型测试已有分段成果，完整迁移体系、公开业务链及目标拓扑资格仍待完成。当前范围以项目经理基线和各 issue 为准，实施时按仓库门禁分别提交实现证据与部署资格。
 
 ## 13. 上游依据与版本锁定
 

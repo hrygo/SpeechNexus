@@ -1,10 +1,10 @@
 # 团队 C 工作台操作覆盖映射（workbench surface）
 
-核验日期：2026-10-26，Asia/Shanghai。基线：main `e2fee58799f2`，契约 `contracts/workbench-openapi.yaml`（digest `4aed45a36837…`）。关联：[阶段 Goal](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[映射 JSON](2026-10-26-team-c-operation-coverage.json)。
+核验日期：2026-10-26，Asia/Shanghai。机器映射受检 head：`15173b1aba73a19c1079e72e96d870043394554b`；收尾核对 main `54daef6ae4792b69a0e5e8645b09240ff715082e` 的契约摘要仍为 `e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9`。关联：[阶段 Goal](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[映射 JSON](2026-10-26-team-c-operation-coverage.json)。
 
 ## 结论
 
-workbench surface 的 51 个声明操作已逐项建立“契约 → 绑定与边界类型 → 生产消费者 → 行为用例”映射：41 个四条腿齐全（`bound`），10 个缺生产消费者（`consumer_pending`）。10 个非 `bound` 操作均已具名登记 owner、制品、解除条件和影响，不再以“保留声明”冒充覆盖。**本映射是接线审计，不是 AC-03 通过或任何验收结算**；其他 surface（admin/profile/binding 等）另行核验。
+workbench surface 的 52 个声明操作已逐项建立“契约 → 绑定与边界类型 → 生产消费者 → 行为用例”映射：42 个四条腿齐全（`bound`），10 个缺生产消费者（`consumer_pending`）。10 个非 `bound` 操作均已具名登记 owner、制品、解除条件和影响，不再以“保留声明”冒充覆盖。**本映射是接线审计，不是 AC-03 通过或任何验收结算**；其他 surface（admin/profile/binding 等）另行核验。
 
 ## 判定口径
 
@@ -42,4 +42,4 @@ make operation-coverage-check
 
 - 只覆盖 workbench surface；`admin`、`profile`、`profile_lifecycle`、`binding`、`binding_defaults`、`voice_catalogue` 等 surface 仍需同类映射。
 - 消费者识别基于路径/方法文本与客户端方法解析，可能漏掉动态拼接路径或间接调用；不据此宣称“已覆盖”任何行为。
-- 下一单元：按 [C07/T09 缺口](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md) 接通生成触发、v2 单元轮询与导出 SSE 的正式消费者；v1 兼容操作由契约 owner 给出保留/退役决定。
+- 生成 V2、单元轮询和历史 GET/页面已有分段消费者，导出 SSE 仍待；未决持久化/CAS、读取与公平性审查见[最终交接](../plans/2026-10-26-team-c-final-handoff.md)。v1 兼容操作由契约 owner 决定保留/退役，新负责人安排后续实施。

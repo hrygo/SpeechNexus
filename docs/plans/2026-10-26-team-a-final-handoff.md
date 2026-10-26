@@ -1,19 +1,21 @@
 ---
 title: "团队 A 完整工作交接与项目接管入口"
-status: review
-version: "1.1.0"
+status: active
+version: "1.2.0"
 date: 2026-10-26
 ---
 
 # 团队 A 完整工作交接与项目接管入口
 
-本文件是 [PR #221](https://github.com/hrygo/SpeechNexus/pull/221) 的完整交接入口，覆盖 A00–A07、
-本轮待审媒体实现、三队接口、全部 issue 状态、证据与资源保留、风险及接管步骤。
+本文件保留 [PR #221](https://github.com/hrygo/SpeechNexus/pull/221) 原交接时点的完整记录，覆盖 A00–A07、
+媒体实现、三队接口、全部 issue 状态、证据与资源保留、风险及接管步骤。
+#221 后经接管审查修复 WAV RIFF 尾部完整性，以最终 head `f326f5d` 的 14 项 CI 成功后合入 `41e29b6`。
+下表的候选/验证/现场是原时点事实，当前组合和接收状态转到[项目经理基线](2026-10-26-project-manager-baseline.md)；不追溯改挂历史证据。
 用户已要求结束旧排期，后续 owner、优先级和窗口由新负责人重新安排。
 [原 Goal](2026-10-23-team-a-goal.md)和[原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)
 已标记 superseded；历史 KR、F01–F12 和原完整范围继续保留，不据交接结算验收。
 
-## 接管时先确认的事实
+## 原交接时点的事实
 
 | 对象 | 固定版本及状态 |
 | --- | --- |

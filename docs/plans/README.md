@@ -1,16 +1,18 @@
 # SpeechNexus 实施计划
 
-后续工作由新负责人重新安排，原目标保留完整范围与历史记录，旧排期停止自动执行。
-接管先读[项目完整交接](../audits/2026-10-26-project-handoff.md)，
-其中汇总 A/B/C、全部 40 个 issue、待审交付、证据与风险；
+当前接管与后续管理先读[项目经理基线](2026-10-26-project-manager-baseline.md)，
+结合[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)核对远端进度。
+原目标保留完整范围与历史记录，旧排期停止自动执行；
+[原项目交接](../audits/2026-10-26-project-handoff.md)保留三队交接时点快照，
 团队 B 详细记录见[收尾交接](../audits/2026-10-26-team-b-handoff.md)。
 
-- [2026-10-26 团队 A 最终交接](2026-10-26-team-a-final-handoff.md)：完整 A00–A07 状态、本轮媒体/回执候选、全部 40 个 issue、证据/资源恢复、风险和接管步骤；原排期转为历史，后续交新负责人安排。
+- [2026-10-26 团队 A 最终交接](2026-10-26-team-a-final-handoff.md)：A00–A07、媒体/回执及原件/资源交接；原候选与验证保留时点，后续集成修复见项目经理基线。
 - [2026-10-26 团队 A 进展复盘与原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
+- [2026-10-26 团队 C 最终交接](2026-10-26-team-c-final-handoff.md)：C00–C08 已集成范围、未决风险、A/B 接收方式、证据归档和全量 issue 核对；后续由新负责人重新安排。
 
 - [2026-10-24 团队 C Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)：五项持久业务操作、原子封存/纪要关联、原键恢复及会议删除依赖；默认工厂13项，显式装配18项，生产/会议页面及完整资格继续。
 
-计划按基准日期保存，阶段完成状态须有实际交付和验收证据。
+计划按基准日期保存，阶段完成状态须有实际交付和验收证据。C 的旧 Goal 与[联审协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md)保留原范围与审查处理，已停止自动执行。
 
 - [2026-10-24 团队 C 7cd18879集成](2026-10-24-team-c-7cd-integration-handoff.md)：安全吸收#77/#79/#80/#81，保留237文件并重生成交集，新增Meeting/Minutes与公开realtime解析依赖；Python2735/PG269/Web1150及Chromium合成流程通过，实际handlers/会议与实时业务继续。
 - [2026-10-24 团队 C 项目与稿件版本工作台](2026-10-24-team-c-c1-editor-handoff.md)：正式生成客户端/页面、草稿与原键恢复、历史/冲突校对；53项针对性、Web940及4个Chromium合成上下文，一次终审两项Important已TDD修复，生产装配与完整资格继续。步骤见[实施计划](2026-10-24-team-c-c1-editor-plan.md)。
@@ -22,7 +24,7 @@
 - [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：可直接下发至云环境、MegaCube、MacBook 的首轮任务与统一交接模板。
 - [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
 - [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 的持续目标、MegaCube 环境与停止证据探针、网关/控制器首个单元与阻塞条件；应用 Goal 是否启用单独核验。
-- [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的持续范围、首轮接力、模块所有权与完成条件；[C00 版本单元交接](2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
+- [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的历史目标、原接力与完成条件，现已转为 superseded；[C00 版本单元交接](2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
 - [2026-10-24 原命令与对象输入接入](2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和现有文件消费者的输入接入边界。
 - [2026-10-25 持久文件执行接线](2026-10-25-b03-durable-file-runner.md)：提交后启动、原身份恢复、私有回执及后台生命周期；不替代真实引擎与公开业务链资格。
 - [2026-10-22 分阶段实施计划](2026-10-22-speechnexus-implementation-plan.md)：P0–P5、工作包、契约产物与初始预算。

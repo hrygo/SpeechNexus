@@ -176,6 +176,13 @@ jobs:
       - name: Reject generated contract drift
         run: make contracts-drift
 
+      - name: Dump generated drift (debug)
+        if: failure()
+        run: |
+          make contracts-generate
+          git --no-pager diff --stat
+          git --no-pager diff -- packages/contracts/src/workbench.generated.ts | head -200
+
       - name: Check breaking changes to OpenAI-compatible contracts
         if: github.event_name == 'pull_request'
         env:

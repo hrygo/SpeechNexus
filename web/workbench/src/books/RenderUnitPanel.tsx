@@ -51,6 +51,23 @@ const copyProblems = {
 
 export type CopyProblem = keyof typeof copyProblems;
 
+const saveProblems: Record<"unavailable" | "rejected" | "unknown" | "missing", string> = {
+  unavailable: "保存服务暂不可用，副本未写入。",
+  rejected: "保存被拒绝，未写入副本。请核对项目与来源后重试。",
+  unknown: "保存结果尚未确认。请按原键重试，不要重复保存。",
+  missing: "来源制品或回执不存在，无法保存副本。",
+};
+
+function saveProblemOf(error: unknown): keyof typeof saveProblems {
+  if (error instanceof WorkbenchResponseError) {
+    if (error.status === 404 || error.status === 410) return "missing";
+    if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
+      return "rejected";
+    return "unknown";
+  }
+  return error instanceof TypeError ? "unavailable" : "unknown";
+}
+
 function copyProblemOf(error: unknown): CopyProblem {
   if (error instanceof WorkbenchResponseError) {
     if (error.status === 404) return "missing";
@@ -206,6 +223,11 @@ function ChapterUnits({
     record: Contracts["VoiceRevision"] | null;
     problem: RevisionProblem | null;
   }>({ voiceId: "", revision: "", record: null, problem: null });
+  const [saving, setSaving] = useState<{
+    unitId: string | null;
+    problem: keyof typeof saveProblems | null;
+  }>({ unitId: null, problem: null });
+  const saveKeys = useRef(new Map<string, string>());
   const [copy, setCopy] = useState<{
     assetId: string | null;
     asset: Contracts["SavedAsset"] | null;
@@ -351,6 +373,42 @@ function ChapterUnits({
       },
       true,
     );
+  }
+
+  /**
+   * A saved copy is pinned to the producer receipt, not to the unit revision: the same
+   * key replays an unknown save, and a fresh unit read carries the copy identity back.
+   */
+  async function saveCopy(target: Contracts["RenderUnitV2"]) {
+    if (
+      saving.unitId !== null ||
+      target.source_artifact_id == null ||
+      target.source_receipt_id == null
+    )
+      return;
+    const key = saveKeys.current.get(target.id) ?? crypto.randomUUID();
+    saveKeys.current.set(target.id, key);
+    setSaving({ unitId: target.id, problem: null });
+    try {
+      const book = await client.book(chapter.book_id);
+      const asset = await client.saveProjectAsset(
+        book.project_id,
+        {
+          source_artifact_id: target.source_artifact_id,
+          source_receipt_id: target.source_receipt_id,
+        },
+        key,
+      );
+      saveKeys.current.delete(target.id);
+      const fresh = await client.renderUnit(target.id);
+      if (!owner.current.alive) return;
+      setUnits((current) => current.map((item) => (item.id === fresh.id ? fresh : item)));
+      setSaving({ unitId: null, problem: null });
+      setNotice(`单元 ${target.id}：已保存独立副本 ${asset.id}。`);
+    } catch (error) {
+      if (!owner.current.alive) return;
+      setSaving({ unitId: target.id, problem: saveProblemOf(error) });
+    }
   }
 
   /** Dispatch names the revision the operator saw; the key stays the recovery identity. */
@@ -695,6 +753,23 @@ function ChapterUnits({
                     <button type="button" disabled={locked} onClick={() => void generate(unit)}>
                       {`${label} 生成配音`}
                     </button>
+                  )}
+                  {unit.status === "ready" &&
+                    unit.saved_asset_id == null &&
+                    unit.source_artifact_id != null &&
+                    unit.source_receipt_id != null && (
+                      <button
+                        type="button"
+                        disabled={locked || saving.unitId !== null}
+                        onClick={() => void saveCopy(unit)}
+                      >
+                        {`${label} 保存副本`}
+                      </button>
+                    )}
+                  {saving.unitId === unit.id && saving.problem !== null && (
+                    <p role="alert" aria-label={`${label} 保存副本错误`}>
+                      {saveProblems[saving.problem]}
+                    </p>
                   )}
                   {unit.saved_asset_id != null && (
                     <div aria-label={`${label} 已保存副本核对`}>

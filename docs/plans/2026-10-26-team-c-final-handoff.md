@@ -1,7 +1,7 @@
 ---
 title: "团队 C 收尾与新负责人交接"
 status: active
-version: "1.0.0"
+version: "1.0.1"
 date: 2026-10-26
 ---
 
@@ -13,13 +13,14 @@ date: 2026-10-26
 
 ## 接管版本与阅读顺序
 
-核验基线为 main `54daef6ae4792b69a0e5e8645b09240ff715082e`（#219）。A/B 收尾 PR 在本次读取时均未合并，接管时应重新查询。
+2026-10-26 18:30（Asia/Shanghai）收尾复核，核验基线为 main `54daef6ae4792b69a0e5e8645b09240ff715082e`（#219）。A/B 收尾 PR 在本次读取时均未合并，接管时应重新查询。
 
 | 入口 | 内容与使用边界 |
 | --- | --- |
+| [C 收尾 #222](https://github.com/hrygo/SpeechNexus/pull/222) | 本文件和全量 issue 核对，纯文档待审，不结算产品 AC |
 | [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6) | 当前远端进度；25 个工作包完整验收 0/25，6 个 Gate 放行 0/6 |
 | [B 收尾 #220](https://github.com/hrygo/SpeechNexus/pull/220) | 提供[项目统一交接](https://github.com/hrygo/SpeechNexus/blob/45bc90ed0fcc36264022b0c2f684e3d9006685ec/docs/audits/2026-10-26-project-handoff.md)及 B 的完整证据、归档与剩余范围；该文件目前属于待审候选 |
-| [A 收尾 #221](https://github.com/hrygo/SpeechNexus/pull/221) | head `b7e65f4a119999e720d594200c53dc683bec5526`；[A 交接](https://github.com/hrygo/SpeechNexus/blob/b7e65f4a119999e720d594200c53dc683bec5526/docs/plans/2026-10-26-team-a-final-handoff.md)与共享媒体/私有检查回执，尚待集成和 B 实际接收 |
+| [A 收尾 #221](https://github.com/hrygo/SpeechNexus/pull/221) | head `a0006736d59e38d506cadc19a74483d73d47c3b8`（实现提交 `b7e65f4`）；[A 交接](https://github.com/hrygo/SpeechNexus/blob/a0006736d59e38d506cadc19a74483d73d47c3b8/docs/plans/2026-10-26-team-a-final-handoff.md)与共享媒体/私有检查回执，尚待集成和 B 实际接收 |
 | [本轮全量 issue 核对](../audits/2026-10-26-team-c-closeout-issue-audit.md) | 全部 40 项正文、状态与元数据核对，保留目标/AC；状态标签描述实施程度，不表示 agent 仍在自动执行 |
 | [C 实现/证据矩阵](../audits/2026-10-26-team-c-render-loop-status.md)、[缺口表](../audits/2026-10-26-team-c-remaining-gaps.md) | C07 已接线范围、未决代码审查和依赖，不把 C 自有风险都归为外部阻塞 |
 | [C 协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md) | A/B 联审后的 v1.2.0 历史方案，已转为 superseded；C-N01–07 供重新规划，不是开工指令 |
@@ -81,8 +82,8 @@ date: 2026-10-26
 | 原验收映射 | [41 条原 AC 矩阵](../audits/2026-10-25-team-c-original-ac-matrix.md)、[278 子条件机器映射](../audits/2026-10-25-team-c-acceptance-map.json)均保留；全部仍 not_run，旧实现分类不是当前完成率 |
 | 证据事故 | [#189 清理丢失 82 份原件](../audits/2026-10-26-team-c-evidence-retention.md)，影响 214 个条件引用。不可由摘要补勾；稳定根重建属于新证据，不能称原件找回 |
 | 当前操作映射 | [JSON](../audits/2026-10-26-team-c-operation-coverage.json)与[报告](../audits/2026-10-26-team-c-operation-coverage.md)：52 项、42 bound、10 consumer_pending；仅 workbench 接线审计，SSE/兼容退役/其他 surface/语义仍待 |
-| 本轮稳定归档 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`；保存旧工作区 3 份文档原件、原目标 diff、worktree/status、40 issue 前后原文/元数据、检查结果与 manifest。只含本任务材料，不纳入 Git |
-| 旧工作区 | `/Users/hrygo/Documents/SpeechNexus`，原 C 分支 HEAD `24ea145bd7ff8f77ad7c6f96c655e4597be416dc`。既存目标 diff、贡献指南/模板和未知 `.paperclip/` 予以保留；不将旧 checkout 的未跟踪文件直接当作主干新增 |
+| 本轮稳定归档 | `/Users/hrygo/.codex/team-c-evidence/20261026T101715Z-final-handoff/`；保存旧工作区 3 份文档原件、原目标 diff、worktree/status、40 issue 前后原文/元数据、4 项写入回读、清理记录、检查结果与 manifest。只含本任务材料，不纳入 Git |
+| 旧工作区 | `/Users/hrygo/Documents/SpeechNexus`，原 C 分支 HEAD `24ea145bd7ff8f77ad7c6f96c655e4597be416dc`。本轮旧计划副本已在逐字节校验归档后移入废纸篓，临时索引入口只撤回本轮两行；既存目标 diff、贡献指南/模板和未知 `.paperclip/` 保留，不将其直接当作主干新增 |
 | 最终 PR 工作区 | `/Users/hrygo/.codex/worktrees/team-c-final-handoff/SpeechNexus`，`codex/team-c-final-handoff`，独立基于 54daef6；保留供审阅，归档原件位于 worktree 之外 |
 
 归档的 `manifest.json` 记录大小和 SHA-256；移机先校验再复制，在独立目录恢复，不覆盖现有源码、数据库、对象区或配置。原件含任务材料，也按部署内证据管理；不从工作区清理顺带删除其他 worktree、模型、运行数据或未知配置。本轮未启动或停止数据库、模型、容器和已有服务。
@@ -112,6 +113,6 @@ PY
 
 ## 本轮验证与完成边界
 
-本 PR 按[文档验证规则](../agent-verification.md)检查本地链接、frontmatter、命令、事实与 diff；issue 全量核对结果见[核对记录](../audits/2026-10-26-team-c-closeout-issue-audit.md)。精确提交的 CI 以 PR 检查为准，文档路由跳过的业务项不记为通过。
+本 PR 已按[文档验证规则](../agent-verification.md)检查 10 份 Markdown 的 220 个本地链接、frontmatter、2 个 Bash 代码块语法与 diff；操作守卫实测 52/42/10、0 findings，原 Goal checkbox/阶段完整 AC 保留。4 项 issue 就地更新、全部 40 项回读通过，详见[核对记录](../audits/2026-10-26-team-c-closeout-issue-audit.md)。精确提交的 CI 以 PR 检查为准，文档路由跳过的业务项不记为通过。
 
 未重跑业务、数据库、真实模型、设备、LLM 或目标拓扑资格。历史 #201 合后取消/清理未结、旧 ENOSPC、C 焦点/探针失败及丢失证据继续保留；绿色文档 CI 不解除这些问题。最终交付是可接管的记录和一个待审 PR，项目重新排期由新负责人完成。

@@ -167,8 +167,9 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 下一步将固定配置、私有回执及该停止链接到 A 的生产准入/发布，再与 SDK/C 联验；
 真实故障恢复、持续就绪及目标拓扑资格保留未完成。
 
-原工作树 `codex/b03-worker-fence-observation` 的未提交观察草稿保持独立，
-不得与本单元拼成已交付版本；request cleanup/unfinished=0/EOF 均不证明 GPU 资源已释放。
+原生 worker 完成观察已作为独立组件交付，见[观察单元](2026-10-25-b03-worker-fence.md)；
+其 `release_evidence` 恒为 false，request cleanup/unfinished=0/EOF 仍不证明 GPU 资源已释放，
+也不构成网关停止事实或预算归还依据。
 
 | 工作包 | 唯一状态 | 本阶段及后续剩余 |
 | --- | --- | --- |

@@ -3,7 +3,7 @@ name = "speechnexus-vllm-asr-lifecycle"
 version = "0.1.0.dev0"
 description = "Request cleanup overlay for the pinned SpeechNexus vLLM ASR image"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["jsonschema>=4.23,<5"]
 
 [project.entry-points."vllm.endpoint_plugins"]
 speechnexus_asr_scope = "speechnexus_vllm_asr.plugin:AsrScopePlugin"

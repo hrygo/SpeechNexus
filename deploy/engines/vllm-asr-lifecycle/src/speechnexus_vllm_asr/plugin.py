@@ -2,31 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib
 import json
 from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 from .middleware import AsrScopeMiddleware
+from .runtime_pin import verify_pin
 from .scope import AsrScopeController
 
 
 def verify_runtime() -> Any:
     """Fail startup before installing hooks if the native implementation differs."""
     pin = json.loads(files("speechnexus_vllm_asr").joinpath("runtime-pin.json").read_text())
-    version = importlib.import_module("vllm._version")
-    if version.__version__ != pin["version"] or version.__commit_id__ != pin["commit"]:
-        raise RuntimeError("ASR cleanup requires its pinned vLLM runtime")
+    verify_pin(pin)
     native = importlib.import_module("vllm.v1.engine.async_llm")
-    module_file = importlib.import_module("vllm").__file__
-    if not isinstance(module_file, str):
-        raise RuntimeError("ASR cleanup native source is unavailable")
-    root = Path(module_file).resolve().parent
-    for relative, digest in pin["source_sha256"].items():
-        if hashlib.sha256((root / relative).read_bytes()).hexdigest() != digest:
-            raise RuntimeError("ASR cleanup native source verification failed")
     return native.AsyncLLM
 
 

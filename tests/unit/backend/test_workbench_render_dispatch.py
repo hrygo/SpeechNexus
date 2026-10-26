@@ -83,6 +83,9 @@ class _Store:
     async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
         return ()
 
+    async def scan_ready_without_copy(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
+        return ()
+
 
 class _Jobs:
     def __init__(self, job_id: str = "job_1") -> None:

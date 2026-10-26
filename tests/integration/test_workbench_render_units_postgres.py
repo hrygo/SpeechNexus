@@ -619,6 +619,7 @@ async def test_completion_settles_the_attempt_and_scan_lists_only_generating(
         "receipt_1",
     )
     assert await store.scan_generating(workspace_id=WORKSPACE, limit=10) == ()
+    assert await store.scan_ready_without_copy(workspace_id=WORKSPACE, limit=10) == (unit.id,)
     with pytest.raises(RenderAttemptConflictError):
         await store.complete_unit(
             unit_id=unit.id, workspace_id=WORKSPACE, generation_id="gen:abc", source=source

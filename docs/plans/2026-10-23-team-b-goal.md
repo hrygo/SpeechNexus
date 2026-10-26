@@ -195,10 +195,10 @@ CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付
 
 | 工作包 | 唯一状态 | 本阶段及后续剩余 |
 | --- | --- | --- |
-| B00 #27 | in-progress | #162 固定制品和完整注册输入候选已交付；权威配置发布与逐能力停止/容量资格待完成 |
+| B00 #27 | in-progress | #162 ASR 固定制品和注册输入已集成；CustomVoice 固定制品/许可/显式默认与同一注册消费者的交接候选已实现，权威注册/发布与容量资格仍待 |
 | B01 #28 | in-progress | #168 默认工厂已集成；原版本整代次停止、网关恢复及 A 结算有隔离证据；单请求取消与生产公开链待完成 |
-| B02 #29 | in-progress | ASR 真实预热/停止、入口屏障及 A 租约/base 已隔离联验；TTS 代次鉴权/整代次双证据候选已有真实证据；正式就绪、持续 ready、故障与 peak→steady/drain 资格待完成 |
-| B03 #30 | in-progress | 真实 CustomVoice 三格式持久执行与重启重放已验；取消/整代次停止及 A 租约结算候选已有隔离证据；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
+| B02 #29 | in-progress | ASR 真实预热/停止、入口屏障及 A 租约/base 已隔离联验；#218 TTS 代次鉴权/整代次双证据已集成，合前/精确合后 CI 成功；正式就绪、持续 ready、故障与 peak→steady/drain 资格待完成 |
+| B03 #30 | in-progress | 真实 CustomVoice 三格式、重启重放及取消/整代次停止和 A 租约结算已有隔离证据；[CustomVoice 交接](../architecture/file-tts-binding-handoff.md)候选复用原注册入口；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |
 | B06 #33 | in-progress | CPU VAD/文件消费者已有；实时、对齐、匿名分人及质量资格待完成 |

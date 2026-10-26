@@ -1,0 +1,39 @@
+{
+  "tasks": ["tts_file"],
+  "execution_recipe": {
+    "recipe_revision": "1",
+    "stage_roles": ["tts_connector"],
+    "requires_complete_reservation": true
+  },
+  "parameter_domains": {
+    "tts": {
+      "languages": ["zh", "en"],
+      "audio_formats": ["mp3", "wav", "pcm"],
+      "sample_rates_hz": [24000],
+      "text_commit_modes": ["explicit"],
+      "audio_delivery_modes": ["complete"],
+      "supports_instructions": true,
+      "supports_speed": true,
+      "speed_range": { "minimum": 0.5, "maximum": 2.0 },
+      "max_input_codepoints": 400,
+      "supports_seed": true
+    }
+  },
+  "release_tier": "production",
+  "parameter_defaults": {
+    "tts": {
+      "language": "zh",
+      "text_commit_mode": "explicit",
+      "audio_delivery": "complete",
+      "speed": 1.0,
+      "instructions": null,
+      "pronunciation_revision": null,
+      "seed": null,
+      "planner": { "max_chars": 400, "max_wait_ms": 1000 }
+    },
+    "output": {
+      "audio_format": "mp3",
+      "save_artifacts": true
+    }
+  }
+}

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Offline integrity inputs for binding registration; never grants runtime qualification."""
+"""Offline ASR/TTS integrity inputs; never grants registration or runtime qualification.
+
+The historical command and v1 ASR pin remain supported. A v2 pin supports a
+bounded nested speech tokenizer and a vLLM-Omni runtime without a VAD artifact.
+"""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -44,17 +49,22 @@ def _object(properties: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@lru_cache(maxsize=1)
-def _pin_validator() -> Draft202012Validator:
+@lru_cache(maxsize=2)
+def _pin_validator(version: int = 1) -> Draft202012Validator:
     # Reuse the generated offline bundle, including transitive local definitions.
     bundle = json.loads(
         files("speechnexus_contracts").joinpath("model_bindings.schema.json").read_text()
     )
-    named_file = {"type": "string", "pattern": _NAME}
+    named_file = {
+        "type": "string",
+        "pattern": _NAME
+        if version == 1
+        else r"^(?:[A-Za-z0-9_.-]{1,128}/){0,3}[A-Za-z0-9_.-]{1,128}$",
+    }
     artifact = {"allOf": [{"$ref": "#/$defs/ArtifactReference"}, {"required": ["size_bytes"]}]}
     schema = _object(
         {
-            "version": {"type": "integer", "const": 1},
+            "version": {"type": "integer", "const": version},
             "model": _object(
                 {
                     "repository": {"type": "string", "minLength": 1, "maxLength": 128},
@@ -120,6 +130,9 @@ def _pin_validator() -> Draft202012Validator:
             },
         }
     )
+    if version == 2:
+        schema["properties"].pop("vad")
+        schema["required"].remove("vad")
     schema["$defs"] = bundle["$defs"]
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
@@ -137,11 +150,18 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _document(raw: bytes) -> dict[str, Any]:
+def _finite_number(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise VerificationError("pin_invalid")
+    return result
+
+
+def _document(raw: bytes, *, allow_floats: bool = False) -> dict[str, Any]:
     value = json.loads(
         raw,
         object_pairs_hook=_unique_object,
-        parse_float=_reject_number,
+        parse_float=_finite_number if allow_floats else _reject_number,
         parse_constant=_reject_number,
     )
     if not isinstance(value, dict):
@@ -234,21 +254,64 @@ def _verify_file(
         return bytes(data)
 
 
+def _verify_model_tree(directory: int, required: list[str], allowed: list[str]) -> None:
+    """Walk only named directories, without following links or accepting extra entries."""
+    allowed_files = set(allowed)
+    allowed_directories = {
+        "/".join(parts[:index])
+        for name in allowed
+        for parts in [_parts(name)]
+        for index in range(1, len(parts))
+    }
+    if allowed_files & allowed_directories:
+        raise VerificationError("pin_invalid")
+    seen: set[str] = set()
+
+    def visit(parent: int, prefix: str = "") -> None:
+        with os.scandir(parent) as entries:
+            for entry in entries:
+                name = prefix + entry.name
+                if name in allowed_directories and entry.is_dir(follow_symlinks=False):
+                    child = os.open(
+                        entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+                    )
+                    try:
+                        visit(child, name + "/")
+                    finally:
+                        os.close(child)
+                elif name in allowed_files and entry.is_file(follow_symlinks=False):
+                    seen.add(name)
+                else:
+                    raise VerificationError("model_directory_invalid")
+
+    visit(directory)
+    if not set(required) <= seen:
+        raise VerificationError("model_directory_invalid")
+
+
 def verify(
-    *, pin_path: Path, model_root: Path, vad_file: Path, repository_root: Path = ROOT
+    *, pin_path: Path, model_root: Path, vad_file: Path | None = None, repository_root: Path = ROOT
 ) -> dict[str, Any]:
     """Verify a local snapshot against a trusted pin, without network or engine I/O."""
     with _directory(pin_path.parent) as parent, _regular(parent, pin_path.name) as fd:
         raw = _read(fd, MAX_DOCUMENT_BYTES)
     pin = _document(raw)
-    if not _pin_validator().is_valid(pin):
+    version = pin.get("version")
+    if type(version) is not int or version not in (1, 2):
         raise VerificationError("pin_invalid")
+    validator = _pin_validator(version)
+    if not validator.is_valid(pin):
+        raise VerificationError("pin_invalid")
+    if ("vad" in pin) != (vad_file is not None):
+        raise VerificationError("vad_argument_invalid")
     model = pin["model"]
     model_names = [entry["file_name"] for entry in model["files"]]
     required_names = [*model_names, model["model_card"]["file_name"]]
     allowed_names = [*required_names, *model["ignored_metadata"]]
     repository_names = [entry["path"] for entry in pin["repository_files"]]
-    artifacts = [entry["artifact"] for entry in model["files"]] + [pin["vad"]["artifact"]]
+    artifacts = [entry["artifact"] for entry in model["files"]]
+    if "vad" in pin:
+        artifacts.append(pin["vad"]["artifact"])
     if (
         len(set(allowed_names)) != len(allowed_names)
         or len(set(repository_names)) != len(repository_names)
@@ -266,11 +329,11 @@ def verify(
             if is_runtime:
                 runtime = _document(content)
     engine = {
-        "kind": "vllm",
+        "kind": "vllm" if version == 1 else runtime.get("kind"),
         "image_digest": runtime.get("image"),
         "runtime_version": runtime.get("version"),
     }
-    schema = _pin_validator().schema
+    schema = validator.schema
     assert not isinstance(schema, bool)
     bundle = schema["$defs"]
     if (
@@ -279,28 +342,34 @@ def verify(
             format_checker=FormatChecker(),
         ).is_valid(engine)
         or runtime.get("commit") != "g" + pin["engine"]["source_commit"][:9]
+        or (version == 2 and engine["kind"] != "vllm_omni")
+        or (
+            version == 2
+            and any(
+                runtime.get(key) != pin["engine"][key]
+                for key in (
+                    "source_commit",
+                    "python_version",
+                    "distribution_count",
+                    "distribution_inventory_digest",
+                )
+            )
+        )
     ):
         raise VerificationError("engine_pin_invalid")
     with _directory(model_root) as directory:
-        seen: set[str] = set()
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                if entry.name not in allowed_names or not entry.is_file(follow_symlinks=False):
-                    raise VerificationError("model_directory_invalid")
-                seen.add(entry.name)
-        if not set(required_names) <= seen:
-            raise VerificationError("model_directory_invalid")
+        _verify_model_tree(directory, required_names, allowed_names)
         for entry in model["files"]:
             _verify_file(directory, entry["file_name"], entry["artifact"])
         _verify_file(directory, model["model_card"]["file_name"], model["model_card"])
-    with _directory(vad_file.parent) as directory:
-        _verify_file(directory, vad_file.name, pin["vad"]["artifact"])
-    return {
-        "version": 1,
+    if vad_file is not None:
+        with _directory(vad_file.parent) as directory:
+            _verify_file(directory, vad_file.name, pin["vad"]["artifact"])
+    report = {
+        "version": version,
         "scope": "local_artifact_integrity",
         "pin_digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
         "model": {key: model[key] for key in ("repository", "revision", "license")},
-        "vad": {key: pin["vad"][key] for key in ("repository", "revision", "license")},
         "engine": engine,
         "artifact_set": artifacts,
         "runtime_artifact_bytes_total": sum(entry["size_bytes"] for entry in artifacts),
@@ -312,6 +381,9 @@ def verify(
             "mutable_files_require_read_only_deployment",
         ],
     }
+    if "vad" in pin:
+        report["vad"] = {key: pin["vad"][key] for key in ("repository", "revision", "license")}
+    return report
 
 
 def binding_request(
@@ -336,7 +408,7 @@ def binding_request(
 
     with _directory(definition_path.parent) as parent, _regular(parent, definition_path.name) as fd:
         try:
-            definition = _document(_read(fd, MAX_DOCUMENT_BYTES))
+            definition = _document(_read(fd, MAX_DOCUMENT_BYTES), allow_floats=True)
         except ValueError, TypeError, RecursionError, OverflowError:
             raise VerificationError("binding_definition_invalid") from None
     if (
@@ -363,7 +435,7 @@ def binding_request(
     try:
         # Use the real consumer's schema AND composition/default checks. This
         # pure preparation does no I/O; the validation identity is never stored.
-        prepare_binding_defaults_draft(request, "offline-file-asr-validation")
+        prepare_binding_defaults_draft(request, "offline-file-speech-validation")
     except ContractValidationError:
         raise VerificationError("binding_request_invalid") from None
     return request
@@ -378,7 +450,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = _Parser(description=__doc__)
     parser.add_argument("--pin", type=Path, default=DEFAULT_PIN)
     parser.add_argument("--model-root", type=Path, required=True)
-    parser.add_argument("--vad-file", type=Path, required=True)
+    parser.add_argument("--vad-file", type=Path)
+    parser.add_argument("--binding-definition", type=Path)
     parser.add_argument(
         "--emit-binding-request",
         action="store_true",
@@ -390,19 +463,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     identities = (args.binding_id, args.logical_model, args.capacity_manifest_id)
     if (args.emit_binding_request and not all(identities)) or (
-        not args.emit_binding_request and any(value is not None for value in identities)
+        not args.emit_binding_request
+        and (any(value is not None for value in identities) or args.binding_definition is not None)
     ):
         parser.error("binding request identities must be explicit")
     try:
         report = verify(pin_path=args.pin, model_root=args.model_root, vad_file=args.vad_file)
         if args.emit_binding_request:
+            if report["version"] == 2 and args.binding_definition is None:
+                parser.error("v2 binding definition must be explicit")
             report = binding_request(
                 report,
                 binding_id=args.binding_id,
                 logical_model=args.logical_model,
                 capacity_manifest_id=args.capacity_manifest_id,
+                definition_path=args.binding_definition or DEFAULT_DEFINITION,
             )
     except VerificationError as error:
+        if str(error) == "vad_argument_invalid":
+            parser.error("VAD argument must match the pin")
         print(json.dumps({"error": str(error)}), file=sys.stderr)
         return 1
     except OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, ImportError:

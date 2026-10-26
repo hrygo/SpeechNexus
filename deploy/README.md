@@ -1,6 +1,6 @@
 # Deployment bootstrap
 
-This directory defines a local, single-node Compose topology for validating
+This directory currently defines a local, single-node Compose topology for validating
 the repository bootstrap. Following
 [ADR 0004](../docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md),
 the architecture is cluster-ready while the MVP deployment runs as a
@@ -8,6 +8,24 @@ single-node homomorphic topology (`Node=1, Replica=1`). It is not a production
 capacity or multi-node high-availability qualification. Release images must be
 locked by digest before publication; the bootstrap uses explicit version tags
 for readability.
+
+## Deployment units and platform boundaries
+
+The product targets distributed deployment. See the
+[deployment unit and platform plan (Chinese)](../docs/architecture/deployment-units.md)
+and [ADR 0011 (Chinese)](../docs/decisions/0011-distributed-deployment-and-platform-boundaries.md)
+for service placement, platform requirements, existing entry points and acceptance gaps.
+Business/control services and the workbench can be placed independently of compute
+hosts. The selected CUDA engine and node execution stack targets Linux; the current
+CPU audio inspection sandbox also needs Linux. Native macOS/Linux application support,
+container execution and multi-host operation require separate qualification.
+
+The current Compose file starts PostgreSQL, MinIO, Speech API, Gateway and two static
+Web applications. The `workbench` container serves the frontend; it does not start the
+independent Workbench API. Its `/v2/workbench/` proxy currently points to `api:8000`.
+Independent Workbench, Controller, complete background-role and model deployment
+assembly remain work items in the plan. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies
+a process; it does not switch the backend command to a different service factory.
 
 ## Local Compose
 

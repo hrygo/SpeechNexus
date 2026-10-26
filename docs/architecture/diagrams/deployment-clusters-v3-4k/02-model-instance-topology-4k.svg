@@ -1,0 +1,183 @@
+<svg id="poster" xmlns="http://www.w3.org/2000/svg" width="3840" height="2160" viewBox="0 0 1920 1080" role="img"><title>模型、引擎与实例拓扑</title><defs>
+<linearGradient id="paper" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FAFCFD"/><stop offset="1" stop-color="#F2F6F6"/></linearGradient>
+<filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#234150" flood-opacity=".045"/></filter>
+<style>text{font-family:Arial,'PingFang SC','Hiragino Sans GB',sans-serif;text-rendering:geometricPrecision}</style>
+<marker id="arrow-teal" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#177A75" stroke-width="1.5" stroke-linejoin="round"/></marker>
+<marker id="arrow-gray" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#94A5AF" stroke-width="1.5" stroke-linejoin="round"/></marker>
+<marker id="arrow-amber" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#AE7839" stroke-width="1.5" stroke-linejoin="round"/></marker>
+<marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#526FA6" stroke-width="1.5" stroke-linejoin="round"/></marker>
+<marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="#8664A0" stroke-width="1.5" stroke-linejoin="round"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="url(#paper)" stroke="none" stroke-width="1"/>
+<g data-layout-icon="true" data-icon="speech" transform="translate(58 32) scale(0.75)">
+<g fill="none" stroke="#177A75" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M3 8H1v16h2 M29 8h2v16h-2 M7 13v6 M12 8v16 M17 3v26 M22 8v16 M27 13v6"/></g></g>
+<text data-check-box="label-1" data-max-width="220" x="96" y="53" fill="#172D43" font-size="20" font-weight="700" text-anchor="start">SpeechNexus</text>
+<text data-check-box="label-2" data-max-width="650" x="254" y="52" fill="#667C8C" font-size="12" font-weight="400" text-anchor="start">/  TARGET ARCHITECTURE</text>
+<text data-check-box="label-3" data-max-width="1740" x="56" y="120" fill="#172D43" font-size="44" font-weight="650" text-anchor="start">模型、引擎与实例拓扑</text>
+<text data-check-box="label-4" data-max-width="1760" x="58" y="163" fill="#667C8C" font-size="17" font-weight="400" text-anchor="start">模型绑定固定版本；引擎实例独立标识；同模型副本跨节点扩容；资源池在节点之间聚合容量</text>
+<rect id="catalog" data-layout-container="true" data-inset="20" x="64" y="230" width="912" height="676" rx="20" fill="#FFFFFF" stroke="#DCE5E8" stroke-width="1" filter="url(#shadow)"/>
+<text data-check-box="label-5" data-max-width="560" data-owner="catalog" x="90" y="273" fill="#172D43" font-size="22" font-weight="650" text-anchor="start">能力与模型制品</text>
+<text data-check-box="label-6" data-max-width="200" data-owner="catalog" x="742" y="273" fill="#667C8C" font-size="17" font-weight="600" text-anchor="start">推理运行时</text>
+<rect x="80" y="300" width="880" height="69" rx="10" fill="#F4F8F9" stroke="none" stroke-width="1"/>
+<rect id="pill-7" data-layout-container="true" data-inset="7" x="96" y="319" width="28" height="30" rx="12" fill="#EAF5F0" stroke="none" stroke-width="1"/>
+<text data-check-box="label-7" data-max-width="12" data-owner="pill-7" x="110.0" y="338.59" fill="#177A75" font-size="13.5" font-weight="600" text-anchor="middle">A</text>
+<text data-check-box="label-8" data-max-width="118" data-owner="catalog" x="144" y="334" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">实时 ASR</text>
+<text data-check-box="label-9" data-max-width="432" data-owner="catalog" x="278" y="329" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-ASR-0.6B</text>
+<text data-check-box="label-10" data-max-width="432" data-owner="catalog" x="278" y="354" fill="#177A75" font-size="12.2" font-weight="400" text-anchor="start">预加载 / 实时常驻</text>
+<text data-check-box="label-11" data-max-width="208" data-owner="catalog" x="742" y="329" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM</text>
+<text data-check-box="label-12" data-max-width="208" data-owner="catalog" x="742" y="354" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
+<rect id="pill-13" data-layout-container="true" data-inset="7" x="96" y="392" width="28" height="30" rx="12" fill="#EBF1F9" stroke="none" stroke-width="1"/>
+<text data-check-box="label-13" data-max-width="12" data-owner="pill-13" x="110.0" y="411.59" fill="#4774A8" font-size="13.5" font-weight="600" text-anchor="middle">B</text>
+<text data-check-box="label-14" data-max-width="118" data-owner="catalog" x="144" y="407" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">文件 / 复核</text>
+<text data-check-box="label-15" data-max-width="432" data-owner="catalog" x="278" y="402" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-ASR-1.7B</text>
+<text data-check-box="label-16" data-max-width="432" data-owner="catalog" x="278" y="427" fill="#4774A8" font-size="12.2" font-weight="400" text-anchor="start">文件按策略；实时复核依赖须就绪</text>
+<text data-check-box="label-17" data-max-width="208" data-owner="catalog" x="742" y="402" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM</text>
+<text data-check-box="label-18" data-max-width="208" data-owner="catalog" x="742" y="427" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
+<rect x="80" y="446" width="880" height="69" rx="10" fill="#F4F8F9" stroke="none" stroke-width="1"/>
+<rect id="pill-19" data-layout-container="true" data-inset="7" x="96" y="465" width="28" height="30" rx="12" fill="#FAF1E4" stroke="none" stroke-width="1"/>
+<text data-check-box="label-19" data-max-width="12" data-owner="pill-19" x="110.0" y="484.59" fill="#AE7839" font-size="13.5" font-weight="600" text-anchor="middle">C</text>
+<text data-check-box="label-20" data-max-width="118" data-owner="catalog" x="144" y="480" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">预设音色</text>
+<text data-check-box="label-21" data-max-width="432" data-owner="catalog" x="278" y="475" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice</text>
+<text data-check-box="label-22" data-max-width="432" data-owner="catalog" x="278" y="500" fill="#AE7839" font-size="12.2" font-weight="400" text-anchor="start">承担实时合成的绑定常驻</text>
+<text data-check-box="label-23" data-max-width="208" data-owner="catalog" x="742" y="475" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM-Omni</text>
+<text data-check-box="label-24" data-max-width="208" data-owner="catalog" x="742" y="500" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
+<rect id="pill-25" data-layout-container="true" data-inset="7" x="96" y="538" width="28" height="30" rx="12" fill="#F2EDF8" stroke="none" stroke-width="1"/>
+<text data-check-box="label-25" data-max-width="12" data-owner="pill-25" x="110.0" y="557.59" fill="#8263A4" font-size="13.5" font-weight="600" text-anchor="middle">D</text>
+<text data-check-box="label-26" data-max-width="118" data-owner="catalog" x="144" y="553" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">克隆 / 复用</text>
+<text data-check-box="label-27" data-max-width="432" data-owner="catalog" x="278" y="548" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-TTS-12Hz-1.7B-Base</text>
+<text data-check-box="label-28" data-max-width="432" data-owner="catalog" x="278" y="573" fill="#8263A4" font-size="12.2" font-weight="400" text-anchor="start">实时常驻；受控创作预算复用</text>
+<text data-check-box="label-29" data-max-width="208" data-owner="catalog" x="742" y="548" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM-Omni</text>
+<text data-check-box="label-30" data-max-width="208" data-owner="catalog" x="742" y="573" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
+<rect x="80" y="592" width="880" height="69" rx="10" fill="#F4F8F9" stroke="none" stroke-width="1"/>
+<rect id="pill-31" data-layout-container="true" data-inset="7" x="96" y="611" width="28" height="30" rx="12" fill="#F8EDF2" stroke="none" stroke-width="1"/>
+<text data-check-box="label-31" data-max-width="12" data-owner="pill-31" x="110.0" y="630.59" fill="#A26483" font-size="13.5" font-weight="600" text-anchor="middle">E</text>
+<text data-check-box="label-32" data-max-width="118" data-owner="catalog" x="144" y="626" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">声音设计</text>
+<text data-check-box="label-33" data-max-width="432" data-owner="catalog" x="278" y="621" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign</text>
+<text data-check-box="label-34" data-max-width="432" data-owner="catalog" x="278" y="646" fill="#A26483" font-size="12.2" font-weight="400" text-anchor="start">按需加载 / 空闲回收</text>
+<text data-check-box="label-35" data-max-width="208" data-owner="catalog" x="742" y="621" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM-Omni</text>
+<text data-check-box="label-36" data-max-width="208" data-owner="catalog" x="742" y="646" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
+<rect id="pill-37" data-layout-container="true" data-inset="7" x="96" y="684" width="28" height="30" rx="12" fill="#EBF3F5" stroke="none" stroke-width="1"/>
+<text data-check-box="label-37" data-max-width="12" data-owner="pill-37" x="110.0" y="703.59" fill="#5C8192" font-size="13.5" font-weight="600" text-anchor="middle">F</text>
+<text data-check-box="label-38" data-max-width="118" data-owner="catalog" x="144" y="699" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">强制对齐</text>
+<text data-check-box="label-39" data-max-width="432" data-owner="catalog" x="278" y="694" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-ForcedAligner-0.6B</text>
+<text data-check-box="label-40" data-max-width="432" data-owner="catalog" x="278" y="719" fill="#5C8192" font-size="12.2" font-weight="400" text-anchor="start">独立辅助实例 / 按配方治理</text>
+<text data-check-box="label-41" data-max-width="208" data-owner="catalog" x="742" y="694" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">qwen_asr</text>
+<text data-check-box="label-42" data-max-width="208" data-owner="catalog" x="742" y="719" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">PyTorch CUDA</text>
+<rect x="80" y="738" width="880" height="69" rx="10" fill="#F4F8F9" stroke="none" stroke-width="1"/>
+<rect id="pill-43" data-layout-container="true" data-inset="7" x="96" y="757" width="28" height="30" rx="12" fill="#EFF2E9" stroke="none" stroke-width="1"/>
+<text data-check-box="label-43" data-max-width="12" data-owner="pill-43" x="110.0" y="776.59" fill="#6E7860" font-size="13.5" font-weight="600" text-anchor="middle">G</text>
+<text data-check-box="label-44" data-max-width="118" data-owner="catalog" x="144" y="772" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">匿名分人</text>
+<text data-check-box="label-45" data-max-width="432" data-owner="catalog" x="278" y="767" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">nvidia/Nemotron-3-Diarization</text>
+<text data-check-box="label-46" data-max-width="432" data-owner="catalog" x="278" y="792" fill="#6E7860" font-size="12.2" font-weight="400" text-anchor="start">独立辅助实例 / 按配方治理</text>
+<text data-check-box="label-47" data-max-width="208" data-owner="catalog" x="742" y="767" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">NeMo</text>
+<text data-check-box="label-48" data-max-width="208" data-owner="catalog" x="742" y="792" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">PyTorch CUDA</text>
+<rect id="pill-49" data-layout-container="true" data-inset="7" x="96" y="830" width="28" height="30" rx="12" fill="#EFF5E6" stroke="none" stroke-width="1"/>
+<text data-check-box="label-49" data-max-width="12" data-owner="pill-49" x="110.0" y="849.59" fill="#6B8C4E" font-size="13.5" font-weight="600" text-anchor="middle">H</text>
+<text data-check-box="label-50" data-max-width="118" data-owner="catalog" x="144" y="845" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">VAD</text>
+<text data-check-box="label-51" data-max-width="432" data-owner="catalog" x="278" y="840" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Silero VAD ONNX</text>
+<text data-check-box="label-52" data-max-width="432" data-owner="catalog" x="278" y="865" fill="#6B8C4E" font-size="12.2" font-weight="400" text-anchor="start">CPU 常驻 / 会话状态隔离</text>
+<text data-check-box="label-53" data-max-width="208" data-owner="catalog" x="742" y="840" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">ONNX Runtime</text>
+<text data-check-box="label-54" data-max-width="208" data-owner="catalog" x="742" y="865" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">CPU</text>
+<rect id="binding" data-layout-container="true" data-inset="16" x="1024" y="230" width="832" height="76" rx="16" fill="#ECF4F1" stroke="#D6E4DD" stroke-width="1"/>
+<text data-check-box="label-55" data-max-width="784" data-owner="binding" x="1048" y="262" fill="#172D43" font-size="18" font-weight="600" text-anchor="start">绑定修订 = 模型与版本 + 引擎 + 固定配置</text>
+<text data-check-box="label-56" data-max-width="784" data-owner="binding" x="1048" y="287" fill="#667C8C" font-size="12.6" font-weight="400" text-anchor="start">副本共享 binding_revision；instance / generation 独立；每实例归属一个 pool</text>
+<text data-check-box="label-57" data-max-width="820" x="1024" y="334" fill="#667C8C" font-size="12.7" font-weight="400" text-anchor="start">点线仅标识同绑定模型副本；不代表副本之间存在调用或状态同步</text>
+<rect id="gpu-A" data-layout-container="true" data-inset="16" x="1024" y="356" width="392" height="252" rx="18" fill="#FFFFFF" stroke="#DCE5E8" stroke-width="1" filter="url(#shadow)"/>
+<g data-layout-icon="true" data-icon="gpu" transform="translate(1049 382) scale(0.75)">
+<rect x="-7" y="-7" width="46" height="46" rx="12" fill="#F5ECDE"/>
+<g fill="none" stroke="#AE7839" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><rect x="7" y="7" width="18" height="18" rx="4"/><rect x="12" y="12" width="8" height="8" rx="1"/><path d="M11 2v5 M16 2v5 M21 2v5 M11 25v5 M16 25v5 M21 25v5 M2 11h5 M2 16h5 M2 21h5 M25 11h5 M25 16h5 M25 21h5"/></g></g>
+<text data-check-box="label-58" data-max-width="220" data-owner="gpu-A" x="1088" y="396" fill="#172D43" font-size="20" font-weight="600" text-anchor="start">Host-A</text>
+<rect id="pill-59" data-layout-container="true" data-inset="7" x="1318" y="374" width="74" height="28" rx="12" fill="#F5ECDE" stroke="none" stroke-width="1"/>
+<text data-check-box="label-59" data-max-width="58" data-owner="pill-59" x="1355.0" y="392.08" fill="#AE7839" font-size="12" font-weight="600" text-anchor="middle">Linux</text>
+<text data-check-box="label-60" data-max-width="344" data-owner="gpu-A" x="1048" y="428" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">Execution Gateway A · Node Controller A</text>
+<rect id="slot-A1" data-layout-container="true" data-inset="8" x="1048" y="440" width="344" height="34" rx="10" fill="#EAF5F0" stroke="none" stroke-width="1"/>
+<text data-check-box="label-61" data-max-width="38" data-owner="slot-A1" x="1062" y="463" fill="#177A75" font-size="13.3" font-weight="700" text-anchor="start">A1</text>
+<text data-check-box="label-62" data-max-width="146" data-owner="slot-A1" x="1109" y="463" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">ASR-0.6B</text>
+<text data-check-box="label-63" data-max-width="112" data-owner="slot-A1" x="1378" y="463" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM</text>
+<rect id="slot-C1" data-layout-container="true" data-inset="8" x="1048" y="484" width="344" height="34" rx="10" fill="#FAF1E4" stroke="none" stroke-width="1"/>
+<text data-check-box="label-64" data-max-width="38" data-owner="slot-C1" x="1062" y="507" fill="#AE7839" font-size="13.3" font-weight="700" text-anchor="start">C1</text>
+<text data-check-box="label-65" data-max-width="146" data-owner="slot-C1" x="1109" y="507" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">CustomVoice</text>
+<text data-check-box="label-66" data-max-width="112" data-owner="slot-C1" x="1378" y="507" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM-Omni</text>
+<rect id="slot-D1" data-layout-container="true" data-inset="8" x="1048" y="528" width="344" height="34" rx="10" fill="#F2EDF8" stroke="none" stroke-width="1"/>
+<text data-check-box="label-67" data-max-width="38" data-owner="slot-D1" x="1062" y="551" fill="#8263A4" font-size="13.3" font-weight="700" text-anchor="start">D1</text>
+<text data-check-box="label-68" data-max-width="146" data-owner="slot-D1" x="1109" y="551" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">Base</text>
+<text data-check-box="label-69" data-max-width="112" data-owner="slot-D1" x="1378" y="551" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM-Omni</text>
+<text data-check-box="label-70" data-max-width="344" data-owner="gpu-A" x="1048" y="587" fill="#667C8C" font-size="12" font-weight="400" text-anchor="start">共享本节点父预算，不重复计整卡容量</text>
+<rect id="gpu-B" data-layout-container="true" data-inset="16" x="1464" y="356" width="392" height="252" rx="18" fill="#FFFFFF" stroke="#DCE5E8" stroke-width="1" filter="url(#shadow)"/>
+<g data-layout-icon="true" data-icon="gpu" transform="translate(1489 382) scale(0.75)">
+<rect x="-7" y="-7" width="46" height="46" rx="12" fill="#F5ECDE"/>
+<g fill="none" stroke="#AE7839" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><rect x="7" y="7" width="18" height="18" rx="4"/><rect x="12" y="12" width="8" height="8" rx="1"/><path d="M11 2v5 M16 2v5 M21 2v5 M11 25v5 M16 25v5 M21 25v5 M2 11h5 M2 16h5 M2 21h5 M25 11h5 M25 16h5 M25 21h5"/></g></g>
+<text data-check-box="label-71" data-max-width="220" data-owner="gpu-B" x="1528" y="396" fill="#172D43" font-size="20" font-weight="600" text-anchor="start">Host-B</text>
+<rect id="pill-72" data-layout-container="true" data-inset="7" x="1758" y="374" width="74" height="28" rx="12" fill="#F5ECDE" stroke="none" stroke-width="1"/>
+<text data-check-box="label-72" data-max-width="58" data-owner="pill-72" x="1795.0" y="392.08" fill="#AE7839" font-size="12" font-weight="600" text-anchor="middle">Linux</text>
+<text data-check-box="label-73" data-max-width="344" data-owner="gpu-B" x="1488" y="428" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">Execution Gateway B · Node Controller B</text>
+<rect id="slot-A2" data-layout-container="true" data-inset="8" x="1488" y="440" width="344" height="34" rx="10" fill="#EAF5F0" stroke="none" stroke-width="1"/>
+<text data-check-box="label-74" data-max-width="38" data-owner="slot-A2" x="1502" y="463" fill="#177A75" font-size="13.3" font-weight="700" text-anchor="start">A2</text>
+<text data-check-box="label-75" data-max-width="146" data-owner="slot-A2" x="1549" y="463" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">ASR-0.6B</text>
+<text data-check-box="label-76" data-max-width="112" data-owner="slot-A2" x="1818" y="463" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM</text>
+<rect id="slot-C2" data-layout-container="true" data-inset="8" x="1488" y="484" width="344" height="34" rx="10" fill="#FAF1E4" stroke="none" stroke-width="1"/>
+<text data-check-box="label-77" data-max-width="38" data-owner="slot-C2" x="1502" y="507" fill="#AE7839" font-size="13.3" font-weight="700" text-anchor="start">C2</text>
+<text data-check-box="label-78" data-max-width="146" data-owner="slot-C2" x="1549" y="507" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">CustomVoice</text>
+<text data-check-box="label-79" data-max-width="112" data-owner="slot-C2" x="1818" y="507" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM-Omni</text>
+<rect id="slot-D2" data-layout-container="true" data-inset="8" x="1488" y="528" width="344" height="34" rx="10" fill="#F2EDF8" stroke="none" stroke-width="1"/>
+<text data-check-box="label-80" data-max-width="38" data-owner="slot-D2" x="1502" y="551" fill="#8263A4" font-size="13.3" font-weight="700" text-anchor="start">D2</text>
+<text data-check-box="label-81" data-max-width="146" data-owner="slot-D2" x="1549" y="551" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">Base</text>
+<text data-check-box="label-82" data-max-width="112" data-owner="slot-D2" x="1818" y="551" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM-Omni</text>
+<text data-check-box="label-83" data-max-width="344" data-owner="gpu-B" x="1488" y="587" fill="#667C8C" font-size="12" font-weight="400" text-anchor="start">共享本节点父预算，不重复计整卡容量</text>
+<path data-route="true" data-network="false" d="M1392 457H1488" fill="none" stroke="#177A75" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5"/>
+<path data-route="true" data-network="false" d="M1392 501H1488" fill="none" stroke="#AE7839" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5"/>
+<path data-route="true" data-network="false" d="M1392 545H1488" fill="none" stroke="#8263A4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5"/>
+<rect id="logical-pools" data-layout-container="true" data-inset="7" x="1024" y="626" width="832" height="32" rx="10" fill="#ECF1F7" stroke="none" stroke-width="1"/>
+<text data-check-box="label-84" data-max-width="800" data-owner="logical-pools" x="1040" y="647" fill="#526FA6" font-size="12.4" font-weight="500" text-anchor="start">跨节点逻辑池：asr-realtime → A1 / A2；tts-realtime → C1 / C2 / D1 / D2</text>
+<rect id="gpu-c" data-layout-container="true" data-inset="16" x="1024" y="674" width="392" height="306" rx="18" fill="#FFFFFF" stroke="#DCE5E8" stroke-width="1" filter="url(#shadow)"/>
+<g data-layout-icon="true" data-icon="gpu" transform="translate(1049 700) scale(0.75)">
+<rect x="-7" y="-7" width="46" height="46" rx="12" fill="#F5ECDE"/>
+<g fill="none" stroke="#AE7839" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><rect x="7" y="7" width="18" height="18" rx="4"/><rect x="12" y="12" width="8" height="8" rx="1"/><path d="M11 2v5 M16 2v5 M21 2v5 M11 25v5 M16 25v5 M21 25v5 M2 11h5 M2 16h5 M2 21h5 M25 11h5 M25 16h5 M25 21h5"/></g></g>
+<text data-check-box="label-85" data-max-width="220" data-owner="gpu-c" x="1088" y="714" fill="#172D43" font-size="20" font-weight="600" text-anchor="start">Host-C</text>
+<rect id="pill-86" data-layout-container="true" data-inset="7" x="1318" y="692" width="74" height="28" rx="12" fill="#F5ECDE" stroke="none" stroke-width="1"/>
+<text data-check-box="label-86" data-max-width="58" data-owner="pill-86" x="1355.0" y="710.08" fill="#AE7839" font-size="12" font-weight="600" text-anchor="middle">Linux</text>
+<text data-check-box="label-87" data-max-width="344" data-owner="gpu-c" x="1048" y="746" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">Execution Gateway C · Node Controller C</text>
+<rect id="slot-B1" data-layout-container="true" data-inset="8" x="1048" y="760" width="344" height="34" rx="10" fill="#EBF1F9" stroke="none" stroke-width="1"/>
+<text data-check-box="label-88" data-max-width="38" data-owner="slot-B1" x="1062" y="783" fill="#4774A8" font-size="13.3" font-weight="700" text-anchor="start">B1</text>
+<text data-check-box="label-89" data-max-width="146" data-owner="slot-B1" x="1109" y="783" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">ASR-1.7B</text>
+<text data-check-box="label-90" data-max-width="112" data-owner="slot-B1" x="1378" y="783" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM</text>
+<rect id="slot-E1" data-layout-container="true" data-inset="8" x="1048" y="805" width="344" height="34" rx="10" fill="#F8EDF2" stroke="none" stroke-width="1"/>
+<text data-check-box="label-91" data-max-width="38" data-owner="slot-E1" x="1062" y="828" fill="#A26483" font-size="13.3" font-weight="700" text-anchor="start">E1</text>
+<text data-check-box="label-92" data-max-width="146" data-owner="slot-E1" x="1109" y="828" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">VoiceDesign</text>
+<text data-check-box="label-93" data-max-width="112" data-owner="slot-E1" x="1378" y="828" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">vLLM-Omni</text>
+<rect id="slot-F1" data-layout-container="true" data-inset="8" x="1048" y="850" width="344" height="34" rx="10" fill="#EBF3F5" stroke="none" stroke-width="1"/>
+<text data-check-box="label-94" data-max-width="38" data-owner="slot-F1" x="1062" y="873" fill="#5C8192" font-size="13.3" font-weight="700" text-anchor="start">F1</text>
+<text data-check-box="label-95" data-max-width="146" data-owner="slot-F1" x="1109" y="873" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">ForcedAligner</text>
+<text data-check-box="label-96" data-max-width="112" data-owner="slot-F1" x="1378" y="873" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">qwen_asr</text>
+<rect id="slot-G1" data-layout-container="true" data-inset="8" x="1048" y="895" width="344" height="34" rx="10" fill="#EFF2E9" stroke="none" stroke-width="1"/>
+<text data-check-box="label-97" data-max-width="38" data-owner="slot-G1" x="1062" y="918" fill="#6E7860" font-size="13.3" font-weight="700" text-anchor="start">G1</text>
+<text data-check-box="label-98" data-max-width="146" data-owner="slot-G1" x="1109" y="918" fill="#172D43" font-size="13.5" font-weight="500" text-anchor="start">Diarization</text>
+<text data-check-box="label-99" data-max-width="112" data-owner="slot-G1" x="1378" y="918" fill="#667C8C" font-size="12.2" font-weight="400" text-anchor="end">NeMo</text>
+<text data-check-box="label-100" data-max-width="344" data-owner="gpu-c" x="1048" y="960" fill="#667C8C" font-size="12" font-weight="400" text-anchor="start">独立运行时实例；加载与释放受节点预算约束</text>
+<rect id="cpu-pool" data-layout-container="true" data-inset="16" x="1464" y="674" width="392" height="306" rx="18" fill="#F2F7EC" stroke="#DDE8D2" stroke-width="1"/>
+<text data-check-box="label-101" data-max-width="344" data-owner="cpu-pool" x="1488" y="714" fill="#172D43" font-size="22" font-weight="600" text-anchor="start">CPU 节点集群</text>
+<text data-check-box="label-102" data-max-width="344" data-owner="cpu-pool" x="1488" y="739" fill="#667C8C" font-size="13" font-weight="400" text-anchor="start">ONNX Runtime / 有界媒体沙箱</text>
+<rect id="cpu-1" data-layout-container="true" data-inset="12" x="1488" y="760" width="160" height="154" rx="14" fill="#FFFFFF" stroke="#DDE8D2" stroke-width="1"/>
+<text data-check-box="label-103" data-max-width="112" data-owner="cpu-1" x="1512" y="794" fill="#172D43" font-size="17" font-weight="600" text-anchor="start">CPU-1</text>
+<rect id="pill-104" data-layout-container="true" data-inset="7" x="1500" y="812" width="136" height="37" rx="12" fill="#EFF5E6" stroke="none" stroke-width="1"/>
+<text data-check-box="label-104" data-max-width="120" data-owner="pill-104" x="1568.0" y="834.716" fill="#6B8C4E" font-size="12.4" font-weight="600" text-anchor="middle">H1 · Silero VAD</text>
+<rect id="pill-105" data-layout-container="true" data-inset="7" x="1500" y="866" width="136" height="30" rx="12" fill="#F6ECDA" stroke="none" stroke-width="1"/>
+<text data-check-box="label-105" data-max-width="120" data-owner="pill-105" x="1568.0" y="885.216" fill="#AE7839" font-size="12.4" font-weight="600" text-anchor="middle">媒体安全检查</text>
+<rect id="cpu-2" data-layout-container="true" data-inset="12" x="1672" y="760" width="160" height="154" rx="14" fill="#FFFFFF" stroke="#DDE8D2" stroke-width="1"/>
+<text data-check-box="label-106" data-max-width="112" data-owner="cpu-2" x="1696" y="794" fill="#172D43" font-size="17" font-weight="600" text-anchor="start">CPU-2</text>
+<rect id="pill-107" data-layout-container="true" data-inset="7" x="1684" y="812" width="136" height="37" rx="12" fill="#EFF5E6" stroke="none" stroke-width="1"/>
+<text data-check-box="label-107" data-max-width="120" data-owner="pill-107" x="1752.0" y="834.716" fill="#6B8C4E" font-size="12.4" font-weight="600" text-anchor="middle">H2 · Silero VAD</text>
+<rect id="pill-108" data-layout-container="true" data-inset="7" x="1684" y="866" width="136" height="30" rx="12" fill="#F6ECDA" stroke="none" stroke-width="1"/>
+<text data-check-box="label-108" data-max-width="120" data-owner="pill-108" x="1752.0" y="885.216" fill="#AE7839" font-size="12.4" font-weight="600" text-anchor="middle">媒体安全检查</text>
+<path data-route="true" data-network="false" d="M1636 830H1684" fill="none" stroke="#6B8C4E" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 5"/>
+<text data-check-box="label-109" data-max-width="344" data-owner="cpu-pool" x="1488" y="954" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">H 副本按会话隔离状态；本地临时缓冲有界</text>
+<rect id="dependency-asr" data-layout-container="true" data-inset="16" x="64" y="936" width="440" height="76" rx="14" fill="#ECF3F2" stroke="none" stroke-width="1"/>
+<text data-check-box="label-110" data-max-width="392" data-owner="dependency-asr" x="88" y="965" fill="#177A75" font-size="14" font-weight="600" text-anchor="start">实时完整段复核（按配方）</text>
+<text data-check-box="label-111" data-max-width="392" data-owner="dependency-asr" x="88" y="992" fill="#172D43" font-size="14" font-weight="500" text-anchor="start">A 0.6B 预览 → B 1.7B 复核 / 定稿</text>
+<rect id="dependency-voice" data-layout-container="true" data-inset="16" x="528" y="936" width="448" height="76" rx="14" fill="#ECF3F2" stroke="none" stroke-width="1"/>
+<text data-check-box="label-112" data-max-width="400" data-owner="dependency-voice" x="552" y="965" fill="#177A75" font-size="14" font-weight="600" text-anchor="start">声音设计 → 不可变音色 → 复用</text>
+<text data-check-box="label-113" data-max-width="400" data-owner="dependency-voice" x="552" y="992" fill="#172D43" font-size="14" font-weight="500" text-anchor="start">E 候选 → D 校验 → VoiceRevision → D 合成</text>
+<text data-check-box="label-114" data-max-width="832" x="1024" y="1008" fill="#667C8C" font-size="12" font-weight="400" text-anchor="start">Host-C 示例：asr-batch → B1；voice-creation → E1；auxiliary → F1 / G1</text>
+<text data-check-box="label-115" data-max-width="832" x="1024" y="1031" fill="#667C8C" font-size="12.4" font-weight="400" text-anchor="start">资源池跨 HostNode 聚合；同节点所有池与实例共享一个父物理预算</text>
+<text data-check-box="label-116" data-max-width="1750" x="64" y="1052" fill="#667C8C" font-size="12.6" font-weight="400" text-anchor="start">模型共置与副本数量为拓扑示意，不表示固定容量；每次扩容仍受版本、完整配方与父预算约束</text>
+</svg>

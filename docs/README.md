@@ -1,6 +1,6 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[项目经理基线](plans/2026-10-26-project-manager-baseline.md)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.5。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[项目经理基线](plans/2026-10-26-project-manager-baseline.md)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -10,6 +10,7 @@
 | [Agent 验证指南](agent-verification.md) | 按改动选择检查、锁定依赖、隔离服务前置与证据范围 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
+| [部署单元与平台规划](architecture/deployment-units.md) | 独立服务、平台与节点边界、当前入口/缺口及跨平台和多机验收 |
 | [工程目录与依赖边界](architecture/repository-layout.md)                                             | Python / Web workspace、模块方向、契约生命周期、测试层级与部署入口              |
 | [语音接口](architecture/speech-api.md)                                                              | OpenAI 兼容子集、增强 REST / Job、音色版本、实时事件和调用示例                  |
 | [OpenAI 兼容与增强边界](architecture/openai-compatibility.md)                                       | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁                              |

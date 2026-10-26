@@ -1,18 +1,18 @@
 ---
 title: "SpeechNexus 产品与架构设计"
 status: active
-version: "0.5.4"
-date: 2026-10-23
+version: "0.5.5"
+date: 2026-10-26
 audience: "产品负责人、架构师、Web 与语音服务开发者、平台运维、验收人员"
 ---
 
 # SpeechNexus 产品与架构设计
 
-SpeechNexus 是面向 Linux 的企业级语音服务底座，采用 OpenAI 兼容的 ASR/TTS 子集及音色创作等增强协议。WebUI 包含 AdminUI 与个人语音工作台；首期不建设用户身份认证体系，采用可信共享部署。
+SpeechNexus 是面向自有部署网络、按分布式架构设计的企业级语音服务底座，采用 OpenAI 兼容的 ASR/TTS 子集及音色创作等增强协议。WebUI 包含 AdminUI 与个人语音工作台；首期不建设用户身份认证体系，采用可信共享部署。
 
 本文是 SpeechNexus 独立项目的主设计，定义产品范围、职责边界、技术基线与验收要求。[整体技术方案](architecture/technical-blueprint.md)负责工程选型与组件协作，[语音接口](architecture/speech-api.md)负责公共协议细节，[资源治理](architecture/runtime-governance.md)负责调度、持久化与数据生命周期；共同构成后续实现依据。已确认产品边界见 [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)，模型、引擎与加载策略见 [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)，内网 LLM 与内容网络边界见 [ADR 0003](decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。存在冲突时先修订设计与决策，不以偶然实现替代契约。
 
-**实现状态：仓库已建立工程骨架与运营健康检查，尚未实现语音业务 API 或真实工作台。** `active` 表示本文是当前维护的设计基线，不表示语音、音色、模型能力或服务指标已经实现。参数是初始设计值；性能、质量、容量及恢复指标须在目标部署验证。文档版本独立于未来软件版本。
+**实现状态：已有部分业务 HTTP、独立工作台、持久协调与真实文件执行的分段实现；完整公开语音链、跨平台及多机部署仍待验收。** 当前范围见 [README](../README.md)和[项目经理基线](plans/2026-10-26-project-manager-baseline.md)。`active` 表示本文是当前维护的设计基线，不表示全部能力或服务指标已经实现。参数是初始设计值；性能、质量、容量及恢复指标须在目标部署验证。文档版本独立于未来软件版本。
 
 阅读入口：[产品工作流](#2-产品结构与用户工作流) · [统一接口](#4-语音接口与传输选择) · [场景预设](#5-场景参数与预设) · [共享访问边界](#6-首期访问边界与身份体系演进) · [资源治理](#7-资源治理与持久任务) · [模型后端](#8-模型后端与执行接口) · [部署与验收](#10-部署拓扑与故障行为) · [实施路线](#13-实施路线与配套文档)
 
@@ -22,7 +22,7 @@ SpeechNexus 是面向 Linux 的企业级语音服务底座，采用 OpenAI 兼�
 
 - 产品名称为 **SpeechNexus**，由 SpeechRail 的产品经验与架构启发；使用独立仓库。
 - 后端是企业级语音服务底座，面向应用集成，采用 **OpenAI 兼容 + 增强协议**；增强能力包括音色创作。
-- 部署于提供 vLLM 推理能力的 Linux 环境，不绑定具体硬件。
+- 业务、控制、工作台、数据与算力执行按独立部署单元分机运行；当前 CUDA / vLLM 推理栈以 Linux 为目标，其他单元的平台要求按职责与资格验证确定，不绑定具体硬件。
 - 同时提供实时 ASR、非实时 ASR、实时 TTS、非实时 TTS，使用参数和预设适配不同业务。
 - WebUI 定位为 **AdminUI + 个人语音工作台**，面向不同需求的使用者。
 - **短期不建设用户身份认证体系**，不将登录、用户目录、角色权限或企业身份源作为首期前置。
@@ -32,7 +32,7 @@ SpeechNexus 是面向 Linux 的企业级语音服务底座，采用 OpenAI 兼�
 
 | 决策 | 基线与理由 |
 | --- | --- |
-| 部署形态 | 首期采用可信网络内的独立部署；无登录、共享服务数据，不承诺用户或租户隔离；外部入口可复用部署方现有网关 |
+| 部署形态 | 可信网络内的分布式部署，单节点为同构验证拓扑；按部署单元确定平台要求；无登录、共享服务数据，不承诺用户或租户隔离；外部入口可复用部署方现有网关 |
 | 项目关系 | 在 SpeechNexus 按模块提取 SpeechRail 领域代码与测试，不给现有 macOS 产品增加 Linux 分支 |
 | 产品分层 | 语音底座、AdminUI、个人工作台职责分开；底座可在无 WebUI、无 LLM、无工作台业务数据库时运行 |
 | 兼容协议 | OpenAI Audio 和 Realtime 的明确子集用于标准调用；扩展资源使用 `/v1/nexus/`，扩展事件使用 `nexus.*` |
@@ -414,6 +414,8 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 
 ## 10. 部署拓扑与故障行为
 
+按 [ADR 0011](decisions/0011-distributed-deployment-and-platform-boundaries.md)确定部署单元与平台边界，具体职责、现有入口、Linux 媒体沙箱及未交付项维护于[部署单元规划](architecture/deployment-units.md)。业务与控制服务不依赖本机 GPU 或 Linux 专属内核能力；当前 Linux 推理与节点执行组件保持独立。macOS / Linux 原生运行、Linux 容器与跨主机运行分别取证，单节点验证不替代分布式交付。
+
 ### 10.1 不绑定硬件的三种拓扑
 
 | 拓扑 | 组成 | 适用与边界 |
@@ -528,6 +530,7 @@ LLM 拥有工作台自己的任务、取消与结果，失败不改写成功转�
 实施按 P0 契约、P1 独立语音底座、P2 AdminUI / 基础工作台、P3 实时工作流、P4 有声书、P5 生产资格推进。P1 先验证标准文件 ASR / 文本 TTS，再验证实时 ASR / TTS 和可复用音色路径；每段以可运行闭环验收。身份体系不在 P0–P5 的前置依赖中。
 
 - [整体技术方案](architecture/technical-blueprint.md)：技术基线、内部控制、事务 / 迁移、执行配方、Web / 内网 LLM、观测和当前工程交接顺序。
+- [部署单元与平台规划](architecture/deployment-units.md)：独立服务、平台要求、节点绑定、当前装配缺口与跨平台/多机验收。
 - [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)：阶段退出条件、工作包、P0 交接产物与预算假设。
 - [SpeechRail 复用边界](architecture/speechrail-reuse.md)：可提取领域模型、需重写的基础设施、平台专属部分、固定来源及许可证。
 - [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)：问题、修正裁决、核验来源和未验证项。

@@ -35,7 +35,7 @@
 | 协调事务、锁序、表所有权与恢复 | [应用事务](architecture/coordination-transactions.md)、[协调 Schema](architecture/distributed-coordination-schema.md)、[事务契约](../contracts/internal/coordination-transactions.schema.json) |
 | 遗留协调原型退出 | [ADR 0007](decisions/0007-legacy-coordination-retirement.md) |
 | Web 视觉、Token 与无障碍 | [Web 目录规则](../web/AGENTS.md)、[设计框架](architecture/ui-ux-design-framework-and-tokens.md) |
-| 环境、服务与部署 | [开发环境](development-environment.md)、[部署说明](../deploy/README.md)、[集成测试说明](../tests/integration/README.md) |
+| 环境、服务与部署 | [部署单元与平台规划](architecture/deployment-units.md)、[开发环境](development-environment.md)、[部署说明](../deploy/README.md)、[集成测试说明](../tests/integration/README.md) |
 | CI 调度、验证范围与门禁 | [CI 规则](architecture/ci-validation.md)、[工作流](../.github/workflows/ci.yml) |
 | SpeechRail 规则复用 | [固定来源与边界](architecture/speechrail-reuse.md) |
 

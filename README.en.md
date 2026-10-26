@@ -13,7 +13,7 @@
 [![TTS: Qwen3-TTS](https://img.shields.io/badge/TTS-Qwen3--TTS-8B5CF6)](https://github.com/QwenLM/Qwen3-TTS)
 [![Docker Compose](https://img.shields.io/badge/deploy-Docker_Compose-2496ED?logo=docker&logoColor=white)](deploy/README.md)
 
-SpeechNexus is a speech service and creation hub for your own Linux environment. It connects recognition, synthesis, and voice creation to everyday work: users transcribe, narrate, and organize content in a browser; developers integrate through APIs; operators manage models, resources, and tasks.
+SpeechNexus is a speech service and creation hub designed for distributed deployment within your own network. It connects recognition, synthesis, and voice creation to everyday work: users transcribe, narrate, and organize content in a browser; developers integrate through APIs; operators manage models, resources, and tasks.
 
 > **Early development: suitable for interface previews and development evaluation.** The default startup loads no speech models and cannot yet transcribe real recordings or generate speech. Some pages and service modules are connected and independently verified; complete speech workflows and production deployment still require integration and acceptance. The use cases below describe product goals. See [current availability](#current-availability) for delivered scope.
 
@@ -137,6 +137,8 @@ The configured independent workbench provides public downloads of committed copi
 
 ## Deployment and data boundaries
 
+Business and control services, the workbench, data services, and compute components are planned as independent deployment units that can run on different hosts. The selected CUDA inference and node execution stack targets Linux, as does the existing CPU audio inspection sandbox; these dependencies do not require every API or workbench service to use Linux. The single-node Compose setup is a development preview. Native macOS / Linux support and complete multi-host workflows still require acceptance; see the [deployment unit and platform plan (Chinese)](docs/architecture/deployment-units.md).
+
 **The initial scope is a shared deployment within a trusted network, without login, role permissions, or tenant isolation.** Users of a deployment share its data. “Personal speech workbench” describes the experience and does not provide private user spaces. Workbench and AdminUI entry points do not establish permission boundaries; the operator controls access.
 
 The product requires local speech inference, keeping business audio, transcripts, manuscripts, voice references, and derived content within the deployment network. LLM integration for assistants and minutes is optional, disabled by default, and restricted to deployment-approved local or intranet services, with no public-cloud fallback. Complete LLM integration and egress restrictions still require acceptance; see the [network boundary decision (Chinese)](docs/decisions/0003-workbench-llm-network-boundary.md).
@@ -159,6 +161,7 @@ See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implem
 | Project status and takeover | [Project manager baseline: team capabilities, gaps, evidence, and collaboration (Chinese)](docs/plans/2026-10-26-project-manager-baseline.md) |
 | Product scope and workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md) |
 | Deployment, ports, and configuration | [Deployment guide](deploy/README.md) |
+| Deployment units, host placement, and platform requirements | [Deployment unit and platform plan (Chinese)](docs/architecture/deployment-units.md) |
 | API integration and compatibility | [Speech API (Chinese)](docs/architecture/speech-api.md) |
 | Development and verification | [Development guide (Chinese)](docs/development-environment.md) |
 | Architecture and module boundaries | [Technical blueprint (Chinese)](docs/architecture/technical-blueprint.md) |

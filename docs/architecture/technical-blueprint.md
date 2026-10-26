@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 整体技术方案"
 status: active
-version: "0.3.0"
+version: "0.3.1"
 date: 2026-10-26
 ---
 
@@ -37,7 +37,9 @@ MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计�
 
 ## 2. 进程、网络与所有权
 
-首轮部署使用单节点 Compose / 运维基础设施，架构层面遵循 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的集群原生同构原则（单节点为 `Node=1, Replica=1` 特例）：逻辑角色按职责分离，每个进程显式声明 `node_id`、`process_role` 与唯一实例身份（`instance_id` / `gateway_id`），backend 与 execution-gateway 独立部署，禁止使用进程内存态或共享本地目录传递业务状态。单机 MVP 可将 scheduler / job-worker 折叠进 `api` 进程以减少容器数量，但必须保留独立身份、连接池、租约、worker claim 与协议边界；`node-controller` 不与业务 API 合并。单节点验收覆盖受控故障与恢复，不声称节点级高可用；扩容先增加已资格化节点与实例，再验证按节点划分的父物理预算与 owner 路由。
+产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的同构验证拓扑（`Node=1, Replica=1`）。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；当前节点执行栈和私有媒体沙箱各自保留平台要求，媒体沙箱的部署适配形态仍待设计。
+
+逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代 PostgreSQL 全局权威。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
 
 ```mermaid
 flowchart LR

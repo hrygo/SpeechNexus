@@ -1,7 +1,7 @@
 ---
 title: "SpeechNexus 工程目录与依赖边界"
 status: active
-version: "0.4.0"
+version: "0.4.1"
 date: 2026-10-26
 ---
 
@@ -132,6 +132,8 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 `make verify` 还执行媒体和浏览器基础冒烟检查。它们证明本机工具链可采集与播放，不证明真实麦克风、模型质量、容量或完整业务流程。
 
 ## 6. 部署与凭据
+
+服务拆分与平台要求以[部署单元规划](deployment-units.md)和 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)为准。workspace、Python 包和当前共享镜像不是物理部署边界；Speech / Workbench API、后台角色、节点执行与数据服务可分机部署。当前开发脚本的 Linux ARM64 / systemd 要求只适用于该开发环境，各单元的原生平台与容器运行能力须分别验证。
 
 `deploy/compose.yaml` 提供单节点开发拓扑。所有宿主端口只绑定回环地址，凭据由 `deploy/compose.env` 提供且被 Git 忽略。容器使用非 root Python 用户、只读根文件系统和 `no-new-privileges`；Web 镜像使用非特权 Nginx。
 

@@ -14,5 +14,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 
 - [0009：工作台显式模型绑定与配置发现的 HTTP 版本迁移](0009-workbench-explicit-binding-http-version.md)（accepted，2026-10-25；保留严格 v1、新增 v2 显式绑定与状态配置发现，消费者按路径迁移）。
 - [0010：私有音频回执与旧 JSON 消费者兼容](0010-private-audio-receipt-compatibility.md)（accepted，2026-10-25；独立音频读取视图、复用原回执及样本账本，先升级读取者再启用生产者）。
+- [0011：分布式部署单元与平台边界](0011-distributed-deployment-and-platform-boundaries.md)（accepted，2026-10-26；按服务职责确定平台与节点绑定，分布式为目标、单节点为验证拓扑；跨平台与多机资格待验收）。
 
 [文档索引](../README.md)

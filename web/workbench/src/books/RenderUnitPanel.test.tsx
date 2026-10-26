@@ -72,6 +72,32 @@ function setup(
   const read = vi
     .spyOn(client, "renderUnit")
     .mockResolvedValue(unit({ status: "generating", revision: "2", speech_job_id: "job_demo" }));
+  const book = vi.spyOn(client, "book").mockResolvedValue(
+    parse("Book", {
+      object: "nexus.book",
+      id: "book_demo",
+      project_id: "project_demo",
+      title: "合成书",
+      status: "draft",
+      casting_revision: "1",
+      created_at: "2026-10-24T12:00:00Z",
+      updated_at: "2026-10-24T12:00:00Z",
+    }),
+  );
+  const save = vi.spyOn(client, "saveProjectAsset").mockResolvedValue(
+    parse("SavedAsset", {
+      object: "nexus.saved_asset",
+      id: "asset_saved",
+      project_id: "project_demo",
+      display_name: null,
+      media_type: "audio/wav",
+      bytes: 1024,
+      sha256: "sha256:" + "a".repeat(64),
+      source_artifact_id: "artifact_1",
+      source_receipt_id: "receipt_1",
+      created_at: "2026-10-24T12:00:00Z",
+    }),
+  );
   const update = vi.spyOn(client, "updateRenderUnit").mockImplementation((id, body) =>
     Promise.resolve(
       unit({
@@ -84,7 +110,7 @@ function setup(
     ),
   );
   const view = render(<RenderUnitPanel client={client} chapter={chapter} />);
-  return { client, list, generate, read, update, voices, ...view };
+  return { client, list, generate, read, book, save, update, voices, ...view };
 }
 
 describe("render unit panel", () => {
@@ -593,4 +619,55 @@ it("polls a generating unit until the terminal status is recorded", async () => 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("saves a ready unit's copy with its producer receipt and a stable key", async () => {
+  const ready = unit({
+    status: "ready",
+    revision: "3",
+    speech_job_id: "job_demo",
+    source_artifact_id: "artifact_1",
+    source_receipt_id: "receipt_1",
+  });
+  const { read, book, save } = setup([ready]);
+  read.mockResolvedValue({ ...ready, saved_asset_id: "asset_saved" });
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 保存副本" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const [projectId, body, key] = save.mock.calls[0]!;
+  expect(projectId).toBe("project_demo");
+  expect(body).toEqual({ source_artifact_id: "artifact_1", source_receipt_id: "receipt_1" });
+  expect(key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(book).toHaveBeenCalledWith("book_demo");
+  expect(read).toHaveBeenCalledWith("unit_demo");
+  await screen.findByText(/已保存独立副本 asset_saved/);
+  await screen.findByRole("button", { name: "单元 1 读取副本" });
+});
+
+it("reports a rejected copy without claiming it was saved", async () => {
+  const ready = unit({
+    status: "ready",
+    revision: "3",
+    speech_job_id: "job_demo",
+    source_artifact_id: "artifact_1",
+    source_receipt_id: "receipt_1",
+  });
+  const { save } = setup([ready]);
+  save.mockRejectedValueOnce(
+    new WorkbenchResponseError(422, {
+      error: {
+        code: "saved_asset_rejected",
+        type: "invalid_request_error",
+        message: "private-synthetic",
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    }),
+  );
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 保存副本" }));
+  const alert = await screen.findByRole("alert", { name: "单元 1 保存副本错误" });
+  expect(alert.textContent).toContain("保存被拒绝");
+  expect(screen.queryByText(/已保存独立副本/)).toBeNull();
 });

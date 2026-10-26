@@ -3,7 +3,7 @@
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
   "contract_sha256": "0eebe6622eafb07ace8885bc768f022f0cebfbc90854c6f9f8201c9f27db2b6d",
-  "audited_head": "b95cd90fc17109bae02a33f19049130c5770bcf6",
+  "audited_head": "1b05807c1e18d187d18693c771bd8ea3d906fb4b",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -370,6 +370,7 @@
       ],
       "tests": [
         "web/workbench/src/books/BooksHost.test.tsx",
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],
       "status": "bound"
@@ -837,6 +838,7 @@
         "web/workbench/src/manuscripts/workbench-client.ts"
       ],
       "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx",
         "web/workbench/src/file-workflow/TtsTaskHost.test.tsx",
         "web/workbench/src/manuscripts/workbench-client.test.ts"
       ],

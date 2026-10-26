@@ -690,12 +690,16 @@ it("reports a rejected copy without claiming it was saved", async () => {
 it("shows the recorded generation history of one unit", async () => {
   const { history } = setup();
   await screen.findByRole("list", { name: "单元列表" });
-  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
+  const toggle = screen.getByRole("button", { name: "单元 1 生成历史" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
   await screen.findByRole("list", { name: "单元 1 生成记录" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(history).toHaveBeenCalledWith("unit_demo", 100);
   const records = screen.getByRole("list", { name: "单元 1 生成记录" });
   expect(records.textContent).toContain("修订 2");
   expect(records.textContent).toContain("job_1");
+  expect(screen.getByText((_, node) => node?.textContent === "共 1 条生成记录。")).toBeTruthy();
 });
 
 it("reports an unreadable history without inventing records", async () => {

@@ -10,7 +10,7 @@
 | 消费触发 | `web/workbench/src/books/RenderUnitPanel.tsx` | 面板 24 项：派发参数、未知原键重放、generating→ready 轮询 | 真实浏览器端到端；真实网络恢复 |
 | 终态结算 | `application/render_reconcile.py` + `PostgresRenderUnits.complete_unit/fail_unit` | reconciler 11 项；PG 结算/拒绝重复结算/扫描（一次性 PG 实跑） | 真实 Job 终态；真实失败原因展示；结算循环默认关闭 |
 | 独立副本 | `application/render_copies.py`、`SavedAssets` 既有链路 | 副本应用 3 项；页面保存消费者 2 项；待补副本扫描 PG 断言；永久拒绝与瞬时失败分类 2 项 | 真实 MinIO 往返；真实 speech 制品；分类仅进程内、重启后重试一次 |
-| 生成历史 | `GET /v2/workbench/render-units/{unit_id}/generations`、`WorkbenchRenderUnits.generations`、`render_generations_payload`、`RenderUnitPanel` "生成历史" | 路由 3 项（默认 limit、404、非法 limit）；面板 3 项（记录展示、读取失败不伪造、超出上限标注）；页面按契约上限一次读取最近 100 条；覆盖门禁 42/10 | 真实历史数据；多单元混合；超过 100 条时仅标注、无游标翻页 |
+| 生成历史 | `GET /v2/workbench/render-units/{unit_id}/generations`、`WorkbenchRenderUnits.generations`、`render_generations_payload`、`RenderUnitPanel` "生成历史" | 路由 3 项（默认 limit、404、非法 limit）；面板 3 项（记录展示与可展开披露、读取失败不伪造、超出上限标注）；页面按契约上限一次读取最近 100 条；覆盖门禁 42/10 | 真实历史数据；多单元混合；超过 100 条时仅标注、无游标翻页 |
 | 状态恢复 | 面板日志、原键重放、pending/unknown 提示 | 单元/面板测试覆盖未知、拒绝、存储失败 | 真实浏览器存储故障；真实 VoiceOver |
 
 ## 明确未实现（C 自有缺口）

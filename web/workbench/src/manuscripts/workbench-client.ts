@@ -605,6 +605,39 @@ export class WorkbenchClient {
     return value;
   }
 
+  /**
+   * Generation is dispatched for the revision the operator saw. The key is the
+   * recovery identity: replaying it returns the recorded attempt even if the
+   * unit revision moved on.
+   */
+  async generateRenderUnit(unitId: string, expectedRevision: string, key: string) {
+    const value = result(
+      "RenderUnitGenerationAcceptedV2",
+      await this.#api.POST("/v2/workbench/render-units/{unit_id}/generations", {
+        params: { path: { unit_id: unitId } },
+        body: parse("RenderUnitGenerationRequest", { expected_unit_revision: expectedRevision }),
+        headers: { "Idempotency-Key": key },
+      }),
+    );
+    identity(value.render_unit.id === unitId);
+    identity(value.render_unit.status === "generating");
+    identity(value.render_unit.speech_job_id === value.speech_job_id);
+    return value;
+  }
+
+  /** A unit is read by the identity the caller already holds, never by a list position. */
+  async renderUnit(unitId: string, signal?: AbortSignal) {
+    const value = result(
+      "RenderUnitV2",
+      await this.#api.GET("/v2/workbench/render-units/{unit_id}", {
+        params: { path: { unit_id: unitId } },
+        signal: signal ?? null,
+      }),
+    );
+    identity(value.id === unitId);
+    return value;
+  }
+
   async updateRenderUnit(unitId: string, body: Contracts["RenderUnitPatchV2"], key: string) {
     const value = result(
       "RenderUnitV2",

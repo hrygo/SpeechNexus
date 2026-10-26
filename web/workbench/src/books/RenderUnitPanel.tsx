@@ -72,6 +72,7 @@ function splitVoiceKey(key: string): { voiceId: string; voiceRevision: string } 
 function problemOf(error: unknown): RenderUnitProblem {
   if (error instanceof WorkbenchResponseError) {
     if (error.status === 404) return "missing";
+    if (error.code === "outcome_unknown") return "unknown";
     if (error.code === "revision_conflict") return "conflict";
     if (error.code === "invalid_change") return "rejected";
     if (error.status >= 500 || error.code === "store_unavailable") return "unavailable";
@@ -142,6 +143,38 @@ function ChapterUnits({
     };
   }, []);
   const locked = busy || recovery.pending !== null || recovery.blocked;
+  const generating = units
+    .filter((unit) => unit.status === "generating")
+    .map((unit) => unit.id)
+    .join(",");
+  useEffect(() => {
+    if (!generating) return;
+    const ids = generating.split(",");
+    let cancelled = false;
+    const timer = setInterval(() => {
+      for (const id of ids) {
+        void client
+          .renderUnit(id)
+          .then((next) => {
+            if (cancelled || !owner.current.alive) return;
+            setUnits((current) => current.map((item) => (item.id === next.id ? next : item)));
+            if (next.status !== "generating")
+              setNotice(
+                `单元 ${next.id}：生成状态 ${next.status}${
+                  next.saved_asset_id === null ? "" : `，已保存副本 ${next.saved_asset_id}`
+                }。`,
+              );
+          })
+          .catch((error: unknown) => {
+            if (!cancelled) setProblem(problemOf(error));
+          });
+      }
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [client, generating]);
 
   const [voices, setVoices] = useState<Contracts["VoiceSummary"][] | null>(null);
   const [createProblem, setCreateProblem] = useState<RenderUnitProblem | null>(null);
@@ -196,14 +229,24 @@ function ChapterUnits({
     flight.current = true;
     setBusy(true);
     try {
-      const updated =
-        command.kind === "create"
-          ? await client.createRenderUnit(command.chapterId, command.body, command.key)
-          : await client.updateRenderUnit(command.unitId, command.body, command.key);
+      let accepted: Contracts["RenderUnitGenerationAcceptedV2"] | null = null;
+      let updated: Contracts["RenderUnitV2"];
+      if (command.kind === "generate") {
+        accepted = await client.generateRenderUnit(
+          command.unitId,
+          command.expectedRevision,
+          command.key,
+        );
+        updated = accepted.render_unit;
+      } else if (command.kind === "create") {
+        updated = await client.createRenderUnit(command.chapterId, command.body, command.key);
+      } else {
+        updated = await client.updateRenderUnit(command.unitId, command.body, command.key);
+      }
       if (!owner.current.alive) return false;
       if (
         updated.chapter_id !== command.chapterId ||
-        (command.kind === "patch" && updated.id !== command.unitId)
+        (command.kind !== "create" && updated.id !== command.unitId)
       )
         throw new Error("Unit response scope mismatch");
       try {
@@ -224,7 +267,7 @@ function ChapterUnits({
         setCreate((current) => ({ ...current, ordinal: "", text: "", key: crypto.randomUUID() }));
         firstField.current?.focus();
         setNotice(`单元 ${updated.ordinal + 1} 已创建为修订 ${updated.revision}。`);
-      } else {
+      } else if (command.kind === "patch") {
         setDrafts((current) => {
           const next = { ...current };
           delete next[command.unitId];
@@ -234,6 +277,10 @@ function ChapterUnits({
           updated.revision === command.body.expected_revision
             ? `单元 ${updated.id}：没有变化，未生成新的修订。`
             : `单元 ${updated.id}：修订 ${command.body.expected_revision} → ${updated.revision}，状态 ${updated.status}，需要重新生成。`,
+        );
+      } else {
+        setNotice(
+          `单元 ${updated.id}：已提交生成，语音作业 ${accepted?.speech_job_id ?? ""}，状态 ${updated.status}。`,
         );
       }
       setProblem(null);
@@ -301,6 +348,20 @@ function ChapterUnits({
           model: input.model,
           model_binding: { id: input.bindingId, revision: input.bindingRevision },
         },
+      },
+      true,
+    );
+  }
+
+  /** Dispatch names the revision the operator saw; the key stays the recovery identity. */
+  async function generate(target: Contracts["RenderUnitV2"]) {
+    return execute(
+      {
+        kind: "generate",
+        chapterId: chapter.id,
+        unitId: target.id,
+        expectedRevision: target.revision,
+        key: crypto.randomUUID(),
       },
       true,
     );
@@ -630,6 +691,11 @@ function ChapterUnits({
                         : `已保存副本 ${unit.saved_asset_id}`}
                     </span>
                   </p>
+                  {(["pending", "stale", "failed"] as string[]).includes(unit.status) && (
+                    <button type="button" disabled={locked} onClick={() => void generate(unit)}>
+                      {`${label} 生成配音`}
+                    </button>
+                  )}
                   {unit.saved_asset_id != null && (
                     <div aria-label={`${label} 已保存副本核对`}>
                       <button

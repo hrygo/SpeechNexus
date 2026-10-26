@@ -58,6 +58,20 @@ function setup(
     }),
   );
   const voices = vi.spyOn(client, "voices").mockImplementation(catalogue);
+  const generate = vi.spyOn(client, "generateRenderUnit").mockResolvedValue(
+    parse("RenderUnitGenerationAcceptedV2", {
+      render_unit: unit({
+        status: "generating",
+        revision: "2",
+        speech_job_id: "job_demo",
+      }),
+      speech_job_id: "job_demo",
+      accepted_at: "2026-10-24T12:00:00Z",
+    }),
+  );
+  const read = vi
+    .spyOn(client, "renderUnit")
+    .mockResolvedValue(unit({ status: "generating", revision: "2", speech_job_id: "job_demo" }));
   const update = vi.spyOn(client, "updateRenderUnit").mockImplementation((id, body) =>
     Promise.resolve(
       unit({
@@ -70,7 +84,7 @@ function setup(
     ),
   );
   const view = render(<RenderUnitPanel client={client} chapter={chapter} />);
-  return { client, list, update, voices, ...view };
+  return { client, list, generate, read, update, voices, ...view };
 }
 
 describe("render unit panel", () => {
@@ -514,4 +528,69 @@ it("keeps the original unit patch after an unknown outcome followed by a 409", a
   expect(update.mock.calls[1]).toEqual(update.mock.calls[0]);
   expect(screen.queryByRole("button", { name: "结束已拒绝单元请求" })).toBeNull();
   expect(screen.getByRole("button", { name: "重做单元 1" })).toBeDisabled();
+});
+
+it("dispatches generation for the revision shown and names the speech job", async () => {
+  const { generate } = setup();
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成配音" }));
+  await waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+  const first = generate.mock.calls[0]!;
+  expect(first[0]).toBe("unit_demo");
+  expect(first[1]).toBe("1");
+  expect(first[2]).toMatch(/^[0-9a-f-]{36}$/);
+  await screen.findByText(/已提交生成，语音作业 job_demo/);
+});
+
+it("keeps the original key when the dispatch result is unknown", async () => {
+  const { generate } = setup();
+  generate.mockRejectedValueOnce(
+    new WorkbenchResponseError(503, {
+      error: {
+        code: "outcome_unknown",
+        type: "service_unavailable_error",
+        message: "Mutation outcome is unknown.",
+        param: null,
+        request_id: "request-demo",
+        retryable: false,
+      },
+    }),
+  );
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成配音" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("结果尚未确认");
+  fireEvent.click(screen.getByRole("button", { name: "按原键重放单元请求" }));
+  await waitFor(() => expect(generate).toHaveBeenCalledTimes(2));
+  expect(generate.mock.calls[1]![2]).toBe(generate.mock.calls[0]![2]);
+  await screen.findByText(/已提交生成，语音作业 job_demo/);
+});
+
+it("polls a generating unit until the terminal status is recorded", async () => {
+  vi.useFakeTimers();
+  try {
+    const { read } = setup([
+      unit({ status: "generating", revision: "2", speech_job_id: "job_demo" }),
+    ]);
+    read.mockResolvedValue(
+      unit({
+        status: "ready",
+        revision: "3",
+        speech_job_id: "job_demo",
+        saved_asset_id: "asset_1",
+        source_artifact_id: "artifact_1",
+        source_receipt_id: "receipt_1",
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(read).toHaveBeenCalledWith("unit_demo");
+    expect(screen.getByText(/生成状态 ready/)).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
 });

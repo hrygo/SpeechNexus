@@ -4,7 +4,7 @@
 
 ## 结论
 
-workbench surface 的 51 个声明操作已逐项建立“契约 → 绑定与边界类型 → 生产消费者 → 行为用例”映射：39 个四条腿齐全（`bound`），12 个缺生产消费者（`consumer_pending`）。12 个非 `bound` 操作均已具名登记 owner、制品、解除条件和影响，不再以“保留声明”冒充覆盖。**本映射是接线审计，不是 AC-03 通过或任何验收结算**；其他 surface（admin/profile/binding 等）另行核验。
+workbench surface 的 51 个声明操作已逐项建立“契约 → 绑定与边界类型 → 生产消费者 → 行为用例”映射：41 个四条腿齐全（`bound`），10 个缺生产消费者（`consumer_pending`）。10 个非 `bound` 操作均已具名登记 owner、制品、解除条件和影响，不再以“保留声明”冒充覆盖。**本映射是接线审计，不是 AC-03 通过或任何验收结算**；其他 surface（admin/profile/binding 等）另行核验。
 
 ## 判定口径
 
@@ -28,11 +28,9 @@ make operation-coverage-check
 | 操作 | 状态 | 缺什么（制品） | 影响 |
 | --- | --- | --- | --- |
 | `createRenderUnit` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |
-| `generateRenderUnit` | consumer_pending | 有声书生成触发与单元轮询的正式页面消费者（C07/T09） | 页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过 |
-| `generateRenderUnitV2` | consumer_pending | RenderUnitPanel/BooksHost 的生成触发、v2 轮询与未知结果恢复（C07/T09） | 后端可提交并记录固定版本生成，但页面仍不能发起或读取生成；真实 speech 投递与生成终态回写未验证；C07/T09 未通过 |
+| `generateRenderUnit` | consumer_pending | v1 生成操作保留/退役决定（v2 生产路由与页面消费者已就绪） | v1 生成无路由与消费者；页面只使用 v2。C07/T09 未通过，真实 speech 投递仍未验证 |
 | `getChapter` | consumer_pending | 单章读取/单修订读取的使用决定或退役（C07/C02） | 无生产消费者；当前页面行为不受影响，但声明操作缺处置，AC-03 未通过 |
 | `getRenderUnit` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |
-| `getRenderUnitV2` | consumer_pending | 有声书生成触发与单元轮询的正式页面消费者（C07/T09） | 页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过 |
 | `getTranscriptRevision` | consumer_pending | 单章读取/单修订读取的使用决定或退役（C07/C02） | 无生产消费者；当前页面行为不受影响，但声明操作缺处置，AC-03 未通过 |
 | `getVoiceRevision` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |
 | `getWorkbenchStatus` | consumer_pending | v1/v2 兼容与退役决定（C00/AC1 契约维护） | 正式页面已全部使用 v2，v1 无生产消费者；AC-03 要求每个声明操作有具名处置，不以保留声明冒充覆盖 |

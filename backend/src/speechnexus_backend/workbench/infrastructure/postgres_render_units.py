@@ -153,7 +153,7 @@ class _ReceiptRow:
 
 
 @dataclass(frozen=True)
-class _GeneratingRow:
+class _UnitIdRow:
     id: str
 
 
@@ -573,11 +573,41 @@ class PostgresRenderUnits(RenderUnitStore):
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
             rows = await base._many(
-                _GeneratingRow,
+                _UnitIdRow,
                 """
                 SELECT u.id FROM {s}.render_units u
                 JOIN {s}.projects p ON p.id = u.project_id
                 WHERE u.status = 'generating' AND p.workspace_id = %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {s}.resource_tombstones d
+                        WHERE d.resource_kind = 'project' AND d.resource_id = p.id
+                        UNION ALL
+                        SELECT 1 FROM {s}.deletion_ledger l,
+                            jsonb_array_elements(l.deleted) e
+                        WHERE e->>1 = 'project' AND e->>2 = p.id)
+                ORDER BY u.updated_at, u.id LIMIT %s
+            """,
+                (workspace_id, limit),
+            )
+        return tuple(row.id for row in rows)
+
+    async def scan_ready_without_copy(
+        self, *, workspace_id: str, limit: int
+    ) -> tuple[str, ...]:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            rows = await base._many(
+                _UnitIdRow,
+                """
+                SELECT u.id FROM {s}.render_units u
+                JOIN {s}.projects p ON p.id = u.project_id
+                WHERE u.status = 'ready' AND u.source_artifact_id IS NOT NULL
+                    AND p.workspace_id = %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {s}.saved_assets a
+                        WHERE a.project_id = u.project_id
+                            AND a.source_artifact_id = u.source_artifact_id
+                            AND a.source_receipt_id = u.source_receipt_id)
                     AND NOT EXISTS (
                         SELECT 1 FROM {s}.resource_tombstones d
                         WHERE d.resource_kind = 'project' AND d.resource_id = p.id

@@ -121,9 +121,23 @@ class RenderUnitStore(Protocol):
 
     async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]: ...
 
+    async def scan_ready_without_copy(
+        self, *, workspace_id: str, limit: int
+    ) -> tuple[str, ...]: ...
+
 
 class WorkbenchRenderUnits:
     """A revise is refused before any transaction opens when nothing changes."""
+
+    async def unsaved_units(self, *, workspace_id: str, limit: int = 20) -> tuple[RenderUnit, ...]:
+        ids = await self._units.scan_ready_without_copy(workspace_id=workspace_id, limit=limit)
+        units: list[RenderUnit] = []
+        for unit_id in ids:
+            try:
+                units.append(await self._units.get_unit(unit_id=unit_id, workspace_id=workspace_id))
+            except ResourceNotFoundError:
+                continue
+        return tuple(units)
 
     def __init__(self, units: RenderUnitStore, jobs: RenderJobPort | None = None) -> None:
         self._units = units

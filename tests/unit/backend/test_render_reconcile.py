@@ -16,6 +16,7 @@ from speechnexus_backend.workbench.application.render_reconcile import (
 from speechnexus_backend.workbench.domain.render_units import (
     RenderAttemptConflictError,
     RenderDependencies,
+    RenderSource,
     RenderUnit,
     RevisionPin,
 )
@@ -52,9 +53,13 @@ class Units:
         self.conflict = conflict
         self.completed: list[dict[str, Any]] = []
         self.failed: list[dict[str, Any]] = []
+        self.unsaved: tuple[RenderUnit, ...] = ()
 
     async def generating_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]:
         return (self.current,)
+
+    async def unsaved_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]:
+        return self.unsaved
 
     async def complete_unit(self, **arguments: Any) -> RenderUnit:
         if self.conflict:
@@ -156,3 +161,49 @@ async def test_copy_failure_does_not_unsettle_the_ready_unit() -> None:
     ).settle(workspace_id=WORKSPACE)
     assert [item.state for item in settled] == ["succeeded"]
     assert units.completed != []
+
+
+def ready_with_source() -> RenderUnit:
+    started = unit()
+    return started.complete(
+        generation_id="gen:1",
+        source=RenderSource(
+            "unit", "job_1", "artifact_1", "receipt_1", started.dependencies.sha256
+        ),
+        now=NOW,
+    )
+
+
+async def test_restore_copies_retries_ready_units_that_lost_their_copy() -> None:
+    ready = ready_with_source()
+    units, copies = Units(ready), Copies()
+    units.unsaved = (ready,)
+    restored = await RenderReconciler(
+        units, Jobs(RenderJobOutcome("pending")), copies
+    ).restore_copies(workspace_id=WORKSPACE)
+    assert restored == ("unit",)
+    assert [saved["unit"].id for saved in copies.saved] == ["unit"]
+
+
+async def test_restore_copies_keeps_failed_copies_for_the_next_pass() -> None:
+    ready = ready_with_source()
+    units, copies = Units(ready), Copies(ObjectZoneError())
+    units.unsaved = (ready,)
+    assert (
+        await RenderReconciler(units, Jobs(RenderJobOutcome("pending")), copies).restore_copies(
+            workspace_id=WORKSPACE
+        )
+        == ()
+    )
+
+
+async def test_restore_copies_without_a_port_is_a_no_op() -> None:
+    ready = ready_with_source()
+    units = Units(ready)
+    units.unsaved = (ready,)
+    assert (
+        await RenderReconciler(units, Jobs(RenderJobOutcome("pending"))).restore_copies(
+            workspace_id=WORKSPACE
+        )
+        == ()
+    )

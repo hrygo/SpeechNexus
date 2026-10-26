@@ -239,6 +239,43 @@ async def test_update_revises_the_pins_and_marks_the_unit_stale(render_store: St
     assert fresh == revised
 
 
+async def test_start_records_one_attempt_and_rejects_a_stale_revision(
+    render_store: Store,
+) -> None:
+    _, chapter_id, _ = await chapter(render_store)
+    unit = await create(render_store, chapter_id)
+    store = PostgresRenderUnits(render_store.uow)
+
+    started = await store.start_unit(
+        unit_id=unit.id,
+        workspace_id=WORKSPACE,
+        expected_revision=1,
+        job_id="job_1",
+        generation_id="gen:abc",
+    )
+    assert (started.revision, started.status) == (2, "generating")
+    assert started.generations[-1].job_id == "job_1"
+    row = await stored(render_store, unit.id)
+    assert (int(row["revision"]), row["status"]) == (2, "generating")
+
+    with pytest.raises(RevisionConflictError):
+        await store.start_unit(
+            unit_id=unit.id,
+            workspace_id=WORKSPACE,
+            expected_revision=1,
+            job_id="job_2",
+            generation_id="gen:def",
+        )
+    with pytest.raises(ResourceNotFoundError):
+        await store.start_unit(
+            unit_id=unit.id,
+            workspace_id="workspace-other",
+            expected_revision=2,
+            job_id="job_3",
+            generation_id="gen:ghi",
+        )
+
+
 async def test_units_keep_independent_positions_inside_one_chapter(render_store: Store) -> None:
     _, chapter_id, _ = await chapter(render_store)
     first = await create(render_store, chapter_id, ordinal=0)

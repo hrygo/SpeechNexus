@@ -143,6 +143,16 @@ ERRORS = {
         "Mutation outcome is unknown. Preserve the original idempotency key; "
         "do not create a new intent.",
     ),
+    "render_attempt_conflict": (
+        409,
+        "invalid_request_error",
+        "A render attempt is already running for this unit.",
+    ),
+    "render_submission_rejected": (
+        422,
+        "invalid_request_error",
+        "The pinned render unit cannot be dispatched as a speech Job.",
+    ),
     "internal_error": (500, "api_error", "Workbench request could not be completed."),
 }
 

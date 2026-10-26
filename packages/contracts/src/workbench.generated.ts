@@ -824,7 +824,21 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Submit a speech Job for a render unit */
+    /**
+     * Submit a speech Job for a render unit
+     * @description Creates one speech Job for the unit's fixed revision and records the
+     *     attempt before returning 202. A changed unit revision or an attempt that
+     *     is already running returns 409. An identical Idempotency-Key replay
+     *     returns the original accepted result; a changed intent under the same key
+     *     returns 409 `idempotency_conflict`.
+     *
+     *     An unreadable or uncertain Job submission returns 503 `outcome_unknown`.
+     *     That response does not prove that no Job was created. Only a caller
+     *     retaining the original Idempotency-Key may replay this same POST with the
+     *     same path, body and key to recover the original accepted result; no
+     *     automatic retry, new key or query-by-key resource is provided. Keyless
+     *     submissions have no promised recovery.
+     */
     post: operations["generateRenderUnitV2"];
     delete?: never;
     options?: never;
@@ -1934,6 +1948,19 @@ export interface components {
     };
     /** @description Event history or content expired. */
     Gone: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
+    /**
+     * @description The render dispatch outcome is unknown: a speech Job may already exist.
+     *     Preserve the original Idempotency-Key and replay the same POST to recover
+     *     the original result. This is not proof that no Job was created.
+     */
+    RenderDispatchUnknown: {
       headers: {
         [name: string]: unknown;
       };
@@ -3877,6 +3904,7 @@ export interface operations {
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];
+      503: components["responses"]["RenderDispatchUnknown"];
     };
   };
 }

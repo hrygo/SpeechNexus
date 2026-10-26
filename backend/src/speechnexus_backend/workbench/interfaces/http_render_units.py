@@ -8,12 +8,19 @@ from speechnexus_contracts.workbench import parse
 from speechnexus_contracts.workbench_http import contract, validate_response
 from starlette.responses import JSONResponse, Response
 
-from speechnexus_backend.workbench.application.render_units import WorkbenchRenderUnits
+from speechnexus_backend.workbench.application.render_units import (
+    RenderDispatchUnavailableError,
+    RenderSubmissionConflictError,
+    RenderSubmissionRejectedError,
+    RenderSubmissionUnknownError,
+    WorkbenchRenderUnits,
+)
 from speechnexus_backend.workbench.application.version_ports import VersionStoreError
 from speechnexus_backend.workbench.application.versions import (
     IdempotencyConflictError,
     ResourceNotFoundError,
 )
+from speechnexus_backend.workbench.domain.render_units import RenderAttemptConflictError
 from speechnexus_backend.workbench.domain.versions import (
     InvalidVersionChangeError,
     RevisionConflictError,
@@ -33,7 +40,7 @@ OPERATIONS = frozenset(
     name + suffix
     for name in ("listRenderUnits", "createRenderUnit", "getRenderUnit", "updateRenderUnit")
     for suffix in ("", "V2")
-)
+) | {"generateRenderUnitV2"}
 
 
 def create_render_unit_router(
@@ -108,6 +115,19 @@ def create_render_unit_router(
                 version=version,
             )
         body = value["body"]
+        if name == "generateRenderUnit":
+            body = value["body"]
+            started, job_id = await service.start_unit(
+                unit_id=path["unit_id"],
+                workspace_id=default_workspace_id,
+                expected_revision=int(body["expected_unit_revision"]),
+                key=value["headers"].get("idempotency-key"),
+            )
+            return 202, {
+                "render_unit": render_unit_payload(started, version=2),
+                "speech_job_id": job_id,
+                "accepted_at": started.updated_at.isoformat(),
+            }
         if name == "updateRenderUnit":
             voice = body.get("voice")
             binding = body.get("model_binding")
@@ -165,6 +185,16 @@ def create_render_unit_router(
                 return _error("resource_not_found", rid, operation)
             except IdempotencyConflictError:
                 return _error("idempotency_conflict", rid, operation)
+            except RenderDispatchUnavailableError:
+                return _error("workbench_unavailable", rid, operation)
+            except RenderSubmissionUnknownError:
+                return _error("outcome_unknown", rid, operation)
+            except RenderSubmissionConflictError:
+                return _error("idempotency_conflict", rid, operation)
+            except RenderSubmissionRejectedError:
+                return _error("render_submission_rejected", rid, operation)
+            except RenderAttemptConflictError:
+                return _error("render_attempt_conflict", rid, operation)
             except RevisionConflictError:
                 return _error("revision_conflict", rid, operation)
             except InvalidVersionChangeError:

@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
-  "contract_sha256": "4aed45a368374ea2900738a0a8e98442b004ab745810cda56a2b611a9437e1b2",
-  "audited_head": "e2fee58799f25f131cc4d63c0d0efdfcb61fe7ca",
+  "contract_sha256": "0eebe6622eafb07ace8885bc768f022f0cebfbc90854c6f9f8201c9f27db2b6d",
+  "audited_head": "8d2e33da31a0df5f7b3be66876da52543416ed0e",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -333,9 +333,9 @@
       "status": "consumer_pending",
       "pending": {
         "owner": "C",
-        "artifact": "有声书生成触发与单元轮询的正式页面消费者（C07/T09）",
-        "unblock_condition": "先冻结生成单元状态机、固定清单/检查点与版本关联语义，再由 RenderUnitPanel/BooksHost 接入发起生成、轮询终态与失败恢复，页面不自创接口",
-        "impact": "页面只能建/改单元与读取音色修订，无法发起真实生成或读取 v2 生成结果；C07/T09 未通过"
+        "artifact": "RenderUnitPanel/BooksHost 的生成触发、v2 轮询与未知结果恢复（C07/T09）",
+        "unblock_condition": "生产路由、store 生成记录与公开 speech Job 适配器已在后端就绪；接入页面消费前须完成真实 speech 端点/凭据联调，并按原 Idempotency-Key 重放未知结果",
+        "impact": "后端可提交并记录固定版本生成，但页面仍不能发起或读取生成；真实 speech 投递与生成终态回写未验证；C07/T09 未通过"
       }
     },
     {

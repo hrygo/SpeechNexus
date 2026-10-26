@@ -10,14 +10,33 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from speechnexus_backend.workbench.application.render_units import WorkbenchRenderUnits
 from speechnexus_backend.workbench.application.versions import ResourceNotFoundError
 from speechnexus_backend.workbench.domain.render_units import (
     RenderAttemptConflictError,
     RenderSource,
+    RenderUnit,
 )
 
 type RenderJobState = Literal["pending", "succeeded", "failed", "expired", "cancelled"]
+
+
+class RenderSettlementStore(Protocol):
+    async def generating_units(
+        self, *, workspace_id: str, limit: int
+    ) -> tuple[RenderUnit, ...]: ...
+
+    async def complete_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        generation_id: str,
+        source: RenderSource,
+    ) -> RenderUnit: ...
+
+    async def fail_unit(
+        self, *, unit_id: str, workspace_id: str, generation_id: str
+    ) -> RenderUnit: ...
 
 
 class RenderJobReadError(Exception):
@@ -46,7 +65,7 @@ class SettledAttempt:
 class RenderReconciler:
     """Apply terminal Job outcomes to the units that dispatched them."""
 
-    def __init__(self, units: WorkbenchRenderUnits, jobs: RenderJobReader) -> None:
+    def __init__(self, units: RenderSettlementStore, jobs: RenderJobReader) -> None:
         self._units = units
         self._jobs = jobs
 

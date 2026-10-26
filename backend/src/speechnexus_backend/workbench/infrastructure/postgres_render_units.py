@@ -157,6 +157,7 @@ class _GeneratingRow:
     id: str
 
 
+@dataclass(frozen=True)
 class _UnitWithCopyRow(_UnitRow):
     # Newest workbench-owned copy of this unit's producer result, if one exists yet.
     saved_copy_id: str | None

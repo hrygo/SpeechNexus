@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from speechnexus_backend.workbench.application.render_reconcile import (
     RenderJobOutcome,
+    RenderJobState,
     RenderJobReadError,
     RenderReconciler,
 )
@@ -94,7 +95,7 @@ async def test_succeeded_job_completes_the_attempt_with_its_receipt() -> None:
 
 @pytest.mark.parametrize("state", ["failed", "expired", "cancelled"])
 async def test_terminal_failures_fail_the_attempt(state: str) -> None:
-    units, jobs = Units(unit()), Jobs(RenderJobOutcome(state))
+    units, jobs = Units(unit()), Jobs(RenderJobOutcome(cast(RenderJobState, state)))
     settled = await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE)
     assert [item.state for item in settled] == [state]
     assert units.completed == []

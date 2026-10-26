@@ -47,6 +47,15 @@ class _Store:
         self.calls.append(("start", dict(kw)))
         return cast(RenderUnit, None)
 
+    async def complete_unit(self, **kw: Any) -> RenderUnit:
+        return cast(RenderUnit, None)
+
+    async def fail_unit(self, **kw: Any) -> RenderUnit:
+        return cast(RenderUnit, None)
+
+    async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
+        return ()
+
     async def update_unit(
         self,
         *,

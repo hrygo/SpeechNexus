@@ -55,6 +55,13 @@ JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限�
 命令的 `response_format` 决定。其它采样率、Base、VoiceDesign、流式文本和音色素材不属于
 本单元。`tts_policy` 中即使有原生默认值也必须显式给出全部字段。
 
+受限控制器可使用既有 `engine_auth=vllm_api_key_v1` 模板，通过
+`/v1/audio/speech` 的固定、有界 `http_warmup_ok` 注入并验证代次凭据；
+其派生作用域和容器漂移检查沿用[原生鉴权与代次关联](controlled-asr-generation.md)。
+只通过 `/health` 不构成该模式的 ready，模板不得在 argv 覆盖原生 key。
+部署须先升级控制器、核验固定镜像及实际预热，再提供网关描述；此配置不签发权威
+binding、readiness 资格或准入预算。
+
 ## 激活与执行
 
 1. `create_app` 有界读取配置并在数据库池、入口 ownership 与外部请求前完成严格校验；
@@ -71,9 +78,15 @@ JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限�
 
 ## 尚未覆盖
 
-公开 `/v1/audio/speech` 路由、公开下载与 A 的发布链、真实 CustomVoice 合成与质量、
-长文本切分、流式/音色素材、可信停止与资源释放、GPU 混合负载和物理多节点仍需独立交付。
+固定版本的真实 CustomVoice 已完成[默认工厂和三格式私有交付实验](../audits/2026-10-26-b03-default-real-tts-probe.md)，
+其证据不自动覆盖后续代码或模型组合。公开 `/v1/audio/speech` 路由、公开下载与 A 的发布链、
+真实语料质量、长文本切分、流式/音色素材、生产停止与资源释放、
+GPU 混合负载和物理多节点仍需独立交付。
 默认 Compose 不提供私有配置、模型或已批准实例。
+
+[真实取消与整代次停止联验](../audits/2026-10-26-b03-real-tts-stop-settlement.md)
+已在隔离 PG/MinIO 中证明取消保持占用、控制器双证据由默认网关登记、A 原租约事务只结算
+一次；就绪/准入和 runtime stop 意图生产者仍为 fixture，实例 base 结算与单请求释放未验。
 
 ## 验证范围
 

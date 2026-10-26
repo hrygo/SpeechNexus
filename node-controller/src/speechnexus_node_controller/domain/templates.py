@@ -180,9 +180,12 @@ class ApprovedRuntimeTemplate:
                 self.command is None
                 or self.readiness.kind is not ReadinessKind.HTTP_WARMUP_OK
                 or self.readiness.warmup is None
-                or self.readiness.warmup.path != "/v1/audio/transcriptions"
+                or self.readiness.warmup.path
+                not in {"/v1/audio/transcriptions", "/v1/audio/speech"}
             ):
-                raise ValueError("native ASR authentication requires explicit argv and ASR warmup")
+                raise ValueError(
+                    "native speech authentication requires explicit argv and speech warmup"
+                )
             # CLI api-key overrides VLLM_API_KEY. Refuse abbreviations,
             # underscore spellings and config/root/middleware overrides too.
             forbidden = ("--api-key", "--config", "--root-path", "--middleware")

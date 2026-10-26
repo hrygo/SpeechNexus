@@ -59,7 +59,9 @@ def native_server() -> Iterator[tuple[ThreadingHTTPServer, list[str], list[str]]
         assert not thread.is_alive()
 
 
-def template(tmp_path: Path, port: int) -> ApprovedRuntimeTemplate:
+def template(
+    tmp_path: Path, port: int, path: str = "/v1/audio/transcriptions"
+) -> ApprovedRuntimeTemplate:
     body = tmp_path / "synthetic-warmup"
     body.write_bytes(b"synthetic bounded warmup")
     return replace(
@@ -69,7 +71,7 @@ def template(tmp_path: Path, port: int) -> ApprovedRuntimeTemplate:
                 ReadinessKind.HTTP_WARMUP_OK,
                 port=port,
                 warmup=WarmupRequest(
-                    path="/v1/audio/transcriptions",
+                    path=path,
                     content_type="application/octet-stream",
                     body_path=str(body),
                     body_sha256="sha256:" + hashlib.sha256(body.read_bytes()).hexdigest(),
@@ -92,12 +94,14 @@ def runtime(
     )
 
 
+@pytest.mark.parametrize("path", ["/v1/audio/transcriptions", "/v1/audio/speech"])
 def test_prepare_installs_native_key_and_authenticates_actual_warmup(
     tmp_path: Path,
     native_server: Any,
+    path: str,
 ) -> None:
     server, seen, _ = native_server
-    approved = template(tmp_path, server.server_port)
+    approved = template(tmp_path, server.server_port, path)
     engine = FakeDockerEngine(
         images={approved.image_reference: approved.image_digest}, addresses=("127.0.0.1",)
     )
@@ -120,13 +124,15 @@ def test_prepare_installs_native_key_and_authenticates_actual_warmup(
 @pytest.mark.parametrize(
     "drift", ["missing", "other_key", "duplicate", "argv", "image", "gateway_label"]
 )
+@pytest.mark.parametrize("path", ["/v1/audio/transcriptions", "/v1/audio/speech"])
 def test_drift_or_unprotected_container_cannot_be_reused_as_ready_and_still_can_stop(
     tmp_path: Path,
     native_server: Any,
     drift: str,
+    path: str,
 ) -> None:
     server, seen, _ = native_server
-    approved = template(tmp_path, server.server_port)
+    approved = template(tmp_path, server.server_port, path)
     engine = FakeDockerEngine(
         images={approved.image_reference: approved.image_digest}, addresses=("127.0.0.1",)
     )
@@ -162,12 +168,14 @@ def test_no_root_key_rejects_creation_before_any_daemon_mutation(tmp_path: Path)
     assert not engine.created
 
 
+@pytest.mark.parametrize("path", ["/v1/audio/transcriptions", "/v1/audio/speech"])
 def test_reused_ip_with_next_generation_native_key_cannot_complete_old_warmup(
     tmp_path: Path,
     native_server: Any,
+    path: str,
 ) -> None:
     server, seen, expected = native_server
-    approved = template(tmp_path, server.server_port)
+    approved = template(tmp_path, server.server_port, path)
     expected[0] = CREDENTIALS.for_instance(build_request(instance_generation=2))
     engine = FakeDockerEngine(
         images={approved.image_reference: approved.image_digest}, addresses=("127.0.0.1",)
@@ -197,6 +205,22 @@ def test_template_cannot_override_or_bypass_native_authentication(
 ) -> None:
     with pytest.raises(ValueError, match="override native"):
         replace(template(tmp_path, 8000), command=(argument,))
+
+
+@pytest.mark.parametrize("path", ["/v1/models", "/health", "/v1/audio/speech/"])
+def test_native_auth_rejects_a_warmup_outside_the_supported_speech_paths(
+    tmp_path: Path, path: str
+) -> None:
+    with pytest.raises(ValueError, match="warmup"):
+        template(tmp_path, 8000, path)
+
+
+def test_native_auth_still_requires_model_warmup_instead_of_health_only(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="warmup"):
+        replace(
+            template(tmp_path, 8000),
+            readiness=ReadinessRule(ReadinessKind.HTTP_STATUS_OK, port=8000, path="/health"),
+        )
 
 
 def test_native_auth_keeps_approved_api_server_concurrency_configurable(tmp_path: Path) -> None:

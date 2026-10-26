@@ -1,0 +1,22 @@
+{
+  "source_commit": "230031043a76ac6c2d04ee6bb2fe93ca38f991c5",
+  "recipe_version": "pcm-decode-1",
+  "files": [
+    {
+      "source_path": "execution-gateway/src/speechnexus_gateway/domain/media.py",
+      "source_blob": "4d70acc4e8226a977ab84a0ab11ee0265d182020",
+      "source_sha256": "d91f2c4e11039f6e6121574b65cd746bd271cd63d9418b3ccd2c18f8fcc60980",
+      "package_path": "src/speechnexus_media/domain.py",
+      "package_sha256": "d91f2c4e11039f6e6121574b65cd746bd271cd63d9418b3ccd2c18f8fcc60980",
+      "changes": "None"
+    },
+    {
+      "source_path": "execution-gateway/src/speechnexus_gateway/infrastructure/pyav_audio.py",
+      "source_blob": "12684eb017b0dfdcc36a694f891cfdbc0ad51b37",
+      "source_sha256": "62451aa78c3858cc45414cbc47c6323c36479b9943609ba2773db9575a554114",
+      "package_path": "src/speechnexus_media/decoder.py",
+      "package_sha256": "f08829064f20bd764312e4f754396e43422b48da3047af2c94fba6682abc71cc",
+      "changes": "Import shared native types"
+    }
+  ]
+}

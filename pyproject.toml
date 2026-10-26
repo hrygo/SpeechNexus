@@ -10,7 +10,7 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["backend", "execution-gateway", "node-controller", "packages/contracts"]
+members = ["backend", "execution-gateway", "node-controller", "packages/contracts", "packages/media"]
 
 [dependency-groups]
 dev = [
@@ -59,6 +59,7 @@ source = [
   "execution-gateway/src/speechnexus_gateway",
   "node-controller/src/speechnexus_node_controller",
   "packages/contracts/src/speechnexus_contracts",
+  "packages/media/src/speechnexus_media",
   "deploy/engines/vllm-asr-lifecycle/src/speechnexus_vllm_asr",
 ]
 
@@ -70,7 +71,7 @@ skip_covered = true
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["backend/src", "execution-gateway/src", "node-controller/src", "tests"]
+src = ["backend/src", "execution-gateway/src", "node-controller/src", "packages/media/src", "tests"]
 
 [tool.ruff.per-file-target-version]
 # These lightweight entry points use the runner's system Python, without uv.
@@ -100,6 +101,7 @@ files = [
   "tests",
   "scripts/dev-env",
   "packages/contracts/src",
+  "packages/media/src",
   "deploy/engines/vllm-asr-lifecycle/src",
 ]
 exclude = ["(?x)(^|/)(\\.venv|node_modules)/"]
@@ -115,7 +117,14 @@ root_packages = [
   "speechnexus_gateway",
   "speechnexus_contracts",
   "speechnexus_node_controller",
+  "speechnexus_media",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Shared media does not depend on services or wire DTOs"
+type = "forbidden"
+source_modules = ["speechnexus_media"]
+forbidden_modules = ["speechnexus_backend", "speechnexus_gateway", "speechnexus_node_controller", "speechnexus_contracts"]
 
 [[tool.importlinter.contracts]]
 name = "Speech backend dependency direction"

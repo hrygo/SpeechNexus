@@ -11,6 +11,7 @@ import * as realtime_events from "../src/realtime_events.ts";
 import * as model_bindings from "../src/model_bindings.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
 import * as gateway_recovery from "../src/gateway_recovery.ts";
+import * as audio_inspection from "../src/audio_inspection.ts";
 import * as binding_defaults from "../src/binding_defaults.ts";
 import * as binding_defaults_producer from "../src/binding_defaults_producer.ts";
 import { exampleValue } from "./contract-examples.mjs";
@@ -25,6 +26,7 @@ const profiles = {
   scenario_profiles,
   model_bindings,
   gateway_recovery,
+  audio_inspection,
   binding_defaults,
   binding_defaults_producer,
 };

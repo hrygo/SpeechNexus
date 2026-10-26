@@ -1,0 +1,405 @@
+{
+  "snapshot_utc": "2026-10-26 10:13:27 UTC",
+  "date_timezone": "Asia/Shanghai",
+  "repository": "hrygo/SpeechNexus",
+  "source": "GitHub issue API, reread after concurrent updates",
+  "state_counts": {
+    "open": 40
+  },
+  "status_counts": {
+    "status:in-progress": 34,
+    "status:planned": 6
+  },
+  "original_work_packages": 25,
+  "gates": 6,
+  "completed_work_packages": 0,
+  "passed_gates": 0,
+  "acceptance_note": "Implementation, integration, behavior qualification and Gate approval remain separate; this is a timestamped handoff index, not a schedule.",
+  "integration_base": "54daef6ae4792b69a0e5e8645b09240ff715082e",
+  "implementation_head": "b7e65f4a119999e720d594200c53dc683bec5526",
+  "pull_requests": [
+    {
+      "number": 221,
+      "state": "open",
+      "merged": false,
+      "implementation_head": "b7e65f4a119999e720d594200c53dc683bec5526",
+      "scope": "Team A media implementation and complete handoff"
+    },
+    {
+      "number": 220,
+      "state": "open",
+      "merged": false,
+      "reviewed_head": "45bc90ed0fcc36264022b0c2f684e3d9006685ec",
+      "scope": "Project and Team B handoff; reference only"
+    }
+  ],
+  "organic_issue_update": {
+    "receipt": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6412962541",
+    "before_characters": 93001,
+    "after_characters": 72246,
+    "goal_and_ac_sections": "unchanged",
+    "metadata": "state/labels/title/assignees/milestone preserved"
+  },
+  "issues": [
+    {
+      "number": 6,
+      "title": "[总控] SpeechNexus 三团队整体实施与验收跟踪",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/6",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:06:18Z"
+    },
+    {
+      "number": 7,
+      "title": "[Epic S0] 接口、环境与关键风险探针",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/7",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:05Z"
+    },
+    {
+      "number": 8,
+      "title": "[Epic S1] 标准文件语音与基础页面闭环",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/8",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:08Z"
+    },
+    {
+      "number": 9,
+      "title": "[Epic S2] 实时语音、音色与实例生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/9",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:10Z"
+    },
+    {
+      "number": 10,
+      "title": "[Epic S3] 完整语音底座与基础产品试点",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/10",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:13Z"
+    },
+    {
+      "number": 11,
+      "title": "[Epic S4] 会议、提词、助手与有声书",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/11",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:16Z"
+    },
+    {
+      "number": 12,
+      "title": "[Epic S5] 目标拓扑、恢复与完整交付资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/12",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:19Z"
+    },
+    {
+      "number": 13,
+      "title": "[Gate G0] 接口、环境与关键风险探针验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/13",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:22Z"
+    },
+    {
+      "number": 14,
+      "title": "[Gate G1] 标准文件语音与基础页面闭环验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/14",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:25Z"
+    },
+    {
+      "number": 15,
+      "title": "[Gate G2] 实时语音、音色与实例生命周期验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/15",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:27Z"
+    },
+    {
+      "number": 16,
+      "title": "[Gate G3] 完整语音底座与基础产品试点验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/16",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:30Z"
+    },
+    {
+      "number": 17,
+      "title": "[Gate G4] 会议、提词、助手与有声书验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/17",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:42Z"
+    },
+    {
+      "number": 18,
+      "title": "[Gate G5] 目标拓扑、恢复与完整交付资格验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/18",
+      "state": "open",
+      "status": "status:planned",
+      "team": "A/B/C",
+      "updated_at": "2026-10-26T10:02:44Z"
+    },
+    {
+      "number": 19,
+      "title": "[A00] 契约类型生成、语义样例与接口交接",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/19",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:02:47Z"
+    },
+    {
+      "number": 20,
+      "title": "[A01] 生产协调事务、迁移权限与 18 端口验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/20",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:02:49Z"
+    },
+    {
+      "number": 21,
+      "title": "[A02] 资产、不可变版本与对象原子发布",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/21",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:02:52Z"
+    },
+    {
+      "number": 22,
+      "title": "[A03] 调度准入、持久任务、配额与未知恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/22",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:02:54Z"
+    },
+    {
+      "number": 23,
+      "title": "[A04] 标准文件语音、任务与管理 REST/SSE",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/23",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:02:57Z"
+    },
+    {
+      "number": 24,
+      "title": "[A05] 公开实时协议、双工准入与流恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/24",
+      "state": "open",
+      "status": "status:planned",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:03:00Z"
+    },
+    {
+      "number": 25,
+      "title": "[A06] 音色候选、复用校验与版本发布",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/25",
+      "state": "open",
+      "status": "status:planned",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:03:04Z"
+    },
+    {
+      "number": 26,
+      "title": "[A07] 删除账本、备份恢复与平台发布交付",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/26",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:03:06Z"
+    },
+    {
+      "number": 27,
+      "title": "[B00] MegaCube 环境、模型可行性与停止证据探针",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/27",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:19Z"
+    },
+    {
+      "number": 28,
+      "title": "[B01] 执行网关、持久意图与真实提交屏障",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/28",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:22Z"
+    },
+    {
+      "number": 29,
+      "title": "[B02] 受限节点控制器与实例生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/29",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:24Z"
+    },
+    {
+      "number": 30,
+      "title": "[B03] 真实文件 ASR/TTS 与有界媒体流水线",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/30",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:27Z"
+    },
+    {
+      "number": 31,
+      "title": "[B04] 流式 ASR/TTS、PCM 背压与输出区间账本",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/31",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:29Z"
+    },
+    {
+      "number": 32,
+      "title": "[B05] VoiceDesign/Base、克隆与声音材料恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/32",
+      "state": "open",
+      "status": "status:planned",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:32Z"
+    },
+    {
+      "number": 33,
+      "title": "[B06] VAD、对齐与匿名分人能力",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/33",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:34Z"
+    },
+    {
+      "number": 34,
+      "title": "[B07] 模型部署、混合负载与目标拓扑资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/34",
+      "state": "open",
+      "status": "status:planned",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:03:37Z"
+    },
+    {
+      "number": 35,
+      "title": "[C00] 工作台版本骨架、契约客户端与开发 fake",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/35",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:03:39Z"
+    },
+    {
+      "number": 36,
+      "title": "[C01] AdminUI 与持久任务中心",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/36",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:03:43Z"
+    },
+    {
+      "number": 37,
+      "title": "[C02] 转写校对导出与文本配音闭环",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/37",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:03:52Z"
+    },
+    {
+      "number": 38,
+      "title": "[C03] 音色创作、校验发布与复用工作室",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/38",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:03:55Z"
+    },
+    {
+      "number": 39,
+      "title": "[C04] 浏览器采集播放、实时字幕与媒体生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/39",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:03:57Z"
+    },
+    {
+      "number": 40,
+      "title": "[C05] 会议封存、校对与提词跟随",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/40",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:04:00Z"
+    },
+    {
+      "number": 41,
+      "title": "[C06] 内网 LLM、会议纪要与语音助手",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/41",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:04:03Z"
+    },
+    {
+      "number": 42,
+      "title": "[C07] 有声书局部重做、保存副本与独立导出",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/42",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:04:05Z"
+    },
+    {
+      "number": 43,
+      "title": "[C08] 浏览器、业务删除恢复与应用交付资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/43",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:C",
+      "updated_at": "2026-10-26T10:04:08Z"
+    },
+    {
+      "number": 142,
+      "title": "[B-G1] 真实文件 ASR/TTS 持久执行与制品交接",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/142",
+      "state": "open",
+      "status": "status:in-progress",
+      "team": "team:B",
+      "updated_at": "2026-10-26T10:04:10Z"
+    },
+    {
+      "number": 149,
+      "title": "[A→C06] 提供真实 Speech Job 与已发布音色，解除助手成功路径阻塞",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/149",
+      "state": "open",
+      "status": "status:planned",
+      "team": "team:A",
+      "updated_at": "2026-10-26T10:04:13Z"
+    }
+  ]
+}

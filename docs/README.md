@@ -1,6 +1,6 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已建立可构建的 FastAPI / 执行网关与两个 Web 入口外壳，并交付 P0 公共、管理与内部机器契约，但尚未实现语音或工作台业务。契约冻结、schema 校验和 OpenAI SDK 形状测试不等于服务端路由或真实模型已可用。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.0。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。新负责人从[项目完整交接](audits/2026-10-26-project-handoff.md)接管，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -43,7 +43,7 @@
 | [文件 ASR 原生识别接口](architecture/file-asr-recognition.md) | 固定内网 ASR、VAD 门禁、SSE 完成/截断判定、源时钟及未装配的持久执行边界 |
 | [文件 ASR 固定制品与参数交接](architecture/file-asr-binding-handoff.md) | 1.7B/VAD/引擎锁定、离线校验、原命令参数与 A 配置/发布的接入边界 |
 | [文件 TTS 原生合成接口](architecture/file-tts.md) | 固定内网 synthesis、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码 |
-| [文件 TTS 默认执行装配](architecture/file-tts-runtime.md) | 私有配置、受控 generation、原命令 worker、生成区间与音频回执；实际模型和公开链待验 |
+| [文件 TTS 默认执行装配](architecture/file-tts-runtime.md) | 私有配置、受控 generation、原命令 worker、生成区间与音频回执；真实 CustomVoice 隔离实验已有，公开链和完整资格待验 |
 | [B03 真实文件 ASR 与首次长窗口开销](audits/2026-10-24-b03-file-asr-probe.md) | 0.6B/1.7B、真实录音、无语音零外发、真实截断负例与同片段重复测量 |
 | [B03 TTS 适配器真实探针](audits/2026-10-24-b03-tts-adapter-probe.md) | 1.7B CustomVoice 经适配器的 WAV/MP3 交付、24→16 kHz 解码与 0.6B ASR 回环、停止与清理证据 |
 | [设计审查记录](audits/2026-10-22-speechnexus-design-review.md)                                      | 已发现问题、修正裁决、来源核验、文档检查与未验证项                              |

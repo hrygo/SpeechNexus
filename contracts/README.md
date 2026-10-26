@@ -15,6 +15,11 @@ root/semantic limits and does not alter the default request surface.
 
 ## Current scope
 
+- `internal/audio-inspection.schema.json`: private successful output from the
+  isolated media worker, explicitly generated as `audio_inspection`. Consumers
+  separately bind original input digest/length, exact source clock, configured
+  limits and process completion. This is not a public Asset/stop/budget receipt.
+
 - `operations.openapi.yaml`: liveness and readiness protocol shared by the
   speech API, execution gateway, and deployment probes.
 - `speech-openapi.yaml`: the public OpenAI-compatible Audio subset

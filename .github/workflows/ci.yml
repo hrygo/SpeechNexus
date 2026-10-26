@@ -97,11 +97,14 @@ jobs:
       - name: Install Linux inspection sandbox
         # Only this job executes the real Linux inspection-process tests. The
         # bubblewrap package supplies the executable, not an enabled AppArmor
-        # profile. Never install/load a profile, change host policy or fall back
-        # to unsandboxed workers automatically.
+        # profile. The following separately bounded, approved step loads only
+        # the pinned official two rules on this disposable job VM.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends bubblewrap
+
+      - name: Load approved official inspection rules on this temporary VM
+        run: python3 scripts/dev-env/ci-inspection-profile.py load
 
       - name: Verify inspection startup before complete regression
         # Fail the same required job early on an unusable native dependency.
@@ -227,6 +230,22 @@ jobs:
         run: |
           uv build --all-packages --out-dir dist/python
           uv build --wheel --no-sources deploy/engines/vllm-asr-lifecycle --out-dir dist/python
+
+      - name: Remove only new inspection rules after owned processes stop
+        if: always()
+        run: python3 scripts/dev-env/ci-inspection-profile.py cleanup
+
+      - name: Preserve inspection policy identity and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: inspection-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/speech-inspection-profile/receipt.json
+            ${{ runner.temp }}/speech-inspection-profile/bwrap-userns-restrict
+            ${{ runner.temp }}/speech-inspection-profile/load-consumed
+          if-no-files-found: error
+          retention-days: 7
 
   python_contracts:
     name: Python static and contract checks

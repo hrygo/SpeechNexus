@@ -262,23 +262,33 @@ The non-exec guardian and original API pidfd remove reliance on this signal;
 local RED→GREEN and ordinary namespace tests remain separate from validation
 under the CI AppArmor rules. That CI validation is still pending.
 
-### Proposed repeatable CI policy — approval required before implementation
+### Approved repeatable temporary CI policy (2026-10-26)
 
-The remaining reproducibility decision is limited to this repository's
-temporary GitHub-hosted `python_checks` job VM. A repeatable implementation
-would use the exact package/rule hashes above, the existing parser and runner,
-and only the two official rules. It would reject existing same-name rules,
-profile files or local overrides instead of replacing them. The whole profile
-package would not be installed; host sysctls, capabilities, network isolation,
-seccomp and application assertions would remain unchanged.
+The user explicitly approved the preceding proposal to load the two verified
+official rules on each temporary CI test machine and clean up after testing:
+“批准，你必须完成合并”. This new scope is separate from the consumed experiment;
+it does not reuse the experiment's token or result. It is limited to this
+repository's GitHub-hosted `python_checks` job VM, the exact package/rule hashes
+above, the existing parser and runner, and only the two official rules.
+`scripts/dev-env/ci-inspection-profile.py` rejects existing same-name rules,
+profile files, disabled/complain markers or local overrides. The whole profile
+package is not installed; host sysctls, capabilities, network isolation, seccomp
+and application assertions remain unchanged. Source checkout must match the
+recorded SHA, and the exclusive per-VM claim prevents a second load attempt.
 
-Each job would bind its receipt to run/attempt/job/runner/source identities,
-verify loading, preserve diagnostics and run the complete current Python gate
-(including real Workbench PG coverage), media smoke and wheel build. Cleanup
-would remove only its newly loaded rules after owned-process stop is proved;
-an uncertain load/stop would fail and rely on VM teardown, never retry loading
-or unload around an unknown live worker. Receipts would remain artifacts.
+Each receipt binds run/attempt/non-matrix job key/runner/source identities;
+the numeric job ID can be resolved from ordinary Actions metadata without
+adding token permissions to the workflow. CI verifies loading and preserves
+diagnostics, then runs the complete current Python gate (including real
+Workbench PG coverage), media smoke and wheel build. Cleanup removes only its
+newly loaded rules after new processes of the job UID are absent; PID reuse is
+distinguished by start time. Unknown load/stop fails and retains policy for VM
+teardown, rather than retrying or unloading around a live worker. Hard timeout
+may prevent cleanup/artifact steps; that run cannot count as success. Normal
+failure/cancellation executes the `always()` cleanup and artifact steps.
+
 This affects every bwrap invocation on that temporary VM and grants namespace
-setup access under the official rules. It does not affect production or grant
-application deployment/Gate approval. This proposal is not implemented or
-activated; the consumed one-time approval does not authorize it.
+setup access under the official rules. It does not affect production, enlarge
+application permissions, change repository protection or approve a Gate. The
+configuration and offline guards do not themselves prove the revised guardian
+passes under these rules; exact-head CI and review remain required.

@@ -4,4 +4,4 @@
 
 向 B 交付固定资源、有效命令与输入资格，向 C 交付可正式消费的协议及错误/恢复语义。接收方按固定提交审查；高风险变更由另一名 Sol 独立复核。私有检查回执、单元测试与公开 ready、生产装配、完整资格分别报告。
 
-环境准备见 `docs/operations/paperclip/environment-readiness.md` 与 DEL-36。安装/验证前先 `source "$SPEECHNEXUS_TOOLCHAIN_ENV"`，准确路径由任务提供；核对工具版本、当前 checkout 及其独立依赖目录。A 的 pnpm store 字段尚未保存，激活步骤是必要前置，不沿用全局工具或其他 checkout 的依赖。
+环境准备见 `docs/operations/paperclip/environment-readiness.md` 与 DEL-36。安装/验证前先 `source "$SPEECHNEXUS_TOOLCHAIN_ENV"`，准确路径由任务提供；核对工具版本、当前 checkout 及其独立依赖目录。A 的专用 pnpm store 字段已保存并回读；激活仍是工具路径与缓存准备的必要前置，不沿用全局工具或其他 checkout 的依赖。

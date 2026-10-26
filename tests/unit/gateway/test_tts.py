@@ -45,6 +45,10 @@ DELIVERY = LocalTtsEncoder().encode(
         {"max_audio_ms": 0},
         {"timeout_seconds": 0},
         {"instructions": "bad\x00instruction"},
+        {"language": "EN_us"},
+        {"language": ""},
+        {"seed": "7"},
+        {"seed": 2**63},
     ],
 )
 def test_invalid_frozen_policies_are_rejected(kwargs: dict[str, Any]) -> None:
@@ -56,6 +60,8 @@ def test_invalid_frozen_policies_are_rejected(kwargs: dict[str, Any]) -> None:
 def test_policy_digest_tracks_every_frozen_field() -> None:
     other = replace(POLICY, instructions="柔和一些", speed=1.25, sample_rate_hz=8000)
     assert POLICY.digest != other.digest
+    assert POLICY.digest != replace(POLICY, language="en").digest
+    assert POLICY.digest != replace(POLICY, seed=7).digest
     assert POLICY.digest == TtsPolicy("config-1", "Vivian").digest
     assert POLICY.digest.startswith("sha256:")
 

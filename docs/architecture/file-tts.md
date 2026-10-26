@@ -58,7 +58,8 @@ PCM 字节数、时长和交付载荷。文本与音频载荷不进入 `repr`；
 调用方须通过原 B 区间端口登记实际生成样本，再调用原观察事务登记回执。
 新音频查询、完整区间检查、升级顺序及回退边界见
 [执行回执](execution-staging-results.md)和 [ADR 0010](../decisions/0010-private-audio-receipt-compatibility.md)。
-生产 TTS 命令映射/default factory 仍未装配；上述组件接线不能替代 A 的公开发布链。
+原命令消费见下文 `CommandFileTts`；默认部署工厂与 A 的公开发布链仍未装配，
+组件接线不能替代公开闭环。
 
 staging 本地稳定错误为 `tts_result_invalid`、`tts_result_cancelled`、
 `tts_result_deadline_exceeded`、`tts_result_storage_unknown`、
@@ -72,6 +73,7 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 
 - `voice` 是预设 speaker 标识；`task` 目前只有 `CustomVoice`，与已验证的 checkpoint 对应。
 - `instructions` 可选、最多 4096 字符且拒绝 NUL；`speed` 允许 0.25–4.0，默认 1.0。
+- `language` 可选 BCP-47 形式标签，`seed` 可选 64 位整数；两者进入策略摘要并透传引擎。
 - `engine_format` 只允许 `wav`/`pcm`，即本单元能结构校验的两种引擎响应。
 - `sample_rate_hz` 允许 8000/24000；策略声明值必须与引擎响应头和 WAV 头一致，不一致即失败。
 - `max_pcm_bytes`（1 KiB–64 MiB）、`max_audio_ms`（≤ 1 小时）和 `timeout_seconds`
@@ -91,11 +93,27 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 不声明引擎侧只执行一次生成。输出被引擎标记截断（`X-Audio-Truncated: true`）时按
 `tts_output_truncated` 失败，不把部分音频当作完整结果交付。
 
+## 原命令消费
+
+`CommandFileTts` 把已持久化的原 `SubmitExecutionRequest` 冻结成一次合成：校验 command digest
+与总长度、`kind=tts`/`task_kind=tts_file`/`stage_role=tts_connector`、binding/policy revision、
+非空 `voice_revision_id`，以及 `text` 非空且 `text_stream` 为空。它只接受
+`text_commit_mode=explicit`、`audio_delivery=complete`、无 pronunciation revision、
+`voice_kind=builtin` 且无 voice material/词表/发音资源，并要求文本长度不超过命令声明的
+`planner.max_chars`：本单元只做单段完整交付，长文本切分属于后续单元，不会被静默截断。
+
+接受的参数覆盖到策略字段：`instructions`、`speed`、`language`、`seed`；`response_format`
+决定交付格式（wav/mp3/pcm），引擎格式、采样率与各项上限仍来自批准 binding。
+`validate_request` 只做无 I/O 的冻结检查；`synthesize` 至多一次引擎调用；
+`stage_result` 复用私有 staging 回执。三者都不写终止状态、不发布制品、不签发停止或释放证据；
+执行身份、准入、计量与对外发布仍由 A 的原事务负责。
+
 ## 私有 HTTP 和结构校验
 
 adapter 只使用配置的私网地址与端口，`trust_env=False`、不跟随重定向、不自动重试，
 并设置 `Accept-Encoding: identity`。请求体是冻结的 JSON 文档：`model`、`input`、`voice`、
-`task_type`、`response_format`、`sample_rate`、`speed`，`instructions` 非空时一并发送。
+`task_type`、`response_format`、`sample_rate`、`speed`；`instructions`、`language`、`seed`
+仅在策略显式声明时发送。
 
 只有以下条件同时成立才接受响应：
 

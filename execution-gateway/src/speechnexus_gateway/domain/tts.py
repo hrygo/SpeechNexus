@@ -19,6 +19,7 @@ from speechnexus_gateway.domain.canonical import command_digest
 
 TTS_RECIPE_VERSION = "file-tts-1"
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+_LANGUAGE = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}")
 
 MAX_TTS_TEXT_CHARS = 4096
 MAX_TTS_TEXT_BYTES = 16384
@@ -119,6 +120,8 @@ class TtsPolicy:
     speed: float = 1.0
     engine_format: TtsEngineFormat = TtsEngineFormat.WAV
     sample_rate_hz: int = 24000
+    language: str | None = None
+    seed: int | None = None
     max_pcm_bytes: int = 8 * 1024 * 1024
     max_audio_ms: int = 600000
     timeout_seconds: float = 120.0
@@ -139,6 +142,14 @@ class TtsPolicy:
             or not isinstance(self.engine_format, TtsEngineFormat)
             or type(self.sample_rate_hz) is not int
             or self.sample_rate_hz not in ENGINE_SAMPLE_RATES
+            or (
+                self.language is not None
+                and (type(self.language) is not str or _LANGUAGE.fullmatch(self.language) is None)
+            )
+            or (
+                self.seed is not None
+                and (type(self.seed) is not int or not -(2**63) <= self.seed < 2**63)
+            )
             or type(self.max_pcm_bytes) is not int
             or not 1024 <= self.max_pcm_bytes <= 64 * 1024 * 1024
             or type(self.max_audio_ms) is not int
@@ -165,6 +176,8 @@ class TtsPolicy:
                 "speed": self.speed,
                 "engine_format": self.engine_format.value,
                 "sample_rate_hz": self.sample_rate_hz,
+                "language": self.language,
+                "seed": self.seed,
                 "max_pcm_bytes": self.max_pcm_bytes,
                 "max_audio_ms": self.max_audio_ms,
                 "timeout_seconds": self.timeout_seconds,

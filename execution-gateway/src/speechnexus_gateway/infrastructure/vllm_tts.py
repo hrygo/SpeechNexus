@@ -98,6 +98,10 @@ def _request_body(request: TtsRequest, policy: TtsPolicy, endpoint: VllmTtsEndpo
     }
     if policy.instructions:
         document["instructions"] = policy.instructions
+    if policy.language is not None:
+        document["language"] = policy.language
+    if policy.seed is not None:
+        document["seed"] = policy.seed
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
         "utf-8"
     )

@@ -24,6 +24,10 @@ NOW = datetime(2026, 10, 24, tzinfo=UTC)
 WORKSPACE = "workspace-demo"
 
 
+class ObjectZoneError(Exception):
+    """Stand-in for a storage adapter that could not accept the copy."""
+
+
 def unit() -> RenderUnit:
     dependencies = RenderDependencies(
         original=RevisionPin("original", 1),
@@ -115,3 +119,40 @@ async def test_pending_job_and_unreadable_receipt_leave_the_unit_generating() ->
 async def test_a_settled_attempt_is_not_settled_again() -> None:
     units, jobs = Units(unit(), conflict=True), Jobs(RenderJobOutcome("failed"))
     assert await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE) == ()
+
+
+class Copies:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.saved: list[dict[str, Any]] = []
+
+    async def save_copy(self, **arguments: Any) -> str:
+        if self.error is not None:
+            raise self.error
+        self.saved.append(arguments)
+        return "asset_1"
+
+
+async def test_succeeded_settlement_saves_the_receipt_pinned_copy() -> None:
+    units = Units(unit())
+    copies = Copies()
+    reconciler = RenderReconciler(
+        units, Jobs(RenderJobOutcome("succeeded", "artifact_1", "receipt_1")), copies
+    )
+    assert [item.state for item in await reconciler.settle(workspace_id=WORKSPACE)] == ["succeeded"]
+    (saved,) = copies.saved
+    assert saved["workspace_id"] == WORKSPACE
+    assert saved["unit"].id == "unit"
+    assert (saved["source"].artifact_id, saved["source"].receipt_id) == (
+        "artifact_1",
+        "receipt_1",
+    )
+
+
+async def test_copy_failure_does_not_unsettle_the_ready_unit() -> None:
+    units, copies = Units(unit()), Copies(ObjectZoneError())
+    settled = await RenderReconciler(
+        units, Jobs(RenderJobOutcome("succeeded", "artifact_1", "receipt_1")), copies
+    ).settle(workspace_id=WORKSPACE)
+    assert [item.state for item in settled] == ["succeeded"]
+    assert units.completed != []

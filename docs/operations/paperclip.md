@@ -1,8 +1,8 @@
 ---
 title: SpeechNexus Paperclip 工作流与团队
 status: active
-version: "1.2.0"
-date: 2026-10-26
+version: "1.3.0"
+date: 2026-10-27
 ---
 
 # SpeechNexus Paperclip 工作流与团队
@@ -129,7 +129,7 @@ MacBook 最多一个浏览器/设备验证。多个 agent 的主机总量由经�
 
 本轮早期环境探针产生的两条未计价记录，已依据用户确认的“固定订阅已包含、不按本次用量加收费用”，通过线上 r6 既有审计调整接口更正。2026-10-26 15:45 UTC 核验未计价数为 0、预算 `ok`、原 incident 自动解决，原始回执与用量保持完整，七岗手动暂停不变。这项历史更正不需要新计费代码；没有提高额度、关闭未计价阻止或改用其他项目。
 
-A/B 环境保存的程序缺陷由 [Delegra PR #20](https://github.com/hrygo/Delegra/pull/20) 修复，最终检查与发布仍待完成。未来自动识别订阅内用量的 [PR #21](https://github.com/hrygo/Delegra/pull/21) 已退回草稿，本次不部署。用户确认不推及以后运行；缺少定价依据的新记录仍按原预算策略处理。
+A/B 环境保存的程序缺陷已由 [Delegra PR #20](https://github.com/hrygo/Delegra/pull/20) 修复并部署 r8；三项最终字段已保存和精确回读，模型、连接、凭据引用与七岗暂停保持。未来自动识别订阅内用量的 [PR #21](https://github.com/hrygo/Delegra/pull/21) 保留草稿，本次不部署。用户确认不推及以后运行；缺少定价依据的新记录仍按原预算策略处理。
 
 保留 per-turn 生命周期，continuation 最多一次。开始前列明预期完成窗口；工作未完成时保存已有任务文档检查点和下一步。
 同一配置/鉴权/工作区错误不自动循环重试；保存一次失败后交经理，修复原因并取得新证据才重新派工。

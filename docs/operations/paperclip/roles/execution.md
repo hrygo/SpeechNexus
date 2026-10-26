@@ -6,4 +6,4 @@
 
 当前采用 Codex CLI 的 SSH 隔离源码传递路径。远端保留工作区修改，不执行 Git commit 或 push；报告完整 base SHA、修改清单与检查结果，由平台回传后交本机经理审查和提交。只使用任务提供的隔离测试服务及凭据引用，不读取其他项目配置。已有隔离服务时按验证指南直接执行相应用例，不重新运行整机 bootstrap。
 
-验证命令先 `source "$SPEECHNEXUS_TOOLCHAIN_ENV"`，准确路径由任务提供；该激活文件固定工具与缓存，并选择 Paperclip 专属 MinIO `59002`。不要直接沿用 agent 中保留的旧 `59000` 默认值。确认有效端点、工具版本和当前 checkout 后再使用测试连接。
+验证命令先 `source "$SPEECHNEXUS_TOOLCHAIN_ENV"`，准确路径由任务提供；该激活文件固定工具与缓存，并选择 Paperclip 专属 MinIO `59002`。agent 的专用 pnpm store 与 `59002` 端点已保存并回读，与激活文件一致；不得指向旧 `59000` 开发服务。确认实际有效端点、工具版本和当前 checkout 后再使用测试连接。

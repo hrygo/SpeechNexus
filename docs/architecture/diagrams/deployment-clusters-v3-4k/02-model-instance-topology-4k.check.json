@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "file": "02-model-instance-topology-4k.png",
+  "svgSha256": "4918f8f65841ae98b392f7a75e4d0044d57a0700a43ba8bbcba725c9e915b38e",
+  "pngSha256": "0d16ed3ffbe258d3ffe50592ae2ab729ca8d9b2688085aca1cbf0b93c31ce90c",
+  "pixels": {
+    "width": 3840,
+    "height": 2160
+  },
+  "layout": {
+    "canvas": {
+      "width": 3840,
+      "height": 2160
+    },
+    "labels": 116,
+    "icons": 4,
+    "illustrations": 0,
+    "minimumFontPx": 24,
+    "minimumOwnedInsetPx": 13.84,
+    "spacingPolicy": {
+      "textGapPx": 6,
+      "iconGapPx": 8,
+      "routeTextGapPx": 6,
+      "containerInset": "per-container data-inset"
+    },
+    "missing": [],
+    "forbidden": [],
+    "overflow": [],
+    "outside": [],
+    "padding": [],
+    "overlaps": [],
+    "textClearance": [],
+    "iconClearance": [],
+    "routeText": [],
+    "routeImages": [],
+    "imageText": []
+  },
+  "resourceFailures": []
+}

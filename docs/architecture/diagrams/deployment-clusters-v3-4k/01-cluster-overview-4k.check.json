@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "file": "01-cluster-overview-4k.png",
+  "svgSha256": "6f741abcccf1a361c8ad41ac970da38593c31746d1084204a607f1cec887ea8f",
+  "pngSha256": "569cf68d5caaa14af362adb6981057d50d34b09ddcc4c859ca5298a7ebaed9ee",
+  "pixels": {
+    "width": 3840,
+    "height": 2160
+  },
+  "layout": {
+    "canvas": {
+      "width": 3840,
+      "height": 2160
+    },
+    "labels": 108,
+    "icons": 16,
+    "illustrations": 3,
+    "minimumFontPx": 22.8,
+    "minimumOwnedInsetPx": 12.84,
+    "spacingPolicy": {
+      "textGapPx": 6,
+      "iconGapPx": 8,
+      "routeTextGapPx": 6,
+      "containerInset": "per-container data-inset"
+    },
+    "missing": [],
+    "forbidden": [],
+    "overflow": [],
+    "outside": [],
+    "padding": [],
+    "overlaps": [],
+    "textClearance": [],
+    "iconClearance": [],
+    "routeText": [],
+    "routeImages": [],
+    "imageText": []
+  },
+  "resourceFailures": []
+}

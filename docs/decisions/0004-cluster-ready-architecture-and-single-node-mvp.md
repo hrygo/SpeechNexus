@@ -75,4 +75,8 @@ HostNode (host_node_id, 节点级共享父物理预算: 统一内存 / 显存 / 
 跨表规则的主要执行边界调整为受控应用事务；PostgreSQL 仍为唯一正式交付数据库，
 MySQL/InnoDB 仅验证关键协调路径，不采用 etcd。
 
+[ADR 0011](0011-distributed-deployment-and-platform-boundaries.md)进一步明确按部署单元
+确定平台与节点绑定，业务/控制面不继承推理宿主的 Linux 要求。本决定的单节点 MVP
+保留为同构验证拓扑；分布式部署是明确目标，各平台与多机运行能力仍须分别验收。
+
 [决策索引](README.md) · [整体技术方案](../architecture/technical-blueprint.md) · [资源治理](../architecture/runtime-governance.md) · [项目主设计](../speechnexus-product-architecture.md)

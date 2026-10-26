@@ -13,7 +13,7 @@
 [![TTS: Qwen3-TTS](https://img.shields.io/badge/TTS-Qwen3--TTS-8B5CF6)](https://github.com/QwenLM/Qwen3-TTS)
 [![Docker Compose](https://img.shields.io/badge/deploy-Docker_Compose-2496ED?logo=docker&logoColor=white)](deploy/README.md)
 
-SpeechNexus 是面向自有 Linux 环境的语音服务与创作中枢。它将语音识别、语音合成与音色创作连接到日常工作：使用者在浏览器中转写、配音和整理内容，开发者通过 API 接入语音能力，维护者集中管理模型、资源与任务。
+SpeechNexus 是面向自有部署网络、按分布式架构设计的语音服务与创作中枢。它将语音识别、语音合成与音色创作连接到日常工作：使用者在浏览器中转写、配音和整理内容，开发者通过 API 接入语音能力，维护者集中管理模型、资源与任务。
 
 > **早期开发中，当前适合界面预览与开发评估。** 默认启动不加载语音模型，尚不能直接完成真实录音转写或配音。部分页面和服务模块已接入并单独验证，完整语音流程与生产部署仍待联调验收。以下场景描述产品目标，具体可用性见[当前可用范围](#当前可用范围)。
 
@@ -137,6 +137,8 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 ## 部署与数据边界
 
+业务与控制服务、工作台、数据服务和算力执行组件按独立部署单元规划，可分布在不同主机。当前选定的 CUDA 推理与节点执行栈以 Linux 为目标，现有 CPU 音频安全沙箱也依赖 Linux；这些依赖不构成所有 API 和工作台必须使用 Linux 的要求。单节点 Compose 是开发预览；macOS / Linux 原生运行和完整多机链路的验收范围见[部署单元与平台规划](docs/architecture/deployment-units.md)，当前尚未全部通过。
+
 **首期面向可信网络内的共享部署，没有登录、角色权限或多租户隔离。** 同一部署的数据由使用者共享；“个人语音工作台”描述使用体验，不代表个人私有空间。工作台与 AdminUI 的入口划分也不构成权限隔离，访问范围由部署方控制。
 
 产品要求语音模型本地推理，业务音频、转写、书稿、声音参考及派生内容留在部署网络内。助手与纪要的 LLM 集成可选、默认关闭，仅允许部署批准的本机或内网服务，不回退公有云。完整 LLM 集成与出站限制仍待验收，详见[网络边界说明](docs/decisions/0003-workbench-llm-network-boundary.md)。
@@ -159,6 +161,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 | 项目进展与接管 | [项目经理基线：三队能力、缺口、证据与协作](docs/plans/2026-10-26-project-manager-baseline.md) |
 | 产品范围与工作流 | [产品设计](docs/speechnexus-product-architecture.md) |
 | 部署、端口与配置 | [部署说明](deploy/README.md) |
+| 部署单元、分机拓扑与平台要求 | [部署单元与平台规划](docs/architecture/deployment-units.md) |
 | API 集成与兼容范围 | [语音接口](docs/architecture/speech-api.md) |
 | 开发环境与验证 | [开发指南](docs/development-environment.md) |
 | 架构与模块边界 | [技术方案](docs/architecture/technical-blueprint.md) |

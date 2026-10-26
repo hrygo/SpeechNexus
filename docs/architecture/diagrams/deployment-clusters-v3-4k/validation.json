@@ -1,0 +1,54 @@
+{
+  "status": "passed",
+  "verifiedAt": "2026-10-26T16:27:02.879Z",
+  "method": "Chromium native 4K rendering; SVG glyph bounds, per-container padding, icon and route clearance",
+  "catalog": {
+    "models": 8,
+    "passed": true
+  },
+  "assets": [
+    {
+      "file": "assets/application.png",
+      "width": 1536,
+      "height": 1024,
+      "hasAlpha": true,
+      "sha256": "f23921591df316d63419083518d593b97f8cce902c610637213bb26a40e9c6bd"
+    },
+    {
+      "file": "assets/compute.png",
+      "width": 1536,
+      "height": 1024,
+      "hasAlpha": true,
+      "sha256": "065a2ad817d3354305ca87547bcb1b0872c6025f40efeb046509e0df7667ed6a"
+    },
+    {
+      "file": "assets/data.png",
+      "width": 1490,
+      "height": 1055,
+      "hasAlpha": true,
+      "sha256": "62460a8e2e5469890b288352a203b6180decaf9d55929cb475f30ca2366d4fa5"
+    }
+  ],
+  "diagrams": [
+    {
+      "file": "01-cluster-overview-4k.png",
+      "status": "passed",
+      "pixels": {
+        "width": 3840,
+        "height": 2160
+      },
+      "svgSha256": "6f741abcccf1a361c8ad41ac970da38593c31746d1084204a607f1cec887ea8f",
+      "pngSha256": "569cf68d5caaa14af362adb6981057d50d34b09ddcc4c859ca5298a7ebaed9ee"
+    },
+    {
+      "file": "02-model-instance-topology-4k.png",
+      "status": "passed",
+      "pixels": {
+        "width": 3840,
+        "height": 2160
+      },
+      "svgSha256": "4918f8f65841ae98b392f7a75e4d0044d57a0700a43ba8bbcba725c9e915b38e",
+      "pngSha256": "0d16ed3ffbe258d3ffe50592ae2ab729ca8d9b2688085aca1cbf0b93c31ce90c"
+    }
+  ]
+}

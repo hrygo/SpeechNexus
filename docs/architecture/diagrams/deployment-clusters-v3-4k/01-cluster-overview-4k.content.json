@@ -1,0 +1,29 @@
+{
+  "expectedText": [
+    "部署集群总览",
+    "Speech API",
+    "Workbench API",
+    "Realtime Gateway",
+    "Scheduler",
+    "Job Workers",
+    "API-1",
+    "API-2",
+    "API-n",
+    "Host-A",
+    "Host-B",
+    "Host-C",
+    "ASR-0.6B / A1",
+    "ASR-0.6B / A2",
+    "CustomVoice / C1",
+    "CustomVoice / C2",
+    "PostgreSQL",
+    "单写权威",
+    "S3 统一端点",
+    "CPU 节点集群"
+  ],
+  "width": 3840,
+  "height": 2160,
+  "textLabels": 108,
+  "iconCount": 16,
+  "sourceKind": "终态目标拓扑，节点与副本数量为示意"
+}

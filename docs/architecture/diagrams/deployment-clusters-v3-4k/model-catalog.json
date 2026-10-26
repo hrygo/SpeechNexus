@@ -1,0 +1,66 @@
+[
+  {
+    "alias": "A",
+    "capability": "实时 ASR",
+    "artifact": "Qwen/Qwen3-ASR-0.6B",
+    "engine": "vLLM",
+    "device": "GPU",
+    "loading": "预加载 / 实时常驻"
+  },
+  {
+    "alias": "B",
+    "capability": "文件 / 复核",
+    "artifact": "Qwen/Qwen3-ASR-1.7B",
+    "engine": "vLLM",
+    "device": "GPU",
+    "loading": "文件按策略；实时复核依赖须就绪"
+  },
+  {
+    "alias": "C",
+    "capability": "预设音色",
+    "artifact": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+    "engine": "vLLM-Omni",
+    "device": "GPU",
+    "loading": "承担实时合成的绑定常驻"
+  },
+  {
+    "alias": "D",
+    "capability": "克隆 / 复用",
+    "artifact": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "engine": "vLLM-Omni",
+    "device": "GPU",
+    "loading": "实时常驻；受控创作预算复用"
+  },
+  {
+    "alias": "E",
+    "capability": "声音设计",
+    "artifact": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    "engine": "vLLM-Omni",
+    "device": "GPU",
+    "loading": "按需加载 / 空闲回收"
+  },
+  {
+    "alias": "F",
+    "capability": "强制对齐",
+    "artifact": "Qwen/Qwen3-ForcedAligner-0.6B",
+    "engine": "qwen_asr",
+    "device": "PyTorch CUDA",
+    "loading": "独立辅助实例 / 按配方治理"
+  },
+  {
+    "alias": "G",
+    "capability": "匿名分人",
+    "artifact": "nvidia/Nemotron-3-Diarization",
+    "engine": "NeMo",
+    "device": "PyTorch CUDA",
+    "loading": "独立辅助实例 / 按配方治理"
+  },
+  {
+    "alias": "H",
+    "capability": "VAD",
+    "artifact": "Silero VAD ONNX",
+    "engine": "ONNX Runtime",
+    "device": "CPU",
+    "loading": "CPU 常驻 / 会话状态隔离"
+  }
+]

@@ -136,7 +136,8 @@ async def stored(store: Store, unit_id: str) -> dict[str, Any]:
             await owner.execute(
                 sql.SQL(
                     "SELECT revision, status, text, dependencies_sha256,"
-                    " text_plan_revision, original_revision, working_revision"
+                    " text_plan_revision, original_revision, working_revision,"
+                    " source_artifact_id, source_receipt_id"
                     " FROM {}.render_units WHERE id = %s"
                 ).format(sql.Identifier(store.schema)),
                 (unit_id,),

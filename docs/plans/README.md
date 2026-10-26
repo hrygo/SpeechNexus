@@ -10,6 +10,8 @@
 - [2026-10-26 团队 A 进展复盘与原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
 - [2026-10-26 团队 C 最终交接](2026-10-26-team-c-final-handoff.md)：C00–C08 已集成范围、未决风险、A/B 接收方式、证据归档和全量 issue 核对；后续由新负责人重新安排。
 
+- [2026-10-26 Paperclip 工作流与环境准备](2026-10-26-paperclip-bootstrap-plan.md)：当前环境准备入口；七个 agent 暂停，三机与 Harness 自检、修改回传及启用阻塞分别记录。
+
 - [2026-10-24 团队 C Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)：五项持久业务操作、原子封存/纪要关联、原键恢复及会议删除依赖；默认工厂13项，显式装配18项，生产/会议页面及完整资格继续。
 
 计划按基准日期保存，阶段完成状态须有实际交付和验收证据。C 的旧 Goal 与[联审协作方案](2026-10-26-team-c-next-phase-execution-and-collaboration.md)保留原范围与审查处理，已停止自动执行。

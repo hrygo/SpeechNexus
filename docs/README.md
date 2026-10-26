@@ -28,6 +28,8 @@
 | [契约与事务所有权](architecture/contract-ownership.md)                                              | 18 端口/表归属、快照恢复映射与首批生成契约包交接                                |
 | [UI/UX 设计框架与设计 Token 系统](architecture/ui-ux-design-framework-and-tokens.md)                | 2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系          |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
+| [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
+| [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |
 | [整体实施跟踪矩阵](plans/2026-10-23-implementation-tracking.md)                                     | GitHub 总控 #6、6 Epic、25 工作包与 6 Gate 的状态、依赖和证据矩阵               |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | P0–P5、退出条件、工作包、交接产物与预算假设                                     |

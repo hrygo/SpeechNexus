@@ -25,8 +25,12 @@ channels; no format is inferred from the filename or MIME. The command hashes
 the bounded encoded input, exhausts the decoder, discards PCM blocks and emits
 one small JSON receipt binding source digest/length to observed sample facts.
 This initial private profile accepts PCM WAV and explicitly described raw PCM.
-WAV RIFF byte length and header sample facts must match the actual complete
-decode. FLAC/MP3/Ogg remain available to B through the unchanged shared decoder,
+WAV requires complete RIFF chunk headers, bodies and odd-length padding, one
+format chunk followed by one frame-aligned data chunk, and header sample facts
+matching the actual complete decode. Complete metadata chunks before or after
+audio are allowed; duplicate format/data chunks are rejected by this narrow
+profile. Chunk traversal shares the inspection deadline and cancellation checks.
+FLAC/MP3/Ogg remain available to B through the unchanged shared decoder,
 but are not yet admitted by this inspection profile.
 No partial result is printed on failure. The private result is not an Asset,
 Operation, public error mapping, execution/stop receipt or budget permission.

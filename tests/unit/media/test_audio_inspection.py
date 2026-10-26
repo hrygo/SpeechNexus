@@ -129,6 +129,54 @@ def test_truncated_wav_is_rejected_even_when_codec_reaches_eof(fix_outer_length:
         )
 
 
+@pytest.mark.parametrize(
+    "tail",
+    [
+        b"JUNK",
+        b"JUNK" + struct.pack("<I", 100) + b"abc",
+        b"JUNK" + struct.pack("<I", 3) + b"abc",
+        b"data" + struct.pack("<I", 19200) + b"\x01\x00\x02\x00" * 4800,
+        b"data" + struct.pack("<I", 0),
+        b"fmt " + struct.pack("<I", 16) + wav()[20:36],
+    ],
+    ids=["short-header", "short-body", "missing-padding", "second-data", "empty-data", "fmt"],
+)
+def test_wav_cannot_hide_incomplete_or_ambiguous_chunks_after_audio(tail: bytes) -> None:
+    content = bytearray(wav() + tail)
+    struct.pack_into("<I", content, 4, len(content) - 8)
+    with pytest.raises(MediaError):
+        inspection.inspect_audio(
+            io.BytesIO(content),
+            source_format=AudioSourceFormat("audio/wav"),
+            limits=LIMITS,
+            cancelled=lambda: False,
+        )
+
+
+@pytest.mark.parametrize("before_audio", [False, True])
+@pytest.mark.parametrize("payload", [b"abcd", b"abc"])
+def test_complete_metadata_chunks_preserve_all_source_facts(
+    before_audio: bool, payload: bytes
+) -> None:
+    content = wav()
+    chunk = b"JUNK" + struct.pack("<I", len(payload)) + payload
+    if len(payload) % 2:
+        chunk += b"\x00"
+    position = content.index(b"data") if before_audio else len(content)
+    content = bytearray(content[:position] + chunk + content[position:])
+    struct.pack_into("<I", content, 4, len(content) - 8)
+    facts = inspection.inspect_audio(
+        io.BytesIO(content),
+        source_format=AudioSourceFormat("audio/wav"),
+        limits=LIMITS,
+        cancelled=lambda: False,
+    )
+    assert facts["status"] == "complete"
+    assert facts["source_samples"] == 4800 and facts["duration_ms"] == 100
+    assert facts["encoded_bytes"] == len(content)
+    assert facts["sha256"] == "sha256:" + hashlib.sha256(content).hexdigest()
+
+
 def test_unqualified_container_profile_cannot_claim_complete() -> None:
     with pytest.raises(MediaError, match="not qualified"):
         inspection.inspect_audio(

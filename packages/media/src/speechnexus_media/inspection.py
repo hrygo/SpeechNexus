@@ -31,7 +31,10 @@ from speechnexus_media.domain import (
 _INPUT = Path("/input/media")
 
 
-def _wav_source_facts(source: BinaryIO, encoded_bytes: int) -> tuple[int, int, int]:
+def _wav_source_facts(
+    source: BinaryIO, encoded_bytes: int, *, check_budget: Callable[[], None]
+) -> tuple[int, int, int]:
+    check_budget()
     source.seek(0)
     header = source.read(12)
     if (
@@ -41,9 +44,36 @@ def _wav_source_facts(source: BinaryIO, encoded_bytes: int) -> tuple[int, int, i
         or int.from_bytes(header[4:8], "little") + 8 != encoded_bytes
     ):
         raise MediaError("incomplete or unsupported WAV container")
+    offset = 12
+    has_format = False
+    data_bytes: int | None = None
+    while offset < encoded_bytes:
+        check_budget()
+        source.seek(offset)
+        chunk = source.read(8)
+        if len(chunk) != 8:
+            raise MediaError("incomplete WAV chunk header")
+        size = int.from_bytes(chunk[4:], "little")
+        next_offset = offset + 8 + size + (size % 2)
+        if next_offset > encoded_bytes:
+            raise MediaError("incomplete WAV chunk body or padding")
+        if chunk[:4] == b"fmt ":
+            if has_format or data_bytes is not None:
+                raise MediaError("unsupported WAV format organization")
+            has_format = True
+        elif chunk[:4] == b"data":
+            if not has_format or data_bytes is not None:
+                raise MediaError("unsupported WAV data organization")
+            data_bytes = size
+        offset = next_offset
+    if not has_format or data_bytes is None:
+        raise MediaError("missing WAV format or audio data")
+    check_budget()
     source.seek(0)
     try:
         with wave.open(source, "rb") as metadata:
+            if data_bytes % (metadata.getnchannels() * metadata.getsampwidth()):
+                raise MediaError("incomplete PCM WAV frame")
             return metadata.getframerate(), metadata.getnchannels(), metadata.getnframes()
     except wave.Error, EOFError:
         raise MediaError("unsupported PCM WAV metadata") from None
@@ -68,14 +98,18 @@ def inspect_audio(
     if source_format.media_type not in ("audio/wav", "audio/pcm"):
         raise MediaError("audio format is not qualified for private inspection")
     deadline = monotonic() + limits.timeout_seconds
-    source.seek(0)
-    digest = hashlib.sha256()
-    encoded_bytes = 0
-    while True:
+
+    def check_budget() -> None:
         if cancelled():
             raise MediaCancelledError("audio inspection was cancelled")
         if monotonic() >= deadline:
             raise MediaLimitError("audio inspection exceeded its deadline")
+
+    source.seek(0)
+    digest = hashlib.sha256()
+    encoded_bytes = 0
+    while True:
+        check_budget()
         chunk = source.read(65536)
         if type(chunk) is not bytes:
             raise MediaError("invalid binary audio source")
@@ -86,7 +120,7 @@ def inspect_audio(
             raise MediaLimitError("encoded audio exceeded its byte limit")
         digest.update(chunk)
     expected = (
-        _wav_source_facts(source, encoded_bytes)
+        _wav_source_facts(source, encoded_bytes, check_budget=check_budget)
         if source_format.media_type == "audio/wav"
         else None
     )

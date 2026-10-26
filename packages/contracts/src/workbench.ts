@@ -58,6 +58,8 @@ export type Contracts = Pick<
   | "RenderUnitPatchV2"
   | "RenderUnitListV2"
   | "RenderUnitGenerationAcceptedV2"
+  | "RenderGenerationV2"
+  | "RenderUnitGenerationListV2"
   | "ExportEvent"
 >;
 const parseValue = createProfileParser(bundle);

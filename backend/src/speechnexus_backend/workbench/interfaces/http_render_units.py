@@ -34,13 +34,16 @@ from speechnexus_backend.workbench.interfaces.http_ingress import (
     validate_limits,
 )
 from speechnexus_backend.workbench.interfaces.http_versions import _error
-from speechnexus_backend.workbench.interfaces.render_unit_views import render_unit_payload
+from speechnexus_backend.workbench.interfaces.render_unit_views import (
+    render_generations_payload,
+    render_unit_payload,
+)
 
 OPERATIONS = frozenset(
     name + suffix
     for name in ("listRenderUnits", "createRenderUnit", "getRenderUnit", "updateRenderUnit")
     for suffix in ("", "V2")
-) | {"generateRenderUnitV2"}
+) | {"generateRenderUnitV2", "listRenderUnitGenerationsV2"}
 
 
 def create_render_unit_router(
@@ -114,6 +117,12 @@ def create_render_unit_router(
                 await service.get_unit(unit_id=path["unit_id"], workspace_id=default_workspace_id),
                 version=version,
             )
+        if operation == "listRenderUnitGenerationsV2":
+            limit = int(value["query"].get("limit", 20))
+            unit, generations, has_more = await service.generations(
+                unit_id=path["unit_id"], workspace_id=default_workspace_id, limit=limit
+            )
+            return 200, render_generations_payload(unit.id, generations, has_more=has_more)
         body = value["body"]
         if name == "generateRenderUnit":
             body = value["body"]

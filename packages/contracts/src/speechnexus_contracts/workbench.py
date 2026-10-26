@@ -235,6 +235,16 @@ def parse(
 
 
 @overload
+def parse(name: Literal["RenderGenerationV2"], value: Any) -> models.RenderGenerationV2: ...
+
+
+@overload
+def parse(
+    name: Literal["RenderUnitGenerationListV2"], value: Any
+) -> models.RenderUnitGenerationListV2: ...
+
+
+@overload
 def parse(name: Literal["ExportEvent"], value: Any) -> models.ExportEvent: ...
 
 

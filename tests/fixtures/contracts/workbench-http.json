@@ -13491,6 +13491,91 @@
         }
       },
       "valid": true
+    },
+    {
+      "id": "listRenderUnitGenerations-request-valid-v2",
+      "kind": "request",
+      "operation": "listRenderUnitGenerationsV2",
+      "value": {
+        "path": {
+          "unit_id": "unit_demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "listRenderUnitGenerations-request-invalid-v2",
+      "kind": "request",
+      "operation": "listRenderUnitGenerationsV2",
+      "value": {
+        "path": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "listRenderUnitGenerations-request-limit-invalid-v2",
+      "kind": "request",
+      "operation": "listRenderUnitGenerationsV2",
+      "value": {
+        "path": {
+          "unit_id": "unit_demo"
+        },
+        "query": {
+          "limit": "0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "listRenderUnitGenerations-response-200-v2",
+      "kind": "response",
+      "operation": "listRenderUnitGenerationsV2",
+      "status": 200,
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "unit_id": "unit_demo",
+          "data": [
+            {
+              "id": "gen:demo",
+              "job_id": "job_demo",
+              "dependencies_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revision": "2"
+            }
+          ],
+          "has_more": false
+        },
+        "headers": {
+          "X-Request-ID": "request-demo"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "listRenderUnitGenerations-response-extra-field-v2",
+      "kind": "response",
+      "operation": "listRenderUnitGenerationsV2",
+      "status": 200,
+      "value": {
+        "body": {
+          "object": "nexus.list",
+          "unit_id": "unit_demo",
+          "data": [
+            {
+              "id": "gen:demo",
+              "job_id": "job_demo",
+              "dependencies_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revision": "2"
+            }
+          ],
+          "has_more": false,
+          "extra": true
+        },
+        "headers": {
+          "X-Request-ID": "request-demo"
+        }
+      },
+      "valid": false
     }
   ]
 }

@@ -19,6 +19,7 @@ from speechnexus_backend.workbench.application.listings import (
 from speechnexus_backend.workbench.application.versions import ResourceNotFoundError
 from speechnexus_backend.workbench.domain.render_units import (
     RenderAttemptConflictError,
+    RenderGeneration,
     RenderSource,
     RenderUnit,
     RenderUnitSummary,
@@ -128,6 +129,14 @@ class RenderUnitStore(Protocol):
 
 class WorkbenchRenderUnits:
     """A revise is refused before any transaction opens when nothing changes."""
+
+    async def generations(
+        self, *, unit_id: str, workspace_id: str, limit: int = 20
+    ) -> tuple[RenderUnit, tuple[RenderGeneration, ...], bool]:
+        """Return the newest recorded attempts first, bounded by the page limit."""
+        unit = await self._units.get_unit(unit_id=unit_id, workspace_id=workspace_id)
+        newest_first = tuple(reversed(unit.generations))
+        return unit, newest_first[:limit], len(newest_first) > limit
 
     async def unsaved_units(self, *, workspace_id: str, limit: int = 20) -> tuple[RenderUnit, ...]:
         ids = await self._units.scan_ready_without_copy(workspace_id=workspace_id, limit=limit)

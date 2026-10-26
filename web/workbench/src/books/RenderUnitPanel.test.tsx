@@ -98,6 +98,21 @@ function setup(
       created_at: "2026-10-24T12:00:00Z",
     }),
   );
+  const history = vi.spyOn(client, "renderUnitGenerations").mockResolvedValue(
+    parse("RenderUnitGenerationListV2", {
+      object: "nexus.list",
+      unit_id: "unit_demo",
+      data: [
+        {
+          id: "gen:1",
+          job_id: "job_1",
+          dependencies_sha256: "sha256:" + "a".repeat(64),
+          revision: "2",
+        },
+      ],
+      has_more: false,
+    }),
+  );
   const update = vi.spyOn(client, "updateRenderUnit").mockImplementation((id, body) =>
     Promise.resolve(
       unit({
@@ -110,7 +125,7 @@ function setup(
     ),
   );
   const view = render(<RenderUnitPanel client={client} chapter={chapter} />);
-  return { client, list, generate, read, book, save, update, voices, ...view };
+  return { client, list, generate, read, book, save, history, update, voices, ...view };
 }
 
 describe("render unit panel", () => {
@@ -670,4 +685,25 @@ it("reports a rejected copy without claiming it was saved", async () => {
   const alert = await screen.findByRole("alert", { name: "单元 1 保存副本错误" });
   expect(alert.textContent).toContain("保存被拒绝");
   expect(screen.queryByText(/已保存独立副本/)).toBeNull();
+});
+
+it("shows the recorded generation history of one unit", async () => {
+  const { history } = setup();
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
+  await screen.findByRole("list", { name: "单元 1 生成记录" });
+  expect(history).toHaveBeenCalledWith("unit_demo");
+  const records = screen.getByRole("list", { name: "单元 1 生成记录" });
+  expect(records.textContent).toContain("修订 2");
+  expect(records.textContent).toContain("job_1");
+});
+
+it("reports an unreadable history without inventing records", async () => {
+  const { history } = setup();
+  history.mockRejectedValueOnce(new Error("offline"));
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
+  const alert = await screen.findByRole("alert", { name: "单元 1 生成历史错误" });
+  expect(alert.textContent).toContain("连接不可用");
+  expect(screen.queryByRole("list", { name: "单元 1 生成记录" })).toBeNull();
 });

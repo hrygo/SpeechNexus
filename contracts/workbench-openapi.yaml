@@ -2130,6 +2130,44 @@ paths:
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
   /v2/workbench/render-units/{unit_id}/generations:
+    get:
+      tags: [audiobooks]
+      operationId: listRenderUnitGenerationsV2
+      summary: Read the recorded generation attempts of a render unit
+      parameters:
+        - $ref: "#/components/parameters/RenderUnitIdPath"
+        - $ref: "#/components/parameters/XRequestId"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Recorded generation attempts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderUnitGenerationListV2"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       tags: [audiobooks]
       operationId: generateRenderUnitV2
@@ -4274,3 +4312,33 @@ components:
         accepted_at:
           type: string
           format: date-time
+
+    RenderGenerationV2:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, dependencies_sha256, revision]
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        job_id:
+          $ref: "#/components/schemas/Identifier"
+        dependencies_sha256:
+          $ref: "#/components/schemas/Sha256Digest"
+        revision:
+          $ref: "#/components/schemas/Revision"
+
+    RenderUnitGenerationListV2:
+      type: object
+      additionalProperties: false
+      required: [object, unit_id, data, has_more]
+      properties:
+        object:
+          const: nexus.list
+        unit_id:
+          $ref: "#/components/schemas/Identifier"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenderGenerationV2"
+        has_more:
+          type: boolean

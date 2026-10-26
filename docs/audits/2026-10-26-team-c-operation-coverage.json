@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "scope": "workbench HTTP surface only; other surfaces and behaviour review are separate units",
   "contract": "contracts/workbench-openapi.yaml",
-  "contract_sha256": "0eebe6622eafb07ace8885bc768f022f0cebfbc90854c6f9f8201c9f27db2b6d",
-  "audited_head": "1b05807c1e18d187d18693c771bd8ea3d906fb4b",
+  "contract_sha256": "e0138dff9de096a5fc8d2c10c5c7ba532df6736a99091d4ef601d144a20438c9",
+  "audited_head": "15173b1aba73a19c1079e72e96d870043394554b",
   "operations": [
     {
       "id": "cancelAssistantTurn",
@@ -738,6 +738,23 @@
         "web/workbench/src/meetings/MeetingHost.test.tsx",
         "web/workbench/src/meetings/MeetingNavigation.test.tsx",
         "web/workbench/src/meetings/meeting-session.test.ts"
+      ],
+      "status": "bound"
+    },
+    {
+      "id": "listRenderUnitGenerationsV2",
+      "method": "get",
+      "path": "/v2/workbench/render-units/{unit_id}/generations",
+      "binding": {
+        "path_entry": true,
+        "http_operation_union": true,
+        "python_http_schema": true
+      },
+      "consumers": [
+        "web/workbench/src/manuscripts/workbench-client.ts"
+      ],
+      "tests": [
+        "web/workbench/src/books/RenderUnitPanel.test.tsx"
       ],
       "status": "bound"
     },

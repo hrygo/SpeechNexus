@@ -676,6 +676,20 @@ class RenderUnitGenerationAcceptedV2(TypedDict):
     accepted_at: str
 
 
+class RenderGenerationV2(TypedDict):
+    id: Identifier
+    job_id: Identifier
+    dependencies_sha256: Sha256Digest
+    revision: Revision
+
+
+class RenderUnitGenerationListV2(TypedDict):
+    object: Literal["nexus.list"]
+    unit_id: Identifier
+    data: list[RenderGenerationV2]
+    has_more: bool
+
+
 type EventSequence = ExternalSharedIdentifiersSchemaJsonEventSequence
 
 
@@ -978,5 +992,7 @@ type WorkbenchContracts = (
     | RenderUnitPatchV2
     | RenderUnitListV2
     | RenderUnitGenerationAcceptedV2
+    | RenderGenerationV2
+    | RenderUnitGenerationListV2
     | ExportEvent
 )

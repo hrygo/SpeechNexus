@@ -2981,6 +2981,71 @@
         }
       }
     },
+    "listRenderUnitGenerationsV2": {
+      "path": "/v2/workbench/render-units/{unit_id}/generations",
+      "method": "get",
+      "request": "HttpRequest_listRenderUnitGenerationsV2",
+      "parameters": {
+        "path": {
+          "unit_id": "string"
+        },
+        "query": {
+          "limit": "integer"
+        },
+        "headers": {
+          "x-request-id": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_200",
+          "headers": {},
+          "json": true
+        },
+        "400": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_400",
+          "headers": {},
+          "json": true
+        },
+        "401": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_401",
+          "headers": {},
+          "json": true
+        },
+        "404": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_404",
+          "headers": {},
+          "json": true
+        },
+        "408": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_408",
+          "headers": {},
+          "json": true
+        },
+        "413": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_413",
+          "headers": {},
+          "json": true
+        },
+        "422": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_422",
+          "headers": {},
+          "json": true
+        },
+        "500": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_500",
+          "headers": {},
+          "json": true
+        },
+        "503": {
+          "schema": "HttpResponse_listRenderUnitGenerationsV2_503",
+          "headers": {
+            "retry-after": "integer"
+          },
+          "json": true
+        }
+      }
+    },
     "generateRenderUnitV2": {
       "path": "/v2/workbench/render-units/{unit_id}/generations",
       "method": "post",
@@ -3702,6 +3767,16 @@
     "HttpResponse_updateRenderUnitV2_500",
     "HttpResponse_updateRenderUnitV2_503",
     "HttpResponse_updateRenderUnitV2_415",
+    "HttpRequest_listRenderUnitGenerationsV2",
+    "HttpResponse_listRenderUnitGenerationsV2_200",
+    "HttpResponse_listRenderUnitGenerationsV2_400",
+    "HttpResponse_listRenderUnitGenerationsV2_401",
+    "HttpResponse_listRenderUnitGenerationsV2_404",
+    "HttpResponse_listRenderUnitGenerationsV2_408",
+    "HttpResponse_listRenderUnitGenerationsV2_413",
+    "HttpResponse_listRenderUnitGenerationsV2_422",
+    "HttpResponse_listRenderUnitGenerationsV2_500",
+    "HttpResponse_listRenderUnitGenerationsV2_503",
     "HttpRequest_generateRenderUnitV2",
     "HttpResponse_generateRenderUnitV2_202",
     "HttpResponse_generateRenderUnitV2_400",
@@ -7203,6 +7278,47 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "RenderUnitGenerationListV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "unit_id", "data", "has_more"],
+      "properties": {
+        "object": {
+          "const": "nexus.list"
+        },
+        "unit_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RenderGenerationV2"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RenderGenerationV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "job_id", "dependencies_sha256", "revision"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "job_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "dependencies_sha256": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
         }
       }
     },
@@ -16283,6 +16399,197 @@
         "headers": {
           "type": "object",
           "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpRequest_listRenderUnitGenerationsV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "properties": {
+            "unit_id": {
+              "$ref": "#/$defs/Identifier"
+            }
+          },
+          "required": ["unit_id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "x-request-id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      },
+      "required": ["path"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_200": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/RenderUnitGenerationListV2"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_400": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_401": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_404": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_408": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_413": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_422": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_500": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "body": {
+          "$ref": "#/$defs/ErrorResponse"
+        }
+      },
+      "required": ["body"]
+    },
+    "HttpResponse_listRenderUnitGenerationsV2_503": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "properties": {
+            "retry-after": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
           "required": [],
           "additionalProperties": true
         },

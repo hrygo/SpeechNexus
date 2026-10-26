@@ -74,7 +74,9 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 
 - `voice` 是预设 speaker 标识；`task` 目前只有 `CustomVoice`，与已验证的 checkpoint 对应。
 - `instructions` 可选、最多 4096 字符且拒绝 NUL；`speed` 允许 0.25–4.0，默认 1.0。
-- `language` 可选 BCP-47 形式标签，`seed` 可选 64 位整数；两者进入策略摘要并透传引擎。
+- `language` 可选 BCP-47 形式标签，`seed` 可选 64 位整数；两者进入策略摘要。HTTP 边界把
+  已声明的主语言子标签转换为 vLLM-Omni 的固定名称（如 `zh`/`zh-CN`→`Chinese`、
+  `en`/`en-US`→`English`），未映射标签保持原值交由引擎拒绝，不伪造成功。
 - `engine_format` 只允许 `wav`/`pcm`，即本单元能结构校验的两种引擎响应。
 - `sample_rate_hz` 允许 8000/24000；策略声明值必须与引擎响应头和 WAV 头一致，不一致即失败。
 - `max_pcm_bytes`（1 KiB–64 MiB）、`max_audio_ms`（≤ 1 小时）和 `timeout_seconds`
@@ -118,7 +120,8 @@ unknown/停止协议保留占用，PUT 或读回失败不重试或删除未知�
 adapter 只使用配置的私网地址与端口，`trust_env=False`、不跟随重定向、不自动重试，
 并设置 `Accept-Encoding: identity`。请求体是冻结的 JSON 文档：`model`、`input`、`voice`、
 `task_type`、`response_format`、`sample_rate`、`speed`；`instructions`、`language`、`seed`
-仅在策略显式声明时发送。
+仅在策略显式声明时发送。公开 BCP-47 主语言子标签在 vendor 边界转换为该镜像要求的名称，
+区域变体共享主语言；这项转换只改变厂商请求表示，不改变冻结策略摘要或执行身份。
 
 只有以下条件同时成立才接受响应：
 

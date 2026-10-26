@@ -176,14 +176,21 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 node/gateway/pool/instance/generation/binding、ASR/TTS 共享持久 worker，并在登记音频回执前
 写入完整生成区间。原命令消费者不再拒绝真实提交的 24 kHz 时钟和派生输出流；越过冻结上界
 或缺少区间时隔离并保留占用。本机 3857 项单元、Ruff/mypy/7 条边界、32 份契约及 PR 14 项
-CI 通过。真实 CustomVoice、公开路由/发布/下载、可信停止与物理集群仍未交付。
+CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付；真实 CustomVoice 见下。
+
+随后在 2026-10-26 用固定 vLLM-Omni 镜像和真实 1.7B CustomVoice 完成
+[默认工厂持久执行探针](../audits/2026-10-26-b03-default-real-tts-probe.md)：隔离 PG/MinIO
+中取得 24 kHz mono WAV、单对象版本、`[0,153600)` 完整生成区间和 4.543 秒提交到回执；
+网关重启后原身份回执保留、重放保持 unknown，预算不变。首次真实请求暴露 BCP-47 `zh`
+与厂商 `Chinese` 的语言边界不兼容，已在适配器修复并补回归。公开路由/发布/下载、A 结算、
+可信停止/释放、Base/VoiceDesign、长文本和物理集群仍未交付。
 
 | 工作包 | 唯一状态 | 本阶段及后续剩余 |
 | --- | --- | --- |
 | B00 #27 | in-progress | #162 固定制品和完整注册输入候选已交付；权威配置发布与逐能力停止/容量资格待完成 |
 | B01 #28 | in-progress | #168 默认工厂已集成；原版本整代次停止、网关恢复及 A 结算有隔离证据；单请求取消与生产公开链待完成 |
 | B02 #29 | in-progress | #163 已集成；真实预热/停止、实际入口屏障及 A 租约/base 结算已隔离联验；正式就绪来源、持续 ready、真实故障与 peak→steady/drain 资格待完成 |
-| B03 #30 | in-progress | #203 已接通 TTS 默认私有执行、音频身份与回执区间；真实 CustomVoice/公开链、Base、长文本和完整参数矩阵待完成 |
+| B03 #30 | in-progress | #203 已接通 TTS 默认私有执行、音频身份与回执区间；真实 1.7B CustomVoice 默认工厂与重启重放已验，公开链、Base、长文本、停止/释放和完整参数矩阵待完成 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |
 | B06 #33 | in-progress | CPU VAD/文件消费者已有；实时、对齐、匿名分人及质量资格待完成 |

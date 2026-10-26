@@ -530,13 +530,14 @@ class PostgresRenderUnits(RenderUnitStore):
             await base._execute(
                 """
                 UPDATE {s}.render_units SET
-                    revision = %s, status = %s, source_artifact_id = %s,
-                    source_receipt_id = %s, updated_at = %s
+                    revision = %s, status = %s, speech_job_id = %s,
+                    source_artifact_id = %s, source_receipt_id = %s, updated_at = %s
                 WHERE id = %s
             """,
                 (
                     completed.revision,
                     completed.status,
+                    source.job_id,
                     source.artifact_id,
                     source.receipt_id,
                     completed.updated_at,

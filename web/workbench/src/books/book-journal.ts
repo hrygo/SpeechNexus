@@ -45,6 +45,13 @@ export type UnitCommand =
       unitId: string;
       body: Contracts["RenderUnitPatchV2"];
       key: string;
+    }
+  | {
+      kind: "generate";
+      chapterId: string;
+      unitId: string;
+      expectedRevision: string;
+      key: string;
     };
 function validateUnit(input: unknown): UnitCommand {
   const raw = input as Partial<UnitCommand>;
@@ -59,6 +66,22 @@ function validateUnit(input: unknown): UnitCommand {
       kind: "create",
       chapterId: v.chapterId as string,
       body: parse("RenderUnitCreateRequestV2", v.body),
+      key: v.key as string,
+    };
+  }
+  if ((input as { kind?: unknown }).kind === "generate") {
+    const v = fields(input, ["kind", "chapterId", "unitId", "expectedRevision", "key"]);
+    if (typeof v.chapterId !== "string" || !v.chapterId) throw new Error("Invalid unit intent");
+    validateRequest("generateRenderUnitV2", {
+      path: { unit_id: v.unitId },
+      headers: { "Idempotency-Key": v.key },
+      body: { expected_unit_revision: v.expectedRevision },
+    });
+    return {
+      kind: "generate",
+      chapterId: v.chapterId,
+      unitId: v.unitId as string,
+      expectedRevision: v.expectedRevision as string,
       key: v.key as string,
     };
   }

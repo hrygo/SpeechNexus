@@ -178,6 +178,17 @@ async def _body_for(policy: TtsPolicy) -> bytes:
     return requests[0].content
 
 
+async def test_language_and_seed_are_forwarded_only_when_declared() -> None:
+    declared = json.loads(
+        await _body_for(replace(POLICY, engine_format=TtsEngineFormat.PCM, language="en", seed=7))
+    )
+    assert declared["language"] == "en"
+    assert declared["seed"] == 7
+    absent = json.loads(await _body_for(replace(POLICY, engine_format=TtsEngineFormat.PCM)))
+    assert "language" not in absent
+    assert "seed" not in absent
+
+
 @pytest.mark.parametrize(
     "change",
     [

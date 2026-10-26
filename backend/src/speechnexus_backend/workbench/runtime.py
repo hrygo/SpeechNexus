@@ -24,6 +24,7 @@ from speechnexus_backend.workbench.application.exports import WorkbenchExports
 from speechnexus_backend.workbench.application.meetings import WorkbenchMeetings
 from speechnexus_backend.workbench.application.minutes_tasks import MinutesTasks
 from speechnexus_backend.workbench.application.recovery import WorkbenchRecovery
+from speechnexus_backend.workbench.application.render_copies import WorkbenchRenderResultCopies
 from speechnexus_backend.workbench.application.render_reconcile import RenderReconciler
 from speechnexus_backend.workbench.application.render_units import WorkbenchRenderUnits
 from speechnexus_backend.workbench.application.saved_assets import WorkbenchSavedAssets
@@ -536,6 +537,7 @@ def create_runtime_app(
     }
     render_jobs = None if client is None else PublicSpeechRenderJobs(client)
     render_units = WorkbenchRenderUnits(PostgresRenderUnits(versions), render_jobs)
+    books = WorkbenchBooks(PostgresBooks(versions))
     saved_assets = (
         None
         if objects is None or client is None
@@ -544,6 +546,9 @@ def create_runtime_app(
             PublicArtifactSource(client, deadline_seconds=settings.saved_asset_deadline_seconds),
             objects,
         )
+    )
+    render_copies = (
+        None if saved_assets is None else WorkbenchRenderResultCopies(books, saved_assets)
     )
 
     @asynccontextmanager
@@ -570,7 +575,7 @@ def create_runtime_app(
             if settings.render_settle_interval_seconds > 0 and render_jobs is not None:
                 render_settler = asyncio.create_task(
                     _settle_render_generations(
-                        RenderReconciler(render_units, render_jobs),
+                        RenderReconciler(render_units, render_jobs, render_copies),
                         settings.workspace_id,
                         settings.render_settle_interval_seconds,
                     )
@@ -634,7 +639,7 @@ def create_runtime_app(
         ),
         download_timeout_seconds=settings.download_timeout_seconds,
         voices=voices,
-        books=WorkbenchBooks(PostgresBooks(versions)),
+        books=books,
         # The same deployment-configured intranet LLM serves the assistant; with none
         # configured it reports a stable disabled error instead of a client-chosen model.
         assistant=WorkbenchAssistant(PostgresAssistantTurns(versions), llm),

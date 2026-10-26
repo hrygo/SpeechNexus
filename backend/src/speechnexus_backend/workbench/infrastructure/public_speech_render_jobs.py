@@ -13,6 +13,10 @@ import httpx
 from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.parsers import parse
 
+from speechnexus_backend.workbench.application.render_reconcile import (
+    RenderJobOutcome,
+    RenderJobReadError,
+)
 from speechnexus_backend.workbench.application.render_units import (
     RenderSubmissionConflictError,
     RenderSubmissionRejectedError,
@@ -79,3 +83,26 @@ class PublicSpeechRenderJobs:
         if response.status_code in {400, 401, 403, 415, 422}:
             raise RenderSubmissionRejectedError from None
         raise RenderSubmissionUnknownError from None
+
+    async def read_job(self, *, job_id: str) -> RenderJobOutcome:
+        if not _IDENTIFIER.fullmatch(job_id):
+            raise RenderJobReadError
+        try:
+            response = await self._client.get(f"/v1/nexus/jobs/{job_id}")
+        except httpx.HTTPError, TimeoutError:
+            raise RenderJobReadError from None
+        if response.status_code != 200:
+            raise RenderJobReadError
+        try:
+            job = parse("Job", response.json())
+        except ContractValidationError, TypeError, ValueError:
+            raise RenderJobReadError from None
+        status = job["status"]
+        if status == "succeeded":
+            result = job["result"]
+            if result is None or result["kind"] != "tts":
+                raise RenderJobReadError
+            return RenderJobOutcome("succeeded", result["audio_artifact_id"], result["receipt_id"])
+        if status in {"failed", "expired", "cancelled"}:
+            return RenderJobOutcome(status)
+        return RenderJobOutcome("pending")

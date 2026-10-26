@@ -44,7 +44,11 @@ from speechnexus_backend.workbench.application.versions import (
     ResourceNotFoundError,
     WorkbenchVersions,
 )
-from speechnexus_backend.workbench.domain.render_units import RenderUnit
+from speechnexus_backend.workbench.domain.render_units import (
+    RenderAttemptConflictError,
+    RenderSource,
+    RenderUnit,
+)
 from speechnexus_backend.workbench.domain.versions import (
     InvalidVersionChangeError,
     RevisionConflictError,
@@ -132,7 +136,8 @@ async def stored(store: Store, unit_id: str) -> dict[str, Any]:
             await owner.execute(
                 sql.SQL(
                     "SELECT revision, status, text, dependencies_sha256,"
-                    " text_plan_revision, original_revision, working_revision"
+                    " text_plan_revision, original_revision, working_revision,"
+                    " source_artifact_id, source_receipt_id"
                     " FROM {}.render_units WHERE id = %s"
                 ).format(sql.Identifier(store.schema)),
                 (unit_id,),
@@ -585,3 +590,50 @@ async def test_a_restored_unit_stays_invisible_while_the_ledger_records_erasure(
         await service.get_unit(unit_id=unit.id, workspace_id=WORKSPACE)
     with pytest.raises(ResourceNotFoundError):
         await service.list_units(chapter_id=made.id, workspace_id=WORKSPACE, limit=10)
+
+
+async def test_completion_settles_the_attempt_and_scan_lists_only_generating(
+    render_store: Store,
+) -> None:
+    _, chapter_id, _ = await chapter(render_store)
+    unit = await create(render_store, chapter_id)
+    store = PostgresRenderUnits(render_store.uow)
+    started = await store.start_unit(
+        unit_id=unit.id,
+        workspace_id=WORKSPACE,
+        expected_revision=1,
+        job_id="job_1",
+        generation_id="gen:abc",
+    )
+    assert await store.scan_generating(workspace_id=WORKSPACE, limit=10) == (unit.id,)
+    source = RenderSource(unit.id, "job_1", "artifact_1", "receipt_1", started.dependencies.sha256)
+
+    ready = await store.complete_unit(
+        unit_id=unit.id, workspace_id=WORKSPACE, generation_id="gen:abc", source=source
+    )
+    assert (ready.revision, ready.status, ready.source) == (3, "ready", source)
+    row = await stored(render_store, unit.id)
+    assert (int(row["revision"]), row["status"]) == (3, "ready")
+    assert (row["source_artifact_id"], row["source_receipt_id"]) == (
+        "artifact_1",
+        "receipt_1",
+    )
+    assert await store.scan_generating(workspace_id=WORKSPACE, limit=10) == ()
+    with pytest.raises(RenderAttemptConflictError):
+        await store.complete_unit(
+            unit_id=unit.id, workspace_id=WORKSPACE, generation_id="gen:abc", source=source
+        )
+
+    other = await create(render_store, chapter_id, key="render-request-key-0002", ordinal=1)
+    await store.start_unit(
+        unit_id=other.id,
+        workspace_id=WORKSPACE,
+        expected_revision=1,
+        job_id="job_2",
+        generation_id="gen:def",
+    )
+    failed = await store.fail_unit(
+        unit_id=other.id, workspace_id=WORKSPACE, generation_id="gen:def"
+    )
+    assert (failed.revision, failed.status, failed.source) == (3, "failed", None)
+    assert await store.scan_generating(workspace_id=WORKSPACE, limit=10) == ()

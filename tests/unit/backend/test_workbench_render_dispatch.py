@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -73,6 +73,15 @@ class _Store:
             generation_id=kw["generation_id"],
             now=NOW,
         )
+
+    async def complete_unit(self, **kw: Any) -> RenderUnit:
+        return cast(RenderUnit, None)
+
+    async def fail_unit(self, **kw: Any) -> RenderUnit:
+        return cast(RenderUnit, None)
+
+    async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
+        return ()
 
 
 class _Jobs:

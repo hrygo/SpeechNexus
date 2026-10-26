@@ -624,7 +624,7 @@ async def test_completion_settles_the_attempt_and_scan_lists_only_generating(
             unit_id=unit.id, workspace_id=WORKSPACE, generation_id="gen:abc", source=source
         )
 
-    other = await create(render_store, chapter_id)
+    other = await create(render_store, chapter_id, key="render-request-key-0002", ordinal=1)
     await store.start_unit(
         unit_id=other.id,
         workspace_id=WORKSPACE,

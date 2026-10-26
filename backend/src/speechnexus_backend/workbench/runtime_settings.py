@@ -78,6 +78,7 @@ class WorkbenchSettings(BaseSettings):
     # audio through an injected producer; it never invokes speech generation.
     # An unconfigured deployment must not claim work it cannot finish.
     export_interval_seconds: float = Field(default=0, ge=0, le=300)
+    render_settle_interval_seconds: float = Field(default=0, ge=0, le=300)
     # Execution safety limits, not model/quality or deployment qualifications.
     export_max_output_bytes: int = Field(default=256 * 1024**2, ge=1, le=2**40)
     export_max_unpacked_bytes: int = Field(default=512 * 1024**2, ge=1, le=2**40)

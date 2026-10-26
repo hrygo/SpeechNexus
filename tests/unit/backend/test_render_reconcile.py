@@ -1,0 +1,116 @@
+"""Settlement applies only terminal, readable Job outcomes and never invents a result."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+import pytest
+
+from speechnexus_backend.workbench.application.render_reconcile import (
+    RenderJobOutcome,
+    RenderJobReadError,
+    RenderReconciler,
+)
+from speechnexus_backend.workbench.domain.render_units import (
+    RenderAttemptConflictError,
+    RenderDependencies,
+    RenderUnit,
+    RevisionPin,
+)
+
+NOW = datetime(2026, 10, 24, tzinfo=UTC)
+WORKSPACE = "workspace-demo"
+
+
+def unit() -> RenderUnit:
+    dependencies = RenderDependencies(
+        original=RevisionPin("original", 1),
+        working=RevisionPin("working", 2),
+        chapter_id="chapter",
+        role_id="narrator",
+        text_plan=RevisionPin("plan", 1),
+        voice=RevisionPin("voice", 3),
+        model="tts-quality",
+        model_binding=RevisionPin("binding", 4),
+        text="合成旁白单元",
+    )
+    created = RenderUnit.create(
+        unit_id="unit", book_id="book", ordinal=0, dependencies=dependencies, now=NOW
+    )
+    return created.start(expected_revision=1, generation_id="gen:1", job_id="job_1", now=NOW)
+
+
+class Units:
+    def __init__(self, current: RenderUnit, *, conflict: bool = False) -> None:
+        self.current = current
+        self.conflict = conflict
+        self.completed: list[dict[str, Any]] = []
+        self.failed: list[dict[str, Any]] = []
+
+    async def generating_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]:
+        return (self.current,)
+
+    async def complete_unit(self, **arguments: Any) -> RenderUnit:
+        if self.conflict:
+            raise RenderAttemptConflictError
+        self.completed.append(arguments)
+        return self.current
+
+    async def fail_unit(self, **arguments: Any) -> RenderUnit:
+        if self.conflict:
+            raise RenderAttemptConflictError
+        self.failed.append(arguments)
+        return self.current
+
+
+class Jobs:
+    def __init__(self, outcome: RenderJobOutcome | Exception) -> None:
+        self.outcome = outcome
+        self.read: list[str] = []
+
+    async def read_job(self, *, job_id: str) -> RenderJobOutcome:
+        self.read.append(job_id)
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+async def test_succeeded_job_completes_the_attempt_with_its_receipt() -> None:
+    units, jobs = Units(unit()), Jobs(RenderJobOutcome("succeeded", "artifact_1", "receipt_1"))
+    settled = await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE)
+    assert [(item.unit_id, item.state) for item in settled] == [("unit", "succeeded")]
+    assert jobs.read == ["job_1"]
+    (completed,) = units.completed
+    assert completed["unit_id"] == "unit"
+    assert completed["workspace_id"] == WORKSPACE
+    assert completed["generation_id"] == "gen:1"
+    source = completed["source"]
+    assert (source.unit_id, source.job_id) == ("unit", "job_1")
+    assert (source.artifact_id, source.receipt_id) == ("artifact_1", "receipt_1")
+    assert source.dependencies_sha256 == units.current.dependencies.sha256
+    assert units.failed == []
+
+
+@pytest.mark.parametrize("state", ["failed", "expired", "cancelled"])
+async def test_terminal_failures_fail_the_attempt(state: str) -> None:
+    units, jobs = Units(unit()), Jobs(RenderJobOutcome(state))
+    settled = await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE)
+    assert [item.state for item in settled] == [state]
+    assert units.completed == []
+    assert units.failed == [
+        {"unit_id": "unit", "workspace_id": WORKSPACE, "generation_id": "gen:1"}
+    ]
+
+
+async def test_pending_job_and_unreadable_receipt_leave_the_unit_generating() -> None:
+    unreadable = (RenderJobOutcome("pending"), RenderJobReadError(), RenderJobOutcome("succeeded"))
+    for outcome in unreadable:
+        units, jobs = Units(unit()), Jobs(outcome)
+        assert await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE) == ()
+        assert units.completed == [] and units.failed == []
+
+
+async def test_a_settled_attempt_is_not_settled_again() -> None:
+    units, jobs = Units(unit(), conflict=True), Jobs(RenderJobOutcome("failed"))
+    assert await RenderReconciler(units, jobs).settle(workspace_id=WORKSPACE) == ()

@@ -19,6 +19,7 @@ from speechnexus_backend.workbench.application.listings import (
 from speechnexus_backend.workbench.application.versions import ResourceNotFoundError
 from speechnexus_backend.workbench.domain.render_units import (
     RenderAttemptConflictError,
+    RenderSource,
     RenderUnit,
     RenderUnitSummary,
 )
@@ -105,6 +106,21 @@ class RenderUnitStore(Protocol):
         generation_id: str,
     ) -> RenderUnit: ...
 
+    async def complete_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        generation_id: str,
+        source: RenderSource,
+    ) -> RenderUnit: ...
+
+    async def fail_unit(
+        self, *, unit_id: str, workspace_id: str, generation_id: str
+    ) -> RenderUnit: ...
+
+    async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]: ...
+
 
 class WorkbenchRenderUnits:
     """A revise is refused before any transaction opens when nothing changes."""
@@ -158,6 +174,38 @@ class WorkbenchRenderUnits:
                 return current, job_id
             raise
         return started, job_id
+
+    async def complete_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        generation_id: str,
+        source: RenderSource,
+    ) -> RenderUnit:
+        return await self._units.complete_unit(
+            unit_id=unit_id,
+            workspace_id=workspace_id,
+            generation_id=generation_id,
+            source=source,
+        )
+
+    async def fail_unit(self, *, unit_id: str, workspace_id: str, generation_id: str) -> RenderUnit:
+        return await self._units.fail_unit(
+            unit_id=unit_id, workspace_id=workspace_id, generation_id=generation_id
+        )
+
+    async def generating_units(
+        self, *, workspace_id: str, limit: int = 20
+    ) -> tuple[RenderUnit, ...]:
+        ids = await self._units.scan_generating(workspace_id=workspace_id, limit=limit)
+        units: list[RenderUnit] = []
+        for unit_id in ids:
+            try:
+                units.append(await self._units.get_unit(unit_id=unit_id, workspace_id=workspace_id))
+            except ResourceNotFoundError:
+                continue
+        return tuple(units)
 
     async def create_unit(
         self,

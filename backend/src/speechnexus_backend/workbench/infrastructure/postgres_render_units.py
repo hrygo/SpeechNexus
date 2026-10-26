@@ -153,6 +153,10 @@ class _ReceiptRow:
 
 
 @dataclass(frozen=True)
+class _GeneratingRow:
+    id: str
+
+
 class _UnitWithCopyRow(_UnitRow):
     # Newest workbench-owned copy of this unit's producer result, if one exists yet.
     saved_copy_id: str | None
@@ -502,6 +506,88 @@ class PostgresRenderUnits(RenderUnitStore):
                 ),
             )
             return started
+
+    async def complete_unit(
+        self,
+        *,
+        unit_id: str,
+        workspace_id: str,
+        generation_id: str,
+        source: RenderSource,
+    ) -> RenderUnit:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            row = await self._unit_row(base, unit_id)
+            if row is None:
+                raise ResourceNotFoundError
+            await self._project(base, row.project_id, workspace_id, lock=True)
+            current = row.unit(
+                await self._generations(base, unit_id), saved_asset_id=row.saved_copy_id
+            )
+            now = await base.now()
+            completed = current.complete(generation_id=generation_id, source=source, now=now)
+            await base._execute(
+                """
+                UPDATE {s}.render_units SET
+                    revision = %s, status = %s, source_artifact_id = %s,
+                    source_receipt_id = %s, updated_at = %s
+                WHERE id = %s
+            """,
+                (
+                    completed.revision,
+                    completed.status,
+                    source.artifact_id,
+                    source.receipt_id,
+                    completed.updated_at,
+                    unit_id,
+                ),
+            )
+            return completed
+
+    async def fail_unit(self, *, unit_id: str, workspace_id: str, generation_id: str) -> RenderUnit:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            row = await self._unit_row(base, unit_id)
+            if row is None:
+                raise ResourceNotFoundError
+            await self._project(base, row.project_id, workspace_id, lock=True)
+            current = row.unit(
+                await self._generations(base, unit_id), saved_asset_id=row.saved_copy_id
+            )
+            now = await base.now()
+            failed = current.fail(generation_id=generation_id, now=now)
+            await base._execute(
+                """
+                UPDATE {s}.render_units SET
+                    revision = %s, status = %s, source_artifact_id = NULL,
+                    source_receipt_id = NULL, updated_at = %s
+                WHERE id = %s
+            """,
+                (failed.revision, failed.status, failed.updated_at, unit_id),
+            )
+            return failed
+
+    async def scan_generating(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
+        async with self._versions.transaction() as base:
+            assert isinstance(base, _Session)
+            rows = await base._many(
+                _GeneratingRow,
+                """
+                SELECT u.id FROM {s}.render_units u
+                JOIN {s}.projects p ON p.id = u.project_id
+                WHERE u.status = 'generating' AND p.workspace_id = %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {s}.resource_tombstones d
+                        WHERE d.resource_kind = 'project' AND d.resource_id = p.id
+                        UNION ALL
+                        SELECT 1 FROM {s}.deletion_ledger l,
+                            jsonb_array_elements(l.deleted) e
+                        WHERE e->>1 = 'project' AND e->>2 = p.id)
+                ORDER BY u.updated_at, u.id LIMIT %s
+            """,
+                (workspace_id, limit),
+            )
+        return tuple(row.id for row in rows)
 
     async def update_unit(
         self,

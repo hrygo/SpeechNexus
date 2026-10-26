@@ -24,6 +24,7 @@ from speechnexus_backend.workbench.application.exports import WorkbenchExports
 from speechnexus_backend.workbench.application.meetings import WorkbenchMeetings
 from speechnexus_backend.workbench.application.minutes_tasks import MinutesTasks
 from speechnexus_backend.workbench.application.recovery import WorkbenchRecovery
+from speechnexus_backend.workbench.application.render_reconcile import RenderReconciler
 from speechnexus_backend.workbench.application.render_units import WorkbenchRenderUnits
 from speechnexus_backend.workbench.application.saved_assets import WorkbenchSavedAssets
 from speechnexus_backend.workbench.application.teleprompter import WorkbenchTeleprompter
@@ -168,6 +169,7 @@ _log = logging.getLogger(__name__)
 
 _MINUTES_BATCH = 8
 _EXPORT_BATCH = 4
+_RENDER_SETTLE_BATCH = 12
 
 
 class RuntimeStartupError(RuntimeError):
@@ -424,6 +426,24 @@ async def _dispatch_exports(worker: ExportWorker, interval: float) -> None:
             _log.error("export pass failed; inspect durable export state before retrying")
 
 
+async def _settle_render_generations(
+    reconciler: RenderReconciler, workspace_id: str, interval: float
+) -> None:
+    """Apply terminal speech Job outcomes to their generating units.
+
+    A pass reads the durable unit rows, so a restart cannot forget an attempt; an
+    unreadable Job leaves the unit generating for the next pass.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await reconciler.settle(workspace_id=workspace_id, limit=_RENDER_SETTLE_BATCH)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _log.error("render settlement pass failed; units stay generating")
+
+
 def _deletion_recovery(
     settings: WorkbenchSettings, objects: MinioObjectZone | None
 ) -> WorkbenchRecovery | None:
@@ -514,6 +534,8 @@ def create_runtime_app(
             else "disabled"
         ),
     }
+    render_jobs = None if client is None else PublicSpeechRenderJobs(client)
+    render_units = WorkbenchRenderUnits(PostgresRenderUnits(versions), render_jobs)
     saved_assets = (
         None
         if objects is None or client is None
@@ -532,6 +554,7 @@ def create_runtime_app(
         sweeper: asyncio.Task[None] | None = None
         dispatcher: asyncio.Task[None] | None = None
         exports_dispatcher: asyncio.Task[None] | None = None
+        render_settler: asyncio.Task[None] | None = None
         try:
             await check_database(settings)
             if llm.profile is not None:
@@ -543,6 +566,14 @@ def create_runtime_app(
             if settings.export_interval_seconds > 0 and export_worker.enabled:
                 exports_dispatcher = asyncio.create_task(
                     _dispatch_exports(export_worker, settings.export_interval_seconds)
+                )
+            if settings.render_settle_interval_seconds > 0 and render_jobs is not None:
+                render_settler = asyncio.create_task(
+                    _settle_render_generations(
+                        RenderReconciler(render_units, render_jobs),
+                        settings.workspace_id,
+                        settings.render_settle_interval_seconds,
+                    )
                 )
             if recovery is not None:
                 await check_cleanup_identity(settings)
@@ -562,6 +593,10 @@ def create_runtime_app(
                 exports_dispatcher.cancel()
                 with suppress(asyncio.CancelledError):
                     await exports_dispatcher
+            if render_settler is not None:
+                render_settler.cancel()
+                with suppress(asyncio.CancelledError):
+                    await render_settler
             if sweeper is not None:
                 sweeper.cancel()
                 with suppress(asyncio.CancelledError):
@@ -605,10 +640,7 @@ def create_runtime_app(
         assistant=WorkbenchAssistant(PostgresAssistantTurns(versions), llm),
         exports=WorkbenchExports(exports),
         capabilities=capabilities,
-        render_units=WorkbenchRenderUnits(
-            PostgresRenderUnits(versions),
-            None if client is None else PublicSpeechRenderJobs(client),
-        ),
+        render_units=render_units,
         default_workspace_id=settings.workspace_id,
         deployment_id=settings.deployment_id,
         cursor_key=settings.cursor_key.get_secret_value().encode("utf-8"),

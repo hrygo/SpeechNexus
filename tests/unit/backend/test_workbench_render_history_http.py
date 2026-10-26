@@ -97,5 +97,7 @@ async def test_the_limit_is_forwarded_and_bounded_by_the_contract() -> None:
     service = _Service()
     assert (await call(service, query="?limit=5")).status_code == 200
     assert service.calls[-1]["limit"] == 5
+    assert (await call(service, query="?limit=100")).status_code == 200
+    assert service.calls[-1]["limit"] == 100
     rejected = await call(service, query="?limit=0")
     assert rejected.status_code == 400

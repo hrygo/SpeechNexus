@@ -692,7 +692,7 @@ it("shows the recorded generation history of one unit", async () => {
   await screen.findByRole("list", { name: "单元列表" });
   fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
   await screen.findByRole("list", { name: "单元 1 生成记录" });
-  expect(history).toHaveBeenCalledWith("unit_demo");
+  expect(history).toHaveBeenCalledWith("unit_demo", 100);
   const records = screen.getByRole("list", { name: "单元 1 生成记录" });
   expect(records.textContent).toContain("修订 2");
   expect(records.textContent).toContain("job_1");
@@ -706,4 +706,26 @@ it("reports an unreadable history without inventing records", async () => {
   const alert = await screen.findByRole("alert", { name: "单元 1 生成历史错误" });
   expect(alert.textContent).toContain("连接不可用");
   expect(screen.queryByRole("list", { name: "单元 1 生成记录" })).toBeNull();
+});
+
+it("labels a capped history instead of pretending it is complete", async () => {
+  const { history } = setup();
+  history.mockResolvedValueOnce(
+    parse("RenderUnitGenerationListV2", {
+      object: "nexus.list",
+      unit_id: "unit_demo",
+      data: [
+        {
+          id: "gen:1",
+          job_id: "job_1",
+          dependencies_sha256: "sha256:" + "a".repeat(64),
+          revision: "2",
+        },
+      ],
+      has_more: true,
+    }),
+  );
+  await screen.findByRole("list", { name: "单元列表" });
+  fireEvent.click(screen.getByRole("button", { name: "单元 1 生成历史" }));
+  await screen.findByText(/仅显示最近 1 条记录/);
 });

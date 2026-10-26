@@ -445,7 +445,9 @@ function ChapterUnits({
   async function showHistory(target: Contracts["RenderUnitV2"]) {
     setHistory({ unitId: target.id, items: [], hasMore: false, problem: null });
     try {
-      const list = await client.renderUnitGenerations(target.id);
+      // The contract caps the page at 100; load it whole so a unit with a long
+      // retry history does not need a second click to become complete.
+      const list = await client.renderUnitGenerations(target.id, 100);
       setHistory({
         unitId: target.id,
         items: list.data,
@@ -844,7 +846,11 @@ function ChapterUnits({
                               </li>
                             ))}
                           </ol>
-                          {history.hasMore && <p className="books-status">仅显示最近记录。</p>}
+                          {history.hasMore && (
+                            <p className="books-status">
+                              仅显示最近 {history.items.length} 条记录。
+                            </p>
+                          )}
                         </>
                       )}
                     </div>

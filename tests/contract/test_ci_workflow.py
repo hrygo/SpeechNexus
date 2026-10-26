@@ -83,6 +83,30 @@ def test_browser_preparation_keeps_partition_selection_and_original_budgets() ->
     assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3, 4, 5]
 
 
+def test_integration_evidence_uses_same_run_rest_download_with_read_only_access() -> None:
+    job = _WORKFLOW["jobs"]["coordination"]
+    assert _WORKFLOW["permissions"] == {"contents": "read"}
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert job["timeout-minutes"] == 2
+    assert set(job["needs"]) == {"changes", "integration_shards"}
+    step = next(s for s in job["steps"] if "actions/download-artifact@" in s.get("uses", ""))
+    assert step["uses"] == "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
+    assert step["with"] == {
+        "github-token": "${{ github.token }}",
+        "repository": "${{ github.repository }}",
+        "run-id": "${{ github.run_id }}",
+        "pattern": "integration-shard-*",
+        "path": "${{ runner.temp }}/integration-shards",
+        "merge-multiple": True,
+        "digest-mismatch": "error",
+    }
+    assert "if" not in step and "continue-on-error" not in step
+    check = job["steps"][job["steps"].index(step) + 1]
+    assert "scripts/dev-env/integration-shards.py check" in check["run"]
+    assert '--count 6 --head "$(git rev-parse HEAD)"' in check["run"]
+    assert "if" not in check and "continue-on-error" not in check
+
+
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],

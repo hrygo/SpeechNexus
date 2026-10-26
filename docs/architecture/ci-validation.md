@@ -143,6 +143,14 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 新增 9 项轻量回归，仅用 1700 字符即可复现旧实现的 17041 字符 ID，再验证短 ID、确定性、重复值及显式 ID。修复后的仅收集检查确认原 7446 项按测试函数分组的参数数量保持一致；加入 9 项新回归后，最大 ID 为 **1626 字符**，两片 JSON 内容大小估算为 **1,932,258 / 1,900,544 bytes**。此项只证明收集及尺寸，没有再次执行业务测试。原 **16 MiB 报告、16 KiB 身份、完整执行及全项目 80%** 保护均不放宽；最终结果以修复提交的托管 CI 为准。
 
+### 托管复核及证据下载退出异常
+
+[修复后运行 40348884456](https://github.com/hrygo/SpeechNexus/actions/runs/40348884456) 的 Python 两片分别 **3728 / 3727 passed**，合并全项目覆盖率 **84%**，原 80% 门槛通过；覆盖步骤 294 秒，Python 作业 347 秒。六个集成分片、Web、静态契约及部署检查均通过。这是单轮观测，不能代替同条件耗时对照或长期提速结论。
+
+集成汇总另遇下载动作退出异常：作业 `121668563675` 的六份 artifact 均约六秒下载完成，SHA-256 全匹配，并输出 `Download artifact has finished successfully`，进程随后不退出，耗尽原两分钟预算。仅重试汇总与后续门禁一次，作业 `121671154056` 在同一位置复现；未因此重跑业务分片。日志把故障定位到下载动作完成后的进程退出，尚未确定其具体未释放资源。
+
+工作流保留官方固定版本 v8.0.2，使用其 `github-token` 输入选择公开 REST 路径，并显式固定当前 `github.repository` / `github.run_id`，避免继续走本轮卡住的默认运行时客户端。仅汇总作业增加 `actions: read`，全局仍为 `contents: read`；继续要求摘要不匹配即失败、六片成功、同提交完整互斥集合与实际结果，超时仍为两分钟。官方源码确认该输入切换客户端，公开路径仍计算并比较下载摘要；是否消除托管退出异常必须由新提交实测确认，不能以配置回归代替。依据：[固定版本输入](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/action.yml)、[客户端路径选择](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/client.ts)、[公开路径摘要校验](https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/download/download-artifact.ts)，核验日期 2026-10-26。
+
 ## 路由维护
 
 - 对比事件的准确 base SHA 与实际 checkout 的合并结果；路径用 NUL 分隔，不按换行拆分，也不使用 API 文件列表截断后的子集。

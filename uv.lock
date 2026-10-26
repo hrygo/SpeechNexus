@@ -8,6 +8,7 @@ members = [
     "speechnexus-backend",
     "speechnexus-contracts",
     "speechnexus-execution-gateway",
+    "speechnexus-media",
     "speechnexus-node-controller",
 ]
 
@@ -1698,6 +1699,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "speechnexus-contracts" },
+    { name = "speechnexus-media", extra = ["audio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1711,8 +1713,27 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.14.1,<3" },
     { name = "pydantic-settings", specifier = ">=2.16.1,<3" },
     { name = "speechnexus-contracts", editable = "packages/contracts" },
+    { name = "speechnexus-media", extras = ["audio"], editable = "packages/media" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<0.55" },
 ]
+
+[[package]]
+name = "speechnexus-media"
+version = "0.1.0.dev0"
+source = { editable = "packages/media" }
+
+[package.optional-dependencies]
+audio = [
+    { name = "av" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "av", marker = "extra == 'audio'", specifier = ">=19,<20" },
+    { name = "numpy", marker = "extra == 'audio'", specifier = ">=2.2,<3" },
+]
+provides-extras = ["audio"]
 
 [[package]]
 name = "speechnexus-node-controller"

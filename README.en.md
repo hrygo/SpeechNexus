@@ -156,6 +156,7 @@ See the [implementation plan (Chinese)](docs/plans/2026-10-22-speechnexus-implem
 
 | I want to learn about | Start here |
 | --- | --- |
+| Ownership transfer, current progress, and remaining work | [Complete project handoff (Chinese)](docs/audits/2026-10-26-project-handoff.md) |
 | Product scope and workflows | [Product design (Chinese)](docs/speechnexus-product-architecture.md) |
 | Deployment, ports, and configuration | [Deployment guide](deploy/README.md) |
 | API integration and compatibility | [Speech API (Chinese)](docs/architecture/speech-api.md) |

@@ -56,11 +56,12 @@ These are selected integration paths: ASR, VAD, and CustomVoice TTS have partial
 
 ## Current availability
 
-Repository delivery summary as of **2026-10-25**. Independently verified modules do not imply complete availability in the default deployment.
+Repository delivery summary as of **2026-10-26**. Independently verified modules do not imply complete availability in the default deployment.
 
 | Area | Current state | Before you try it |
 | --- | --- | --- |
 | Default Compose startup | Two Web entry points, speech service, and infrastructure health checks | Interface preview; no model loading or complete speech workflow |
+| Fixed pronunciation revision GET | Explicit independent read-only PG configuration reads existing draft revisions | Unconfigured returns 503; create, publication and TTS qualification remain pending; see [reader configuration](docs/architecture/pronunciation-read-contract.md) |
 | File transcription, narration, and task pages | Public API consumer flows connected | Real speech execution, result generation, and complete deployment still need integration |
 | Gateway file-ASR composition | Private configuration connects the durable worker to a fixed-generation endpoint, CPU VAD, and object storage | Candidate default entrypoint verified with real 1.7B/CPU VAD, isolated PG/MinIO, synthetic speech/silence, replay and restart; production admission, trusted budget release, publication and public workflow acceptance remain pending; see [configuration (Chinese)](docs/architecture/file-asr-runtime.md) |
 | Projects, manuscripts, and meeting records | Pages and an independent workbench service have verification evidence | Separate configuration and database preparation required; not fully assembled in default Compose |

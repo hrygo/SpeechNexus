@@ -2,13 +2,13 @@
 
 This A02 component creates and reads private, immutable pronunciation draft
 revisions. It does not register public routes, publish a dictionary, select a
-default, execute TTS or establish voice/engine qualification. Public list/create/
-fixed-revision HTTP and the rest of A02/A04 remain separate work.
+default, execute TTS or establish voice/engine qualification. Public list/create
+and the rest of A02/A04 remain separate work.
 
 The [fixed-revision read contract](pronunciation-read-contract.md) now provides
-an opt-in generated GET validator and distinguishes unavailable metadata from
-confirmed absence. It does not register a public route or change this private
-writer's scope.
+an opt-in generated GET validator and an independently owned read-only API
+runtime, distinguishing unavailable metadata from confirmed absence. This does
+not change this private writer's scope or expose its create/recover methods.
 
 The canonical request is `PronunciationCreateRequest` in
 `contracts/speech-openapi.yaml`; the response is `PronunciationRevision` in

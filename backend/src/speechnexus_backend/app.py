@@ -17,11 +17,13 @@ from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
+from speechnexus_backend.pronunciation_runtime import PronunciationRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
+from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
@@ -43,6 +45,11 @@ from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddl
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
 from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
 from speechnexus_backend.speech.interfaces.http.profiles import create_profile_router
+from speechnexus_backend.speech.interfaces.http.pronunciations import (
+    PronunciationIngress,
+    create_pronunciation_router,
+    pronunciation_http_contract,
+)
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
     PREFIX as WORKSPACE_PREFIX,
@@ -67,6 +74,7 @@ class _SpeechAPI(FastAPI):
                 asset_http_contract(),
                 workspace_http_contract(),
                 profile_http_contract(),
+                pronunciation_http_contract(),
                 binding_http_contract(producer=self._binding_defaults_enabled),
             ):
                 surface = copy.deepcopy(contract)
@@ -105,6 +113,7 @@ def create_app(
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
+    pronunciations: PronunciationReader | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -136,6 +145,18 @@ def create_app(
             return profiles
         return profile_runtime.provider if profile_runtime is not None else None
 
+    pronunciation_runtime = (
+        PronunciationRuntime(resolved_settings)
+        if pronunciations is None
+        and resolved_settings.pronunciation_reader_database_url is not None
+        else None
+    )
+
+    def get_pronunciations() -> PronunciationReader | None:
+        if pronunciations is not None:
+            return pronunciations
+        return pronunciation_runtime.provider if pronunciation_runtime is not None else None
+
     binding_runtime = (
         BindingRuntime(resolved_settings)
         if bindings is None and resolved_settings.binding_writer_database_url is not None
@@ -162,6 +183,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
+            if pronunciation_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
+                await run_in_threadpool(pronunciation_runtime.open)
             if binding_defaults_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_defaults_runtime.close)
                 await run_in_threadpool(binding_defaults_runtime.open)
@@ -223,10 +247,18 @@ def create_app(
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
     # Request IDs wrap early ingress errors as well as route responses.
+    app.add_middleware(
+        PronunciationIngress,
+        concurrency=resolved_settings.pronunciation_read_concurrency,
+        is_enabled=lambda: get_pronunciations() is not None,
+        allowed_hosts=resolved_settings.asset_allowed_hosts,
+        allowed_origins=resolved_settings.asset_allowed_origins,
+    )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
+    app.include_router(create_pronunciation_router(get_pronunciations))
     app.include_router(create_binding_router(get_bindings, producer=producer))
 
     @app.exception_handler(HTTPException)
@@ -267,6 +299,7 @@ def create_app(
     )
     app.state.settings = resolved_settings
     app.state.profile_runtime = profile_runtime
+    app.state.pronunciation_runtime = pronunciation_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
     return app

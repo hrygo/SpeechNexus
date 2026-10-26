@@ -591,9 +591,7 @@ class PostgresRenderUnits(RenderUnitStore):
             )
         return tuple(row.id for row in rows)
 
-    async def scan_ready_without_copy(
-        self, *, workspace_id: str, limit: int
-    ) -> tuple[str, ...]:
+    async def scan_ready_without_copy(self, *, workspace_id: str, limit: int) -> tuple[str, ...]:
         async with self._versions.transaction() as base:
             assert isinstance(base, _Session)
             rows = await base._many(

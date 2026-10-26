@@ -17,7 +17,7 @@ pnpm install --frozen-lockfile
 
 | 改动 | 验证入口与范围 |
 | --- | --- |
-| 文档、`AGENTS.md`、无脚本的 skill | 核对本地链接、frontmatter、命令、规则衔接与声明；`git diff --check`。不默认安装依赖、初始化服务或运行业务测试 |
+| 文档、`AGENTS.md`、无脚本的 skill、Issue / PR 模板 | 核对本地链接、frontmatter、命令、规则衔接与声明；表单额外检查 YAML、字段类型、唯一 ID 和必填项；`git diff --check`。不默认安装依赖、初始化服务或运行业务测试；本地结构检查不代表 GitHub 页面已生效 |
 | skill 中的脚本 | 在隔离样例中运行受影响分支、失败与重试出口；再按脚本语言选择检查 |
 | Python | `uv run ruff format --check .`、`uv run ruff check .`、`uv run mypy`、`uv run lint-imports`，以及覆盖改动的 `uv run pytest` 测试 |
 | Web | `pnpm format:check`、`pnpm lint`（含设计 Token 门禁）、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm test:a11y`；真实浏览器前置与证据范围见 [CI 规则](architecture/ci-validation.md) |

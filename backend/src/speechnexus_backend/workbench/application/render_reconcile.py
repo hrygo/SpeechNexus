@@ -27,9 +27,7 @@ class RenderSettlementStore(Protocol):
         self, *, workspace_id: str, limit: int
     ) -> tuple[RenderUnit, ...]: ...
 
-    async def unsaved_units(
-        self, *, workspace_id: str, limit: int
-    ) -> tuple[RenderUnit, ...]: ...
+    async def unsaved_units(self, *, workspace_id: str, limit: int) -> tuple[RenderUnit, ...]: ...
 
     async def complete_unit(
         self,
@@ -129,9 +127,7 @@ class RenderReconciler:
             settled.append(SettledAttempt(unit.id, outcome.state))
         return tuple(settled)
 
-    async def restore_copies(
-        self, *, workspace_id: str, limit: int = 8
-    ) -> tuple[str, ...]:
+    async def restore_copies(self, *, workspace_id: str, limit: int = 8) -> tuple[str, ...]:
         """Retry copies for ready units whose settlement-time copy was not written.
 
         The unit row is the durable record: a failed copy stays visible as a ready unit
@@ -145,9 +141,7 @@ class RenderReconciler:
             if source is None:
                 continue
             try:
-                await self._copies.save_copy(
-                    workspace_id=workspace_id, unit=unit, source=source
-                )
+                await self._copies.save_copy(workspace_id=workspace_id, unit=unit, source=source)
             except Exception:
                 continue
             restored.append(unit.id)

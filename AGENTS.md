@@ -36,15 +36,15 @@
 | 设计、审查或改变提交未知、幂等重放、取消释放、发布/删除竞态的恢复语义，以及相关故障验证 | [speechnexus-recovery-design](.agents/skills/speechnexus-recovery-design/SKILL.md)；具体协调事务变更再按对应行处理 |
 | 新增路由，变更或审查机器契约、协议状态/错误、生成消费者 | [speechnexus-contract-change](.agents/skills/speechnexus-contract-change/SKILL.md)、[契约目录规则](contracts/AGENTS.md) |
 | 变更或审查协调事务、锁序、租约/预算、fencing、持久恢复、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
-| 起草、创建或整理 issue | [speechnexus-issue-maintenance](.agents/skills/speechnexus-issue-maintenance/SKILL.md) |
-| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [sync-issues-after-merge](.agents/skills/sync-issues-after-merge/SKILL.md)；核实合并事实，按证据维护正文、任务/AC、状态与唯一 `status:*` 标签 |
+| 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[speechnexus-issue-maintenance](.agents/skills/speechnexus-issue-maintenance/SKILL.md) |
+| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [sync-issues-after-merge](.agents/skills/sync-issues-after-merge/SKILL.md)；核实合并事实，按证据维护正文、任务/AC、状态及适用的既有标签 |
 | Web 实现或审查 | [web/AGENTS.md](web/AGENTS.md) |
 | 集成测试实现或执行 | [tests/integration/AGENTS.md](tests/integration/AGENTS.md) |
 | 实施、构建、验证或检查失败排查 | [验证指南](docs/agent-verification.md)；按改动选择检查，纯文档只做文档验证 |
 | CI 调度、验证范围与门禁 | [CI 规则](docs/architecture/ci-validation.md)、[工作流](.github/workflows/ci.yml) |
 | 定位设计材料与执行入口 | [Agent 工作指南](docs/agent-guide.md)；当前能力从 [README.md](README.md) 开始 |
 
-Issue 默认按长期日常模式组织：一个边界清晰的小 issue 由一个 PR 完整解决，合入主干且 AC 满足后直接关闭；仅实际存在跨 PR、父项、Gate 或制品依赖时扩展流程。正文保持 `目标`、`进展总结`、`任务清单`、`验收标准（AC）` 四部分，小 issue 各部分简写即可。任务交付与 AC 证据分别判断；只改正文不改元数据，单纯查询/审查不写远端。完整规则与长度检查由上述技能维护。
+Issue 先区分外部反馈与实施跟踪：缺陷报告、功能建议和提问保留报告者的问题、复现与讨论，不强制改成实施格式；进入实施的任务使用 `目标`、`进展总结`、`任务清单`、`验收标准（AC）` 四部分，小 issue 简写即可。默认一个边界清晰的小 issue 由一个 PR 完整解决，合入主干且 AC 满足后直接关闭；仅实际存在跨 PR、父项、Gate 或制品依赖时扩展流程。任务交付与 AC 证据分别判断；只改正文不改元数据，单纯查询/审查不写远端。GitHub state 表达开关状态；`status:*` 仅用于已采用该体系的跟踪项，不给普通反馈强加标签流程。完整规则由上述指南与技能维护。
 
 ## 验证与交付
 

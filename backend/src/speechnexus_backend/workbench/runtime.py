@@ -439,9 +439,7 @@ async def _settle_render_generations(
         await asyncio.sleep(interval)
         try:
             await reconciler.settle(workspace_id=workspace_id, limit=_RENDER_SETTLE_BATCH)
-            await reconciler.restore_copies(
-                workspace_id=workspace_id, limit=_RENDER_SETTLE_BATCH
-            )
+            await reconciler.restore_copies(workspace_id=workspace_id, limit=_RENDER_SETTLE_BATCH)
         except asyncio.CancelledError:
             raise
         except Exception:

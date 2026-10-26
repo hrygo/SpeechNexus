@@ -166,7 +166,7 @@ SpeechNexus 的接口设计采用 **OpenAI Audio 兼容子集 + `nexus` 扩展**
 
 欢迎通过 [Issues](https://github.com/hrygo/SpeechNexus/issues) 提出使用场景、功能建议或问题。报告问题时请说明运行环境、复现步骤、预期行为和实际结果，避免附带凭据、私人音频或完整业务转写。
 
-参与开发请先阅读[开发指南](docs/development-environment.md)与 [AGENTS.md](AGENTS.md)，按改动范围运行检查。完整本机验证入口为 `make verify`，运行前需满足指南中的宿主与隔离服务条件。
+反馈入口、实施任务格式与关闭规则见[贡献与 Issue 指南](CONTRIBUTING.md)。参与开发请先阅读[开发指南](docs/development-environment.md)与 [AGENTS.md](AGENTS.md)，按改动范围运行检查。完整本机验证入口为 `make verify`，运行前需满足指南中的宿主与隔离服务条件。
 
 ## 许可证与致谢
 

@@ -825,11 +825,17 @@ function ChapterUnits({
                       )}
                     </div>
                   )}
-                  <button type="button" disabled={locked} onClick={() => void showHistory(unit)}>
+                  <button
+                    type="button"
+                    aria-expanded={history !== null && history.unitId === unit.id}
+                    aria-controls={`history-${unit.id}`}
+                    disabled={locked}
+                    onClick={() => void showHistory(unit)}
+                  >
                     {`${label} 生成历史`}
                   </button>
                   {history !== null && history.unitId === unit.id && (
-                    <div aria-label={`${label} 生成历史`}>
+                    <div id={`history-${unit.id}`} aria-label={`${label} 生成历史`}>
                       {history.problem !== null ? (
                         <p role="alert" aria-label={`${label} 生成历史错误`}>
                           {problems[history.problem]}
@@ -846,6 +852,9 @@ function ChapterUnits({
                               </li>
                             ))}
                           </ol>
+                          <p role="status" className="books-status">
+                            共 {history.items.length} 条生成记录。
+                          </p>
                           {history.hasMore && (
                             <p className="books-status">
                               仅显示最近 {history.items.length} 条记录。

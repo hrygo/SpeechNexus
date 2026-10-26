@@ -10478,6 +10478,294 @@
         "extra": true
       },
       "valid": false
+    },
+    {
+      "id": "audio-inspection-valid-wav",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": true,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-valid-explicit-pcm",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": true,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/pcm",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-schema_version-2",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 2,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-schema_version-true",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": true,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-recipe_version-future",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "future",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-sha256-sha256:not-a-digest",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:not-a-digest",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-encoded_bytes-0",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 0,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-sample_rate_hz-true",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": true,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-sample_rate_hz-7999",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 7999,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-channels-9",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 9,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-source_samples-0",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 0,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-duration_ms-86400001",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 86400001
+      }
+    },
+    {
+      "id": "audio-inspection-status-failed",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "failed",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-media_type-audio/mpeg",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/mpeg",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
+    },
+    {
+      "id": "audio-inspection-object_key-private/not-public",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100,
+        "object_key": "private/not-public"
+      }
+    },
+    {
+      "id": "audio-inspection-missing-input-digest",
+      "profile": "audio_inspection",
+      "schema": "AudioInspectionSuccess",
+      "valid": false,
+      "value": {
+        "schema_version": 1,
+        "status": "complete",
+        "recipe_version": "pcm-decode-1",
+        "encoded_bytes": 19244,
+        "media_type": "audio/wav",
+        "sample_rate_hz": 48000,
+        "channels": 2,
+        "source_samples": 4800,
+        "duration_ms": 100
+      }
     }
   ]
 }

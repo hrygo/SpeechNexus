@@ -15,6 +15,10 @@
     "sha256": "3f27dfa3d0b30542c8506abcb5124d13a81b41a54539297c5d0604858b247b40",
     "version": null
   },
+  "internal/audio-inspection.schema.json": {
+    "sha256": "e44787aa83a7f24b3c9818b2fde4f83d29c41db41f5b92b343e6a283da5a3a71",
+    "version": "1.0.0"
+  },
   "internal/coordination-transactions.schema.json": {
     "sha256": "af7c8b8852db7ace68355fb0cb71c251b1fc1c3485bae5c409a04cad83311a33",
     "version": null

@@ -6,6 +6,13 @@ It contains no business rules, database adapter, server route, or engine.
 Do not import it from any domain package. Interfaces translate validated DTOs
 into their own application/domain values.
 
+Private media inspection consumers explicitly select Python `audio_inspection`
+or TypeScript `@speechnexus/contracts/audio-inspection`. The generated success
+receipt preserves the canonical version, recipe, input digest/length and source
+sample facts. The A adapter additionally checks the original input, exact clock,
+configured limits and cancellation; schema acceptance does not publish an Asset
+or establish process stop, compute release or deployment qualification.
+
 The file boundary also exposes the existing public `Transcription` schema for
 consumers of staged file-ASR JSON. This generates validation/types from the
 speech source without changing its wire format. See

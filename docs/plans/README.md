@@ -1,5 +1,8 @@
 # SpeechNexus 实施计划
 
+- [2026-10-26 团队 A 最终交接](2026-10-26-team-a-final-handoff.md)：完整 A00–A07 状态、本轮媒体/回执候选、全部 40 个 issue、证据/资源恢复、风险和接管步骤；原排期转为历史，后续交新负责人安排。
+- [2026-10-26 团队 A 进展复盘与原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
+
 - [2026-10-24 团队 C Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)：五项持久业务操作、原子封存/纪要关联、原键恢复及会议删除依赖；默认工厂13项，显式装配18项，生产/会议页面及完整资格继续。
 
 计划按基准日期保存，阶段完成状态须有实际交付和验收证据。
@@ -12,7 +15,7 @@
 - [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：原规划 38 个 issue，另列 #142/#149 阶段交接、具名制品依赖、联合验收与分段证据；由[编排清单](2026-10-23-implementation-issues.json)和只读刷新脚本生成状态快照。
 - [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：agent 整体实施调度入口；三环境责任、25 个工作包、开工/联调依赖、六波次关口与同步规则。
 - [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：可直接下发至云环境、MegaCube、MacBook 的首轮任务与统一交接模板。
-- [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的持续目标、首轮生产事务、交付证据与阻塞条件；应用 Goal 是否启用单独核验。
+- [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
 - [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 的持续目标、MegaCube 环境与停止证据探针、网关/控制器首个单元与阻塞条件；应用 Goal 是否启用单独核验。
 - [2026-10-24 团队 C 执行目标](2026-10-24-team-c-goal.md)：C00–C08 的持续范围、首轮接力、模块所有权与完成条件；[C00 版本单元交接](2026-10-24-team-c-c00-version-handoff.md)、[C00 生成请求消费交接](2026-10-24-team-c-c00-project-boundary-handoff.md)、[C00 元数据分页交接](2026-10-24-team-c-c00-listing-handoff.md)、[C00 PostgreSQL 事务交接](2026-10-24-team-c-c00-postgres-handoff.md)、[C00 删除事务交接](2026-10-24-team-c-c00-deletion-handoff.md)、[C01 Admin 任务中心交接](2026-10-24-team-c-c01-task-center-handoff.md)、[C02 文件任务与 A00 消费交接](2026-10-24-team-c-c02-file-flow-handoff.md)、[C02 原始转写导入交接](2026-10-24-team-c-c02-transcript-import-handoff.md)、[C04 合成播放交接](2026-10-24-team-c-c04-media-handoff.md)、[C04 浏览器采集交接](2026-10-24-team-c-c04-capture-handoff.md)记录本地实现与未验证项。
 - [2026-10-24 原命令与对象输入接入](2026-10-24-b03-frozen-inputs.md)：B01/B03 原持久命令、固定版本 MinIO 和现有文件消费者的输入接入边界。

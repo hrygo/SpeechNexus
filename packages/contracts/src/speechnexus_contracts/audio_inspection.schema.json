@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudioInspectionContracts",
+  "x-nexus-bindings-version": "1.0.0",
+  "x-nexus-entrypoints": ["AudioInspectionSuccess"],
+  "$defs": {
+    "AudioInspectionSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "status",
+        "recipe_version",
+        "sha256",
+        "encoded_bytes",
+        "media_type",
+        "sample_rate_hz",
+        "channels",
+        "source_samples",
+        "duration_ms"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "status": {
+          "const": "complete"
+        },
+        "recipe_version": {
+          "const": "pcm-decode-1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "encoded_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "media_type": {
+          "enum": ["audio/wav", "audio/pcm"]
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 192000
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "source_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16588800000
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        }
+      }
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/AudioInspectionSuccess"
+    }
+  ]
+}

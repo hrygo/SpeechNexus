@@ -9,9 +9,11 @@ from speechnexus_backend.speech.domain.pronunciation_drafts import (
 )
 
 
-class PronunciationDrafts(Protocol):
+class PronunciationReader(Protocol):
+    def get(self, pronunciation_id: str, revision: str) -> PronunciationDraft | None: ...
+
+
+class PronunciationDrafts(PronunciationReader, Protocol):
     def create(self, command: CreatePronunciationDraft) -> PronunciationDraftResult: ...
 
     def recover(self, command: CreatePronunciationDraft) -> PronunciationDraftResult: ...
-
-    def get(self, pronunciation_id: str, revision: str) -> PronunciationDraft | None: ...

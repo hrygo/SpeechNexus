@@ -371,7 +371,15 @@ def test_actual_node_http_consumer_gets_locked_tools_only_in_its_partition() -> 
         for node in ast.parse(pronunciation_path.read_text()).body
         if isinstance(node, ast.FunctionDef)
     }
+    read_consumer = "test_generated_consumers_read_actual_loopback_http"
+    read_path = ROOT / "tests/integration/test_pronunciation_http.py"
+    assert read_consumer in {
+        node.name
+        for node in ast.parse(read_path.read_text()).body
+        if isinstance(node, ast.FunctionDef)
+    }
     expected = (
+        f"{read_path.relative_to(ROOT)}::{read_consumer}",
         *(f"{path.relative_to(ROOT)}::{consumer}[postgresql]" for path in paths),
         *(
             f"{pronunciation_path.relative_to(ROOT)}::{pronunciation_consumer}[{dialect}]"

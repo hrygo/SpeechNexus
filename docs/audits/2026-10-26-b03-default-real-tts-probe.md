@@ -64,14 +64,30 @@ Invalid language 'Zh'. Supported: Auto, Beijing_Dialect, Chinese, English, ...
 网关重启后仍能读取同一个对象版本与回执，且没有再次调用引擎。回执登记只证明私有 staging
 结果；执行状态仍为 `executing`，由 A 的原事务负责后续结算、发布或停止处理。
 
+### 三种交付格式
+
+同一镜像和模型在 run `20261026T051302Z-bf1ec5c0` 中串行提交 WAV、MP3、PCM 三条命令：
+
+| 交付 | 对象字节 | 对象摘要 | 提交到回执 | 解码/样本核对 |
+| --- | --- | --- | --- | --- |
+| WAV | 311084 | `sha256:e6c21a949f699106eb12a7b0ab0cefdabe0b79735ba03a93b20bc166e604fc0d` | 4.530 秒 | RIFF/WAVE，PCM 311040 字节 |
+| MP3 | 52460 | `sha256:ecf0982d4a64d5f144ae0025ad2cc12d15d03712697532c9884b80f93e908bdf` | 2.797 秒 | 解码 155520 样本、6480 ms |
+| PCM | 311040 | `sha256:9934c6b42648ab88457a3b69a53abdfc7f337f1a2defa761590abf86c985dd9b` | 2.703 秒 | 恰好 155520×2 字节 |
+
+三条命令的源 PCM 均为 155520 样本、6480 ms，生成区间均为 `[0,155520)`；各自使用独立
+submit intent、引擎请求号、对象版本和回执。三次重启后回执都保留，原身份重放都保持
+`unknown_quarantined`，预算计数不变且没有停止证据行。MP3 的编码延迟/填充没有改变
+回执声明的源样本事实，解码回读也没有出现时长漂移。
+
 ## 验证与边界
 
 - `uv run pytest -q tests/unit --no-cov`：3869 passed。
 - `uv run ruff format --check .`、`uv run ruff check .`、`uv run mypy`：通过。
 - `uv run lint-imports`：7 条依赖边界全部通过。
 - `make contracts-check`：32 份机器契约通过。
-- 真实探针：1 passed，容器停止后 `Running=false`，网络已删除，受保护 35B 未变化。
+- 真实探针：WAV/MP3/PCM 共 3 passed，容器停止后 `Running=false`，网络已删除，
+  受保护 35B 未变化。
 
-本证据不证明 Base、VoiceDesign、音色克隆、流式、长文本切分、MP3/PCM 真实交付、
-公开路由/Job/发布/下载、SDK/C 消费、A 的预算结算、单请求取消/停止/资源释放双事实、
-物理多节点竞争或生产许可。只有后续在这些范围内取得对应证据，才能勾选相应 AC。
+本证据不证明 Base、VoiceDesign、音色克隆、流式、长文本切分、公开路由/Job/发布/下载、
+SDK/C 消费、A 的预算结算、单请求取消/停止/资源释放双事实、物理多节点竞争或生产许可。
+只有后续在这些范围内取得对应证据，才能勾选相应 AC。

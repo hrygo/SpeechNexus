@@ -158,12 +158,12 @@ def test_wav_cannot_hide_incomplete_or_ambiguous_chunks_after_audio(tail: bytes)
 def test_complete_metadata_chunks_preserve_all_source_facts(
     before_audio: bool, payload: bytes
 ) -> None:
-    content = wav()
+    source = wav()
     chunk = b"JUNK" + struct.pack("<I", len(payload)) + payload
     if len(payload) % 2:
         chunk += b"\x00"
-    position = content.index(b"data") if before_audio else len(content)
-    content = bytearray(content[:position] + chunk + content[position:])
+    position = source.index(b"data") if before_audio else len(source)
+    content = bytearray(source[:position] + chunk + source[position:])
     struct.pack_into("<I", content, 4, len(content) - 8)
     facts = inspection.inspect_audio(
         io.BytesIO(content),

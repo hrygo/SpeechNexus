@@ -1,0 +1,29 @@
+name: 功能建议 / Feature request
+description: 描述使用场景、困难和期望结果 / Suggest an improvement.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有建议，并确认 README 中的当前能力与产品范围。可以使用中文或英文。
+        Search existing requests and check the README for current capabilities and scope. Chinese and English are welcome.
+        无需先设计实现方案或承诺贡献代码；仅使用合成或最小脱敏示例。
+        A solution design or contribution commitment is optional. Use synthetic or redacted examples.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 场景与问题 / Use case and problem
+      description: 说明希望完成什么，以及现有方式为什么不足。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果 / Desired outcome
+      description: 描述可观察的改进、适用范围或具体示例。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与补充信息 / Alternatives and context
+      description: 可选：当前绕行方式、方案权衡、相关建议或参与意愿。

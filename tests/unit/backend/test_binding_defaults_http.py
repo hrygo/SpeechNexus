@@ -51,10 +51,18 @@ def provider() -> Mock:
     return port
 
 
+class _DraftFacts:
+    """Every revision this unit test stores is a draft, never published."""
+
+    def project(self, draft: Any) -> None:
+        return None
+
+
 def client(port: Any, **settings: Any) -> AsyncClient:
     app = create_app(
         settings=_settings().model_copy(update={"asset_allowed_hosts": ("test",), **settings}),
         binding_defaults=port,
+        binding_publication_facts=_DraftFacts(),
     )
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

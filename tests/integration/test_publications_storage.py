@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -17,6 +18,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
 from speechnexus_backend.speech.domain.publications import Publication
+from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
@@ -30,6 +33,8 @@ PASSWORD = "synthetic_publication_test"
 @dataclass
 class Sandbox:
     store: PostgresPublications
+    catalog: PostgresModelCatalog
+    admin: psycopg.Connection[tuple[object, ...]]
     schema: str
     role: str
     url: str
@@ -58,14 +63,16 @@ def sandbox() -> Iterator[Sandbox]:
     admin = psycopg.connect(url, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
-    for grant in publication_grants(schema, role):
+    for grant in (*publication_grants(schema, role), *binding_draft_grants(schema, role)):
         admin.execute(grant)
     pool = speech_pool(
         make_conninfo(url, user=role, password=PASSWORD), schema=schema, max_size=2, name="pub-test"
     )
     pool.open()
     try:
-        yield Sandbox(PostgresPublications(pool), schema, role, url)
+        yield Sandbox(
+            PostgresPublications(pool), PostgresModelCatalog(pool), admin, schema, role, url
+        )
     finally:
         pool.close()
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
@@ -124,3 +131,73 @@ def test_runtime_role_cannot_rewrite_or_remove_publications(sandbox: Sandbox) ->
     finally:
         runtime.close()
     assert sandbox.store.get("binding", "binding-tts", 1) == publication(1, "binding-rev-1")
+
+
+def create_binding(
+    admin: psycopg.Connection[tuple[object, ...]], definition: dict[str, object]
+) -> None:
+    """Insert one prepared binding revision exactly as the draft writer would."""
+    binding_id = str(definition["binding_id"])
+    key = "sha256:" + "a1" * 32
+    request = "sha256:" + "b2" * 32
+    document = "sha256:" + "c3" * 32
+    admin.execute("DELETE FROM speech_binding_revisions")
+    admin.execute("DELETE FROM speech_binding_commands")
+    admin.execute("DELETE FROM speech_binding_families")
+    admin.execute(
+        "INSERT INTO speech_binding_families (binding_id, latest_revision) VALUES (%s, %s)",
+        (binding_id, "1"),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, %s, %s)",
+        (key, binding_id, "{}", request),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, "
+        " definition_json, definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s)",
+        (
+            binding_id,
+            "1",
+            "binding-rev-1",
+            key,
+            json.dumps(definition, sort_keys=True),
+            document,
+            request,
+            1_700_000_000_000_000,
+        ),
+    )
+
+
+DEFINITION = {
+    "binding_id": "tts-quality",
+    "logical_model": "qwen3-tts-customvoice",
+    "tasks": ["tts_file", "tts_realtime"],
+    "release_tier": "production",
+}
+
+
+def test_catalogue_lists_only_published_bindings(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+
+    assert sandbox.catalog.list_models() == []
+
+    sandbox.store.append(
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    )
+    models = sandbox.catalog.list_models()
+
+    assert [model["id"] for model in models] == ["tts-quality"]
+    assert models[0]["nexus"]["logical_model"] == "qwen3-tts-customvoice"
+    assert models[0]["nexus"]["tasks"] == ["tts_file", "tts_realtime"]
+    assert models[0]["nexus"]["readiness"]["admission_state"] == "unavailable"
+
+
+def test_publication_naming_another_document_does_not_list_a_model(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    sandbox.store.append(Publication("binding", "tts-quality", 1, "binding-rev-other", 1))
+
+    assert sandbox.catalog.list_models() == []

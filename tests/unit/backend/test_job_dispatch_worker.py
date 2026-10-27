@@ -76,6 +76,11 @@ def _settings(**changes: object) -> JobDispatchSettings:
         "max_attempts": 5,
         "interval_seconds": 1.0,
         "storage_timeout_seconds": 3.0,
+        "object_storage_endpoint": "http://127.0.0.1:59000",
+        "artifacts_bucket": "synthetic-artifacts",
+        "execution_result_bucket": "synthetic-results",
+        "object_storage_access_key": SecretStr("synthetic-access-key"),
+        "object_storage_secret_key": SecretStr("synthetic-secret-key"),
     }
     return JobDispatchSettings.model_validate(values | changes)
 
@@ -97,6 +102,10 @@ def test_configuration_requires_every_operating_value_before_io() -> None:
         _settings(lease_ms=600_001)
     with pytest.raises(ValidationError):
         _settings(process_role="api")
+    with pytest.raises(ValidationError):
+        _settings(artifacts_bucket="INVALID")
+    with pytest.raises(ValidationError):
+        _settings(object_storage_endpoint="http://127.0.0.1:59000/private")
 
 
 def test_configuration_derives_explicit_worker_identity_without_secret_repr() -> None:
@@ -122,6 +131,10 @@ def test_production_dependencies_fail_closed() -> None:
     (
         "SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL",
         "SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL",
+        "SPEECHNEXUS_OBJECT_STORAGE_BUCKET",
+        "SPEECHNEXUS_EXECUTION_RESULT_BUCKET",
+        "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY",
+        "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY",
     ),
 )
 def test_cli_refuses_missing_gateway_configuration_before_io(
@@ -146,6 +159,15 @@ def test_cli_refuses_missing_gateway_configuration_before_io(
         "SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS": str(settings.max_attempts),
         "SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS": str(settings.interval_seconds),
         "SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS": str(settings.storage_timeout_seconds),
+        "SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT": str(settings.object_storage_endpoint),
+        "SPEECHNEXUS_OBJECT_STORAGE_BUCKET": settings.artifacts_bucket,
+        "SPEECHNEXUS_EXECUTION_RESULT_BUCKET": settings.execution_result_bucket,
+        "SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY": (
+            settings.object_storage_access_key.get_secret_value()
+        ),
+        "SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY": (
+            settings.object_storage_secret_key.get_secret_value()
+        ),
     }
     for key, value in environment.items():
         monkeypatch.setenv(key, value)

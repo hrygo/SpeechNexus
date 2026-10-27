@@ -51,8 +51,11 @@ class ArtifactRuntime:
             self.close()
             if not isinstance(error, Exception):
                 raise
+            # The cause type is safe to name and is what distinguishes a bad
+            # grant from an unreachable database; the message itself stays fixed.
             raise ValueError(
-                "Artifact reader startup rejected; verify migration and reader role"
+                "Artifact reader startup rejected "
+                f"({type(error).__name__}); verify migration and reader role"
             ) from None
 
     def close(self) -> None:

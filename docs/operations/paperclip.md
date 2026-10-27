@@ -218,3 +218,21 @@ POST /v1/audio/transcriptions -> 503 backend_unavailable
 迁移 DDL 里写 `storage_version_id !~ '[\x00-\x1f\x7f]'`，Python 先把 `\x00` 变成真正的 NUL 字节；PostgreSQL 的 C 字符串在 NUL 处截断，报 `unterminated quoted string at or near "'["`，六个集成分片全在 setup 阶段失败。
 
 改用 POSIX 字符类 `'[[:cntrl:]]'`（等价覆盖 0x00–0x1F 与 0x7F）。**单元测试发现不了这类问题**——正确性取决于"字符串里的字节是什么"，只有真实数据库解析才暴露。新增迁移一律在真实 PG 上跑一次 `alembic upgrade head` 再交。
+
+### 并行分支的 diff 里会"删除"别人刚合并的东西
+
+两个 agent 改同一片区域、先后合并时，晚提交的那个分支基线早于对方合并。rebase 到最新 `main` 后常常**没有文本冲突**，但 `git diff` 会把"我的分支里本来就没有那段新内容"呈现成**删除**。
+
+实例：分支 base 是 `057fbfd`，`main` 已到 `1bcbf12`（新增了 ASR 结果字段与它的测试）。直接合并该分支会删掉 `test_vllm_asr.py` −96 行、`test_file_asr_result.py` −164 行——两个文件的改动都不属于这个分支的工作范围。
+
+合并前必须做两件事：
+
+```bash
+git fetch origin main
+git rebase origin/main
+git diff --name-status origin/main HEAD | grep '^D'   # 每一行都要能解释
+```
+
+`^D` 里出现**本任务没打算删的文件**时，不要合，先问是谁的。rebase 成功后还要重跑受影响层的测试——冲突解决得干净不代表语义还在。
+
+判据：**"能快进/无冲突"不等于"没有删除"。** 只有逐条看过删除项，才知道别人的成果还在不在。

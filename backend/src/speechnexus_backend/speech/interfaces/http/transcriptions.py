@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -158,7 +158,7 @@ async def _receive(request: Request, max_bytes: int, receive_timeout: float) -> 
     return b"".join(chunks)
 
 
-async def _chunks(body: bytes) -> AsyncIterator[bytes]:
+async def _chunks(body: bytes) -> AsyncGenerator[bytes]:
     for offset in range(0, len(body), 65536):
         yield body[offset : offset + 65536]
 

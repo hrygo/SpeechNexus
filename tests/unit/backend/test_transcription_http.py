@@ -487,9 +487,10 @@ def test_request_ceilings_only_tighten_the_deployment_policy() -> None:
 
 async def test_body_ingress_is_bounded_before_multipart_parsing() -> None:
     from starlette.requests import Request
+    from starlette.types import Message
 
-    async def receive() -> dict[str, object] | None:
-        return None
+    async def receive() -> Message:
+        return {"type": "http.disconnect"}
 
     scope = {
         "type": "http",

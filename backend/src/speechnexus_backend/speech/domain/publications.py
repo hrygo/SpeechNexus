@@ -54,15 +54,18 @@ class Publication:
             raise ValueError("Invalid publication timestamp")
 
     @property
-    def reference(self) -> dict[str, object]:
-        return {"id": self.object_id, "revision": self.revision}
+    def reference(self) -> dict[str, str]:
+        """Contract resource reference; revisions are decimal text, not numbers."""
+        return {"id": self.object_id, "revision": str(self.revision)}
 
 
-def catalog_revision(publications: Iterable[Publication]) -> str:
-    """One stable revision over the whole published set, independent of order.
+def catalog_digest(publications: Iterable[Publication]) -> str:
+    """One stable digest over the whole published set, independent of order.
 
     Duplicate publications for the same triple collapse, so re-reading storage
-    whose rows arrive in a different order cannot change the public revision.
+    whose rows arrive in a different order cannot change the digest. The public
+    ``catalog_revision`` is a monotonic decimal counter supplied by the catalog
+    authority, so this digest identifies content and never replaces that counter.
     """
     ordered = sorted(
         {(item.kind, item.object_id, item.revision, item.revision_id) for item in publications}

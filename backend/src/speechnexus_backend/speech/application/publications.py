@@ -8,7 +8,7 @@ from typing import Protocol
 from speechnexus_backend.speech.domain.publications import (
     Publication,
     PublicationKind,
-    catalog_revision,
+    catalog_digest,
 )
 
 
@@ -31,7 +31,7 @@ class PublicationStore(Protocol):
 
 
 class Publications:
-    """Append-only publication commands plus the catalog revision they define."""
+    """Append-only publication commands plus the catalog digest they define."""
 
     def __init__(
         self,
@@ -71,7 +71,7 @@ class Publications:
             raise PublicationAbsentError("revision is not published")
         return publication
 
-    def current_catalog_revision(self) -> str:
-        return catalog_revision(
+    def current_catalog_digest(self) -> str:
+        return catalog_digest(
             item for kind in ("profile", "binding", "voice") for item in self._store.list_kind(kind)
         )

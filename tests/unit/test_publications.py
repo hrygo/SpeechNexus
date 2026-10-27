@@ -12,7 +12,7 @@ from speechnexus_backend.speech.application.publications import (
 from speechnexus_backend.speech.domain.publications import (
     Publication,
     PublicationKind,
-    catalog_revision,
+    catalog_digest,
 )
 
 
@@ -47,7 +47,7 @@ def test_publish_records_one_immutable_identity() -> None:
 
     assert created is True
     assert publication.published_at_us == store.clock
-    assert publication.reference == {"id": "binding-tts", "revision": 1}
+    assert publication.reference == {"id": "binding-tts", "revision": "1"}
     assert len(store.rows) == 1
 
 
@@ -75,19 +75,19 @@ def test_unpublished_revision_is_absent_not_empty() -> None:
         publications.require("binding", "binding-tts", 1)
 
 
-def test_catalog_revision_ignores_order_and_duplicates() -> None:
+def test_catalog_digest_ignores_order_and_duplicates() -> None:
     first = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
     second = Publication("profile", "profile-main", 3, "profile-rev-3", 2)
 
-    assert catalog_revision([first, second]) == catalog_revision([second, first])
-    assert catalog_revision([first, second]) == catalog_revision([first, second, first])
+    assert catalog_digest([first, second]) == catalog_digest([second, first])
+    assert catalog_digest([first, second]) == catalog_digest([first, second, first])
 
 
-def test_catalog_revision_changes_when_a_revision_is_published() -> None:
+def test_catalog_digest_changes_when_a_revision_is_published() -> None:
     publications, _ = build()
-    before = publications.current_catalog_revision()
+    before = publications.current_catalog_digest()
     publications.publish("binding", "binding-tts", 1, "binding-rev-1")
-    after = publications.current_catalog_revision()
+    after = publications.current_catalog_digest()
 
     assert before != after
     assert after.startswith("sha256:")

@@ -32,6 +32,7 @@ from tests.integration.test_production_jobs import (
     JobDatabase,
     database,  # noqa: F401 -- shared real PG migration/role fixture
 )
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.assets import AssetService, TextAssetInspector
 from speechnexus_backend.speech.domain.assets import (
@@ -461,7 +462,7 @@ def test_asset_upgrade_is_atomic_and_preserves_existing_coordination_history(
     sandbox.admin.execute("DROP TABLE speech_content_deletions")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1

@@ -31,6 +31,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_defaults_database import MySQLBindingDefaults
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.domain.binding_drafts import (
@@ -56,7 +57,6 @@ from speechnexus_backend.speech.interfaces.binding_default_drafts import (
 )
 
 pytestmark = pytest.mark.integration
-HEAD = "0014_pronunciation_drafts"
 
 
 def downgrade_defaults(

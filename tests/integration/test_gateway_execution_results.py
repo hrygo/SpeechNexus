@@ -35,6 +35,7 @@ from tests.integration.test_gateway_stop_evidence import stop_ledger as stop_led
 from tests.integration.test_production_jobs import ROOT, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
+from tests.support.migrations import HEAD
 from tests.unit.gateway.test_file_asr import Recognizer
 
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
@@ -364,7 +365,7 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
     sandbox.upgrade()
     sandbox.upgrade()
     after = sandbox.admin.execute("SELECT * FROM submit_intents").fetchall()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert after[0].pop("staging_result_document") is None
     assert after == before
     # An unreadable old receipt is still history: migration must not discard it.
@@ -374,7 +375,7 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
         sandbox.config.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match=r"history.*preservation"):
             migration.downgrade(sandbox.config, "0011_binding_parameter_defaults")
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT * FROM submit_intents").fetchall() == preserved
 
 

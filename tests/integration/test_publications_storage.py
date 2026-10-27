@@ -172,7 +172,7 @@ def create_binding(
     )
 
 
-DEFINITION = {
+DEFINITION: dict[str, object] = {
     "binding_id": "tts-quality",
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file", "tts_realtime"],

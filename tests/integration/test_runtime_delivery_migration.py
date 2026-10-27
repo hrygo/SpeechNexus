@@ -8,6 +8,7 @@ from tests.integration.test_coordination_foundation import DIGEST, UpgradeSandbo
 from tests.integration.test_coordination_foundation import upgrade_sandbox as upgrade_sandbox
 from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.migrations import HEAD
 
 pytestmark = [
     pytest.mark.integration,
@@ -86,7 +87,7 @@ def test_upgrade_failure_is_atomic_then_legacy_runtime_adoption_is_conservative(
         assert adopted["claim_holder_id"] is None and adopted["claim_expires_at_us"] == 0
         assert adopted["created_at_us"] == adopted["updated_at_us"] > 0
         sandbox.upgrade()
-        assert sandbox.version() == "0014_pronunciation_drafts"
+        assert sandbox.version() == HEAD
         assert sandbox.admin.execute("SELECT * FROM runtime_intent_deliveries").fetchall() == rows
         assert {
             name: sandbox.admin.execute("SELECT * FROM " + name + " ORDER BY 1").fetchall()

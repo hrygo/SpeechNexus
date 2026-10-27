@@ -28,6 +28,7 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.infrastructure.admission_command_schema import (
     ADMISSION_COMMAND_DDL,
@@ -486,7 +487,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -553,7 +554,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0014_pronunciation_drafts"
+        assert sandbox.version() == HEAD
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

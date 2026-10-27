@@ -201,6 +201,8 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",
+        "/v1/models",
+        "/v1/models/{model}",
     }
     _assert_contract_matches(_load_contract(), document, require_exact_paths=False)
 

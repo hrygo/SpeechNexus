@@ -25,6 +25,7 @@ from tests.unit.backend.test_health import _settings
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
+from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
@@ -113,6 +114,7 @@ def jobs_db() -> Iterator[JobSandbox]:
     try:
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
         for grant in (
+            *job_runtime_grants(schema, role),
             *public_job_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
@@ -186,6 +188,19 @@ async def test_submit_read_replay_and_conflict_against_real_pg(jobs_db: JobSandb
         assert jobs_db.count("speech_jobs") == 1
         assert jobs_db.count("speech_job_events") == 1
         assert jobs_db.count("speech_job_submissions") == 1
+        assert jobs_db.count("admission_operations") == 1
+        assert jobs_db.count("coordination_jobs") == 1
+        assert jobs_db.count("coordination_outbox") == 1
+        ledger = jobs_db.query("SELECT request_document, request_digest FROM admission_operations")[
+            0
+        ]
+        assert (
+            jobs_db.query(
+                "SELECT request_digest FROM speech_jobs WHERE job_id = %s", (first["id"],)
+            )[0]["request_digest"]
+            == ledger["request_digest"]
+        )
+        assert "synthetic public job" in ledger["request_document"]
 
         read = await client.get(PREFIX + "/" + first["id"])
         assert read.status_code == 200, read.text
@@ -197,6 +212,9 @@ async def test_submit_read_replay_and_conflict_against_real_pg(jobs_db: JobSandb
         assert jobs_db.count("speech_jobs") == 1
         assert jobs_db.count("speech_job_events") == 1
         assert jobs_db.count("speech_job_submissions") == 1
+        assert jobs_db.count("admission_operations") == 1
+        assert jobs_db.count("coordination_jobs") == 1
+        assert jobs_db.count("coordination_outbox") == 1
 
         conflict = await client.post(
             PREFIX, json=_body(client_reference="other-intent"), headers=headers

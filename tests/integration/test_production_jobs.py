@@ -30,7 +30,11 @@ from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
-from speechnexus_backend.speech.infrastructure.job_schema import JOB_DDL, job_runtime_grants
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    JOB_DDL,
+    job_dispatch_grants,
+    job_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.jobs_postgres import (
     JobPool,
     PostgresJobTransactions,
@@ -127,7 +131,9 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         admin: Any = psycopg.connect(url, row_factory=dict_row, autocommit=True)
         admin.execute(f'SET search_path TO "{schema}", pg_catalog')
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_job_test'")
-        for grant in job_runtime_grants(schema, role):
+        # Base grants come from 0001; the dispatcher set only applies once the
+        # admission command tables exist, so it is applied after a full upgrade.
+        for grant in job_runtime_grants(schema, role) + job_dispatch_grants(schema, role):
             admin.execute(grant)
         pool = job_pool(make_conninfo(url, user=role, password="synthetic_job_test"), schema=schema)
         pool.open()

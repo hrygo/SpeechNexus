@@ -9,6 +9,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import rfc8785
+
 from speechnexus_backend.speech.application.effective_configuration import (
     effective_configuration,
 )
@@ -217,12 +219,23 @@ class PublicJobs:
             progress_total=_text_length(payload),
             submitted_at_us=self._now_us(),
         )
+        intent = _canonical_intent(payload, typed_kind)
+        request_digest = canonical_digest(intent)
+        job_id = "job-" + uuid.uuid4().hex
         request = NewPublicJob(
-            job_id="job-" + uuid.uuid4().hex,
+            job_id=job_id,
             workspace_id=workspace_id,
             kind=typed_kind,
             model_id=model_id,
-            request_digest=canonical_digest(_canonical_intent(payload, typed_kind)),
+            request_digest=request_digest,
+            request_document=rfc8785.dumps(intent).decode("utf-8"),
+            initial_event_digest=canonical_digest(
+                {
+                    "job_id": job_id,
+                    "state": "pending",
+                    "request_digest": request_digest,
+                }
+            ),
             idempotency_key_digest=(
                 None if idempotency_key is None else idempotency_digest(idempotency_key)
             ),

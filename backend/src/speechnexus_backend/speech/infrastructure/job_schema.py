@@ -50,3 +50,20 @@ def job_runtime_grants(schema: str, role: str) -> tuple[str, ...]:
         "GRANT INSERT (event_id, job_id, event_digest) "
         f'ON "{schema}".coordination_outbox TO "{role}"',
     )
+
+
+def job_dispatch_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Privileges the dispatcher adds on top of the base Job writer.
+
+    Kept separate because ``admission_operations`` only exists from migration
+    ``0007_admission_commands`` onwards, while ``job_runtime_grants`` is also
+    applied to historical revisions (the upgrade sandbox starts at
+    ``0001_jobs``). Provisioning applies this set after a full upgrade.
+    """
+
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        "GRANT INSERT (operation_id, workspace_id, request_digest, request_document, "
+        f"initial_attempt_id, current_attempt_id, recorded_at_us) "
+        f'ON "{schema}".admission_operations TO "{role}"',
+    )

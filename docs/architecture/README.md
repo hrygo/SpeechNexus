@@ -16,6 +16,7 @@
 - [应用事务方案与契约](coordination-transactions.md)：程序职责、锁序、预算、恢复身份、旧规则映射和后续编码交接。
 - [受限节点控制器](node-controller.md)：批准模板的 prepare / stop 规则、generation / fencing 与停止证据，以及当前实现与待交付边界。
 - [执行网关提交事务](execution-gateway.md)：`create_submit` 的持久意图、锁序、完整请求摘要、版本守卫、错误分类与当前未交付的停止/计量端口；
+- [执行网关客户端](gateway-execution-client.md)：已准入执行事实的 HTTP 传输、五类错误分类、显式超时/重试与固定版本结果读取；不是准入层。
 - [CPU VAD](cpu-vad.md)：有界切段、会话推理状态、无语音门禁、固定模型与原生消费接口；公开实时链路仍待集成。
 - [文件 ASR 有界媒体输入](file-asr-audio.md)：受控二进制流、五种格式、源时钟/尾部、文件 VAD 组合及尚未接入的外发/发布。
 - [文件 ASR 原生识别接口](file-asr-recognition.md)：固定内网 vLLM、请求/终态/token 校验、无语音零外发和源/模型样本关联。

@@ -14,6 +14,9 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     catalog_digest,
 )
+from speechnexus_backend.speech.infrastructure.publication_schema import (
+    model_catalog_reader_grants,
+)
 
 
 class Store:
@@ -42,6 +45,22 @@ def build() -> tuple[Publications, Store]:
     return Publications(store, now_us=lambda: store.clock), store
 
 
+class RacingStore(Store):
+    def __init__(self, concurrent: Publication) -> None:
+        super().__init__()
+        self.concurrent = concurrent
+        self.reads = 0
+
+    def get(self, kind: PublicationKind, object_id: str, revision: int) -> Publication | None:
+        self.reads += 1
+        if self.reads == 1:
+            return None
+        return self.concurrent
+
+    def append(self, publication: Publication) -> bool:
+        return False
+
+
 def test_publish_records_one_immutable_identity() -> None:
     publications, store = build()
     publication, created = publications.publish("binding", "binding-tts", 1, "binding-rev-1")
@@ -66,6 +85,24 @@ def test_identical_republication_reports_the_original() -> None:
 def test_revision_number_cannot_be_rewritten_to_another_document() -> None:
     publications, _ = build()
     publications.publish("binding", "binding-tts", 1, "binding-rev-1")
+    with pytest.raises(PublicationConflictError):
+        publications.publish("binding", "binding-tts", 1, "binding-rev-2")
+
+
+def test_concurrent_append_reads_back_and_accepts_only_the_same_document() -> None:
+    concurrent = Publication("binding", "binding-tts", 1, "binding-rev-1", 7)
+    publications = Publications(RacingStore(concurrent), now_us=lambda: 8)
+
+    publication, created = publications.publish("binding", "binding-tts", 1, "binding-rev-1")
+
+    assert created is False
+    assert publication == concurrent
+
+
+def test_concurrent_append_cannot_be_rewritten_by_a_later_document() -> None:
+    concurrent = Publication("binding", "binding-tts", 1, "binding-rev-1", 7)
+    publications = Publications(RacingStore(concurrent), now_us=lambda: 8)
+
     with pytest.raises(PublicationConflictError):
         publications.publish("binding", "binding-tts", 1, "binding-rev-2")
 
@@ -101,3 +138,14 @@ def test_invalid_publication_identity_is_rejected() -> None:
         Publication("binding", "binding-tts", 0, "binding-rev-1", 1)
     with pytest.raises(ValueError):
         Publication("binding", "binding-tts", 1, "binding-rev-1", -1)
+
+
+def test_model_catalog_reader_grants_are_select_only() -> None:
+    grants = model_catalog_reader_grants("speechnexus_test", "catalogue_reader")
+
+    assert grants == (
+        'GRANT USAGE ON SCHEMA "speechnexus_test" TO "catalogue_reader"',
+        'GRANT SELECT ON "speechnexus_test".speech_publications, '
+        '"speechnexus_test".speech_binding_revisions TO "catalogue_reader"',
+    )
+    assert not any(word in " ".join(grants) for word in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"))

@@ -49,6 +49,8 @@ def effective_configuration(
         raise ValueError("Voice reference must be a publication of a voice")
     if profile is not None and profile.kind != "profile":
         raise ValueError("Profile reference must be a publication of a profile")
+    if pronunciation is not None and pronunciation.kind != "pronunciation":
+        raise ValueError("Pronunciation reference must be a publication of a pronunciation set")
     if degradation not in _DEGRADATIONS:
         raise ValueError("Unknown degradation state")
 

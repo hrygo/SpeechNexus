@@ -29,6 +29,7 @@ def _component(name: str) -> Draft202012Validator:
 TTS_BINDING = Publication("binding", "binding-tts", 2, "binding-rev-2", 1_000)
 MAIN_PROFILE = Publication("profile", "profile-main", 1, "profile-rev-1", 1_000)
 VIVIAN = Publication("voice", "voice-vivian", 4, "voice-rev-4", 1_000)
+PRONUNCIATION = Publication("pronunciation", "pron-main", 2, "pron-rev-2", 1_000)
 
 
 def test_projection_satisfies_the_frozen_contract() -> None:
@@ -38,6 +39,7 @@ def test_projection_satisfies_the_frozen_contract() -> None:
         catalog_revision=31,
         profile=MAIN_PROFILE,
         voice=VIVIAN,
+        pronunciation=PRONUNCIATION,
     )
     _component("EffectiveConfiguration").validate(document_value)
 
@@ -87,6 +89,16 @@ def test_voice_and_profile_slots_keep_their_publication_kind() -> None:
             policy_revision=1,
             catalog_revision=1,
             profile=VIVIAN,
+        )
+
+
+def test_pronunciation_slot_must_reference_a_pronunciation_publication() -> None:
+    with pytest.raises(ValueError):
+        effective_configuration(
+            models={"tts": TTS_BINDING},
+            policy_revision=1,
+            catalog_revision=1,
+            pronunciation=MAIN_PROFILE,
         )
 
 

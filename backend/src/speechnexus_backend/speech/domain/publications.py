@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 import rfc8785
 
-PublicationKind = Literal["profile", "binding", "voice"]
+PublicationKind = Literal["profile", "binding", "voice", "pronunciation"]
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 _MAX_TIMESTAMP_US = 253_402_300_799_999_999
@@ -44,7 +44,7 @@ class Publication:
     published_at_us: int
 
     def __post_init__(self) -> None:
-        if self.kind not in ("profile", "binding", "voice"):
+        if self.kind not in ("profile", "binding", "voice", "pronunciation"):
             raise ValueError("Unknown publication kind")
         for value in (self.object_id, self.revision_id):
             if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):

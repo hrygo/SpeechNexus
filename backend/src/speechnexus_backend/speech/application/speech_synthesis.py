@@ -266,6 +266,15 @@ class SpeechSynthesis:
                     "The request audio ceiling is below one frame.", param="max_output_audio_ms"
                 )
             ceiling = min(ceiling, max_output_audio_ms)
+        instruction_ceiling = min(
+            MAX_SPEECH_INSTRUCTIONS_CHARS, self._limits.max_instructions_chars
+        )
+        if len(command.instructions) > instruction_ceiling:
+            # Tightening the deployment limit narrows what this chain accepts; it
+            # never truncates the caller's instructions into different semantics.
+            raise SpeechUnsupportedError(
+                "The instructions exceed the deployment limit.", param="instructions"
+            )
         source_pcm = pcm16_mono_bytes(ceiling, REST_SAMPLE_RATE_HZ)
         payload = min(
             self._limits.max_payload_bytes,

@@ -235,6 +235,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/SpeechMethodNotAllowed"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -1856,6 +1860,18 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     Forbidden:
       description: Origin/Host policy rejected the request or the feature is disabled.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    SpeechMethodNotAllowed:
+      description: The speech path accepts POST only.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: POST
       content:
         application/json:
           schema:

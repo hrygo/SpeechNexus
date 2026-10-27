@@ -373,7 +373,9 @@ async def test_request_ceiling_at_binding_keeps_the_binding_pcm_ceiling() -> Non
 class LongSynthesizer(Synthesizer):
     """Returns 120 ms of PCM no matter what the request ceiling allowed."""
 
-    async def synthesize(self, request, policy, *, cancelled):  # type: ignore[override]
+    async def synthesize(
+        self, request: TtsRequest, policy: TtsPolicy, *, cancelled: Callable[[], bool]
+    ) -> TtsAudio:
         assert not cancelled()
         self.calls.append((request, policy))
         return TtsAudio(

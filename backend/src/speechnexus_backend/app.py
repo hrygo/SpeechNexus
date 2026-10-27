@@ -260,6 +260,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
+            if transcriptions is not None:
+                resources.push_async_callback(run_in_threadpool, transcriptions.close)
             if catalogue_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, catalogue_runtime.close)
                 await run_in_threadpool(catalogue_runtime.open)

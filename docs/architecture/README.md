@@ -21,6 +21,7 @@
 - [文件 ASR 有界媒体输入](file-asr-audio.md)：受控二进制流、五种格式、源时钟/尾部、文件 VAD 组合及尚未接入的外发/发布。
 - [文件 ASR 原生识别接口](file-asr-recognition.md)：固定内网 vLLM、请求/终态/token 校验、无语音零外发和源/模型样本关联。
 - [文件 ASR 默认执行装配](file-asr-runtime.md)：私有配置、默认工厂、原 worker 与结果回执；真实模型、可信停止和公开链资格分别待验。
+- [同步文件转写的生产装配](synchronous-transcription.md)：A 侧组合根、私有准入配方、输入 staging 与网关轮询取回；真实 DB/MinIO/引擎联验仍待。
 - [文件 TTS 原生合成接口](file-tts.md)：固定内网 `/v1/audio/speech`、响应头/RIFF 结构校验、单次外发与有界 PCM/WAV/MP3 交付编码。
 - [文件 TTS 默认执行装配](file-tts-runtime.md)：私有配置、受控 generation、原命令 worker、生成区间与音频回执；真实私有执行和整代停止已有隔离证据，公开链与生产资格仍待。
 - [CustomVoice 制品与参数交接](file-tts-binding-handoff.md)：固定制品、镜像/源码、完整注册输入与显式默认，区分参数声明、发布与运行资格。

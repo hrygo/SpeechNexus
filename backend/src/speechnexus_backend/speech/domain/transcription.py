@@ -175,8 +175,13 @@ class TranscriptionPlan:
     """Everything one bounded transcription may use; the ceilings are applied."""
 
     request_id: str
+    workspace_id: str
+    model: str
+    binding_publication_id: str
     audio: bytes = field(repr=False)
     audio_media_type: str
+    audio_sample_rate_hz: int
+    audio_channels: int
     response_format: TranscriptFormat
     language: str
     prompt: str = field(default="", repr=False)
@@ -191,6 +196,10 @@ class TranscriptionPlan:
     def __post_init__(self) -> None:
         if type(self.request_id) is not str or _IDENTIFIER.fullmatch(self.request_id) is None:
             raise ValueError("Invalid transcription request identity")
+        identifier(self.workspace_id)
+        if type(self.model) is not str or not 1 <= len(self.model) <= 128:
+            raise ValueError("Invalid transcription model")
+        identifier(self.binding_publication_id)
         if (
             type(self.audio) is not bytes
             or not MIN_TRANSCRIPTION_UPLOAD_BYTES
@@ -202,6 +211,13 @@ class TranscriptionPlan:
             raise ValueError("Transcription audio exceeds its upload ceiling")
         if type(self.audio_media_type) is not str or not 1 <= len(self.audio_media_type) <= 64:
             raise ValueError("Invalid audio media type")
+        if (
+            type(self.audio_sample_rate_hz) is not int
+            or not 8000 <= self.audio_sample_rate_hz <= 192000
+        ):
+            raise ValueError("Invalid audio sample rate")
+        if type(self.audio_channels) is not int or not 1 <= self.audio_channels <= 8:
+            raise ValueError("Invalid audio channel count")
         if not isinstance(self.response_format, TranscriptFormat):
             raise ValueError("Invalid transcript format")
         if (
@@ -311,24 +327,30 @@ class TranscriptWord:
 
 @dataclass(frozen=True, slots=True)
 class TranscriptionResult:
-    """One complete transcript; nothing here may be estimated or truncated."""
+    """One complete transcript; nothing here may be estimated or truncated.
+
+    The gateway derives ``duration_ms`` from decoded source samples and only
+    emits ``language`` when every voiced engine call agreed. A receipt that does
+    not contain either field stays absent here; rendering a contract shape that
+    requires it fails instead of inventing a value.
+    """
 
     text: str
-    language: str
-    duration_ms: int
+    language: str | None
+    duration_ms: int | None
     segments: tuple[TranscriptSegment, ...] = ()
     words: tuple[TranscriptWord, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.text) is not str or "\x00" in self.text:
             raise ValueError("Invalid transcript text")
-        if (
+        if self.language is not None and (
             type(self.language) is not str
             or not 1 <= len(self.language) <= MAX_TRANSCRIPTION_LANGUAGE_CHARS
             or _LANGUAGE.fullmatch(self.language) is None
         ):
             raise ValueError("Invalid transcript language")
-        if (
+        if self.duration_ms is not None and (
             type(self.duration_ms) is not int
             or not 0 < self.duration_ms <= MAX_TRANSCRIPTION_AUDIO_MS
         ):

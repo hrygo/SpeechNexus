@@ -10,7 +10,7 @@ from speechnexus_backend.settings import Settings
 def main() -> None:
     settings = Settings()
     uvicorn.run(
-        "speechnexus_backend.app:create_app",
+        "speechnexus_backend.transcription_runtime:create_app_from_env",
         factory=True,
         host=settings.host,
         port=settings.port,

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from speechnexus_backend.speech.application.public_jobs import BindingFact, WorkspaceFact
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 from speechnexus_backend.speech.domain.transcription import (
     MAX_TRANSCRIPTION_AUDIO_MS,
@@ -35,6 +36,10 @@ DEFAULT_MAX_SEGMENT_MS = 30_000
 
 class TranscriptionUnavailableError(RuntimeError):
     """The deployment cannot execute a transcription at all."""
+
+
+class TranscriptionOutcomeUnknownError(TranscriptionUnavailableError):
+    """Transport ambiguity after submission; the original identity must be queried."""
 
 
 class TranscriptionModelNotFoundError(LookupError):
@@ -124,22 +129,6 @@ class TranscriptionLimits:
             raise ValueError("Transcription timeout must be bounded")
 
 
-@dataclass(frozen=True, slots=True)
-class WorkspaceFact:
-    """The published workspace policy revision a request executes under."""
-
-    policy_revision: int
-    active: bool
-
-
-@dataclass(frozen=True, slots=True)
-class BindingFact:
-    """One published binding revision plus its immutable definition document."""
-
-    publication: Publication
-    definition: Mapping[str, Any]
-
-
 class TranscriptionFacts(Protocol):
     """Published-only inputs; every absence is explicit and never a default."""
 
@@ -164,6 +153,91 @@ class Transcriber(Protocol):
     def transcribe(self, plan: TranscriptionPlan) -> TranscriptionResult: ...
 
 
+@dataclass(frozen=True, slots=True)
+class StagedAudio:
+    """One immutable private audio object the gateway may read."""
+
+    asset_id: str
+    workspace_id: str
+    bucket: str
+    object_key: str
+    content_sha256: str
+    byte_length: int
+
+    def __post_init__(self) -> None:
+        for value in (self.asset_id, self.workspace_id):
+            identifier(value)
+        if type(self.bucket) is not str or not self.bucket:
+            raise ValueError("Invalid staged audio bucket")
+        if type(self.object_key) is not str or not self.object_key or "\x00" in self.object_key:
+            raise ValueError("Invalid staged audio object key")
+        if (
+            type(self.content_sha256) is not str
+            or len(self.content_sha256) != 71
+            or not self.content_sha256.startswith("sha256:")
+        ):
+            raise ValueError("Invalid staged audio digest")
+        if type(self.byte_length) is not int or self.byte_length < 1:
+            raise ValueError("Invalid staged audio length")
+
+
+@dataclass(frozen=True, slots=True)
+class AdmittedExecution:
+    """The complete coordination identity a gateway submit must carry."""
+
+    submit_intent_id: str
+    lease_id: str
+    operation_id: str
+    attempt_id: str
+    stage_id: str
+    workspace_id: str
+    pool_id: str
+    host_node_id: str
+    gateway_id: str
+    instance_id: str
+    instance_generation: int
+    binding_revision_id: str
+    policy_revision_id: str
+    fencing_token: int
+    deadline_at_us: int
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.submit_intent_id,
+            self.lease_id,
+            self.operation_id,
+            self.attempt_id,
+            self.stage_id,
+            self.workspace_id,
+            self.pool_id,
+            self.host_node_id,
+            self.gateway_id,
+            self.instance_id,
+            self.binding_revision_id,
+            self.policy_revision_id,
+        ):
+            identifier(value)
+        for counter in (self.instance_generation, self.fencing_token):
+            if type(counter) is not int or counter < 1:
+                raise ValueError("Invalid admitted execution counter")
+        if type(self.deadline_at_us) is not int or self.deadline_at_us < 1:
+            raise ValueError("Invalid admitted execution deadline")
+
+
+class TranscriptionInputObjects(Protocol):
+    """Upload one immutable, versioned private input for the gateway."""
+
+    def put(self, plan: TranscriptionPlan) -> StagedAudio: ...
+
+
+class TranscriptionAdmission(Protocol):
+    """Reserve the complete execution identity before any submit is sent."""
+
+    def admit(
+        self, plan: TranscriptionPlan, *, submit_intent_id: str, audio: StagedAudio
+    ) -> AdmittedExecution: ...
+
+
 class Transcription:
     """One explicit resolution, one transcription, one complete or failed result."""
 
@@ -182,6 +256,12 @@ class Transcription:
     @property
     def limits(self) -> TranscriptionLimits:
         return self._limits
+
+    def close(self) -> None:
+        """Release an injected long-lived transcriber, if it owns resources."""
+        closer = getattr(self._transcriber, "close", None)
+        if callable(closer):
+            closer()
 
     def transcribe(
         self,
@@ -227,8 +307,13 @@ class Transcription:
 
         plan = TranscriptionPlan(
             request_id=identifier(request_id),
+            workspace_id=identifier(command.workspace_id),
+            model=command.model,
+            binding_publication_id=binding.publication.revision_id,
             audio=command.audio,
             audio_media_type=facts.media_type,
+            audio_sample_rate_hz=facts.sample_rate_hz,
+            audio_channels=facts.channels,
             response_format=command.response_format,
             language=command.language or "auto",
             prompt=command.prompt,
@@ -262,7 +347,7 @@ class Transcription:
 
 
 def _conform(plan: TranscriptionPlan, result: TranscriptionResult) -> None:
-    if result.duration_ms > plan.max_audio_ms:
+    if result.duration_ms is not None and result.duration_ms > plan.max_audio_ms:
         raise TranscriptionOutputLimitExceededError
     if plan.require_segments and not result.segments:
         raise TranscriptionUnsupportedError(
@@ -342,18 +427,23 @@ def _segment_ceiling(domain: Mapping[str, Any]) -> int:
 
 __all__ = [
     "DEFAULT_WORKSPACE",
+    "AdmittedExecution",
     "AudioProbe",
     "BindingFact",
+    "StagedAudio",
     "Transcriber",
     "Transcription",
+    "TranscriptionAdmission",
     "TranscriptionAudioTooLongError",
     "TranscriptionAudioUnsupportedError",
     "TranscriptionDeadlineExceededError",
     "TranscriptionEngineError",
     "TranscriptionFacts",
+    "TranscriptionInputObjects",
     "TranscriptionLimits",
     "TranscriptionMediaTooLargeError",
     "TranscriptionModelNotFoundError",
+    "TranscriptionOutcomeUnknownError",
     "TranscriptionOutputInvalidError",
     "TranscriptionOutputLimitExceededError",
     "TranscriptionProfileNotFoundError",

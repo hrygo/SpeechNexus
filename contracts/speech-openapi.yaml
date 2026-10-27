@@ -46,16 +46,28 @@ paths:
         admission facts. This endpoint never exposes model paths or endpoints.
       parameters:
         - $ref: "#/components/parameters/XRequestId"
+        - name: If-None-Match
+          in: header
+          required: false
+          description: |
+            Return `304` without a body when the supplied validator still
+            matches the current catalogue.
+          schema:
+            type: string
       responses:
         "200":
           description: Published logical models.
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelList"
+        "304":
+          description: The supplied ETag still matches the current catalogue.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "503":
@@ -74,16 +86,28 @@ paths:
             minLength: 1
             maxLength: 128
         - $ref: "#/components/parameters/XRequestId"
+        - name: If-None-Match
+          in: header
+          required: false
+          description: |
+            Return `304` without a body when the supplied validator still
+            matches the current revision of this model entry.
+          schema:
+            type: string
       responses:
         "200":
           description: Published logical model.
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Model"
+        "304":
+          description: The supplied ETag still matches this model entry.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

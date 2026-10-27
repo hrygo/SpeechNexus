@@ -240,17 +240,23 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    publication_tables = (
+        {"speech_publications", "speech_jobs", "speech_job_events"}
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
+    assert publication_tables <= {row["name"] for row in rows}
     assert {row["name"] for row in rows} - {
         "alembic_version"
-    } - asset_tables - profile_tables - binding_tables == (
+    } - asset_tables - profile_tables - binding_tables - publication_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
     if db.dialect == "postgresql":
-        # New configuration tables are outside shared coordination grants.
+        # New configuration and publication tables are outside shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables | binding_tables:
+            for table in profile_tables | binding_tables | publication_tables:
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,

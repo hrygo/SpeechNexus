@@ -27,6 +27,10 @@ from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    job_dispatch_grants,
+    job_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
     public_job_submission_grants,
@@ -116,6 +120,11 @@ def jobs_db() -> Iterator[JobSandbox]:
         for grant in (
             *job_runtime_grants(schema, role),
             *public_job_grants(schema, role),
+            # Creating a public Job now also commits the coordination claim and the
+            # private original command in the same transaction, so the writer role
+            # needs the production Job-writer privileges as well.
+            *job_runtime_grants(schema, role),
+            *job_dispatch_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "

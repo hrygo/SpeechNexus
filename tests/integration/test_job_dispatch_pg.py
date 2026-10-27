@@ -38,7 +38,10 @@ from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
     PostgresDispatchStateStore,
 )
-from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
+from speechnexus_backend.speech.infrastructure.job_schema import (
+    job_dispatch_grants,
+    job_runtime_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
@@ -121,6 +124,7 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
         for grant in (
             *job_runtime_grants(schema, role),
+            *job_dispatch_grants(schema, role),
             *public_job_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f'GRANT SELECT ON "{schema}".admission_operations TO "{role}"',

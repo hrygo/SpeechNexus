@@ -17,6 +17,7 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchJob,
     DispatchLimits,
     DispatchProtocolError,
+    DispatchRejectedError,
     DispatchRequestUnavailableError,
     DispatchResult,
     DispatchUnavailableError,
@@ -165,6 +166,8 @@ class JobDispatcher:
             return await self._follow(claim, job, submission, reply, should_stop)
         except DispatchRequestUnavailableError:
             return await self._fail(claim, job, "job_request_unavailable")
+        except DispatchRejectedError as error:
+            return await self._fail(claim, job, error.error_code)
         except DispatchConflictError:
             return DispatchResult(job.job_id, "claim_lost", "claim_lost")
         except DispatchProtocolError:

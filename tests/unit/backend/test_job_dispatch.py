@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.domain.job_dispatch import (
@@ -19,17 +20,26 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     DispatchConflictError,
     DispatchJob,
     DispatchLimits,
+    DispatchProtocolError,
+    DispatchRejectedError,
+    DispatchUnavailableError,
     ExecutionSubmission,
     PublishedResult,
     submit_intent_identity,
 )
-from speechnexus_backend.speech.infrastructure.execution_gateway_http import (
-    ExecutionGatewayEndpoint,
-    HttpExecutionGateway,
+from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
+    ExecutionGatewayAdapter,
+)
+from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+    GatewayExecutionClient,
 )
 
 NOW = 1_700_000_000_000_000
 DIGEST = "sha256:" + "a" * 64
+
+
+class _GatewayHandlerSource(Protocol):
+    def handler(self, request: httpx.Request) -> httpx.Response: ...
 
 
 def _job(*, state: str = "pending", version: int = 1) -> DispatchJob:
@@ -198,7 +208,13 @@ class GatewayState:
             if self.submit_status != 200:
                 return httpx.Response(
                     self.submit_status,
-                    json={"error": {"code": "component_credential_invalid", "message": "no"}},
+                    json={
+                        "error": {
+                            "code": "component_credential_invalid",
+                            "message": "no",
+                            "retryable": False,
+                        }
+                    },
                 )
             return httpx.Response(200, json=self.status("executing"))
         if request.method == "GET" and path.startswith("/internal/v1/executions/"):
@@ -243,22 +259,25 @@ class GatewayState:
         raise AssertionError("unexpected gateway path: " + request.method + " " + path)
 
 
+class _FixedGateway:
+    def __init__(self, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        self._handler = handler
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        return self._handler(request)
+
+
 def _dispatcher(
     queue: Queue,
     states: States,
-    gateway_state: GatewayState,
+    gateway_state: _GatewayHandlerSource,
     publisher: Publisher,
     *,
     now: list[int] | None = None,
     sleep: Any = None,
     limits: DispatchLimits | None = None,
 ) -> JobDispatcher:
-    transport = httpx.MockTransport(gateway_state.handler)
-    gateway = HttpExecutionGateway(
-        ExecutionGatewayEndpoint("http://127.0.0.1:9999", "synthetic-token-0001"),
-        timeout_seconds=1,
-        _transport=transport,
-    )
+    gateway = _gateway(gateway_state.handler)
     return JobDispatcher(
         queue,
         states,
@@ -268,6 +287,24 @@ def _dispatcher(
         limits=limits or DispatchLimits(poll_seconds=0.01, job_timeout_seconds=10),
         now_us=(lambda: (now or [NOW])[0]),
         sleep=sleep or (lambda _: asyncio.sleep(0)),
+    )
+
+
+def _gateway(
+    handler: Any,
+    *,
+    timeout_seconds: float = 1,
+    max_retries: int = 0,
+) -> ExecutionGatewayAdapter:
+    return ExecutionGatewayAdapter(
+        GatewayExecutionClient(
+            base_url="http://127.0.0.1:9999",
+            credential=SecretStr("synthetic-token-0001"),
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            backoff_seconds=0,
+            _transport=httpx.MockTransport(handler),
+        )
     )
 
 
@@ -486,4 +523,126 @@ async def test_attempt_limit_fails_without_calling_the_gateway() -> None:
     batch = await dispatcher.run_once("worker-synthetic")
 
     assert batch.failed == 1 and gateway.submit_calls == 0
+    assert states.jobs[job.job_id].state == "failed"
+
+
+def _connect_failure(_: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("synthetic connection failure")
+
+
+def _read_timeout(_: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout("synthetic read timeout")
+
+
+def _server_failure(_: httpx.Request) -> httpx.Response:
+    return httpx.Response(503, json={"error": {"code": "control_store_unavailable"}})
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [_connect_failure, _read_timeout, _server_failure],
+    ids=["connection", "timeout", "server"],
+)
+async def test_transport_server_and_timeout_failures_stay_unknown(handler: Any) -> None:
+    gateway = _gateway(handler)
+
+    with pytest.raises(DispatchUnavailableError):
+        await gateway.query("submit-" + "b" * 32)
+
+
+async def test_a_4xx_semantic_rejection_is_a_protocol_error_not_unknown() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={
+                "error": {
+                    "code": "submit_intent_conflict",
+                    "message": "synthetic conflict",
+                    "retryable": False,
+                    "recovery": "query_current_authority",
+                }
+            },
+        )
+
+    gateway = _gateway(handler)
+    submit_id = "submit-" + "b" * 32
+    submission = ExecutionSubmission(submit_id, {"submit_intent_id": submit_id})
+
+    with pytest.raises(DispatchProtocolError) as caught:
+        await gateway.submit(submission)
+
+    assert isinstance(caught.value, DispatchRejectedError)
+    assert caught.value.error_code == "submit_intent_conflict"
+
+
+async def test_a_4xx_without_a_contract_error_is_a_plain_protocol_error() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, text="not the frozen error document")
+
+    gateway = _gateway(handler)
+    submit_id = "submit-" + "b" * 32
+    submission = ExecutionSubmission(submit_id, {"submit_intent_id": submit_id})
+
+    with pytest.raises(DispatchProtocolError) as caught:
+        await gateway.submit(submission)
+
+    assert not isinstance(caught.value, DispatchRejectedError)
+
+
+async def test_an_unreadable_success_body_is_a_plain_protocol_error() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"submit_intent_id": "submit-" + "b" * 32})
+
+    gateway = _gateway(handler)
+
+    with pytest.raises(DispatchProtocolError) as caught:
+        await gateway.query("submit-" + "b" * 32)
+
+    assert not isinstance(caught.value, DispatchRejectedError)
+
+
+async def test_adapter_transport_failure_leaves_the_job_unknown() -> None:
+    job = _job()
+    states = States(job)
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        _FixedGateway(_connect_failure),
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.unknown == 1 and batch.failed == 0
+    assert states.jobs[job.job_id].state == "running"
+
+
+async def test_adapter_4xx_rejection_fails_the_job_instead_of_unknown() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(404, json={"error": {"code": "control_execution_not_found"}})
+        return httpx.Response(
+            409,
+            json={
+                "error": {
+                    "code": "submit_intent_conflict",
+                    "message": "synthetic conflict",
+                    "retryable": False,
+                    "recovery": "query_current_authority",
+                }
+            },
+        )
+
+    job = _job()
+    states = States(job)
+    dispatcher = _dispatcher(
+        Queue([[ClaimedJob(job, "worker-synthetic", 1, NOW + 30_000_000)]]),
+        states,
+        _FixedGateway(handler),
+        Publisher(),
+    )
+
+    batch = await dispatcher.run_once("worker-synthetic")
+
+    assert batch.failed == 1 and batch.unknown == 0
     assert states.jobs[job.job_id].state == "failed"

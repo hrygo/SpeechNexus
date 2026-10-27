@@ -23,6 +23,7 @@ import hashlib
 import json
 import re
 import uuid
+from collections.abc import Mapping
 from typing import Any, Literal, cast
 from urllib.parse import quote, urlsplit
 
@@ -246,6 +247,26 @@ class GatewayExecutionClient:
         except ValueError:
             raise self._invalid_response() from None
 
+    async def submit_document(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Send one already-built submit document without reinterpreting its schema.
+
+        The dispatcher adapter owns the frozen request document and only needs the
+        shared transport, response bound and failure classification from this client.
+        """
+        if not isinstance(body, Mapping):
+            raise ValueError("Execution submission must be an object")
+        submit_intent_id = body.get("submit_intent_id")
+        if not isinstance(submit_intent_id, str):
+            raise ValueError("Execution submission has no stable identity")
+        _identifier(submit_intent_id)
+        try:
+            encoded = json.dumps(
+                body, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        except TypeError, ValueError:
+            raise ValueError("Execution submission is not strict JSON") from None
+        return await self._send("POST", _SUBMIT_PATH, body=encoded, idempotent=False)
+
     async def query(self, submit_intent_id: str) -> ExecutionStatusResponse:
         """Read authoritative execution state by the original submit identity."""
         path = _EXECUTION_PATH + quote(_identifier(submit_intent_id), safe="")
@@ -254,6 +275,11 @@ class GatewayExecutionClient:
             return parse("ExecutionStatusResponse", payload)
         except ValueError:
             raise self._invalid_response() from None
+
+    async def query_document(self, submit_intent_id: str) -> dict[str, Any]:
+        """Read the authoritative execution document without a schema projection."""
+        path = _EXECUTION_PATH + quote(_identifier(submit_intent_id), safe="")
+        return await self._send("GET", path, body=None, idempotent=True)
 
     async def staging_result(self, submit_intent_id: str) -> ExecutionStagingResultResponse:
         """Read the private JSON result receipt without publishing or executing."""
@@ -278,6 +304,14 @@ class GatewayExecutionClient:
             return parse("ExecutionAudioStagingResultResponse", payload)
         except ValueError:
             raise self._invalid_response() from None
+
+    async def staging_result_document(
+        self, submit_intent_id: str, *, audio: bool
+    ) -> dict[str, Any]:
+        """Read one private staging-result document through the shared transport."""
+        suffix = "/audio-staging-result" if audio else "/staging-result"
+        path = _EXECUTION_PATH + quote(_identifier(submit_intent_id), safe="") + suffix
+        return await self._send("GET", path, body=None, idempotent=True)
 
     @staticmethod
     def _invalid_response() -> GatewayResponseError:

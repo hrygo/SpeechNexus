@@ -19,6 +19,7 @@ from alembic import command
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
@@ -31,9 +32,11 @@ from speechnexus_backend.speech.domain.job_dispatch import (
     ExecutionSubmission,
     PublishedResult,
 )
-from speechnexus_backend.speech.infrastructure.execution_gateway_http import (
-    ExecutionGatewayEndpoint,
-    HttpExecutionGateway,
+from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
+    ExecutionGatewayAdapter,
+)
+from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+    GatewayExecutionClient,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
@@ -263,11 +266,15 @@ async def test_concurrent_claim_executes_one_submission_and_closes_once(
         _body(), request_id="request-dispatch-0001", idempotency_key=None
     )
     gateway, publisher = Gateway(), Publisher()
-    transport = httpx.MockTransport(gateway.handler)
-    client = HttpExecutionGateway(
-        ExecutionGatewayEndpoint("http://127.0.0.1:9999", "synthetic-token-0001"),
-        timeout_seconds=1,
-        _transport=transport,
+    client = ExecutionGatewayAdapter(
+        GatewayExecutionClient(
+            base_url="http://127.0.0.1:9999",
+            credential=SecretStr("synthetic-token-0001"),
+            timeout_seconds=1,
+            max_retries=0,
+            backoff_seconds=0,
+            _transport=httpx.MockTransport(gateway.handler),
+        )
     )
     queue = PostgresDispatchQueue(dispatch_db.pool)
     states = PostgresDispatchStateStore(dispatch_db.pool)

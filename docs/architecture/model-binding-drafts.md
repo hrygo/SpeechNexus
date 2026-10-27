@@ -212,9 +212,13 @@ writer; CI installs locked Node tools in every partition containing that probe.
 
 ## Remaining implementation
 
-Public lists, publication/activation/CAS, default pointers and qualification
-are not implemented here. Only the selected draft POST and fixed GET are served;
-other administrative operations do not become available through this unit.
+Publication of an already-stored revision now has an explicit operator command
+(`speechnexus-publish-binding`, see the [operations guide](../operations/publish-binding-revision.md)).
+It is not an HTTP route, does not implement the frozen `publishModelBindingRevision`
+endpoint, and the fixed GET still reports `draft` after publication. Public lists,
+activation/CAS, default pointers and qualification are not implemented here. Only
+the selected draft POST and fixed GET are served; other administrative operations
+do not become available through this unit.
 
 Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,

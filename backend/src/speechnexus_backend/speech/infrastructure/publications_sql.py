@@ -59,6 +59,22 @@ def find_publication(
     return _publication(rows[0]) if rows else None
 
 
+def find_binding_revision(cursor: PublicationCursor, binding_id: str, revision: int) -> str | None:
+    """Return the stored revision ID for exactly this binding revision number.
+
+    ``speech_publications`` has no foreign key to the draft history, so the
+    write path must prove the target revision exists before promoting it.
+    """
+    cursor.execute(
+        "SELECT revision_id FROM speech_binding_revisions WHERE binding_id = %s AND revision = %s",
+        (binding_id, str(revision)),
+    )
+    rows = cursor.fetchall()
+    if len(rows) > 1:
+        raise ValueError("Binding revision identity is not unique")
+    return rows[0]["revision_id"] if rows else None
+
+
 def list_publications(cursor: PublicationCursor, kind: PublicationKind) -> list[Publication]:
     cursor.execute(
         "SELECT kind, object_id, revision, revision_id, published_at_us "

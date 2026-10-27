@@ -9,6 +9,7 @@ import pytest
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
+    find_binding_revision,
     find_publication,
     list_publications,
 )
@@ -62,6 +63,18 @@ def test_find_publication_returns_the_exact_full_identity() -> None:
 
 def test_find_publication_is_absent_not_defaulted() -> None:
     assert find_publication(Cursor(), "binding", "binding-tts", 1) is None
+
+
+def test_find_binding_revision_reads_the_exact_stored_triple() -> None:
+    cursor = Cursor([{"revision_id": "binding-rev-1"}])
+
+    assert find_binding_revision(cursor, "binding-tts", 1) == "binding-rev-1"
+    assert "FROM speech_binding_revisions" in cursor.calls[0][0]
+    assert cursor.calls[0][1] == ("binding-tts", "1")
+
+
+def test_find_binding_revision_is_absent_not_invented() -> None:
+    assert find_binding_revision(Cursor(), "binding-tts", 1) is None
 
 
 def test_duplicate_publication_identity_is_rejected() -> None:

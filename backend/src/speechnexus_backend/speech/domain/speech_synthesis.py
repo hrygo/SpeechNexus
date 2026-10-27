@@ -9,6 +9,7 @@ or rewrites a request; every absence is an explicit failure upstream.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from dataclasses import dataclass, field
@@ -295,6 +296,21 @@ def identifier(value: str) -> str:
     if type(value) is not str or _IDENTIFIER.fullmatch(value) is None:
         raise ValueError("Invalid identifier")
     return value
+
+
+def correlation_identifier(value: str) -> str:
+    """Derive an identifier-shaped value from any platform correlation ID.
+
+    The HTTP layer mints or accepts ``X-Request-ID`` values that are wider than
+    the domain identifier grammar (uppercase hex, short trace IDs). A correlation
+    ID is not a domain entity, so it must never be rejected here: accept it when
+    it already fits, otherwise derive a stable identifier from its bytes.
+    """
+    if type(value) is str and _IDENTIFIER.fullmatch(value) is not None:
+        return value
+    if type(value) is not str or not value:
+        raise ValueError("Invalid correlation identifier")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
 
 
 def revision_number(value: int) -> int:

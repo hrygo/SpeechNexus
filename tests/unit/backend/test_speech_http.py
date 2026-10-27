@@ -459,3 +459,40 @@ def test_surface_constants_match_the_frozen_contract() -> None:
     assert planner["max_wait_ms"]["minimum"] == surface.PLANNER_WAIT_MIN
     assert planner["max_wait_ms"]["maximum"] == surface.PLANNER_WAIT_MAX
     assert tts["properties"]["audio_delivery"]["const"] == "complete"
+
+
+@pytest.mark.parametrize(
+    "trace",
+    ["AB", "ABCDEF-0123", "urn:UUID:ABC", "550E8400-E29B-41D4-A716-446655440000", "a" * 128],
+)
+async def test_platform_correlation_ids_never_fail_a_valid_request(trace: str) -> None:
+    """An X-Request-ID the HTTP layer accepted must never become a 503.
+
+    The middleware accepts wider values (uppercase hex, short trace IDs) than the
+    domain identifier grammar. Blaming the synthesizer for that disagreement made
+    every client echoing an uppercase UUID fail 100% of the time.
+    """
+    chain, synth = service()
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": trace}
+        )
+
+    assert response.status_code == 200
+    assert response.content == mp3().payload
+    assert len(synth.plans) == 1
+    plan_request_id = synth.plans[0].request_id
+    assert plan_request_id.islower()
+    assert len(plan_request_id) >= 3
+
+
+async def test_valid_lowercase_correlation_id_is_preserved_verbatim() -> None:
+    chain, synth = service()
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": "trace-0123abcd"}
+        )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "trace-0123abcd"
+    assert synth.plans[0].request_id == "trace-0123abcd"

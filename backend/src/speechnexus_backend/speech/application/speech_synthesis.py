@@ -24,6 +24,7 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     SpeechCommand,
     SpeechFormat,
     SpeechPlan,
+    correlation_identifier,
     identifier,
     pcm16_mono_bytes,
 )
@@ -271,7 +272,7 @@ class SpeechSynthesis:
             _delivery_bytes(command.response_format, source_pcm),
         )
         return SpeechPlan(
-            request_id=identifier(request_id),
+            request_id=correlation_identifier(request_id),
             text=command.text,
             voice_id=voice.object_id,
             voice_revision_id=voice.revision_id,

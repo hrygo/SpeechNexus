@@ -32,6 +32,7 @@ from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
 )
+from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
@@ -58,6 +59,9 @@ from speechnexus_backend.speech.interfaces.http.pronunciations import (
     create_pronunciation_router,
     pronunciation_http_contract,
 )
+from speechnexus_backend.speech.interfaces.http.speech import PREFIX as SPEECH_PREFIX
+from speechnexus_backend.speech.interfaces.http.speech import create_speech_router
+from speechnexus_backend.speech.interfaces.http.speech_errors import speech_error
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
     PREFIX as WORKSPACE_PREFIX,
@@ -124,6 +128,7 @@ def create_app(
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
     jobs: PublicJobs | None = None,
+    speech: SpeechSynthesis | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -316,6 +321,7 @@ def create_app(
             receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
         )
     )
+    app.include_router(create_speech_router(lambda: speech))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
@@ -359,6 +365,17 @@ def create_app(
                 else {}
             )
             return job_error(code, request.state.request_id, headers=headers)
+        if path == SPEECH_PREFIX and error.status_code in (404, 405):
+            headers = (
+                {"Allow": error.headers["Allow"]}
+                if error.headers and "Allow" in error.headers
+                else {}
+            )
+            return speech_error(
+                "speech_method_not_allowed",
+                request.state.request_id,
+                headers=headers,
+            )
         return await http_exception_handler(request, error)
 
     app.include_router(
@@ -375,4 +392,5 @@ def create_app(
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
     app.state.job_runtime = job_runtime
+    app.state.speech = speech
     return app

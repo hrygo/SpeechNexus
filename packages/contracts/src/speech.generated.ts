@@ -3223,6 +3223,16 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The speech path accepts POST only. */
+    SpeechMethodNotAllowed: {
+      headers: {
+        Allow: "POST";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Resource not found or not visible to the requested workspace. */
     NotFound: {
       headers: {
@@ -3422,11 +3432,6 @@ export interface operations {
       query?: never;
       header?: {
         "X-Request-ID"?: components["parameters"]["XRequestId"];
-        /**
-         * @description Return `304` without a body when the supplied validator still
-         *     matches the current catalogue.
-         */
-        "If-None-Match"?: string;
       };
       path?: never;
       cookie?: never;
@@ -3436,20 +3441,12 @@ export interface operations {
       /** @description Published logical models. */
       200: {
         headers: {
-          ETag?: components["headers"]["ETag"];
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["ModelList"];
         };
-      };
-      /** @description The supplied ETag still matches the current catalogue. */
-      304: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       401: components["responses"]["Unauthorized"];
       503: components["responses"]["ServiceUnavailable"];
@@ -3460,11 +3457,6 @@ export interface operations {
       query?: never;
       header?: {
         "X-Request-ID"?: components["parameters"]["XRequestId"];
-        /**
-         * @description Return `304` without a body when the supplied validator still
-         *     matches the current revision of this model entry.
-         */
-        "If-None-Match"?: string;
       };
       path: {
         model: string;
@@ -3476,20 +3468,12 @@ export interface operations {
       /** @description Published logical model. */
       200: {
         headers: {
-          ETag?: components["headers"]["ETag"];
           "X-Request-ID"?: components["headers"]["XRequestId"];
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["Model"];
         };
-      };
-      /** @description The supplied ETag still matches this model entry. */
-      304: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       401: components["responses"]["Unauthorized"];
       404: components["responses"]["NotFound"];
@@ -3583,6 +3567,8 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      405: components["responses"]["SpeechMethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];

@@ -23,6 +23,9 @@ from starlette.responses import Response
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_documents import encode_json, parse_integer
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
+from speechnexus_backend.speech.application.binding_publication import (
+    BindingPublicationFacts,
+)
 from speechnexus_backend.speech.domain.binding_defaults import BindingDefaultsDraftResult
 from speechnexus_backend.speech.domain.binding_drafts import BindingUnavailableError
 from speechnexus_backend.speech.interfaces.binding_default_drafts import (
@@ -32,6 +35,7 @@ from speechnexus_backend.speech.interfaces.binding_default_drafts import (
 from speechnexus_backend.speech.interfaces.binding_drafts import (
     draft_to_wire,
     prepare_binding_draft,
+    revision_to_wire,
 )
 from speechnexus_backend.speech.interfaces.http.binding_errors import (
     CREATE,
@@ -134,7 +138,12 @@ def _create(
         )
 
 
-def _read(provider: BindingProvider, envelope: dict[str, Any], request_id: str) -> Response:
+def _read(
+    provider: BindingProvider,
+    facts: BindingPublicationFacts | None,
+    envelope: dict[str, Any],
+    request_id: str,
+) -> Response:
     try:
         validate_request(READ, envelope)
     except ContractValidationError, ValueError, TypeError, RecursionError:
@@ -146,7 +155,12 @@ def _read(provider: BindingProvider, envelope: dict[str, Any], request_id: str) 
             return binding_error("binding_not_found", request_id, operation=READ)
         if draft.binding_id != identity or draft.revision != revision:
             raise BindingUnavailableError
-        wire = draft_to_wire(draft)
+        if facts is None:
+            # Without the read-only publication projection the endpoint cannot
+            # distinguish a draft from a published revision. Fail closed rather
+            # than report ``draft`` for a revision already in use.
+            return binding_error("binding_unavailable", request_id, operation=READ)
+        wire = revision_to_wire(draft, facts.project(draft))
         validate_response(READ, 200, {"body": wire})
         return Response(
             encode_json(wire, max_bytes=1048576),
@@ -202,6 +216,7 @@ def _read_defaults(
 def create_binding_router(
     get_provider: Callable[[], BindingProvider | None],
     *,
+    get_admin_reader: Callable[[], BindingPublicationFacts | None],
     producer: bool = False,
 ) -> APIRouter:
     router = APIRouter(tags=["bindings"])
@@ -261,7 +276,9 @@ def create_binding_router(
                     envelope,
                     request_id,
                 )
-            return await run_in_threadpool(_read, provider, envelope, request_id)
+            return await run_in_threadpool(
+                _read, provider, get_admin_reader(), envelope, request_id
+            )
         except ContractValidationError, TimeoutError, ClientDisconnect:
             return binding_error(
                 "invalid_binding_request", request_id, operation=operation, producer=producer

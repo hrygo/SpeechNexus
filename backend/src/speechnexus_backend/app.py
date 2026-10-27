@@ -16,7 +16,11 @@ from starlette.responses import Response
 from speechnexus_backend import __version__
 from speechnexus_backend.artifact_runtime import ArtifactRuntime
 from speechnexus_backend.asset_runtime import AssetRuntime
-from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
+from speechnexus_backend.binding_runtime import (
+    BindingAdminReaderRuntime,
+    BindingDefaultsRuntime,
+    BindingRuntime,
+)
 from speechnexus_backend.job_runtime import JobRuntime
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
@@ -26,6 +30,9 @@ from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
+from speechnexus_backend.speech.application.binding_publication import (
+    BindingPublicationFacts,
+)
 from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
@@ -137,6 +144,7 @@ def create_app(
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
+    binding_publication_facts: BindingPublicationFacts | None = None,
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
     jobs: PublicJobs | None = None,
@@ -257,6 +265,18 @@ def create_app(
             return bindings
         return binding_runtime.provider if binding_runtime is not None else None
 
+    binding_admin_runtime = (
+        BindingAdminReaderRuntime(resolved_settings)
+        if binding_publication_facts is None
+        and resolved_settings.binding_admin_reader_database_url is not None
+        else None
+    )
+
+    def get_binding_publication_facts() -> BindingPublicationFacts | None:
+        if binding_publication_facts is not None:
+            return binding_publication_facts
+        return binding_admin_runtime.provider if binding_admin_runtime is not None else None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
@@ -274,6 +294,9 @@ def create_app(
             if binding_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_runtime.close)
                 await run_in_threadpool(binding_runtime.open)
+            if binding_admin_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, binding_admin_runtime.close)
+                await run_in_threadpool(binding_admin_runtime.open)
             if job_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, job_runtime.close)
                 await run_in_threadpool(job_runtime.open)
@@ -358,7 +381,13 @@ def create_app(
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
-    app.include_router(create_binding_router(get_bindings, producer=producer))
+    app.include_router(
+        create_binding_router(
+            get_bindings,
+            get_admin_reader=get_binding_publication_facts,
+            producer=producer,
+        )
+    )
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:
@@ -436,6 +465,7 @@ def create_app(
     app.state.catalogue_runtime = catalogue_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
+    app.state.binding_admin_runtime = binding_admin_runtime
     app.state.job_runtime = job_runtime
     app.state.artifact_runtime = artifact_runtime
     app.state.speech = speech

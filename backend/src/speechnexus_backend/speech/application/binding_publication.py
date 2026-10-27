@@ -13,6 +13,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
+from speechnexus_backend.speech.domain.binding_publication_evidence import (
+    BindingPublicationEvidence,
+    EvidenceSource,
+)
 from speechnexus_backend.speech.domain.publications import Publication
 
 
@@ -65,16 +70,36 @@ class BindingPublicationConflictError(ValueError):
 
 
 class BindingPublicationStore(Protocol):
-    def publish_binding_revision(self, publication: Publication) -> tuple[Publication, bool]:
-        """Validate the exact stored revision, then append; return row and created flag."""
+    def publish_binding_revision(
+        self,
+        publication: Publication,
+        evidence: BindingPublicationEvidence,
+    ) -> tuple[Publication, BindingPublicationEvidence, bool]:
+        """Validate the exact stored revision, then append row and evidence together."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedBinding:
+    """The facts an admin GET may report for a proven published revision."""
+
+    published_at_us: int
+    capacity_manifest_id: str
+    qualification_report_id: str
+
+
+class BindingPublicationFacts(Protocol):
+    def project(self, draft: BindingDraft) -> PublishedBinding | None:
+        """Return published facts, ``None`` for a draft, or fail closed."""
         ...
 
 
 @dataclass(frozen=True, slots=True)
 class BindingPublicationResult:
-    """One publication fact plus whether this invocation inserted it."""
+    """One publication fact, its evidence and whether this invocation inserted it."""
 
     publication: Publication
+    evidence: BindingPublicationEvidence
     created: bool
 
 
@@ -90,13 +115,38 @@ class BindingPublisher:
         self._store = store
         self._now_us = now_us
 
-    def publish(self, binding_id: str, revision: int, revision_id: str) -> BindingPublicationResult:
+    def publish(
+        self,
+        binding_id: str,
+        revision: int,
+        revision_id: str,
+        *,
+        capacity_manifest_id: str,
+        qualification_report_id: str,
+        capacity_manifest_digest: str | None = None,
+        qualification_report_digest: str | None = None,
+        evidence_source: EvidenceSource = "operator_cli",
+    ) -> BindingPublicationResult:
+        now_us = self._now_us()
         publication = Publication(
             kind="binding",
             object_id=binding_id,
             revision=revision,
             revision_id=revision_id,
-            published_at_us=self._now_us(),
+            published_at_us=now_us,
         )
-        stored, created = self._store.publish_binding_revision(publication)
-        return BindingPublicationResult(stored, created)
+        evidence = BindingPublicationEvidence(
+            object_id=binding_id,
+            revision=revision,
+            revision_id=revision_id,
+            capacity_manifest_id=capacity_manifest_id,
+            qualification_report_id=qualification_report_id,
+            evidence_source=evidence_source,
+            recorded_at_us=now_us,
+            capacity_manifest_digest=capacity_manifest_digest,
+            qualification_report_digest=qualification_report_digest,
+        )
+        stored, stored_evidence, created = self._store.publish_binding_revision(
+            publication, evidence
+        )
+        return BindingPublicationResult(stored, stored_evidence, created)

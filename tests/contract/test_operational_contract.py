@@ -206,6 +206,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/models/{model}",
         "/v1/nexus/jobs",
         "/v1/nexus/jobs/{job_id}",
+        "/v1/audio/speech",
     }
     _assert_contract_matches(_load_contract(), document, require_exact_paths=False)
 

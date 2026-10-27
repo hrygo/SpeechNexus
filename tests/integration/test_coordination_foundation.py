@@ -28,6 +28,7 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.infrastructure.admission_command_schema import (
     ADMISSION_COMMAND_DDL,
@@ -239,17 +240,23 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    publication_tables = (
+        {"speech_publications", "speech_jobs", "speech_job_events"}
+        if db.dialect == "postgresql"
+        else set()
+    )
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
+    assert publication_tables <= {row["name"] for row in rows}
     assert {row["name"] for row in rows} - {
         "alembic_version"
-    } - asset_tables - profile_tables - binding_tables == (
+    } - asset_tables - profile_tables - binding_tables - publication_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
     if db.dialect == "postgresql":
-        # New configuration tables are outside shared coordination grants.
+        # New configuration and publication tables are outside shared coordination grants.
         for owner in ("speech", "gateway"):
-            for table in profile_tables | binding_tables:
+            for table in profile_tables | binding_tables | publication_tables:
                 with (
                     pytest.raises(psycopg.errors.InsufficientPrivilege),
                     foundation.connection(owner) as connection,
@@ -486,7 +493,7 @@ def test_failed_upgrade_rolls_back_all_new_ddl_and_preserves_old_history(
     ).fetchall()
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"] == 1
     assert (
         sandbox.admin.execute("SELECT count(*) AS n FROM coordination_outbox").fetchone()["n"] == 1
@@ -553,7 +560,7 @@ def test_separate_migration_processes_wait_on_the_same_transaction_lock(
         for process in processes:
             output, error = process.communicate(timeout=15)
             assert process.returncode == 0, output + error
-        assert sandbox.version() == "0014_pronunciation_drafts"
+        assert sandbox.version() == HEAD
         assert (
             sandbox.admin.execute("SELECT count(*) AS n FROM coordination_jobs").fetchone()["n"]
             == 1

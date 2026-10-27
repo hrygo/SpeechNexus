@@ -18,6 +18,7 @@ from tests.integration.test_coordination_foundation import foundation as foundat
 from tests.integration.test_coordination_foundation import upgrade_sandbox as upgrade_sandbox
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.infrastructure.jobs_sql import create_in_transaction
 
@@ -359,7 +360,7 @@ def test_0007_failure_rolls_back_and_upgrade_preserves_legacy_commands_and_acl(
     sandbox.admin.execute("DROP TABLE admission_requests")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT * FROM admission_attempts").fetchall() == original
     assert sandbox.admin.execute("SELECT * FROM submit_intents").fetchall() == [
         row | {"staging_result_document": None} for row in submits

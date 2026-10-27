@@ -16,4 +16,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 - [0010：私有音频回执与旧 JSON 消费者兼容](0010-private-audio-receipt-compatibility.md)（accepted，2026-10-25；独立音频读取视图、复用原回执及样本账本，先升级读取者再启用生产者）。
 - [0011：分布式部署单元与平台边界](0011-distributed-deployment-and-platform-boundaries.md)（accepted，2026-10-26；按服务职责确定平台与节点绑定，分布式为目标、单节点为验证拓扑；跨平台与多机资格待验收）。
 
+- [0012：公开 Job 面与执行装配的所有权](0012-public-job-surface.md)（accepted，2026-10-27；公开读模型独立于协调事实，状态只前进、终态不回头，提交经持久意图装配；路由与两条链验收待实现）。
+
 [文档索引](../README.md)

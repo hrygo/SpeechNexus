@@ -28,6 +28,7 @@ from tests.integration.test_coordination_foundation import upgrade_sandbox as up
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 from tests.support.profile_database import ProfileCursor
 from tests.support.pronunciation_database import MySQLPronunciationDrafts
 from tests.support.pronunciation_examples import pronunciation_request
@@ -379,7 +380,7 @@ def test_migration_is_repeatable_and_preserves_any_committed_pronunciation_histo
     old = s.admin.execute("SELECT * FROM coordination_jobs").fetchall()
     s.upgrade()
     s.upgrade()
-    assert s.version() == "0014_pronunciation_drafts"
+    assert s.version() == HEAD
     with s.engine.connect() as connection:
         s.config.attributes["connection"] = connection
         migration.downgrade(s.config, "0013_profile_lifecycle_intents")
@@ -392,7 +393,7 @@ def test_migration_is_repeatable_and_preserves_any_committed_pronunciation_histo
         s.config.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match="Pronunciation history"):
             migration.downgrade(s.config, "0013_profile_lifecycle_intents")
-    assert s.version() == "0014_pronunciation_drafts"
+    assert s.version() == HEAD
     assert s.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
     assert s.admin.execute(
         "SELECT pronunciation_id FROM speech_pronunciation_families"
@@ -575,9 +576,7 @@ def test_writer_commit_while_downgrade_waits_preserves_all_new_history(
             pending.result(timeout=5)
     assert p.port.recover(cmd).draft == original.draft
     assert all(len(rows) == 1 for rows in p.snapshot().values())
-    assert p.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert p.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)
@@ -692,4 +691,4 @@ def test_failed_new_migration_rolls_back_all_ddl_without_losing_previous_history
     assert s.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
     s.admin.execute("ALTER TABLE speech_pronunciation_commands RENAME TO pron_collision_fixture")
     s.upgrade()
-    assert s.version() == "0014_pronunciation_drafts"
+    assert s.version() == HEAD

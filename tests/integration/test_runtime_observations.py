@@ -22,6 +22,7 @@ from tests.integration.test_production_jobs import JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_production_runtime_intents import RuntimeDatabase
 from tests.integration.test_production_runtime_intents import runtime_database as runtime_database
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.runtime_intents import RuntimeService
 from speechnexus_backend.speech.domain.runtime_intents import RuntimeIntent
@@ -643,7 +644,7 @@ def test_0006_failed_upgrade_preserves_rows_and_acl_then_upgrades_idempotently(
         sandbox.admin.execute("ALTER TABLE runtime_instance_intents DROP COLUMN readiness_document")
         sandbox.upgrade()
         sandbox.upgrade()
-        assert sandbox.version() == "0014_pronunciation_drafts"
+        assert sandbox.version() == HEAD
         rows = sandbox.admin.execute("SELECT * FROM runtime_instance_intents").fetchall()
         for row in rows:
             assert row.pop("readiness_document") is None

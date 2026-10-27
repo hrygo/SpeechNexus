@@ -21,6 +21,7 @@ from tests.integration.test_production_jobs import ROOT, FaultConnection
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_profile_drafts import Profiles
 from tests.integration.test_profile_drafts import profiles as profiles
+from tests.support.migrations import HEAD
 from tests.support.profile_database import MySQLProfileDrafts
 
 from speechnexus_backend.speech.application.profile_lifecycle_intents import ProfileLifecycleIntents
@@ -344,9 +345,7 @@ def test_additive_upgrade_and_empty_only_downgrade_preserve_all_other_history(
     with pytest.raises(RuntimeError, match="history requires preservation"):
         migrate(journal, "downgrade", "0012_execution_results")
     assert journal.rows() == original and profile.snapshot() == before
-    assert profile.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert profile.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
 
 
 def wait_for_migration(journal: Journal, minimum: int) -> None:

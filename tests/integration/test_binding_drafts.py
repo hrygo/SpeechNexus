@@ -28,6 +28,7 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_database import BindingCursor, MySQLBindingDrafts
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.binding_documents import (
     decode_document,
@@ -619,9 +620,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_binding_history(bindings:
                 migration.downgrade(config, "0009_profile_drafts")
     finally:
         engine.dispose()
-    assert bindings.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert bindings.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
     assert bindings.snapshot() == before
 
 
@@ -657,5 +656,5 @@ def test_failed_0010_upgrade_rolls_back_new_ddl_and_preserves_old_rows_and_acl(
     sandbox.admin.execute("ALTER TABLE speech_binding_commands RENAME TO binding_collision_fixture")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == before

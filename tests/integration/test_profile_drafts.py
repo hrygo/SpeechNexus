@@ -25,6 +25,7 @@ from tests.integration.test_coordination_foundation import upgrade_sandbox as up
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 from tests.support.profile_database import MySQLProfileDrafts, ProfileCursor
 from tests.support.profile_examples import profile_request
 
@@ -371,9 +372,7 @@ def test_migration_repeat_and_refused_downgrade_preserve_profile_history(
     finally:
         engine.dispose()
     assert profiles.snapshot() == before
-    assert profiles.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert profiles.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
 
 
 def test_full_decimal_revision_range_and_exhaustion_do_not_overflow_or_allocate(

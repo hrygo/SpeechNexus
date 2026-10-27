@@ -13,6 +13,7 @@ from tests.integration.test_coordination_foundation import foundation as foundat
 from tests.integration.test_coordination_foundation import upgrade_sandbox as upgrade_sandbox
 from tests.integration.test_production_jobs import REQUEST, JobDatabase
 from tests.integration.test_production_jobs import database as database
+from tests.support.migrations import HEAD
 
 pytestmark = pytest.mark.integration
 DIGEST = "sha256:" + "a" * 64
@@ -199,7 +200,7 @@ def test_0005_failure_rolls_back_then_upgrade_preserves_legacy_rows_and_grants(
     sandbox.admin.execute("ALTER TABLE coordination_outbox DROP COLUMN event_kind")
     sandbox.upgrade()
     sandbox.upgrade()
-    assert sandbox.version() == "0014_pronunciation_drafts"
+    assert sandbox.version() == HEAD
     assert (
         sandbox.admin.execute(
             "SELECT target_node_id, intent_id, request_document, intent_state, version "

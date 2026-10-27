@@ -23,6 +23,7 @@ dependencies = [
 speechnexus-api = "speechnexus_backend.main:main"
 speechnexus-runtime-delivery-worker = "speechnexus_backend.runtime_delivery_worker:main"
 speechnexus-asset-maintain = "speechnexus_backend.asset_worker:main"
+speechnexus-job-dispatch-worker = "speechnexus_backend.job_dispatch_worker:main"
 speechnexus-job-migrate = "speechnexus_backend.speech.infrastructure.migrate_jobs:main"
 
 [project.optional-dependencies]

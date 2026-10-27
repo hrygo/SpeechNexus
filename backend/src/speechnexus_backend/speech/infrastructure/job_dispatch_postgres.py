@@ -11,6 +11,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.domain.job_dispatch import (
     ClaimedJob,
+    DispatchClaimLostError,
     DispatchConflictError,
     DispatchJob,
     DispatchProtocolError,
@@ -25,6 +26,10 @@ _JOB_SELECT = (
     "FROM speech_jobs AS j "
     "LEFT JOIN admission_operations AS a ON a.operation_id = j.job_id "
 )
+
+
+class _TerminalGuardLostError(RuntimeError):
+    """The current transaction must roll back without writing a terminal state."""
 
 
 def _job(row: dict[str, Any]) -> DispatchJob:
@@ -114,15 +119,21 @@ class PostgresDispatchStateStore:
     async def mark_running(self, job: DispatchJob) -> DispatchJob:
         return await asyncio.to_thread(self._mark_running, job)
 
+    async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None:
+        identifier(claim.worker_id)
+        if not 1_000 <= lease_ms <= 60_000:
+            raise ValueError("Dispatch renewal bounds are invalid")
+        return await asyncio.to_thread(self._renew, claim, lease_ms)
+
     async def finish(
         self,
-        job: DispatchJob,
+        claim: ClaimedJob,
         target: str,
         *,
         result_json: str | None,
         error_code: str | None,
     ) -> DispatchJob:
-        return await asyncio.to_thread(self._finish, job, target, result_json, error_code)
+        return await asyncio.to_thread(self._finish, claim, target, result_json, error_code)
 
     def _reload(self, job_id: str) -> DispatchJob:
         identifier(job_id)
@@ -168,30 +179,14 @@ class PostgresDispatchStateStore:
             return current
         raise DispatchConflictError("Public Job did not enter running")
 
-    def _finish(
-        self,
-        job: DispatchJob,
-        target: str,
-        result_json: str | None,
-        error_code: str | None,
-    ) -> DispatchJob:
-        if target not in ("succeeded", "failed"):
-            raise ValueError("Dispatch can finish only in a terminal state")
+    def _renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob | None:
         query = (
             "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000000 "
-            "AS BIGINT) AS now_us), changed AS (UPDATE speech_jobs AS j "
-            "SET state = %s, status_version = j.status_version + 1, result_json = %s, "
-            "error_code = %s, updated_at_us = clock.now_us FROM clock "
-            "WHERE j.job_id = %s AND j.status_version = %s AND j.state = %s "
-            "RETURNING j.job_id, clock.now_us AS now_us"
-            "), event AS (INSERT INTO speech_job_events "
-            "(job_id, event_seq, state, occurred_at_us) "
-            "SELECT changed.job_id, %s, %s, changed.now_us FROM changed RETURNING job_id"
-            "), closed AS (UPDATE coordination_jobs SET job_state = %s, claim_expires_at_us = 0 "
-            "WHERE job_id = %s AND job_state = 'pending' RETURNING job_id"
-            ") SELECT (SELECT count(*) FROM changed) AS changed, "
-            "(SELECT count(*) FROM event) AS evented, "
-            "(SELECT count(*) FROM closed) AS closed"
+            "AS BIGINT) AS now_us) "
+            "UPDATE coordination_jobs AS c SET claim_expires_at_us = clock.now_us + %s "
+            "FROM clock WHERE c.job_id = %s AND c.claim_owner_id = %s "
+            "AND c.claim_version = %s AND c.job_state = 'pending' "
+            "RETURNING c.claim_expires_at_us"
         )
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
@@ -199,8 +194,56 @@ class PostgresDispatchStateStore:
                     "SELECT set_config('statement_timeout', %s, true)",
                     (str(max(1, int(self._timeout * 1000))),),
                 )
-                row = connection.execute(
+                rows = connection.execute(
                     query,
+                    (lease_ms * 1000, claim.job.job_id, claim.worker_id, claim.claim_version),
+                ).fetchall()
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise DispatchUnavailableError("Dispatch lease renewal is unavailable") from None
+        if not rows:
+            return None
+        return replace(claim, lease_expires_at_us=int(rows[0]["claim_expires_at_us"]))
+
+    def _finish(
+        self,
+        claim: ClaimedJob,
+        target: str,
+        result_json: str | None,
+        error_code: str | None,
+    ) -> DispatchJob:
+        if target not in ("succeeded", "failed"):
+            raise ValueError("Dispatch can finish only in a terminal state")
+        job = claim.job
+        terminal: DispatchJob | None = None
+        try:
+            with (
+                self._pool.connection(timeout=self._timeout) as connection,
+                connection.transaction(),
+            ):
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(self._timeout * 1000))),),
+                )
+                owned = connection.execute(
+                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                    "* 1000000 AS BIGINT) AS now_us) "
+                    "SELECT c.job_id FROM coordination_jobs AS c CROSS JOIN clock "
+                    "WHERE c.job_id = %s AND c.claim_owner_id = %s "
+                    "AND c.claim_version = %s AND c.job_state = 'pending' "
+                    "AND c.claim_expires_at_us > clock.now_us FOR UPDATE OF c",
+                    (job.job_id, claim.worker_id, claim.claim_version),
+                ).fetchone()
+                if owned is None:
+                    # No public or event write may occur without the current lease.
+                    raise _TerminalGuardLostError
+                changed = connection.execute(
+                    "WITH clock AS (SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                    "* 1000000 AS BIGINT) AS now_us) "
+                    "UPDATE speech_jobs AS j SET state = %s, "
+                    "status_version = j.status_version + 1, result_json = %s, "
+                    "error_code = %s, updated_at_us = clock.now_us FROM clock "
+                    "WHERE j.job_id = %s AND j.status_version = %s AND j.state = %s "
+                    "RETURNING clock.now_us AS now_us",
                     (
                         target,
                         result_json,
@@ -208,24 +251,42 @@ class PostgresDispatchStateStore:
                         job.job_id,
                         job.status_version,
                         job.state,
-                        job.status_version,
-                        target,
-                        target,
-                        job.job_id,
                     ),
                 ).fetchone()
+                if changed is None:
+                    # The public Job was settled or advanced by another writer.
+                    raise _TerminalGuardLostError
+                evented = connection.execute(
+                    "INSERT INTO speech_job_events "
+                    "(job_id, event_seq, state, occurred_at_us) VALUES (%s, %s, %s, %s) "
+                    "RETURNING job_id",
+                    (job.job_id, job.status_version, target, int(changed["now_us"])),
+                ).fetchone()
+                if evented is None:
+                    raise _TerminalGuardLostError
+                closed = connection.execute(
+                    "UPDATE coordination_jobs AS c SET job_state = %s, claim_expires_at_us = 0 "
+                    "WHERE c.job_id = %s AND c.job_state = 'pending' "
+                    "AND c.claim_owner_id = %s AND c.claim_version = %s "
+                    "AND c.claim_expires_at_us > CAST(EXTRACT(EPOCH FROM clock_timestamp()) "
+                    "* 1000000 AS BIGINT) RETURNING c.job_id",
+                    (target, job.job_id, claim.worker_id, claim.claim_version),
+                ).fetchone()
+                if closed is None:
+                    # Roll back the public transition if the lease expired before close.
+                    raise _TerminalGuardLostError
+                terminal = replace(
+                    job,
+                    state=cast(Any, target),
+                    status_version=job.status_version + 1,
+                )
+        except _TerminalGuardLostError:
+            terminal = None
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise DispatchUnavailableError("Dispatch terminal transition failed") from None
-        if row is not None and int(row["changed"]) == 1 and int(row["evented"]) == 1:
-            return replace(
-                job,
-                state=cast(Any, target),
-                status_version=job.status_version + 1,
-            )
-        current = self._reload(job.job_id)
-        if current.state in ("succeeded", "failed"):
-            return current
-        raise DispatchConflictError("Public Job terminal transition lost its guard")
+        if terminal is not None:
+            return terminal
+        raise DispatchClaimLostError("Dispatch lease was lost before the terminal transition")
 
 
 __all__ = ["PostgresDispatchQueue", "PostgresDispatchStateStore"]

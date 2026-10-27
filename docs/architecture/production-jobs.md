@@ -101,11 +101,54 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 返回 unknown，不用 `failed` 假装算力已停止；只有从未找到执行身份时才可写
 `job_timeout`。
 
-当前边界只完成派发器、真实 PG 领取/终态存储、HTTP 客户端和假网关测试。
-生产 `SubmitExecutionRequest` planner、对象存储结果发布、worker 入口/进程角色
-及组合根装配尚未接入；`GET /v1/nexus/artifacts/{id}` 尚未由该路径产生可读制品。
-因此本步不能宣称公开异步链已在部署中闭环，也不能代替真实网关、真实引擎或
-对象存储的发布资格。
+当前边界完成派发器、真实 PG 领取/终态存储、HTTP 客户端、worker 入口/进程角色
+及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 与对象存储
+结果发布仍未装配；`build_dispatch_dependencies` 在二者缺失时显式抛错，进程以
+退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}`
+尚未由该路径产生可读制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替
+真实网关、真实引擎或对象存储的发布资格。
+
+### worker 入口与运行配置（DEL-98）
+
+独立入口为 `speechnexus-job-dispatch-worker`，组合根在 `job_dispatch_runtime.py`，
+不进入 `create_app` 的请求期装配。部署需显式提供下列变量；缺任意一项时
+`JobDispatchSettings` 在连接数据库或网关前拒绝启动，进程不领取租约：
+
+| 变量 | 含义 |
+| --- | --- |
+| `SPEECHNEXUS_PROCESS_ROLE` | 固定为 `job-worker` |
+| `SPEECHNEXUS_NODE_ID` / `SPEECHNEXUS_INSTANCE_ID` | 显式 worker 身份；组合为 claim owner |
+| `SPEECHNEXUS_DATABASE_URL` / `SPEECHNEXUS_DATABASE_SCHEMA` | 权威 PostgreSQL 与非 owner 运行角色 |
+| `SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL` | 网关 origin，不允许路径、凭据或 query |
+| `SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL` | 网关组件凭据 |
+| `SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS` | 单次网关调用上限 |
+| `SPEECHNEXUS_JOB_DISPATCH_BATCH_SIZE` | 单轮领取上限 1–32 |
+| `SPEECHNEXUS_JOB_DISPATCH_LEASE_MS` | 领取租约 1–60 秒；不得用超长租约替代续租 |
+| `SPEECHNEXUS_JOB_DISPATCH_POLL_SECONDS` | 执行轮询间隔 |
+| `SPEECHNEXUS_JOB_DISPATCH_JOB_TIMEOUT_SECONDS` | 单 Job 总上限，最大 1 小时 |
+| `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` | 最大领取版本 1–20 |
+| `SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS` | 空批次后的下一轮等待 |
+| `SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS` | 领取、续租、终态事务的上限 |
+
+每轮向 stdout 输出一行固定字段的 JSON：`event=job_dispatch_batch`、`claimed`、
+`succeeded`、`failed`、`unknown`、`skipped`、`deferred`、`lease_reclaimed`、
+`lease_lost`。只包含计数，不包含原命令、请求 ID、端点或凭据。
+
+### 续租、接管与优雅停止
+
+每次网关查询（包括查询后的下一步处理前）都以 `claim_owner_id`、`claim_version`
+和 `pending` 协调行状态为条件续租。返回 0 行表示租约已被其他 worker 接管：本 worker
+立即以 `claim_lost` 结束该 Job，不再 `finish`，也不再调用结果发布。任务超时仍按原
+语义返回 `unknown`，不会把仍可能运行的引擎写成 failed。
+
+终态写入在同一个事务中再次核对 owner、`claim_version`、租约未过期、公共 Job 的
+`status_version` 和协调行 `pending`；只有公共状态、事件和协调关闭三者都更新成功才
+认作成功。旧 worker 在续租失败或被接管后无法写终态。续租延长租约，但 Job 总期限
+不延长，避免用超长租约掩盖崩溃 worker。
+
+SIGTERM/SIGINT 只设置停止标志：不再开始下一轮领取，不再提交新的执行；若正在轮询，
+本轮以 `deferred` 结束，不写终态也不发布，保留当前租约直到到期。下一 worker
+在到期后按 `running` 原 Job 和同一 `submit_intent_id` 接手，不创建第二个执行。
 
 ## 迁移与最低权限
 

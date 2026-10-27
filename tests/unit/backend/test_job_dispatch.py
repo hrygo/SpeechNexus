@@ -15,6 +15,7 @@ import pytest
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.domain.job_dispatch import (
     ClaimedJob,
+    DispatchClaimLostError,
     DispatchConflictError,
     DispatchJob,
     DispatchLimits,
@@ -73,19 +74,23 @@ class States:
         self.events.append((updated.job_id, updated.status_version - 1, "running"))
         return updated
 
+    async def renew(self, claim: ClaimedJob, lease_ms: int) -> ClaimedJob:
+        return replace(claim, lease_expires_at_us=claim.lease_expires_at_us + lease_ms * 1000)
+
     async def finish(
         self,
-        job: DispatchJob,
+        claim: ClaimedJob,
         target: str,
         *,
         result_json: str | None,
         error_code: str | None,
     ) -> DispatchJob:
+        job = claim.job
         current = self.jobs[job.job_id]
         if current.state in ("succeeded", "failed"):
             return current
         if current.status_version != job.status_version or current.state != job.state:
-            raise DispatchConflictError("terminal guard lost")
+            raise DispatchClaimLostError("terminal guard lost")
         if (target == "succeeded") != (result_json is not None):
             raise AssertionError("bad result shape")
         if (target == "failed") != (error_code is not None):

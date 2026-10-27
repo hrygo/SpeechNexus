@@ -102,6 +102,15 @@ node/instance identities. Provision its bucket/role before running it; it never
 runs DDL or creates storage policies. It must continue running for retention and
 unknown-original polling. The API's one startup pass does not replace that worker.
 
+The public Job dispatcher is registered separately as
+`speechnexus-job-dispatch-worker`. It requires explicit worker identity, a
+non-owner PostgreSQL role, the execution-gateway origin/credential, and every
+batch/lease/poll/timeout bound listed in
+[production jobs](../docs/architecture/production-jobs.md#worker-入口与运行配置del-98).
+Missing configuration or an unassembled planner/result publisher makes the
+process exit before claiming a lease; it never falls back to a fake planner,
+placeholder publisher or implicit endpoint.
+
 Browser callers use the same-origin proxy and explicitly approved frontend
 Origin. This release does not claim complete backup restoration, production
 object IAM/outbound restrictions, arbitrary audio inspection or G1 qualification.

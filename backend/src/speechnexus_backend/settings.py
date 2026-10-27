@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     job_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     job_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    execution_gateway_base_url: AnyHttpUrl | None = None
+    execution_gateway_component_credential: SecretStr | None = Field(default=None, min_length=1)
+    execution_gateway_timeout_seconds: float = Field(default=10, gt=0, le=600)
+    execution_gateway_max_retries: int = Field(default=2, ge=0, le=5)
+    execution_gateway_backoff_seconds: float = Field(default=0.25, ge=0, le=10)
+    execution_gateway_max_response_bytes: int = Field(default=1_048_576, ge=1024, le=4_194_304)
+
     @field_validator(
         "profile_writer_database_url",
         "model_catalog_reader_database_url",
@@ -101,6 +108,7 @@ class Settings(BaseSettings):
         "binding_writer_database_url",
         "binding_defaults_writer_database_url",
         "job_writer_database_url",
+        "execution_gateway_component_credential",
         mode="before",
     )
     @classmethod
@@ -117,6 +125,10 @@ class Settings(BaseSettings):
             raise ValueError("Configure one explicit binding writer mode")
         if (self.object_storage_access_key is None) != (self.object_storage_secret_key is None):
             raise ValueError("Configure both object-storage keys together")
+        if (self.execution_gateway_base_url is None) != (
+            self.execution_gateway_component_credential is None
+        ):
+            raise ValueError("Configure both execution-gateway URL and credential together")
         for host in self.asset_allowed_hosts:
             if not host or host != host.lower() or any(c in host for c in "*/@?# "):
                 raise ValueError("Configure explicit lowercase asset hostnames")

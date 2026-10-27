@@ -11,14 +11,17 @@ import pytest
 import rfc8785
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
+from speechnexus_contracts.execution_models import ArtifactStorageReference
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.transcription import (
     AdmittedExecution,
     StagedAudio,
     Transcription,
+    TranscriptionEngineError,
     TranscriptionLimits,
     TranscriptionOutcomeUnknownError,
+    TranscriptionOutputInvalidError,
 )
 from speechnexus_backend.speech.domain.transcription import (
     TranscriptFormat,
@@ -110,9 +113,11 @@ class Admission:
 class Results:
     def __init__(self, document: dict[str, Any]) -> None:
         self.document = document
-        self.reads: list[tuple[dict[str, Any], str]] = []
+        self.reads: list[tuple[ArtifactStorageReference, str]] = []
 
-    def read_json(self, reference: dict[str, Any], storage_version: str) -> dict[str, Any]:
+    def read_json(
+        self, reference: ArtifactStorageReference, storage_version: str
+    ) -> dict[str, Any]:
         self.reads.append((reference, storage_version))
         return dict(self.document)
 
@@ -262,7 +267,7 @@ def test_gateway_transport_ambiguity_is_unknown_not_failed(failure: type[Excepti
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        raise failure("synthetic transport failure", request=request)
+        raise failure("synthetic transport failure")
 
     transcriber = GatewayTranscriber(
         gateway(handler), Admission(), Inputs(), Results({"text": "unused"}), planner()
@@ -370,3 +375,84 @@ async def test_verbose_json_without_duration_or_language_is_not_guessed() -> Non
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "unsupported_parameter"
     assert response.json()["error"]["param"] == "response_format"
+
+
+def _identity_echo(sent: dict[str, Any]) -> dict[str, Any]:
+    response = submit_response()
+    for field in _IDENTITY_FIELDS:
+        if field in sent:
+            response[field] = sent[field]
+    return response
+
+
+def test_a_staging_receipt_for_another_intent_is_unknown_and_never_resubmitted() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        path = request.url.path
+        if path.endswith("/submit"):
+            response = _identity_echo(json.loads(request.content))
+            response["execution_state"] = "executing"
+            response["cleanup_state"] = "pending"
+            return httpx.Response(200, json=response)
+        if path.endswith("/staging-result"):
+            return httpx.Response(
+                200,
+                json={
+                    "submit_intent_id": "submit-someone-else",
+                    "request_digest": DIGEST,
+                    "staging_result": None,
+                },
+            )
+        response = _identity_echo(json.loads(calls[0].content))
+        response["execution_state"] = "succeeded"
+        response["cleanup_state"] = "complete"
+        return httpx.Response(200, json=response)
+
+    transcriber = GatewayTranscriber(
+        gateway(handler), Admission(), Inputs(), Results({"text": "unused"}), planner()
+    )
+    try:
+        with pytest.raises(TranscriptionOutcomeUnknownError):
+            transcriber.transcribe(plan())
+    finally:
+        transcriber.close()
+    assert sum(request.url.path.endswith("/submit") for request in calls) == 1
+
+
+def test_gateway_terminal_failure_is_a_failure_not_unknown() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        path = request.url.path
+        if not path.endswith("/submit"):
+            raise AssertionError("a terminal failure must not be polled again")
+        response = _identity_echo(json.loads(request.content))
+        response["execution_state"] = "failed"
+        response["cleanup_state"] = "complete"
+        return httpx.Response(200, json=response)
+
+    transcriber = GatewayTranscriber(
+        gateway(handler), Admission(), Inputs(), Results({"text": "unused"}), planner()
+    )
+    try:
+        with pytest.raises(TranscriptionEngineError):
+            transcriber.transcribe(plan())
+    finally:
+        transcriber.close()
+    assert len(calls) == 1
+
+
+def test_a_receipt_without_text_is_invalid_and_never_becomes_empty() -> None:
+    calls: list[httpx.Request] = []
+    service, transcriber = service_for(calls, {"language": "en"})
+    try:
+        with pytest.raises(TranscriptionOutputInvalidError):
+            service.transcribe(
+                TranscriptionCommand("asr-quality", AUDIO),
+                request_id="request-no-text",
+            )
+    finally:
+        transcriber.close()

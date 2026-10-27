@@ -8,6 +8,7 @@ named in the startup log; malformed private files fail startup instead.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from fastapi import FastAPI
@@ -141,7 +142,7 @@ def build_transcription(settings: Settings) -> Transcription | None:
             poll_seconds=settings.transcription_poll_seconds,
         )
         created.append(transcriber)
-        service = Transcription(
+        return Transcription(
             PostgresPublicJobs(
                 pool, timeout_seconds=settings.transcription_storage_timeout_seconds
             ),
@@ -153,15 +154,12 @@ def build_transcription(settings: Settings) -> Transcription | None:
                 timeout_seconds=settings.transcription_timeout_seconds,
             ),
         )
-        return service
     except BaseException:
         for resource in reversed(created):
             closer = getattr(resource, "close", None)
             if callable(closer):
-                try:
+                with contextlib.suppress(Exception):
                     closer()
-                except Exception:
-                    pass
         if not pool.closed:
             pool.close()
         raise

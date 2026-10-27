@@ -241,7 +241,12 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         else set()
     )
     publication_tables = (
-        {"speech_publications", "speech_jobs", "speech_job_events"}
+        {
+            "speech_publications",
+            "speech_jobs",
+            "speech_job_events",
+            "speech_job_submissions",
+        }
         if db.dialect == "postgresql"
         else set()
     )

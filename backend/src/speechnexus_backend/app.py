@@ -35,6 +35,7 @@ from speechnexus_backend.speech.application.readiness import (
     ReadinessService,
 )
 from speechnexus_backend.speech.application.speech_synthesis import SpeechSynthesis
+from speechnexus_backend.speech.application.transcription import Transcription
 from speechnexus_backend.speech.application.workspaces import WorkspaceService
 from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
@@ -69,6 +70,9 @@ from speechnexus_backend.speech.interfaces.http.pronunciations import (
 from speechnexus_backend.speech.interfaces.http.speech import PREFIX as SPEECH_PREFIX
 from speechnexus_backend.speech.interfaces.http.speech import create_speech_router
 from speechnexus_backend.speech.interfaces.http.speech_errors import speech_error
+from speechnexus_backend.speech.interfaces.http.transcriptions import (
+    create_transcription_router,
+)
 from speechnexus_backend.speech.interfaces.http.workspace_contract import workspace_http_contract
 from speechnexus_backend.speech.interfaces.http.workspaces import (
     PREFIX as WORKSPACE_PREFIX,
@@ -137,6 +141,7 @@ def create_app(
     catalogue: ModelCatalogue | None = None,
     jobs: PublicJobs | None = None,
     speech: SpeechSynthesis | None = None,
+    transcriptions: Transcription | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -347,6 +352,7 @@ def create_app(
         )
     )
     app.include_router(create_speech_router(lambda: speech))
+    app.include_router(create_transcription_router(lambda: transcriptions))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
@@ -431,4 +437,5 @@ def create_app(
     app.state.job_runtime = job_runtime
     app.state.artifact_runtime = artifact_runtime
     app.state.speech = speech
+    app.state.transcriptions = transcriptions
     return app

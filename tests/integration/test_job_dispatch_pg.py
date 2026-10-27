@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ from sqlalchemy.pool import NullPool
 from speechnexus_backend.speech.application.job_dispatcher import JobDispatcher
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.job_dispatch import (
+    DispatchClaimLostError,
     DispatchJob,
     DispatchLimits,
     ExecutionSubmission,
@@ -321,3 +322,64 @@ async def test_concurrent_claim_executes_one_submission_and_closes_once(
         "audio_artifact_id": "artifact-synthetic",
         "receipt_id": "receipt-synthetic",
     }
+
+
+async def test_cross_lease_takeover_renews_only_the_new_owner(
+    dispatch_db: DispatchSandbox,
+) -> None:
+    created = dispatch_db.jobs.submit(
+        _body(), request_id="request-dispatch-0002", idempotency_key=None
+    )
+    queue = PostgresDispatchQueue(dispatch_db.pool)
+    states = PostgresDispatchStateStore(dispatch_db.pool)
+
+    first_claims = await queue.claim_due("worker-synthetic-a", 30_000, 1)
+    assert len(first_claims) == 1
+    first = replace(first_claims[0], job=await states.mark_running(first_claims[0].job))
+
+    dispatch_db.query(
+        "UPDATE coordination_jobs SET claim_expires_at_us = 0 "
+        "WHERE job_id = %s AND claim_version = %s",
+        (created.job_id, first.claim_version),
+    )
+    second_claims = await queue.claim_due("worker-synthetic-b", 30_000, 1)
+    assert len(second_claims) == 1
+    second = second_claims[0]
+    assert second.claim_version == 2 and second.job.state == "running"
+
+    assert await states.renew(first, 30_000) is None
+    renewed = await states.renew(second, 30_000)
+    assert renewed is not None
+    result_json = json.dumps(
+        {
+            "kind": "tts",
+            "audio_artifact_id": "artifact-synthetic",
+            "receipt_id": "receipt-synthetic",
+        },
+        separators=(",", ":"),
+    )
+    terminal = await states.finish(renewed, "succeeded", result_json=result_json, error_code=None)
+    assert terminal.state == "succeeded" and terminal.status_version == 3
+
+    with pytest.raises(DispatchClaimLostError):
+        await states.finish(first, "succeeded", result_json=result_json, error_code=None)
+
+    rows = dispatch_db.query(
+        "SELECT j.state, j.status_version, j.result_json, c.claim_version, "
+        "c.job_state, c.claim_expires_at_us, "
+        "(SELECT count(*) FROM speech_job_events e WHERE e.job_id = j.job_id) AS events "
+        "FROM speech_jobs AS j JOIN coordination_jobs AS c ON c.job_id = j.job_id "
+        "WHERE j.job_id = %s",
+        (created.job_id,),
+    )
+    assert rows == [
+        {
+            "state": "succeeded",
+            "status_version": 3,
+            "result_json": result_json,
+            "claim_version": 2,
+            "job_state": "succeeded",
+            "claim_expires_at_us": 0,
+            "events": 3,
+        }
+    ]

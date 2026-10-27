@@ -16,7 +16,16 @@ ExecutionState = Literal[
     "submitting", "executing", "stopping", "succeeded", "failed", "aborted", "unknown_quarantined"
 ]
 JobOutcome = Literal[
-    "succeeded", "failed", "unknown", "idle", "claimed", "skipped", "exhausted", "timed_out"
+    "succeeded",
+    "failed",
+    "unknown",
+    "idle",
+    "claimed",
+    "skipped",
+    "exhausted",
+    "timed_out",
+    "deferred",
+    "claim_lost",
 ]
 
 _IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
@@ -42,6 +51,10 @@ class DispatchUnavailableError(RuntimeError):
 
 class DispatchConflictError(RuntimeError):
     """A public Job transition lost its status-version or state guard."""
+
+
+class DispatchClaimLostError(DispatchConflictError):
+    """The claimed lease was taken over or expired before a terminal write."""
 
 
 class DispatchProtocolError(RuntimeError):
@@ -222,6 +235,9 @@ class DispatchBatch:
     failed: int = 0
     unknown: int = 0
     skipped: int = 0
+    deferred: int = 0
+    lease_reclaimed: int = 0
+    lease_lost: int = 0
 
     def count(self, result: DispatchResult) -> DispatchBatch:
         increments = {
@@ -233,14 +249,19 @@ class DispatchBatch:
             "idle": "skipped",
             "skipped": "skipped",
             "claimed": "skipped",
+            "deferred": "deferred",
+            "claim_lost": "lease_lost",
         }
         name = increments[result.outcome]
         return DispatchBatch(
-            self.claimed,
-            self.succeeded + (name == "succeeded"),
-            self.failed + (name == "failed"),
-            self.unknown + (name == "unknown"),
-            self.skipped + (name == "skipped"),
+            claimed=self.claimed,
+            succeeded=self.succeeded + (name == "succeeded"),
+            failed=self.failed + (name == "failed"),
+            unknown=self.unknown + (name == "unknown"),
+            skipped=self.skipped + (name == "skipped"),
+            deferred=self.deferred + (name == "deferred"),
+            lease_reclaimed=self.lease_reclaimed,
+            lease_lost=self.lease_lost + (name == "lease_lost"),
         )
 
 
@@ -266,6 +287,7 @@ def gateway_failure_code(status: Mapping[str, Any]) -> str:
 __all__ = [
     "ClaimedJob",
     "DispatchBatch",
+    "DispatchClaimLostError",
     "DispatchConflictError",
     "DispatchJob",
     "DispatchLimits",

@@ -45,8 +45,18 @@ class FakeCursor:
             self.current = self.connection.tables_by_role.get(
                 str(parameters[0]), self.connection.default_tables
             )
-        elif "pg_read_all_data" in query:
-            self.current = {"forbidden": str(parameters[0]) in self.connection.unsafe_roles}
+        elif "aclexplode" in query:
+            self.current = [
+                {"grantee": grantee, "privilege_type": "TEMPORARY"}
+                for grantee in self.connection.temp_roles
+            ]
+        elif "relkind='S'" in query:
+            self.current = [
+                {"schema_name": "speech", "relname": relation}
+                for relation in self.connection.sequence_roles.get(str(parameters[0]), ())
+            ]
+        elif "AS forbidden" in query:
+            self.current = {"forbidden": str(parameters[-1]) in self.connection.forbidden_roles}
         else:
             raise AssertionError(f"Unexpected audit query: {query}")
 
@@ -66,14 +76,19 @@ class FakeConnection:
         self,
         *,
         roles: tuple[str, ...] = ("catalogue_reader",),
-        unsafe_roles: tuple[str, ...] = (),
+        forbidden_roles: tuple[str, ...] = (),
+        database_create_roles: tuple[str, ...] = (),
+        temp_roles: tuple[str, ...] = (),
+        sequence_roles: dict[str, tuple[str, ...]] | None = None,
         definer_roles: tuple[str, ...] = (),
         tables_by_role: dict[str, list[dict[str, Any]]] | None = None,
         default_tables: list[dict[str, Any]] | None = None,
     ) -> None:
         self.identities = {"login": "catalogue_reader", "effective": "catalogue_reader"}
         self.roles = roles
-        self.unsafe_roles = unsafe_roles
+        self.forbidden_roles = set(forbidden_roles) | set(database_create_roles)
+        self.temp_roles = temp_roles
+        self.sequence_roles = sequence_roles or {}
         self.definer_roles = definer_roles
         self.tables_by_role = tables_by_role or {}
         self.default_tables = (
@@ -84,13 +99,15 @@ class FakeConnection:
                     "schema_name": "speech",
                     "relname": "speech_publications",
                     "can_select": True,
+                    "can_select_column": True,
                     "can_write": False,
                     "can_write_column": False,
                 },
                 {
                     "schema_name": "speech",
-                    "relname": "speech_binding_revisions",
+                    "relname": "speech_published_binding_revisions",
                     "can_select": True,
+                    "can_select_column": True,
                     "can_write": False,
                     "can_write_column": False,
                 },
@@ -140,23 +157,51 @@ def test_unreachable_identity_is_rejected_and_closes() -> None:
     runtime.close()
 
 
-def test_role_audit_checks_the_settable_closure_and_global_reader_membership() -> None:
+def test_role_audit_checks_the_published_surface_and_privilege_classes() -> None:
     connection = FakeConnection()
 
     _verify(connection)
 
     queries = "\n".join(query for query, _ in connection.queries)
     assert "pg_auth_members" in queries
-    assert "pg_read_all_data" in queries
-    assert "pg_write_all_data" in queries
+    assert "has_database_privilege" in queries
+    assert "aclexplode" in queries
+    assert "relkind='S'" in queries
     assert "p.prosecdef" in queries
     assert "SELECT n.nspname AS schema_name" in queries
-    assert ("n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND p.prosecdef") in queries
 
 
-def test_predefined_data_role_membership_is_rejected() -> None:
+@pytest.mark.parametrize(
+    "predefined",
+    [
+        "pg_read_all_data",
+        "pg_read_server_files",
+        "pg_write_server_files",
+        "pg_execute_server_program",
+        "pg_signal_backend",
+        "pg_monitor",
+        "pg_read_all_settings",
+        "pg_read_all_stats",
+    ],
+)
+def test_predefined_role_membership_is_rejected(predefined: str) -> None:
+    with pytest.raises(ValueError, match="predefined PostgreSQL role"):
+        _verify(FakeConnection(roles=("catalogue_reader", predefined)))
+
+
+def test_database_create_privilege_is_rejected() -> None:
     with pytest.raises(ValueError):
-        _verify(FakeConnection(unsafe_roles=("catalogue_reader",)))
+        _verify(FakeConnection(database_create_roles=("catalogue_reader",)))
+
+
+def test_direct_database_temp_grant_is_rejected() -> None:
+    with pytest.raises(ValueError, match="TEMP"):
+        _verify(FakeConnection(temp_roles=("catalogue_reader",)))
+
+
+def test_sequence_privilege_is_rejected() -> None:
+    with pytest.raises(ValueError, match="sequence"):
+        _verify(FakeConnection(sequence_roles={"catalogue_reader": ("catalogue_probe_seq",)}))
 
 
 def test_every_switchable_role_is_audited() -> None:
@@ -165,6 +210,7 @@ def test_every_switchable_role_is_audited() -> None:
             "schema_name": "speech",
             "relname": "speech_publications",
             "can_select": True,
+            "can_select_column": True,
             "can_write": True,
             "can_write_column": False,
         }
@@ -183,7 +229,7 @@ def test_security_definer_execution_surface_is_rejected() -> None:
         _verify(FakeConnection(definer_roles=("catalogue_reader",)))
 
 
-def test_reader_must_have_select_on_exactly_the_two_catalogue_tables() -> None:
+def test_reader_must_have_select_on_exactly_the_published_surface() -> None:
     with pytest.raises(ValueError):
         _verify(FakeConnection(default_tables=[]))
     with pytest.raises(ValueError):
@@ -194,6 +240,7 @@ def test_reader_must_have_select_on_exactly_the_two_catalogue_tables() -> None:
                         "schema_name": "speech",
                         "relname": "speech_publications",
                         "can_select": True,
+                        "can_select_column": True,
                         "can_write": False,
                         "can_write_column": False,
                     },
@@ -201,6 +248,30 @@ def test_reader_must_have_select_on_exactly_the_two_catalogue_tables() -> None:
                         "schema_name": "speech",
                         "relname": "speech_binding_revisions",
                         "can_select": True,
+                        "can_select_column": True,
+                        "can_write": False,
+                        "can_write_column": False,
+                    },
+                ]
+            )
+        )
+    with pytest.raises(ValueError):
+        _verify(
+            FakeConnection(
+                default_tables=[
+                    {
+                        "schema_name": "speech",
+                        "relname": "speech_publications",
+                        "can_select": True,
+                        "can_select_column": True,
+                        "can_write": False,
+                        "can_write_column": False,
+                    },
+                    {
+                        "schema_name": "speech",
+                        "relname": "speech_published_binding_revisions",
+                        "can_select": True,
+                        "can_select_column": True,
                         "can_write": False,
                         "can_write_column": False,
                     },
@@ -208,6 +279,7 @@ def test_reader_must_have_select_on_exactly_the_two_catalogue_tables() -> None:
                         "schema_name": "speech",
                         "relname": "speech_private",
                         "can_select": True,
+                        "can_select_column": True,
                         "can_write": False,
                         "can_write_column": False,
                     },
@@ -221,6 +293,7 @@ def test_reader_cannot_select_in_another_user_schema() -> None:
         "schema_name": "public",
         "relname": "unrelated_private",
         "can_select": True,
+        "can_select_column": True,
         "can_write": False,
         "can_write_column": False,
     }
@@ -234,16 +307,49 @@ def test_column_level_write_privilege_is_rejected() -> None:
             "schema_name": "speech",
             "relname": "speech_publications",
             "can_select": True,
+            "can_select_column": True,
             "can_write": False,
             "can_write_column": True,
         },
         {
             "schema_name": "speech",
-            "relname": "speech_binding_revisions",
+            "relname": "speech_published_binding_revisions",
             "can_select": True,
+            "can_select_column": True,
             "can_write": False,
             "can_write_column": False,
         },
     ]
     with pytest.raises(ValueError):
         _verify(FakeConnection(default_tables=writable))
+
+
+def test_column_level_read_privilege_is_rejected() -> None:
+    column_read = [
+        {
+            "schema_name": "speech",
+            "relname": "speech_binding_revisions",
+            "can_select": False,
+            "can_select_column": True,
+            "can_write": False,
+            "can_write_column": False,
+        },
+        {
+            "schema_name": "speech",
+            "relname": "speech_publications",
+            "can_select": True,
+            "can_select_column": True,
+            "can_write": False,
+            "can_write_column": False,
+        },
+        {
+            "schema_name": "speech",
+            "relname": "speech_published_binding_revisions",
+            "can_select": True,
+            "can_select_column": True,
+            "can_write": False,
+            "can_write_column": False,
+        },
+    ]
+    with pytest.raises(ValueError, match="reads beyond"):
+        _verify(FakeConnection(default_tables=column_read))

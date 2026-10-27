@@ -69,7 +69,11 @@ def sandbox() -> Iterator[Sandbox]:
     admin = psycopg.connect(url, autocommit=True)
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
-    for grant in (*publication_grants(schema, role), *binding_draft_grants(schema, role)):
+    for grant in (
+        *publication_grants(schema, role),
+        *binding_draft_grants(schema, role),
+        *model_catalog_reader_grants(schema, role),
+    ):
         admin.execute(grant)
     pool = speech_pool(
         make_conninfo(url, user=role, password=PASSWORD), schema=schema, max_size=2, name="pub-test"
@@ -346,41 +350,196 @@ def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> 
     ]
 
 
-def test_reader_grants_are_select_only_and_global_writer_membership_is_rejected(
-    sandbox: Sandbox,
-) -> None:
+PREDEFINED_ROLES = (
+    "pg_read_all_data",
+    "pg_write_all_data",
+    "pg_read_server_files",
+    "pg_write_server_files",
+    "pg_execute_server_program",
+    "pg_signal_backend",
+    "pg_monitor",
+    "pg_read_all_settings",
+    "pg_read_all_stats",
+)
+
+
+def _create_reader(sandbox: Sandbox) -> str:
     reader = "sn_pub_reader_" + uuid.uuid4().hex[:12]
     sandbox.admin.execute(f"CREATE ROLE \"{reader}\" LOGIN PASSWORD '{PASSWORD}'")
+    for grant in model_catalog_reader_grants(sandbox.schema, reader):
+        sandbox.admin.execute(grant)
+    return reader
+
+
+def _drop_reader(sandbox: Sandbox, reader: str) -> None:
+    sandbox.admin.execute(f'DROP OWNED BY "{reader}"')
+    sandbox.admin.execute(f'DROP ROLE IF EXISTS "{reader}"')
+
+
+def _assert_reader_rejected(sandbox: Sandbox, reader: str) -> None:
+    runtime = _reader_runtime(sandbox, reader)
+    with pytest.raises(ValueError):
+        runtime.open()
+    assert runtime.catalogue is None
+    runtime.close()
+
+
+def test_reader_receives_only_the_published_surface(sandbox: Sandbox) -> None:
+    reader = _create_reader(sandbox)
     try:
-        for grant in model_catalog_reader_grants(sandbox.schema, reader):
-            sandbox.admin.execute(grant)
         privileges = sandbox.admin.execute(
             "SELECT "
-            "pg_catalog.has_table_privilege(%s,%s,'SELECT') AS can_select, "
+            "pg_catalog.has_table_privilege(%s,%s,'SELECT') AS can_select_view, "
+            "pg_catalog.has_table_privilege(%s,%s,'SELECT') AS can_select_drafts, "
             "pg_catalog.has_table_privilege(%s,%s,"
             "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS can_write",
             (
                 reader,
-                f"{sandbox.schema}.speech_publications",
+                f"{sandbox.schema}.speech_published_binding_revisions",
+                reader,
+                f"{sandbox.schema}.speech_binding_revisions",
                 reader,
                 f"{sandbox.schema}.speech_publications",
             ),
         ).fetchone()
-        assert privileges == (True, False)
+        assert privileges == (True, False, False)
+
+        options = sandbox.admin.execute(
+            "SELECT c.reloptions FROM pg_catalog.pg_class AS c "
+            "JOIN pg_catalog.pg_namespace AS n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relname='speech_published_binding_revisions'",
+            (sandbox.schema,),
+        ).fetchone()
+        assert options is not None
+        reloptions = options[0]
+        assert isinstance(reloptions, list)
+        assert "security_barrier=true" in reloptions
+        assert "security_invoker=false" in reloptions
+
+        draft_table = f'"{sandbox.schema}".speech_binding_revisions'
+        sandbox.admin.execute(f'GRANT SELECT ON {draft_table} TO "{reader}"')
+        try:
+            _assert_reader_rejected(sandbox, reader)
+        finally:
+            sandbox.admin.execute(f'REVOKE SELECT ON {draft_table} FROM "{reader}"')
+
+        sandbox.admin.execute(f'GRANT SELECT (definition_json) ON {draft_table} TO "{reader}"')
+        try:
+            _assert_reader_rejected(sandbox, reader)
+        finally:
+            sandbox.admin.execute(
+                f'REVOKE SELECT (definition_json) ON {draft_table} FROM "{reader}"'
+            )
 
         runtime = _reader_runtime(sandbox, reader)
         runtime.open()
         runtime.close()
-
-        sandbox.admin.execute(f'GRANT pg_write_all_data TO "{reader}"')
-        rejected = _reader_runtime(sandbox, reader)
-        with pytest.raises(ValueError):
-            rejected.open()
-        assert rejected.catalogue is None
-        rejected.close()
     finally:
-        sandbox.admin.execute(f'DROP OWNED BY "{reader}"')
-        sandbox.admin.execute(f'DROP ROLE IF EXISTS "{reader}"')
+        _drop_reader(sandbox, reader)
+
+
+def test_reader_rejects_every_predefined_role(sandbox: Sandbox) -> None:
+    reader = _create_reader(sandbox)
+    try:
+        for predefined in PREDEFINED_ROLES:
+            sandbox.admin.execute(f'GRANT "{predefined}" TO "{reader}"')
+            try:
+                _assert_reader_rejected(sandbox, reader)
+            finally:
+                sandbox.admin.execute(f'REVOKE "{predefined}" FROM "{reader}"')
+
+        runtime = _reader_runtime(sandbox, reader)
+        runtime.open()
+        runtime.close()
+    finally:
+        _drop_reader(sandbox, reader)
+
+
+def test_reader_rejects_sequence_and_database_privileges(sandbox: Sandbox) -> None:
+    reader = _create_reader(sandbox)
+    try:
+        runtime = _reader_runtime(sandbox, reader)
+        runtime.open()
+        runtime.close()
+
+        current = sandbox.admin.execute("SELECT current_database()").fetchone()
+        assert current is not None
+        database = str(current[0])
+        sandbox.admin.execute(f'GRANT TEMP ON DATABASE "{database}" TO "{reader}"')
+        try:
+            _assert_reader_rejected(sandbox, reader)
+        finally:
+            sandbox.admin.execute(f'REVOKE TEMP ON DATABASE "{database}" FROM "{reader}"')
+
+        sandbox.admin.execute(f'GRANT CREATE ON DATABASE "{database}" TO "{reader}"')
+        try:
+            _assert_reader_rejected(sandbox, reader)
+        finally:
+            sandbox.admin.execute(f'REVOKE CREATE ON DATABASE "{database}" FROM "{reader}"')
+
+        sandbox.admin.execute(f'CREATE SEQUENCE "{sandbox.schema}".reader_probe_seq')
+        try:
+            sandbox.admin.execute(
+                f'GRANT USAGE ON SEQUENCE "{sandbox.schema}".reader_probe_seq TO "{reader}"'
+            )
+            _assert_reader_rejected(sandbox, reader)
+        finally:
+            sandbox.admin.execute(f'DROP SEQUENCE "{sandbox.schema}".reader_probe_seq')
+
+        runtime = _reader_runtime(sandbox, reader)
+        runtime.open()
+        runtime.close()
+    finally:
+        _drop_reader(sandbox, reader)
+
+
+def test_reader_view_exposes_only_published_binding_revisions(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    create_binding_revision(
+        sandbox.admin,
+        {
+            **DEFINITION,
+            "revision": "2",
+            "revision_id": "binding-rev-2",
+            "logical_model": "qwen3-tts-customvoice-v2",
+        },
+    )
+    sandbox.store.append(
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    )
+
+    reader = _create_reader(sandbox)
+    try:
+        runtime = _reader_runtime(sandbox, reader)
+        runtime.open()
+        catalogue = runtime.catalogue
+        assert catalogue is not None
+        assert [model["id"] for model in catalogue.list_models()] == ["tts-quality"]
+        runtime.close()
+
+        connection = psycopg.connect(
+            make_conninfo(sandbox.url, user=reader, password=PASSWORD), autocommit=True
+        )
+        try:
+            connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute("SELECT * FROM speech_binding_revisions")
+            rows = connection.execute(
+                "SELECT binding_id, revision, revision_id FROM "
+                "speech_published_binding_revisions ORDER BY revision"
+            ).fetchall()
+            assert rows == [("tts-quality", "1", "binding-rev-1")]
+            assert (
+                connection.execute(
+                    "SELECT definition_json FROM speech_published_binding_revisions "
+                    "WHERE revision='2'"
+                ).fetchall()
+                == []
+            )
+        finally:
+            connection.close()
+    finally:
+        _drop_reader(sandbox, reader)
 
 
 def _reader_runtime(sandbox: Sandbox, reader: str) -> ModelCatalogRuntime:
@@ -397,3 +556,59 @@ def _reader_runtime(sandbox: Sandbox, reader: str) -> ModelCatalogRuntime:
             object_storage_bucket="test",
         )
     )
+
+
+def _migration_config(sandbox: Sandbox) -> Config:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.attributes["schema"] = sandbox.schema
+    return config
+
+
+def _downgrade_pronunciation(sandbox: Sandbox, *, isolation_level: str | None = None) -> None:
+    engine = create_engine(
+        sandbox.url.replace("postgresql://", "postgresql+psycopg://", 1),
+        poolclass=NullPool,
+        hide_parameters=True,
+        isolation_level=isolation_level,
+    )
+    config = _migration_config(sandbox)
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.downgrade(config, "0017_job_submissions")
+    finally:
+        engine.dispose()
+
+
+def test_pronunciation_downgrade_refuses_existing_publications(sandbox: Sandbox) -> None:
+    pronunciation = Publication("pronunciation", "pron-main", 1, "pron-rev-1", 1)
+    sandbox.store.append(pronunciation)
+
+    with pytest.raises(RuntimeError, match="Pronunciation publications require preservation"):
+        _downgrade_pronunciation(sandbox)
+
+    assert sandbox.store.get("pronunciation", "pron-main", 1) == pronunciation
+
+
+def test_pronunciation_downgrade_requires_read_committed(sandbox: Sandbox) -> None:
+    with pytest.raises(RuntimeError, match="READ COMMITTED"):
+        _downgrade_pronunciation(sandbox, isolation_level="REPEATABLE READ")
+
+    sandbox.admin.execute(
+        "INSERT INTO speech_publications "
+        "(kind, object_id, revision, revision_id, published_at_us) "
+        "VALUES ('pronunciation', 'pron-main', '1', 'pron-rev-1', 1)"
+    )
+
+
+def test_empty_pronunciation_downgrade_reverts_the_kind_constraint(sandbox: Sandbox) -> None:
+    _downgrade_pronunciation(sandbox)
+
+    version = sandbox.admin.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert version == ("0017_job_submissions",)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        sandbox.admin.execute(
+            "INSERT INTO speech_publications "
+            "(kind, object_id, revision, revision_id, published_at_us) "
+            "VALUES ('pronunciation', 'pron-main', '1', 'pron-rev-1', 1)"
+        )

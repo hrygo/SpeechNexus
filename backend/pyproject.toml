@@ -25,6 +25,7 @@ speechnexus-runtime-delivery-worker = "speechnexus_backend.runtime_delivery_work
 speechnexus-asset-maintain = "speechnexus_backend.asset_worker:main"
 speechnexus-job-dispatch-worker = "speechnexus_backend.job_dispatch_worker:main"
 speechnexus-job-migrate = "speechnexus_backend.speech.infrastructure.migrate_jobs:main"
+speechnexus-publish-binding = "speechnexus_backend.publish_binding:main"
 
 [project.optional-dependencies]
 migrations = ["alembic>=1.18,<2"]

@@ -9,6 +9,10 @@ from typing import Any
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_backend.speech.application.binding_publication import (
+    BindingPublicationConflictError,
+    BindingRevisionNotFoundError,
+)
 from speechnexus_backend.speech.domain.publications import (
     Publication,
     PublicationKind,
@@ -17,6 +21,7 @@ from speechnexus_backend.speech.domain.publications import (
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
+    find_binding_revision,
     find_publication,
     list_publications,
 )
@@ -58,6 +63,7 @@ class PostgresPublications:
         *,
         read_only: bool = False,
         repeatable_read: bool = False,
+        preserve: tuple[type[BaseException], ...] = (),
     ) -> T:
         deadline = time.monotonic() + self._timeout
         try:
@@ -76,6 +82,8 @@ class PostgresPublications:
             if time.monotonic() >= deadline:
                 raise PublicationUnavailableError
             return result
+        except preserve:
+            raise
         except (
             psycopg.Error,
             PoolClosed,
@@ -92,6 +100,54 @@ class PostgresPublications:
 
     def append(self, publication: Publication) -> bool:
         return self._run(lambda cursor: append_publication(cursor, publication))
+
+    def publish_binding_revision(self, publication: Publication) -> tuple[Publication, bool]:
+        """Validate the stored triple and append it inside one transaction."""
+
+        def operation(cursor: _Cursor) -> tuple[Publication, bool]:
+            existing = find_publication(
+                cursor, publication.kind, publication.object_id, publication.revision
+            )
+            if existing is not None and existing.revision_id != publication.revision_id:
+                raise BindingPublicationConflictError(
+                    publication.object_id,
+                    publication.revision,
+                    existing.revision_id,
+                    publication.revision_id,
+                )
+            stored_revision_id = find_binding_revision(
+                cursor, publication.object_id, publication.revision
+            )
+            if stored_revision_id != publication.revision_id:
+                raise BindingRevisionNotFoundError(
+                    publication.object_id,
+                    publication.revision,
+                    publication.revision_id,
+                    stored_revision_id=stored_revision_id,
+                )
+            if existing is not None:
+                return existing, False
+            if append_publication(cursor, publication):
+                return publication, True
+            # A concurrent writer inserted this revision first; report the stored fact.
+            stored = find_publication(
+                cursor, publication.kind, publication.object_id, publication.revision
+            )
+            if stored is None:
+                raise PublicationUnavailableError
+            if stored.revision_id != publication.revision_id:
+                raise BindingPublicationConflictError(
+                    publication.object_id,
+                    publication.revision,
+                    stored.revision_id,
+                    publication.revision_id,
+                )
+            return stored, False
+
+        return self._run(
+            operation,
+            preserve=(BindingRevisionNotFoundError, BindingPublicationConflictError),
+        )
 
     def get(self, kind: PublicationKind, object_id: str, revision: int) -> Publication | None:
         return self._run(

@@ -87,6 +87,14 @@ date: 2026-10-28
 `final_deadline_ms` 是“段关闭到正文 final”的窗口，不是整个 HTTP 请求期限；后者来自
 公开请求的 `deadline_ms` 与部署上限的较小值。
 
+## 引擎实例注册前提
+
+同步请求进入准入前，目标实例必须已有 `engine_instances` / `runtime_instance_heads`
+ready 事实以及成功的 prepare intent。当前受支持的运维入口是
+[`speechnexus-register-engine`](../operations/register-engine.md)；它不替代节点控制器，
+也不构成模型/硬件资格。没有该事实时同步路径会以
+`Transcription admission facts are not provisioned` 或准入拒绝结束。
+
 ## 一次同步请求的链路
 
 1. 公开路由完成既有请求校验与 `AudioProbe`（生产为进程内 PyAV，无 `ffprobe` 进程）。

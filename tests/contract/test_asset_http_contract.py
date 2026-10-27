@@ -51,6 +51,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         "/v1/nexus/jobs",
         "/v1/nexus/jobs/{job_id}",
         "/v1/audio/speech",
+        "/v1/audio/transcriptions",
     }
     for path in PATHS:
         assert actual["paths"][path] == document["paths"][path]

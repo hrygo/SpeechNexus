@@ -137,7 +137,7 @@ def test_evidence_requires_both_identifiers_and_a_known_source() -> None:
             revision_id="mbrev-abc123",
             capacity_manifest_id=CAPACITY,
             qualification_report_id=REPORT,
-            evidence_source="invented",
+            evidence_source="invented",  # type: ignore[arg-type]
             recorded_at_us=1,
         )
     with pytest.raises(ValueError):

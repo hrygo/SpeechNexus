@@ -429,6 +429,4 @@ def test_downgrade_waits_for_in_flight_result_and_preserves_committed_receipt(
         with pytest.raises(RuntimeError, match=r"history.*preservation"):
             pending.result(timeout=5)
     assert recovery_ledger.get(saved.identity.submit_intent_id) == saved
-    assert db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]

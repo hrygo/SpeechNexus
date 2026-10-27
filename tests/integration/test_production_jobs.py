@@ -26,6 +26,7 @@ from pymysql.cursors import DictCursor
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from tests.support.job_database import MySQLJobTransactions
+from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.jobs import CreateJobService, JobTransactions
 from speechnexus_backend.speech.domain.jobs import CreateJob
@@ -424,7 +425,5 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
                 command.downgrade(config, "base")
     finally:
         engine.dispose()
-    assert database.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert database.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
     assert database.counts() == (1, 1)

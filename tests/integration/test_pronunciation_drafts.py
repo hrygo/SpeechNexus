@@ -576,9 +576,7 @@ def test_writer_commit_while_downgrade_waits_preserves_all_new_history(
             pending.result(timeout=5)
     assert p.port.recover(cmd).draft == original.draft
     assert all(len(rows) == 1 for rows in p.snapshot().values())
-    assert p.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert p.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
 
 
 @pytest.mark.parametrize("database", ["postgresql"], indirect=True)

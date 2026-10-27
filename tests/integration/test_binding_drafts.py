@@ -620,9 +620,7 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_binding_history(bindings:
                 migration.downgrade(config, "0009_profile_drafts")
     finally:
         engine.dispose()
-    assert bindings.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": "0014_pronunciation_drafts"}
-    ]
+    assert bindings.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
     assert bindings.snapshot() == before
 
 

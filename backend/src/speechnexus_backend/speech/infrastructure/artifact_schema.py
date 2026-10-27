@@ -22,7 +22,7 @@ ARTIFACT_DDL = (
         object_key VARCHAR(512) COLLATE "C" NOT NULL UNIQUE CHECK
             (OCTET_LENGTH(object_key) BETWEEN 1 AND 512),
         storage_version_id VARCHAR(1024) COLLATE "C" NOT NULL CHECK
-            (storage_version_id <> 'null' AND storage_version_id !~ '[\x00-\x1f\x7f]'),
+            (storage_version_id <> 'null' AND storage_version_id !~ '[[:cntrl:]]'),
         created_at_us BIGINT NOT NULL CHECK (created_at_us >= 0),
         expires_at_us BIGINT CHECK (expires_at_us > created_at_us),
         CHECK (receipt_id IS NULL OR receipt_id ~ '^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'),

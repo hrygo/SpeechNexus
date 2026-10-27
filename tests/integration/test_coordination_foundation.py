@@ -253,12 +253,16 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
         if db.dialect == "postgresql"
         else set()
     )
+    # Artifact metadata (0020). Reads go through their own connection; the
+    # table stays outside the shared coordination surface.
+    artifact_tables = {"speech_artifacts"} if db.dialect == "postgresql" else set()
     assert binding_tables <= {row["name"] for row in rows}
     assert profile_tables <= {row["name"] for row in rows}
     assert publication_tables <= {row["name"] for row in rows}
+    assert artifact_tables <= {row["name"] for row in rows}
     assert {row["name"] for row in rows} - {
         "alembic_version"
-    } - asset_tables - profile_tables - binding_tables - publication_tables == (
+    } - asset_tables - profile_tables - binding_tables - publication_tables - artifact_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )
     if db.dialect == "postgresql":

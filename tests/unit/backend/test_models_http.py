@@ -31,6 +31,19 @@ DEFINITION: dict[str, Any] = {
     "release_tier": "production",
 }
 MODEL = model_document(PUBLICATION, DEFINITION, owned_by="speechnexus")
+OTHER_PUBLICATION = Publication(
+    "binding", "asr-quality", 1, "binding-rev-asr-1", 1_700_000_000_100_000
+)
+OTHER_MODEL = model_document(
+    OTHER_PUBLICATION,
+    {
+        "binding_id": "asr-quality",
+        "logical_model": "whisper-large-v3",
+        "tasks": ["asr_file"],
+        "release_tier": "production",
+    },
+    owned_by="speechnexus",
+)
 FULL_DEFINITION: dict[str, Any] = {
     "schema_version": "1.0.0",
     "binding_id": "tts-quality",
@@ -155,6 +168,92 @@ async def test_retrieve_returns_the_published_model() -> None:
 
     assert response.status_code == 200
     assert response.json() == MODEL
+
+
+async def test_retrieve_returns_a_stable_etag() -> None:
+    async with client(Catalogue()) as http:
+        first = await http.get("/v1/models/tts-quality")
+        second = await http.get("/v1/models/tts-quality")
+
+    assert first.status_code == second.status_code == 200
+    assert first.headers["cache-control"] == "no-store"
+    assert first.headers["etag"].startswith('"sha256:')
+    assert first.headers["etag"] == second.headers["etag"]
+
+
+async def test_retrieve_conditional_get_hits_and_misses() -> None:
+    async with client(Catalogue()) as http:
+        first = await http.get("/v1/models/tts-quality")
+        etag = first.headers["etag"]
+        matched = await http.get("/v1/models/tts-quality", headers={"If-None-Match": etag})
+        weak = await http.get("/v1/models/tts-quality", headers={"If-None-Match": "W/" + etag})
+        listed = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": '"other", ' + etag}
+        )
+        wildcard = await http.get("/v1/models/tts-quality", headers={"If-None-Match": "*"})
+        missed = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": '"sha256:' + "0" * 64 + '"'}
+        )
+
+    not_modified = (matched, weak, listed, wildcard)
+    assert all(response.status_code == 304 for response in not_modified)
+    assert all(response.content == b"" for response in not_modified)
+    assert all(response.headers["etag"] == etag for response in not_modified)
+    assert missed.status_code == 200
+    assert missed.json() == MODEL
+
+
+async def test_retrieve_etag_is_per_model_and_tracks_revisions() -> None:
+    catalogue = Catalogue(models=[MODEL, OTHER_MODEL], revision=3)
+    async with client(catalogue) as http:
+        tts = await http.get("/v1/models/tts-quality")
+        asr = await http.get("/v1/models/asr-quality")
+        listed = await http.get("/v1/models")
+        crossed = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": listed.headers["etag"]}
+        )
+        catalogue.revision = 4
+        changed = await http.get("/v1/models/tts-quality")
+        stale = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": tts.headers["etag"]}
+        )
+
+    assert tts.headers["etag"] != asr.headers["etag"]
+    assert tts.headers["etag"] != listed.headers["etag"]
+    assert crossed.status_code == 200
+    assert changed.headers["etag"] != tts.headers["etag"]
+    assert changed.json() == tts.json()
+    assert stale.status_code == 200
+
+
+async def test_retrieve_etag_tracks_the_policy_revision() -> None:
+    async with client(Catalogue()) as http:
+        before = await http.get("/v1/models/tts-quality")
+
+    changed_policy = _settings().model_copy(update={"capability_policy_revision": 2})
+    async with client(Catalogue(), changed_policy) as http:
+        after = await http.get("/v1/models/tts-quality")
+
+    assert before.headers["etag"] != after.headers["etag"]
+
+
+async def test_retrieve_conditional_headers_do_not_mask_errors() -> None:
+    async with client(Catalogue()) as http:
+        missing = await http.get("/v1/models/does-not-exist", headers={"If-None-Match": "*"})
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "model_not_found"
+    assert "etag" not in missing.headers
+
+    async with client(None) as http:
+        unconfigured = await http.get("/v1/models/tts-quality", headers={"If-None-Match": "*"})
+    assert unconfigured.status_code == 503
+    assert unconfigured.json()["error"]["code"] == "model_catalogue_unavailable"
+    assert "etag" not in unconfigured.headers
+
+    async with client(Catalogue(error=PublicationUnavailableError())) as http:
+        failed = await http.get("/v1/models/tts-quality", headers={"If-None-Match": "*"})
+    assert failed.status_code == 503
+    assert failed.json()["error"]["code"] == "model_catalogue_unavailable"
 
 
 async def test_unknown_model_is_not_found() -> None:

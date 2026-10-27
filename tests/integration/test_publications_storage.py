@@ -13,11 +13,13 @@ import psycopg
 import pytest
 from alembic import command as migration
 from alembic.config import Config
+from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from speechnexus_backend.app import create_app
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.domain.publications import Publication
@@ -88,6 +90,17 @@ def sandbox() -> Iterator[Sandbox]:
         admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         admin.execute(f'DROP ROLE IF EXISTS "{role}"')
         admin.close()
+
+
+def _http_settings() -> Settings:
+    """A deterministic app config; the catalogue is injected explicitly below."""
+    return Settings(
+        service_name="speechnexus-models-http-test",
+        database_url=SecretStr("postgresql://unused@127.0.0.1/unused"),
+        object_storage_endpoint=AnyHttpUrl("http://127.0.0.1:9000"),
+        object_storage_healthcheck_url=AnyHttpUrl("http://127.0.0.1:9000/health"),
+        object_storage_bucket="test",
+    )
 
 
 def publication(revision: int, revision_id: str, object_id: str = "binding-tts") -> Publication:
@@ -348,6 +361,59 @@ def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> 
         "wav",
         "pcm",
     ]
+
+
+async def test_models_conditional_get_over_real_postgres_and_http(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    sandbox.store.append(
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    )
+    app = create_app(settings=_http_settings(), catalogue=sandbox.catalog)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        first = await http.get("/v1/models/tts-quality")
+        assert first.status_code == 200, first.text
+        etag = first.headers["etag"]
+        assert etag.startswith('"sha256:')
+
+        matched = await http.get("/v1/models/tts-quality", headers={"If-None-Match": etag})
+        weak = await http.get("/v1/models/tts-quality", headers={"If-None-Match": "W/" + etag})
+        missed = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": '"sha256:' + "0" * 64 + '"'}
+        )
+        assert matched.status_code == weak.status_code == 304
+        assert matched.content == weak.content == b""
+        assert matched.headers["etag"] == etag
+        assert missed.status_code == 200
+        assert missed.json() == first.json()
+
+        recipe = DEFINITION["execution_recipe"]
+        assert isinstance(recipe, dict)
+        create_binding_revision(
+            sandbox.admin,
+            {
+                **DEFINITION,
+                "revision": "2",
+                "revision_id": "binding-rev-2",
+                "logical_model": "qwen3-tts-customvoice-v2",
+                "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-2"},
+            },
+        )
+        sandbox.store.append(
+            Publication("binding", "tts-quality", 2, "binding-rev-2", 1_700_000_000_000_002)
+        )
+
+        changed = await http.get("/v1/models/tts-quality")
+        stale = await http.get("/v1/models/tts-quality", headers={"If-None-Match": etag})
+        refreshed = await http.get(
+            "/v1/models/tts-quality", headers={"If-None-Match": changed.headers["etag"]}
+        )
+        listed = await http.get("/v1/models")
+        assert changed.status_code == 200
+        assert changed.headers["etag"] != etag
+        assert changed.json()["nexus"]["logical_model"] == "qwen3-tts-customvoice-v2"
+        assert stale.status_code == 200
+        assert refreshed.status_code == 304
+        assert listed.headers["etag"] != changed.headers["etag"]
 
 
 PREDEFINED_ROLES = (

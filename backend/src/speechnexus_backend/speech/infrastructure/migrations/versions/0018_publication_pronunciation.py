@@ -22,6 +22,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
+    if connection.execute(text("SHOW transaction_isolation")).scalar_one() != "read committed":
+        raise RuntimeError("Publication kind downgrade requires READ COMMITTED isolation")
+    # Match 0015: lock before the emptiness snapshot so no pronunciation
+    # publication can appear after it and before the constraint is replaced.
     op.execute("LOCK TABLE speech_publications IN ACCESS EXCLUSIVE MODE")
     if connection.execute(
         text("SELECT count(*) FROM speech_publications WHERE kind = 'pronunciation'")

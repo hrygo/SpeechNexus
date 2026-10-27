@@ -12,21 +12,23 @@ class CatalogCursor(Protocol):
 
 
 def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
-    """Join on the full revision identity and return only each binding's newest revision.
+    """Read the published-only view and return each binding's newest revision.
 
     Matching ``revision_id`` as well as the number keeps the catalogue honest when
     a publication and the stored document ever disagree. A newer publication that
     does not name a stored document hides older revisions rather than silently
-    falling back and presenting a stale model as current.
+    falling back and presenting a stale model as current. The revision document
+    comes only from the security-barrier view, so a leaked reader credential
+    cannot select unpublished draft revisions.
     """
     cursor.execute(
         "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
-        "r.definition_json "
+        "v.definition_json "
         "FROM speech_publications AS p "
-        "JOIN speech_binding_revisions AS r "
-        "  ON r.binding_id = p.object_id "
-        " AND r.revision = p.revision "
-        " AND r.revision_id = p.revision_id "
+        "JOIN speech_published_binding_revisions AS v "
+        "  ON v.binding_id = p.object_id "
+        " AND v.revision = p.revision "
+        " AND v.revision_id = p.revision_id "
         "WHERE p.kind = 'binding' "
         "AND NOT EXISTS ("
         "SELECT 1 FROM speech_publications AS newer "

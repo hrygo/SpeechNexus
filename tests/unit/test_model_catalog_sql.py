@@ -43,7 +43,9 @@ def test_bindings_select_the_newest_revision_and_join_the_full_document_identity
 
     assert list_published_bindings(cursor) == [binding_row()]
     query, parameters = cursor.calls[0]
-    assert "r.revision_id = p.revision_id" in query
+    assert "v.revision_id = p.revision_id" in query
+    assert "speech_published_binding_revisions" in query
+    assert "JOIN speech_binding_revisions" not in query
     assert "newer.revision::numeric > p.revision::numeric" in query
     assert "NOT EXISTS" in query
     assert parameters == ()

@@ -15,6 +15,7 @@ from speechnexus_backend.speech.domain.publications import (
     catalog_digest,
 )
 from speechnexus_backend.speech.infrastructure.publication_schema import (
+    PUBLICATION_READER_VIEW_DDL,
     model_catalog_reader_grants,
 )
 
@@ -146,6 +147,15 @@ def test_model_catalog_reader_grants_are_select_only() -> None:
     assert grants == (
         'GRANT USAGE ON SCHEMA "speechnexus_test" TO "catalogue_reader"',
         'GRANT SELECT ON "speechnexus_test".speech_publications, '
-        '"speechnexus_test".speech_binding_revisions TO "catalogue_reader"',
+        '"speechnexus_test".speech_published_binding_revisions TO "catalogue_reader"',
     )
     assert not any(word in " ".join(grants) for word in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"))
+
+
+def test_reader_view_is_a_published_only_security_barrier() -> None:
+    ddl = "\n".join(PUBLICATION_READER_VIEW_DDL)
+
+    assert "security_barrier = true" in ddl
+    assert "security_invoker = false" in ddl
+    assert "WHERE p.kind = 'binding'" in ddl
+    assert "speech_binding_revisions" in ddl

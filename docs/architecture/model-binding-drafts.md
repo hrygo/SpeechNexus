@@ -160,6 +160,21 @@ statement deadlines, closed pools, corruption and immutable original-result link
 PG separately verifies failed/repeated migrations and preserved older rows/ACLs.
 Synthetic SQL fixtures do not qualify a physical cluster or speech engine.
 
+## Published catalogue reader
+
+Migration `0019_publication_reader_view` adds
+`speech_published_binding_revisions`, a `security_barrier` view that joins only
+publication rows to the revision identity they name. `model_catalog_reader_grants`
+gives the public catalogue reader SELECT on `speech_publications` and this view,
+never on `speech_binding_revisions`; unpublished definitions therefore stay
+unreadable even with the reader credential. Startup rejects any inherited
+predefined `pg_*` role, database CREATE or explicit TEMP grant, sequence use,
+table/view or column SELECT beyond those two relations, write authority and
+SECURITY DEFINER execution. An upgraded deployment must also revoke any old
+`speech_binding_revisions` SELECT from the reader; startup fails closed while both
+the draft table and the published view are readable. Database PUBLIC TEMP remains
+a separate deployment audit as in the coordination baseline.
+
 ## Opt-in HTTP writer
 
 Configure `SPEECHNEXUS_BINDING_WRITER_DATABASE_URL` explicitly for an API process

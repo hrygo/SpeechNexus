@@ -193,6 +193,9 @@ def _dispatch_settings(
     )
 
 
+ROLE_PASSWORD = "synthetic_result_publication"
+
+
 def _reader_settings(
     url: str,
     schema: str,
@@ -214,7 +217,9 @@ def _reader_settings(
         object_storage_bucket=artifacts_bucket,
         object_storage_access_key=SecretStr(access),
         object_storage_secret_key=SecretStr(secret),
-        artifact_reader_database_url=SecretStr(make_conninfo(url, user=role)),
+        artifact_reader_database_url=SecretStr(
+            make_conninfo(url, user=role, password=ROLE_PASSWORD)
+        ),
         capability_default_workspace_id=WORKSPACE,
     )
 
@@ -239,8 +244,10 @@ def sandbox() -> Iterator[Sandbox]:
     pool = None
     publisher = None
     try:
-        admin.execute(f'CREATE ROLE "{writer_role}" LOGIN')
-        admin.execute(f'CREATE ROLE "{reader_role}" LOGIN')
+        # The roles need a password: a DSN with password authentication (CI)
+        # cannot log in as a passwordless role, while a local trust setup can.
+        admin.execute(f"CREATE ROLE \"{writer_role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
+        admin.execute(f"CREATE ROLE \"{reader_role}\" LOGIN PASSWORD '{ROLE_PASSWORD}'")
         for grant in artifact_publisher_grants(schema, writer_role):
             admin.execute(grant)
         for grant in artifact_reader_grants(schema, reader_role):
@@ -262,7 +269,7 @@ def sandbox() -> Iterator[Sandbox]:
             url, schema, endpoint, artifacts_bucket, staging_bucket, access, secret
         )
         pool = speech_pool(
-            make_conninfo(url, user=writer_role),
+            make_conninfo(url, user=writer_role, password=ROLE_PASSWORD),
             schema=schema,
             max_size=2,
             name="result-" + suffix,

@@ -16,6 +16,7 @@ from starlette.responses import Response
 from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
+from speechnexus_backend.job_runtime import JobRuntime
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.pronunciation_runtime import PronunciationRuntime
@@ -25,6 +26,7 @@ from speechnexus_backend.speech.application.binding_default_drafts import Bindin
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
+from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.application.readiness import (
     ReadinessProbe,
     ReadinessService,
@@ -42,6 +44,9 @@ from speechnexus_backend.speech.interfaces.http.binding_contract import binding_
 from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIngress
 from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
+from speechnexus_backend.speech.interfaces.http.job_errors import job_error
+from speechnexus_backend.speech.interfaces.http.jobs import PREFIX as JOB_PREFIX
+from speechnexus_backend.speech.interfaces.http.jobs import create_job_router
 from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
 from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, create_model_router
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
@@ -117,6 +122,7 @@ def create_app(
     binding_defaults: BindingDefaultDrafts | None = None,
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
+    jobs: PublicJobs | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -171,6 +177,17 @@ def create_app(
             return catalogue
         return catalogue_runtime.catalogue if catalogue_runtime is not None else None
 
+    job_runtime = (
+        JobRuntime(resolved_settings)
+        if jobs is None and resolved_settings.job_writer_database_url is not None
+        else None
+    )
+
+    def get_jobs() -> PublicJobs | None:
+        if jobs is not None:
+            return jobs
+        return job_runtime.jobs if job_runtime is not None else None
+
     binding_runtime = (
         BindingRuntime(resolved_settings)
         if bindings is None and resolved_settings.binding_writer_database_url is not None
@@ -209,6 +226,9 @@ def create_app(
             if binding_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_runtime.close)
                 await run_in_threadpool(binding_runtime.open)
+            if job_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, job_runtime.close)
+                await run_in_threadpool(job_runtime.open)
             if profile_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, profile_runtime.close)
                 await run_in_threadpool(profile_runtime.open)
@@ -274,6 +294,13 @@ def create_app(
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
     app.include_router(create_model_router(get_catalogue))
+    app.include_router(
+        create_job_router(
+            get_jobs,
+            max_bytes=resolved_settings.job_receive_max_bytes,
+            receive_timeout_seconds=resolved_settings.job_receive_timeout_seconds,
+        )
+    )
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
@@ -306,6 +333,17 @@ def create_app(
                 else {}
             )
             return workspace_error(code, request.state.request_id, headers=headers)
+        if (path == JOB_PREFIX or path.startswith(JOB_PREFIX + "/")) and error.status_code in (
+            404,
+            405,
+        ):
+            code = "job_not_found" if error.status_code == 404 else "job_method_not_allowed"
+            headers = (
+                {"Allow": error.headers["Allow"]}
+                if error.headers and "Allow" in error.headers
+                else {}
+            )
+            return job_error(code, request.state.request_id, headers=headers)
         return await http_exception_handler(request, error)
 
     app.include_router(
@@ -321,4 +359,5 @@ def create_app(
     app.state.catalogue_runtime = catalogue_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
+    app.state.job_runtime = job_runtime
     return app

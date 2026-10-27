@@ -76,12 +76,18 @@ class Settings(BaseSettings):
     binding_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
     binding_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    job_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    job_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
+    job_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    job_transaction_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
     @field_validator(
         "profile_writer_database_url",
         "model_catalog_reader_database_url",
         "pronunciation_reader_database_url",
         "binding_writer_database_url",
         "binding_defaults_writer_database_url",
+        "job_writer_database_url",
         mode="before",
     )
     @classmethod

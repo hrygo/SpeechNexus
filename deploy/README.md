@@ -113,3 +113,8 @@ object IAM/outbound restrictions, arbitrary audio inspection or G1 qualification
 启用原子默认值声明与固定快照GET。两者互斥、默认均为空；没有通用数据库身份回退，
 也不会自动扩旧角色权限。配置示例仅传递操作者已配置的凭据，不执行grant、DDL或部署。
 模式、错误恢复与实际入口见 [producer HTTP](../docs/architecture/binding-defaults-producer.md)。
+
+公开 Job 提交与读取默认关闭。应用 `0017_job_submissions` 并为非 owner 角色授予
+`speech_jobs` / `speech_job_events` / `speech_job_submissions` 的最小写入权限及发布事实只读权限后，
+设置 `SPEECHNEXUS_JOB_WRITER_DATABASE_URL`；启动只验证权限，不执行迁移或 grant。
+未配置时 `/v1/nexus/jobs` 返回既有错误包封的 `503 job_unavailable`，不会伪造 pending Job。

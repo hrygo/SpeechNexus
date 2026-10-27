@@ -130,6 +130,14 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 | `SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS` | 空批次后的下一轮等待 |
 | `SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS` | 领取、续租、终态事务的上限 |
 
+安装 backend wheel 后以该独立入口启动；`--once` 只做一轮有界领取，供部署冒烟：
+
+```sh
+export SPEECHNEXUS_PROCESS_ROLE=job-worker
+# 其余变量按上表显式注入，数据库与网关凭据从部署环境读取。
+uv run speechnexus-job-dispatch-worker
+```
+
 每轮向 stdout 输出一行固定字段的 JSON：`event=job_dispatch_batch`、`claimed`、
 `succeeded`、`failed`、`unknown`、`skipped`、`deferred`、`lease_reclaimed`、
 `lease_lost`。只包含计数，不包含原命令、请求 ID、端点或凭据。
@@ -141,10 +149,10 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 立即以 `claim_lost` 结束该 Job，不再 `finish`，也不再调用结果发布。任务超时仍按原
 语义返回 `unknown`，不会把仍可能运行的引擎写成 failed。
 
-终态写入在同一个事务中再次核对 owner、`claim_version`、租约未过期、公共 Job 的
-`status_version` 和协调行 `pending`；只有公共状态、事件和协调关闭三者都更新成功才
-认作成功。旧 worker 在续租失败或被接管后无法写终态。续租延长租约，但 Job 总期限
-不延长，避免用超长租约掩盖崩溃 worker。
+终态写入先锁协调行，再在同一个事务中核对 owner、`claim_version`、租约未过期、公共
+Job 的 `status_version` 和协调行 `pending`；只有公共状态、事件和协调关闭三者都更新
+成功才提交，任一失败整笔回滚。旧 worker 在续租失败或被接管后无法写终态。续租延长
+租约，但 Job 总期限不延长，避免用超长租约掩盖崩溃 worker。
 
 SIGTERM/SIGINT 只设置停止标志：不再开始下一轮领取，不再提交新的执行；若正在轮询，
 本轮以 `deferred` 结束，不写终态也不发布，保留当前租约直到到期。下一 worker

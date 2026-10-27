@@ -16,6 +16,7 @@ from starlette.responses import Response
 from speechnexus_backend import __version__
 from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
+from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.pronunciation_runtime import PronunciationRuntime
 from speechnexus_backend.settings import Settings
@@ -159,6 +160,17 @@ def create_app(
             return pronunciations
         return pronunciation_runtime.provider if pronunciation_runtime is not None else None
 
+    catalogue_runtime = (
+        ModelCatalogRuntime(resolved_settings)
+        if catalogue is None and resolved_settings.model_catalog_reader_database_url is not None
+        else None
+    )
+
+    def get_catalogue() -> ModelCatalogue | None:
+        if catalogue is not None:
+            return catalogue
+        return catalogue_runtime.catalogue if catalogue_runtime is not None else None
+
     binding_runtime = (
         BindingRuntime(resolved_settings)
         if bindings is None and resolved_settings.binding_writer_database_url is not None
@@ -185,6 +197,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
+            if catalogue_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, catalogue_runtime.close)
+                await run_in_threadpool(catalogue_runtime.open)
             if pronunciation_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, pronunciation_runtime.close)
                 await run_in_threadpool(pronunciation_runtime.open)
@@ -258,7 +273,7 @@ def create_app(
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
-    app.include_router(create_model_router(lambda: catalogue))
+    app.include_router(create_model_router(get_catalogue))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))
@@ -303,6 +318,7 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.profile_runtime = profile_runtime
     app.state.pronunciation_runtime = pronunciation_runtime
+    app.state.catalogue_runtime = catalogue_runtime
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
     return app

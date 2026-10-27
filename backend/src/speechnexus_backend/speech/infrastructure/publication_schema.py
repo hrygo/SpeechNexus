@@ -12,7 +12,7 @@ _IDENTIFIER = r"'^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'"
 PUBLICATION_DDL = (
     f"""CREATE TABLE {TABLE} (
         kind VARCHAR(16) COLLATE "C" NOT NULL
-            CHECK (kind IN ('profile', 'binding', 'voice')),
+            CHECK (kind IN ('profile', 'binding', 'voice', 'pronunciation')),
         object_id VARCHAR(128) COLLATE "C" NOT NULL
             CHECK (object_id ~ {_IDENTIFIER}),
         revision VARCHAR(19) COLLATE "C" NOT NULL
@@ -34,4 +34,13 @@ def publication_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO {target}',
+    )
+
+
+def model_catalog_reader_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Explicit SELECT-only declaration for the public catalogue reader."""
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{TABLE}, "{schema}".speech_binding_revisions TO "{role}"',
     )

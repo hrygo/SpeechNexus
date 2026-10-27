@@ -190,7 +190,7 @@ class PublicJobs:
             if not self._facts.pronunciation_exists(*pronunciation):
                 raise PronunciationNotFoundError
             pronunciation_publication = Publication(
-                "voice", pronunciation[0], pronunciation[1], "pronunciation-revision", 0
+                "pronunciation", pronunciation[0], pronunciation[1], "pronunciation-revision", 0
             )
 
         self._require_inputs(typed_kind, payload, workspace_id)

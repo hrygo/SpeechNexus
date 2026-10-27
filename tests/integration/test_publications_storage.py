@@ -14,14 +14,20 @@ import pytest
 from alembic import command as migration
 from alembic.config import Config
 from psycopg.conninfo import make_conninfo
+from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
+from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
 from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
-from speechnexus_backend.speech.infrastructure.publication_schema import publication_grants
+from speechnexus_backend.speech.infrastructure.publication_schema import (
+    model_catalog_reader_grants,
+    publication_grants,
+)
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 
 pytestmark = pytest.mark.integration
@@ -249,6 +255,72 @@ def test_publication_naming_another_document_does_not_list_a_model(sandbox: Sand
     assert sandbox.catalog.list_models() == []
 
 
+def test_catalogue_lists_one_model_at_the_latest_published_revision(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    recipe = DEFINITION["execution_recipe"]
+    assert isinstance(recipe, dict)
+    create_binding_revision(
+        sandbox.admin,
+        {
+            **DEFINITION,
+            "revision": "2",
+            "revision_id": "binding-rev-2",
+            "logical_model": "qwen3-tts-customvoice-v2",
+            "execution_recipe": {
+                **recipe,
+                "capacity_manifest_id": "cap-tts-quality-2",
+            },
+        },
+    )
+    sandbox.store.append(publication(1, "binding-rev-1", object_id="tts-quality"))
+    sandbox.store.append(publication(2, "binding-rev-2", object_id="tts-quality"))
+
+    models = sandbox.catalog.list_models()
+
+    assert len(models) == 1
+    assert models[0]["id"] == "tts-quality"
+    assert models[0]["nexus"]["binding"]["revision"] == "2"
+    assert models[0]["nexus"]["logical_model"] == "qwen3-tts-customvoice-v2"
+
+
+def create_binding_revision(
+    admin: psycopg.Connection[tuple[object, ...]], definition: dict[str, object]
+) -> None:
+    """Append a second prepared revision without changing the original fixture helper."""
+    binding_id = str(definition["binding_id"])
+    revision = str(definition["revision"])
+    revision_id = str(definition["revision_id"])
+    key = "sha256:" + ("d" + revision).ljust(64, "d")
+    request = "sha256:" + ("e" + revision).ljust(64, "e")
+    document = "sha256:" + ("f" + revision).ljust(64, "f")
+    admin.execute(
+        "UPDATE speech_binding_families SET latest_revision=%s WHERE binding_id=%s",
+        (revision, binding_id),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest, binding_id, document_version, intent_json, request_digest) "
+        "VALUES (%s, %s, 1, %s, %s)",
+        (key, binding_id, "{}", request),
+    )
+    admin.execute(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id, revision, revision_id, key_digest, document_version, "
+        " definition_json, definition_digest, request_digest, created_at_us) "
+        "VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s)",
+        (
+            binding_id,
+            revision,
+            revision_id,
+            key,
+            json.dumps(definition, sort_keys=True),
+            document,
+            request,
+            1_700_000_000_000_000 + int(revision),
+        ),
+    )
+
+
 def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> None:
     create_binding(sandbox.admin, DEFINITION)
 
@@ -272,3 +344,56 @@ def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> 
         "wav",
         "pcm",
     ]
+
+
+def test_reader_grants_are_select_only_and_global_writer_membership_is_rejected(
+    sandbox: Sandbox,
+) -> None:
+    reader = "sn_pub_reader_" + uuid.uuid4().hex[:12]
+    sandbox.admin.execute(f"CREATE ROLE \"{reader}\" LOGIN PASSWORD '{PASSWORD}'")
+    try:
+        for grant in model_catalog_reader_grants(sandbox.schema, reader):
+            sandbox.admin.execute(grant)
+        privileges = sandbox.admin.execute(
+            "SELECT "
+            "pg_catalog.has_table_privilege(%s,%s,'SELECT') AS can_select, "
+            "pg_catalog.has_table_privilege(%s,%s,"
+            "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS can_write",
+            (
+                reader,
+                f"{sandbox.schema}.speech_publications",
+                reader,
+                f"{sandbox.schema}.speech_publications",
+            ),
+        ).fetchone()
+        assert privileges == (True, False)
+
+        runtime = _reader_runtime(sandbox, reader)
+        runtime.open()
+        runtime.close()
+
+        sandbox.admin.execute(f'GRANT pg_write_all_data TO "{reader}"')
+        rejected = _reader_runtime(sandbox, reader)
+        with pytest.raises(ValueError):
+            rejected.open()
+        assert rejected.catalogue is None
+        rejected.close()
+    finally:
+        sandbox.admin.execute(f'DROP OWNED BY "{reader}"')
+        sandbox.admin.execute(f'DROP ROLE IF EXISTS "{reader}"')
+
+
+def _reader_runtime(sandbox: Sandbox, reader: str) -> ModelCatalogRuntime:
+    return ModelCatalogRuntime(
+        Settings(
+            service_name="speechnexus-catalogue-reader-test",
+            database_url=SecretStr(sandbox.url),
+            database_schema=sandbox.schema,
+            model_catalog_reader_database_url=SecretStr(
+                make_conninfo(sandbox.url, user=reader, password=PASSWORD)
+            ),
+            object_storage_endpoint=AnyHttpUrl("http://127.0.0.1:9000"),
+            object_storage_healthcheck_url=AnyHttpUrl("http://127.0.0.1:9000/health"),
+            object_storage_bucket="test",
+        )
+    )

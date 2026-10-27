@@ -86,46 +86,85 @@ class ModelCatalogRuntime:
                 ) from None
 
     def _verify_read_only(self, connection: SpeechConnection) -> None:
-        schema = self._settings.database_schema
         identities = connection.execute(
             "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
         ).fetchone()
         if identities is None:
             raise ValueError("Model catalogue reader identity unavailable")
-        for role in dict.fromkeys((identities["login"], identities["effective"])):
-            privileged = connection.execute(
-                "SELECT r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
-                "OR r.rolbypassrls OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
-                "OR pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER') "
-                "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
-                "SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace=n.oid "
-                "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
-                "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
-                "CROSS JOIN pg_catalog.pg_namespace n WHERE r.rolname=%s "
-                "AND n.nspname=%s AND d.datname=CURRENT_DATABASE()",
-                (role, schema, role, role, role, role, schema),
-            ).fetchone()
-            if privileged is None or privileged["forbidden"]:
-                raise ValueError("Model catalogue reader requires a non-owner identity")
-            rows: list[dict[str, Any]] = connection.execute(
-                "SELECT c.relname, "
-                "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS can_select, "
-                "pg_catalog.has_table_privilege(%s::name,c.oid,"
-                "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS can_write "
-                "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
-                "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f')",
-                (role, role, schema),
-            ).fetchall()
-            for row in rows:
-                if row["can_write"]:
-                    raise ValueError("Model catalogue reader must not write any table")
-                if row["can_select"] and row["relname"] not in READABLE:
-                    raise ValueError("Model catalogue reader reads beyond its two tables")
-            missing = READABLE - {row["relname"] for row in rows if row["can_select"]}
-            if missing:
-                raise ValueError(
-                    "Model catalogue reader lacks SELECT on " + ",".join(sorted(missing))
-                )
+        reached = connection.execute(
+            "WITH RECURSIVE reachable(role_oid) AS ("
+            "SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (%s,%s) UNION "
+            "SELECT membership.roleid FROM pg_catalog.pg_auth_members AS membership "
+            "JOIN reachable ON membership.member=reachable.role_oid"
+            ") SELECT role.rolname FROM pg_catalog.pg_roles AS role "
+            "JOIN reachable ON role.oid=reachable.role_oid ORDER BY role.rolname",
+            (identities["login"], identities["effective"]),
+        ).fetchall()
+        if not reached:
+            raise ValueError("Model catalogue reader has no auditable role")
+        for row in reached:
+            self._verify_role(connection, row["rolname"])
+
+    def _verify_role(self, connection: SpeechConnection, role: str) -> None:
+        schema = self._settings.database_schema
+        privileged = connection.execute(
+            "SELECT r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
+            "OR r.rolbypassrls "
+            "OR NOT COALESCE(pg_catalog.has_schema_privilege(%s::name,%s,'USAGE'),false) "
+            "OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n "
+            "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
+            "AND (pg_catalog.pg_has_role(%s::name,n.nspowner,'MEMBER') "
+            "OR pg_catalog.has_schema_privilege(%s::name,n.oid,'CREATE'))) "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') "
+            "OR pg_catalog.pg_has_role(%s::name,'pg_read_all_data','MEMBER') "
+            "OR pg_catalog.pg_has_role(%s::name,'pg_write_all_data','MEMBER') OR EXISTS ("
+            "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname <> 'information_schema' "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+            "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
+            (role, schema, role, role, role, role, role, role, role),
+        ).fetchone()
+        if privileged is None or privileged["forbidden"]:
+            raise ValueError(
+                "Model catalogue reader requires a non-owner, non-global-reader identity"
+            )
+
+        rows: list[dict[str, Any]] = connection.execute(
+            "SELECT n.nspname AS schema_name, c.relname, "
+            "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS can_select, "
+            "pg_catalog.has_table_privilege(%s::name,c.oid,"
+            "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS can_write, "
+            "pg_catalog.has_any_column_privilege(%s::name,c.oid,"
+            "'INSERT,UPDATE,REFERENCES') AS can_write_column "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
+            "AND c.relkind IN ('r','p','v','m','f')",
+            (role, role, role),
+        ).fetchall()
+        for row in rows:
+            if row["can_write"] or row["can_write_column"]:
+                raise ValueError("Model catalogue reader must not write any table")
+            if row["can_select"] and (
+                row["schema_name"] != schema or row["relname"] not in READABLE
+            ):
+                raise ValueError("Model catalogue reader reads beyond its two tables")
+        missing = READABLE - {
+            row["relname"] for row in rows if row["schema_name"] == schema and row["can_select"]
+        }
+        if missing:
+            raise ValueError("Model catalogue reader lacks SELECT on " + ",".join(sorted(missing)))
+
+        definer = connection.execute(
+            "SELECT p.oid::regprocedure::text AS signature FROM pg_catalog.pg_proc AS p "
+            "JOIN pg_catalog.pg_namespace AS n ON n.oid=p.pronamespace "
+            "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND p.prosecdef "
+            "AND pg_catalog.has_function_privilege(%s::name,p.oid,'EXECUTE') LIMIT 1",
+            (role,),
+        ).fetchone()
+        if definer is not None:
+            raise ValueError("Model catalogue reader must not execute SECURITY DEFINER functions")
 
     def close(self) -> None:
         with self._lifetime:

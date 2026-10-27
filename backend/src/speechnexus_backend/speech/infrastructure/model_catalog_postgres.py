@@ -36,35 +36,40 @@ class PostgresModelCatalog:
 
     def snapshot(self) -> ModelCatalogueSnapshot:
         rows, state = self._driver._run(read_catalog_snapshot, read_only=True, repeatable_read=True)
-        models: list[dict[str, Any]] = []
-        capability_models: list[dict[str, Any]] = []
-        for row in rows:
-            definition = _definition(row["definition_json"])
-            publication = Publication(
-                kind=row["kind"],
-                object_id=row["object_id"],
-                revision=int(row["revision"]),
-                revision_id=row["revision_id"],
-                published_at_us=int(row["published_at_us"]),
-            )
-            model = model_document(
-                publication, definition, owned_by=self._owned_by, readiness=self._readiness
-            )
-            models.append(model)
-            capability_models.append(
-                capability_model(
-                    publication,
-                    definition,
-                    owned_by=self._owned_by,
-                    readiness=self._readiness,
+        try:
+            models: list[dict[str, Any]] = []
+            capability_models: list[dict[str, Any]] = []
+            for row in rows:
+                definition = _definition(row["definition_json"])
+                publication = Publication(
+                    kind=row["kind"],
+                    object_id=row["object_id"],
+                    revision=int(row["revision"]),
+                    revision_id=row["revision_id"],
+                    published_at_us=int(row["published_at_us"]),
                 )
+                model = model_document(
+                    publication, definition, owned_by=self._owned_by, readiness=self._readiness
+                )
+                models.append(model)
+                capability_models.append(
+                    capability_model(
+                        publication,
+                        definition,
+                        owned_by=self._owned_by,
+                        readiness=self._readiness,
+                    )
+                )
+            return ModelCatalogueSnapshot(
+                models=tuple(models),
+                capability_models=tuple(capability_models),
+                catalog_revision=int(state["catalog_revision"]),
+                generated_at_us=int(state["generated_at_us"]),
             )
-        return ModelCatalogueSnapshot(
-            models=tuple(models),
-            capability_models=tuple(capability_models),
-            catalog_revision=int(state["catalog_revision"]),
-            generated_at_us=int(state["generated_at_us"]),
-        )
+        except PublicationUnavailableError:
+            raise
+        except KeyError, TypeError, ValueError, RecursionError, OverflowError:
+            raise PublicationUnavailableError from None
 
     def list_models(self) -> list[dict[str, Any]]:
         return list(self.snapshot().models)

@@ -78,5 +78,7 @@ class Publications:
 
     def current_catalog_digest(self) -> str:
         return catalog_digest(
-            item for kind in ("profile", "binding", "voice") for item in self._store.list_kind(kind)
+            item
+            for kind in ("profile", "binding", "voice", "pronunciation")
+            for item in self._store.list_kind(kind)
         )

@@ -15,6 +15,7 @@ from speechnexus_backend.speech.application.capability_snapshot import (
     snapshot_etag,
 )
 from speechnexus_backend.speech.application.model_catalog import (
+    TASKS,
     ReadinessFacts,
     capability_model,
     model_document,
@@ -124,6 +125,12 @@ def test_tasks_are_deduplicated_and_ordered() -> None:
     document_value = model_document(BINDING, DEFINITION, owned_by="speechnexus")
 
     assert document_value["nexus"]["tasks"] == ["tts_file", "tts_realtime"]
+
+
+def test_catalogue_tasks_are_exactly_the_contract_speech_task_kind() -> None:
+    schema = document(ROOT / "shared" / "capability-domains.schema.json")
+
+    assert tuple(schema["$defs"]["SpeechTaskKind"]["enum"]) == TASKS
 
 
 def test_created_is_seconds_from_the_publication_instant() -> None:

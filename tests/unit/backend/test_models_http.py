@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +20,7 @@ from speechnexus_backend.speech.domain.publications import (
     Publication,
     PublicationUnavailableError,
 )
+from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
 from tests.unit.backend.test_health import _settings
 
 PUBLICATION = Publication("binding", "tts-quality", 2, "binding-rev-2", 1_700_000_000_000_000)
@@ -102,6 +105,35 @@ class Catalogue:
         )
 
 
+class RowsDriver:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+
+    def _run(
+        self,
+        operation: Callable[..., object],
+        *,
+        read_only: bool = False,
+        repeatable_read: bool = False,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        assert read_only and repeatable_read
+        return self.rows, {"catalog_revision": 2, "generated_at_us": PUBLICATION.published_at_us}
+
+
+def _postgres_catalogue(definition: dict[str, Any]) -> PostgresModelCatalog:
+    catalogue = PostgresModelCatalog(cast(Any, object()))
+    row = {
+        "kind": "binding",
+        "object_id": "tts-quality",
+        "revision": "2",
+        "revision_id": "binding-rev-2",
+        "published_at_us": PUBLICATION.published_at_us,
+        "definition_json": json.dumps(definition),
+    }
+    cast(Any, catalogue)._driver = RowsDriver([row])
+    return catalogue
+
+
 def client(catalogue: Catalogue | None, settings: Settings | None = None) -> AsyncClient:
     app = create_app(settings=settings or _settings(), catalogue=catalogue)
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -148,6 +180,25 @@ async def test_catalogue_failure_is_unavailable_not_empty() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "model_catalogue_unavailable"
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {**DEFINITION, "binding_id": "other-binding"},
+        {**DEFINITION, "tasks": ["not_a_task"]},
+        {**DEFINITION, "release_tier": "beta"},
+    ],
+)
+async def test_poison_publication_is_503_never_500(broken: dict[str, Any]) -> None:
+    catalogue = _postgres_catalogue(broken)
+    async with client(cast(Any, catalogue)) as http:
+        listed = await http.get("/v1/models")
+        retrieved = await http.get("/v1/models/tts-quality")
+
+    assert listed.status_code == retrieved.status_code == 503
+    assert listed.status_code != 500
+    assert listed.json()["error"]["code"] == "model_catalogue_unavailable"
 
 
 async def test_models_conditional_get_hits_and_misses() -> None:

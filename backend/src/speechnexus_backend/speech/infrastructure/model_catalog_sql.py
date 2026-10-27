@@ -12,10 +12,12 @@ class CatalogCursor(Protocol):
 
 
 def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
-    """Join on the full revision identity; a stale publication cannot list a model.
+    """Join on the full revision identity and return only each binding's newest revision.
 
     Matching ``revision_id`` as well as the number keeps the catalogue honest when
-    a publication and the stored document ever disagree.
+    a publication and the stored document ever disagree. A newer publication that
+    does not name a stored document hides older revisions rather than silently
+    falling back and presenting a stale model as current.
     """
     cursor.execute(
         "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
@@ -26,7 +28,12 @@ def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
         " AND r.revision = p.revision "
         " AND r.revision_id = p.revision_id "
         "WHERE p.kind = 'binding' "
-        "ORDER BY p.published_at_us, p.object_id"
+        "AND NOT EXISTS ("
+        "SELECT 1 FROM speech_publications AS newer "
+        "WHERE newer.kind = 'binding' AND newer.object_id = p.object_id "
+        "AND newer.revision::numeric > p.revision::numeric"
+        ") "
+        "ORDER BY p.published_at_us DESC, p.object_id"
     )
     return cursor.fetchall()
 

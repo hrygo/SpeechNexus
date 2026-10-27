@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import io
 import json
+import math
 import re
 import secrets
 import wave
@@ -20,7 +21,9 @@ from speechnexus_gateway.domain.asr import (
     AsrExecutionTarget,
     AsrFailure,
     AsrPolicy,
+    AsrSegment,
     AsrText,
+    AsrWord,
 )
 from speechnexus_gateway.infrastructure.private_engine_endpoint import (
     PrivateEngineEndpoint,
@@ -90,6 +93,14 @@ def _nonfinite(value: str) -> Any:
     raise ValueError("nonfinite ASR response value")
 
 
+def _seconds(value: Any) -> float | None:
+    if value is None:
+        return None
+    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+        raise _invalid()
+    return float(value)
+
+
 class _TranscriptStream:
     def __init__(self, audio: AsrAudio, endpoint: VllmAsrEndpoint, policy: AsrPolicy) -> None:
         self._audio = audio
@@ -104,7 +115,15 @@ class _TranscriptStream:
         self._text: list[str] = []
         self._finish: str | None = None
         self._tokens: int | None = None
+        self._language: str | None = None
+        self._duration_ms: int | None = None
+        self._segments: tuple[AsrSegment, ...] = ()
+        self._words: tuple[AsrWord, ...] = ()
         self.done = False
+
+    @property
+    def _clip_ms(self) -> int:
+        return round(len(self._audio.pcm16) / 2 * 1000 / 16000)
 
     def push(self, chunk: bytes) -> None:
         self._total_bytes += len(chunk)
@@ -155,6 +174,7 @@ class _TranscriptStream:
             or not isinstance(document.get("choices"), list)
         ):
             raise _invalid()
+        self._metadata(document)
         choices = document["choices"]
         usage = document.get("usage")
         if not choices:
@@ -206,13 +226,171 @@ class _TranscriptStream:
                 request_may_have_run=True,
                 completion_tokens=self._tokens,
             )
-        return AsrText(
-            self._audio.request_id,
-            "transcribe-" + self._audio.request_id,
-            "".join(self._text),
-            self._tokens,
-            self._policy.digest,
-        )
+        try:
+            return AsrText(
+                self._audio.request_id,
+                "transcribe-" + self._audio.request_id,
+                "".join(self._text),
+                self._tokens,
+                self._policy.digest,
+                language=self._language,
+                duration_ms=self._duration_ms,
+                segments=self._segments,
+                words=self._words,
+            )
+        except ValueError:
+            raise _invalid() from None
+
+    def _metadata(self, document: dict[str, Any]) -> None:
+        """Carry only native evidence supplied by the engine; never synthesize it."""
+        language = document.get("language")
+        if language is not None:
+            if type(language) is not str or (
+                self._language is not None and self._language != language
+            ):
+                raise _invalid()
+            self._language = language
+        if "duration" in document or "duration_ms" in document:
+            duration = self._engine_duration_ms(document)
+            if duration is not None:
+                if self._duration_ms is not None and self._duration_ms != duration:
+                    raise _invalid()
+                self._duration_ms = duration
+        if document.get("segments") is not None:
+            segments = self._engine_segments(document["segments"])
+            if self._segments and self._segments != segments:
+                raise _invalid()
+            self._segments = segments
+        if document.get("words") is not None:
+            words = self._engine_words(document["words"])
+            if self._words and self._words != words:
+                raise _invalid()
+            self._words = words
+
+    def _engine_duration_ms(self, document: dict[str, Any]) -> int | None:
+        explicit = document.get("duration_ms")
+        seconds = document.get("duration")
+        values: list[int] = []
+        if explicit is not None:
+            if type(explicit) is not int or explicit <= 0:
+                raise _invalid()
+            values.append(explicit)
+        if seconds is not None:
+            if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+                raise _invalid()
+            values.append(round(seconds * 1000))
+        if not values:
+            return None
+        if len(set(values)) != 1:
+            raise _invalid()
+        # vLLM's duration usage rounds up to whole seconds; anything wider
+        # contradicts the clip actually sent to the engine.
+        if abs(values[0] - self._clip_ms) > 1000:
+            raise _invalid()
+        return values[0]
+
+    def _engine_segments(self, value: Any) -> tuple[AsrSegment, ...]:
+        if not isinstance(value, list):
+            raise _invalid()
+        clip_seconds = self._clip_ms / 1000
+        segments: list[AsrSegment] = []
+        previous_end = 0.0
+        for raw in value:
+            if not isinstance(raw, dict):
+                raise _invalid()
+            start = _seconds(raw.get("start"))
+            end = _seconds(raw.get("end"))
+            text = raw.get("text")
+            if (
+                start is None
+                or end is None
+                or not 0 <= start < end
+                or end > clip_seconds + 1e-6
+                or start + 1e-9 < previous_end
+                or type(text) is not str
+                or "\x00" in text
+            ):
+                raise _invalid()
+            start_ms = round(start * 1000)
+            end_ms = round(end * 1000)
+            if start_ms >= end_ms:
+                raise _invalid()
+            tokens: tuple[int, ...] = ()
+            raw_tokens = raw.get("tokens")
+            if raw_tokens is not None:
+                if not isinstance(raw_tokens, list) or any(
+                    type(token) is not int or token < 0 for token in raw_tokens
+                ):
+                    raise _invalid()
+                tokens = tuple(raw_tokens)
+            for name in ("id", "seek"):
+                number = raw.get(name)
+                if number is not None and (type(number) is not int or number < 0):
+                    raise _invalid()
+            for name in ("avg_logprob", "compression_ratio", "temperature"):
+                number = raw.get(name)
+                if number is not None and (
+                    type(number) not in (int, float) or not math.isfinite(number)
+                ):
+                    raise _invalid()
+            no_speech_prob = raw.get("no_speech_prob")
+            if no_speech_prob is not None and (
+                type(no_speech_prob) not in (int, float)
+                or not math.isfinite(no_speech_prob)
+                or not 0 <= no_speech_prob <= 1
+            ):
+                raise _invalid()
+            try:
+                segments.append(
+                    AsrSegment(
+                        start_ms,
+                        end_ms,
+                        text,
+                        id=raw.get("id"),
+                        avg_logprob=raw.get("avg_logprob"),
+                        compression_ratio=raw.get("compression_ratio"),
+                        no_speech_prob=no_speech_prob,
+                        seek=raw.get("seek"),
+                        temperature=raw.get("temperature"),
+                        tokens=tokens,
+                    )
+                )
+            except ValueError:
+                raise _invalid() from None
+            previous_end = end
+        return tuple(segments)
+
+    def _engine_words(self, value: Any) -> tuple[AsrWord, ...]:
+        if not isinstance(value, list):
+            raise _invalid()
+        clip_seconds = self._clip_ms / 1000
+        words: list[AsrWord] = []
+        previous_start = 0
+        for raw in value:
+            if not isinstance(raw, dict):
+                raise _invalid()
+            word = raw.get("word")
+            start = _seconds(raw.get("start"))
+            end = _seconds(raw.get("end"))
+            if (
+                type(word) is not str
+                or "\x00" in word
+                or start is None
+                or end is None
+                or not 0 <= start < end
+                or end > clip_seconds + 1e-6
+            ):
+                raise _invalid()
+            start_ms = round(start * 1000)
+            end_ms = round(end * 1000)
+            if start_ms < previous_start or start_ms >= end_ms:
+                raise _invalid()
+            try:
+                words.append(AsrWord(word, start_ms, end_ms))
+            except ValueError:
+                raise _invalid() from None
+            previous_start = start_ms
+        return tuple(words)
 
 
 def _multipart(audio: AsrAudio, endpoint: VllmAsrEndpoint, policy: AsrPolicy) -> tuple[bytes, str]:

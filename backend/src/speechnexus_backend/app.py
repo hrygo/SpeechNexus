@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import Response
 
 from speechnexus_backend import __version__
+from speechnexus_backend.artifact_runtime import ArtifactRuntime
 from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.binding_runtime import BindingDefaultsRuntime, BindingRuntime
 from speechnexus_backend.job_runtime import JobRuntime
@@ -21,6 +22,7 @@ from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.profile_runtime import ProfileRuntime
 from speechnexus_backend.pronunciation_runtime import PronunciationRuntime
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.artifacts import ArtifactService
 from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
@@ -38,6 +40,11 @@ from speechnexus_backend.speech.infrastructure.readiness import (
     ObjectStorageReadinessProbe,
     PostgresReadinessProbe,
 )
+from speechnexus_backend.speech.interfaces.http.artifact_errors import artifact_error
+from speechnexus_backend.speech.interfaces.http.artifacts import (
+    PREFIX as ARTIFACT_PREFIX,
+)
+from speechnexus_backend.speech.interfaces.http.artifacts import create_artifact_router
 from speechnexus_backend.speech.interfaces.http.asset_contract import asset_http_contract
 from speechnexus_backend.speech.interfaces.http.asset_errors import asset_error
 from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngress
@@ -121,6 +128,7 @@ def create_app(
     settings: Settings | None = None,
     readiness: ReadinessService | None = None,
     assets: AssetService | None = None,
+    artifacts: ArtifactService | None = None,
     workspaces: WorkspaceService | None = None,
     profiles: ProfileDrafts | None = None,
     bindings: BindingDrafts | None = None,
@@ -149,6 +157,19 @@ def create_app(
     )
     asset_service = assets or (runtime.service if runtime is not None else None)
     workspace_service = workspaces or (runtime.workspaces if runtime is not None else None)
+    artifact_runtime = (
+        ArtifactRuntime(resolved_settings)
+        if artifacts is None
+        and resolved_settings.artifact_reader_database_url is not None
+        and resolved_settings.object_storage_access_key is not None
+        else None
+    )
+
+    def get_artifacts() -> ArtifactService | None:
+        if artifacts is not None:
+            return artifacts
+        return artifact_runtime.service if artifact_runtime is not None else None
+
     profile_runtime = (
         ProfileRuntime(resolved_settings)
         if profiles is None and resolved_settings.profile_writer_database_url is not None
@@ -249,6 +270,9 @@ def create_app(
             if job_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, job_runtime.close)
                 await run_in_threadpool(job_runtime.open)
+            if artifact_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, artifact_runtime.close)
+                await run_in_threadpool(artifact_runtime.open)
             if profile_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, profile_runtime.close)
                 await run_in_threadpool(profile_runtime.open)
@@ -313,6 +337,7 @@ def create_app(
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
+    app.include_router(create_artifact_router(get_artifacts))
     app.include_router(create_model_router(get_catalogue, capability_policy))
     app.include_router(
         create_job_router(
@@ -340,6 +365,18 @@ def create_app(
                 else {}
             )
             return asset_error(code, request.state.request_id, headers=headers)
+        if (
+            path == ARTIFACT_PREFIX or path.startswith(ARTIFACT_PREFIX + "/")
+        ) and error.status_code in (404, 405):
+            code = (
+                "artifact_method_not_allowed" if error.status_code == 405 else "artifact_not_found"
+            )
+            headers = (
+                {"Allow": error.headers["Allow"]}
+                if error.headers and "Allow" in error.headers
+                else {}
+            )
+            return artifact_error(code, request.state.request_id, headers=headers)
         if (
             path == WORKSPACE_PREFIX or path.startswith(WORKSPACE_PREFIX + "/")
         ) and error.status_code in (404, 405):
@@ -392,5 +429,6 @@ def create_app(
     app.state.binding_runtime = binding_runtime
     app.state.binding_defaults_runtime = binding_defaults_runtime
     app.state.job_runtime = job_runtime
+    app.state.artifact_runtime = artifact_runtime
     app.state.speech = speech
     return app

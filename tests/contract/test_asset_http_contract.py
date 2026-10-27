@@ -21,6 +21,10 @@ from tests.unit.test_assets import READY
 
 ROOT = Path(__file__).resolve().parents[2]
 PATHS = {"/v1/nexus/assets", "/v1/nexus/assets/{asset_id}", "/v1/nexus/assets/{asset_id}/content"}
+ARTIFACT_PATHS = {
+    "/v1/nexus/artifacts/{artifact_id}",
+    "/v1/nexus/artifacts/{artifact_id}/content",
+}
 
 
 def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
@@ -31,7 +35,7 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
     assert set(manifest["http_surfaces"]["assets"]["paths"]) == PATHS
     source = yaml.safe_load((ROOT / "contracts/speech-openapi.yaml").read_text())
     actual = create_app(settings=_settings()).openapi()
-    assert set(actual["paths"]) == PATHS | {
+    assert set(actual["paths"]) == PATHS | ARTIFACT_PATHS | {
         "/healthz",
         "/readyz",
         "/v1/nexus/workspaces",
@@ -53,6 +57,12 @@ def test_packaged_http_surface_is_closed_and_matches_real_operations() -> None:
         for method, operation in document["paths"][path].items():
             assert operation["operationId"] == source["paths"][path][method]["operationId"]
             assert set(operation["responses"]) == set(source["paths"][path][method]["responses"])
+    for path in ARTIFACT_PATHS:
+        for method, operation in source["paths"][path].items():
+            actual_operation = actual["paths"][path][method]
+            assert actual_operation["operationId"] == operation["operationId"]
+            assert actual_operation["summary"] == operation["summary"]
+            assert set(actual_operation["responses"]) == set(operation["responses"])
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):

@@ -25,12 +25,11 @@ from tests.unit.backend.test_health import _settings
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
-from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
-from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
 )
+from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
     public_job_submission_grants,

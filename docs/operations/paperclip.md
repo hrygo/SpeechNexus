@@ -121,11 +121,31 @@ model / effort 按当前授权和验证结果调整；不得通过改连接、�
 
 集成测试的 `skip` 不计入证据；`fake` 只证明覆盖范围；作者自测不得当作独立验收。独立验收要求不同主机、不同数据库大版本或不同取码路径，同一环境重跑不构成独立证据。
 
-### 唤醒只有一个可靠方式：新建卡
+### 唤醒看起来"只有新建卡有效"，真因通常是队列里的一条僵尸唤醒
 
-改卡片状态、改指派人、事后补评论都不会触发派工。2026-10-27 当天，把 `paused` 岗改回 `idle`、把 `blocked` 卡改回 `todo`、把卡改派给空闲岗，三次都没有起来；而新建一张卡立刻进入 `in_progress`。
+2026-10-27 的记录：改卡片状态、改指派人、事后补评论都不触发派工，而新建一张卡立刻进入 `in_progress`。当时据此写下的规则是"唤醒只有一个可靠方式：新建卡"。
 
-要让人干活就造新卡，不要指望改状态。旧卡随之作废，写清取代关系，别留两张同时可执行的同类卡。
+**这条规则在 2026-10-28 被证伪**：同一环境下把 `blocked` 卡改回 `todo` 后岗立即执行了。真正的阻塞不是"改状态无效"，而是队列里有一条**永远投递不出去的唤醒**占着该岗的唤醒位。
+
+例：一条 `agent_wakeup_requests` 记录指向某张已 `cancelled` 卡上的评论，状态长期停在 `deferred_issue_execution`，自愈循环每 30 秒尝试一次并失败：
+
+```
+WARN failed to deliver saved legacy comment after recovery stopped {"queueId":"<wake-id>"}
+```
+
+当次一天内累积了 1224 条以该 `queueId` 命名的 `queued-comment-delivery:<wake-id>` 子记录。
+
+**处置**：找到 `id` 等于日志中 `queueId` 的那条唤醒（**不是**它派生的子记录），改为终态：
+
+```bash
+psql "$PAPERCLIP_DSN" -c "UPDATE agent_wakeup_requests
+  SET status='skipped', reason='issue_cancelled_superseded', updated_at=now()
+  WHERE id='<queueId>'"
+```
+
+改完约 90 秒内不再产生新的 `queued-comment-delivery` 记录，被占住的岗随即恢复。**只删子记录无效**，父记录会继续派生。
+
+因此排查顺序是：先查 `agent_wakeup_requests` 里该岗是否有非终态唤醒，再判断"平台唤不醒"；直接新建卡只是绕过，僵尸唤醒仍在。
 
 ### `paused` 是可改状态字段，不是不可变约束
 

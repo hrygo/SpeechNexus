@@ -49,4 +49,7 @@ def job_runtime_grants(schema: str, role: str) -> tuple[str, ...]:
         f'initial_event_digest, request_digest) ON "{schema}".coordination_jobs TO "{role}"',
         "GRANT INSERT (event_id, job_id, event_digest) "
         f'ON "{schema}".coordination_outbox TO "{role}"',
+        "GRANT INSERT (operation_id, workspace_id, request_digest, request_document, "
+        "initial_attempt_id, current_attempt_id, recorded_at_us) "
+        f'ON "{schema}".admission_operations TO "{role}"',
     )

@@ -26,6 +26,26 @@ REQUIRED_SELECT = (
     "speech_job_submissions",
 )
 REQUIRED_INSERT = ("speech_jobs", "speech_job_events", "speech_job_submissions")
+REQUIRED_INSERT_COLUMNS = {
+    "admission_operations": (
+        "operation_id",
+        "workspace_id",
+        "request_digest",
+        "request_document",
+        "initial_attempt_id",
+        "current_attempt_id",
+        "recorded_at_us",
+    ),
+    "coordination_jobs": (
+        "job_id",
+        "operation_id",
+        "attempt_id",
+        "initial_event_id",
+        "initial_event_digest",
+        "request_digest",
+    ),
+    "coordination_outbox": ("event_id", "job_id", "event_digest"),
+}
 REQUIRED_UPDATE_COLUMNS = {
     "speech_jobs": ("state", "status_version", "result_json", "error_code", "updated_at_us"),
 }
@@ -124,6 +144,14 @@ def _verify_privileges(connection: SpeechConnection, schema: str) -> None:
         row = privileges.get(table)
         if row is None or not row["can_insert"]:
             raise ValueError("Public Job writer lacks INSERT on " + table)
+    for table, columns in REQUIRED_INSERT_COLUMNS.items():
+        for column in columns:
+            allowed = connection.execute(
+                "SELECT pg_catalog.has_column_privilege(CURRENT_USER, %s, %s, 'INSERT') AS ok",
+                (f"{schema}.{table}", column),
+            ).fetchone()
+            if allowed is None or not allowed["ok"]:
+                raise ValueError(f"Public Job writer lacks INSERT on {table}.{column}")
     for table, columns in REQUIRED_UPDATE_COLUMNS.items():
         for column in columns:
             allowed = connection.execute(

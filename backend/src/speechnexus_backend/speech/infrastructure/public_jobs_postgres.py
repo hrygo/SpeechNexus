@@ -326,6 +326,7 @@ def _replay_or_conflict(row: dict[str, Any], job: NewPublicJob) -> JobCreateResu
 
 def _insert(connection: SpeechConnection, job: NewPublicJob) -> None:
     submission = job.submission
+    attempt_id = job.job_id + "-a1"
     connection.execute(
         "INSERT INTO speech_jobs "
         "(job_id, workspace_id, kind, model_id, request_digest, idempotency_key_digest, "
@@ -362,4 +363,40 @@ def _insert(connection: SpeechConnection, job: NewPublicJob) -> None:
             submission.progress_total,
             submission.submitted_at_us,
         ),
+    )
+    # Private original command: the dispatcher may rebuild the engine request
+    # only from this canonical document, never from a digest or current default.
+    connection.execute(
+        "INSERT INTO admission_operations "
+        "(operation_id, workspace_id, request_digest, request_document, "
+        "initial_attempt_id, current_attempt_id, recorded_at_us) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (
+            job.job_id,
+            job.workspace_id,
+            job.request_digest,
+            job.request_document,
+            attempt_id,
+            attempt_id,
+            max(1, submission.submitted_at_us),
+        ),
+    )
+    # Coordination claim/outbox identity is committed with the public Job. The
+    # claim row stays pending until the durable terminal transition.
+    connection.execute(
+        "INSERT INTO coordination_jobs "
+        "(job_id, operation_id, attempt_id, initial_event_id, initial_event_digest, "
+        "request_digest) VALUES (%s, %s, %s, %s, %s, %s)",
+        (
+            job.job_id,
+            job.job_id,
+            attempt_id,
+            job.job_id + "-queued",
+            job.initial_event_digest,
+            job.request_digest,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO coordination_outbox (event_id, job_id, event_digest) VALUES (%s, %s, %s)",
+        (job.job_id + "-queued", job.job_id, job.initial_event_digest),
     )

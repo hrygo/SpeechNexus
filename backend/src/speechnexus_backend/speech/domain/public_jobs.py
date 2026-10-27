@@ -156,6 +156,8 @@ class NewPublicJob:
     kind: JobKind
     model_id: str
     request_digest: str
+    request_document: str
+    initial_event_digest: str
     idempotency_key_digest: str | None
     submission: JobSubmission
 
@@ -166,9 +168,25 @@ class NewPublicJob:
             raise ValueError("Invalid public Job kind")
         if not isinstance(self.model_id, str) or not 1 <= len(self.model_id) <= 128:
             raise ValueError("Invalid public Job model")
-        for digest in (self.request_digest, self.idempotency_key_digest):
+        for digest in (
+            self.request_digest,
+            self.initial_event_digest,
+            self.idempotency_key_digest,
+        ):
             if digest is not None and not _DIGEST.fullmatch(digest):
                 raise ValueError("Invalid public Job digest")
+        if not isinstance(self.request_document, str) or not (
+            2 <= len(self.request_document.encode("utf-8")) <= 262144
+        ):
+            raise ValueError("Invalid public Job request document")
+        try:
+            decoded = json.loads(self.request_document)
+        except ValueError, TypeError:
+            raise ValueError("Invalid public Job request document") from None
+        if not isinstance(decoded, dict):
+            raise ValueError("Invalid public Job request document")
+        if canonical_digest(decoded) != self.request_digest:
+            raise ValueError("Public Job request document disagrees with its digest")
 
 
 def check_transition(

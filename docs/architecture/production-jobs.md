@@ -19,7 +19,7 @@ MySQL 测试 adapter 仅复用显式 SQL 与领域裁决验证 InnoDB 行为。
 不改写本单元的 Job/outbox 身份或授权；已有迁移命令升级整个包内链到 head。
 
 这里的 Job 是协调元数据，不是完整公开 Job 的业务命令/结果存储。公共路由、
-完整配方准入、outbox 投递、Scheduler/Worker 循环和真实引擎仍待对应单元。
+完整配方准入、outbox 投递、生产 worker 装配和真实引擎仍待对应单元。
 不得把此单元解释为文件转写/合成闭环已完成。
 
 ## 原子性、身份与恢复
@@ -78,6 +78,32 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 本轮尚未接入这些写入端口，不能据此宣称完整 worker fencing 已完成。
 重新认领不允许重新提交已有引擎执行，必须查询原 submit 身份与持久证据。
 认领、TTL 和查询都不改变 GPU 租约、停止证据或容量账本。
+
+## 公开 Job 派发器（DEL-96 第一步）
+
+`speech/domain/job_dispatch.py`、`speech/application/job_dispatcher.py` 与
+`speech/infrastructure/job_dispatch_postgres.py` 组成公开 Job 的派发边界。
+公共提交在同一事务写入 `speech_jobs`、事件、提交文档，以及私有
+`admission_operations` 原命令和 `coordination_jobs`/`coordination_outbox` 身份；
+不使用摘要或当前默认值重建请求。
+
+派发器按 `FOR UPDATE OF c SKIP LOCKED` 批量领取到期的协调行，写入 owner、
+`claim_version` 和租约；进程崩溃后租约到期可重新领取。一次公开 Job 对应一个由
+Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只有 `not_found`
+才提交，重复领取不会创建第二个执行。`unknown`、不可解析的回执、身份或命令摘要
+不一致都返回 unknown 并保留 `running`，不当作可重试失败。
+
+成功执行读取原回执后写引用型 `result_json`；网关终态失败冻结错误码。公共 Job
+的 `status_version` 由条件 UPDATE 递增，终态与协调行关闭在同一事务。批次、租约、
+轮询、提交超时、任务期限和领取次数均有显式上限。任务期限到达但执行可能仍在运行时
+返回 unknown，不用 `failed` 假装算力已停止；只有从未找到执行身份时才可写
+`job_timeout`。
+
+当前边界只完成派发器、真实 PG 领取/终态存储、HTTP 客户端和假网关测试。
+生产 `SubmitExecutionRequest` planner、对象存储结果发布、worker 入口/进程角色
+及组合根装配尚未接入；`GET /v1/nexus/artifacts/{id}` 尚未由该路径产生可读制品。
+因此本步不能宣称公开异步链已在部署中闭环，也不能代替真实网关、真实引擎或
+对象存储的发布资格。
 
 ## 迁移与最低权限
 

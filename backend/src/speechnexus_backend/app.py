@@ -42,6 +42,7 @@ from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIn
 from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.middleware import RequestIdMiddleware
+from speechnexus_backend.speech.interfaces.http.models import ModelCatalogue, create_model_router
 from speechnexus_backend.speech.interfaces.http.profile_contract import profile_http_contract
 from speechnexus_backend.speech.interfaces.http.profile_ingress import ProfileIngress
 from speechnexus_backend.speech.interfaces.http.profiles import create_profile_router
@@ -114,6 +115,7 @@ def create_app(
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
     pronunciations: PronunciationReader | None = None,
+    catalogue: ModelCatalogue | None = None,
 ) -> FastAPI:
     """Create an API instance with explicit dependencies for tests and deployment."""
 
@@ -256,6 +258,7 @@ def create_app(
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
+    app.include_router(create_model_router(lambda: catalogue))
     app.include_router(create_workspace_router(lambda: workspace_service))
     app.include_router(create_profile_router(get_profiles))
     app.include_router(create_pronunciation_router(get_pronunciations))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal, Self
 from urllib.parse import urlsplit
 
@@ -100,6 +101,17 @@ class Settings(BaseSettings):
     execution_gateway_backoff_seconds: float = Field(default=0.25, ge=0, le=10)
     execution_gateway_max_response_bytes: int = Field(default=1_048_576, ge=1024, le=4_194_304)
 
+    transcription_recipe_file: Path | None = None
+    transcription_input_bucket: str | None = Field(default=None, min_length=3, max_length=63)
+    transcription_poll_seconds: float = Field(default=0.25, gt=0, le=30)
+    transcription_max_audio_ms: int = Field(default=120_000, ge=100, le=3_600_000)
+    transcription_max_upload_bytes: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024
+    )
+    transcription_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    transcription_max_command_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
+    transcription_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
+
     @field_validator(
         "profile_writer_database_url",
         "model_catalog_reader_database_url",
@@ -109,6 +121,8 @@ class Settings(BaseSettings):
         "binding_defaults_writer_database_url",
         "job_writer_database_url",
         "execution_gateway_component_credential",
+        "transcription_recipe_file",
+        "transcription_input_bucket",
         mode="before",
     )
     @classmethod

@@ -360,13 +360,27 @@ def _render(result: TranscriptionResult, response_format: TranscriptFormat) -> R
         return Response(
             _subtitle(result, vtt=True), status_code=200, media_type="text/plain", headers=headers
         )
-    usage = {"type": "duration", "seconds": result.duration_ms / 1000}
+    usage = (
+        {"type": "duration", "seconds": result.duration_ms / 1000}
+        if result.duration_ms is not None
+        else None
+    )
     if response_format is TranscriptFormat.JSON:
+        body: dict[str, Any] = {"text": result.text}
+        if usage is not None:
+            body["usage"] = usage
         return Response(
-            json.dumps({"text": result.text, "usage": usage}, ensure_ascii=False),
+            json.dumps(body, ensure_ascii=False),
             status_code=200,
             media_type="application/json",
             headers=headers,
+        )
+    if result.duration_ms is None or result.language is None:
+        # verbose_json requires both fields in the frozen public contract. A
+        # receipt that did not carry them cannot be rendered without guessing.
+        raise TranscriptionUnsupportedError(
+            "Verbose transcripts require engine-supplied duration and language.",
+            param="response_format",
         )
     return Response(
         json.dumps(
@@ -481,6 +495,8 @@ async def _create(
         return transcription_error("transcription_output_invalid", request_id)
     try:
         return _render(result, command.response_format)
+    except TranscriptionUnsupportedError as error:
+        return transcription_error("unsupported_parameter", request_id, param=error.param)
     except ValueError, TypeError, KeyError, AttributeError, RecursionError, UnicodeError:
         return transcription_error("transcription_output_invalid", request_id)
 

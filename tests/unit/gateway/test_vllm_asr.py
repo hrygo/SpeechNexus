@@ -14,6 +14,8 @@ from speechnexus_gateway.domain.asr import (
     AsrCallError,
     AsrFailure,
     AsrPolicy,
+    AsrSegment,
+    AsrWord,
 )
 from speechnexus_gateway.infrastructure.vllm_asr import VllmAsrEndpoint, VllmAsrRecognizer
 
@@ -41,12 +43,19 @@ def event(choices: list[Any], **extra: Any) -> bytes:
 
 
 def response_bytes(
-    *, text: str = "合成 synthetic.", finish: str = "stop", tokens: int = 7
+    *,
+    text: str = "合成 synthetic.",
+    finish: str = "stop",
+    tokens: int = 7,
+    **extra: Any,
 ) -> bytes:
     return b"".join(
         [
             event([{"delta": {"content": text}}]),
-            event([{"delta": {"content": ""}, "finish_reason": finish, "stop_reason": None}]),
+            event(
+                [{"delta": {"content": ""}, "finish_reason": finish, "stop_reason": None}],
+                **extra,
+            ),
             event(
                 [],
                 usage={
@@ -119,6 +128,89 @@ async def test_real_httpx_stream_handles_fragmented_utf8_and_verifies_terminal_u
     assert b'name="max_completion_tokens"\r\n\r\n1024' in body
     assert b'name="language"' not in body
     assert b"RIFF" in body and b'filename="audio.wav"' in body
+
+
+async def test_native_language_duration_and_timestamp_evidence_are_carried() -> None:
+    stream = Chunks(
+        response_bytes(
+            language="en",
+            duration=0.1,
+            segments=[
+                {
+                    "id": 0,
+                    "start": 0.0,
+                    "end": 0.1,
+                    "text": "synthetic",
+                    "tokens": [1, 2],
+                    "avg_logprob": -0.1,
+                    "compression_ratio": 1.0,
+                    "no_speech_prob": 0.01,
+                    "seek": 0,
+                    "temperature": 0.0,
+                }
+            ],
+            words=[{"word": "synthetic", "start": 0.0, "end": 0.1}],
+        )
+    )
+    result = await client_for(stream, []).transcribe(AUDIO, POLICY, cancelled=lambda: False)
+    assert result.language == "en"
+    assert result.duration_ms == 100
+    assert result.segments == (
+        AsrSegment(
+            0,
+            100,
+            "synthetic",
+            id=0,
+            avg_logprob=-0.1,
+            compression_ratio=1.0,
+            no_speech_prob=0.01,
+            seek=0,
+            temperature=0.0,
+            tokens=(1, 2),
+        ),
+    )
+    assert result.words == (AsrWord("synthetic", 0, 100),)
+
+
+async def test_native_engine_without_optional_evidence_leaves_them_unset() -> None:
+    result = await client_for(Chunks(response_bytes()), []).transcribe(
+        AUDIO, POLICY, cancelled=lambda: False
+    )
+    assert result.language is None
+    assert result.duration_ms is None
+    assert result.segments == () and result.words == ()
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {
+            "segments": [
+                {"start": 0.08, "end": 0.09, "text": "b"},
+                {"start": 0.01, "end": 0.02, "text": "a"},
+            ]
+        },
+        {"segments": [{"start": 0.0, "end": 0.2, "text": "beyond"}]},
+        {"segments": [{"start": 0.05, "end": 0.05, "text": "empty"}]},
+        {"segments": [{"start": 0.0, "end": 0.1}]},
+        {"segments": [{"start": 0.0, "end": float("nan"), "text": "nonfinite"}]},
+        {
+            "words": [
+                {"word": "later", "start": 0.08, "end": 0.09},
+                {"word": "earlier", "start": 0.0, "end": 0.01},
+            ]
+        },
+        {"words": [{"word": "beyond", "start": 0.0, "end": 0.2}]},
+        {"duration": 2.0},
+        {"language": 7},
+    ],
+)
+async def test_unusable_native_evidence_is_rejected(extra: dict[str, Any]) -> None:
+    stream = Chunks(response_bytes(**extra))
+    with pytest.raises(AsrCallError) as error:
+        await client_for(stream, []).transcribe(AUDIO, POLICY, cancelled=lambda: False)
+    assert error.value.code == AsrFailure.RESPONSE_INVALID
+    assert error.value.request_may_have_run and stream.closed
 
 
 @pytest.mark.parametrize(

@@ -142,9 +142,11 @@ async def test_default_entrypoint_consumes_original_command_and_never_reruns_aft
                 cancelled=lambda: False,
             ) as verified:
                 assert verified.storage_version == saved["storage_version"]
-                assert json.loads(verified.stream.read()) == {
-                    "text": "Synthetic.\nSynthetic." if speech else ""
-                }
+                document = json.loads(verified.stream.read())
+                # duration_ms is the measured audio duration, not an engine claim;
+                # it is always present and must be positive.
+                assert document.pop("duration_ms") > 0
+                assert document == {"text": "Synthetic.\nSynthetic." if speech else ""}
         assert app.state.file_execution_runtime is app.state.submit_execution is None
         restarted = create_app(settings=settings)
         async with (

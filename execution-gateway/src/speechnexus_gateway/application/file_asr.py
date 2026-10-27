@@ -16,6 +16,8 @@ from speechnexus_gateway.domain.asr import (
     AsrFailure,
     AsrPolicy,
     AsrRecognizer,
+    AsrSegment,
+    AsrWord,
 )
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.media import (
@@ -40,6 +42,10 @@ class FileAsrSegment:
     policy_digest: str
     vad_policy_digest: str
     binding_revision_id: str
+    language: str | None = None
+    duration_ms: int | None = None
+    segments: tuple[AsrSegment, ...] = ()
+    words: tuple[AsrWord, ...] = ()
 
 
 class FileAsrTranscription:
@@ -133,6 +139,10 @@ class FileAsrTranscription:
                 engine_request_id = None
                 text = ""
                 completion_tokens = 0
+                language: str | None = None
+                engine_duration_ms: int | None = None
+                engine_segments: tuple[AsrSegment, ...] = ()
+                engine_words: tuple[AsrWord, ...] = ()
                 if vad.has_speech:
                     request_id = "nexus-" + command_digest(
                         {
@@ -168,10 +178,24 @@ class FileAsrTranscription:
                         or type(recognized.text) is not str
                     ):
                         raise AsrCallError(AsrFailure.RESPONSE_INVALID, request_may_have_run=True)
+                    clip_ms = round((vad.sample_end - vad.sample_start) / 16)
+                    if (
+                        (
+                            recognized.duration_ms is not None
+                            and abs(recognized.duration_ms - clip_ms) > 1000
+                        )
+                        or any(segment.end_ms > clip_ms for segment in recognized.segments)
+                        or any(word.end_ms > clip_ms for word in recognized.words)
+                    ):
+                        raise AsrCallError(AsrFailure.RESPONSE_INVALID, request_may_have_run=True)
                     self._check()
                     text = recognized.text
                     engine_request_id = recognized.engine_request_id
                     completion_tokens = recognized.completion_tokens
+                    language = recognized.language
+                    engine_duration_ms = recognized.duration_ms
+                    engine_segments = recognized.segments
+                    engine_words = recognized.words
                 self._remaining_final(prepared)
                 yield FileAsrSegment(
                     vad.sequence,
@@ -187,6 +211,10 @@ class FileAsrTranscription:
                     self._policy.digest,
                     vad.policy_digest,
                     self._binding_revision,
+                    language,
+                    engine_duration_ms,
+                    engine_segments,
+                    engine_words,
                 )
             self._check()
             completed = self._audio.summary

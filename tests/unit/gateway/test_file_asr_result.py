@@ -15,7 +15,15 @@ from jsonschema import Draft202012Validator
 
 from speechnexus_gateway.application.file_asr import FileAsrTranscription
 from speechnexus_gateway.application.file_asr_result import stage_file_asr_result
-from speechnexus_gateway.domain.asr import AsrCallError, AsrFailure
+from speechnexus_gateway.domain.asr import (
+    AsrAudio,
+    AsrCallError,
+    AsrFailure,
+    AsrPolicy,
+    AsrSegment,
+    AsrText,
+    AsrWord,
+)
 from speechnexus_gateway.domain.asr_results import (
     MAX_ASR_RESULT_BYTES,
     AsrResultError,
@@ -58,7 +66,7 @@ def transcription_schema() -> dict[str, Any]:
     return cast(dict[str, Any], schema["components"]["schemas"]["Transcription"])
 
 
-async def test_complete_transcription_matches_existing_public_schema_and_private_reference(
+async def test_complete_transcription_keeps_public_text_shape_and_adds_decoded_duration(
     setup: Any, transcription_schema: dict[str, Any]
 ) -> None:
     request, objects, recognizer = setup
@@ -68,11 +76,11 @@ async def test_complete_transcription_matches_existing_public_schema_and_private
     )
     result = store.results[0]
     document = json.loads(result.body)
-    Draft202012Validator(transcription_schema).validate(document)
-    assert document == {"text": "Synthetic.\nSynthetic."}
+    Draft202012Validator(transcription_schema).validate({"text": document["text"]})
+    assert document == {"text": "Synthetic.\nSynthetic.", "duration_ms": 1001}
     assert receipt.request_digest == request.request_digest
     assert receipt.reference == result.reference("sn-output-test")
-    assert result.body == b'{"text":"Synthetic.\\nSynthetic."}'
+    assert result.body == b'{"text":"Synthetic.\\nSynthetic.","duration_ms":1001}'
     assert "Synthetic." not in repr(result) + repr(receipt)
     assert "private/" not in repr(receipt)
     assert len(recognizer.requests) == 2
@@ -88,12 +96,146 @@ async def test_silence_has_valid_nonempty_json_without_a_vendor_call(setup: Any)
     value._vad_model = ScriptedVadModel(fallback=0.0)
     store = Store()
     receipt = await value.stage_result(
-        request, store=store, max_result_bytes=11, cancelled=lambda: False
+        request, store=store, max_result_bytes=40, cancelled=lambda: False
     )
-    assert store.results[0].body == b'{"text":""}'
-    assert receipt.reference.byte_length == 11
+    body = store.results[0].body
+    assert json.loads(body) == {"text": "", "duration_ms": 1001}
+    assert receipt.reference.byte_length == len(body)
     assert not recognizer.requests
     assert all(stream.closed for stream in objects.streams)
+
+
+async def test_engine_language_and_segments_are_written_without_inventing_evidence(
+    setup: Any,
+) -> None:
+    class EvidenceRecognizer(CapturingRecognizer):
+        async def transcribe(
+            self, audio: AsrAudio, policy: AsrPolicy, *, cancelled: Any
+        ) -> AsrText:
+            value = await super().transcribe(audio, policy, cancelled=cancelled)
+            clip_ms = round(len(audio.pcm16) / 2 * 1000 / 16000)
+            if clip_ms <= 0:
+                return replace(value, language="en")
+            segment = AsrSegment(
+                0,
+                clip_ms,
+                value.text,
+                id=0,
+                avg_logprob=-0.1,
+                compression_ratio=1.0,
+                no_speech_prob=0.01,
+                seek=0,
+                temperature=0.0,
+                tokens=(1, 2),
+            )
+            return replace(
+                value,
+                language="en",
+                duration_ms=clip_ms,
+                segments=(segment,),
+                words=(AsrWord(value.text, 0, clip_ms),),
+            )
+
+    request, objects, _ = setup
+    store = Store()
+    await consumer(objects, EvidenceRecognizer()).stage_result(
+        request, store=store, max_result_bytes=4096, cancelled=lambda: False
+    )
+    document = json.loads(store.results[0].body)
+    assert document["language"] == "en"
+    assert document["duration_ms"] == 1001
+    assert document["segments"] == [
+        {
+            "start_ms": 0,
+            "end_ms": 1000,
+            "text": "Synthetic.",
+            "id": 0,
+            "tokens": [1, 2],
+            "avg_logprob": -0.1,
+            "compression_ratio": 1.0,
+            "no_speech_prob": 0.01,
+            "seek": 0,
+            "temperature": 0.0,
+        },
+    ]
+    assert document["words"] == [
+        {"word": "Synthetic.", "start_ms": 0, "end_ms": 1000},
+    ]
+
+
+async def test_missing_engine_language_is_omitted_not_guessed(setup: Any) -> None:
+    request, objects, recognizer = setup
+    store = Store()
+    await consumer(objects, recognizer).stage_result(
+        request, store=store, max_result_bytes=1024, cancelled=lambda: False
+    )
+    document = json.loads(store.results[0].body)
+    assert "language" not in document
+    assert "unknown" not in document
+
+
+async def test_reversed_engine_segments_are_rejected_before_storage(setup: Any) -> None:
+    request, objects, recognizer = setup
+    async with consumer(objects, recognizer).open(request, cancelled=lambda: False) as run:
+        segments = [segment async for segment in run]
+        summary = run.summary
+    segments[0] = replace(
+        segments[0],
+        segments=(
+            AsrSegment(500, 900, "later"),
+            AsrSegment(0, 400, "earlier"),
+        ),
+    )
+
+    class Run:
+        def __init__(self) -> None:
+            self.summary = summary
+
+        async def __aiter__(self) -> AsyncIterator[Any]:
+            for segment in segments:
+                yield segment
+
+    store = Store()
+    with pytest.raises(AsrResultError, match="asr_result_invalid"):
+        await stage_file_asr_result(
+            request,
+            cast(FileAsrTranscription, Run()),
+            store=store,
+            max_result_bytes=1024,
+            check=lambda: None,
+        )
+    assert not store.results
+
+
+async def test_out_of_bounds_engine_segments_are_rejected_before_storage(setup: Any) -> None:
+    request, objects, recognizer = setup
+    async with consumer(objects, recognizer).open(request, cancelled=lambda: False) as run:
+        segments = [segment async for segment in run]
+        summary = run.summary
+    segments[0] = replace(
+        segments[0],
+        duration_ms=5000,
+        segments=(AsrSegment(0, 5000, "beyond the clip"),),
+    )
+
+    class Run:
+        def __init__(self) -> None:
+            self.summary = summary
+
+        async def __aiter__(self) -> AsyncIterator[Any]:
+            for segment in segments:
+                yield segment
+
+    store = Store()
+    with pytest.raises(AsrResultError, match="asr_result_invalid"):
+        await stage_file_asr_result(
+            request,
+            cast(FileAsrTranscription, Run()),
+            store=store,
+            max_result_bytes=1024,
+            check=lambda: None,
+        )
+    assert not store.results
 
 
 @pytest.mark.parametrize("limit", [0, 10, -1, True, 1.5, MAX_ASR_RESULT_BYTES + 1])
@@ -184,7 +326,6 @@ def test_unusable_storage_version_cannot_become_a_receipt(version: str) -> None:
 
 @pytest.mark.parametrize("text", ['私有合成"文本\\\n', "\ud800", "\x01" * 30])
 async def test_utf8_and_json_escape_budget(setup: Any, text: str) -> None:
-    from speechnexus_gateway.domain.asr import AsrAudio, AsrPolicy, AsrText
 
     class TextRecognizer(CapturingRecognizer):
         async def transcribe(
@@ -206,7 +347,10 @@ async def test_utf8_and_json_escape_budget(setup: Any, text: str) -> None:
         await consumer(objects, recognizer).stage_result(
             request, store=store, max_result_bytes=128, cancelled=lambda: False
         )
-        assert json.loads(store.results[0].body) == {"text": text + "\n" + text}
+        assert json.loads(store.results[0].body) == {
+            "text": text + "\n" + text,
+            "duration_ms": 1001,
+        }
 
 
 async def test_mutating_original_command_during_storage_does_not_change_receipt(setup: Any) -> None:

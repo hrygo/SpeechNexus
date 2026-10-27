@@ -47,9 +47,10 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 
 - 公开同步接口还没有生产准入/派发器来产生 lease、attempt、stage、fencing token、
   command digest 和完整 `asr_file` 命令（DEL-96）。
-- 网关私有 ASR 结果当前只有 `{"text": ...}`；公开 `TranscriptionResult` 必填
-  `language` 和 `duration_ms`，verbose 还需要真实 segments/words（DEL-97）。
-- 本客户端没有接入 `create_app`，也不推断缺失字段。等 DEL-96 与 DEL-97 到位后，
+- 网关私有 ASR 结果现在携带真实解码的 `duration_ms`；`language`、`segments` 和
+  `words` 只在引擎实际给出时出现。缺少这些证据时，公开 `verbose_json` 必须如实
+  报 `unsupported_parameter`，不能由适配器推断。
+- 本客户端没有接入 `create_app`，也不推断缺失字段。等 DEL-96 的准入/派发器到位后，
   由后续卡把同步端点接到同一执行链。
 
 ## 验证

@@ -5,8 +5,8 @@ from sqlalchemy import text
 
 from speechnexus_backend.speech.infrastructure.artifact_schema import ARTIFACT_DDL, ARTIFACTS
 
-revision = "0019_artifacts"
-down_revision = "0018_publication_pronunciation"
+revision = "0020_artifacts"
+down_revision = "0019_publication_reader_view"
 branch_labels = None
 depends_on = None
 

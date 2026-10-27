@@ -101,8 +101,17 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 返回 unknown，不用 `failed` 假装算力已停止；只有从未找到执行身份时才可写
 `job_timeout`。
 
-当前边界完成派发器、真实 PG 领取/终态存储、HTTP 客户端、worker 入口/进程角色
-及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 与对象存储
+派发器只通过 `speech/infrastructure/execution_gateway_adapter.py` 的
+`ExecutionGatewayAdapter` 使用执行网关；适配器不持有 HTTP 实现，而是委托唯一
+`speech/infrastructure/gateway_execution_client.py` 中的
+`GatewayExecutionClient`。连接失败、超时、5xx 和不可解析响应保持“结果未知”
+（分别进入 `DispatchUnavailableError` / `DispatchProtocolError`）；只有通过冻结错误
+契约校验的 4xx 语义拒绝经 `DispatchRejectedError`（`DispatchProtocolError` 子类）进入
+终态失败，缺少合法错误码的 4xx 仍是 `DispatchProtocolError` / `unknown`。查询或回执
+的 404 仍是 `not_found`，408/429 保持 `unknown`。不得把 `unknown` 映射成 `failed`。
+
+当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
+worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 与对象存储
 结果发布仍未装配；`build_dispatch_dependencies` 在二者缺失时显式抛错，进程以
 退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}`
 尚未由该路径产生可读制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替

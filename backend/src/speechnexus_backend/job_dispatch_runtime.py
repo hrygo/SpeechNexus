@@ -22,9 +22,11 @@ from speechnexus_backend.speech.application.job_dispatcher import (
     ResultPublisher,
 )
 from speechnexus_backend.speech.domain.job_dispatch import DispatchLimits, identifier
-from speechnexus_backend.speech.infrastructure.execution_gateway_http import (
-    ExecutionGatewayEndpoint,
-    HttpExecutionGateway,
+from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
+    ExecutionGatewayAdapter,
+)
+from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
+    GatewayExecutionClient,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
@@ -135,6 +137,8 @@ class JobDispatchSettings(BaseSettings):
             or parsed.fragment
         ):
             raise ValueError("Dispatch gateway requires an origin without credentials or path")
+        if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "::1", "localhost"):
+            raise ValueError("Dispatch gateway plain HTTP is allowed only for loopback")
         token = self.gateway_credential.get_secret_value()
         if len(token) > 4096 or any(not 33 <= ord(char) <= 126 for char in token):
             raise ValueError("Dispatch gateway credential must be visible ASCII")
@@ -168,7 +172,7 @@ class JobDispatchRuntime:
         planner: DispatchPlanner,
         results: ResultPublisher,
         *,
-        gateway: HttpExecutionGateway | None = None,
+        gateway: ExecutionGatewayAdapter | None = None,
     ) -> None:
         if not isinstance(settings, JobDispatchSettings):
             raise ValueError("Dispatch requires explicit settings")
@@ -191,12 +195,14 @@ class JobDispatchRuntime:
         try:
             await asyncio.to_thread(self._check_role)
             if self._gateway is None:
-                self._gateway = HttpExecutionGateway(
-                    ExecutionGatewayEndpoint(
-                        str(self.settings.gateway_base_url),
-                        self.settings.gateway_credential.get_secret_value(),
-                    ),
-                    timeout_seconds=self.settings.gateway_timeout_seconds,
+                self._gateway = ExecutionGatewayAdapter(
+                    GatewayExecutionClient(
+                        base_url=str(self.settings.gateway_base_url),
+                        credential=self.settings.gateway_credential,
+                        timeout_seconds=self.settings.gateway_timeout_seconds,
+                        max_retries=0,
+                        backoff_seconds=0,
+                    )
                 )
             self.dispatcher = JobDispatcher(
                 PostgresDispatchQueue(

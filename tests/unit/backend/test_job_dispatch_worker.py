@@ -107,6 +107,11 @@ def test_configuration_derives_explicit_worker_identity_without_secret_repr() ->
     assert "127.0.0.1" not in text
 
 
+def test_configuration_rejects_plain_http_gateway_outside_loopback() -> None:
+    with pytest.raises(ValidationError):
+        _settings(gateway_base_url="http://gateway.internal:8010")
+
+
 def test_production_dependencies_fail_closed() -> None:
     with pytest.raises(DispatchDependenciesUnavailableError):
         build_dispatch_dependencies(_settings())

@@ -61,6 +61,16 @@ class DispatchProtocolError(RuntimeError):
     """A gateway or stored document cannot be interpreted as the fixed contract."""
 
 
+class DispatchRejectedError(DispatchProtocolError):
+    """The gateway explicitly rejected the request with a stable error code."""
+
+    def __init__(self, error_code: str) -> None:
+        if not isinstance(error_code, str) or not _ERROR_CODE.fullmatch(error_code):
+            raise DispatchProtocolError("Gateway returned an invalid error code") from None
+        self.error_code = error_code
+        super().__init__("Gateway rejected the execution request")
+
+
 class DispatchRequestUnavailableError(RuntimeError):
     """The original canonical request is absent or has been redacted."""
 
@@ -292,6 +302,7 @@ __all__ = [
     "DispatchJob",
     "DispatchLimits",
     "DispatchProtocolError",
+    "DispatchRejectedError",
     "DispatchRequestUnavailableError",
     "DispatchResult",
     "DispatchUnavailableError",

@@ -52,12 +52,23 @@ class PostgresPublications:
             raise ValueError("Publication transactions require bounded deadlines")
         self._pool, self._timeout = pool, timeout_seconds
 
-    def _run[T](self, operation: Callable[[_Cursor], T], *, read_only: bool = False) -> T:
+    def _run[T](
+        self,
+        operation: Callable[[_Cursor], T],
+        *,
+        read_only: bool = False,
+        repeatable_read: bool = False,
+    ) -> T:
         deadline = time.monotonic() + self._timeout
         try:
             with self._pool.connection(timeout=self._timeout) as connection:
                 if read_only:
-                    connection.execute("SET TRANSACTION READ ONLY")
+                    transaction = "READ ONLY"
+                    if repeatable_read:
+                        transaction += ", ISOLATION LEVEL REPEATABLE READ"
+                    connection.execute("SET TRANSACTION " + transaction)
+                elif repeatable_read:
+                    raise ValueError("Repeatable read is only valid for read operations")
                 with connection.cursor() as raw:
                     result = operation(_Cursor(raw, deadline))
                     if time.monotonic() >= deadline:

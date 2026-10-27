@@ -8,8 +8,15 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry
 
+from speechnexus_backend.speech.application.capability_snapshot import (
+    CapabilityPolicy,
+    capability_snapshot,
+    matches_if_none_match,
+    snapshot_etag,
+)
 from speechnexus_backend.speech.application.model_catalog import (
     ReadinessFacts,
+    capability_model,
     model_document,
     model_list,
 )
@@ -34,6 +41,59 @@ DEFINITION: dict[str, Any] = {
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file", "tts_realtime", "tts_file"],
     "release_tier": "production",
+}
+
+FULL_DEFINITION: dict[str, Any] = {
+    "schema_version": "1.0.0",
+    "binding_id": "tts-quality",
+    "revision": "3",
+    "revision_id": "binding-rev-3",
+    "logical_model": "qwen3-tts-customvoice",
+    "tasks": ["tts_file", "tts_realtime"],
+    "engine": {
+        "kind": "vllm_omni",
+        "image_digest": "sha256:" + "1" * 64,
+        "runtime_version": "vllm-omni-2026.10",
+    },
+    "artifact_set": [
+        {
+            "role": "weights",
+            "artifact_id": "model-qwen3-tts",
+            "digest": "sha256:" + "2" * 64,
+            "media_type": "application/x-safetensors",
+            "size_bytes": 1,
+        }
+    ],
+    "execution_recipe": {
+        "recipe_revision": "1",
+        "capacity_manifest_id": "cap-tts-quality-3",
+        "stage_roles": ["tts_talker", "tts_code2wav"],
+        "requires_complete_reservation": True,
+    },
+    "parameter_domains": {
+        "tts": {
+            "languages": ["zh", "en"],
+            "audio_formats": ["mp3", "wav", "pcm"],
+            "sample_rates_hz": [24000],
+            "text_commit_modes": ["explicit", "sentence"],
+            "audio_delivery_modes": ["complete", "chunked"],
+            "supports_instructions": True,
+            "supports_speed": True,
+            "speed_range": {"minimum": 0.75, "maximum": 1.25},
+            "max_input_codepoints": 2000,
+            "supports_seed": False,
+        }
+    },
+    "release_tier": "production",
+    "publication": {
+        "status": "draft",
+        "published_at": None,
+        "retired_at": None,
+        "capacity_manifest_id": None,
+        "qualification_report_id": None,
+        "disabled_reason": None,
+    },
+    "created_at": "2026-10-27T08:00:00Z",
 }
 
 
@@ -107,3 +167,85 @@ def test_list_envelope_wraps_the_documents() -> None:
     first = model_document(BINDING, DEFINITION, owned_by="speechnexus")
 
     assert model_list([first]) == {"object": "list", "data": [first]}
+
+
+def test_capability_model_carries_only_declared_domains_and_readiness() -> None:
+    value = capability_model(BINDING, FULL_DEFINITION, owned_by="speechnexus")
+
+    _component("CapabilityModel").validate(value)
+    assert value["parameter_domains"] == FULL_DEFINITION["parameter_domains"]
+    assert value["readiness"] == {
+        "configured": True,
+        "engine_ready": False,
+        "quality_qualified": False,
+        "admission_state": "unavailable",
+    }
+
+
+def test_capability_projection_rejects_a_definition_without_contract_domains() -> None:
+    with pytest.raises(ValueError):
+        capability_model(BINDING, DEFINITION, owned_by="speechnexus")
+
+
+def _policy() -> CapabilityPolicy:
+    return CapabilityPolicy(
+        deployment_id="test:speechnexus-api:speech",
+        workspace_id="workspace-default",
+        policy_revision=7,
+        max_audio_bytes=4 * 1024 * 1024,
+        max_text_codepoints=1_000_000,
+        max_segment_ms=30_000,
+        max_realtime_session_ms=600_000,
+        max_queue_wait_ms=600_000,
+    )
+
+
+def test_capability_snapshot_satisfies_the_frozen_contract() -> None:
+    model = capability_model(BINDING, FULL_DEFINITION, owned_by="speechnexus")
+    snapshot = capability_snapshot(
+        models=[model],
+        profiles=[],
+        voices=[],
+        catalog_revision=12,
+        generated_at_us=BINDING.published_at_us,
+        policy=_policy(),
+    )
+
+    _component("CapabilitySnapshot").validate(snapshot)
+    assert snapshot["models"][0]["parameter_domains"]["tts"]["audio_formats"] == [
+        "mp3",
+        "wav",
+        "pcm",
+    ]
+
+
+def test_snapshot_id_and_etag_are_stable_for_equal_facts() -> None:
+    model = capability_model(BINDING, FULL_DEFINITION, owned_by="speechnexus")
+    first = capability_snapshot(
+        models=[model],
+        profiles=[],
+        voices=[],
+        catalog_revision=12,
+        generated_at_us=BINDING.published_at_us,
+        policy=_policy(),
+    )
+    second = capability_snapshot(
+        models=[model],
+        profiles=[],
+        voices=[],
+        catalog_revision=12,
+        generated_at_us=BINDING.published_at_us,
+        policy=_policy(),
+    )
+    etag = snapshot_etag(
+        policy=_policy(),
+        workspace_id="workspace-default",
+        catalog_revision=12,
+        snapshot=first,
+    )
+
+    assert first == second
+    assert matches_if_none_match(etag, etag)
+    assert matches_if_none_match("W/" + etag, etag)
+    assert matches_if_none_match('"other", ' + etag, etag)
+    assert not matches_if_none_match('"other"', etag)

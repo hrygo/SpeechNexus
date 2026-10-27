@@ -173,10 +173,56 @@ def create_binding(
 
 
 DEFINITION: dict[str, object] = {
+    "schema_version": "1.0.0",
     "binding_id": "tts-quality",
+    "revision": "1",
+    "revision_id": "binding-rev-1",
     "logical_model": "qwen3-tts-customvoice",
     "tasks": ["tts_file", "tts_realtime"],
+    "engine": {
+        "kind": "vllm_omni",
+        "image_digest": "sha256:" + "1" * 64,
+        "runtime_version": "vllm-omni-2026.10",
+    },
+    "artifact_set": [
+        {
+            "role": "weights",
+            "artifact_id": "model-qwen3-tts",
+            "digest": "sha256:" + "2" * 64,
+            "media_type": "application/x-safetensors",
+            "size_bytes": 1,
+        }
+    ],
+    "execution_recipe": {
+        "recipe_revision": "1",
+        "capacity_manifest_id": "cap-tts-quality-1",
+        "stage_roles": ["tts_talker", "tts_code2wav"],
+        "requires_complete_reservation": True,
+    },
+    "parameter_domains": {
+        "tts": {
+            "languages": ["zh", "en"],
+            "audio_formats": ["mp3", "wav", "pcm"],
+            "sample_rates_hz": [24000],
+            "text_commit_modes": ["explicit", "sentence"],
+            "audio_delivery_modes": ["complete", "chunked"],
+            "supports_instructions": True,
+            "supports_speed": True,
+            "speed_range": {"minimum": 0.75, "maximum": 1.25},
+            "max_input_codepoints": 2000,
+            "supports_seed": False,
+        }
+    },
     "release_tier": "production",
+    "publication": {
+        "status": "draft",
+        "published_at": None,
+        "retired_at": None,
+        "capacity_manifest_id": None,
+        "qualification_report_id": None,
+        "disabled_reason": None,
+    },
+    "created_at": "2026-10-27T08:00:00Z",
 }
 
 
@@ -201,3 +247,28 @@ def test_publication_naming_another_document_does_not_list_a_model(sandbox: Sand
     sandbox.store.append(Publication("binding", "tts-quality", 1, "binding-rev-other", 1))
 
     assert sandbox.catalog.list_models() == []
+
+
+def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+
+    empty = sandbox.catalog.snapshot()
+    assert empty.catalog_revision == 1
+    assert empty.models == ()
+
+    sandbox.store.append(
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    )
+    populated = sandbox.catalog.snapshot()
+
+    assert populated.catalog_revision == 2
+    assert populated.generated_at_us == 1_700_000_000_000_000
+    assert populated.capability_models[0]["binding"] == {
+        "id": "tts-quality",
+        "revision": "1",
+    }
+    assert populated.capability_models[0]["parameter_domains"]["tts"]["audio_formats"] == [
+        "mp3",
+        "wav",
+        "pcm",
+    ]

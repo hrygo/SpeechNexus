@@ -45,4 +45,21 @@ def artifact_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
-__all__ = ["ARTIFACTS", "ARTIFACT_DDL", "artifact_reader_grants"]
+def artifact_publisher_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Provisioning declaration for the dispatcher's committed Artifact writes."""
+    from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
+
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    columns = (
+        "artifact_id, workspace_id, artifact_kind, artifact_state, media_type, bytes, "
+        "sha256, receipt_id, source_operation_id, object_key, storage_version_id, "
+        "created_at_us, expires_at_us"
+    )
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{ARTIFACTS} TO "{role}"',
+        f'GRANT INSERT ({columns}) ON "{schema}".{ARTIFACTS} TO "{role}"',
+    )
+
+
+__all__ = ["ARTIFACTS", "ARTIFACT_DDL", "artifact_publisher_grants", "artifact_reader_grants"]

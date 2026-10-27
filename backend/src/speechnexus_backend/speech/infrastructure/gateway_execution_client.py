@@ -50,6 +50,7 @@ _EXECUTION_PATH = "/internal/v1/executions/"
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$")
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}")
 _MAX_RESULT_BYTES = 4 * 1024 * 1024
+_MAX_RESULT_OBJECT_BYTES = 64 * 1024 * 1024
 
 GatewayFailureKind = Literal["connection", "timeout", "rejected", "server", "invalid_response"]
 
@@ -529,7 +530,7 @@ class MinioExecutionResultObjects:
             or not access_key
             or not secret_key
             or type(max_bytes) is not int
-            or not 11 <= max_bytes <= _MAX_RESULT_BYTES
+            or not 1 <= max_bytes <= _MAX_RESULT_OBJECT_BYTES
         ):
             raise ValueError("Configure an explicit result endpoint, bucket and credentials")
         self._bucket = bucket
@@ -560,7 +561,7 @@ class MinioExecutionResultObjects:
         if reference["storage_bucket"] != self._bucket:
             raise GatewayResultObjectError("result_object_scope_rejected")
         length = reference["byte_length"]
-        if type(length) is not int or not 11 <= length <= self._max_bytes:
+        if type(length) is not int or not 1 <= length <= self._max_bytes:
             raise GatewayResultObjectError("result_object_limit_rejected")
         expected_digest = reference["content_sha256"]
         if _SHA256.fullmatch(expected_digest) is None:

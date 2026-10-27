@@ -1,4 +1,4 @@
-"""Bounded read-only lookup of committed Artifact metadata."""
+"""Bounded lookup and committed insertion of Artifact metadata."""
 
 from __future__ import annotations
 
@@ -57,6 +57,85 @@ class PostgresArtifactMetadata:
         return time.time_ns() // 1_000
 
 
+_COLUMNS = (
+    "artifact_id, workspace_id, artifact_kind, artifact_state, media_type, bytes, "
+    "sha256, receipt_id, source_operation_id, created_at_us, expires_at_us, "
+    "object_key, storage_version_id"
+)
+
+
+class PostgresArtifactWriter:
+    """Insert one ready Artifact row without ever calling object storage here."""
+
+    def __init__(self, pool: SpeechPool, *, timeout_seconds: float = 3) -> None:
+        if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 30:
+            raise ValueError("Artifact writes require bounded deadlines")
+        self._pool, self._timeout = pool, timeout_seconds
+
+    def find(self, artifact_id: str) -> ArtifactRecord | None:
+        artifact_id = identifier(artifact_id)
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute("SET TRANSACTION READ ONLY")
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(self._timeout * 1000))),),
+                )
+                row = connection.execute(
+                    f"SELECT {_COLUMNS} FROM speech_artifacts WHERE artifact_id = %s",
+                    (artifact_id,),
+                ).fetchone()
+        except ArtifactError:
+            raise
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise ArtifactError("artifact_storage_unavailable") from None
+        return None if row is None else _artifact(row)
+
+    def insert_ready(self, artifact: ArtifactRecord) -> ArtifactRecord:
+        """Commit one ready row; an existing deterministic row is returned unchanged."""
+        try:
+            with self._pool.connection(timeout=self._timeout) as connection:
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(self._timeout * 1000))),),
+                )
+                inserted = connection.execute(
+                    "INSERT INTO speech_artifacts ("
+                    + _COLUMNS
+                    + ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                    "ON CONFLICT (artifact_id) DO NOTHING RETURNING " + _COLUMNS,
+                    (
+                        artifact.artifact_id,
+                        artifact.workspace_id,
+                        artifact.kind,
+                        artifact.status,
+                        artifact.media_type,
+                        artifact.bytes,
+                        artifact.sha256,
+                        artifact.receipt_id,
+                        artifact.source_operation_id,
+                        artifact.created_at_us,
+                        artifact.expires_at_us,
+                        artifact.object_key,
+                        artifact.storage_version_id,
+                    ),
+                ).fetchone()
+                row = (
+                    inserted
+                    or connection.execute(
+                        f"SELECT {_COLUMNS} FROM speech_artifacts WHERE artifact_id = %s",
+                        (artifact.artifact_id,),
+                    ).fetchone()
+                )
+        except ArtifactError:
+            raise
+        except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
+            raise ArtifactError("artifact_storage_unavailable") from None
+        if row is None:
+            raise ArtifactError("artifact_storage_unavailable")
+        return _artifact(row)
+
+
 def _artifact(row: dict[str, Any]) -> ArtifactRecord:
     try:
         return ArtifactRecord(
@@ -78,4 +157,4 @@ def _artifact(row: dict[str, Any]) -> ArtifactRecord:
         raise ArtifactError("artifact_storage_unavailable") from None
 
 
-__all__ = ["PostgresArtifactMetadata"]
+__all__ = ["PostgresArtifactMetadata", "PostgresArtifactWriter"]

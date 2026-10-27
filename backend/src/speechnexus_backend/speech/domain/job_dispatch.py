@@ -93,6 +93,29 @@ def submit_intent_identity(job_id: str) -> str:
     return "submit-" + hashlib.sha256(("public-job:" + job_id).encode()).hexdigest()[:48]
 
 
+def result_artifact_identity(job_id: str, kind: Literal["asr", "tts"]) -> str:
+    """One Job and kind publish one stable Artifact identity across replays."""
+    identifier(job_id)
+    if kind not in ("asr", "tts"):
+        raise ValueError("Invalid result Job kind")
+    return (
+        "artifact-" + hashlib.sha256(f"public-job-result:{job_id}:{kind}".encode()).hexdigest()[:48]
+    )
+
+
+def result_receipt_identity(job_id: str) -> str:
+    """A repeat publication returns the same public receipt reference."""
+    identifier(job_id)
+    return "receipt-" + hashlib.sha256(f"public-job-receipt:{job_id}".encode()).hexdigest()[:48]
+
+
+def result_object_key(workspace_id: str, artifact_id: str) -> str:
+    """A workspace-scoped, stable object key; never derived from client bytes."""
+    identifier(workspace_id)
+    identifier(artifact_id)
+    return f"private/artifacts/{workspace_id}/{artifact_id}"
+
+
 @dataclass(frozen=True, slots=True)
 class DispatchLimits:
     """Every bound is explicit; no caller may extend one request indefinitely."""
@@ -311,6 +334,9 @@ __all__ = [
     "PublishedResult",
     "ResultReceipt",
     "gateway_failure_code",
+    "result_artifact_identity",
+    "result_object_key",
+    "result_receipt_identity",
     "submit_intent_identity",
     "terminal_result",
 ]

@@ -9,7 +9,7 @@ date: 2026-10-27
 
 GitHub 保存产品需求、原始验收条件、代码审查和合并事实；Delegra / Paperclip 保存执行切片、依赖、工作区、产物和接收回执。产品进展以同版公开业务链和 AC 证据判断，任务数量、绿色 CI 和健康检查各自只证明覆盖范围。
 
-**当前处于首轮产品切片交付阶段。** 用户已明确由唯一 SM+PO 直接派工推进上线，底座整改期结束；阶段事实以同版公开业务链和 AC 证据判断，不以任务数量或整改计划完成度判断。首个产品切片（公开目录与发布事实，PR #236 → main `b4e8149`）已合并且六分片 CI 全绿；当前关键路径为公开 Job 提交/读取（#237）。[闭环整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实。已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
+**当前处于首轮产品切片交付阶段。** 用户已明确由唯一 SM+PO 直接派工推进上线，底座整改期结束；阶段事实以同版公开业务链和 AC 证据判断，不以任务数量或整改计划完成度判断。公开目录、任务提交/读取、同步 TTS、同步 ASR、制品下载均已合并且 CI 全绿，但**执行链路尚未接通**：同步语音入口在默认装配下返回 503（缺生产适配器），任务提交后没有消费者推进状态（[#254](https://github.com/hrygo/SpeechNexus/issues/254)）。当前关键路径是这两段接线，不是新增接口面。[闭环整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实。已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
 
 ## 唯一决策方与执行结构
 
@@ -164,3 +164,57 @@ model / effort 按当前授权和验证结果调整；不得通过改连接、�
 某岗的 native 会话在一次成功运行后损坏，报 `HarnessReconciliationError: persisted active turn ... is missing from thread/read`，此后新运行被拒（`New work must wait while a native run recovers its unfinished accounting`），卡片被反复置为 `blocked`，而该岗显示 `idle`。
 
 处理顺序：清理卡住的 finalization 状态、清空该岗的历史 session id 强制新会话、**新建一张卡**（不是改旧卡状态）。修旧会话没有成功过。
+
+### 单次运行有硬时限，且是**按岗可配**的
+
+执行适配器配置里有 `timeoutSec`（`adapter_config.timeoutSec`，缺省不限）。某岗的实际值是 3600，一张"三处修复 + 全量测试"的卡跑到整数一小时被砍，报 `Timed out after 3600s`，**worktree 里 77 KB 改动一次都没提交**。
+
+判断口径：**卡的规模要按"含环境搭建的整段耗时"估**，不是按"改几行代码"。新依赖、新 venv、模型下载都算在内。两种处理都可接受——把上限调大，或把卡拆小；什么都不做就会周期性丢掉一小时。
+
+### 运行被砍后，先抢救工作区，再决定要不要重派
+
+运行结束时工作区**不会被删除**，未提交的改动还在原处：
+
+```bash
+# 执行机上：导出已跟踪改动 + 未跟踪文件
+cd <run_workspace>
+git diff > /tmp/<run>.tracked.patch
+tar cf - $(git status --porcelain | awk '/^\?\?/ && !/\.paperclip-runtime/ {print $2}') \
+  | base64 -w0 > /tmp/<run>.untracked.b64
+```
+
+拉回本地后在**干净 worktree**（基于当前主干）上复原：
+
+```bash
+git worktree add /tmp/salvage -b <branch> origin/main
+git apply --3way /tmp/<run>.tracked.patch
+tar xf <decoded>.tar -C /tmp/salvage
+```
+
+然后**必须自己跑测试**：当日抢救回来的 ASR 实现有 9 个测试红，根因是运行层填 `"auto"`、域校验只认 BCP-47 的哨兵不一致——一次默认请求 100% 503。抢救不等于可用，抢救只等于"不必重做一遍"。
+
+顺序上：**先抢救再决定**。直接重派会得到一个"已经做过一遍"的活，且新运行拿不到旧工作区的分支。
+
+### CI 全绿不等于部署可用：按默认装配实测每个入口
+
+当日 12 个 PR 全部 14/14 绿之后，用生产入口的默认装配（`create_app(settings=...)`，不注入任何服务）实测：
+
+```
+POST /v1/audio/speech         -> 503 backend_unavailable
+POST /v1/audio/transcriptions -> 503 backend_unavailable
+```
+
+原因是这两个服务**只接受注入**，而 `create_app` 没有对应的 runtime 装配模块（其它服务如 `job_runtime` / `artifact_runtime` 都有）。同一轮还查出：`POST /v1/nexus/jobs` 只写 `speech_jobs` 一族，**不写任何派发意图**，网关也不读该表，`advance()` 在生产代码里零调用点——队列有生产者、没有消费者。
+
+判据很简单，每次切片合并后做两件事：
+
+1. **装配实测**：用默认 settings 建 app，逐个打新入口，记录状态码；503 要能解释成"确实缺配置"而不是"没人接线"。
+2. **成对搜索**：新写一张表/一个队列，同时搜"谁读它"和"谁写它"。只有写没有读，就是没有消费者。
+
+分层交付的固有盲区是：**每层测试只验证自己那层**，两层之间那段线没人写的时候，没有任何测试会红。
+
+### SQL 字符串里的转义会变成真实字节
+
+迁移 DDL 里写 `storage_version_id !~ '[\x00-\x1f\x7f]'`，Python 先把 `\x00` 变成真正的 NUL 字节；PostgreSQL 的 C 字符串在 NUL 处截断，报 `unterminated quoted string at or near "'["`，六个集成分片全在 setup 阶段失败。
+
+改用 POSIX 字符类 `'[[:cntrl:]]'`（等价覆盖 0x00–0x1F 与 0x7F）。**单元测试发现不了这类问题**——正确性取决于"字符串里的字节是什么"，只有真实数据库解析才暴露。新增迁移一律在真实 PG 上跑一次 `alembic upgrade head` 再交。

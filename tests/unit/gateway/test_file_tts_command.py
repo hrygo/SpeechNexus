@@ -346,3 +346,59 @@ def test_admitted_target_must_match_the_configured_generation() -> None:
     runner, _, _ = build(synthesizer=engine)
     with pytest.raises(InvalidExecutionRequestError):
         runner.validate_request(tts_request())
+
+
+def _with_ceiling(request: SubmitRequest, ceiling_ms: int) -> SubmitRequest:
+    return replace(request, identity=replace(request.identity, max_output_audio_ms=ceiling_ms))
+
+
+async def test_request_ceiling_tightens_the_effective_policy() -> None:
+    runner, engine, _ = build()
+    await runner.synthesize(_with_ceiling(tts_request(), 100), cancelled=lambda: False)
+
+    _, policy = engine.calls[0]
+    assert policy.max_audio_ms == 100
+    assert policy.max_pcm_bytes == 4800
+
+
+async def test_request_ceiling_at_binding_keeps_the_binding_pcm_ceiling() -> None:
+    runner, engine, _ = build()
+    await runner.synthesize(_with_ceiling(tts_request(), 600000), cancelled=lambda: False)
+
+    _, policy = engine.calls[0]
+    assert policy.max_audio_ms == 600000
+    assert policy.max_pcm_bytes == BINDING.max_pcm_bytes
+
+
+class LongSynthesizer(Synthesizer):
+    """Returns 120 ms of PCM no matter what the request ceiling allowed."""
+
+    async def synthesize(
+        self, request: TtsRequest, policy: TtsPolicy, *, cancelled: Callable[[], bool]
+    ) -> TtsAudio:
+        assert not cancelled()
+        self.calls.append((request, policy))
+        return TtsAudio(
+            request.request_id,
+            "audio/wav",
+            b"\x00\x00" * 2880,
+            policy.sample_rate_hz,
+            1,
+            policy.digest,
+        )
+
+
+async def test_audio_over_the_request_ceiling_is_not_published() -> None:
+    engine = LongSynthesizer()
+    runner, _, _ = build(synthesizer=engine)
+    store = Store()
+    with pytest.raises(TtsCallError) as error:
+        await runner.stage_result(
+            _with_ceiling(tts_request(), 100), store=store, cancelled=lambda: False
+        )
+
+    assert error.value.code is TtsFailure.RESPONSE_INVALID
+    _, policy = engine.calls[0]
+    assert policy.max_audio_ms == 100
+    assert policy.max_pcm_bytes == 4800
+    assert store.results == []

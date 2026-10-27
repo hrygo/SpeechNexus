@@ -29,3 +29,28 @@ def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
         "ORDER BY p.published_at_us, p.object_id"
     )
     return cursor.fetchall()
+
+
+def read_catalog_state(cursor: CatalogCursor) -> dict[str, Any]:
+    """Return the monotonic publication counter and its latest fact time.
+
+    Publication rows are insert-only.  The count therefore never decreases and
+    advances by exactly one for each new visible revision, including profile and
+    voice publications that do not otherwise alter the model list.  Adding one
+    keeps the empty catalog a valid contract ``Revision`` (the contract requires
+    revisions to start at one).
+    """
+    cursor.execute(
+        "SELECT COUNT(*) + 1 AS catalog_revision, "
+        "COALESCE(MAX(published_at_us), 0) AS generated_at_us "
+        "FROM speech_publications"
+    )
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        raise ValueError("Publication catalog state is not unique")
+    return rows[0]
+
+
+def read_catalog_snapshot(cursor: CatalogCursor) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Read bindings and the counter in one repeatable-read transaction."""
+    return list_published_bindings(cursor), read_catalog_state(cursor)

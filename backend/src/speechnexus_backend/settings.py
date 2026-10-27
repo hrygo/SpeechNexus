@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     model_catalog_read_concurrency: int = Field(default=2, ge=1, le=4)
     model_catalog_read_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    capability_default_workspace_id: str = Field(
+        default="workspace-default", pattern=r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
+    )
+    capability_policy_revision: int = Field(default=1, ge=1, le=9_999_999_999_999_999_999)
+    capability_max_text_codepoints: int = Field(default=1_000_000, ge=1, le=1_000_000)
+    capability_max_segment_ms: int = Field(default=30_000, ge=1000, le=30_000)
+    capability_max_realtime_session_ms: int = Field(default=600_000, ge=60_000)
+    capability_max_queue_wait_ms: int = Field(default=600_000, ge=0)
+
     pronunciation_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     pronunciation_read_concurrency: int = Field(default=4, ge=1, le=4)
     pronunciation_read_timeout_seconds: float = Field(default=3, gt=0, le=30)

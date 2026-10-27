@@ -201,6 +201,7 @@ def test_backend_exposes_valid_operational_openapi() -> None:
         "/v1/nexus/admin/model-bindings",
         "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
         "/v1/nexus/pronunciation-sets/{pronunciation_id}/revisions/{revision}",
+        "/v1/nexus/capabilities",
         "/v1/models",
         "/v1/models/{model}",
         "/v1/nexus/jobs",

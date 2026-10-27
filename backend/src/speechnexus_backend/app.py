@@ -24,6 +24,7 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.assets import AssetService
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.application.binding_drafts import BindingDrafts
+from speechnexus_backend.speech.application.capability_snapshot import CapabilityPolicy
 from speechnexus_backend.speech.application.profile_drafts import ProfileDrafts
 from speechnexus_backend.speech.application.pronunciation_drafts import PronunciationReader
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
@@ -177,6 +178,20 @@ def create_app(
             return catalogue
         return catalogue_runtime.catalogue if catalogue_runtime is not None else None
 
+    capability_policy = CapabilityPolicy(
+        deployment_id=(
+            f"{resolved_settings.environment}:{resolved_settings.service_name}:"
+            f"{resolved_settings.database_schema}"
+        ),
+        workspace_id=resolved_settings.capability_default_workspace_id,
+        policy_revision=resolved_settings.capability_policy_revision,
+        max_audio_bytes=resolved_settings.asset_max_bytes,
+        max_text_codepoints=resolved_settings.capability_max_text_codepoints,
+        max_segment_ms=resolved_settings.capability_max_segment_ms,
+        max_realtime_session_ms=resolved_settings.capability_max_realtime_session_ms,
+        max_queue_wait_ms=resolved_settings.capability_max_queue_wait_ms,
+    )
+
     job_runtime = (
         JobRuntime(resolved_settings)
         if jobs is None and resolved_settings.job_writer_database_url is not None
@@ -293,7 +308,7 @@ def create_app(
     )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(create_asset_router(lambda: asset_service))
-    app.include_router(create_model_router(get_catalogue))
+    app.include_router(create_model_router(get_catalogue, capability_policy))
     app.include_router(
         create_job_router(
             get_jobs,

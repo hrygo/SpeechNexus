@@ -12,6 +12,11 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
         "The model catalogue is unavailable.",
     ),
     "model_not_found": (404, "not_found_error", "The model was not found."),
+    "capability_workspace_not_found": (
+        404,
+        "not_found_error",
+        "The workspace was not found.",
+    ),
 }
 
 

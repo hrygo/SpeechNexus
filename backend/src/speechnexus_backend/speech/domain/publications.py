@@ -29,6 +29,10 @@ def publication_digest(value: Any) -> str:
         raise ValueError("Invalid publication document") from None
 
 
+class PublicationUnavailableError(LookupError):
+    """Publication storage could not answer; the caller must not assume success."""
+
+
 @dataclass(frozen=True, slots=True)
 class Publication:
     """One immutable published revision; republication cannot rewrite it."""

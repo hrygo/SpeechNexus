@@ -21,10 +21,11 @@ class Store:
         self.rows: list[Publication] = []
         self.clock = 1_700_000_000_000_000
 
-    def append(self, publication: Publication) -> None:
+    def append(self, publication: Publication) -> bool:
         if self.get(publication.kind, publication.object_id, publication.revision) is not None:
-            raise ValueError("duplicate publication")
+            return False
         self.rows.append(publication)
+        return True
 
     def get(self, kind: PublicationKind, object_id: str, revision: int) -> Publication | None:
         for row in self.rows:

@@ -30,4 +30,8 @@ PUBLICATION_DDL = (
 def publication_grants(schema: str, role: str) -> tuple[str, ...]:
     """Provisioning declaration; never executed by provider construction."""
     schema, role = checked_sql_name(schema), checked_sql_name(role)
-    return (f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO "{role}"',)
+    target = f'"{role}"'
+    return (
+        f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO {target}',
+    )

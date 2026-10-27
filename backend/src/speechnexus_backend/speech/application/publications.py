@@ -21,8 +21,8 @@ class PublicationAbsentError(LookupError):
 
 
 class PublicationStore(Protocol):
-    def append(self, publication: Publication) -> None:
-        """Insert one publication, or raise when the revision is already named."""
+    def append(self, publication: Publication) -> bool:
+        """Insert one publication; return whether this call created the row."""
         ...
 
     def get(self, kind: PublicationKind, object_id: str, revision: int) -> Publication | None: ...
@@ -62,8 +62,13 @@ class Publications:
             revision_id=revision_id,
             published_at_us=self._now_us(),
         )
-        self._store.append(publication)
-        return publication, True
+        if self._store.append(publication):
+            return publication, True
+        # A concurrent writer inserted this revision first; report the stored fact.
+        stored = self._store.get(kind, object_id, revision)
+        if stored is None or stored.revision_id != revision_id:
+            raise PublicationConflictError("publication revision already names a document")
+        return stored, False
 
     def require(self, kind: PublicationKind, object_id: str, revision: int) -> Publication:
         publication = self._store.get(kind, object_id, revision)

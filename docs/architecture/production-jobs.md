@@ -87,6 +87,8 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 `admission_operations` 原命令和 `coordination_jobs`/`coordination_outbox` 身份；
 不使用摘要或当前默认值重建请求。
 
+授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT 由 `job_dispatch_grants` 给出，**必须在升级到 head 之后**再执行——该表要到 `0007_admission_commands` 才存在，提前应用会让授权失败或掩盖升级顺序问题。
+
 派发器按 `FOR UPDATE OF c SKIP LOCKED` 批量领取到期的协调行，写入 owner、
 `claim_version` 和租约；进程崩溃后租约到期可重新领取。一次公开 Job 对应一个由
 Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只有 `not_found`

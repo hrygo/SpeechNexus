@@ -160,6 +160,33 @@ statement deadlines, closed pools, corruption and immutable original-result link
 PG separately verifies failed/repeated migrations and preserved older rows/ACLs.
 Synthetic SQL fixtures do not qualify a physical cluster or speech engine.
 
+## Publication evidence and admin projection
+
+Migration `0021_publication_evidence` adds an independent
+`speech_binding_publication_evidence` table with a foreign key to the publication
+row it qualifies. Evidence is a publication-time fact, so it never rewrites the
+immutable revision or `definition_json`. `publication_evidence_grants` gives the
+publication writer `SELECT, INSERT`; `binding_admin_reader_grants` gives the
+admin GET reader `SELECT` on binding history, publications and evidence; the
+public catalogue reader is unchanged and cannot read evidence.
+
+The admin GET uses its own read-only pool
+(`SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL`). Without it the fixed GET fails
+closed with `503 binding_unavailable` rather than reporting `draft` for a
+published revision. A publication whose evidence is missing, whose
+`revision_id` disagrees, or whose `capacity_manifest_id` differs from the
+revision's `execution_recipe` is treated as unavailable, not as draft.
+
+Historical publications without evidence are backfilled by an explicit,
+default-free mapping (`speechnexus-backfill-binding-evidence`); production
+preflight must reach `unresolved = 0` before this stage is a production
+candidate. See the [backfill and projection guide](../operations/backfill-binding-publication-evidence.md).
+
+While such a historical publication is still unbackfilled, public resolution can
+select it from `speech_publications` even though the admin GET returns `503`.
+That contradiction is a known transition state; it is not a second source of
+truth and is expected to disappear after backfill.
+
 ## Published catalogue reader
 
 Migration `0019_publication_reader_view` adds
@@ -214,11 +241,15 @@ writer; CI installs locked Node tools in every partition containing that probe.
 
 Publication of an already-stored revision now has an explicit operator command
 (`speechnexus-publish-binding`, see the [operations guide](../operations/publish-binding-revision.md)).
-It is not an HTTP route, does not implement the frozen `publishModelBindingRevision`
-endpoint, and the fixed GET still reports `draft` after publication. Public lists,
-activation/CAS, default pointers and qualification are not implemented here. Only
-the selected draft POST and fixed GET are served; other administrative operations
-do not become available through this unit.
+It is not an HTTP route and does not implement the frozen
+`publishModelBindingRevision` endpoint. The command requires both evidence
+identities and writes `speech_publications` plus
+`speech_binding_publication_evidence` in one transaction. The fixed GET projects
+that stored state: `draft`, `published`, or `503 binding_unavailable` when a
+publication has no matching evidence. Public lists, activation/CAS, default
+pointers and full qualification are not implemented here. Only the selected
+draft POST and fixed GET are served; other administrative operations do not
+become available through this unit.
 
 Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,

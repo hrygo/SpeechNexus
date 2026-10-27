@@ -70,7 +70,7 @@ def producer_db(http_db: HTTPDatabase) -> DefaultsHTTPDatabase:
             "binding_defaults_writer_database_url": http_db.settings.binding_writer_database_url,
         }
     )
-    return DefaultsHTTPDatabase(http_db.db, http_db.role, settings)
+    return DefaultsHTTPDatabase(http_db.db, http_db.role, http_db.reader_role, settings)
 
 
 @pytest.mark.parametrize("declaration", [None, {}, {"asr": {"max_segment_ms": 15000}}])

@@ -84,6 +84,7 @@ class Settings(BaseSettings):
 
     binding_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
     binding_defaults_writer_database_url: SecretStr | None = Field(default=None, min_length=1)
+    binding_admin_reader_database_url: SecretStr | None = Field(default=None, min_length=1)
     binding_receive_max_bytes: int = Field(default=262144, ge=1, le=1048576)
     binding_receive_concurrency: int = Field(default=4, ge=1, le=4)
     binding_receive_timeout_seconds: float = Field(default=5, gt=0, le=30)
@@ -119,6 +120,7 @@ class Settings(BaseSettings):
         "pronunciation_reader_database_url",
         "binding_writer_database_url",
         "binding_defaults_writer_database_url",
+        "binding_admin_reader_database_url",
         "job_writer_database_url",
         "execution_gateway_component_credential",
         "transcription_recipe_file",

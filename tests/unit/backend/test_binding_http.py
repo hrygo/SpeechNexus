@@ -22,6 +22,13 @@ PATH = CREATE_PATH
 GET = PATH + "/synthetic-binding/revisions/1"
 
 
+class _DraftFacts:
+    """Every revision this unit test stores is a draft, never published."""
+
+    def project(self, draft: BindingDraft) -> None:
+        return None
+
+
 def provider() -> Mock:
     port = Mock()
 
@@ -42,6 +49,7 @@ def client(port: Any = None, **settings: Any) -> AsyncClient:
     app = create_app(
         settings=_settings().model_copy(update={"asset_allowed_hosts": ("test",), **settings}),
         bindings=port,
+        binding_publication_facts=_DraftFacts(),
     )
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

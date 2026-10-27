@@ -31,6 +31,9 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.binding_runtime import BindingRuntime
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
+from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
+    binding_admin_reader_grants,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.interfaces.http.binding_ingress import CREATE_PATH as PATH
 
@@ -46,6 +49,7 @@ TABLES = ("speech_binding_commands", "speech_binding_families", "speech_binding_
 class HTTPDatabase:
     db: JobDatabase
     role: str
+    reader_role: str
     settings: Settings
 
     def app(self, **updates: Any) -> Any:
@@ -73,9 +77,13 @@ class HTTPDatabase:
 @pytest.fixture
 def http_db(database: JobDatabase) -> Iterator[HTTPDatabase]:
     role = database.role.replace("sn_jobs_role_", "sn_binding_")
+    reader_role = database.role.replace("sn_jobs_role_", "sn_binding_reader_")
     database.query(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_binding_http'")
+    database.query(f"CREATE ROLE \"{reader_role}\" LOGIN PASSWORD 'synthetic_binding_reader'")
     try:
         for grant in binding_draft_grants(database.schema, role):
+            database.query(grant)
+        for grant in binding_admin_reader_grants(database.schema, reader_role):
             database.query(grant)
         settings = Settings(
             **{
@@ -84,13 +92,18 @@ def http_db(database: JobDatabase) -> Iterator[HTTPDatabase]:
                 "binding_writer_database_url": make_conninfo(
                     database.url, user=role, password="synthetic_binding_http"
                 ),
+                "binding_admin_reader_database_url": make_conninfo(
+                    database.url, user=reader_role, password="synthetic_binding_reader"
+                ),
                 "asset_allowed_hosts": ("testserver", "test", "127.0.0.1"),
                 "binding_receive_concurrency": 1,
                 "binding_transaction_timeout_seconds": 1,
             }
         )
-        yield HTTPDatabase(database, role, settings)
+        yield HTTPDatabase(database, role, reader_role, settings)
     finally:
+        database.query(f'DROP OWNED BY "{reader_role}"')
+        database.query(f'DROP ROLE "{reader_role}"')
         database.query(f'DROP OWNED BY "{role}"')
         database.query(f'DROP ROLE "{role}"')
 

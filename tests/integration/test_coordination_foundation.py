@@ -249,6 +249,8 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             # security-barrier view from 0019: the only published binding
             # surface a read-only catalogue credential may reach.
             "speech_published_binding_revisions",
+            # 0021: publish-time evidence, one row per publication.
+            "speech_binding_publication_evidence",
         }
         if db.dialect == "postgresql"
         else set()

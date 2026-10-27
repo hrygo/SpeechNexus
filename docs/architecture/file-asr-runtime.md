@@ -50,12 +50,13 @@ JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限�
 不接受最终路径为 symlink、FIFO 或目录；读取不会等待 FIFO。
 CA 上限为 262,144 bytes。
 
-顶层必须显式提供以下全部字段：
+顶层必须显式提供以下全部字段，唯一例外是带缺省值的 `require_correlation_echo`：
 
 | 字段 | 含义 |
 | --- | --- |
 | `protocol` | 固定 `file_asr_v1` |
 | `controlled_endpoint_file` | [受控 ASR 描述](controlled-asr-generation.md)的绝对私有路径；沿用其 `vllm_api_key_v1` 及凭据要求 |
+| `require_correlation_echo` | 可选布尔，缺省 `true`；要求引擎在响应头原值回显 `X-Request-ID`。仅对不回显该头的第三方端点显式设为 `false`，语义和后果见[原生识别接口](file-asr-recognition.md) |
 | `vad_model_file` / `vad_model_sha256` | 已下载普通 ONNX 文件的绝对路径、64 位小写十六进制 SHA-256；允许模型卷软链接，打开后的目标须为普通文件，启动核对实际内容摘要和 CPU 模型接口 |
 | `objects` | 下表的固定对象存储范围 |
 | `vad_tuning` | 完整原生 `VadPolicy` 字段，包含固定策略修订 |

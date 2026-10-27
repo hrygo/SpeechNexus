@@ -42,9 +42,12 @@ class VllmAsrEndpoint(PrivateEngineEndpoint):
     """A configured private IP literal for the fixed vLLM ASR endpoint."""
 
     execution_target: AsrExecutionTarget | None = None
+    require_correlation_echo: bool = True
 
     def __post_init__(self) -> None:
         PrivateEngineEndpoint.__post_init__(self)
+        if type(self.require_correlation_echo) is not bool:
+            raise ValueError("invalid correlation echo requirement")
         if self.execution_target is not None and (
             self.execution_target.binding_revision_id != self.binding_revision_id
             or self.bearer_token is None
@@ -53,7 +56,9 @@ class VllmAsrEndpoint(PrivateEngineEndpoint):
             raise ValueError("a controlled ASR target requires its native generation credential")
 
 
-def load_controlled_asr_endpoint(path: Path) -> VllmAsrEndpoint:
+def load_controlled_asr_endpoint(
+    path: Path, *, require_correlation_echo: bool = True
+) -> VllmAsrEndpoint:
     """Read one private, bounded deployment descriptor; caller input cannot select it."""
     try:
         descriptor = load_controlled_endpoint_descriptor(path)
@@ -67,6 +72,7 @@ def load_controlled_asr_endpoint(path: Path) -> VllmAsrEndpoint:
             binding_revision_id=target["binding_revision_id"],
             bearer_token=descriptor.bearer_token,
             execution_target=AsrExecutionTarget(**target),
+            require_correlation_echo=require_correlation_echo,
         )
     except OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError:
         raise ValueError("invalid private controlled ASR deployment descriptor") from None
@@ -481,9 +487,13 @@ class VllmAsrRecognizer:
                 async with client.stream(
                     "POST", "/v1/audio/transcriptions", headers=headers, content=body
                 ) as response:
+                    echoed = response.headers.get("x-request-id")
+                    correlation_ok = echoed == audio.request_id or (
+                        echoed is None and not self._endpoint.require_correlation_echo
+                    )
                     if (
                         response.status_code != 200
-                        or response.headers.get("x-request-id") != audio.request_id
+                        or not correlation_ok
                         or response.headers.get("content-type", "").split(";")[0]
                         != "text/event-stream"
                         or response.headers.get("content-encoding", "identity") != "identity"

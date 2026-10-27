@@ -61,6 +61,7 @@ class _Objects(_PrivateConfiguration):
 class _Deployment(_PrivateConfiguration):
     protocol: Literal["file_asr_v1"]
     controlled_endpoint_file: str
+    require_correlation_echo: bool = True
     vad_model_file: str
     vad_model_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     objects: _Objects
@@ -184,7 +185,10 @@ def load_file_asr_configuration(settings: Settings) -> FileAsrConfiguration | No
             max_completion_tokens=deployment.max_completion_tokens,
             timeout_seconds=deployment.max_call_seconds,
         )
-        endpoint = load_controlled_asr_endpoint(absolute_path(deployment.controlled_endpoint_file))
+        endpoint = load_controlled_asr_endpoint(
+            absolute_path(deployment.controlled_endpoint_file),
+            require_correlation_echo=deployment.require_correlation_echo,
+        )
         target = endpoint.execution_target
         if (
             target is None

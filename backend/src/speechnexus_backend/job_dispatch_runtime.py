@@ -1,15 +1,16 @@
 """Composition and owned lifetime for the public Job dispatch loop.
 
 This is deliberately outside ``create_app``: dispatch is a long-lived worker,
-not a request-scoped component. The production planner and result publisher are
-not part of this assembly card, so their absence is an explicit startup failure
-instead of a fake implementation or a silent no-op.
+not a request-scoped component. The production planner is still a separate
+assembly step; the result publisher is built here and its absence is an explicit
+startup failure instead of a fake implementation or a silent no-op.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Literal, Self
+from collections.abc import Mapping
+from typing import Any, Literal, Self, cast
 from urllib.parse import urlsplit
 
 from psycopg.conninfo import conninfo_to_dict
@@ -21,12 +22,21 @@ from speechnexus_backend.speech.application.job_dispatcher import (
     JobDispatcher,
     ResultPublisher,
 )
+from speechnexus_backend.speech.application.results import (
+    MAX_RESULT_BYTES,
+    ResultArtifactPublisher,
+)
+from speechnexus_backend.speech.domain.artifacts import ArtifactError
 from speechnexus_backend.speech.domain.job_dispatch import DispatchLimits, identifier
+from speechnexus_backend.speech.infrastructure.artifacts_minio import MinioArtifactPublisher
+from speechnexus_backend.speech.infrastructure.artifacts_postgres import PostgresArtifactWriter
 from speechnexus_backend.speech.infrastructure.execution_gateway_adapter import (
     ExecutionGatewayAdapter,
 )
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
+    GatewayResultObjectError,
+    MinioExecutionResultObjects,
 )
 from speechnexus_backend.speech.infrastructure.job_dispatch_postgres import (
     PostgresDispatchQueue,
@@ -100,6 +110,27 @@ class JobDispatchSettings(BaseSettings):
         le=30,
         allow_inf_nan=False,
     )
+    object_storage_endpoint: AnyHttpUrl = Field(
+        validation_alias="SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT", repr=False
+    )
+    artifacts_bucket: str = Field(
+        validation_alias="SPEECHNEXUS_OBJECT_STORAGE_BUCKET",
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+    )
+    execution_result_bucket: str = Field(
+        validation_alias="SPEECHNEXUS_EXECUTION_RESULT_BUCKET",
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+    )
+    object_storage_access_key: SecretStr = Field(
+        validation_alias="SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY", min_length=1, repr=False
+    )
+    object_storage_secret_key: SecretStr = Field(
+        validation_alias="SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY", min_length=1, repr=False
+    )
 
     @property
     def worker_id(self) -> str:
@@ -142,9 +173,72 @@ class JobDispatchSettings(BaseSettings):
         token = self.gateway_credential.get_secret_value()
         if len(token) > 4096 or any(not 33 <= ord(char) <= 126 for char in token):
             raise ValueError("Dispatch gateway credential must be visible ASCII")
+        objects = urlsplit(str(self.object_storage_endpoint))
+        if (
+            not objects.hostname
+            or objects.username
+            or objects.password
+            or objects.path not in ("", "/")
+            or objects.query
+            or objects.fragment
+        ):
+            raise ValueError(
+                "Artifact object storage requires an origin without credentials or path"
+            )
         if self.poll_seconds > self.job_timeout_seconds:
             raise ValueError("Dispatch polling cannot exceed the Job timeout")
         return self
+
+
+class _StagingResultReader:
+    """Adapt the verified gateway object reader to the publication port."""
+
+    def __init__(self, objects: MinioExecutionResultObjects) -> None:
+        self._objects = objects
+
+    def read(self, reference: Mapping[str, Any], storage_version: str) -> bytes:
+        try:
+            return self._objects.read(cast(Any, dict(reference)), storage_version)
+        except GatewayResultObjectError:
+            raise ArtifactError("artifact_staging_unavailable") from None
+
+
+def build_result_publisher(
+    settings: JobDispatchSettings, pool: SpeechPool
+) -> ResultArtifactPublisher:
+    """Build the real publisher; object clients are closed together on failure."""
+    endpoint = str(settings.object_storage_endpoint)
+    access = settings.object_storage_access_key.get_secret_value()
+    secret = settings.object_storage_secret_key.get_secret_value()
+    artifacts = MinioArtifactPublisher(endpoint, settings.artifacts_bucket, access, secret)
+    try:
+        staging = MinioExecutionResultObjects(
+            endpoint=endpoint,
+            bucket=settings.execution_result_bucket,
+            access_key=access,
+            secret_key=secret,
+            max_bytes=MAX_RESULT_BYTES,
+        )
+    except BaseException:
+        artifacts.close()
+        raise
+
+    def close() -> None:
+        artifacts.close()
+        staging.close()
+
+    publisher = ResultArtifactPublisher(
+        PostgresArtifactWriter(pool, timeout_seconds=settings.storage_timeout_seconds),
+        artifacts,
+        _StagingResultReader(staging),
+        close=close,
+    )
+    try:
+        publisher.check_ready()
+    except BaseException:
+        close()
+        raise
+    return publisher
 
 
 def build_dispatch_dependencies(
@@ -152,15 +246,13 @@ def build_dispatch_dependencies(
 ) -> tuple[DispatchPlanner, ResultPublisher]:
     """Return the production planner/publisher, or fail closed.
 
-    The follow-up planner and result-externalization cards replace this single
-    seam. Until then, starting a worker that claims Jobs would only mark them
-    running and then abandon them, so startup is refused instead.
+    Result publication is assembled by ``build_result_publisher``. The
+    production planner remains a separate card; starting a worker without it
+    would claim Jobs and abandon them, so startup is still refused.
     """
 
     del settings
-    raise DispatchDependenciesUnavailableError(
-        "Job dispatch planner and result publisher are not assembled"
-    )
+    raise DispatchDependenciesUnavailableError("Job dispatch planner is not assembled")
 
 
 class JobDispatchRuntime:
@@ -270,6 +362,7 @@ class JobDispatchRuntime:
                 "SELECT job_id, event_seq, state, occurred_at_us FROM speech_job_events LIMIT 0",
                 "SELECT job_id FROM coordination_jobs LIMIT 0",
                 "SELECT operation_id, request_document FROM admission_operations LIMIT 0",
+                "SELECT artifact_id FROM speech_artifacts LIMIT 0",
             ):
                 connection.execute(statement)
 
@@ -279,4 +372,5 @@ __all__ = [
     "JobDispatchRuntime",
     "JobDispatchSettings",
     "build_dispatch_dependencies",
+    "build_result_publisher",
 ]

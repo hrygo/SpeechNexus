@@ -87,7 +87,7 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 `admission_operations` 原命令和 `coordination_jobs`/`coordination_outbox` 身份；
 不使用摘要或当前默认值重建请求。
 
-授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT 由 `job_dispatch_grants` 给出，**必须在升级到 head 之后**再执行——该表要到 `0007_admission_commands` 才存在，提前应用会让授权失败或掩盖升级顺序问题。
+授权分两段安装：`job_runtime_grants` 覆盖从 `0001_jobs` 起就存在的表，可在历史版本沙箱上直接应用；派发器额外需要的 `admission_operations` INSERT 与 `speech_artifacts` 的 SELECT/INSERT 由 `job_dispatch_grants` 一并给出，**必须在升级到 head 之后**再执行——前者要到 `0007_admission_commands`、后者要到 `0020_artifacts` 才存在，提前应用会让授权失败或掩盖升级顺序问题。Artifact 写入只授予显式列 INSERT 与读取既有行的 SELECT，不授予 UPDATE/DELETE 或 DDL。
 
 派发器按 `FOR UPDATE OF c SKIP LOCKED` 批量领取到期的协调行，写入 owner、
 `claim_version` 和租约；进程崩溃后租约到期可重新领取。一次公开 Job 对应一个由
@@ -111,11 +111,18 @@ Job ID 确定性派生的 `submit_intent_id`，领取者先查询原身份，只
 的 404 仍是 `not_found`，408/429 保持 `unknown`。不得把 `unknown` 映射成 `failed`。
 
 当前边界完成派发器、真实 PG 领取/终态存储、唯一网关客户端（派发器经适配器接入）、
-worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 与对象存储
-结果发布仍未装配；`build_dispatch_dependencies` 在二者缺失时显式抛错，进程以
-退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}`
-尚未由该路径产生可读制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替
+worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitExecutionRequest` planner 仍未装配（结果发布已实现，见下节）；`build_dispatch_dependencies` 在二者缺失时显式抛错，进程以
+退出码 2 结束且不领取租约，不会用 fake 或空实现硬跑。`GET /v1/nexus/artifacts/{id}` 的读路径已可用，但需 planner 装配后才会由 Job 路径产生制品。因此本步不能宣称公开异步链已在部署中闭环，也不能代替
 真实网关、真实引擎或对象存储的发布资格。
+
+### 结果发布语义（DEL-100）
+
+发布以 `job_id + kind` 确定性派生 `artifact_id`，以 `job_id` 确定性派生 `receipt_id`，
+对象键为 `private/artifacts/{workspace_id}/{artifact_id}`。每次发布先读取版本固定的
+staging 回执对象并核对长度/SHA-256，再写入版本化 Artifact 桶并回读校验，最后才在
+短事务中提交 `speech_artifacts` ready 行；对象 I/O 不在该事务内。重复发布先查既有
+行，命中即返回原 `artifact_id`/`receipt_id`，不重写对象。DB 提交失败时对象可保留；
+重试以同一对象键与内容复用既有版本，再提交同一行。对象已写入但 DB 未提交不返回成功。
 
 ### worker 入口与运行配置（DEL-98）
 
@@ -138,6 +145,10 @@ worker 入口/进程角色及 `create_app` 之外的组合根。生产 `SubmitEx
 | `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` | 最大领取版本 1–20 |
 | `SPEECHNEXUS_JOB_DISPATCH_INTERVAL_SECONDS` | 空批次后的下一轮等待 |
 | `SPEECHNEXUS_JOB_DISPATCH_STORAGE_TIMEOUT_SECONDS` | 领取、续租、终态事务的上限 |
+| `SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT` | 版本化对象存储 origin，不允许路径、凭据或 query |
+| `SPEECHNEXUS_OBJECT_STORAGE_BUCKET` | Artifact 桶；必须启用版本化 |
+| `SPEECHNEXUS_EXECUTION_RESULT_BUCKET` | 网关 staging 回执所在桶；按回执版本读取 |
+| `SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY` / `SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY` | 对象存储凭据，只从部署注入 |
 
 安装 backend wheel 后以该独立入口启动；`--once` 只做一轮有界领取，供部署冒烟：
 
@@ -196,6 +207,9 @@ Job/outbox SELECT 和创建所需列的 INSERT；没有 UPDATE、DELETE、持久
 ```sh
 uv run pytest tests/unit/test_production_jobs.py -q
 uv run pytest tests/unit/test_production_claims.py -q
+uv run pytest tests/unit/backend/test_result_publication.py -q
+# 配置隔离 PG DSN 与 MinIO endpoint/keys 后：
+uv run pytest tests/integration/test_result_publication_real_storage.py -q
 # 先配置指向项目隔离实例的两个测试 DSN。
 make coordination-test
 make integration-test

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -10,6 +11,7 @@ from speechnexus_backend.speech.domain.assets import (
     DIGEST,
     IDENTIFIER,
     counter,
+    hash_bytes,
     identifier,
 )
 
@@ -81,6 +83,34 @@ class ArtifactRecord:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactObjectWrite:
+    """Bytes and identity of one immutable object before its storage version exists."""
+
+    artifact_id: str
+    workspace_id: str
+    object_key: str
+    media_type: str
+    bytes: int
+    sha256: str
+    body: builtins.bytes
+
+    def __post_init__(self) -> None:
+        identifier(self.artifact_id)
+        identifier(self.workspace_id)
+        if not isinstance(self.object_key, str) or not 1 <= len(self.object_key) <= 512:
+            raise ValueError("Invalid artifact object identity")
+        if not isinstance(self.media_type, str) or not _MEDIA_TYPE.fullmatch(self.media_type):
+            raise ValueError("Invalid artifact media type")
+        counter(self.bytes, minimum=1)
+        if not DIGEST.fullmatch(self.sha256):
+            raise ValueError("Invalid artifact digest")
+        if not isinstance(self.body, bytes):
+            raise ValueError("Invalid artifact body")
+        if len(self.body) != self.bytes or hash_bytes(self.body) != self.sha256:
+            raise ValueError("Artifact body disagrees with its size or digest")
+
+
 def artifact_range(value: str | None, size: int) -> tuple[int, int, bool]:
     """One bounded byte range; malformed, multiple and unsatisfiable values fail closed."""
     counter(size, minimum=1)
@@ -128,6 +158,7 @@ __all__ = [
     "ARTIFACT_STATUSES",
     "ArtifactError",
     "ArtifactKind",
+    "ArtifactObjectWrite",
     "ArtifactRecord",
     "ArtifactStatus",
     "artifact_range",

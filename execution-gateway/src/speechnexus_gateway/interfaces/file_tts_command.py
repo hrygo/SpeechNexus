@@ -32,6 +32,7 @@ from speechnexus_gateway.domain.tts import (
     TtsPolicy,
     TtsRequest,
     TtsSynthesizer,
+    pcm16_mono_bytes,
 )
 from speechnexus_gateway.domain.tts_results import TtsResultStore
 
@@ -40,6 +41,18 @@ _DELIVERY_FORMATS = {target.value: target for target in TtsDeliveryFormat}
 
 def _invalid(message: str) -> InvalidExecutionRequestError:
     return InvalidExecutionRequestError(message)
+
+
+def _request_bounds(policy: TtsPolicy, max_output_audio_ms: int) -> tuple[int, int]:
+    """Tighten the approved binding to the duration this request declared.
+
+    A request ceiling below the binding must bound both the audio clock and the
+    source PCM, otherwise the engine may return audio the request never allowed.
+    The declared ceiling is already at least one frame by the submission
+    identity, so the derived bound always satisfies the policy floor.
+    """
+    bounded = min(max_output_audio_ms, policy.max_audio_ms)
+    return bounded, min(policy.max_pcm_bytes, pcm16_mono_bytes(bounded, policy.sample_rate_hz))
 
 
 class CommandFileTts:
@@ -127,12 +140,17 @@ class CommandFileTts:
             ):
                 raise ValueError
             delivery = _DELIVERY_FORMATS[parameters["response_format"]]
+            max_audio_ms, max_pcm_bytes = _request_bounds(
+                self._binding_policy, identity.max_output_audio_ms
+            )
             policy = replace(
                 self._binding_policy,
                 instructions=parameters["instructions"] or "",
                 speed=parameters["speed"],
                 language=parameters["language"],
                 seed=parameters["seed"],
+                max_audio_ms=max_audio_ms,
+                max_pcm_bytes=max_pcm_bytes,
             )
             frozen = TtsRequest(identity.submit_intent_id, text)
         except (

@@ -132,6 +132,18 @@ class TtsExecutionTarget:
             raise ValueError("invalid configured file TTS execution target")
 
 
+def pcm16_mono_bytes(duration_ms: int, sample_rate_hz: int) -> int:
+    """Exact upper bound in bytes for PCM16 mono audio of one declared duration.
+
+    The engine clock and channel count are fixed by the approved binding, so a
+    request that declares a shorter duration must bound the source PCM the same
+    way instead of inheriting the binding's much larger ceiling.
+    """
+    if type(duration_ms) is not int or duration_ms < 0 or type(sample_rate_hz) is not int:
+        raise ValueError("Invalid audio duration bound")
+    return -((-duration_ms * sample_rate_hz) // 1000) * 2
+
+
 @dataclass(frozen=True, slots=True)
 class TtsPolicy:
     """Frozen per-binding synthesis policy.

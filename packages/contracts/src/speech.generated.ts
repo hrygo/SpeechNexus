@@ -3223,6 +3223,16 @@ export interface components {
         "application/json": components["schemas"]["ErrorResponse"];
       };
     };
+    /** @description The speech path accepts POST only. */
+    SpeechMethodNotAllowed: {
+      headers: {
+        Allow: "POST";
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResponse"];
+      };
+    };
     /** @description Resource not found or not visible to the requested workspace. */
     NotFound: {
       headers: {
@@ -3583,6 +3593,8 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      405: components["responses"]["SpeechMethodNotAllowed"];
       409: components["responses"]["Conflict"];
       422: components["responses"]["UnprocessableEntity"];
       429: components["responses"]["TooManyRequests"];

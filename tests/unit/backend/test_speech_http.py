@@ -21,6 +21,7 @@ from speechnexus_backend.speech.application.speech_synthesis import (
     SpeechOutputLimitExceededError,
     SpeechSynthesis,
     SpeechUnavailableError,
+    SpeechUnsupportedError,
     WorkspaceFact,
 )
 from speechnexus_backend.speech.domain.publications import (
@@ -34,8 +35,10 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     SpeechCommand,
     SpeechFormat,
     SpeechPlan,
+    identifier,
 )
 from speechnexus_backend.speech.interfaces.http import speech as surface
+from speechnexus_backend.speech.interfaces.http import speech_errors
 from tests.unit.backend.test_health import _settings
 
 BINDING = Publication("binding", "tts-quality", 2, "binding-rev-2", 1_000)
@@ -370,6 +373,89 @@ def test_request_ceiling_never_exceeds_the_deployment_ceiling() -> None:
     assert synth.plans[0].max_audio_ms == 2_000
 
 
+def test_deployment_instruction_limit_rejects_instead_of_truncating() -> None:
+    chain, synth = service(limits=SpeechLimits(max_instructions_chars=4))
+
+    with pytest.raises(SpeechUnsupportedError) as raised:
+        chain.synthesize(command(instructions="12345"), request_id="req:instructions")
+
+    assert raised.value.param == "instructions"
+    assert synth.plans == []
+
+
+@pytest.mark.parametrize("client_id", ["AB", "ABC", "AB-01", "a" * 129])
+async def test_contract_legal_request_id_never_blames_the_synthesizer(client_id: str) -> None:
+    """An accepted X-Request-ID must never become a 503.
+
+    The entry point keeps the client value verbatim (so traces line up) and the
+    domain derives a stable identifier for anything the identifier grammar
+    rejects; the old behaviour blamed the synthesizer instead.
+    """
+
+    chain, synth = service()
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": client_id}
+        )
+
+    assert response.status_code == 200
+    issued = response.headers["x-request-id"]
+    plan_request_id = synth.plans[0].request_id
+    assert identifier(plan_request_id) == plan_request_id
+    if len(client_id) <= 128:
+        # Within the accepted width the client value is echoed verbatim so traces
+        # line up; only longer values are replaced by the entry point.
+        assert issued == client_id
+        if client_id.islower():
+            assert plan_request_id == client_id
+    else:
+        assert issued != client_id
+
+
+async def test_conforming_request_id_is_echoed_as_the_plan_identity() -> None:
+    chain, synth = service()
+    async with client(chain) as http:
+        response = await http.post(
+            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": "req-01:tts"}
+        )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req-01:tts"
+    assert synth.plans[0].request_id == "req-01:tts"
+
+
+def test_implemented_response_codes_are_declared_by_the_contract() -> None:
+    source = Path(__file__).resolve().parents[3] / "contracts" / "speech-openapi.yaml"
+    document = yaml.safe_load(source.read_text())
+    declared = {int(code) for code in document["paths"]["/v1/audio/speech"]["post"]["responses"]}
+    # 404 is the absent model/voice answer; the error table also carries the
+    # method-level 405 the composition root emits for this path.
+    implemented = {200, *speech_errors.SPEECH_ERROR_STATUSES}
+
+    assert 404 in declared
+    assert implemented <= declared
+
+
+async def test_tightened_instruction_limit_is_enforced_before_the_engine() -> None:
+    chain, synth = service(limits=SpeechLimits(max_instructions_chars=4))
+    async with client(chain) as http:
+        response = await http.post("/v1/audio/speech", json={**REQUEST, "instructions": "12345"})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert response.json()["error"]["param"] == "instructions"
+    assert synth.plans == []
+
+
+async def test_instructions_within_the_deployment_limit_reach_the_plan() -> None:
+    chain, synth = service(limits=SpeechLimits(max_instructions_chars=4))
+    async with client(chain) as http:
+        response = await http.post("/v1/audio/speech", json={**REQUEST, "instructions": "1234"})
+
+    assert response.status_code == 200
+    assert synth.plans[0].instructions == "1234"
+
+
 def test_wav_payload_without_a_header_is_rejected() -> None:
     with pytest.raises(ValueError):
         SpeechAudio(b"not-a-wave", SpeechFormat.WAV, 24000, 1, 100)
@@ -459,40 +545,3 @@ def test_surface_constants_match_the_frozen_contract() -> None:
     assert planner["max_wait_ms"]["minimum"] == surface.PLANNER_WAIT_MIN
     assert planner["max_wait_ms"]["maximum"] == surface.PLANNER_WAIT_MAX
     assert tts["properties"]["audio_delivery"]["const"] == "complete"
-
-
-@pytest.mark.parametrize(
-    "trace",
-    ["AB", "ABCDEF-0123", "urn:UUID:ABC", "550E8400-E29B-41D4-A716-446655440000", "a" * 128],
-)
-async def test_platform_correlation_ids_never_fail_a_valid_request(trace: str) -> None:
-    """An X-Request-ID the HTTP layer accepted must never become a 503.
-
-    The middleware accepts wider values (uppercase hex, short trace IDs) than the
-    domain identifier grammar. Blaming the synthesizer for that disagreement made
-    every client echoing an uppercase UUID fail 100% of the time.
-    """
-    chain, synth = service()
-    async with client(chain) as http:
-        response = await http.post(
-            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": trace}
-        )
-
-    assert response.status_code == 200
-    assert response.content == mp3().payload
-    assert len(synth.plans) == 1
-    plan_request_id = synth.plans[0].request_id
-    assert plan_request_id.islower()
-    assert len(plan_request_id) >= 3
-
-
-async def test_valid_lowercase_correlation_id_is_preserved_verbatim() -> None:
-    chain, synth = service()
-    async with client(chain) as http:
-        response = await http.post(
-            "/v1/audio/speech", json=REQUEST, headers={"X-Request-ID": "trace-0123abcd"}
-        )
-
-    assert response.status_code == 200
-    assert response.headers["x-request-id"] == "trace-0123abcd"
-    assert synth.plans[0].request_id == "trace-0123abcd"

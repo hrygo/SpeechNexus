@@ -62,6 +62,9 @@ _ERRORS: dict[str, tuple[int, str, str, bool]] = {
 }
 
 
+SPEECH_ERROR_STATUSES: frozenset[int] = frozenset(status for status, _, _, _ in _ERRORS.values())
+
+
 def speech_error(
     code: str,
     request_id: str,
@@ -91,4 +94,4 @@ def speech_error(
     )
 
 
-__all__ = ["speech_error"]
+__all__ = ["SPEECH_ERROR_STATUSES", "speech_error"]

@@ -246,6 +246,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_jobs",
             "speech_job_events",
             "speech_job_submissions",
+            # security-barrier view from 0019: the only published binding
+            # surface a read-only catalogue credential may reach.
+            "speech_published_binding_revisions",
         }
         if db.dialect == "postgresql"
         else set()

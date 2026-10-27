@@ -62,6 +62,7 @@ def configured(tmp_path: Path, path: Path) -> Settings:
         "endpoint-node",
         "endpoint-gateway",
         "endpoint-generation",
+        "echo-type",
         "duplicate",
         "nonfinite",
     ],
@@ -122,6 +123,8 @@ def test_invalid_deployment_refuses_before_authority_or_model_activation(
         }[change]
         value["target"][key] = replacement
         endpoint.write_text(json.dumps(value))
+    elif change == "echo-type":
+        document["require_correlation_echo"] = 1
     if change == "nonfinite":
         document["max_call_seconds"] = float("nan")
     payload = json.dumps(document)
@@ -199,6 +202,18 @@ def test_absent_configuration_preserves_unavailable_default(tmp_path: Path) -> N
     app = create_app(settings=settings)
     assert not app.state.file_execution_required
     assert app.state.submit_execution is app.state.abort_execution is None
+
+
+@pytest.mark.parametrize(("configured_value", "expected"), [(None, True), (False, False)])
+def test_correlation_echo_requirement_defaults_to_strict_and_is_explicitly_configurable(
+    tmp_path: Path, configured_value: bool | None, expected: bool
+) -> None:
+    path, document = write_configuration(tmp_path / "deployment")
+    if configured_value is not None:
+        document["require_correlation_echo"] = configured_value
+    path.write_text(json.dumps(document))
+    loaded = load_file_asr_configuration(configured(tmp_path, path))
+    assert loaded is not None and loaded.endpoint.require_correlation_echo is expected
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

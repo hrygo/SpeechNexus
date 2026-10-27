@@ -87,22 +87,61 @@ def client_for(
     stream: httpx.AsyncByteStream,
     requests: list[httpx.Request],
     *,
+    endpoint: VllmAsrEndpoint = ENDPOINT,
+    echo_correlation: bool = True,
     status: int = 200,
     headers: dict[str, str] | None = None,
 ) -> VllmAsrRecognizer:
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        response_headers = {"content-type": "text/event-stream", **(headers or {})}
+        if echo_correlation:
+            response_headers.setdefault("x-request-id", "request-1")
         return httpx.Response(
             status,
-            headers={
-                "content-type": "text/event-stream",
-                "x-request-id": "request-1",
-                **(headers or {}),
-            },
+            headers=response_headers,
             stream=stream,
         )
 
-    return VllmAsrRecognizer(ENDPOINT, transport=httpx.MockTransport(handle))
+    return VllmAsrRecognizer(endpoint, transport=httpx.MockTransport(handle))
+
+
+async def test_missing_correlation_echo_is_rejected_by_default() -> None:
+    requests: list[httpx.Request] = []
+    stream = Chunks(response_bytes())
+    with pytest.raises(AsrCallError) as error:
+        await client_for(stream, requests, echo_correlation=False).transcribe(
+            AUDIO, POLICY, cancelled=lambda: False
+        )
+    assert error.value.code == AsrFailure.RESPONSE_INVALID
+    assert error.value.request_may_have_run and stream.closed and len(requests) == 1
+
+
+async def test_missing_correlation_echo_is_tolerated_only_when_explicitly_disabled() -> None:
+    requests: list[httpx.Request] = []
+    stream = Chunks(response_bytes())
+    result = await client_for(
+        stream,
+        requests,
+        endpoint=replace(ENDPOINT, require_correlation_echo=False),
+        echo_correlation=False,
+    ).transcribe(AUDIO, POLICY, cancelled=lambda: False)
+    assert result.text == "合成 synthetic." and result.completion_tokens == 7
+    assert result.request_id == AUDIO.request_id and stream.closed
+
+
+async def test_present_but_mismatched_correlation_echo_always_fails() -> None:
+    requests: list[httpx.Request] = []
+    stream = Chunks(response_bytes())
+    with pytest.raises(AsrCallError) as error:
+        await client_for(
+            stream,
+            requests,
+            endpoint=replace(ENDPOINT, require_correlation_echo=False),
+            headers={"x-request-id": "another-request"},
+        ).transcribe(AUDIO, POLICY, cancelled=lambda: False)
+    assert error.value.code == AsrFailure.RESPONSE_INVALID
+    assert error.value.request_may_have_run and stream.closed and len(requests) == 1
 
 
 @pytest.mark.parametrize("size", [1, 7, 4096])
@@ -404,6 +443,7 @@ async def test_transport_failure_is_sanitized_and_not_retried() -> None:
         {"port": True},
         {"served_model": "/synthetic/private/path"},
         {"bearer_token": "synthetic\nheader"},
+        {"require_correlation_echo": 1},
     ],
 )
 def test_endpoint_is_private_pinned_and_never_accepts_a_client_url(changes: dict[str, Any]) -> None:

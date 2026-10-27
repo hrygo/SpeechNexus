@@ -96,12 +96,21 @@ Bearer 凭据可由服务端注入，隐藏于 `repr`，不进入公共 DTO。
 传给 `SamplingParams.max_tokens`。普通 JSON 不带 finish reason，
 因此 adapter 请求内部 SSE，并显式要求最终 usage：
 
-1. HTTP 200、`text/event-stream`、无压缩，header 请求 ID 必须原值回显。
+1. HTTP 200、`text/event-stream`、无压缩；默认还要求响应头 `X-Request-ID` 原值回显。
+   `VllmAsrEndpoint.require_correlation_echo`（部署配置 `file_asr_v1.require_correlation_echo`，
+   缺省 `true`）只控制“缺失”是否容忍，不控制“不匹配”：即使设为 `false`，响应头存在但与
+   请求 ID 不同仍然拒绝。
 2. 每个事件的 ID 必须为原请求的 `transcribe-…`，模型别名与配置一致。
 3. 只接受一个输出 choice；必须收到结束原因、最终 token usage 与 `[DONE]`。
 4. `finish_reason=stop` 才能成功；`length` 报 `asr_output_truncated`，不发布截断文本。
 5. 实际 completion tokens 不得超过请求上限；拒绝布尔计数、无效和重复 JSON 字段、
    非有限值、缺失/重复终态、错误身份和异常事件。
+
+关闭 `require_correlation_echo` 后，响应与请求的绑定只依赖 HTTP 连接本身、
+`content-type: text/event-stream`、SSE 帧结构与转写 schema，不再有请求级回显证明。
+这适用于由 vLLM 原生 OpenAI 兼容 serving 直接提供、不实现该头回显的第三方端点；
+由我们自己的服务保证回显的第一方端点应保持 `true`，不要为了省事统一关闭。
+该开关不是协议放宽：公开请求、事件 ID、模型别名、终态和 token 校验都不变。
 
 客户端限制每事件/单行 65,536 bytes、文本 65,536 bytes、总响应 1 MiB、最多 8192 事件。
 这些是应用消费边界，不代替进程内存上限或服务端生成资格。

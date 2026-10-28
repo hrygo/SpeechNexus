@@ -375,10 +375,16 @@ uv run --no-project \
 - stage 与 engine component 对应；
 - `artifact-pin.model` 摘要、config bundle、topology、evidence 文件/逐场景摘要；
 - `evidence_digest` 与文件 SHA；
-- 定义 `capacity_manifest_id`/release tier/stage roles/tasks/max segment；
+- 对传入的 `--binding-definition` 与快照内定义分别执行同一组语义检查：`capacity_manifest_id` 存在且等于 manifest、release tier 可识别并一致、stage roles/tasks/max segment 对应（输出前缀分别为 `binding_definition.*` 与 `definition.*`）；
 - live/快照 DB 的 revision/publication/evidence/instance/host/pool/workspace 账本。
 
 样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/operations/release-evidence-verification-output.txt`。
+
+当前随仓 `deploy/engines/file-asr-audio/binding-definition.json` 不是可用发布定义：校验器会直接报
+`binding_definition.capacity_manifest_id=FAIL`（missing）和
+`binding_definition.release_tier=FAIL`（`production` vs manifest 的 `experimental`），随后仍报
+`digest.config_bundle=FAIL` 与实例 `config_digest=FAIL`。这是定义与证据不一致的事实，不能通过修改
+fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision。
 
 ## 11. 已知缺口与后续卡建议
 

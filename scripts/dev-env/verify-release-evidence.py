@@ -2,9 +2,9 @@
 """Verify one capacity-manifest / qualification-report release bundle.
 
 The command is read-only. It validates the frozen JSON schemas, cross-document
-release rules, content digests, and (when a database or snapshot is supplied)
-the binding definition, publication evidence, host budget, engine instance
-vectors, resource pool, and workspace quota.
+release rules, content digests, the supplied binding definition's release
+semantics, and (when a database or snapshot is supplied) publication evidence,
+host budget, engine instance vectors, resource pool, and workspace quota.
 """
 
 from __future__ import annotations
@@ -62,6 +62,7 @@ VECTOR_KEYS = (
 REQUIRED_EVIDENCE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SCHEMA_NAME = re.compile(r"^[a-z][a-z0-9_]{2,62}$")
 PLACEHOLDER_ID = re.compile(r"(^|[-_.:])local-test([-_.:]|$)|local-test-capacity")
+RELEASE_TIERS = frozenset({"experimental", "best_effort", "production"})
 
 
 @dataclass
@@ -481,62 +482,72 @@ def check_definition(
     definition: dict[str, Any],
     manifest: dict[str, Any],
     checks: Report,
+    *,
+    prefix: str = "definition",
 ) -> None:
     recipe = definition.get("execution_recipe")
     if not isinstance(recipe, dict):
-        checks.add("definition.execution_recipe", "FAIL", "missing execution_recipe")
+        checks.add(f"{prefix}.execution_recipe", "FAIL", "missing execution_recipe")
         return
     declared = recipe.get("capacity_manifest_id")
     if not isinstance(declared, str):
-        checks.add("definition.capacity_manifest_id", "FAIL", "missing")
+        checks.add(f"{prefix}.capacity_manifest_id", "FAIL", "missing")
     elif declared != manifest["manifest_id"]:
         checks.add(
-            "definition.capacity_manifest_id",
+            f"{prefix}.capacity_manifest_id",
             "FAIL",
             f"declares {declared}, expected {manifest['manifest_id']}",
         )
     else:
-        checks.add("definition.capacity_manifest_id", "PASS", declared)
+        checks.add(f"{prefix}.capacity_manifest_id", "PASS", declared)
     if isinstance(declared, str) and PLACEHOLDER_ID.search(declared):
         checks.add(
-            "definition.placeholder",
+            f"{prefix}.placeholder",
             "FAIL",
             f"definition declares placeholder capacity manifest {declared}",
         )
     else:
-        checks.add("definition.placeholder", "PASS", "no local-test placeholder")
+        checks.add(f"{prefix}.placeholder", "PASS", "no local-test placeholder")
     definition_tier = definition.get("release_tier")
-    if definition_tier is not None and definition_tier != manifest["release_tier"]:
+    if definition_tier is not None and (
+        not isinstance(definition_tier, str) or definition_tier not in RELEASE_TIERS
+    ):
         checks.add(
-            "definition.release_tier",
+            f"{prefix}.release_tier",
+            "FAIL",
+            f"unrecognized definition release_tier={definition_tier}",
+        )
+    elif definition_tier is not None and definition_tier != manifest["release_tier"]:
+        checks.add(
+            f"{prefix}.release_tier",
             "FAIL",
             f"definition={definition_tier}, manifest={manifest['release_tier']}",
         )
     elif definition_tier is None:
-        checks.add("definition.release_tier", "WARN", "definition has no release_tier")
+        checks.add(f"{prefix}.release_tier", "WARN", "definition has no release_tier")
     else:
-        checks.add("definition.release_tier", "PASS", definition_tier)
+        checks.add(f"{prefix}.release_tier", "PASS", definition_tier)
     roles = recipe.get("stage_roles", [])
     manifest_roles = [stage["stage_role"] for stage in manifest["stage_graph"]]
     if set(roles) != set(manifest_roles):
         checks.add(
-            "definition.stage_roles", "FAIL", f"definition={roles}, manifest={manifest_roles}"
+            f"{prefix}.stage_roles", "FAIL", f"definition={roles}, manifest={manifest_roles}"
         )
     else:
-        checks.add("definition.stage_roles", "PASS", ",".join(roles))
+        checks.add(f"{prefix}.stage_roles", "PASS", ",".join(roles))
     tasks = definition.get("tasks", [])
     missing = [task for task in manifest["supported_tasks"] if task not in tasks]
     checks.add(
-        "definition.tasks",
+        f"{prefix}.tasks",
         "FAIL" if missing else "PASS",
         "missing: " + ", ".join(missing) if missing else ",".join(manifest["supported_tasks"]),
     )
     domain_ms = definition.get("parameter_domains", {}).get("asr", {}).get("max_segment_ms")
     limit_ms = manifest["rate_and_segment_limits"]["max_segment_audio_ms"]
     if domain_ms is not None and integer(domain_ms) != integer(limit_ms):
-        checks.add("definition.max_segment", "FAIL", f"definition={domain_ms}, manifest={limit_ms}")
+        checks.add(f"{prefix}.max_segment", "FAIL", f"definition={domain_ms}, manifest={limit_ms}")
     else:
-        checks.add("definition.max_segment", "PASS", str(limit_ms))
+        checks.add(f"{prefix}.max_segment", "PASS", str(limit_ms))
 
 
 def _vector(row: dict[str, Any], prefix: str) -> dict[str, int]:
@@ -1026,6 +1037,7 @@ def main(argv: list[str] | None = None) -> int:
 
         check_envelope(manifest, checks)
         check_placeholders(manifest, report, evidence, binding_definition, checks)
+        check_definition(binding_definition, manifest, checks, prefix="binding_definition")
         check_report_logic(report, checks)
         check_cross_document(
             manifest,

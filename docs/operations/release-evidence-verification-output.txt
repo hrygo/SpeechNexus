@@ -166,3 +166,57 @@ NA   capacity.pool_quota: resource_pools has no numeric quota column; quotas are
 PASS capacity.workspace_quota[ws-speechnexus-dev]: attempt headroom=8
 
 RESULT FAIL
+
+
+## G8 semantic-check rerun (DEL-121, 2026-10-28)
+
+Base revision: `a708dbac8ee7ca0a3cc48248b81915ab4240b674` plus the uncommitted DEL-121 changes.
+No evidence file under `deploy/engines/file-asr-audio/evidence/gb10-20261027/` or
+`tests/fixtures/release-evidence/` was modified for this rerun.
+
+Command (same bundle, changing only `--binding-definition`):
+
+```bash
+python scripts/dev-env/verify-release-evidence.py \
+  --manifest deploy/engines/file-asr-audio/evidence/gb10-20261027/capacity-manifest.json \
+  --report deploy/engines/file-asr-audio/evidence/gb10-20261027/qualification-report.json \
+  --evidence deploy/engines/file-asr-audio/evidence/gb10-20261027/evidence.json \
+  --expect-manifest-id capm-file-asr-qwen3-1p7b-gb10-20261027 \
+  --expect-report-id qrep-file-asr-qwen3-1p7b-gb10-20261027 \
+  --artifact-pin deploy/engines/file-asr-audio/artifact-pin.json \
+  --binding-definition <definition> \
+  --database-snapshot tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json \
+  --require-published --require-digests
+```
+
+### Before the fix
+
+| Definition | Exit code | RESULT | Definition-specific failures |
+| --- | ---: | --- | --- |
+| `evidence/gb10-20261027/binding-definition.candidate.json` | 0 | `PASS_WITH_WARNINGS` | none; only the six snapshot `definition.*` checks ran |
+| `deploy/engines/file-asr-audio/binding-definition.json` | 1 | `FAIL` | `digest.config_bundle` and instance `config_digest` only; missing `capacity_manifest_id` was invisible |
+
+### After the fix
+
+| Definition | Exit code | RESULT | Definition-specific result |
+| --- | ---: | --- | --- |
+| `evidence/gb10-20261027/binding-definition.candidate.json` | 0 | `PASS_WITH_WARNINGS` | `PASS binding_definition.capacity_manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027`; tier `experimental`, stage role `asr_batch`, task `asr_file`, max segment `30000` all pass |
+| `deploy/engines/file-asr-audio/binding-definition.json` | 1 | `FAIL` | `FAIL binding_definition.capacity_manifest_id: missing`; `FAIL binding_definition.release_tier: definition=production, manifest=experimental`; `FAIL digest.config_bundle: expected sha256:da14c1f636861c1c937a9f16b107f4e504a707c9864cf2c0bd32db018261bb3a`; `FAIL capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].config_digest` |
+
+The repository definition remains a real `FAIL`; its new first failure is the missing
+`execution_recipe.capacity_manifest_id`, which the publication transaction
+(`publications_postgres.py`) already rejects. The candidate definition still passes, so the
+semantic check does not reject an otherwise valid release declaration.
+
+### Counterexample CLI runs (after the fix)
+
+Each case is a temporary copy of the candidate definition; the repository evidence files are untouched.
+
+| Case | Mutation | Exit code | Observed `FAIL` |
+| --- | --- | ---: | --- |
+| Missing manifest id | delete `execution_recipe.capacity_manifest_id` | 1 | `FAIL binding_definition.capacity_manifest_id: missing`; `FAIL digest.config_bundle` |
+| Mismatched manifest id | set `execution_recipe.capacity_manifest_id=capm-file-asr-qwen3-1p7b-other` | 1 | `FAIL binding_definition.capacity_manifest_id: declares capm-file-asr-qwen3-1p7b-other, expected capm-file-asr-qwen3-1p7b-gb10-20261027`; `FAIL digest.config_bundle` |
+| Tampered definition digest | set `parameter_defaults.asr.preview_interval_ms=501` | 1 | `PASS binding_definition.max_segment: 30000` proves the semantic values are unchanged; `FAIL digest.config_bundle` catches the byte change |
+
+All three end with `RESULT FAIL`. The matching unit coverage is
+`tests/unit/test_release_evidence_verifier.py`.

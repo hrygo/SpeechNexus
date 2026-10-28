@@ -154,14 +154,14 @@ def test_publish_before_resolution_is_absent_and_after_resolves(sandbox: Sandbox
     draft = create_draft(sandbox)
     jobs = PostgresPublicJobs(sandbox.pool)
     assert jobs.latest_binding(draft.binding_id) is None, "an unpublished draft must not resolve"
-    assert jobs.catalog_revision() == 0
+    assert jobs.catalog_revision() == 1
     assert counts(sandbox) == (0, 1, 0)
 
     result = publish(sandbox, draft)
 
     assert result.created is True
     assert counts(sandbox) == (1, 1, 1)
-    assert jobs.catalog_revision() == 1
+    assert jobs.catalog_revision() == 2
     fact = jobs.latest_binding(draft.binding_id)
     assert fact is not None
     assert fact.publication.kind == "binding"

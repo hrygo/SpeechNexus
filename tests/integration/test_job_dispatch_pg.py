@@ -135,6 +135,7 @@ def dispatch_db() -> Iterator[DispatchSandbox]:
             f"GRANT UPDATE (claim_owner_id, claim_expires_at_us, claim_version, job_state) "
             f'ON "{schema}".coordination_jobs TO "{role}"',
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
+            f"speech_catalog_state, speech_publication_retirements, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "
             f'TO "{role}"',
         ):

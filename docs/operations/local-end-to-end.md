@@ -463,9 +463,10 @@ curl -sS -o /dev/null -w 'conditional=%{http_code}\n' \
 conditional=304
 ```
 
-`ETag` 由 `catalogue_etag(kind, policy, workspace_id, catalog_revision, payload)` 生成；
-空目录的 `catalog_revision` 仍是稳定的 1（`COUNT(*) + 1`）。`Cache-Control: no-store`
-表示客户端可以条件请求，但不得把响应当可复用缓存。
+`ETag` 由 `catalogue_etag(kind, policy, workspace_id, catalog_revision, payload)` 生成。
+迁移 0022 后，`catalog_revision` 来自 `speech_catalog_state`，初始化后的空目录为 1；
+每次公开目录可见集合发生变化都在同一事务中递增，不再由发布行数推导。
+`Cache-Control: no-store` 表示客户端可以条件请求，但不得把响应当可复用缓存。
 
 ## 5. 创建 draft、发布与 admin 投影
 
@@ -881,7 +882,14 @@ admin_unconfigured=503
 {"error":{"code":"binding_unavailable","type":"service_unavailable_error","message":"Fixed binding metadata is unavailable.","param":null,"request_id":"93c209cbc6e049788e13c3cc7db1444a","retryable":true}}
 ```
 
-## 7. 目录 ETag 的最小替代验证（测试注册路径）
+## 7. 目录 ETag 的最小替代验证（0022 前历史记录）
+
+**历史记录，不是当前支持路径。** 以下命令和输出采集于迁移 0022 之前；当时用
+owner `DELETE` 清空 publication，使版本按行数回到初始值。0022 后 publication
+保持 append-only，退役使用可见性墓碑并继续推进版本，`DELETE` 不再是目录回退
+手段。要重跑本节的机制，请使用全新隔离 test schema；不要删除主运行库的发布
+历史。当前行为以 `tests/integration/test_publications_storage.py` 的退役 ETag
+用例为准。
 
 **这不是支持路径，只证明目录 reader/ETag 本身可用。** 它使用
 `tests/integration/test_publications_storage.py` 的完整 revision 文档（含
@@ -889,7 +897,7 @@ admin_unconfigured=503
 `created_at`），并用仓库的 `encode_document` 写成 RFC8785 规范字节。生产代码
 不应依赖这个播种方式；支持路径的修复见 5.1。
 
-先清理上一节用于证明缺陷的 publication（owner 操作），让目录回到空：
+以下是当时用于让目录回到空的 owner 命令原文；**不要在 0022 后的库执行**：
 
 ```bash
 docker exec del109-pg psql -U postgres -d speechnexus -c \

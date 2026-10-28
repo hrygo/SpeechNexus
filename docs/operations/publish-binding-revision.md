@@ -12,7 +12,7 @@ date: 2026-10-28
 ## 前置条件
 
 - 数据库已迁移到当前 head，且目标 revision 已由草稿写入产生；
-- 数据库已应用 `0021_publication_evidence`；
+- 数据库已应用 `0021_publication_evidence` 与 `0022_catalog_revision_state`；
 - 独立非 owner 角色同时具备 `binding_draft_grants`（读取 `speech_binding_revisions`）、`publication_grants`（读写 `speech_publications`）与 `publication_evidence_grants`（读写证据表）；不得复用 Compose bootstrap owner；
 - admin GET 另需只读角色与 `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL`，见[证据回填与投影](backfill-binding-publication-evidence.md)；
 - 显式设置发布写入 DSN，缺省不回退到通用数据库身份：
@@ -46,7 +46,7 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
   capacity_manifest_id=cap-... qualification_report_id=qrep-... created=true
 ```
 
-`created=false` 表示同一三元组此前已发布，本次是幂等回放，`published_at_us` 仍是原发布时间。
+`created=false` 表示同一三元组此前已发布，本次是幂等回放，`published_at_us` 仍是原发布时间，`catalog_revision` 与 ETag 也不会再次推进。
 
 ## 校验、事务与幂等
 
@@ -55,7 +55,7 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
 1. `(binding_id, revision)` 已发布且 `revision_id` 不同 → 冲突错误；
 2. `speech_binding_revisions` 中不存在精确的 `(binding_id, revision, revision_id)` 三元组 → 拒绝，并报出缺失的 binding / revision，或报出实际存储的 `revision_id`；
 3. 三元组存在但 `capacity_manifest_id` 与 revision 的 `execution_recipe.capacity_manifest_id` 不一致 → 拒绝，不写任何行；
-4. 三元组存在且容量一致 → 在同一事务里先写 `speech_publications`、再写 `speech_binding_publication_evidence`；证据写入失败则 publication 一起回滚；
+4. 三元组存在且容量一致 → 在同一事务里先写 `speech_publications`、再写 `speech_binding_publication_evidence`；publication 插入触发器同时推进 `speech_catalog_state`，证据写入失败则 publication、版本推进与证据一起回滚；
 5. 同一 publication 已有证据：内容相同则幂等回放，内容不同则证据冲突；并发写入者先落库时回放其已存事实。
 
 `speech_publications` 没有任何外键，因此“revision 必须存在”只能由本命令在写入端查库保证。发布是 insert-only：同一三元组重复执行**不新增行**；替换版本 = 发布更大的 revision。
@@ -74,7 +74,7 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
 ## 现状与已知缺口
 
 1. **admin GET 已如实投影**：有 publication 且有匹配证据时返回 `published`；只有 publication、没有证据时返回 `503 binding_unavailable`，不再谎报 `draft`。历史无证据行必须先按[证据回填](backfill-binding-publication-evidence.md)处理。
-2. **不可撤回、不可回滚**：尚无 head 指针与 retire/activate；只能发布更大的 revision，已发布事实保持不可变。该能力属于后续阶段，需单独评审。
+2. **生命周期入口仍未接线**：0022 已提供精确退役墓碑、目录版本推进和基础设施级 `retire` 端口，但没有受支持的 CLI/HTTP retire；head 指针、activate 与 rollback 仍未实现，已发布事实保持不可变。该能力属于后续阶段，需单独评审；任何后续可见性变更必须在同一事务推进 `speech_catalog_state`。
 3. **该命令证明的是链路，不构成生产资格**：证据 ID 是发布时记录的事实，不是完整的资格验证；不代表容量、真实引擎或产品准入通过。
 4. **过渡期两个接口可能不一致**：在历史无证据 publication 尚未回填时，公开解析仍能选中它，而 admin GET 返回 `503`。这是已知过渡状态；回填后 unresolved 必须为 0。
 
@@ -86,4 +86,4 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
 
 ## 验证范围
 
-`tests/integration/test_binding_publication_cli.py` 在隔离 PostgreSQL 上用产品草稿事务生成 revision，再用本命令发布，断言：发布前 `latest_binding` 为空、发布后可解析；重复发布前后 `speech_publications` 行数不变；同 revision 不同 `revision_id` 返回冲突且不写行；未存储三元组被拒绝。合成 fixture 只证明链路，不构成生产资格，也不证明真实引擎、部署拓扑或读副本行为。
+`tests/integration/test_binding_publication_cli.py` 在隔离 PostgreSQL 上用产品草稿事务生成 revision，再用本命令发布，断言：发布前 `latest_binding` 为空、发布后可解析；重复发布前后 `speech_publications` 行数不变；同 revision 不同 `revision_id` 返回冲突且不写行；未存储三元组被拒绝。`tests/integration/test_publications_storage.py` 另外覆盖退役后目录 revision/ETag 推进、并发写入版本不重复及证据写入不推进版本。合成 fixture 只证明链路，不构成生产资格，也不证明真实引擎、部署拓扑或读副本行为。

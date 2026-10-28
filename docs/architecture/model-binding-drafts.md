@@ -192,15 +192,48 @@ truth and is expected to disappear after backfill.
 Migration `0019_publication_reader_view` adds
 `speech_published_binding_revisions`, a `security_barrier` view that joins only
 publication rows to the revision identity they name. `model_catalog_reader_grants`
-gives the public catalogue reader SELECT on `speech_publications` and this view,
-never on `speech_binding_revisions`; unpublished definitions therefore stay
-unreadable even with the reader credential. Startup rejects any inherited
+gives the public catalogue reader SELECT on `speech_publications`, this view,
+`speech_catalog_state` and `speech_publication_retirements`, never on
+`speech_binding_revisions`; unpublished definitions therefore stay unreadable
+even with the reader credential. Startup rejects any inherited
 predefined `pg_*` role, database CREATE or explicit TEMP grant, sequence use,
-table/view or column SELECT beyond those two relations, write authority and
+table/view or column SELECT beyond those four relations, write authority and
 SECURITY DEFINER execution. An upgraded deployment must also revoke any old
 `speech_binding_revisions` SELECT from the reader; startup fails closed while both
 the draft table and the published view are readable. Database PUBLIC TEMP remains
 a separate deployment audit as in the coordination baseline.
+
+## Transactional catalogue revision (0022)
+
+`catalog_revision` is a stored public-visibility version, not `COUNT(*)` over
+`speech_publications`. Migration `0022_catalog_revision_state` creates the
+single-row `speech_catalog_state`, seeds it to the old observable value
+`COUNT(*) + 1`, and installs an `AFTER INSERT` trigger on both publications and
+retirement tombstones. The trigger increments the state row and advances
+`generated_at_us` with `GREATEST`, in the inserting transaction. PostgreSQL row
+locking serializes concurrent writers, so two committed visible-set changes
+cannot receive the same revision; a rolled-back publish or evidence write also
+rolls its increment back. Evidence, lease and other unrelated writes do not
+fire either trigger.
+
+Publication rows remain immutable. `speech_publication_retirements` names the
+exact `(kind, object_id, revision, revision_id)`, enforced by a composite foreign
+key, and hides only that revision. Public catalogue and Job resolution do not
+fall back to an older revision after a retirement. The write port takes a transaction-scoped advisory lock keyed by the
+catalogue object before checking that the target is current, so a concurrent
+newer publication cannot make the tombstone stale between the check and insert. Repeating the same retirement conflicts without advancing the
+version again.
+
+The public DTO shape is unchanged. A writer may read the state row and receives
+`UPDATE` only on `revision, generated_at_us`; it cannot rewrite any other column. The public reader receives SELECT-only access to the state and
+retirement tables. Downgrade refuses when tombstone history exists or when the
+stored version cannot be reconstructed as the legacy count, rather than silently
+moving historical ETags backwards.
+
+This card supplies the revision primitive and infrastructure retire port, not a
+supported CLI/HTTP lifecycle. A future activation, rollback or head-pointer
+implementation must advance the same state row in its visibility-changing
+transaction; updating only a pointer or publication row would leave ETags stale.
 
 ## Opt-in HTTP writer
 

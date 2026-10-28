@@ -48,6 +48,7 @@ def test_bindings_select_the_newest_revision_and_join_the_full_document_identity
     assert "JOIN speech_binding_revisions" not in query
     assert "newer.revision::numeric > p.revision::numeric" in query
     assert "NOT EXISTS" in query
+    assert "speech_publication_retirements" in query
     assert parameters == ()
 
 
@@ -55,7 +56,8 @@ def test_catalogue_state_requires_exactly_one_counter_row() -> None:
     cursor = Cursor([[{"catalog_revision": 7, "generated_at_us": 8}]])
 
     assert read_catalog_state(cursor) == {"catalog_revision": 7, "generated_at_us": 8}
-    assert "COUNT(*) + 1 AS catalog_revision" in cursor.calls[0][0]
+    assert "FROM speech_catalog_state" in cursor.calls[0][0]
+    assert "COUNT(*) + 1" not in cursor.calls[0][0]
 
 
 def test_catalogue_state_rejects_an_ambiguous_counter() -> None:

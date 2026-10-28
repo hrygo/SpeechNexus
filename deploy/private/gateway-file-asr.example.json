@@ -1,0 +1,43 @@
+{
+  "protocol": "file_asr_v1",
+  "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-asr-endpoint.json",
+  "require_correlation_echo": false,
+  "vad_model_file": "/run/speechnexus-private/silero_vad.onnx",
+  "vad_model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "objects": {
+    "endpoint": "http://172.28.0.10:9000",
+    "input_bucket": "speechnexus-inputs",
+    "result_bucket": "speechnexus-results",
+    "spool_directory": "/var/lib/speechnexus/spool",
+    "tls_ca_file": null,
+    "result_timeout_seconds": 30
+  },
+  "vad_tuning": {
+    "config_revision": "silero-vad-compose-example",
+    "threshold": 0.5,
+    "end_threshold": 0.35,
+    "min_speech_ms": 96,
+    "prefix_padding_ms": 300,
+    "silence_duration_ms": 500,
+    "max_segment_ms": 20000
+  },
+  "input_limits": {
+    "max_bytes": 268435456,
+    "memory_bytes": 8388608,
+    "timeout_seconds": 60
+  },
+  "decode_limits": {
+    "max_encoded_bytes": 268435456,
+    "max_duration_ms": 120000,
+    "max_frame_samples": 65536,
+    "timeout_seconds": 30
+  },
+  "worker_limits": {
+    "max_result_bytes": 4194304,
+    "max_command_bytes": 65536,
+    "max_pending": 2,
+    "shutdown_seconds": 10
+  },
+  "max_completion_tokens": 2048,
+  "max_call_seconds": 120
+}

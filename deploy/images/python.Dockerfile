@@ -19,10 +19,13 @@ COPY execution-gateway/src execution-gateway/src
 COPY node-controller/src node-controller/src
 COPY packages/contracts/src packages/contracts/src
 COPY packages/media/src packages/media/src
+COPY deploy/engines/cpu-vad/requirements.txt /tmp/cpu-vad-requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
-    uv sync --frozen --all-packages --no-dev --no-editable
+    uv sync --frozen --all-packages --all-extras --no-dev --no-editable \
+    && uv pip install --python /app/.venv/bin/python --require-hashes \
+       -r /tmp/cpu-vad-requirements.txt
 
 FROM python:3.14.9-slim-bookworm AS runtime
 

@@ -1,5 +1,23 @@
 name: speechnexus
 
+# Minimal synchronous ASR/TTS deployment surface.
+#
+# Base `docker compose config --services` is intentionally limited to:
+#   postgres, minio, minio-init, api, gateway
+#
+# The following production units are deliberately NOT part of this file yet:
+#   - node-controller: engine lifecycle is operator/external in this bootstrap;
+#   - runtime-delivery-worker: runtime delivery remains a separate G5 gap;
+#   - job-dispatch-worker: asynchronous Jobs remain blocked by the G5 gap;
+#   - asset-maintain: retention maintenance is not on the synchronous request path.
+# Adding any of them here would incorrectly claim those capabilities are assembled.
+# `migrate`, `engine-register`, `admin` and `workbench` are opt-in profiles and
+# therefore do not appear in the base service list.
+
+x-python-build: &python-build
+  context: ..
+  dockerfile: deploy/images/python.Dockerfile
+
 services:
   postgres:
     image: postgres:16.15-alpine
@@ -8,7 +26,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-speechnexus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${SPEECHNEXUS_POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -28,10 +46,13 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-speechnexus}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
     ports:
-      - "127.0.0.1:59000:9000"
-      - "127.0.0.1:59001:9001"
+      - "127.0.0.1:${SPEECHNEXUS_MINIO_S3_HOST_PORT:-59000}:9000"
+      - "127.0.0.1:${SPEECHNEXUS_MINIO_CONSOLE_HOST_PORT:-59001}:9001"
     volumes:
       - minio-data:/data
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     healthcheck:
       test:
         [
@@ -45,11 +66,36 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # One-shot bootstrap: create and version the private input/result buckets.
+  # It uses the local MinIO identity only; production uses separately scoped
+  # credentials and versioned buckets prepared outside this bootstrap.
+  minio-init:
+    build: *python-build
+    command: ["python", "/opt/speechnexus/init-object-storage.py"]
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
+      SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET: ${SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET:-speechnexus-inputs}
+    volumes:
+      - ./init-object-storage.py:/opt/speechnexus/init-object-storage.py:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   api:
-    build:
-      context: ..
-      dockerfile: deploy/images/python.Dockerfile
+    build: *python-build
     command: ["speechnexus-api"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
     environment:
       SPEECHNEXUS_ENVIRONMENT: development
       SPEECHNEXUS_PROCESS_ROLE: api
@@ -57,10 +103,23 @@ services:
       SPEECHNEXUS_INSTANCE_ID: api-1
       SPEECHNEXUS_HOST: 0.0.0.0
       SPEECHNEXUS_PORT: "8000"
-      SPEECHNEXUS_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_API_DATABASE_URL:?set SPEECHNEXUS_API_DATABASE_URL in compose.env}
       SPEECHNEXUS_OBJECT_STORAGE_ENDPOINT: http://minio:9000
       SPEECHNEXUS_OBJECT_STORAGE_HEALTHCHECK_URL: http://minio:9000/minio/health/live
-      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: speechnexus-dev
+      SPEECHNEXUS_OBJECT_STORAGE_BUCKET: ${SPEECHNEXUS_OBJECT_STORAGE_BUCKET:-speechnexus-results}
+      SPEECHNEXUS_OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      SPEECHNEXUS_OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+      SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE: /run/speechnexus-private/transcription-recipe.json
+      SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET: ${SPEECHNEXUS_TRANSCRIPTION_INPUT_BUCKET:-speechnexus-inputs}
+      SPEECHNEXUS_TRANSCRIPTION_POLL_SECONDS: ${SPEECHNEXUS_TRANSCRIPTION_POLL_SECONDS:-0.25}
+      SPEECHNEXUS_TRANSCRIPTION_MAX_AUDIO_MS: ${SPEECHNEXUS_TRANSCRIPTION_MAX_AUDIO_MS:-120000}
+      SPEECHNEXUS_TRANSCRIPTION_MAX_UPLOAD_BYTES: ${SPEECHNEXUS_TRANSCRIPTION_MAX_UPLOAD_BYTES:-26214400}
+      SPEECHNEXUS_TRANSCRIPTION_TIMEOUT_SECONDS: ${SPEECHNEXUS_TRANSCRIPTION_TIMEOUT_SECONDS:-120}
+      SPEECHNEXUS_TRANSCRIPTION_MAX_COMMAND_BYTES: ${SPEECHNEXUS_TRANSCRIPTION_MAX_COMMAND_BYTES:-65536}
+      SPEECHNEXUS_TRANSCRIPTION_STORAGE_TIMEOUT_SECONDS: ${SPEECHNEXUS_TRANSCRIPTION_STORAGE_TIMEOUT_SECONDS:-3}
+      SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL: http://gateway:8010
+      SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
+      SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS: ${SPEECHNEXUS_EXECUTION_GATEWAY_TIMEOUT_SECONDS:-10}
       SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS: ${SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS:-604800}
       SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL: ${SPEECHNEXUS_PROFILE_WRITER_DATABASE_URL:-}
       SPEECHNEXUS_BINDING_WRITER_DATABASE_URL: ${SPEECHNEXUS_BINDING_WRITER_DATABASE_URL:-}
@@ -68,11 +127,15 @@ services:
       SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL: ${SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL:-}
       SPEECHNEXUS_JOB_WRITER_DATABASE_URL: ${SPEECHNEXUS_JOB_WRITER_DATABASE_URL:-}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${SPEECHNEXUS_API_HOST_PORT:-8000}:8000"
+    volumes:
+      - ${SPEECHNEXUS_PRIVATE_CONFIG_DIR:?set SPEECHNEXUS_PRIVATE_CONFIG_DIR in compose.env}:/run/speechnexus-private:ro
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      minio-init:
+        condition: service_completed_successfully
+      gateway:
         condition: service_healthy
     healthcheck:
       test:
@@ -85,6 +148,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 10s
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -95,22 +159,35 @@ services:
     restart: unless-stopped
 
   gateway:
-    build:
-      context: ..
-      dockerfile: deploy/images/python.Dockerfile
+    build: *python-build
     command: ["speechnexus-gateway"]
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
     environment:
       SPEECHNEXUS_GATEWAY_ENVIRONMENT: development
       SPEECHNEXUS_GATEWAY_NODE_ID: ${SPEECHNEXUS_NODE_ID:-node-local-1}
-      SPEECHNEXUS_GATEWAY_GATEWAY_ID: gateway-1
+      SPEECHNEXUS_GATEWAY_GATEWAY_ID: ${SPEECHNEXUS_GATEWAY_ID:-gateway-1}
       SPEECHNEXUS_GATEWAY_HOST: 0.0.0.0
       SPEECHNEXUS_GATEWAY_PORT: "8010"
-      SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL: postgresql://${POSTGRES_USER:-speechnexus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}@postgres:5432/${POSTGRES_DB:-speechnexus}
+      SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL: ${SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL:?set SPEECHNEXUS_GATEWAY_CONTROL_DATABASE_URL in compose.env}
+      SPEECHNEXUS_GATEWAY_COMPONENT_TOKEN: ${SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL:?set SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL in compose.env}
+      SPEECHNEXUS_GATEWAY_INGRESS_LOCK_DIRECTORY: /run/speechnexus-gateway-locks
+      SPEECHNEXUS_GATEWAY_FILE_ASR_CONFIG_FILE: /run/speechnexus-private/gateway-file-asr.json
+      SPEECHNEXUS_GATEWAY_FILE_ASR_OBJECT_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      SPEECHNEXUS_GATEWAY_FILE_ASR_OBJECT_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
+      SPEECHNEXUS_GATEWAY_FILE_TTS_CONFIG_FILE: /run/speechnexus-private/gateway-file-tts.json
+      SPEECHNEXUS_GATEWAY_FILE_TTS_OBJECT_ACCESS_KEY: ${MINIO_ROOT_USER:-speechnexus}
+      SPEECHNEXUS_GATEWAY_FILE_TTS_OBJECT_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in compose.env}
     ports:
-      - "127.0.0.1:8010:8010"
+      - "127.0.0.1:${SPEECHNEXUS_GATEWAY_HOST_PORT:-8010}:8010"
+    volumes:
+      - ${SPEECHNEXUS_PRIVATE_CONFIG_DIR:?set SPEECHNEXUS_PRIVATE_CONFIG_DIR in compose.env}:/run/speechnexus-private:ro
+      - ${SPEECHNEXUS_GATEWAY_LOCK_DIR:?set SPEECHNEXUS_GATEWAY_LOCK_DIR in compose.env}:/run/speechnexus-gateway-locks
+      - ${SPEECHNEXUS_GATEWAY_SPOOL_DIR:?set SPEECHNEXUS_GATEWAY_SPOOL_DIR in compose.env}:/var/lib/speechnexus/spool
     depends_on:
       postgres:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -122,6 +199,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 10s
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -131,14 +209,77 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Opt-in migration. It never starts as part of the base `up`; the migration
+  # identity is distinct from both runtime roles.
+  migrate:
+    profiles: ["migration"]
+    build: *python-build
+    command: ["speechnexus-job-migrate", "--schema", "speech"]
+    environment:
+      SPEECHNEXUS_MIGRATION_DATABASE_URL: ${SPEECHNEXUS_MIGRATION_DATABASE_URL:?set SPEECHNEXUS_MIGRATION_DATABASE_URL in compose.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  # Opt-in one-shot registration. It never starts as part of the base `up`.
+  # The recipe and endpoint files must already be approved deployment inputs.
+  engine-register:
+    profiles: ["engine-registration"]
+    build: *python-build
+    command:
+      - speechnexus-register-engine
+      - --generation
+      - ${SPEECHNEXUS_ENGINE_GENERATION:-1}
+      - --node
+      - ${SPEECHNEXUS_NODE_ID:-node-local-1}
+      - --gateway
+      - ${SPEECHNEXUS_GATEWAY_ID:-gateway-1}
+      - --instance
+      - ${SPEECHNEXUS_ENGINE_INSTANCE_ID:-instance-asr-1}
+      - --workspace
+      - ${SPEECHNEXUS_ADMISSION_WORKSPACE:-workspace-default}
+      - --max-attempts
+      - ${SPEECHNEXUS_ADMISSION_MAX_ATTEMPTS:-8}
+    user: "${SPEECHNEXUS_RUNTIME_UID:?set SPEECHNEXUS_RUNTIME_UID from id -u}:${SPEECHNEXUS_RUNTIME_GID:?set SPEECHNEXUS_RUNTIME_GID from id -g}"
+    environment:
+      SPEECHNEXUS_DATABASE_URL: ${SPEECHNEXUS_REGISTRATION_DATABASE_URL:?set SPEECHNEXUS_REGISTRATION_DATABASE_URL in compose.env}
+      SPEECHNEXUS_DATABASE_SCHEMA: speech
+      SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE: /run/speechnexus-private/transcription-recipe.json
+      SPEECHNEXUS_ENGINE_HEALTH_URL: ${SPEECHNEXUS_ENGINE_HEALTH_URL:?set SPEECHNEXUS_ENGINE_HEALTH_URL in compose.env}
+    volumes:
+      - ${SPEECHNEXUS_PRIVATE_CONFIG_DIR:?set SPEECHNEXUS_PRIVATE_CONFIG_DIR in compose.env}:/run/speechnexus-private:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  # Optional UI/profile services; intentionally absent from the minimal surface.
   admin:
+    profiles: ["web"]
     build:
       context: ..
       dockerfile: deploy/images/web.Dockerfile
       args:
         APP_NAME: admin
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${SPEECHNEXUS_ADMIN_HOST_PORT:-8080}:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -150,13 +291,14 @@ services:
     restart: unless-stopped
 
   workbench:
+    profiles: ["web"]
     build:
       context: ..
       dockerfile: deploy/images/web.Dockerfile
       args:
         APP_NAME: workbench
     ports:
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:${SPEECHNEXUS_WORKBENCH_HOST_PORT:-8081}:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -170,3 +312,9 @@ services:
 volumes:
   postgres-data:
   minio-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

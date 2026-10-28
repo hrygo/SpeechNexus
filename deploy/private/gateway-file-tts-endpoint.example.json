@@ -1,0 +1,15 @@
+{
+  "protocol": "vllm_api_key_v1",
+  "target": {
+    "host_node_id": "node-local-1",
+    "gateway_id": "gateway-1",
+    "pool_id": "tts-batch",
+    "instance_id": "instance-tts-1",
+    "instance_generation": 1,
+    "binding_revision_id": "binding-revision-tts-compose-example"
+  },
+  "address": "10.0.0.11",
+  "port": 18101,
+  "served_model": "tts-compose-example",
+  "bearer_token": "0000000000000000000000000000000000000000000000000000000000000000"
+}

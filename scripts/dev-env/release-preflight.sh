@@ -755,15 +755,15 @@ COMPOSE_STYLE=""
 
 run_compose() {
   if [[ "$COMPOSE_STYLE" == "plugin" ]]; then
-    POSTGRES_PASSWORD=dummy MINIO_ROOT_PASSWORD=dummy docker compose "$@"
+    docker compose --env-file deploy/compose.env.example "$@"
   else
-    POSTGRES_PASSWORD=dummy MINIO_ROOT_PASSWORD=dummy docker-compose "$@"
+    docker-compose --env-file deploy/compose.env.example "$@"
   fi
 }
 
 check_c9() {
-  local services config service_count missing="" private_missing="" svc
-  local required="api gateway node-controller runtime-delivery-worker job-dispatch-worker asset-maintain"
+  local services config service_count missing="" unexpected="" private_missing="" svc
+  local required="api gateway minio minio-init postgres"
 
   if ! command -v docker >/dev/null 2>&1; then
     record SKIP C9 "可部署服务集合" "docker 不可用"
@@ -793,6 +793,16 @@ check_c9() {
       missing="${missing} ${svc}"
     fi
   done
+  while IFS= read -r svc; do
+    [[ -z "$svc" ]] && continue
+    case " $required " in
+      *" $svc "*) ;;
+      *) unexpected="${unexpected} ${svc}" ;;
+    esac
+  done <<< "$services"
+  if [[ "$service_count" != "5" ]]; then
+    unexpected="${unexpected} service_count=${service_count}"
+  fi
   if ! printf '%s' "$config" | grep -q 'SPEECHNEXUS_GATEWAY_FILE_ASR_CONFIG_FILE'; then
     private_missing="${private_missing} file-asr"
   fi
@@ -800,14 +810,15 @@ check_c9() {
     private_missing="${private_missing} file-tts"
   fi
 
-  if [[ -n "$missing" || -n "$private_missing" ]]; then
+  if [[ -n "$missing" || -n "$unexpected" || -n "$private_missing" ]]; then
     missing=${missing# }
+    unexpected=${unexpected# }
     private_missing=${private_missing# }
-    record FAIL C9 "可部署服务集合" "services=$service_count missing=${missing:-none} gateway_private=missing:${private_missing:-none}"
+    record FAIL C9 "可部署服务集合" "services=$service_count missing=${missing:-none} unexpected=${unexpected:-none} gateway_private=missing:${private_missing:-none}"
     return
   fi
 
-  record PASS C9 "可部署服务集合" "services=$service_count required=6 gateway_private=present"
+  record PASS C9 "可部署服务集合" "services=$service_count required=5 excluded=absent gateway_private=present"
 }
 
 check_c10() {

@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -19,19 +20,47 @@ from typing import Any
 
 ARCHIVE_LIMIT = 16 * 1024 * 1024
 REPORT_LIMIT = 8 * 1024 * 1024
+FETCH_ATTEMPTS = 3
+
+
+class ArtifactFetchError(ValueError):
+    """A bounded API failure containing no response text or endpoint."""
+
+    def __init__(self, category: str, exit_status: int | None, *, shard: int | None = None):
+        self.category = category
+        self.exit_status = exit_status
+        self.shard = shard
+        super().__init__(category)
 
 
 def fetch_api(endpoint: str, target: Path, limit: int) -> None:
-    with target.open("xb") as stream:
-        result = subprocess.run(
-            ["gh", "api", "--hostname", "github.com", endpoint],
-            stdout=stream,
-            stderr=subprocess.PIPE,
-            timeout=15,
-            check=False,
-        )
-    if result.returncode != 0 or not 0 < target.stat().st_size <= limit:
-        raise ValueError("Artifact API failed or returned an invalid size")
+    for attempt in range(FETCH_ATTEMPTS):
+        # A failed process may have written a partial response; never reuse it.
+        with tempfile.NamedTemporaryFile(mode="w+b", dir=target.parent) as stream:
+            try:
+                result = subprocess.run(
+                    ["gh", "api", "--hostname", "github.com", endpoint],
+                    stdout=stream,
+                    stderr=subprocess.PIPE,
+                    timeout=15,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                if attempt + 1 == FETCH_ATTEMPTS:
+                    raise ArtifactFetchError("timeout", None) from None
+                continue
+            if result.returncode != 0:
+                if attempt + 1 == FETCH_ATTEMPTS:
+                    raise ArtifactFetchError("process_failure", result.returncode) from None
+                continue
+            stream.flush()
+            size = stream.tell()
+            if not 0 < size <= limit:
+                raise ValueError("Artifact API returned an invalid size")
+            stream.seek(0)
+            with target.open("xb") as destination:
+                shutil.copyfileobj(stream, destination)
+            return
 
 
 def download(repository: str, run_id: int, count: int, output: Path) -> None:
@@ -77,7 +106,10 @@ def download(repository: str, run_id: int, count: int, output: Path) -> None:
                 raise ValueError("Invalid or expired integration artifact metadata")
             index = int(artifact["name"].removeprefix("integration-shard-"))
             archive = root / f"{index}.zip"
-            fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
+            try:
+                fetch_api(f"repos/{repository}/actions/artifacts/{artifact_id}/zip", archive, size)
+            except ArtifactFetchError as error:
+                raise ArtifactFetchError(error.category, error.exit_status, shard=index) from None
             if archive.stat().st_size != size:
                 raise ValueError("Downloaded archive size does not match API metadata")
             with archive.open("rb") as stream:
@@ -112,6 +144,14 @@ def main() -> int:
     args = parser.parse_args()
     try:
         download(args.repository, args.run_id, args.count, args.output)
+    except ArtifactFetchError as error:
+        shard = "metadata" if error.shard is None else str(error.shard)
+        status = "timeout" if error.exit_status is None else str(error.exit_status)
+        print(
+            f"::error::Integration artifact retrieval failed "
+            f"(category={error.category}, shard={shard}, exit={status})"
+        )
+        return 1
     except (
         OSError,
         ValueError,

@@ -101,7 +101,7 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
 | 9 | admin GET 三态 | 已执行 |
 | 10 | 发布后目录读 | **失败：主干缺陷，见 5.1** |
 | 11 | 网关（带 file-ASR）启动 | 已执行 |
-| 12 | 引擎注册 / readiness | **fixture 播种；真实注册 `[未执行]`（DEL-104）** |
+| 12 | 引擎注册 / readiness | **入口已合入 `2f96fb3`（#275），本轮用 fixture 对照；真实 readiness 回执与代次转移仍 `[未执行]`** |
 | 13 | 一次真实转写（网关 internal API） | 已执行 |
 | 14 | 公开 `/v1/audio/transcriptions` | **已执行：504 `operation_timeout`；worker 只登记 staging、未写终态（11.2 / 11.2.1 / 11.2.2）** |
 

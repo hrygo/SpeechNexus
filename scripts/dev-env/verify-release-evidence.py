@@ -422,17 +422,19 @@ def check_cross_document(
     checks.digests["qualification_report_file_digest"] = file_sha(report_path)
 
     evidence_scenarios = evidence.get("scenarios", {})
-    bad: list[str] = []
+    bad_scenarios: list[str] = []
     for scenario in report["scenarios"]:
         source = evidence_scenarios.get(scenario["scenario_id"])
         if not isinstance(source, dict):
-            bad.append(scenario["scenario_id"] + ":missing")
+            bad_scenarios.append(scenario["scenario_id"] + ":missing")
         elif scenario["evidence_digest"] != sha_value(source):
-            bad.append(scenario["scenario_id"] + ":digest")
+            bad_scenarios.append(scenario["scenario_id"] + ":digest")
     checks.add(
         "digest.scenarios",
-        "FAIL" if bad else "PASS",
-        ", ".join(bad) if bad else f"{len(report['scenarios'])} scenario digests match",
+        "FAIL" if bad_scenarios else "PASS",
+        ", ".join(bad_scenarios)
+        if bad_scenarios
+        else f"{len(report['scenarios'])} scenario digests match",
     )
 
     source_info = evidence.get("source", {})

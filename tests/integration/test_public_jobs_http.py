@@ -126,7 +126,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             *job_dispatch_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
-            f"speech_catalog_state, speech_publication_retirements, "
+            f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "
             f'TO "{role}"',
         ):

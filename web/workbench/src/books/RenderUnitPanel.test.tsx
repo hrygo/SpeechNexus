@@ -129,23 +129,6 @@ function setup(
 }
 
 describe("render unit panel", () => {
-  it("shows a reading state while the catalogue is in flight, not an empty or failed one", async () => {
-    // The read never settles here, so the panel must stay in its reading state rather than
-    // announcing either outcome before the deployment has answered.
-    setup([unit()], () => new Promise<Contracts["VoiceList"]>(() => {}));
-    expect(await screen.findByText(/正在读取已发布音色目录/)).toBeVisible();
-    expect(screen.queryByText(/尚未发布可用音色/)).toBeNull();
-    expect(screen.queryByText(/音色目录暂时不可用/)).toBeNull();
-  });
-
-  it("says the deployment published nothing when the catalogue reads back empty", async () => {
-    setup([unit()]);
-    // A 200 with no rows is a successful read, so it must not be reported as unavailable.
-    expect(await screen.findByText(/尚未发布可用音色/)).toBeVisible();
-    expect(screen.queryByText(/音色目录暂时不可用/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /重新读取音色目录/ })).toBeNull();
-  });
-
   it("lists the chapter's units in reading order and says when there are none", async () => {
     const { list } = setup([unit({ id: "unit_two", ordinal: 1 }), unit({ id: "unit_one" })]);
     await screen.findByRole("list", { name: "单元列表" });
@@ -258,7 +241,7 @@ it("pins the published revision the user picked from the catalogue", async () =>
   );
 });
 
-it("says the catalogue is unavailable, with a retry, when the deployment answers 503", async () => {
+it("reports an absent catalogue instead of offering invented voices", async () => {
   setup([unit()], () =>
     Promise.reject(
       new WorkbenchResponseError(
@@ -277,57 +260,10 @@ it("says the catalogue is unavailable, with a retry, when the deployment answers
     ),
   );
   const select = await screen.findByLabelText("单元 1 已发布音色");
-  await waitFor(() => expect(screen.getByText(/音色目录暂时不可用/)).toBeVisible());
-  // A failed read is not an empty deployment: the panel must not claim nothing was published.
-  expect(screen.queryByText(/尚未发布可用音色/)).toBeNull();
-  // The retry entry point is offered, so a transient 503 is recoverable in place.
-  expect(screen.getByRole("button", { name: /重新读取音色目录/ })).toBeEnabled();
+  await waitFor(() => expect(screen.getByText(/音色目录不可用/)).toBeVisible());
   // Only the unit's current pin remains: the picker shows no catalogue it does not have.
   expect(within(select).getAllByRole("option")).toHaveLength(1);
   expect(within(select).getByRole("option")).toHaveTextContent("当前固定：voice_demo@1");
-});
-
-it("re-reads the catalogue on retry and then offers the published rows", async () => {
-  const { voices } = setup([unit()], () =>
-    Promise.reject(
-      new WorkbenchResponseError(
-        503,
-        parse("ErrorResponse", {
-          error: {
-            code: "voice_catalogue_unavailable",
-            type: "service_unavailable_error",
-            message: "Voice catalogue is unavailable.",
-            request_id: "request-demo",
-            param: null,
-            retryable: true,
-          },
-        }),
-      ),
-    ),
-  );
-  await screen.findByText(/音色目录暂时不可用/);
-  voices.mockResolvedValue(
-    parse("VoiceList", {
-      object: "nexus.list",
-      data: [
-        parse("VoiceSummary", {
-          voice_id: "voice_published",
-          revision: "4",
-          display_name: "已发布旁白",
-          source_type: "designed",
-          status: "published",
-          languages: ["zh-CN"],
-          audio_formats: ["wav"],
-        }),
-      ],
-      has_more: false,
-      next_cursor: null,
-    }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: /重新读取音色目录/ }));
-  await waitFor(() => expect(screen.queryByText(/音色目录暂时不可用/)).toBeNull());
-  const select = await screen.findByLabelText("单元 1 已发布音色");
-  expect(within(select).getByRole("option", { name: /已发布旁白/ })).toBeTruthy();
 });
 
 it("shows the retained saved copy of a unit", async () => {

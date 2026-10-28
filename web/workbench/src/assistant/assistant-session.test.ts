@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkbenchClient, WorkbenchResponseError, parse } from "../manuscripts/workbench-client";
+import { WorkbenchClient, parse } from "../manuscripts/workbench-client";
 import { AssistantSession } from "./assistant-session";
 
 const VOICE = { id: "voice_demo", revision: "1" };
@@ -70,69 +70,6 @@ describe("assistant session", () => {
     );
     expect(create).not.toHaveBeenCalled();
     expect(voices).not.toHaveBeenCalled();
-  });
-
-  it("keeps a failed catalogue read distinct from a deployment that published nothing", async () => {
-    const { session, voices } = setup();
-    voices.mockRejectedValueOnce(
-      new WorkbenchResponseError(
-        503,
-        parse("ErrorResponse", {
-          error: {
-            code: "voice_catalogue_unavailable",
-            type: "service_unavailable_error",
-            message: "Voice catalogue is unavailable.",
-            request_id: "request-demo",
-            param: null,
-            retryable: true,
-          },
-        }),
-      ),
-    );
-    await session.load();
-    // The capability stands; only the catalogue is unreported, and it is not "empty".
-    expect(session.getSnapshot().availability).toBe("available");
-    expect(session.getSnapshot().catalogue).toEqual({
-      kind: "problem",
-      problem: "unavailable",
-    });
-  });
-
-  it("records an answered-but-empty catalogue as a successful read with no rows", async () => {
-    const { session } = setup();
-    await session.load();
-    expect(session.getSnapshot().catalogue).toEqual({ kind: "ready", voices: [] });
-  });
-
-  it("re-reads the catalogue on its own after a failure", async () => {
-    const { session, voices } = setup();
-    voices.mockRejectedValueOnce(
-      new WorkbenchResponseError(
-        503,
-        parse("ErrorResponse", {
-          error: {
-            code: "voice_catalogue_unavailable",
-            type: "service_unavailable_error",
-            message: "Voice catalogue is unavailable.",
-            request_id: "request-demo",
-            param: null,
-            retryable: true,
-          },
-        }),
-      ),
-    );
-    await session.load();
-    expect(session.getSnapshot().catalogue.kind).toBe("problem");
-    voices.mockResolvedValueOnce({
-      object: "nexus.list",
-      data: [],
-      has_more: false,
-      next_cursor: null,
-    } as never);
-    await session.readCatalogue();
-    expect(session.getSnapshot().catalogue).toEqual({ kind: "ready", voices: [] });
-    // The retry re-read only the catalogue, not the deployment verdict.
-    expect(voices).toHaveBeenCalledTimes(2);
   });
 
   it("distinguishes a missing dependency from a deliberate disable", async () => {

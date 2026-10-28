@@ -424,7 +424,7 @@ uv run --no-project \
 - manifest/report/evidence 的 id、tier、topology、时间、stage/engine 组件；
 - `artifact-pin.model` 摘要、`config_bundle_digest`、`topology_digest`、evidence 文件/逐 scenario 摘要、source body 字节；
 - report `evidence_digest` 与 manifest/report 文件 SHA；
-- 定义 `capacity_manifest_id`、`release_tier`、stage roles、tasks、max segment；
+- 传入的 `--binding-definition` 与快照内定义分别检查 `capacity_manifest_id`、可识别的 `release_tier`、stage roles、tasks、max segment；
 - publication/evidence 行的身份与两个文件摘要；
 - instance 三组六维向量、slot、状态、config digest；
 - host 拓扑、allocatable/held/quarantine、peak 覆盖、剩余 slot 余量；

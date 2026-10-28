@@ -33,7 +33,6 @@ TODO_IDLE=8       # 在办卡超过该分钟数 → 积压
 WAKE_WINDOW=3     # 只看近 N 小时的唤醒异常
 
 fail() { echo "fleet-status: $*" >&2; exit 2; }
-mask_dsn() { sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#' <<<"$1"; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,7 +55,7 @@ command -v psql >/dev/null 2>&1 || fail "psql not found"
 PSQL=(psql "$DB" -X -v ON_ERROR_STOP=1 -tAF'|')
 
 if ! PGOPTIONS='-c default_transaction_read_only=on' "${PSQL[@]}" -c 'SELECT 1' >/dev/null 2>&1; then
-  fail "cannot query $(mask_dsn "$DB")"
+  fail "cannot query database"
 fi
 
 if [[ -z "$COMPANY" ]]; then

@@ -92,7 +92,7 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migration.upgrade(
-                config, "0023_publication_lifecycle" if legacy_migration_test else "head"
+                config, "0021_publication_evidence" if legacy_migration_test else "head"
             )
     finally:
         engine.dispose()
@@ -108,13 +108,12 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
         (names["reader"], binding_admin_reader_grants),
         (names["catalogue"], model_catalog_reader_grants),
     )
+    if legacy_migration_test:
+        # This test only writes drafts and exercises the 0021 downgrade.
+        # Later runtime grants refer to tables introduced after that revision.
+        grants = ((names["writer"], binding_draft_grants),)
     for role, declaration in grants:
         for statement in declaration(schema, role):
-            if legacy_migration_test and (
-                "speech_publication_installation" in statement
-                or "speech_binding_publish_intents" in statement
-            ):
-                continue
             admin.execute(statement)
     urls = {role: make_conninfo(base, user=names[role], password=PASSWORD) for role in ROLES}
     pools: dict[str, SpeechPool] = {}

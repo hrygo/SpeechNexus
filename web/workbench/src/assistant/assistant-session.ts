@@ -5,7 +5,6 @@ import {
   type Contracts,
   type WorkbenchClient,
 } from "../manuscripts/workbench-client";
-import { catalogueProblemOf, type CatalogueRead } from "../voices/catalogue-state";
 
 /**
  * The deployment's own verdict on the assistant capability. The consumer never infers
@@ -23,11 +22,7 @@ export type AssistantProblem =
 export interface AssistantState {
   readonly availability: AssistantAvailability;
   readonly turn: Contracts["AssistantTurn"] | null;
-  /**
-   * The published catalogue is a read with its own outcome, not a nullable list: an unread or
-   * failed catalogue must never be presented as a deployment that published nothing.
-   */
-  readonly catalogue: CatalogueRead;
+  readonly voices: Contracts["VoiceList"] | null;
   readonly busy: boolean;
   readonly problem: AssistantProblem | null;
   readonly watching: boolean;
@@ -69,7 +64,7 @@ export class AssistantSession {
   #state: AssistantState = {
     availability: "unknown",
     turn: null,
-    catalogue: { kind: "unread" },
+    voices: null,
     busy: false,
     problem: null,
     watching: false,
@@ -137,28 +132,18 @@ export class AssistantSession {
       return;
     }
     if (availability !== "available") return;
-    await this.readCatalogue(signal);
-  }
-
-  /**
-   * Read the published catalogue on its own. The assistant capability stands on the status
-   * read, so a failed catalogue is reported against the catalogue alone: the form stays
-   * closed with a named reason and an explicit retry, instead of the deployment being called
-   * empty or the whole capability being reported as missing.
-   */
-  async readCatalogue(signal?: AbortSignal): Promise<void> {
-    const generation = this.#generation;
-    this.#set({ catalogue: { kind: "loading" } });
     try {
-      const page = await this.client.voices(signal);
-      if (generation !== this.#generation) return;
-      this.#set({ catalogue: { kind: "ready", voices: page.data }, busy: false });
-    } catch (error) {
+      const voices = await this.client.voices(signal);
       if (generation !== this.#generation) return;
       this.#set({
-        catalogue: { kind: "problem", problem: catalogueProblemOf(error) },
+        voices,
         busy: false,
+        problem: this.#state.blocked ? "storage" : this.#state.pending ? "unknown" : null,
       });
+    } catch (error) {
+      if (generation !== this.#generation) return;
+      // The capability stands; only the catalogue read failed.
+      this.#set({ voices: null, busy: false, problem: problemOf(error) });
     }
   }
 

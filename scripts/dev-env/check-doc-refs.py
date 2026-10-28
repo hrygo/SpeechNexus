@@ -14,6 +14,7 @@
   scripts/dev-env/check-doc-refs.py                 # 检查 docs/ 全量
   scripts/dev-env/check-doc-refs.py --path docs/operations
   scripts/dev-env/check-doc-refs.py --problems-only
+  scripts/dev-env/check-doc-refs.py --show        # 连被引用行的原文一起打印
   scripts/dev-env/check-doc-refs.py --json
 
 退出码:0 全部有效;1 有问题;2 环境不可用(不在 git 仓库内).
@@ -48,6 +49,8 @@ class RefResult(TypedDict):
     ref: str
     verdict: str
     detail: str
+    target: str
+    line: int
 
 
 def git(*args: str) -> str:
@@ -72,6 +75,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--path", default="docs", help="要扫描的目录（默认 docs）")
     ap.add_argument("--problems-only", action="store_true")
+    ap.add_argument(
+        "--show",
+        action="store_true",
+        help="在每条引用后打印被引用行的原文；用于判断内容是否与文档描述相符",
+    )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -114,6 +122,8 @@ def main() -> int:
                         "ref": f"{ref_path}:{ref_line}",
                         "verdict": verdict,
                         "detail": detail,
+                        "target": detail if verdict in ("OK", "EXTERNAL") else "",
+                        "line": ref_line,
                     }
                 )
 
@@ -122,13 +132,23 @@ def main() -> int:
     if args.json:
         print(json.dumps({"total": total, "problems": problems}, ensure_ascii=False, indent=2))
     else:
-        shown = (
-            problems
-            if args.problems_only
-            else [r for r in results if r["verdict"] not in ("OK", "EXTERNAL")]
-        )
+        if args.problems_only:
+            shown = problems
+        elif args.show:
+            shown = [r for r in results if r["verdict"] != "EXTERNAL"]
+        else:
+            shown = [r for r in results if r["verdict"] not in ("OK", "EXTERNAL")]
         for r in shown:
-            print(f"[{r['verdict']}] {r['doc']}:{r['doc_line']}  ->  {r['ref']}  ({r['detail']})")
+            target = r["target"]
+            if args.show:
+                excerpt = referenced_line(target, int(r["line"]))
+                print(
+                    f"[{r['verdict']}] {r['doc']}:{r['doc_line']}  ->  {r['ref']}\n      {excerpt}"
+                )
+            else:
+                print(
+                    f"[{r['verdict']}] {r['doc']}:{r['doc_line']}  ->  {r['ref']}  ({r['detail']})"
+                )
         counts: dict[str, int] = defaultdict(int)
         for r in results:
             counts[r["verdict"]] += 1
@@ -140,6 +160,19 @@ def main() -> int:
             print("RESULT FAIL")
 
     return 0 if not problems else 1
+
+
+def referenced_line(path: str, lineno: int) -> str:
+    """Return the referenced line verbatim, never a silent empty string."""
+    if not path or lineno < 1:
+        return "(无可展示内容)"
+    try:
+        lines = Path(path).read_bytes().splitlines()
+    except OSError as exc:
+        return f"(读取失败: {exc.strerror})"
+    if lineno > len(lines):
+        return f"(越界: 该文件仅 {len(lines)} 行)"
+    return lines[lineno - 1].decode("utf-8", errors="replace").strip()[:200] or "(空行)"
 
 
 def classify(

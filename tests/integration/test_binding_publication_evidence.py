@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -32,6 +35,7 @@ from speechnexus_backend.publish_binding import publish_binding
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.application.binding_publication import BindingPublishIntent
 from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
+from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import (
     PostgresBindingDrafts,
@@ -60,6 +64,25 @@ PATH = "/v1/nexus/admin/model-bindings"
 CAPACITY = "cap-asr-quality-7"
 REPORT = "qrep-asr-quality-7"
 ROLES = ("writer", "publication", "reader", "catalogue")
+POOL_STATS = frozenset(
+    (
+        "pool_min",
+        "pool_max",
+        "pool_size",
+        "pool_available",
+        "requests_waiting",
+        "requests_num",
+        "requests_queued",
+        "requests_wait_ms",
+        "requests_errors",
+        "usage_ms",
+        "returns_bad",
+        "connections_num",
+        "connections_ms",
+        "connections_errors",
+        "connections_lost",
+    )
+)
 
 
 @dataclass
@@ -182,9 +205,46 @@ def counts(sandbox: Sandbox) -> tuple[int, int, int]:
 
 
 def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublishIntent:
-    observation = PostgresPublications(sandbox.pools["publication"]).observe_binding_head(
-        binding_id
-    )
+    pool = sandbox.pools["publication"]
+    started = time.monotonic()
+    try:
+        observation = PostgresPublications(pool).observe_binding_head(binding_id)
+    except PublicationUnavailableError as error:
+        # Diagnostic data is intentionally limited to types and numeric pool facts;
+        # exception text, query text, connection information and parameters stay private.
+        try:
+            chain: list[dict[str, str]] = []
+            seen: set[int] = set()
+            current: BaseException | None = error
+            while current is not None and id(current) not in seen and len(chain) < 16:
+                seen.add(id(current))
+                entry = {"type": type(current).__name__}
+                sqlstate = getattr(current, "sqlstate", None)
+                if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate):
+                    entry["sqlstate"] = sqlstate
+                chain.append(entry)
+                current = current.__context__
+            stats = {
+                name: value
+                for name, value in pool.get_stats().items()
+                if name in POOL_STATS and type(value) is int
+            }
+            print(
+                json.dumps(
+                    {
+                        "chain": chain,
+                        "elapsed_ms": round((time.monotonic() - started) * 1000),
+                        "pool_closed": pool.closed,
+                        "pool_stats": stats,
+                    },
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+        except Exception:
+            # Never replace the original failure if diagnostic collection fails.
+            pass
+        raise
     return BindingPublishIntent.from_request(
         installation_id=str(observation["installation_id"]),
         database=str(observation["database_name"]),
@@ -199,6 +259,35 @@ def connection(sandbox: Sandbox, role: str) -> psycopg.Connection[tuple[object, 
     conn = psycopg.connect(sandbox.urls[role], autocommit=True)
     conn.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
     return conn
+
+
+def test_publish_intent_failure_reports_only_safe_diagnostics(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    failure = PublicationUnavailableError("synthetic-private-exception")
+
+    def fail_observation(_store: PostgresPublications, _binding_id: str) -> dict[str, Any]:
+        try:
+            raise psycopg.errors.InsufficientPrivilege("synthetic-private-sql-parameter")
+        except psycopg.Error:
+            raise failure from None
+
+    monkeypatch.setattr(PostgresPublications, "observe_binding_head", fail_observation)
+    with pytest.raises(PublicationUnavailableError) as raised:
+        publish_intent(sandbox, "synthetic-private-binding", "synthetic-private-key")
+    assert raised.value is failure
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "synthetic-private" not in output.err
+    diagnostic = json.loads(output.err)
+    assert diagnostic["chain"] == [
+        {"type": "PublicationUnavailableError"},
+        {"type": "InsufficientPrivilege", "sqlstate": "42501"},
+    ]
+    assert type(diagnostic["elapsed_ms"]) is int and diagnostic["elapsed_ms"] >= 0
+    assert diagnostic["pool_closed"] is False
+    assert diagnostic["pool_stats"]["pool_max"] == 2
+    assert all(type(value) is int for value in diagnostic["pool_stats"].values())
 
 
 def test_get_reports_draft_published_and_unavailable(sandbox: Sandbox) -> None:

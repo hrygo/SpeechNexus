@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.asr_results import AsrResultStore
 from speechnexus_gateway.domain.canonical import JsonValue
-from speechnexus_gateway.domain.execution_results import StagingResult
-from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
+from speechnexus_gateway.domain.file_execution import (
+    FileExecutionLedger,
+    FileExecutionLimits,
+    FileStagingOutcome,
+)
 from speechnexus_gateway.domain.submission import InvalidExecutionRequestError, SubmitRequest
 from speechnexus_gateway.domain.tts_results import TtsResultStore
 from speechnexus_gateway.file_asr_runtime import (
@@ -61,7 +64,7 @@ class _RoutedExecution:
         *,
         store: _Stores,
         cancelled: Callable[[], bool],
-    ) -> StagingResult:
+    ) -> FileStagingOutcome:
         kind = _kind(request)
         if kind == "asr" and self.asr is not None and store.asr is not None:
             return await self.asr.stage_result(request, store=store.asr, cancelled=cancelled)

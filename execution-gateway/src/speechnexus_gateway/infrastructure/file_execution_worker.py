@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
+from speechnexus_gateway.application.execution_completion import ExecutionCompletionService
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.execution_results import (
     ExecutionAudioStagingResult,
@@ -27,7 +28,10 @@ from speechnexus_gateway.domain.output_intervals import (
     OutputIntervalRecord,
 )
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
-from speechnexus_gateway.domain.recovery import MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import (
+    MarkExecutionUnknown,
+    TerminalStopEvidenceUnavailableError,
+)
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
     EngineObservedState,
@@ -39,6 +43,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionOutcomeUnknownError,
     SubmitRequest,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 
 @dataclass(slots=True, repr=False)
@@ -83,6 +88,7 @@ class FileExecutionWorker[StoreT]:
         self._max_pending = limits.max_pending
         self._shutdown_seconds = limits.shutdown_seconds
         self._engine_request_prefix = engine_request_prefix
+        self._completion = ExecutionCompletionService(ledger=ledger)
         self._now = now
         self._lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
@@ -253,12 +259,13 @@ class FileExecutionWorker[StoreT]:
             await self._database(lambda: self._check_start(intent))
             if ticket.cancelled.is_set():
                 raise asyncio.CancelledError
-            receipt = await self._execution.stage_result(
+            outcome = await self._execution.stage_result(
                 ticket.request,
                 store=self._results,
                 cancelled=ticket.cancelled.is_set,
             )
-            await self._database(lambda: self._register(intent, receipt, ticket.cancelled))
+            await self._database(lambda: self._register(intent, outcome.result, ticket.cancelled))
+            await self._complete(intent, outcome.terminal)
         except Exception, asyncio.CancelledError:
             try:
                 await self._database(
@@ -269,6 +276,23 @@ class FileExecutionWorker[StoreT]:
                 # or private command/content is logged or reported as success.
                 with self._lock:
                     self._accepting = False
+
+    async def _complete(
+        self, accepted: SubmissionIntent, terminal: EngineTerminalResponse | None
+    ) -> None:
+        """Record the success transition only with the adapter's terminal fact."""
+        try:
+            await self._database(lambda: self._completion.complete(accepted, terminal))
+        except TerminalStopEvidenceUnavailableError:
+            # The private result exists, but nothing trusted proved this execution
+            # stopped. Keep the capacity and record that specific pending reason.
+            await self._database(
+                lambda: self._quarantine(
+                    accepted.identity.submit_intent_id,
+                    cancelled=False,
+                    reason_code=ExecutionErrorCode.EXECUTION_CLEANUP_PENDING,
+                )
+            )
 
     def _register(
         self, accepted: SubmissionIntent, result: StagingResult, cancelled: threading.Event
@@ -341,10 +365,15 @@ class FileExecutionWorker[StoreT]:
             )
         ).intent
 
-    def _quarantine(self, key: str, *, cancelled: bool) -> None:
+    def _quarantine(
+        self, key: str, *, cancelled: bool, reason_code: ExecutionErrorCode | None = None
+    ) -> None:
         current = self._ledger.get(key)
+        # A stop that committed while the local task was cancelled is an accepted
+        # terminal fact: quarantining it would be a reversal and would wedge acceptance.
         if (
             current is not None
+            and not current.execution_state.is_terminal
             and current.execution_state.holds_capacity
             and current.execution_state is not ExecutionState.UNKNOWN_QUARANTINED
         ):
@@ -352,9 +381,13 @@ class FileExecutionWorker[StoreT]:
                 MarkExecutionUnknown.for_intent(
                     current,
                     reason_code=(
-                        ExecutionErrorCode.CANCELLATION_UNCONFIRMED
-                        if cancelled
-                        else ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+                        reason_code
+                        if reason_code is not None
+                        else (
+                            ExecutionErrorCode.CANCELLATION_UNCONFIRMED
+                            if cancelled
+                            else ExecutionErrorCode.ENGINE_TRANSPORT_UNKNOWN
+                        )
                     ),
                     at=max(current.updated_at, self._now()),
                 )

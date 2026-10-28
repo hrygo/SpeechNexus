@@ -192,14 +192,34 @@ async def test_owned_http_submit_runs_once_persists_result_and_restart_never_rer
             json=cast(dict[str, Any], request.effective_request)["execution_request"],
         )
         assert replay.status_code == 200
-        assert replay.json()["execution_state"] == "unknown_quarantined"
+        # A terminal success is never quarantined by a restart.
+        assert replay.json()["execution_state"] == "succeeded"
         assert replay.json()["engine_request_id"] == accepted["engine_request_id"]
         assert len(recognizer.requests) == 2
     assert await asyncio.to_thread(counters, foundation) == before
     rows = await asyncio.to_thread(
-        foundation.database.query, "SELECT * FROM execution_stop_evidence"
+        foundation.database.query,
+        "SELECT submit_intent_id, evidence_kind, execution_stopped, resources_released, "
+        "observed_at_us FROM execution_stop_evidence",
     )
-    assert rows == []
+    assert len(rows) == 1
+    assert rows[0]["submit_intent_id"] == "intent-a"
+    assert rows[0]["evidence_kind"] == "engine_terminal_response"
+    assert (rows[0]["execution_stopped"], rows[0]["resources_released"]) == (1, 1)
+    assert rows[0]["observed_at_us"] > 0
+    closed = await asyncio.to_thread(
+        foundation.database.query,
+        "SELECT execution_state, cleanup_state, error_code, terminated_at_us "
+        "FROM submit_intents WHERE submit_intent_id = 'intent-a'",
+    )
+    assert closed == [
+        {
+            "execution_state": "succeeded",
+            "cleanup_state": "complete",
+            "error_code": None,
+            "terminated_at_us": rows[0]["observed_at_us"],
+        }
+    ]
 
     def stored_versions() -> list[Any]:
         return list(
@@ -284,8 +304,10 @@ async def test_worker_recovers_actual_commits_after_lost_ack_without_repeating_w
             assert replay.status_code == 200, replay.text
             value = parse("SubmitExecutionResponse", replay.json())
             assert value["idempotent_replay"] is True
-            assert value["execution_state"] == "executing"
             engine_id = value["engine_request_id"]
+            # A replay never reports an unknown outcome; the terminal transition
+            # may or may not have landed before this read.
+            assert value["execution_state"] in {"executing", "succeeded"}
         if phase == "result":
             saved = await receipt(client)
         else:
@@ -305,7 +327,9 @@ async def test_worker_recovers_actual_commits_after_lost_ack_without_repeating_w
         assert replay.status_code == 200, replay.text
         value = parse("SubmitExecutionResponse", replay.json())
         assert value["idempotent_replay"] is True
-        assert value["execution_state"] == "unknown_quarantined"
+        assert value["execution_state"] == (
+            "unknown_quarantined" if phase == "acceptance" else "succeeded"
+        )
         assert value["engine_request_id"] == engine_id
         if saved is not None:
             assert await receipt(client) == saved
@@ -323,9 +347,20 @@ async def test_worker_recovers_actual_commits_after_lost_ack_without_repeating_w
     )
     assert len(versions) == (1 if phase == "result" else 0)
     assert await asyncio.to_thread(counters, foundation) == before
-    assert (
-        await asyncio.to_thread(foundation.database.query, "SELECT * FROM execution_stop_evidence")
-        == []
+    stops = await asyncio.to_thread(
+        foundation.database.query,
+        "SELECT evidence_kind, execution_stopped, resources_released FROM execution_stop_evidence",
+    )
+    assert stops == (
+        []
+        if phase == "acceptance"
+        else [
+            {
+                "evidence_kind": "engine_terminal_response",
+                "execution_stopped": 1,
+                "resources_released": 1,
+            }
+        ]
     )
 
 
@@ -448,14 +483,15 @@ async def test_two_independent_consumers_of_the_original_intent_execute_and_put_
             while True:
                 saved = await asyncio.to_thread(ledgers[0].get, "intent-a")
                 assert saved is not None
-                if saved.staging_result is not None:
+                if saved.execution_state is ExecutionState.SUCCEEDED:
                     break
                 await asyncio.sleep(0.01)
         for service in services:
             replay = await asyncio.to_thread(service.submit, request)
             assert replay.idempotent_replay and replay.intent.staging_result == saved.staging_result
             assert replay.intent.engine_request_id == engine_id
-        assert saved.execution_state is ExecutionState.EXECUTING
+        assert saved.execution_state is ExecutionState.SUCCEEDED
+        assert saved.staging_result is not None
         assert saved.staging_result.request_digest == request.request_digest
         assert [len(recognizer.requests) for recognizer in recognizers] == [
             2 * int(index == winner) for index in range(2)
@@ -471,7 +507,8 @@ async def test_two_independent_consumers_of_the_original_intent_execute_and_put_
     assert len(versions) == 1
     assert versions[0].version_id == saved.staging_result.storage_version
     assert await asyncio.to_thread(counters, foundation) == before
-    assert (
-        await asyncio.to_thread(foundation.database.query, "SELECT * FROM execution_stop_evidence")
-        == []
+    stops = await asyncio.to_thread(
+        foundation.database.query,
+        "SELECT submit_intent_id, evidence_kind FROM execution_stop_evidence",
     )
+    assert stops == [{"submit_intent_id": "intent-a", "evidence_kind": "engine_terminal_response"}]

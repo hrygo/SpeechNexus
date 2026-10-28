@@ -8,6 +8,7 @@ import math
 import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from speechnexus_gateway.application.file_asr_audio import FileAsrAudio, PreparedAsrSegment
 from speechnexus_gateway.domain.asr import (
@@ -25,6 +26,7 @@ from speechnexus_gateway.domain.media import (
     MediaCancelledError,
     SourceAudioClock,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +82,25 @@ class FileAsrTranscription:
         self._final_deadline = final_deadline_seconds
         self._monotonic = monotonic
         self._has_dispatched = False
+        self._responses: list[str] = []
+        self._completed = False
         self._iterator = self._recognize()
 
     @property
     def has_dispatched(self) -> bool:
         """Conservative execution fact; never a stop or resource-release proof."""
         return self._has_dispatched
+
+    def terminal_response(self, observed_at: datetime) -> EngineTerminalResponse | None:
+        """The engine's terminal answers, or ``None`` while any of them is missing.
+
+        A completed run answers every dispatched request, so this fact covers exactly
+        those requests. A cancelled, failed or engine-free run attests nothing and the
+        execution keeps its capacity instead of being reported as succeeded.
+        """
+        if not self._completed or not self._responses:
+            return None
+        return EngineTerminalResponse(self._execution_id, tuple(self._responses), observed_at)
 
     def __aiter__(self) -> FileAsrTranscription:
         return self
@@ -189,6 +204,7 @@ class FileAsrTranscription:
                     ):
                         raise AsrCallError(AsrFailure.RESPONSE_INVALID, request_may_have_run=True)
                     self._check()
+                    self._responses.append(request_id)
                     text = recognized.text
                     engine_request_id = recognized.engine_request_id
                     completion_tokens = recognized.completion_tokens
@@ -220,6 +236,7 @@ class FileAsrTranscription:
             completed = self._audio.summary
             if completed is None:
                 raise ValueError("file audio did not complete")
+            self._completed = True
         except MediaCancelledError:
             raise AsrCallError(
                 AsrFailure.CANCELLED, request_may_have_run=self._has_dispatched

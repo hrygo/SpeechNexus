@@ -18,7 +18,11 @@ from speechnexus_gateway.domain.asr import AsrPolicy
 from speechnexus_gateway.domain.asr_results import AsrResultStore, validate_asr_result_limit
 from speechnexus_gateway.domain.execution_inputs import ExecutionInputLimits
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
-from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
+from speechnexus_gateway.domain.file_execution import (
+    FileExecutionLedger,
+    FileExecutionLimits,
+    FileStagingOutcome,
+)
 from speechnexus_gateway.domain.media import AudioDecodeLimits
 from speechnexus_gateway.domain.submission import SubmitRequest
 from speechnexus_gateway.domain.vad import VadPolicy
@@ -136,15 +140,18 @@ class AsrFileStage:
         *,
         store: AsrResultStore,
         cancelled: Callable[[], bool],
-    ) -> ExecutionStagingResult:
+    ) -> FileStagingOutcome:
         receipt = await self.command.stage_result(
             request,
             store=store,
             max_result_bytes=self.max_result_bytes,
             cancelled=cancelled,
         )
-        return ExecutionStagingResult(
-            receipt.request_digest, receipt.reference, receipt.storage_version
+        return FileStagingOutcome(
+            ExecutionStagingResult(
+                receipt.request_digest, receipt.reference, receipt.storage_version
+            ),
+            receipt.terminal,
         )
 
 

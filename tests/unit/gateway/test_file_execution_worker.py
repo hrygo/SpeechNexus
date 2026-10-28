@@ -23,15 +23,18 @@ from speechnexus_gateway.domain.asr_results import (
     StagedAsrResult,
 )
 from speechnexus_gateway.domain.execution_results import ExecutionStagingResult
-from speechnexus_gateway.domain.file_execution import FileExecutionLimits
+from speechnexus_gateway.domain.file_execution import FileExecutionLimits, FileStagingOutcome
 from speechnexus_gateway.domain.observation import RecordExecutionObservation
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
+    ExecutionErrorCode,
     ExecutionState,
+    StopEvidenceKind,
     SubmissionIntent,
     SubmissionOutcomeUnknownError,
     SubmitRequest,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
 from tests.fake.execution import InMemorySubmissionLedger, fake_ingress
 from tests.fake.execution_command import original_request
@@ -55,6 +58,7 @@ class Pipeline:
         self.started = threading.Event()
         self.finish = threading.Event()
         self.finish.set()
+        self.attest = True
         self.before_stage: Callable[[], None] = lambda: None
 
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
@@ -66,7 +70,7 @@ class Pipeline:
         *,
         store: Results,
         cancelled: Callable[[], bool],
-    ) -> ExecutionStagingResult:
+    ) -> FileStagingOutcome:
         self.calls += 1
         self.before_stage()
         self.started.set()
@@ -80,8 +84,19 @@ class Pipeline:
             ),
             cancelled=cancelled,
         )
-        return ExecutionStagingResult(
-            receipt.request_digest, receipt.reference, receipt.storage_version
+        return FileStagingOutcome(
+            ExecutionStagingResult(
+                receipt.request_digest, receipt.reference, receipt.storage_version
+            ),
+            self.terminal(request) if self.attest else None,
+        )
+
+    def terminal(self, request: SubmitRequest) -> EngineTerminalResponse:
+        """Synthetic adapter fact: one engine answer for the whole synthetic file."""
+        return EngineTerminalResponse(
+            request.identity.submit_intent_id,
+            ("nexus-" + request.request_digest.removeprefix("sha256:")[:32],),
+            datetime.now(UTC),
         )
 
 
@@ -151,14 +166,53 @@ async def test_only_new_committed_acceptance_runs_and_ingress_is_free() -> None:
         pipeline.before_stage = before_stage
         first = submit.submit(request)
         assert not first.idempotent_replay
-        await wait_for(lambda: stored(ledger, request).staging_result is not None)
+        await wait_for(lambda: stored(ledger, request).execution_state is ExecutionState.SUCCEEDED)
         for _ in range(3):
             assert submit.submit(request).idempotent_replay
         assert pipeline.calls == results.calls == 1
         current = stored(ledger, request)
         assert current.engine_request_id == first.intent.engine_request_id
-        assert current.execution_state is ExecutionState.EXECUTING
-        assert current.execution_state.holds_capacity and not ledger._evidence
+        assert current.execution_state is ExecutionState.SUCCEEDED
+        assert current.stop_evidence_kind is StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+        assert current.cleanup_state.value == "complete"
+        assert not current.execution_state.holds_capacity
+        evidence = ledger._evidence[request.identity.submit_intent_id]
+        assert evidence.is_verified
+        assert evidence.evidence_kind is StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
+        assert worker.running
+
+
+async def test_missing_terminal_fact_keeps_capacity_with_an_explicit_reason() -> None:
+    pipeline = Pipeline()
+    pipeline.attest = False
+    with configured(pipeline=pipeline) as (ledger, _, results, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(
+            lambda: stored(ledger, request).execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        )
+        current = stored(ledger, request)
+        # The private result exists, but nothing attested that the engine stopped.
+        assert current.staging_result is not None and results.calls == 1
+        assert current.error_code is ExecutionErrorCode.EXECUTION_CLEANUP_PENDING
+        assert current.execution_state.holds_capacity
+        assert not ledger._evidence
+        assert worker.running
+
+
+async def test_cancel_after_the_stop_committed_never_reverses_or_wedges() -> None:
+    with configured() as (ledger, _, _, worker, submit, _, _):
+        request = original_request()
+        submit.submit(request)
+        await wait_for(lambda: stored(ledger, request).execution_state is ExecutionState.SUCCEEDED)
+        # A local cancellation may still run the quarantine step after the stop
+        # committed; that accepted terminal fact must not be reversed.
+        await asyncio.to_thread(
+            worker._quarantine, request.identity.submit_intent_id, cancelled=True
+        )
+        current = stored(ledger, request)
+        assert current.execution_state is ExecutionState.SUCCEEDED
+        assert current.stop_evidence_kind is StopEvidenceKind.ENGINE_TERMINAL_RESPONSE
         assert worker.running
 
 
@@ -210,13 +264,14 @@ async def test_result_commit_ack_loss_reads_original_without_repeating_inference
         await wait_for(lambda: not worker._preparations)
         saved = stored(ledger, request)
         assert ledger.result_writes == pipeline.calls == results.calls == 1
-        assert saved.execution_state is ExecutionState.EXECUTING
+        assert saved.execution_state is ExecutionState.SUCCEEDED
+        assert ledger._evidence[request.identity.submit_intent_id].is_verified
     with configured(ledger) as (_, pipeline, results, _, submit, _, _):
         assert submit.submit(request).idempotent_replay
         restored = stored(ledger, request)
         assert restored.staging_result == saved.staging_result
         assert restored.engine_request_id == saved.engine_request_id
-        assert restored.execution_state is ExecutionState.UNKNOWN_QUARANTINED
+        assert restored.execution_state is ExecutionState.SUCCEEDED
         assert pipeline.calls == results.calls == 0
 
 

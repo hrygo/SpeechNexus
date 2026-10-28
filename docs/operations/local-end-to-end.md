@@ -57,6 +57,18 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
 假设（ingress 锁、10 秒 deadline 重试）均被实测排除，见 11.2.1。原始响应、网关状态、
 人工驱动者与清理见 11.2 / 11.2.2。**这条 504 不是重试能解决的，也不能当作公开转写可用。**
 
+> **2026-10-28 后续更新（DEL-115）**：上面记录的“没有终态写者”已在网关内补齐。文件 worker
+> 现在在登记固定回执后，按 adapter 观察到的引擎终态事实调用 `record_stop`，写入
+> `succeeded` 并留下 `execution_stop_evidence` 行；没有可信终态事实时把执行隔离为
+> `unknown_quarantined`、`error_code=execution_cleanup_pending` 并保留容量。上面的 504 仍是
+> `c435908` 上的历史事实，本轮没有在这些端口上重跑公开转写。责任边界与触发时机见
+> [执行网关](../architecture/execution-gateway.md#成功终态的驱动者时机与证据)；
+> 这条证据的双标志只表示该次执行停止及其增量资源归还（来源是引擎终态事件），不是整实例
+> 释放；11.2.2 人工路径里的 `resources_released` 是调用者断言，两者不可互代。
+> 确定性证据见 `tests/integration/test_gateway_default_file_asr.py` 与
+> `tests/integration/test_gateway_file_worker.py`（默认装配、正式 PG 角色、真实 MinIO，
+> 识别为脚本化，不代表真实模型或公开链路资格）。
+
 **停在第 7 步（支持路径）**
 
 用 HTTP POST 创建的 draft，经支持的发布命令发布后，`GET /v1/models` 返回
@@ -70,6 +82,7 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
   `local-test-*` 或任何虚构 ID 冒充生产注册证据；第 5.4 节给出边界。
 - 公开 `/v1/audio/transcriptions` 的成功响应：请求已真实发出，但只得到 504；file worker
   在 staging 登记后没有终态写者，API 轮询 120 秒截止，见 11.2 / 11.2.1 / 11.2.2。
+  该缺口随后由 DEL-115 在网关内补齐（见本节开头的更新块）；公开入口本身仍未重新实测。
 - node controller 注册与真实 readiness 回执：第 10 节只用了 fixture 行，
   `runtime_instance_intents` 仍为 0。
 - `speechnexus-runtime-delivery-worker` 实跑。
@@ -1984,6 +1997,12 @@ staging 后，worker 必须在同一可信进程内以真实引擎终态响应�
 `complete_successfully()` **没有生产调用者**（测试会调用），因此公开请求必然等到 504。这是装配缺口，不是
 API 配置错误，也不是网关超时设置。
 
+**2026-10-28 实现状态（DEL-115）**：该缺口已在网关内补上，做法与上面一致。adapter 在
+每个已发引擎请求都返回并校验、且无在途请求时给出 `EngineTerminalResponse`；worker 在
+回执登记后由 `ExecutionCompletionService` 把它转成 `engine_terminal_response` 证据并调用
+`record_stop`（仍是唯一状态翻转点）。缺该事实时不写成功终态，隔离并保留容量。以下人工
+驱动者自此只作为历史记录和故障对账手段，不再是成功路径的必要步骤。
+
 **人工路径**：只有在没有产品写者、但已有真实 staging 终态结果时，才由持有控制库与网关
 凭据的受信任进程（本轮是 SM+PO 指定的本机测试执行者）做一次证据收敛。它不是 HTTP
 客户端，不是 API 的替代实现，更不是“公开转写成功”的证明。不要在没有 staging、没有
@@ -2161,7 +2180,8 @@ deadline / 租约释放联动；不是“提交握手”或“ingress 锁”。�
 - 504 后的自动租约释放/对账：本轮是手工测试脚本收敛的，不是产品行为；11.2.2 的
   `resources_released=true` 也只是测试断言，不是引擎显式 ACK；
 - 最小权限对象身份（本轮隔离桶用了 root，9.4 已声明）；
-- 预算/租约/fencing 转移、产品自动生成的成功停止证据、GPU 资源释放；
+- 预算/租约/fencing 转移与 GPU 资源释放：产品已能为文件 lane 生成成功停止证据并关闭执行
+  （DEL-115，见 11.2.2），但 A 的预算归还仍是其独立事务，且本轮没有真实 GPU 释放测量；
 - 质量、时延、容量、长期稳定性；
 - 生产单机或集群、TLS/鉴权/RBAC、跨主机/Linux/CUDA 资格；
 - 任何“绿色 CI / 局部测试”之外的正式消费者接入。

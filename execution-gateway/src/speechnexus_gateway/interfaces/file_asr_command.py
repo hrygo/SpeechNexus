@@ -200,8 +200,9 @@ class CommandFileAsr:
     ) -> StagedAsrResult:
         """Stage a complete private result outside the short submit handshake.
 
-        This receipt neither closes the execution nor proves stop/release. The
-        execution owner must durably record it and hand it to A's publisher.
+        The receipt alone neither closes the execution nor proves stop/release: it
+        carries the engine terminal fact only when every dispatched request was
+        answered. The execution owner records it and hands the result to A's publisher.
         """
         validate_asr_result_limit(max_result_bytes)
         snapshot, _, _, _ = self._resolve(request)
@@ -219,13 +220,16 @@ class CommandFileAsr:
             remaining = (snapshot.identity.deadline_at - self._now()).total_seconds()
             try:
                 async with asyncio.timeout(remaining):
-                    return await stage_file_asr_result(
+                    receipt = await stage_file_asr_result(
                         snapshot, run, store=store, max_result_bytes=max_result_bytes, check=check
                     )
             except TimeoutError:
                 raise AsrCallError(
                     AsrFailure.DEADLINE_EXCEEDED, request_may_have_run=run.has_dispatched
                 ) from None
+            # The receipt is what was produced; only a completed run can also attest
+            # the engine's terminal answers, and only the execution owner may use it.
+            return replace(receipt, terminal=run.terminal_response(self._now()))
 
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         """Freeze the supported command before accepting work; no external I/O."""

@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
-from speechnexus_gateway.domain.canonical import canonical_json
+from speechnexus_gateway.domain.canonical import canonical_json, command_digest
 from speechnexus_gateway.domain.execution_results import (
     ExecutionAudioStagingResult,
     ExecutionStagingResult,
@@ -24,6 +24,7 @@ from speechnexus_gateway.domain.submission import (
     contract_instant_text,
     hard_output_ceiling_samples,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -278,4 +279,50 @@ def whole_instance_stop_evidence(
     return replace(
         stop,
         evidence_id="stop-instance-" + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest(),
+    )
+
+
+class TerminalStopEvidenceUnavailableError(ExecutionCleanupPendingError):
+    """No trusted engine terminal fact covers this execution, so it keeps its capacity."""
+
+
+def engine_terminal_stop_evidence(
+    intent: SubmissionIntent, terminal: EngineTerminalResponse | None
+) -> VerifiedStopEvidence | None:
+    """Return per-execution success evidence, or ``None`` when nothing was attested.
+
+    The adapter's fact is the only input: a missing fact, another execution, an
+    undispatched execution or a fact that predates dispatch is never stop evidence.
+    The digest covers the original execution identity, every answered engine request
+    and the instant, so a caller can audit it without trusting this function.
+    """
+    if terminal is None or terminal.submit_intent_id != intent.identity.submit_intent_id:
+        return None
+    if intent.dispatched_at is None or terminal.observed_at < intent.dispatched_at:
+        return None
+    if terminal.observed_at < intent.recorded_at:
+        return None
+    identity = intent.identity.submit_intent_id
+    digest = command_digest(
+        [
+            "engine-terminal-response/v1",
+            {
+                "submit_intent_id": identity,
+                "response_ids": list(terminal.response_ids),
+                "observed_at": contract_instant_text(terminal.observed_at),
+            },
+        ]
+    )
+    # One execution has one terminal fact, so one stable per-execution evidence identity.
+    evidence_key = canonical_json(["engine-terminal-stop/v1", identity])
+    return VerifiedStopEvidence(
+        evidence_id="stop-terminal-"
+        + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest()[:48],
+        submit_intent_id=identity,
+        evidence_kind=StopEvidenceKind.ENGINE_TERMINAL_RESPONSE,
+        evidence_digest=digest,
+        observed_at_us=observed_at_microseconds(terminal.observed_at),
+        execution_stopped=True,
+        resources_released=True,
+        reason=None,
     )

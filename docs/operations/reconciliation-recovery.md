@@ -216,7 +216,7 @@ dispatch 记录之间。当前状态机要求未观测执行的 unknown 也必�
 | 接口/路径 | 当前事实 | 可以做什么 | 不会做什么 |
 | --- | --- | --- | --- |
 | 网关周期恢复扫描 | `ExecutionRecoveryService` 读取本 gateway/node 的 unknown；需要 `SPEECHNEXUS_GATEWAY_RECOVERY_CONFIG_FILE` 和独立节点凭据才有 worker（`execution-gateway/src/speechnexus_gateway/infrastructure/recovery_configuration.py:58`） | 向节点控制器查询 `verified-stop`；取得完整实例终止证明后调用 `record_stop(..., ABORTED)` | 不释放 A 的 lease/quota，不把成功结果改成成功终态，不在查询失败时猜停止 |
-| `POST /internal/v1/executions/{submit_intent_id}/abort` | 网关已注册的组件鉴权 HTTP 入口 | 用原始 `operation_id`、`attempt_id`、`fencing_token` 发起一次有界 abort；适配器返回完整停止证据时记录 aborted | 不保证 file worker 能提供证据（`file_execution_worker.py:382` 只取消本进程任务，未返回 stop evidence），不会直接归还预算 |
+| `POST /internal/v1/executions/{submit_intent_id}/abort` | 网关已注册的组件鉴权 HTTP 入口 | 用原始 `operation_id`、`attempt_id`、`fencing_token` 发起一次有界 abort；适配器返回完整停止证据时记录 aborted | 不保证 file worker 能提供证据（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380` 只取消本进程任务，未返回 stop evidence），不会直接归还预算 |
 | `record_stop` / `mark_execution_unknown` | 可信进程内的 `ExecutionFactBoundary`；文件头明确 no HTTP route（`execution-gateway/src/speechnexus_gateway/interfaces/submit_transactions.py:3`） | 供生产 adapter/恢复 worker 写入不可变执行事实；`mark_execution_unknown` 只能让风险保持/升级 | 不是运维 CLI；不能用来改写任意已有 unknown，不能绕开证据或版本守卫 |
 | 后端 `release_lease` / `release_in_transaction` | `LeaseTransactionBoundary` 是进程内端口，没有 HTTP route；当前 `backend/src/speechnexus_backend/app.py` 的路由清单未装配该服务 | 在原始执行已是 terminal + complete、停止/资源释放证据齐全且 version 匹配时原子释放 lease、槽位和配额 | 不接受 unknown、timeout、404、重启或调用方自报的布尔值；不能在租约已释放后重扣预算 |
 | OpenAPI 声明的 `POST /v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases` | **契约先行，生产未实现**：`contracts/admin-openapi.yaml:878` 有声明，但后端 router/服务中没有对应 handler；当前 `speech.admission_leases` 也没有 `quarantine_release_*` 列 | 无。不要调用或伪造该入口 | 这不是当前受支持路径；缺 API、服务和数据库证据列，属于 G7 缺口 |
@@ -324,7 +324,7 @@ c707b7078ba7f8161ea3738e14beaa3b97d627193e147c009c193cb2cc4477b8  -
   在实例终止证据下收口为 `aborted`，不能变成 `succeeded`。
 - `execution-gateway/src/speechnexus_gateway/infrastructure/recovery_configuration.py:58`：
   恢复 worker 需要私有配置和独立节点凭据。
-- `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:382`：
+- `execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:380`：
   当前 file worker 的 abort 只取消本进程任务，不产出 stop evidence。
 - `backend/src/speechnexus_backend/speech/interfaces/lease_transactions.py:1`：
   lease 释放是进程内边界，没有 HTTP route。

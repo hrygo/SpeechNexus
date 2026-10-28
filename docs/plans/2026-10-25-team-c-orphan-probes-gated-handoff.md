@@ -135,7 +135,7 @@ C 侧结果为 **0 引用**（即没有任何测试或门禁运行）的探针�
 
 - 第一次失败点：`getByLabel('校对草稿')` 找不到——**不是改名**（该标签在当前生产组件与 web 单测里都存在），而是流程过时：现在必须先"核对当前版本"读目录、再从稿件列表选中稿件，编辑器才出现。
 - 按当前流程改了探针（核对 → 选稿件 → 断言编辑器），失败点因此**前移**到下一步：`核对当前版本` 处于**禁用**状态并超时。
-- 读到判定条件：`locked = state.busy || record.pending !== null`（`ManuscriptHost.tsx:33`），该按钮 `disabled={locked || state.blocked}`——即为新项目保存原稿后，本探针的场景里该控件保持禁用。**我没有把它记为产品缺陷**：已在门禁的真实运行时探针在**同一按钮**上成功执行（`workbench-manuscripts-real-probe.mjs:109`，注释"Verifying the head is a read"），说明差异在本探针的场景状态，而不在产品行为。
+- 读到判定条件：`locked = state.busy || record.pending !== null`（`web/workbench/src/manuscripts/ManuscriptHost.tsx:59`），该按钮 `disabled={locked || state.blocked}`——即为新项目保存原稿后，本探针的场景里该控件保持禁用。**我没有把它记为产品缺陷**：已在门禁的真实运行时探针在**同一按钮**上成功执行（`workbench-manuscripts-real-probe.mjs:109`，注释"Verifying the head is a read"），说明差异在本探针的场景状态，而不在产品行为。
 - 因此保守处理：探针的流程修复保留（它反映当前 UI），陈旧登记更新为**精确诊断**（含 `locked` 的定义与上面这条对照证据），待进一步确认该场景里究竟是 `busy` 未清零还是留有 pending 草稿。
 - 本题的有效证据仍是已在门禁的 `test_workbench_real_runtime_manuscripts_browser.py`。
 

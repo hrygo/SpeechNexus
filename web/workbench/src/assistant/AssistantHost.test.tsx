@@ -39,14 +39,31 @@ function catalogue(rows: number) {
   } as never;
 }
 
+function catalogueUnavailable(status = 503) {
+  return new WorkbenchResponseError(
+    status,
+    parse("ErrorResponse", {
+      error: {
+        code: "voice_catalogue_unavailable",
+        type: "service_unavailable_error",
+        message: "Voice catalogue is unavailable.",
+        request_id: "request-demo",
+        param: null,
+        retryable: true,
+      },
+    }),
+  );
+}
+
 function mount(
   capability: "available" | "disabled" | "unavailable",
   voices = 0,
   projects: Contracts["Project"][] = [],
+  catalogueRead: () => Promise<unknown> = () => Promise.resolve(catalogue(voices)),
 ) {
   const client = new WorkbenchClient(vi.fn());
   vi.spyOn(client, "status").mockResolvedValue(status(capability, capability === "available"));
-  vi.spyOn(client, "voices").mockResolvedValue(catalogue(voices));
+  vi.spyOn(client, "voices").mockImplementation(catalogueRead as never);
   vi.spyOn(client, "projects").mockResolvedValue({
     object: "nexus.list",
     data: projects,
@@ -87,8 +104,44 @@ describe("assistant panel", () => {
     await waitFor(() => {
       expect(screen.getByText(/尚未发布可用音色/)).toBeTruthy();
     });
+    // An answered-but-empty catalogue is not a failure: no retry is offered for it.
+    expect(screen.queryByRole("button", { name: /重新读取音色目录/ })).toBeNull();
     const submit = screen.getByRole("button", { name: "提交回合" });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says the catalogue is being read instead of claiming either outcome too early", async () => {
+    // The read never settles, so neither "empty" nor "unavailable" may be asserted yet.
+    mount("available", 0, [], () => new Promise<never>(() => {}));
+    expect(await screen.findByText(/正在读取已发布音色目录/)).toBeTruthy();
+    expect(screen.queryByText(/尚未发布可用音色/)).toBeNull();
+    expect(screen.queryByText(/音色目录暂时不可用/)).toBeNull();
+  });
+
+  it("says the catalogue is unavailable, with a retry, when the deployment answers 503", async () => {
+    mount("available", 0, [], () => Promise.reject(catalogueUnavailable(503)));
+    // The failure is reported against the catalogue, and it is never shown as an empty one.
+    expect(await screen.findByText(/音色目录暂时不可用/)).toBeTruthy();
+    expect(screen.queryByText(/尚未发布可用音色/)).toBeNull();
+    // The retry entry point is present and enabled, so the operator is not stuck.
+    const retry = screen.getByRole("button", { name: /重新读取音色目录/ });
+    expect((retry as HTMLButtonElement).disabled).toBe(false);
+    // No voice can be picked while the catalogue is unknown, so the turn cannot be submitted.
+    const submit = screen.getByRole("button", { name: "提交回合" });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("re-reads the catalogue on retry and offers the rows it then reads", async () => {
+    const read = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(catalogueUnavailable(503))
+      .mockResolvedValueOnce(catalogue(1));
+    mount("available", 0, [], read);
+    const retry = await screen.findByRole("button", { name: /重新读取音色目录/ });
+    fireEvent.click(retry);
+    // The empty wording belongs to a successful read, so it appears only after the retry.
+    await waitFor(() => expect(screen.queryByText(/音色目录暂时不可用/)).toBeNull());
+    expect(screen.getByRole("option", { name: /合成音色 0/ })).toBeTruthy();
   });
 });
 

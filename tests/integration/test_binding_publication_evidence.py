@@ -226,9 +226,8 @@ def test_get_reports_draft_published_and_unavailable(sandbox: Sandbox) -> None:
         assert unavailable.json()["error"]["code"] == "binding_unavailable"
 
     jobs = PostgresPublicJobs(sandbox.pools["publication"])
-    assert jobs.latest_binding("legacy-binding") is not None, (
-        "the transition contradiction is explicit: public resolution still selects "
-        "a publication that admin GET cannot project"
+    assert jobs.latest_binding("legacy-binding") is None, (
+        "public resolution must not select a publication that admin GET cannot project"
     )
     assert counts(sandbox) == (2, 2, 1)
 

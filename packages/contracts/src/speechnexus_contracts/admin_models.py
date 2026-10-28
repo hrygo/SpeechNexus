@@ -498,6 +498,10 @@ class ProfileActivationRequest(TypedDict):
     expected_current_revision: Revision | None
 
 
+class ModelBindingActivationRequest(TypedDict):
+    expected_current_revision: Revision | None
+
+
 class WorkspaceCreateRequest(TypedDict):
     display_name: str
     policy_id: NotRequired[Identifier]
@@ -714,4 +718,5 @@ type AdminContracts = (
     | ProfilePublicationRequest
     | ProfileActivationRequest
     | ProfilePublishedRevision
+    | ModelBindingActivationRequest
 )

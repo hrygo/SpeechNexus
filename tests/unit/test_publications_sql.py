@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from speechnexus_backend.speech.application.binding_publication import BindingHeadPreconditionError
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
@@ -39,20 +40,52 @@ def row(revision: int = 1, revision_id: str = "binding-rev-1") -> dict[str, Any]
 
 
 def test_append_uses_an_insert_only_conflict_and_reports_rowcount() -> None:
-    publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
+    publication = Publication("voice", "binding-tts", 1, "binding-rev-1", 1)
     cursor = Cursor(rowcount=1)
 
     assert append_publication(cursor, publication) is True
     lock_query, lock_parameters = cursor.calls[0]
     insert_query, insert_parameters = cursor.calls[1]
     assert "pg_advisory_xact_lock" in lock_query
-    assert lock_parameters == ("binding", "binding-tts")
+    assert lock_parameters == ("voice", "binding-tts")
     assert insert_query.count("INSERT INTO speech_publications") == 1
     assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in insert_query
     assert insert_parameters[2] == "1"
 
     cursor.rowcount = 0
     assert append_publication(cursor, publication) is False
+
+
+def test_new_binding_requires_observed_head_and_rejects_stale_before_writes() -> None:
+    publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
+    missing = Cursor()
+    with pytest.raises(BindingHeadPreconditionError, match="expected_current_revision_required"):
+        append_publication(missing, publication)
+    assert not any("INSERT INTO" in sql for sql, _ in missing.calls)
+
+    class HeadCursor(Cursor):
+        def fetchall(self) -> list[dict[str, Any]]:
+            if "speech_catalog_state" in self.calls[-1][0]:
+                return [{"revision": 1}]
+            if "speech_publication_heads" in self.calls[-1][0]:
+                return [{"revision": "2"}]
+            return []
+
+    stale = HeadCursor()
+    with pytest.raises(BindingHeadPreconditionError, match="configuration_changed"):
+        append_publication(
+            stale, publication, expected_current_revision=None, expected_catalog_revision=1
+        )
+    assert not any("INSERT INTO" in sql for sql, _ in stale.calls)
+
+
+def test_existing_binding_replay_precedes_cas_and_never_changes_head() -> None:
+    publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
+    cursor = Cursor([row()])
+    assert not append_publication(cursor, publication, expected_current_revision="9")
+    assert not any(
+        "speech_publication_heads" in sql or "INSERT INTO" in sql for sql, _ in cursor.calls
+    )
 
 
 def test_find_publication_returns_the_exact_full_identity() -> None:

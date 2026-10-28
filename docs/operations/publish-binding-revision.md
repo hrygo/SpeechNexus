@@ -1,89 +1,68 @@
 ---
 title: 发布 binding revision（运维命令）
 status: active
-version: "1.0.0"
+version: "1.1.0"
 date: 2026-10-28
 ---
 
 # 发布 binding revision（运维命令）
 
-公开读路径先查 `speech_publications`，缺失即 `model_not_found`；草稿写入不会自动发布。本命令是当前**受支持的发布路径**，在冻结的 `publishModelBindingRevision` 端点具备证据存储之前替代它。它只把**已存在的不可变 revision** 提升为公开，不创建、不修改修订，也不提供 HTTP 面。
+该命令发布已存在的不可变 binding revision，并以显式观察值保护当前选择。它不创建草稿，也不实现 `publishModelBindingRevision` HTTP 端点。证据 ID 是操作员提供的事实，不证明资格报告内容、真实引擎或生产准入。
 
 ## 前置条件
 
-- 数据库已迁移到当前 head，且目标 revision 已由草稿写入产生；
-- 数据库已应用 `0021_publication_evidence` 与 `0022_catalog_revision_state`；
-- 独立非 owner 角色同时具备 `binding_draft_grants`（读取 `speech_binding_revisions`）、`publication_grants`（读写 `speech_publications`）与 `publication_evidence_grants`（读写证据表）；不得复用 Compose bootstrap owner；
-- admin GET 另需只读角色与 `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL`，见[证据回填与投影](backfill-binding-publication-evidence.md)；
-- 显式设置发布写入 DSN，缺省不回退到通用数据库身份：
+数据库使用当前迁移 head（包括 `0024_binding_publish_intents`）。发布角色是独立的非 owner 角色，具备 `binding_draft_grants`、`publication_grants` 和 `publication_evidence_grants`；升级后须重新按声明配置新增表的最小权限。观察和提交必须访问同一权威主库及同一 schema，不使用缓存或副本。配置 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 和可选的 `SPEECHNEXUS_DATABASE_SCHEMA`；凭据通过部署的秘密配置提供，不写入命令参数、日志或工单。
 
-  ```bash
-  export SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL="postgresql://<writer-role>:<secret>@<host>:5432/<db>"
-  export SPEECHNEXUS_DATABASE_SCHEMA="speech"   # 可选，缺省 speech
-  ```
+切换前必须停止或隔离旧版本发布者和可直接写 head 的旁路 SQL，并核实角色权限。新应用内的 CAS 不约束绕过该代码的写者；未完成切换前不能保证并发安全。克隆或恢复数据库会复制 installation UUID，因此 UUID、数据库名与 schema 相同也不能证明是同一实际环境；还须由运维核对原部署及数据库实例的非秘密身份。
 
-缺少 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 时命令以退出码 `2` 明确失败，不会静默跳过。
+## 观察并形成意图
 
-## 命令
+在操作员决定发布之前运行：
+
+```bash
+uv run speechnexus-publish-binding observe --binding-id asr-quality --schema speech
+```
+
+该命令在主库同一语句读取 `installation_id`、`database_name`、`schema_name`、`current_revision` 和 `catalog_revision`。输出的 `current_revision: null` 表示该 family 存在且当前无 head；family 不存在或读取不可靠时命令以退出码 5 报告只读观察不可用，不得解释为空。配置或 schema 无效时退出码为 2，不产生观察结果。将观察结果与目标 binding/revision/revision_id、两个 evidence ID、可选 digest 和一个新 idempotency key 一起保留，供确认和未知结果恢复。不要在提交时重新读取并替换观察值；观察后状态变化，应重新检查并形成新意图。
+
+## 发布
+
+以下参数均来自**先前观察和已确认的发布意图**，方括号仅作说明：
 
 ```bash
 uv run speechnexus-publish-binding \
   --binding-id asr-quality \
   --revision 1 \
-  --revision-id mbrev-<实际存储的 revision_id> \
-  --capacity-manifest-id cap-<该 revision execution_recipe 中的值> \
-  --qualification-report-id qrep-<可信资格报告 ID>
+  --revision-id '[已存 revision_id]' \
+  --capacity-manifest-id '[capacity manifest ID]' \
+  --qualification-report-id '[qualification report ID]' \
+  --expected-current-revision none \
+  --expected-catalog-revision '[先前观察的 catalog_revision]' \
+  --observed-installation-id '[先前观察的 installation_id]' \
+  --observed-database '[先前观察的 database_name]' \
+  --schema '[先前观察的 schema_name]' \
+  --idempotency-key '[此次意图的固定 key]'
 ```
 
-`--capacity-manifest-id` 与 `--qualification-report-id` **必填、没有默认值**；缺任一参数时 argparse 以退出码 `2` 失败，且不写 publication 或证据。`--capacity-manifest-digest` / `--qualification-report-digest` 可选，用于固定证据内容版本（`sha256:<64 位小写十六进制>`）。
+`--expected-current-revision none` 仅表示先前明确观察到空 head；有 head 时传其十进制 revision。`--capacity-manifest-digest` 和 `--qualification-report-digest` 可选，格式为 `sha256:<64 位小写十六进制>`。等价入口为 `uv run python -m speechnexus_backend.publish_binding`。
 
-等价入口：`uv run python -m speechnexus_backend.publish_binding ...`。`--schema` 可覆盖本次调用的 `SPEECHNEXUS_DATABASE_SCHEMA`。
+同一事务在对象锁内检查先前 head 与 catalogue revision，校验固定草稿和证据，并写 publication、head、证据和原意图；任一步失败均不提交这些写入。catalogue revision 也是 ABA 保护：受控写者在 head 经中间状态返回原值时仍会推进它。其他对象的变更也可能推进全局 revision 并导致保守冲突，此时重新观察和确认。直接修改 head 而不推进版本的旧写者仍可绕过保护。
 
-成功输出一行稳定事实：
+结果中的 `outcome=created` 是新建事实，`outcome=replay` 是同 key、同完整意图的已登记结果，`original_created` 保留原操作是否新建事实。`outcome=existing_fact` 表示所请求的 publication 早已存在，本次登记的是当前调用，**不证明历史 publication 由这个 key 或观察产生**；若此前无证据，本次会补录证据，但不会重设 head。已有不同证据保持冲突。重放不会把后续变更过的 head 改回原值。
 
-```text
-published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_us=... \
-  capacity_manifest_id=cap-... qualification_report_id=qrep-... created=true
-```
+| 结果 | 退出码 |
+| --- | --- |
+| 创建、已登记意图重放或已有事实登记 | 0 |
+| 参数、配置或标识非法 | 2 |
+| 目标三元组不存在或 revision_id 不匹配 | 3 |
+| head/版本/目标变化、同 key 意图不同、已有事实或证据冲突 | 4 |
+| 存储不可用或提交结果未知 | 5 |
+| 容量清单与 revision 不匹配 | 6 |
 
-`created=false` 表示同一三元组此前已发布，本次是幂等回放，`published_at_us` 仍是原发布时间，`catalog_revision` 与 ETag 也不会再次推进。
+## 提交结果未知
 
-## 校验、事务与幂等
+退出码 `5` 可能发生在提交前或提交后。不要换 key、目标、schema、观察、binding/revision/revision_id 或证据；先核对原非秘密部署和数据库实例身份，再用保存的**完整原意图**在原目标同 key 重放。相同 key 与不同意图会冲突，不能由固定 revision 的存在推断原命令成功。无法确认目标或原意图时停止并协调，不对另一数据库尝试恢复。
 
-命令在**同一个事务**里先校验后写入，不存在“校验通过但写入失败”的中间态：
+`0024` 的安装身份与发布意图是恢复证据，迁移拒绝向旧版本降级；回退须另行设计和审查。当前实现只在 PostgreSQL 测试环境验证；旧写者切换、恢复/克隆环境识别、部署权限、HTTP 发布消费者和真实拓扑仍需单独验收。公共 HTTP 契约没有本 CLI 使用的 catalogue revision 字段，不能把该 CLI 证明当作 HTTP 端到端实现。
 
-1. `(binding_id, revision)` 已发布且 `revision_id` 不同 → 冲突错误；
-2. `speech_binding_revisions` 中不存在精确的 `(binding_id, revision, revision_id)` 三元组 → 拒绝，并报出缺失的 binding / revision，或报出实际存储的 `revision_id`；
-3. 三元组存在但 `capacity_manifest_id` 与 revision 的 `execution_recipe.capacity_manifest_id` 不一致 → 拒绝，不写任何行；
-4. 三元组存在且容量一致 → 在同一事务里先写 `speech_publications`、再写 `speech_binding_publication_evidence`；publication 插入触发器同时推进 `speech_catalog_state`，证据写入失败则 publication、版本推进与证据一起回滚；
-5. 同一 publication 已有证据：内容相同则幂等回放，内容不同则证据冲突；并发写入者先落库时回放其已存事实。
-
-`speech_publications` 没有任何外键，因此“revision 必须存在”只能由本命令在写入端查库保证。发布是 insert-only：同一三元组重复执行**不新增行**；替换版本 = 发布更大的 revision。
-
-| 结果 | 退出码 | stderr / stdout |
-| --- | --- | --- |
-| 首次发布或幂等回放 | 0 | `published ... created=true|false` |
-| 参数、配置或标识非法 | 2 | usage 或 `invalid request: ...` |
-| 三元组未存储 / `revision_id` 不匹配 | 3 | `not published: ...` |
-| 同 revision 已发布为另一 `revision_id`，或已有不同证据 | 4 | `conflict: ...` / `evidence conflict: ...` |
-| 存储不可用或提交结果未知 | 5 | `publication unavailable: ...` |
-| `capacity_manifest_id` 与 revision execution recipe 不一致 | 6 | `evidence mismatch: ...` |
-
-退出码 `5` 时写入可能已提交也可能未提交；用**完全相同的三元组**重跑即可幂等收敛，不要换 `revision_id` 重试。
-
-## 现状与已知缺口
-
-1. **admin GET 已如实投影**：有 publication 且有匹配证据时返回 `published`；只有 publication、没有证据时返回 `503 binding_unavailable`，不再谎报 `draft`。历史无证据行必须先按[证据回填](backfill-binding-publication-evidence.md)处理。
-2. **生命周期入口仍未接线**：0022 已提供精确退役墓碑、目录版本推进和基础设施级 `retire` 端口，但没有受支持的 CLI/HTTP retire；head 指针、activate 与 rollback 仍未实现，已发布事实保持不可变。该能力属于后续阶段，需单独评审；任何后续可见性变更必须在同一事务推进 `speech_catalog_state`。
-3. **该命令证明的是链路，不构成生产资格**：证据 ID 是发布时记录的事实，不是完整的资格验证；不代表容量、真实引擎或产品准入通过。
-4. **过渡期两个接口可能不一致**：在历史无证据 publication 尚未回填时，公开解析仍能选中它，而 admin GET 返回 `503`。这是已知过渡状态；回填后 unresolved 必须为 0。
-
-## 可见性与生效边界
-
-- 公开读路径没有应用缓存或持久 pending：每次请求新开事务（`PostgresPublicJobs` 为 `READ_COMMITTED`，`PostgresModelCatalog.snapshot()` 为每请求一个 `REPEATABLE READ` 快照）。提交后新请求立即可见；唯一例外是提交前已开始的 `REPEATABLE READ` 事务，到事务结束前看不到，重试即可。HTTP 返回 `Cache-Control: no-store`。
-- 仓库没有读副本配置；若部署把 reader 指向物理 replica，复制延迟是唯一无上界延迟，本命令不核部署拓扑。
-- **解析成功 ≠ 可执行**：同步 ASR admission 还要求私有 recipe 的 `binding_publication_id` 与发布 `revision_id` 一致、instance 的 `binding_revision_id` 对齐；recipe 只在 API 启动时读取一次。发布 recipe 未指向的新 revision 会立即消除 `model_not_found`，但执行仍可能返回 `backend_unavailable`，直到更新 recipe、重启 API 并对齐 instance。验收必须区分“解析信号”和“执行信号”。
-
-## 验证范围
-
-`tests/integration/test_binding_publication_cli.py` 在隔离 PostgreSQL 上用产品草稿事务生成 revision，再用本命令发布，断言：发布前 `latest_binding` 为空、发布后可解析；重复发布前后 `speech_publications` 行数不变；同 revision 不同 `revision_id` 返回冲突且不写行；未存储三元组被拒绝。`tests/integration/test_publications_storage.py` 另外覆盖退役后目录 revision/ETag 推进、并发写入版本不重复及证据写入不推进版本。合成 fixture 只证明链路，不构成生产资格，也不证明真实引擎、部署拓扑或读副本行为。
+公开目录和 Job 读取 head；退役不删除既有 publication、证据和已固定的 Job。内容解析成功不代表 recipe、instance、真实引擎或容量已经就绪；相关验证见 [binding 生命周期操作](binding-lifecycle.md) 和 [证据回填](backfill-binding-publication-evidence.md)。

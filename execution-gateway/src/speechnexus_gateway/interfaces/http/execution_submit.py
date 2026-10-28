@@ -37,6 +37,7 @@ from speechnexus_gateway.interfaces.http.control_security import ComponentCreden
 _REQUEST_ID_HEADER = {"X-Request-ID": {"schema": {"type": "string"}}}
 _SUBMIT_PATH = "/internal/v1/executions/submit"
 _ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
+_ABORT_INTENT_PATH = "/internal/v1/executions/{submit_intent_id}/abort-intents"
 _IDENTIFIER_PATTERN = r"^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$"
 _NO_DISPATCH_ADAPTER = (
     "No engine dispatch adapter is configured on this gateway; the submission was not recorded."
@@ -141,6 +142,45 @@ def create_execution_submit_router(*, credential: ComponentCredential) -> APIRou
             )
         snapshot = await run_in_threadpool(
             service.abort,
+            AbortExecutionRequest(
+                submit_intent_id=submit_intent_id,
+                operation_id=payload["operation_id"],
+                attempt_id=payload["attempt_id"],
+                fencing_token=payload["fencing_token"],
+                reason=payload["reason"],
+                wait_timeout_ms=payload["wait_timeout_ms"],
+            ),
+        )
+        if snapshot is None:
+            return control_response(
+                "control_execution_not_found", "No execution is recorded on this gateway.", 404
+            )
+        return parse("ExecutionStatusResponse", snapshot.status())
+
+    @router.post(
+        _ABORT_INTENT_PATH,
+        operation_id="acceptAbortIntent",
+        summary="Persist and recover an original abort request",
+        response_model=ExecutionStatus,
+        responses={200: {"headers": _REQUEST_ID_HEADER}, **abort_errors},
+    )
+    async def accept_abort_intent(
+        submit_intent_id: Annotated[
+            str, Path(pattern=_IDENTIFIER_PATTERN, min_length=3, max_length=128)
+        ],
+        payload: AbortExecutionPayload,
+        request: Request,
+        _request_id: Annotated[
+            str | None, Header(alias="X-Request-ID", min_length=1, max_length=128)
+        ] = None,
+    ) -> ExecutionStatus | JSONResponse:
+        service = request.app.state.abort_execution
+        if not isinstance(service, ExecutionAbortService):
+            return control_response(
+                "control_store_unavailable", _NO_ABORT_ADAPTER, 503, "retry_transaction"
+            )
+        snapshot = await run_in_threadpool(
+            service.abort_idempotent,
             AbortExecutionRequest(
                 submit_intent_id=submit_intent_id,
                 operation_id=payload["operation_id"],

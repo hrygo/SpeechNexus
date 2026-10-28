@@ -18,13 +18,25 @@ from speechnexus_backend.speech.infrastructure.binding_defaults_postgres import 
 )
 from speechnexus_backend.speech.infrastructure.binding_defaults_schema import TABLE
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import PostgresBindingDrafts
+from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
+    PostgresBindingLifecycle,
+)
 from speechnexus_backend.speech.infrastructure.binding_publication_evidence_schema import (
     ADMIN_READER_TABLES as _ADMIN_READER_TABLES,
+)
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+    RETIREMENT_TABLE,
+    STATE_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
     speech_pool,
+)
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    DISABLE_INTENT_TABLE,
+    EVENT_TABLE,
+    HEAD_TABLE,
 )
 
 
@@ -293,6 +305,202 @@ class BindingAdminReaderRuntime:
             ).fetchone()
             if row is None or not row["permitted"]:
                 raise ValueError("Binding admin reader privileges do not match the port")
+
+    def close(self) -> None:
+        with self._lifetime:
+            self.provider = None
+            try:
+                if self._pool is not None:
+                    self._pool.close()
+            finally:
+                if self._diagnostics is not None:
+                    logging.getLogger("psycopg.pool").removeFilter(self._diagnostics)
+                    self._diagnostics = None
+
+
+_LIFECYCLE_READ_ONLY = (
+    "speech_binding_revisions",
+    "speech_binding_publication_evidence",
+)
+_LIFECYCLE_INSERT_ONLY = (
+    "speech_publications",
+    RETIREMENT_TABLE,
+    EVENT_TABLE,
+    DISABLE_INTENT_TABLE,
+)
+_LIFECYCLE_TABLES = (
+    *_LIFECYCLE_READ_ONLY,
+    *_LIFECYCLE_INSERT_ONLY,
+    HEAD_TABLE,
+    STATE_TABLE,
+)
+_LIFECYCLE_UPDATABLE_COLUMNS = {
+    STATE_TABLE: frozenset(("revision", "generated_at_us")),
+    HEAD_TABLE: frozenset(("revision", "revision_id", "updated_at_us")),
+}
+
+
+def _table_privilege(connection: SpeechConnection, role: str, table: str, privileges: str) -> bool:
+    row = connection.execute(
+        "SELECT pg_catalog.has_table_privilege(%s::name,%s,%s) AS permitted",
+        (role, table, privileges),
+    ).fetchone()
+    return row is not None and bool(row["permitted"])
+
+
+def _any_column_privilege(
+    connection: SpeechConnection, role: str, table: str, privileges: str
+) -> bool:
+    row = connection.execute(
+        "SELECT pg_catalog.has_any_column_privilege(%s::name,%s,%s) AS permitted",
+        (role, table, privileges),
+    ).fetchone()
+    return row is not None and bool(row["permitted"])
+
+
+def _updated_columns(
+    connection: SpeechConnection, role: str, schema: str, table: str, qualified: str
+) -> set[str]:
+    rows = connection.execute(
+        "SELECT column_name, pg_catalog.has_column_privilege(%s::name,%s,column_name,"
+        "'UPDATE') AS updatable FROM information_schema.columns "
+        "WHERE table_schema=%s AND table_name=%s",
+        (role, qualified, schema, table),
+    ).fetchall()
+    return {row["column_name"] for row in rows if row["updatable"]}
+
+
+class BindingLifecycleRuntime:
+    """Explicit lifecycle writer; startup verifies, never provisions, authority."""
+
+    def __init__(self, settings: Settings) -> None:
+        if settings.binding_lifecycle_database_url is None or settings.process_role != "api":
+            raise ValueError("Configure an explicit API binding lifecycle identity")
+        self._settings = settings
+        self._writer_url = settings.binding_lifecycle_database_url
+        self._pool: SpeechPool | None = None
+        self.provider: PostgresBindingLifecycle | None = None
+        self._lifetime = threading.Lock()
+        self._diagnostics: _PoolDiagnostics | None = None
+
+    def open(self) -> None:
+        with self._lifetime:
+            if self.provider is not None:
+                raise ValueError("Binding lifecycle writer is already open")
+            pool_name = "speech-binding-lifecycle-" + uuid.uuid4().hex
+            diagnostic = _PoolDiagnostics(pool_name)
+            logger = logging.getLogger("psycopg.pool")
+            logger.addFilter(diagnostic)
+            self._pool, self._diagnostics = None, diagnostic
+            try:
+                pool = speech_pool(
+                    self._writer_url.get_secret_value(),
+                    schema=self._settings.database_schema,
+                    max_size=self._settings.binding_receive_concurrency,
+                    name=pool_name,
+                )
+                self._pool = pool
+                pool.open()
+                self._verify_principal(pool)
+                self.provider = PostgresBindingLifecycle(
+                    pool, timeout_seconds=self._settings.binding_transaction_timeout_seconds
+                )
+            except BaseException as error:
+                try:
+                    if self._pool is not None:
+                        self._pool.close()
+                finally:
+                    logger.removeFilter(diagnostic)
+                    self._diagnostics = None
+                if not isinstance(error, Exception):
+                    raise
+                raise ValueError(
+                    "Binding lifecycle startup rejected; verify migration and minimum role"
+                ) from None
+
+    def _verify_principal(self, pool: SpeechPool) -> None:
+        with pool.connection(timeout=3) as connection:
+            connection.execute("SET LOCAL statement_timeout='3s'")
+            identities = connection.execute(
+                "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
+            ).fetchone()
+            if identities is None:
+                raise ValueError("Binding lifecycle identity is unavailable")
+            for role in dict.fromkeys((identities["login"], identities["effective"])):
+                self._verify_role(connection, role)
+
+    def _verify_role(self, connection: SpeechConnection, role: str) -> None:
+        schema = self._settings.database_schema
+        row = connection.execute(
+            "SELECT r.rolsuper OR pg_catalog.has_schema_privilege(%s::name,%s,'CREATE') "
+            "OR pg_catalog.pg_has_role(%s::name,d.datdba,'MEMBER') OR EXISTS ("
+            "SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE n.nspname=%s "
+            "AND pg_catalog.pg_has_role(%s::name,c.relowner,'MEMBER')) AS forbidden "
+            "FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_database d "
+            "WHERE r.rolname=%s AND d.datname=CURRENT_DATABASE()",
+            (role, schema, role, schema, role, role),
+        ).fetchone()
+        if row is None or row["forbidden"]:
+            raise ValueError("Binding lifecycle requires a non-owner runtime identity")
+        other = connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','f') "
+            "AND c.relname NOT IN (" + ",".join("%s" for _ in _LIFECYCLE_TABLES) + ") AND ("
+            "pg_catalog.has_table_privilege(%s::name,c.oid,"
+            "'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') "
+            "OR pg_catalog.has_any_column_privilege(%s::name,c.oid,"
+            "'SELECT,INSERT,UPDATE,REFERENCES'))) AS forbidden",
+            (schema, *_LIFECYCLE_TABLES, role, role),
+        ).fetchone()
+        if other is None or other["forbidden"]:
+            raise ValueError("Binding lifecycle cannot hold other speech table privileges")
+        sequences = connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind='S' "
+            "AND CASE WHEN c.relkind='S' THEN pg_catalog.has_sequence_privilege("
+            "%s::name,c.oid,'USAGE,SELECT,UPDATE') ELSE FALSE END) AS forbidden",
+            (schema, role),
+        ).fetchone()
+        if sequences is None or sequences["forbidden"]:
+            raise ValueError("Binding lifecycle cannot hold sequence privileges")
+        for table in _LIFECYCLE_TABLES:
+            qualified = f'"{schema}".{table}'
+            if table in _LIFECYCLE_READ_ONLY:
+                if not _table_privilege(connection, role, qualified, "SELECT"):
+                    raise ValueError("Binding lifecycle lost a required read")
+                if _table_privilege(
+                    connection, role, qualified, "INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER"
+                ):
+                    raise ValueError("Binding lifecycle history cannot be writable")
+                if _any_column_privilege(connection, role, qualified, "INSERT,UPDATE,REFERENCES"):
+                    raise ValueError("Binding lifecycle history cannot carry column writes")
+            elif table in _LIFECYCLE_INSERT_ONLY:
+                if not _table_privilege(connection, role, qualified, "SELECT,INSERT"):
+                    raise ValueError("Binding lifecycle lost an append privilege")
+                if _table_privilege(
+                    connection, role, qualified, "UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER"
+                ):
+                    raise ValueError("Binding lifecycle evidence cannot be rewritten")
+                if _any_column_privilege(connection, role, qualified, "UPDATE,REFERENCES"):
+                    raise ValueError("Binding lifecycle evidence cannot carry column writes")
+            elif table == HEAD_TABLE:
+                if not _table_privilege(connection, role, qualified, "SELECT,INSERT,UPDATE,DELETE"):
+                    raise ValueError("Binding lifecycle lost the pointer privilege")
+                if _table_privilege(connection, role, qualified, "TRUNCATE,REFERENCES,TRIGGER"):
+                    raise ValueError("Binding lifecycle pointer privileges are too broad")
+            else:
+                if not _table_privilege(connection, role, qualified, "SELECT"):
+                    raise ValueError("Binding lifecycle cannot read the catalogue version")
+                if _table_privilege(
+                    connection, role, qualified, "INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER"
+                ):
+                    raise ValueError("Binding lifecycle catalogue version is too writable")
+            allowed = _LIFECYCLE_UPDATABLE_COLUMNS.get(table, frozenset())
+            if _updated_columns(connection, role, schema, table, qualified) != set(allowed):
+                raise ValueError("Binding lifecycle columns do not match the port")
 
     def close(self) -> None:
         with self._lifetime:

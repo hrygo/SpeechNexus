@@ -22,6 +22,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     NewPublicJob,
     PublicJob,
     PublicJobNotFoundError,
+    PublicJobUnavailableError,
     canonical_digest,
     check_transition,
     idempotency_digest,
@@ -110,6 +111,10 @@ class JobFacts(Protocol):
 
 
 class PublicJobStore(Protocol):
+    def find_by_key(
+        self, workspace_id: str, key_digest: str, request_digest: str
+    ) -> JobCreateResult | None: ...
+
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
 
     def get(self, job_id: str) -> PublicJob | None: ...
@@ -153,6 +158,20 @@ class PublicJobs:
         if not isinstance(workspace_id, str):
             raise UnknownWorkspaceError
         identifier(workspace_id)
+        intent = _canonical_intent(payload, typed_kind)
+        request_digest = canonical_digest(intent)
+        key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
+        if key_digest is not None:
+            try:
+                original = self._store.find_by_key(workspace_id, key_digest, request_digest)
+            except PublicJobUnavailableError:
+                raise JobOutcomeUnknownError from None
+            if original is not None:
+                if original.outcome == "conflict":
+                    raise IdempotencyConflictError
+                if original.outcome != "replayed" or original.job is None:
+                    raise JobOutcomeUnknownError
+                return original.job
         workspace = self._facts.workspace(workspace_id)
         if workspace is None:
             raise UnknownWorkspaceError
@@ -219,8 +238,6 @@ class PublicJobs:
             progress_total=_text_length(payload),
             submitted_at_us=self._now_us(),
         )
-        intent = _canonical_intent(payload, typed_kind)
-        request_digest = canonical_digest(intent)
         job_id = "job-" + uuid.uuid4().hex
         request = NewPublicJob(
             job_id=job_id,
@@ -236,9 +253,7 @@ class PublicJobs:
                     "request_digest": request_digest,
                 }
             ),
-            idempotency_key_digest=(
-                None if idempotency_key is None else idempotency_digest(idempotency_key)
-            ),
+            idempotency_key_digest=key_digest,
             submission=submission,
         )
         result = self._store.create(request)

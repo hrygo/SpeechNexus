@@ -12,6 +12,7 @@ from speechnexus_contracts import parse
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
     IdempotencyConflictError,
+    JobOutcomeUnknownError,
     ModelNotPublishedError,
     PublicJobs,
     UnsupportedJobKindError,
@@ -26,6 +27,7 @@ from speechnexus_backend.speech.domain.public_jobs import (
     PublicJob,
     PublicJobConflictError,
     PublicJobNotFoundError,
+    PublicJobUnavailableError,
     check_transition,
 )
 from speechnexus_backend.speech.domain.publications import Publication
@@ -69,6 +71,20 @@ class Store:
     def __init__(self) -> None:
         self.jobs: dict[str, PublicJob] = {}
         self.keys: dict[str, tuple[str, str]] = {}
+
+    def find_by_key(
+        self, workspace_id: str, key_digest: str, request_digest: str
+    ) -> JobCreateResult | None:
+        original = self.keys.get(key_digest)
+        if original is None:
+            return None
+        digest, job_id = original
+        job = self.jobs[job_id]
+        if job.workspace_id != workspace_id:
+            return None
+        if digest != request_digest:
+            return JobCreateResult("conflict", error_code="idempotency_conflict")
+        return JobCreateResult("replayed", job)
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
         if job.idempotency_key_digest is not None:
@@ -162,6 +178,22 @@ def test_same_key_same_intent_replays_and_a_changed_intent_conflicts() -> None:
     changed = parse("JobCreateRequest", _body(client_reference="different"))
     with pytest.raises(IdempotencyConflictError):
         service.submit(changed, request_id="req-create", idempotency_key="idem-key-0001")
+
+
+def test_key_lookup_failure_never_creates_a_new_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _, store = _service()
+
+    def unavailable(workspace_id: str, key_digest: str, request_digest: str) -> None:
+        raise PublicJobUnavailableError("synthetic failure")
+
+    monkeypatch.setattr(store, "find_by_key", unavailable)
+    with pytest.raises(JobOutcomeUnknownError):
+        service.submit(
+            parse("JobCreateRequest", _body()),
+            request_id="req-create",
+            idempotency_key="synthetic-key-0001",
+        )
+    assert store.jobs == {}
 
 
 def test_explicit_contract_defaults_are_the_same_canonical_intent() -> None:

@@ -21,9 +21,27 @@ from speechnexus_backend.speech.interfaces.http.draft_ingress import DraftIngres
 PREFIX = "/v1/nexus/admin/model-bindings"
 CREATE_PATH = next(path for path, item in contract()["paths"].items() if "post" in item)
 READ_PATH = next(path for path, item in contract()["paths"].items() if "get" in item)
-READ_PATTERN = re.compile(
-    re.escape(READ_PATH).replace(r"\{binding_id\}", r"[^/]+").replace(r"\{revision\}", r"[^/]+")
-)
+RETIRE_OPERATION = "retireModelBindingRevision"
+ACTIVATE_OPERATION = "activatePublishedModelBindingRevision"
+_OPERATION_PATHS = {
+    specification["operationId"]: path
+    for path, item in contract()["paths"].items()
+    for specification in item.values()
+    if isinstance(specification, dict) and "operationId" in specification
+}
+RETIRE_PATH = _OPERATION_PATHS[RETIRE_OPERATION]
+ACTIVATE_PATH = _OPERATION_PATHS[ACTIVATE_OPERATION]
+
+
+def _pattern(path: str) -> re.Pattern[str]:
+    return re.compile(
+        re.escape(path).replace(r"\{binding_id\}", r"[^/]+").replace(r"\{revision\}", r"[^/]+")
+    )
+
+
+READ_PATTERN = _pattern(READ_PATH)
+RETIRE_PATTERN = _pattern(RETIRE_PATH)
+ACTIVATE_PATTERN = _pattern(ACTIVATE_PATH)
 DEFAULTS_PATH = next(path for path, item in defaults_contract()["paths"].items() if "get" in item)
 DEFAULTS_PATTERN = re.compile(
     re.escape(DEFAULTS_PATH).replace(r"\{binding_id\}", r"[^/]+").replace(r"\{revision\}", r"[^/]+")
@@ -35,6 +53,10 @@ def target(path: str, *, producer: bool = False) -> tuple[str, str] | None:
         return CREATE, "POST"
     if READ_PATTERN.fullmatch(path):
         return READ, "GET"
+    if RETIRE_PATTERN.fullmatch(path):
+        return RETIRE_OPERATION, "POST"
+    if ACTIVATE_PATTERN.fullmatch(path):
+        return ACTIVATE_OPERATION, "POST"
     if producer and DEFAULTS_PATTERN.fullmatch(path):
         return READ_DEFAULTS, "GET"
     return None
@@ -50,5 +72,6 @@ class BindingIngress(DraftIngress):
             create_operation=CREATE,
             read_operation=READ,
             read_operations=(READ_DEFAULTS,) if producer else (),
+            write_operations=(RETIRE_OPERATION, ACTIVATE_OPERATION),
             **kwargs,
         )

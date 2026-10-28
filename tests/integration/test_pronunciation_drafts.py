@@ -378,14 +378,14 @@ def test_migration_is_repeatable_and_preserves_any_committed_pronunciation_histo
     s = upgrade_sandbox
     s.upgrade("0013_profile_lifecycle_intents")
     old = s.admin.execute("SELECT * FROM coordination_jobs").fetchall()
-    s.upgrade()
-    s.upgrade()
-    assert s.version() == HEAD
+    s.upgrade("0014_pronunciation_drafts")
+    s.upgrade("0014_pronunciation_drafts")
+    assert s.version() == "0014_pronunciation_drafts"
     with s.engine.connect() as connection:
         s.config.attributes["connection"] = connection
         migration.downgrade(s.config, "0013_profile_lifecycle_intents")
     assert s.version() == "0013_profile_lifecycle_intents"
-    s.upgrade()
+    s.upgrade("0014_pronunciation_drafts")
     s.admin.execute(
         "INSERT INTO speech_pronunciation_families(pronunciation_id) VALUES ('pron-history')"
     )
@@ -393,7 +393,7 @@ def test_migration_is_repeatable_and_preserves_any_committed_pronunciation_histo
         s.config.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match="Pronunciation history"):
             migration.downgrade(s.config, "0013_profile_lifecycle_intents")
-    assert s.version() == HEAD
+    assert s.version() == "0014_pronunciation_drafts"
     assert s.admin.execute("SELECT * FROM coordination_jobs").fetchall() == old
     assert s.admin.execute(
         "SELECT pronunciation_id FROM speech_pronunciation_families"
@@ -545,7 +545,7 @@ def downgrade_pronunciations(
         engine.dispose()
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0014_pronunciation_drafts")], indirect=True)
 def test_writer_commit_while_downgrade_waits_preserves_all_new_history(
     pronunciations: Pronunciations,
 ) -> None:
@@ -576,10 +576,12 @@ def test_writer_commit_while_downgrade_waits_preserves_all_new_history(
             pending.result(timeout=5)
     assert p.port.recover(cmd).draft == original.draft
     assert all(len(rows) == 1 for rows in p.snapshot().values())
-    assert p.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert p.db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0014_pronunciation_drafts"}
+    ]
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0014_pronunciation_drafts")], indirect=True)
 def test_downgrade_locks_before_checking_so_waiting_writer_never_succeeds_then_loses_history(
     pronunciations: Pronunciations,
 ) -> None:
@@ -612,7 +614,7 @@ def test_downgrade_locks_before_checking_so_waiting_writer_never_succeeds_then_l
     ]
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0014_pronunciation_drafts")], indirect=True)
 @pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
 def test_downgrade_rejects_stale_transaction_snapshots_before_ddl(
     pronunciations: Pronunciations, isolation: str

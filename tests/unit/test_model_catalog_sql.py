@@ -38,7 +38,7 @@ def binding_row(revision: int = 2, revision_id: str = "binding-rev-2") -> dict[s
     }
 
 
-def test_bindings_select_the_newest_revision_and_join_the_full_document_identity() -> None:
+def test_bindings_select_the_explicit_head_and_join_the_full_document_identity() -> None:
     cursor = Cursor([[binding_row()]])
 
     assert list_published_bindings(cursor) == [binding_row()]
@@ -46,7 +46,10 @@ def test_bindings_select_the_newest_revision_and_join_the_full_document_identity
     assert "v.revision_id = p.revision_id" in query
     assert "speech_published_binding_revisions" in query
     assert "JOIN speech_binding_revisions" not in query
-    assert "newer.revision::numeric > p.revision::numeric" in query
+    assert "JOIN speech_publication_heads AS h" in query
+    assert "h.revision = p.revision" in query
+    assert "h.revision_id = p.revision_id" in query
+    assert "newer.revision::numeric" not in query
     assert "NOT EXISTS" in query
     assert "speech_publication_retirements" in query
     assert parameters == ()

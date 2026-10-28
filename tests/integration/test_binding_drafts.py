@@ -601,7 +601,7 @@ def test_native_statement_deadline_does_not_create_a_second_revision(bindings: B
     assert len(bindings.snapshot()["speech_binding_revisions"]) == 1
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0010_model_binding_drafts")], indirect=True)
 def test_repeat_upgrade_and_refused_downgrade_preserve_binding_history(bindings: Bindings) -> None:
     bindings.port.create(bindings.prepare())
     before = bindings.snapshot()
@@ -615,12 +615,14 @@ def test_repeat_upgrade_and_refused_downgrade_preserve_binding_history(bindings:
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
+            migration.upgrade(config, "0010_model_binding_drafts")
             with pytest.raises(RuntimeError, match="Binding history downgrade"):
                 migration.downgrade(config, "0009_profile_drafts")
     finally:
         engine.dispose()
-    assert bindings.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert bindings.db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0010_model_binding_drafts"}
+    ]
     assert bindings.snapshot() == before
 
 

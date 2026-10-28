@@ -60,7 +60,7 @@ def test_legacy_publication_count_is_seeded_and_retirement_history_blocks_downgr
 
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
+            migration.upgrade(config, "0022_catalog_revision_state")
         seeded_revision = scalar_int(
             admin, "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE"
         )
@@ -90,7 +90,7 @@ def test_legacy_publication_count_is_seeded_and_retirement_history_blocks_downgr
         assert scalar_int(admin, "SELECT COUNT(*) + 1 FROM speech_publications") == 5
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
+            migration.upgrade(config, "0022_catalog_revision_state")
         assert (
             scalar_int(admin, "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE")
             == 5

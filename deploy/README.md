@@ -34,7 +34,9 @@ Additional profiles are opt-in:
 
 - `migration`: one-shot Alembic migration with the separate migration DSN;
 - `engine-registration`: one-shot `speechnexus-register-engine` invocation;
-- `web`: the static Admin and Workbench frontends.
+- `web`: the static Admin and Workbench frontends;
+- `binding-disable`: explicitly starts the disable worker, which is required to
+  process persisted disable intents; it is absent from the base topology.
 
 The `workbench` container serves only the frontend; it does not start the
 independent Workbench API. Setting `SPEECHNEXUS_PROCESS_ROLE` identifies a
@@ -147,3 +149,13 @@ binding 历史、`speech_publications` 与证据表。未配置时 GET 返回
 Release preflight C9 checks only the parsed Compose service set and the presence
 of the gateway's private ASR/TTS configuration keys. It does not start these
 containers; runtime and business evidence remain separate.
+
+## Binding disable worker
+
+See [the optional worker runbook](../docs/operations/compose-minimal.md#binding-disable-worker-opt-in)
+for separate scanner and settlement identities, migration, grants and rollout.
+The worker shares the gateway network namespace and calls its loopback address;
+this is a single-host Compose topology, not a multi-node transport design. A
+`disabled` response means selection is blocked and cleanup remains pending or
+unknown; it does not establish that the worker has run, an engine stopped, or
+capacity was released. The base topology does not start this worker.

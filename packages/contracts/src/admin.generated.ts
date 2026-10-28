@@ -351,6 +351,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Roll the current binding pointer back or forward to a published revision
+     * @description Activates an existing `published` binding revision without changing its
+     *     immutable definition, evidence or historical Jobs. This is the explicit
+     *     rollback path; it never creates a new publication. `expected_current_revision`
+     *     is the active binding revision observed by the operator and is a
+     *     compare-and-swap guard; null is valid only when retirement cleared the
+     *     pointer. A mismatch returns 409 `configuration_changed`. Draft, retired
+     *     and disabled revisions cannot be activated.
+     *
+     *     An identical Idempotency-Key replay returns the original activation; a
+     *     changed intent under the same key returns 409 `idempotency_conflict`.
+     *     An unreadable original result or uncertain commit returns 503
+     *     `binding_result_unknown` with `retryable: false`; it is not evidence that
+     *     the pointer stayed unchanged. A caller retaining the original
+     *     Idempotency-Key may explicitly replay the same complete POST to recover
+     *     its result. No automatic retry or query-by-key resource is provided.
+     */
+    post: operations["activatePublishedModelBindingRevision"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements": {
     parameters: {
       query?: never;
@@ -362,9 +396,20 @@ export interface paths {
     put?: never;
     /**
      * Retire or disable a model binding revision
-     * @description Retiring a binding stops new references but preserves immutable history.
-     *     Emergency disable also cancels confirmed in-flight use; unknown cleanup
-     *     stays quarantined and no budget is released without stop evidence.
+     * @description Retirement is a selection boundary, not a delete. It clears the active
+     *     binding pointer so new Jobs cannot select the revision, while the
+     *     immutable definition, publication, evidence and historical Jobs remain
+     *     readable. In-flight Jobs keep their original effective configuration.
+     *
+     *     `mode: retire` is the normal end of life. `mode: disable` is the same
+     *     selection change with an operator reason and a durable cancellation
+     *     intent. The disabled receipt proves only that new selection is blocked;
+     *     cleanup is pending or unknown, and it does not prove cancellation or
+     *     capacity release. The response header reports this limitation. Repeating
+     *     the same Idempotency-Key
+     *     returns the original result; a second retirement with a new key returns
+     *     409 `revision_already_retired`. Retiring a revision that is not the
+     *     active pointer returns 409 `revision_not_current`.
      */
     post: operations["retireModelBindingRevision"];
     delete?: never;
@@ -742,6 +787,9 @@ export interface components {
       expected_current_revision: components["schemas"]["Revision"] | null;
       capacity_manifest_id: components["schemas"]["Identifier"];
       qualification_report_id: components["schemas"]["Identifier"];
+    };
+    ModelBindingActivationRequest: {
+      expected_current_revision: components["schemas"]["Revision"] | null;
     };
     ModelBindingRetirementRequest: components["schemas"]["RetirementRequest"];
     /**
@@ -3881,6 +3929,49 @@ export interface operations {
       422: components["responses"]["UnprocessableEntity"];
     };
   };
+  activatePublishedModelBindingRevision: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestId"];
+        "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        binding_id: components["parameters"]["BindingIdPath"];
+        revision: components["parameters"]["RevisionPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelBindingActivationRequest"];
+      };
+    };
+    responses: {
+      /** @description Published binding revision activated, or the original activation replayed. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["model-binding.schema"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      405: components["responses"]["BindingCreateMethodNotAllowed"];
+      408: components["responses"]["BindingReceiveTimeout"];
+      409: components["responses"]["Conflict"];
+      413: components["responses"]["BindingRequestTooLarge"];
+      415: components["responses"]["BindingMediaUnsupported"];
+      422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["BindingReceiveFull"];
+      503: components["responses"]["BindingCreationUnknown"];
+    };
+  };
   retireModelBindingRevision: {
     parameters: {
       query?: never;
@@ -3900,10 +3991,12 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Updated binding revision. */
+      /** @description Updated binding revision; disabled status does not prove execution cleanup. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
+          /** @description Present on disable receipts; cancellation completion is not established. */
+          "X-Binding-Disable-Cleanup"?: "pending_or_unknown";
           [name: string]: unknown;
         };
         content: {
@@ -3912,9 +4005,16 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
       404: components["responses"]["NotFound"];
+      405: components["responses"]["BindingCreateMethodNotAllowed"];
+      408: components["responses"]["BindingReceiveTimeout"];
       409: components["responses"]["Conflict"];
+      413: components["responses"]["BindingRequestTooLarge"];
+      415: components["responses"]["BindingMediaUnsupported"];
       422: components["responses"]["UnprocessableEntity"];
+      429: components["responses"]["BindingReceiveFull"];
+      503: components["responses"]["BindingCreationUnknown"];
     };
   };
   listModelInstances: {

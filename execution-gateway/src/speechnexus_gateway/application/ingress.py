@@ -89,6 +89,27 @@ class GatewayIngress:
             finally:
                 lane.sending.release()
 
+    @contextmanager
+    def abort_dispatch(self, identity: SubmissionIdentity) -> Iterator[None]:
+        """Serialize a bounded abort with local sends while retaining process ownership.
+
+        The original execution may predate a newer pool fence. Its exact original
+        identity is verified by the caller; a newer floor must not block cleanup.
+        """
+        if identity.pool_id not in self._pools or (identity.host_node_id, identity.gateway_id) != (
+            self._ownership.node_id,
+            self._ownership.gateway_id,
+        ):
+            raise InvalidExecutionRequestError("execution belongs to another gateway or node")
+        with self._ownership.hold():
+            lane = self._pools[identity.pool_id]
+            if not lane.sending.acquire(timeout=self._timeout):
+                raise IngressUnavailableError("gateway has not finished a local send")
+            try:
+                yield
+            finally:
+                lane.sending.release()
+
     def seal(self, request: BarrierRequest, ledger: BarrierLedger) -> BarrierSnapshot:
         if request.abort_in_flight:
             # There is not yet an engine abort adapter. A fence alone cannot honor an

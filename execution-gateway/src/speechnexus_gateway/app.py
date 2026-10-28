@@ -24,6 +24,7 @@ from speechnexus_gateway.application.recover_executions import ExecutionRecovery
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
 from speechnexus_gateway.file_speech_runtime import load_file_speech_configuration
+from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
 from speechnexus_gateway.infrastructure.postgres_pool import GatewayPool, gateway_pool
 from speechnexus_gateway.infrastructure.process_ownership import ProcessIngressOwnership
 from speechnexus_gateway.infrastructure.readiness import PostgresReadinessProbe
@@ -104,7 +105,10 @@ def _build_control(
         )
         pool.open()
         ingress = GatewayIngress(ownership, timeout_seconds=settings.control_timeout_seconds)
-        ledger = PostgresSubmissionLedger(pool, timeout_seconds=settings.control_timeout_seconds)
+        ledger = PostgresSubmissionLedger(
+            pool, timeout_seconds=settings.control_timeout_seconds, enforce_binding_barrier=True
+        )
+        ledger.durable_abort_enabled = verify_abort_authority(pool, settings.control_schema)
         queries = ExecutionQueryService(ingress=ingress, ledger=ledger)
         worker = (
             None
@@ -270,7 +274,10 @@ def create_app(
                     committed_execution=runtime,
                 )
                 app.state.abort_execution = ExecutionAbortService(
-                    ingress=ingress, ledger=ledger, abort=runtime
+                    ingress=ingress,
+                    ledger=ledger,
+                    abort=runtime,
+                    durable_abort_enabled=ledger.durable_abort_enabled,
                 )
             if worker is not None:
                 worker.start()

@@ -134,12 +134,158 @@ def test_report_size_limit_does_not_require_a_large_test_fixture(
 def test_cli_process_is_bounded_and_never_receives_a_token_argument(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    calls: list[str] = []
+
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         assert command == ["gh", "api", "--hostname", "github.com", "repos/owner/repo/example"]
         assert kwargs["timeout"] == 15
         assert kwargs["stderr"] == subprocess.PIPE
-        raise subprocess.TimeoutExpired(command, 15)
+        calls.append(kwargs["stdout"].name)
+        kwargs["stdout"].write(b"partial secret")
+        raise subprocess.TimeoutExpired(command, 15, stderr=b"secret stderr")
 
     monkeypatch.setattr(MODULE.subprocess, "run", run)
-    with pytest.raises(subprocess.TimeoutExpired):
+    with pytest.raises(MODULE.ArtifactFetchError, match="timeout"):
         MODULE.fetch_api("repos/owner/repo/example", tmp_path / "response", 100)
+    assert len(calls) == 3 and len(set(calls)) == 3
+    assert not (tmp_path / "response").exists()
+    assert not list(tmp_path.iterdir())
+
+
+def test_api_retries_process_failure_with_independent_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        stream = kwargs["stdout"]
+        calls.append(stream.name)
+        if len(calls) == 1:
+            stream.write(b"partial secret")
+            return subprocess.CompletedProcess(command, 22, stderr=b"secret stderr")
+        stream.write(b"valid result")
+        return subprocess.CompletedProcess(command, 0, stderr=b"")
+
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    output = tmp_path / "response"
+    MODULE.fetch_api("repos/owner/repo/example", output, 100)
+    assert len(calls) == 2 and len(set(calls)) == 2
+    assert output.read_bytes() == b"valid result"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_api_recovers_from_timeout_without_retaining_partial_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            kwargs["stdout"].write(b"partial")
+            raise subprocess.TimeoutExpired(command, 15, stderr=b"secret")
+        kwargs["stdout"].write(b"complete")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    output = tmp_path / "response"
+    MODULE.fetch_api("repos/owner/repo/example", output, 100)
+    assert calls == 2
+    assert output.read_bytes() == b"complete"
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_successful_api_invalid_size_is_not_retried_or_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        nonlocal calls
+        calls += 1
+        kwargs["stdout"].write(b"oversized")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    with pytest.raises(ValueError, match="invalid size"):
+        MODULE.fetch_api("repos/owner/repo/example", tmp_path / "response", 2)
+    assert calls == 1
+    assert not list(tmp_path.iterdir())
+
+
+def test_corrupt_archive_after_retry_still_fails_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data, _ = setup_api(monkeypatch)
+    metadata = json.dumps(data).encode()
+    monkeypatch.undo()
+    calls: dict[str, int] = {}
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        endpoint = command[-1]
+        calls[endpoint] = calls.get(endpoint, 0) + 1
+        if "?per_page=100" in endpoint:
+            kwargs["stdout"].write(metadata)
+            return subprocess.CompletedProcess(command, 0)
+        if calls[endpoint] == 1:
+            return subprocess.CompletedProcess(command, 22)
+        index = int(endpoint.split("/")[-2]) - 1
+        payload = bytearray(archive(index))
+        payload[-1] ^= 1
+        kwargs["stdout"].write(payload)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    with pytest.raises(ValueError, match="digest mismatch"):
+        MODULE.download("owner/repo", 123, 2, tmp_path / "reports")
+    assert sorted(calls.values()) == [1, 2, 2]
+    assert not (tmp_path / "reports").exists()
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("failure", ["process_failure", "timeout"])
+def test_api_permanent_failure_reports_shard_and_exit_without_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    data, _ = setup_api(monkeypatch)
+    metadata = json.dumps(data).encode()
+    monkeypatch.undo()
+    calls: list[str] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        endpoint = command[-1]
+        calls.append(endpoint)
+        if "?per_page=100" in endpoint:
+            kwargs["stdout"].write(metadata)
+            return subprocess.CompletedProcess(command, 0, stderr=b"")
+        kwargs["stdout"].write(b"partial")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, 15, stderr=b"secret signed url and token")
+        return subprocess.CompletedProcess(command, 22, stderr=b"secret signed url and token")
+
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "download",
+            "--repository",
+            "owner/repo",
+            "--run-id",
+            "123",
+            "--count",
+            "2",
+            "--output",
+            str(tmp_path / "reports"),
+        ],
+    )
+    assert MODULE.main() == 1
+    message = capsys.readouterr().out
+    assert failure in message and "shard=" in message
+    assert ("exit=timeout" if failure == "timeout" else "exit=22") in message
+    assert "secret" not in message and "owner/repo" not in message
+    assert len(calls) == 7  # one metadata request and three attempts for each artifact
+    assert not (tmp_path / "reports").exists()

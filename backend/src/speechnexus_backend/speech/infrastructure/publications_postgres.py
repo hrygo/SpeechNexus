@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from typing import Any
@@ -11,7 +12,11 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.application.binding_documents import decode_document
 from speechnexus_backend.speech.application.binding_publication import (
+    MISSING_HEAD,
+    BindingHeadPreconditionError,
+    BindingIntentConflictError,
     BindingPublicationConflictError,
+    BindingPublishIntent,
     BindingRevisionNotFoundError,
 )
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
@@ -109,13 +114,68 @@ class PostgresPublications:
         ):
             raise PublicationUnavailableError from None
 
-    def append(self, publication: Publication) -> bool:
-        return self._run(lambda cursor: append_publication(cursor, publication))
+    def append(
+        self,
+        publication: Publication,
+        *,
+        expected_current_revision: object = MISSING_HEAD,
+        expected_catalog_revision: object = MISSING_HEAD,
+    ) -> bool:
+        if publication.kind == "binding":
+            raise BindingHeadPreconditionError("binding_publication_requires_complete_intent")
+        return self._run(
+            lambda cursor: append_publication(
+                cursor,
+                publication,
+                expected_current_revision=expected_current_revision,
+                expected_catalog_revision=expected_catalog_revision,
+            ),
+            preserve=(BindingHeadPreconditionError,),
+        )
 
-    def retire(self, publication: Publication, *, retired_at_us: int) -> bool:
+    def observe_binding_head(self, binding_id: str) -> dict[str, Any]:
+        """Read the target, head and catalogue version in one authoritative snapshot."""
+
+        def operation(cursor: _Cursor) -> dict[str, Any]:
+            # Bound estimates on fresh databases while retaining duplicate detection.
+            cursor.execute(
+                "SELECT current_database() AS database_name, current_schema() AS schema_name, "
+                "i.installation_id::text AS installation_id, s.revision AS catalog_revision, "
+                "h.revision AS current_revision, EXISTS ("
+                "SELECT 1 FROM speech_publication_retirements r "
+                "WHERE r.kind=h.kind AND r.object_id=h.object_id AND r.revision=h.revision "
+                "AND r.revision_id=h.revision_id) AS head_retired FROM speech_binding_families f "
+                "CROSS JOIN (SELECT installation_id FROM speech_publication_installation "
+                "WHERE singleton IS TRUE LIMIT 2) i "
+                "CROSS JOIN (SELECT revision FROM speech_catalog_state "
+                "WHERE singleton IS TRUE LIMIT 2) s "
+                "LEFT JOIN speech_publication_heads h ON h.kind='binding' "
+                "AND h.object_id=f.binding_id "
+                "WHERE f.binding_id=%s",
+                (binding_id,),
+            )
+            rows = cursor.fetchall()
+            if len(rows) != 1:
+                raise PublicationUnavailableError
+            if rows[0].pop("head_retired"):
+                raise PublicationUnavailableError
+            return rows[0]
+
+        return self._run(operation, read_only=True)
+
+    def retire(
+        self,
+        publication: Publication,
+        *,
+        retired_at_us: int,
+        mode: str = "retire",
+        reason: str | None = None,
+    ) -> bool:
         """Hide one current revision; repeating the same retirement is a no-op."""
         return self._run(
-            lambda cursor: retire_publication(cursor, publication, retired_at_us),
+            lambda cursor: retire_publication(
+                cursor, publication, retired_at_us, mode=mode, reason=reason
+            ),
             preserve=(ValueError,),
         )
 
@@ -123,10 +183,20 @@ class PostgresPublications:
         self,
         publication: Publication,
         evidence: BindingPublicationEvidence,
-    ) -> tuple[Publication, BindingPublicationEvidence, bool]:
+        *,
+        expected_current_revision: object = MISSING_HEAD,
+        intent: BindingPublishIntent | None = None,
+    ) -> tuple[Publication, BindingPublicationEvidence, bool, str, bool]:
         """Validate the stored triple and capacity evidence, then write both rows."""
 
-        def operation(cursor: _Cursor) -> tuple[Publication, BindingPublicationEvidence, bool]:
+        def write_publication(
+            cursor: _Cursor,
+        ) -> tuple[Publication, BindingPublicationEvidence, bool]:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended("
+                "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
+                (publication.kind, publication.object_id),
+            )
             existing = find_publication(
                 cursor, publication.kind, publication.object_id, publication.revision
             )
@@ -184,7 +254,14 @@ class PostgresPublications:
                     return existing, stored_evidence, False
                 return existing, evidence, False
 
-            if append_publication(cursor, publication):
+            if append_publication(
+                cursor,
+                publication,
+                expected_current_revision=expected_current_revision,
+                expected_catalog_revision=intent.expected_catalog_revision
+                if intent is not None
+                else MISSING_HEAD,
+            ):
                 if not insert_evidence(cursor, evidence):
                     raise PublicationUnavailableError
                 return publication, evidence, True
@@ -214,6 +291,78 @@ class PostgresPublications:
                 )
             return stored_publication, stored_evidence, False
 
+        def operation(
+            cursor: _Cursor,
+        ) -> tuple[Publication, BindingPublicationEvidence, bool, str, bool]:
+            if intent is None:
+                raise BindingHeadPreconditionError("complete_publication_intent_required")
+            if expected_current_revision != intent.expected_current_revision:
+                raise BindingHeadPreconditionError("observation_mismatch")
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended("
+                "'speechnexus:publish-intent:' || current_schema() || ':' || %s, 0))",
+                (intent.key_digest,),
+            )
+            cursor.execute(
+                "SELECT current_database() AS database_name, current_schema() AS schema_name, "
+                "installation_id::text AS installation_id FROM speech_publication_installation "
+                "WHERE singleton IS TRUE"
+            )
+            targets = cursor.fetchall()
+            if len(targets) != 1 or (
+                targets[0]["database_name"],
+                targets[0]["schema_name"],
+                targets[0]["installation_id"],
+            ) != (intent.database, intent.schema, intent.installation_id):
+                raise BindingHeadPreconditionError("publication_target_changed")
+            payload = {
+                "database": intent.database,
+                "schema": intent.schema,
+                "installation_id": intent.installation_id,
+                "expected_current_revision": intent.expected_current_revision,
+                "expected_catalog_revision": intent.expected_catalog_revision,
+                "binding_id": publication.object_id,
+                "revision": str(publication.revision),
+                "revision_id": publication.revision_id,
+                "capacity_manifest_id": evidence.capacity_manifest_id,
+                "qualification_report_id": evidence.qualification_report_id,
+                "capacity_manifest_digest": evidence.capacity_manifest_digest,
+                "qualification_report_digest": evidence.qualification_report_digest,
+                "evidence_source": evidence.evidence_source,
+            }
+            cursor.execute(
+                "SELECT intent, original_created FROM speech_binding_publish_intents "
+                "WHERE key_digest=%s",
+                (intent.key_digest,),
+            )
+            rows = cursor.fetchall()
+            if len(rows) > 1:
+                raise PublicationUnavailableError
+            if rows:
+                if rows[0]["intent"] != payload:
+                    raise BindingIntentConflictError("idempotency_conflict")
+                existing = find_publication(
+                    cursor, "binding", publication.object_id, publication.revision
+                )
+                stored_evidence = find_evidence(cursor, publication.object_id, publication.revision)
+                if existing is None or stored_evidence is None:
+                    raise PublicationUnavailableError
+                return existing, stored_evidence, False, "replay", bool(rows[0]["original_created"])
+            result = write_publication(cursor)
+            cursor.execute(
+                "INSERT INTO speech_binding_publish_intents "
+                "(key_digest, intent, binding_id, revision, original_created) "
+                "VALUES (%s, %s::jsonb, %s, %s, %s)",
+                (
+                    intent.key_digest,
+                    json.dumps(payload),
+                    publication.object_id,
+                    str(publication.revision),
+                    result[2],
+                ),
+            )
+            return (*result, "created" if result[2] else "existing_fact", result[2])
+
         return self._run(
             operation,
             preserve=(
@@ -221,6 +370,8 @@ class PostgresPublications:
                 BindingPublicationConflictError,
                 BindingCapacityManifestMismatchError,
                 BindingEvidenceConflictError,
+                BindingHeadPreconditionError,
+                BindingIntentConflictError,
             ),
         )
 

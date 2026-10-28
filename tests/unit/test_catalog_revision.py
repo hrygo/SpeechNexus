@@ -89,16 +89,18 @@ def test_publication_writer_can_insert_tombstones_and_advance_the_counter() -> N
 
 def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    cursor = Cursor([[], [row()], []], [0, 0, 1])
+    cursor = Cursor([[], [row()], [], []], [0, 0, 1, 1])
 
     assert retire_publication(cursor, publication, 1_700_000_000_000_001) is True
 
     lock_query, lock_parameters = cursor.calls[0]
     select_query, select_parameters = cursor.calls[1]
     insert_query, insert_parameters = cursor.calls[2]
+    clear_query, clear_parameters = cursor.calls[3]
     assert "pg_advisory_xact_lock" in lock_query
     assert lock_parameters == ("binding", "binding-tts")
-    assert "FROM speech_publications AS p" in select_query
+    assert "FROM speech_publication_heads AS h" in select_query
+    assert "JOIN speech_publications AS p" in select_query
     assert select_parameters == ("binding", "binding-tts")
     assert f"INSERT INTO {RETIREMENT_TABLE}" in insert_query
     assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in insert_query
@@ -108,7 +110,11 @@ def test_retirement_of_the_current_revision_inserts_one_visible_tombstone() -> N
         "1",
         "binding-rev-1",
         1_700_000_000_000_001,
+        "retire",
+        None,
     )
+    assert "DELETE FROM speech_publication_heads" in clear_query
+    assert clear_parameters == ("binding", "binding-tts", "1", "binding-rev-1")
 
 
 def test_repeating_a_retirement_does_not_insert_or_advance_again() -> None:
@@ -121,13 +127,13 @@ def test_repeating_a_retirement_does_not_insert_or_advance_again() -> None:
 
 def test_retirement_must_name_the_current_exact_revision() -> None:
     publication = Publication("binding", "binding-tts", 1, "binding-rev-1", 1)
-    superseded = Cursor([[], [row(2, "binding-rev-2")]], [0, 0])
+    superseded = Cursor([[], [row(2, "binding-rev-2")], []], [0, 0, 0])
 
     with pytest.raises(ValueError, match="current published revision"):
         retire_publication(superseded, publication, 1_700_000_000_000_001)
-    assert len(superseded.calls) == 2
+    assert len(superseded.calls) == 3
 
-    mismatched = Cursor([[], [row(1, "binding-rev-other")]], [0, 0])
+    mismatched = Cursor([[], [row(1, "binding-rev-other")], []], [0, 0, 0])
     with pytest.raises(ValueError, match="current published revision"):
         retire_publication(mismatched, publication, 1_700_000_000_000_001)
-    assert len(mismatched.calls) == 2
+    assert len(mismatched.calls) == 3

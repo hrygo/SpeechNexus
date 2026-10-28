@@ -125,7 +125,9 @@ def build_transcription(settings: Settings) -> Transcription | None:
             ),
             AdmissionService(
                 PostgresAdmissionTransactions(
-                    pool, max_command_bytes=settings.transcription_max_command_bytes
+                    pool,
+                    max_command_bytes=settings.transcription_max_command_bytes,
+                    enforce_binding_disable=True,
                 )
             ),
             recipe,

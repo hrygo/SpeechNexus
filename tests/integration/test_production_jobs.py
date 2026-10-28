@@ -109,7 +109,11 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         pytest.fail("Production Job behavior requires both isolated PG and InnoDB DSNs")
     if not all(configured):
         pytest.skip("Configure both isolated database DSNs; skip is not qualification evidence")
-    dialect = request.param
+    param = request.param
+    if isinstance(param, tuple):
+        dialect, migration_revision = param
+    else:
+        dialect, migration_revision = param, "head"
     url = cast(str, configured[0 if dialect == "postgresql" else 1])
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_jobs_" + suffix, "sn_jobs_role_" + suffix
@@ -125,7 +129,7 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         try:
             with engine.connect() as connection:
                 config.attributes["connection"] = connection
-                command.upgrade(config, "head")
+                command.upgrade(config, migration_revision)
         finally:
             engine.dispose()
         admin: Any = psycopg.connect(url, row_factory=dict_row, autocommit=True)
@@ -133,7 +137,12 @@ def database(request: pytest.FixtureRequest) -> Iterator[JobDatabase]:
         admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD 'synthetic_job_test'")
         # Base grants come from 0001; the dispatcher set only applies once the
         # admission command tables exist, so it is applied after a full upgrade.
-        for grant in job_runtime_grants(schema, role) + job_dispatch_grants(schema, role):
+        grants = job_runtime_grants(schema, role)
+        # Historical migration tests need only Job writer grants. The dispatcher
+        # grants refer to artifacts introduced after those tested revisions.
+        if migration_revision == "head":
+            grants += job_dispatch_grants(schema, role)
+        for grant in grants:
             admin.execute(grant)
         pool = job_pool(make_conninfo(url, user=role, password="synthetic_job_test"), schema=schema)
         pool.open()
@@ -427,7 +436,7 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            with pytest.raises(RuntimeError, match="Binding history downgrade"):
+            with pytest.raises(RuntimeError, match="Publication intent and installation identity"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()

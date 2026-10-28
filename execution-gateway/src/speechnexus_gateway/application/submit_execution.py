@@ -101,6 +101,8 @@ class SubmitExecutionService:
 
         # A long file task must not retain the ingress send lock. Only this
         # invocation's newly committed acceptance may reach the start callback.
+        if outcome.idempotent_replay:
+            return outcome
         if self._committed_execution is not None:
             if outcome.intent.execution_state is ExecutionState.EXECUTING:
                 try:
@@ -131,7 +133,9 @@ class SubmitExecutionService:
             request_digest=request.request_digest,
             output_stream_id=request.output_stream_id,
         )
-        self._ledger.add(intent, request_document=request.request_document)
+        existing = self._ledger.add(intent, request_document=request.request_document)
+        if existing is not None:
+            return SubmissionOutcome(intent=existing, idempotent_replay=True)
         outcome = self._dispatch.dispatch(intent)
         if outcome.result is DispatchResult.ACKNOWLEDGED:
             if outcome.engine_request_id is None:

@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0.dev3",
+  "version": "0.1.0.dev4",
   "examples": [
     {
       "id": "create-original",
@@ -890,6 +890,101 @@
           "revision": "1"
         },
         "body": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-original",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "headers": {
+          "Idempotency-Key": "activate-binding-key"
+        },
+        "body": {
+          "expected_current_revision": "2"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-after-retirement",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-missing-cas",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "body": {}
+      },
+      "valid": false
+    },
+    {
+      "id": "activate-wrong-cas-type",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "body": {
+          "expected_current_revision": 2
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "retire-original",
+      "operation": "retireModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "2"
+        },
+        "headers": {
+          "Idempotency-Key": "retire-binding-key"
+        },
+        "body": {
+          "mode": "retire",
+          "reason": "superseded by revision 3"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "disable-requires-reason",
+      "operation": "retireModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "2"
+        },
+        "body": {
+          "mode": "disable"
+        }
       },
       "valid": false
     },

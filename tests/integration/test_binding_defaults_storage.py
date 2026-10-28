@@ -31,7 +31,6 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.binding_defaults_database import MySQLBindingDefaults
 from tests.support.binding_examples import binding_request
 from tests.support.job_database import MySQLJobTransactions
-from tests.support.migrations import HEAD
 
 from speechnexus_backend.speech.application.binding_default_drafts import BindingDefaultDrafts
 from speechnexus_backend.speech.domain.binding_drafts import (
@@ -592,15 +591,15 @@ def test_empty_new_facts_roundtrip_and_history_preservation(
     assert original.outcome == "created"
     old_binding = sandbox.admin.execute("SELECT * FROM speech_binding_revisions").fetchall()
     prior = sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall()
-    sandbox.upgrade()
-    sandbox.upgrade()
+    sandbox.upgrade("0011_binding_parameter_defaults")
+    sandbox.upgrade("0011_binding_parameter_defaults")
     with sandbox.engine.connect() as connection:
         sandbox.config.attributes["connection"] = connection
         migration.downgrade(sandbox.config, "0010_model_binding_drafts")
     assert sandbox.version() == "0010_model_binding_drafts"
     assert sandbox.admin.execute(f"SELECT to_regclass('{TABLE}') AS t").fetchone()["t"] is None
-    sandbox.upgrade()
-    assert sandbox.version() == HEAD
+    sandbox.upgrade("0011_binding_parameter_defaults")
+    assert sandbox.version() == "0011_binding_parameter_defaults"
     assert sandbox.admin.execute("SELECT * FROM coordination_jobs").fetchall() == prior
     assert sandbox.admin.execute("SELECT * FROM speech_binding_revisions").fetchall() == old_binding
     assert sandbox.admin.execute(f"SELECT * FROM {TABLE}").fetchall() == []
@@ -609,7 +608,9 @@ def test_empty_new_facts_roundtrip_and_history_preservation(
     ).fetchall() == [{"defaults_declared": None}]
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0011_binding_parameter_defaults")], indirect=True
+)
 @pytest.mark.parametrize("remove_child", [False, True])
 def test_declared_history_blocks_downgrade_even_if_child_missing(
     defaults: Defaults, remove_child: bool
@@ -635,11 +636,15 @@ def test_declared_history_blocks_downgrade_even_if_child_missing(
                 migration.downgrade(config, "0010_model_binding_drafts")
     finally:
         engine.dispose()
-    assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0011_binding_parameter_defaults"}
+    ]
     assert defaults.snapshot() == before
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0011_binding_parameter_defaults")], indirect=True
+)
 def test_writer_commit_while_downgrade_waits_preserves_all_declared_facts(
     defaults: Defaults,
 ) -> None:
@@ -679,10 +684,14 @@ def test_writer_commit_while_downgrade_waits_preserves_all_declared_facts(
             pending.result(timeout=5)
     assert defaults.port.recover(cmd).snapshot == accepted.snapshot
     assert defaults.snapshot() == before
-    assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0011_binding_parameter_defaults"}
+    ]
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0011_binding_parameter_defaults")], indirect=True
+)
 def test_downgrade_lock_before_writer_prevents_success_followed_by_history_loss(
     defaults: Defaults,
 ) -> None:
@@ -719,7 +728,9 @@ def test_downgrade_lock_before_writer_prevents_success_followed_by_history_loss(
     ]
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0011_binding_parameter_defaults")], indirect=True
+)
 @pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
 def test_downgrade_refuses_old_transaction_snapshots_without_ddl(
     defaults: Defaults, isolation: str
@@ -733,7 +744,7 @@ def test_downgrade_refuses_old_transaction_snapshots_without_ddl(
         )
     assert defaults.snapshot() == before
     assert defaults.bindings.db.query("SELECT version_num FROM alembic_version") == [
-        {"version_num": HEAD}
+        {"version_num": "0011_binding_parameter_defaults"}
     ]
 
 

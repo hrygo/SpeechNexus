@@ -9,8 +9,9 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
     CommandRedactionResult,
@@ -84,14 +85,16 @@ class SubmissionLedger(ExecutionObservationLedger, Protocol):
     """Durable intent store; the adapter owns the transaction and row version.
 
     ``add`` is the ``create_submit`` transaction: it re-reads the authoritative lease rows
-    under lock, stores one intent plus the canonical request document, and fails rather than
-    returning a pre-existing intent, so a caller never dispatches for a record it did not
-    just create. Observations use a guarded, versioned transaction.
+    under lock, stores one intent plus the canonical request document, or returns a
+    matching existing intent as a replay, which must never dispatch. Observations use a
+    guarded, versioned transaction.
     """
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None: ...
 
-    def add(self, intent: SubmissionIntent, *, request_document: str) -> None: ...
+    def add(
+        self, intent: SubmissionIntent, *, request_document: str
+    ) -> SubmissionIntent | None: ...
 
     def record_stop(self, request: RecordStop) -> SubmissionIntent:
         """Append immutable evidence and close the execution in one transaction."""
@@ -216,6 +219,15 @@ class ExecutionRecoveryLedger(Protocol):
 
 class ExecutionFactLedger(SubmissionLedger, ExecutionRecoveryLedger, Protocol):
     """One execution fact needs the recorded intent, its stop evidence and its unknown state."""
+
+
+@runtime_checkable
+class DurableAbortLedger(Protocol):
+    """Optional durable abort capability, distinct from ordinary execution facts."""
+
+    def receive_abort(self, request: AbortExecutionRequest) -> None: ...
+
+    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None: ...
 
 
 class ExecutionQueryPort(Protocol):

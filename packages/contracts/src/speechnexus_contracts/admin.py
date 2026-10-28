@@ -56,5 +56,11 @@ def parse(
 ) -> models.ProfilePublishedRevision: ...
 
 
+@overload
+def parse(
+    name: Literal["ModelBindingActivationRequest"], value: Any
+) -> models.ModelBindingActivationRequest: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("admin", name, value)

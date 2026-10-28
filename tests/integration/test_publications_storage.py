@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -15,6 +14,7 @@ from alembic import command as migration
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
@@ -22,6 +22,7 @@ from sqlalchemy.pool import NullPool
 from speechnexus_backend.app import create_app
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
@@ -32,6 +33,7 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
     publication_grants,
 )
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,7 +65,7 @@ class Sandbox:
 
 
 @pytest.fixture
-def sandbox() -> Iterator[Sandbox]:
+def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
     url = os.environ.get(VARIABLE)
     if not url:
         pytest.skip("Configure an isolated PostgreSQL DSN; skip is not evidence")
@@ -76,10 +78,17 @@ def sandbox() -> Iterator[Sandbox]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
+    legacy_migration_test = request.node.name in {
+        "test_pronunciation_downgrade_refuses_existing_publications",
+        "test_pronunciation_downgrade_requires_read_committed",
+        "test_empty_pronunciation_downgrade_reverts_the_kind_constraint",
+    }
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
+            migration.upgrade(
+                config, "0023_publication_lifecycle" if legacy_migration_test else "head"
+            )
     finally:
         engine.dispose()
     admin = psycopg.connect(url, autocommit=True)
@@ -90,6 +99,10 @@ def sandbox() -> Iterator[Sandbox]:
         *binding_draft_grants(schema, role),
         *model_catalog_reader_grants(schema, role),
     ):
+        if legacy_migration_test and (
+            "speech_publication_installation" in grant or "speech_binding_publish_intents" in grant
+        ):
+            continue
         admin.execute(grant)
     pool = speech_pool(
         make_conninfo(url, user=role, password=PASSWORD), schema=schema, max_size=2, name="pub-test"
@@ -123,18 +136,34 @@ def publication(revision: int, revision_id: str, object_id: str = "binding-tts")
     )
 
 
+def _append(
+    sandbox: Sandbox, item: Publication, *, expected_current_revision: object = None
+) -> bool:
+    state = sandbox.admin.execute(
+        "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE"
+    ).fetchone()
+    assert state is not None
+    with sandbox.admin.transaction(), sandbox.admin.cursor(row_factory=dict_row) as cursor:
+        return append_publication(
+            cursor,
+            item,
+            expected_current_revision=expected_current_revision,
+            expected_catalog_revision=state[0],
+        )
+
+
 def test_append_is_insert_only_and_idempotent(sandbox: Sandbox) -> None:
     first = publication(1, "binding-rev-1")
 
-    assert sandbox.store.append(first) is True
-    assert sandbox.store.append(first) is False
+    assert _append(sandbox, first, expected_current_revision=None) is True
+    assert _append(sandbox, first) is False
     assert sandbox.store.get("binding", "binding-tts", 1) == first
 
 
 def test_other_document_cannot_take_a_published_revision(sandbox: Sandbox) -> None:
-    sandbox.store.append(publication(1, "binding-rev-1"))
+    _append(sandbox, publication(1, "binding-rev-1"), expected_current_revision=None)
 
-    assert sandbox.store.append(publication(1, "binding-rev-other")) is False
+    assert _append(sandbox, publication(1, "binding-rev-other")) is False
     assert sandbox.store.get("binding", "binding-tts", 1) == publication(1, "binding-rev-1")
 
 
@@ -143,9 +172,9 @@ def test_missing_publication_is_absent_not_defaulted(sandbox: Sandbox) -> None:
 
 
 def test_listing_is_ordered_and_scoped_by_kind(sandbox: Sandbox) -> None:
-    sandbox.store.append(publication(2, "binding-rev-2"))
-    sandbox.store.append(publication(1, "binding-rev-1"))
-    sandbox.store.append(Publication("profile", "profile-main", 1, "profile-rev-1", 1))
+    _append(sandbox, publication(2, "binding-rev-2"), expected_current_revision=None)
+    _append(sandbox, publication(1, "binding-rev-1"), expected_current_revision="2")
+    _append(sandbox, Publication("profile", "profile-main", 1, "profile-rev-1", 1))
 
     assert [(row.object_id, row.revision) for row in sandbox.store.list_kind("binding")] == [
         ("binding-tts", 1),
@@ -155,7 +184,7 @@ def test_listing_is_ordered_and_scoped_by_kind(sandbox: Sandbox) -> None:
 
 
 def test_runtime_role_cannot_rewrite_or_remove_publications(sandbox: Sandbox) -> None:
-    sandbox.store.append(publication(1, "binding-rev-1"))
+    _append(sandbox, publication(1, "binding-rev-1"), expected_current_revision=None)
     runtime = psycopg.connect(
         make_conninfo(sandbox.url, user=sandbox.role, password=PASSWORD), autocommit=True
     )
@@ -201,7 +230,7 @@ def create_binding(
             "1",
             "binding-rev-1",
             key,
-            json.dumps(definition, sort_keys=True),
+            encode_document(definition).decode("utf-8"),
             document,
             request,
             1_700_000_000_000_000,
@@ -268,8 +297,10 @@ def test_catalogue_lists_only_published_bindings(sandbox: Sandbox) -> None:
 
     assert sandbox.catalog.list_models() == []
 
-    sandbox.store.append(
-        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    _append(
+        sandbox,
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000),
+        expected_current_revision=None,
     )
     models = sandbox.catalog.list_models()
 
@@ -281,7 +312,11 @@ def test_catalogue_lists_only_published_bindings(sandbox: Sandbox) -> None:
 
 def test_publication_naming_another_document_does_not_list_a_model(sandbox: Sandbox) -> None:
     create_binding(sandbox.admin, DEFINITION)
-    sandbox.store.append(Publication("binding", "tts-quality", 1, "binding-rev-other", 1))
+    _append(
+        sandbox,
+        Publication("binding", "tts-quality", 1, "binding-rev-other", 1),
+        expected_current_revision=None,
+    )
 
     assert sandbox.catalog.list_models() == []
 
@@ -303,8 +338,16 @@ def test_catalogue_lists_one_model_at_the_latest_published_revision(sandbox: San
             },
         },
     )
-    sandbox.store.append(publication(1, "binding-rev-1", object_id="tts-quality"))
-    sandbox.store.append(publication(2, "binding-rev-2", object_id="tts-quality"))
+    _append(
+        sandbox,
+        publication(1, "binding-rev-1", object_id="tts-quality"),
+        expected_current_revision=None,
+    )
+    _append(
+        sandbox,
+        publication(2, "binding-rev-2", object_id="tts-quality"),
+        expected_current_revision="1",
+    )
 
     models = sandbox.catalog.list_models()
 
@@ -344,7 +387,7 @@ def create_binding_revision(
             revision,
             revision_id,
             key,
-            json.dumps(definition, sort_keys=True),
+            encode_document(definition).decode("utf-8"),
             document,
             request,
             1_700_000_000_000_000 + int(revision),
@@ -359,8 +402,10 @@ def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> 
     assert empty.catalog_revision == 1
     assert empty.models == ()
 
-    sandbox.store.append(
-        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    _append(
+        sandbox,
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000),
+        expected_current_revision=None,
     )
     populated = sandbox.catalog.snapshot()
 
@@ -379,8 +424,10 @@ def test_snapshot_exposes_the_monotonic_catalogue_revision(sandbox: Sandbox) -> 
 
 async def test_models_conditional_get_over_real_postgres_and_http(sandbox: Sandbox) -> None:
     create_binding(sandbox.admin, DEFINITION)
-    sandbox.store.append(
-        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    _append(
+        sandbox,
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000),
+        expected_current_revision=None,
     )
     app = create_app(settings=_http_settings(), catalogue=sandbox.catalog)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
@@ -412,8 +459,10 @@ async def test_models_conditional_get_over_real_postgres_and_http(sandbox: Sandb
                 "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-2"},
             },
         )
-        sandbox.store.append(
-            Publication("binding", "tts-quality", 2, "binding-rev-2", 1_700_000_000_000_002)
+        _append(
+            sandbox,
+            Publication("binding", "tts-quality", 2, "binding-rev-2", 1_700_000_000_000_002),
+            expected_current_revision="1",
         )
 
         changed = await http.get("/v1/models/tts-quality")
@@ -584,8 +633,10 @@ def test_reader_view_exposes_only_published_binding_revisions(sandbox: Sandbox) 
             "logical_model": "qwen3-tts-customvoice-v2",
         },
     )
-    sandbox.store.append(
-        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    _append(
+        sandbox,
+        Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000),
+        expected_current_revision=None,
     )
 
     reader = _create_reader(sandbox)
@@ -662,7 +713,7 @@ def _downgrade_pronunciation(sandbox: Sandbox, *, isolation_level: str | None = 
 
 def test_pronunciation_downgrade_refuses_existing_publications(sandbox: Sandbox) -> None:
     pronunciation = Publication("pronunciation", "pron-main", 1, "pron-rev-1", 1)
-    sandbox.store.append(pronunciation)
+    _append(sandbox, pronunciation)
 
     with pytest.raises(RuntimeError, match="Pronunciation publications require preservation"):
         _downgrade_pronunciation(sandbox)
@@ -698,7 +749,7 @@ async def test_retirement_advances_catalog_revision_and_etag(sandbox: Sandbox) -
     """AC1: a lifecycle tombstone changes the version without another publication row."""
     create_binding(sandbox.admin, DEFINITION)
     published = Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
-    assert sandbox.store.append(published) is True
+    assert _append(sandbox, published, expected_current_revision=None) is True
     before = sandbox.catalog.snapshot()
     assert before.catalog_revision == 2
     assert [model["id"] for model in before.models] == ["tts-quality"]
@@ -765,8 +816,8 @@ def test_retiring_the_newest_revision_does_not_fall_back_to_an_older_one(
     )
     older = publication(1, "binding-rev-1", object_id="tts-quality")
     newest = publication(2, "binding-rev-2", object_id="tts-quality")
-    assert sandbox.store.append(older) is True
-    assert sandbox.store.append(newest) is True
+    assert _append(sandbox, older, expected_current_revision=None) is True
+    assert _append(sandbox, newest, expected_current_revision="1") is True
     jobs = PostgresPublicJobs(sandbox.pool)
     resolved = jobs.latest_binding("tts-quality")
     assert resolved is not None
@@ -784,7 +835,7 @@ def test_evidence_and_idempotent_publication_do_not_advance_catalog_revision(
 ) -> None:
     create_binding(sandbox.admin, DEFINITION)
     published = Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
-    assert sandbox.store.append(published) is True
+    assert _append(sandbox, published, expected_current_revision=None) is True
     after_publication = sandbox.catalog.snapshot().catalog_revision
     assert after_publication == 2
 
@@ -797,7 +848,7 @@ def test_evidence_and_idempotent_publication_do_not_advance_catalog_revision(
     )
     assert sandbox.catalog.snapshot().catalog_revision == after_publication
 
-    assert sandbox.store.append(published) is False
+    assert _append(sandbox, published) is False
     assert sandbox.catalog.snapshot().catalog_revision == after_publication
 
 

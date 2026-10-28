@@ -36,7 +36,10 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Fencing token stale, gateway barrier fenced, instance generation mismatch, or conflicting submit intent.
+          description: |
+            Fencing token stale, gateway barrier fenced, instance generation
+            mismatch, conflicting submit intent, or the fixed binding revision
+            is disabled (`policy_or_resource_disabled`).
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -181,6 +184,60 @@ paths:
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "503":
+          $ref: "#/components/responses/ControlUnavailable"
+  /internal/v1/executions/{submit_intent_id}/abort-intents:
+    post:
+      operationId: acceptAbortIntent
+      summary: Persist and recover an original abort request
+      description: |
+        The gateway persists the exact request before claiming at most one bounded
+        engine dispatch. Replaying the identical request is safe, including after
+        an unknown response; a different intent for the same submit identity is a
+        conflict. A claimed dispatch is uncertain until authoritative stop evidence
+        exists and holds capacity in quarantine. A 200 response is the current
+        execution state, not proof of stop or release. Older gateways return 404;
+        clients must treat missing capability as unresolved and never fall back to
+        the legacy abort endpoint for a retry.
+      parameters:
+        - $ref: "#/components/parameters/SubmitIntentIdPath"
+        - $ref: "#/components/parameters/XRequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbortExecutionRequest"
+      responses:
+        "200":
+          description: The original intent was accepted or replayed; execution status is authoritative.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Original execution or endpoint capability was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "409":
+          description: Original abort request conflicts with the recorded intent or fencing identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionControlErrorResponse"
+        "422":
+          description: Abort request failed schema or identity validation.
           content:
             application/json:
               schema:

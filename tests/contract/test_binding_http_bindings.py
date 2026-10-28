@@ -141,7 +141,7 @@ def test_python_agrees_with_original_openapi_without_mutation(example: dict[str,
     assert value == example["value"]
 
 
-def test_binding_surface_selects_only_create_and_fixed_revision_read() -> None:
+def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() -> None:
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
@@ -151,13 +151,23 @@ def test_binding_surface_selects_only_create_and_fixed_revision_read() -> None:
     assert set(
         actual["paths"]["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"]
     ) == {"get"}
+    assert set(
+        actual["paths"][
+            "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements"
+        ]
+    ) == {"post"}
+    assert set(
+        actual["paths"][
+            "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations"
+        ]
+    ) == {"post"}
     assert all(set(item) == {"get"} for item in workspace_contract()["paths"].values())
     assert "/v1/nexus/admin/model-bindings" not in workspace_contract()["paths"]
     for unknown in ("publishModelBindingRevision", "listModelBindings", "queryBindingCommand"):
         with pytest.raises(ValueError, match="Unknown HTTP operation"):
             validate_request(unknown, {})
     actual["paths"].clear()
-    assert len(contract()["paths"]) == 2
+    assert len(contract()["paths"]) == 4
 
 
 @pytest.mark.parametrize("keyed", [True, False])

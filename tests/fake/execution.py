@@ -9,8 +9,10 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from threading import Lock
 
 from speechnexus_gateway.application.ingress import GatewayIngress
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
@@ -26,9 +28,14 @@ from speechnexus_gateway.domain.output_intervals import (
     OutputIntervalWrite,
 )
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
-from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
+from speechnexus_gateway.domain.recovery import (
+    ExecutionObservationConflictError,
+    ExecutionSnapshot,
+    MarkExecutionUnknown,
+)
 from speechnexus_gateway.domain.submission import (
     DispatchResult,
+    ExecutionErrorCode,
     ExecutionState,
     GatewayBarrierFencedError,
     InvalidExecutionRequestError,
@@ -57,6 +64,10 @@ class InMemorySubmissionLedger:
         self._stream_rates: dict[tuple[str, str, str], int] = {}
         self._instances: dict[tuple[str, int], InstanceIdentity] = {}
         self._now = now or (lambda: datetime.now(UTC))
+        self._abort_receipts: dict[str, AbortExecutionRequest] = {}
+        self._abort_claimed: set[str] = set()
+        self._abort_lock = Lock()
+        self.durable_abort_enabled = False
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
         stored = self._intents.get(submit_intent_id)
@@ -124,6 +135,39 @@ class InMemorySubmissionLedger:
         updated = request.apply(current, at=self._now())
         self._intents[request.submit_intent_id] = copy.deepcopy(updated)
         return updated
+
+    def receive_abort(self, request: AbortExecutionRequest) -> None:
+        with self._abort_lock:
+            current = self.get(request.submit_intent_id)
+            if current is None or (
+                current.identity.operation_id,
+                current.identity.attempt_id,
+                current.identity.fencing_token,
+            ) != (request.operation_id, request.attempt_id, request.fencing_token):
+                raise InvalidExecutionRequestError("unknown abort identity")
+            original = self._abort_receipts.get(request.submit_intent_id)
+            if original is not None and original != request:
+                raise ExecutionObservationConflictError("abort identity has another intent")
+            self._abort_receipts[request.submit_intent_id] = request
+
+    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+        with self._abort_lock:
+            current = self.get(request.submit_intent_id)
+            if current is None or self._abort_receipts.get(request.submit_intent_id) != request:
+                raise ExecutionObservationConflictError("abort receipt is absent")
+            if (
+                request.submit_intent_id in self._abort_claimed
+                or current.execution_state.is_terminal
+            ):
+                return None
+            self._abort_claimed.add(request.submit_intent_id)
+            if current.execution_state is ExecutionState.UNKNOWN_QUARANTINED:
+                return current
+            return self.mark_execution_unknown(
+                MarkExecutionUnknown.for_intent(
+                    current, reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED, at=self._now()
+                )
+            )
 
     def list_unfinished(
         self, *, gateway_id: str, host_node_id: str, limit: int

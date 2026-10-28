@@ -252,7 +252,10 @@ curl -fsS http://127.0.0.1:59000/minio/health/live
 
 ## 5. 迁移到唯一 head
 
-迁移使用独立 DDL 身份，不能用 `sn_api` / `sn_gateway`：
+迁移使用独立 DDL 身份，不能用 `sn_api` / `sn_gateway`。升级前须停止或隔离旧版本
+的 publication 和 lifecycle 写者，直到迁移、授权与新版本切换完成；否则旧写者仍可能
+绕过 head 或 disable 意图。`0025` 会校验并回填旧 0023 的 disable 事件；遇到历史
+事实不一致或表结构异常时事务回滚，必须人工核查，不能删除历史或跳过校验：
 
 ```bash
 "${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
@@ -266,7 +269,7 @@ docker exec speechnexus-postgres-1 psql -U speechnexus -d speechnexus -Atc \
   'select version_num from speech.alembic_version'
 ```
 
-本候选的预期值为 `0021_publication_evidence`。若容器名不同，先用
+本候选的预期值为 `0027_gateway_abort_intents`。若容器名不同，先用
 `"${COMPOSE[@]}" ... ps --format json` 或 `docker ps` 查实际名称；不要跳过或
 手工修改版本表。
 
@@ -453,3 +456,89 @@ http=200
 非 owner 角色连接、探针响应和一次性注册命令。它不覆盖：真实引擎 ASR、公开 TTS、
 异步 Job、G5 物理拓扑、模型质量、GPU 容量、真实内容网络或最终 Gate。把这些分别
 取证，不能用本文件的 `/health` 成功替代。
+
+## Binding disable worker opt-in
+
+The base Compose topology does not start the worker. Enable the
+`binding-disable` profile to process durable disable intents. A disabled receipt
+only confirms the selection boundary and durable intent, and reports cleanup as
+`pending_or_unknown` even if the worker is offline. Readiness of API or gateway
+does not prove that a disable was processed or that capacity was released.
+
+Apply the current unique migration head with the separate migration identity
+before changing runtime grants; determine and check the head from the actual
+release, not the historical value shown earlier in this document. Provision two
+distinct non-owner LOGIN roles, here `sn_disable_scan` and `sn_disable_settle`,
+in the same PostgreSQL database as `sn_api` and `sn_gateway`. Neither role may
+inherit another runtime or owner role, own application tables, create in the
+schema, or have privileges beyond its declared port. Give the scanner only
+`disable_coordinator_grants("speech", "sn_disable_scan")`; give the settlement
+role only `disable_settlement_grants("speech", "sn_disable_settle")`.
+The worker checks both login and effective identities and that the two roles
+are distinct and connect to the same database.
+
+Create these roles through the deployment's approved secret management process.
+The following optional grant script uses the owner DSN prepared in section 6;
+it does not create roles or handle their passwords. Run it only against the
+intended deployment database after reviewing the release's grant functions.
+It does not create or grant a lifecycle writer role.
+
+```bash
+# SN_ADMIN_DSN is supplied through the authorized secret channel in section 6.
+uv run python - <<'PYROLE'
+import os
+import psycopg
+from speechnexus_backend.speech.infrastructure.admission_postgres import binding_disable_admission_grants
+from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
+    disable_coordinator_grants, disable_settlement_grants,
+)
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants, gateway_binding_barrier_grants,
+)
+
+with psycopg.connect(os.environ["SN_ADMIN_DSN"]) as conn:
+    for grant in (
+        *disable_coordinator_grants("speech", "sn_disable_scan"),
+        *disable_settlement_grants("speech", "sn_disable_settle"),
+        *gateway_abort_grants("speech", "sn_gateway"),
+        *gateway_binding_barrier_grants("speech", "sn_gateway"),
+        *binding_disable_admission_grants("speech", "sn_api"),
+    ):
+        conn.execute(grant)
+print("disable worker roles and existing runtime port grants installed")
+PYROLE
+```
+
+If the lifecycle API is enabled, separately provision its existing non-owner
+identity using `binding_lifecycle_grants` and configure
+`SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL`; do not grant lifecycle writes to
+either new role. The scanner and settlement DSNs go in the deployment's private
+configuration as `SPEECHNEXUS_DISABLE_DATABASE_URL` and
+`SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL`. They must refer to the distinct
+roles and the same database. The worker uses the gateway/node identifiers and
+component credential already configured for the gateway.
+
+After the grants and new gateway image are deployed, enable the worker:
+
+```bash
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile binding-disable up -d --build gateway binding-disable-worker
+"${COMPOSE[@]}" --env-file deploy/compose.env -f deploy/compose.yaml \
+  --profile binding-disable ps gateway binding-disable-worker
+```
+
+`network_mode: service:gateway` joins the gateway's complete network namespace;
+the worker uses `http://127.0.0.1:8010` inside it. This is not a separate
+network isolation boundary. Use a separately authenticated TLS deployment for
+remote gateways. Worker exit or restart loops require operator attention. The
+worker currently has no readiness or heartbeat endpoint; a running container
+and gateway `/readyz` do not prove successful processing.
+
+The worker namespace is tied to the particular gateway container. When replacing
+the gateway, explicitly recreate the worker against the new gateway after it is
+healthy, then verify its actual network namespace and resumed scans. Compose's
+`depends_on.restart` handles explicit Compose updates only; daemon restarts and
+external recreation must be separately supervised. Preserve the durable intent
+ledger during rollback; stopping the worker pauses cleanup and does not undo a
+disable or establish stop evidence. Existing unknown executions retain their
+capacity until the existing evidence rules permit release.

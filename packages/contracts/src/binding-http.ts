@@ -4,7 +4,11 @@ import { createHttpValidator } from "./http-runtime.mjs";
 import bundle from "./speechnexus_contracts/binding-http.schema.json" with { type: "json" };
 import type { paths } from "./admin.generated";
 export { ContractValidationError } from "./errors.mjs";
-export type HttpOperation = "createModelBindingDraft" | "getModelBindingRevision";
+export type HttpOperation =
+  | "createModelBindingDraft"
+  | "getModelBindingRevision"
+  | "retireModelBindingRevision"
+  | "activatePublishedModelBindingRevision";
 type HttpPaths = {
   "/v1/nexus/admin/model-bindings": Pick<
     paths["/v1/nexus/admin/model-bindings"],
@@ -13,6 +17,14 @@ type HttpPaths = {
   "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}": Pick<
     paths["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"],
     "parameters" | "get"
+  >;
+  "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements": Pick<
+    paths["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements"],
+    "parameters" | "post"
+  >;
+  "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations": Pick<
+    paths["/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations"],
+    "parameters" | "post"
   >;
 };
 const validator = createHttpValidator(bundle);

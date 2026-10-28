@@ -19,6 +19,7 @@ from speechnexus_backend.asset_runtime import AssetRuntime
 from speechnexus_backend.binding_runtime import (
     BindingAdminReaderRuntime,
     BindingDefaultsRuntime,
+    BindingLifecycleRuntime,
     BindingRuntime,
 )
 from speechnexus_backend.job_runtime import JobRuntime
@@ -59,6 +60,10 @@ from speechnexus_backend.speech.interfaces.http.asset_ingress import AssetIngres
 from speechnexus_backend.speech.interfaces.http.assets import create_asset_router
 from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
 from speechnexus_backend.speech.interfaces.http.binding_ingress import BindingIngress
+from speechnexus_backend.speech.interfaces.http.binding_lifecycle import (
+    BindingLifecycle,
+    create_binding_lifecycle_router,
+)
 from speechnexus_backend.speech.interfaces.http.bindings import create_binding_router
 from speechnexus_backend.speech.interfaces.http.health import create_health_router
 from speechnexus_backend.speech.interfaces.http.job_errors import job_error
@@ -145,6 +150,7 @@ def create_app(
     bindings: BindingDrafts | None = None,
     binding_defaults: BindingDefaultDrafts | None = None,
     binding_publication_facts: BindingPublicationFacts | None = None,
+    binding_lifecycle: BindingLifecycle | None = None,
     pronunciations: PronunciationReader | None = None,
     catalogue: ModelCatalogue | None = None,
     jobs: PublicJobs | None = None,
@@ -277,6 +283,18 @@ def create_app(
             return binding_publication_facts
         return binding_admin_runtime.provider if binding_admin_runtime is not None else None
 
+    binding_lifecycle_runtime = (
+        BindingLifecycleRuntime(resolved_settings)
+        if binding_lifecycle is None
+        and resolved_settings.binding_lifecycle_database_url is not None
+        else None
+    )
+
+    def get_binding_lifecycle() -> BindingLifecycle | None:
+        if binding_lifecycle is not None:
+            return binding_lifecycle
+        return binding_lifecycle_runtime.provider if binding_lifecycle_runtime is not None else None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as resources:
@@ -297,6 +315,9 @@ def create_app(
             if binding_admin_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, binding_admin_runtime.close)
                 await run_in_threadpool(binding_admin_runtime.open)
+            if binding_lifecycle_runtime is not None:
+                resources.push_async_callback(run_in_threadpool, binding_lifecycle_runtime.close)
+                await run_in_threadpool(binding_lifecycle_runtime.open)
             if job_runtime is not None:
                 resources.push_async_callback(run_in_threadpool, job_runtime.close)
                 await run_in_threadpool(job_runtime.open)
@@ -353,7 +374,7 @@ def create_app(
         max_bytes=resolved_settings.binding_receive_max_bytes,
         concurrency=resolved_settings.binding_receive_concurrency,
         receive_timeout_seconds=resolved_settings.binding_receive_timeout_seconds,
-        is_enabled=lambda: get_bindings() is not None,
+        is_enabled=lambda: get_bindings() is not None or get_binding_lifecycle() is not None,
         allowed_hosts=resolved_settings.asset_allowed_hosts,
         allowed_origins=resolved_settings.asset_allowed_origins,
     )
@@ -388,6 +409,7 @@ def create_app(
             producer=producer,
         )
     )
+    app.include_router(create_binding_lifecycle_router(get_binding_lifecycle))
 
     @app.exception_handler(HTTPException)
     async def asset_http_error(request: Request, error: HTTPException) -> Response:

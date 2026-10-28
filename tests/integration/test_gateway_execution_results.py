@@ -35,7 +35,6 @@ from tests.integration.test_gateway_stop_evidence import stop_ledger as stop_led
 from tests.integration.test_production_jobs import ROOT, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
-from tests.support.migrations import HEAD
 from tests.unit.gateway.test_file_asr import Recognizer
 
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
@@ -362,10 +361,10 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
         "UPDATE submit_intents SET staging_output_object_key = 'synthetic-legacy'"
     )
     before = sandbox.admin.execute("SELECT * FROM submit_intents").fetchall()
-    sandbox.upgrade()
-    sandbox.upgrade()
+    sandbox.upgrade("0012_execution_results")
+    sandbox.upgrade("0012_execution_results")
     after = sandbox.admin.execute("SELECT * FROM submit_intents").fetchall()
-    assert sandbox.version() == HEAD
+    assert sandbox.version() == "0012_execution_results"
     assert after[0].pop("staging_result_document") is None
     assert after == before
     # An unreadable old receipt is still history: migration must not discard it.
@@ -375,11 +374,11 @@ def test_additive_migration_preserves_legacy_rows_and_refuses_result_history_los
         sandbox.config.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match=r"history.*preservation"):
             migration.downgrade(sandbox.config, "0011_binding_parameter_defaults")
-    assert sandbox.version() == HEAD
+    assert sandbox.version() == "0012_execution_results"
     assert sandbox.admin.execute("SELECT * FROM submit_intents").fetchall() == preserved
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0012_execution_results")], indirect=True)
 def test_downgrade_waits_for_in_flight_result_and_preserves_committed_receipt(
     foundation: Foundation,
     recovery_ledger: Ledger,
@@ -429,4 +428,6 @@ def test_downgrade_waits_for_in_flight_result_and_preserves_committed_receipt(
         with pytest.raises(RuntimeError, match=r"history.*preservation"):
             pending.result(timeout=5)
     assert recovery_ledger.get(saved.identity.submit_intent_id) == saved
-    assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0012_execution_results"}
+    ]

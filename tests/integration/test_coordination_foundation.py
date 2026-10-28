@@ -254,6 +254,16 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             # 0022: one transactional catalogue version and visibility tombstones.
             "speech_catalog_state",
             "speech_publication_retirements",
+            # 0023: explicit publication selection and append-only lifecycle.
+            "speech_publication_heads",
+            "speech_publication_lifecycle_events",
+            "speech_binding_disable_intents",
+            # Publication and disable intents are durable private evidence.
+            "speech_publication_installation",
+            "speech_binding_publish_intents",
+            "speech_binding_disable_targets",
+            "speech_binding_disable_abort_intents",
+            "gateway_abort_intents",
         }
         if db.dialect == "postgresql"
         else set()

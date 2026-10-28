@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from psycopg.conninfo import conninfo_to_dict
+from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -51,6 +52,14 @@ def test_full_coverage_combines_original_python_gate_and_all_real_pg_tests(tmp_p
         assert command.count(path) == 1
     for path in DRIVER.WORKBENCH_PG_TESTS + DRIVER.WORKBENCH_RUNTIME_TESTS:
         assert command.count(path) == 1
+    for path in (
+        "tests/integration/test_binding_publication_evidence.py",
+        "tests/integration/test_binding_lifecycle_pg.py",
+        "tests/integration/test_binding_disable_intent_pg.py",
+    ):
+        assert command.count(path) == 1
+        assert path not in DRIVER.build_pytest_command()
+        assert path not in DRIVER.build_pytest_command(coverage=True)
     assert "--cov" in command and "--cov-report=term-missing" in command
     assert "--durations=20" in command
     assert f"--cov-report=json:{tmp_path / 'cov.json'}" in command
@@ -319,3 +328,30 @@ def test_private_pg_environment_keeps_external_databases_and_minio(tmp_path: Pat
         "dbname": "speechnexus_workbench_test",
         "user": "workbench_test_owner",
     }
+
+
+def test_full_coverage_speech_dsn_targets_only_its_private_socket(tmp_path: Path) -> None:
+    socket = tmp_path / "socket with # space"
+    env = DRIVER.private_pg_environment(
+        {
+            "SPEECHNEXUS_TEST_DATABASE_URL": "postgresql://external/shared",
+            "SPEECHNEXUS_TEST_MYSQL_URL": "mysql://external/test",
+            "PGHOSTADDR": "external",
+        },
+        sockets=socket,
+        full_coverage=True,
+    )
+    dsn = env["SPEECHNEXUS_TEST_DATABASE_URL"]
+    assert conninfo_to_dict(dsn) == {
+        "host": str(socket),
+        "port": "55439",
+        "dbname": "speechnexus_workbench_test",
+        "user": "workbench_test_owner",
+    }
+    sqlalchemy_url = make_url(dsn.replace("postgresql://", "postgresql+psycopg://", 1))
+    assert sqlalchemy_url.username == "workbench_test_owner"
+    assert sqlalchemy_url.database == "speechnexus_workbench_test"
+    assert sqlalchemy_url.host is None
+    assert sqlalchemy_url.query == {"host": str(socket), "port": "55439"}
+    assert env["SPEECHNEXUS_TEST_MYSQL_URL"] == "mysql://external/test"
+    assert "PGHOSTADDR" not in env

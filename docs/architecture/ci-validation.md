@@ -32,7 +32,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
 | `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
-| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 测试，合并覆盖率、媒体工具链及 Python 包构建 |
+| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，合并覆盖率、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；后两片额外运行浏览器与 Node HTTP 消费者 |
 | `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
@@ -43,7 +43,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。
 
-Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行原完整非集成测试和 Workbench PG／Runtime 全集。各进程独占临时 PG、Unix socket 与 coverage 文件；不连接 runner 的系统数据库。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
+Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行原完整非集成测试、Workbench PG／Runtime 全集，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
 每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，再显式组合全部分片并按 `pyproject.toml` 原全项目 **80%** 门槛执行 `coverage report`。缺片、失败、跳过、收集限定或仅有局部高覆盖率均不能放行；`PYTEST_ADDOPTS` 不能缩小集合。执行证据校验通过后，复制各片原始覆盖数据并生成组合产物，以 `workbench-pg-full-coverage` 上传；覆盖率不足仍保留这些产物并失败。若测试或执行证据校验失败，上传日志和已生成的分片／生命周期／汇总报告，不生成合格的组合产物。直接运行原 `workbench-pg-probe.py --full-coverage` 仍是单次 pytest 的全项目 80%；`--coverage` 仍是独立的 C 层 90% 检查。
 
@@ -167,7 +167,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 曾尝试固定 v8.0.2 的 `github-token` 公开 REST 路径并限定当前仓库/运行；[运行 40353154527](https://github.com/hrygo/SpeechNexus/actions/runs/40353154527) 的六份文件同样全部成功、摘要匹配，仍在完成日志后挂住。因此 REST 接线没有解决退出异常，不能作为有效修复；故障发生于下载动作完成后的进程生命周期，具体未释放资源未确定。
 
-正式汇总改用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断，只接受精确的六个分片名称；三个并发下载进程各限 15 秒，令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限。全部下载及归档校验成功后才发布报告目录，既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时仍为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
+正式汇总改用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断，只接受精确的六个分片名称；三个并发下载进程每次限 15 秒；进程失败或超时最多尝试三次，每次使用独立临时文件，完整性校验失败不放行；令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限。全部下载及归档校验成功后才发布报告目录，既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时仍为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
 
 本机只读取上述已结束运行的六份历史制品（单份 27,782–47,262 bytes），全部大小及 SHA-256 匹配，正常退出；继续运行原检查器，确认 **1807 collected / 1785 passed / 22 existing PG-only parameters skipped**，同一合并提交 `2d755ce473c000e7fc613b2fa712b7cf77c4c683`。这验证了真实 API、归档格式和证据检查链，没有重跑数据库或业务测试；Linux 托管效果仍需新提交验收。新增 12 项小型合成检查覆盖缺片、重复、错误运行、摘要、大小、过期、分页截断、路径与超时；超限回归通过缩小测试内限制实现，不构造大文件。
 

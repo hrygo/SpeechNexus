@@ -25,6 +25,7 @@ from tests.unit.backend.test_health import _settings
 from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.public_jobs import PublicJobs
 from speechnexus_backend.speech.domain.public_jobs import PublicJobConflictError
+from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.job_schema import (
     job_dispatch_grants,
     job_runtime_grants,
@@ -35,6 +36,7 @@ from speechnexus_backend.speech.infrastructure.public_job_submission_schema impo
     public_job_submission_grants,
 )
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
+from speechnexus_backend.speech.infrastructure.publications_sql import append_publication
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -85,12 +87,14 @@ def _seed_binding(admin: psycopg.Connection[dict[str, Any]]) -> None:
         "VALUES ('tts-quality', '1', 'binding-rev-1', %s, 1, %s, %s, %s, 1)",
         (DIGEST, json.dumps(definition), DIGEST, DIGEST),
     )
-    admin.execute(
-        "INSERT INTO speech_publications "
-        "(kind, object_id, revision, revision_id, published_at_us) "
-        "VALUES ('binding', 'tts-quality', '1', 'binding-rev-1', 1), "
-        "('voice', 'voice-vivian', '2', 'voice-rev-2', 2)"
-    )
+    with admin.transaction(), admin.cursor() as cursor:
+        assert append_publication(
+            cursor,
+            Publication("binding", "tts-quality", 1, "binding-rev-1", 1),
+            expected_current_revision=None,
+            expected_catalog_revision=1,
+        )
+        assert append_publication(cursor, Publication("voice", "voice-vivian", 2, "voice-rev-2", 2))
 
 
 @pytest.fixture
@@ -126,7 +130,7 @@ def jobs_db() -> Iterator[JobSandbox]:
             *job_dispatch_grants(schema, role),
             *public_job_submission_grants(schema, role),
             f"GRANT SELECT ON speech_workspaces, speech_publications, "
-            f"speech_catalog_state, speech_publication_retirements, "
+            f"speech_publication_heads, speech_catalog_state, speech_publication_retirements, "
             f"speech_binding_revisions, speech_assets, speech_pronunciation_revisions "
             f'TO "{role}"',
         ):

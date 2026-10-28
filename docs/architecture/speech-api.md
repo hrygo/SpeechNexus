@@ -140,6 +140,8 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
+模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；退役只影响后续选择，在途 Job 保持准入时固化的有效配置。voice 目前只有退役契约与底座墓碑，生产发布/激活路径仍待补齐，不能把 binding 的验证结果外推为 voice 资格。
+
 模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
 
 场景预设采用同样的不可变 revision / 当前指针分离规则。`POST /v1/nexus/admin/profiles` 以 `expected_latest_revision` 原子分配下一个只读 draft revision；draft 可以没有验证记录，但公共列表与公共 revision 查询不可见。`POST .../revisions/{revision}/publications` 必须提交与目标 revision 对应的 `ProfileValidation`，服务端重新核对参数域、能力组合、override 范围和 production 资格后，才写 `published_at` 并切换当前指针。回滚使用 `.../activations` 激活既有 published revision，不复制或改写 revision；退役 / 禁用使用 `.../retirements`，当前 revision 退役后指针为空，不静默选择另一版本。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。

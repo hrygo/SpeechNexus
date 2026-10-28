@@ -12,7 +12,8 @@
     "ModelBindingCreateRequest",
     "ProfilePublicationRequest",
     "ProfileActivationRequest",
-    "ProfilePublishedRevision"
+    "ProfilePublishedRevision",
+    "ModelBindingActivationRequest"
   ],
   "$defs": {
     "WorkspaceCreateRequest": {
@@ -1911,6 +1912,23 @@
         }
       ],
       "unevaluatedProperties": false
+    },
+    "ModelBindingActivationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_current_revision"],
+      "properties": {
+        "expected_current_revision": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   },
   "anyOf": [
@@ -1943,6 +1961,9 @@
     },
     {
       "$ref": "#/$defs/ProfilePublishedRevision"
+    },
+    {
+      "$ref": "#/$defs/ModelBindingActivationRequest"
     }
   ]
 }

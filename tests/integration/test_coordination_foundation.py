@@ -254,6 +254,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             # 0022: one transactional catalogue version and visibility tombstones.
             "speech_catalog_state",
             "speech_publication_retirements",
+            # 0023: explicit publication selection and append-only lifecycle.
+            "speech_publication_heads",
+            "speech_publication_lifecycle_events",
         }
         if db.dialect == "postgresql"
         else set()

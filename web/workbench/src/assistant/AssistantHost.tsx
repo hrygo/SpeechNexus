@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { WorkbenchClient, type Contracts } from "../manuscripts/workbench-client";
 import { AssistantSession } from "./assistant-session";
 import { assistantProblems as problems, availabilityCopy, designState } from "./copy";
-import { catalogueCopy, catalogueRows } from "../voices/catalogue-state";
 import "./assistant.css";
 
 export function AssistantHost({
@@ -52,7 +51,7 @@ export function AssistantHost({
   const capability = designState(state.availability);
   const turn = state.turn;
   const requestKey = key.trim().length >= 8 ? key.trim() : "";
-  const voices = catalogueRows(state.catalogue);
+  const voices = state.voices?.data ?? [];
   const selected = voices.find((voice) => `${voice.voice_id}@${voice.revision}` === voiceKey);
   const submitDisabled =
     locked ||
@@ -155,20 +154,7 @@ export function AssistantHost({
               ))}
             </select>
           </label>
-          {state.catalogue.kind === "loading" && <p aria-busy="true">{catalogueCopy.loading}</p>}
-          {state.catalogue.kind === "ready" && voices.length === 0 && <p>{catalogueCopy.empty}</p>}
-          {state.catalogue.kind === "problem" && (
-            <aside aria-label="音色目录不可用">
-              <p role="alert">{catalogueCopy[state.catalogue.problem]}</p>
-              <button
-                type="button"
-                disabled={state.busy}
-                onClick={() => void session.readCatalogue()}
-              >
-                {catalogueCopy.retry}
-              </button>
-            </aside>
-          )}
+          {voices.length === 0 && <p>当前部署尚未发布可用音色：语音底座发布后此处才会出现选项。</p>}
           <label>
             问题
             <textarea

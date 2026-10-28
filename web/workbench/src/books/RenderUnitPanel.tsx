@@ -6,13 +6,6 @@ import {
   type Contracts,
   type WorkbenchClient,
 } from "../manuscripts/workbench-client";
-import {
-  catalogueCopy,
-  catalogueProblemOf,
-  catalogueRows,
-  type CatalogueProblem,
-  type CatalogueRead,
-} from "../voices/catalogue-state";
 import "./books.css";
 
 const problems = {
@@ -26,7 +19,12 @@ const problems = {
 
 export type RenderUnitProblem = keyof typeof problems;
 
-export type VoiceProblem = CatalogueProblem;
+const voiceProblems = {
+  unavailable: "音色目录不可用：当前部署未配置语音底座，或底座未提供已发布音色。",
+  unknown: "音色目录读取结果未确认，请稍后重试。",
+} as const;
+
+export type VoiceProblem = keyof typeof voiceProblems;
 
 const revisionProblems = {
   missing: "该音色修订不存在（404）。",
@@ -195,8 +193,7 @@ function ChapterUnits({
     };
   }, [client, generating]);
 
-  const [catalogue, setCatalogue] = useState<CatalogueRead>({ kind: "unread" });
-  const voices = catalogueRows(catalogue);
+  const [voices, setVoices] = useState<Contracts["VoiceSummary"][] | null>(null);
   const [createProblem, setCreateProblem] = useState<RenderUnitProblem | null>(null);
   const [create, setCreate] = useState({
     ordinal: "",
@@ -210,6 +207,7 @@ function ChapterUnits({
   });
   const setCreateField = (field: keyof typeof create, value: string) =>
     setCreate((current) => ({ ...current, [field]: value }));
+  const [voiceProblem, setVoiceProblem] = useState<VoiceProblem | null>(null);
   // A successful create clears the fields, which disables the submit button and would drop
   // keyboard focus to the document; it goes back to the first field instead.
   const firstField = useRef<HTMLInputElement>(null);
@@ -492,17 +490,23 @@ function ChapterUnits({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      setCatalogue({ kind: "loading" });
       try {
         const page = await client.voices();
         if (cancelled) return;
-        setCatalogue({ kind: "ready", voices: page.data });
+        setVoices(page.data);
+        setVoiceProblem(null);
       } catch (error) {
-        // An absent catalogue is reported as absent: the panel never fills the picker
-        // with invented voices to hide a missing or unconfigured speech base, and never
-        // lets a failed read pass for a deployment that published nothing.
         if (cancelled) return;
-        setCatalogue({ kind: "problem", problem: catalogueProblemOf(error) });
+        // An absent catalogue is reported as absent: the panel never fills the picker
+        // with invented voices to hide a missing or unconfigured speech base.
+        setVoices(null);
+        setVoiceProblem(
+          error instanceof WorkbenchResponseError
+            ? error.status >= 500
+              ? "unavailable"
+              : "unknown"
+            : "unavailable",
+        );
       }
     })();
     return () => {
@@ -566,15 +570,10 @@ function ChapterUnits({
         </p>
       )}
       {notice !== null && <p className="books-notice">{notice}</p>}
-      {catalogue.kind === "loading" && <p aria-busy="true">{catalogueCopy.loading}</p>}
-      {catalogue.kind === "ready" && voices.length === 0 && <p>{catalogueCopy.empty}</p>}
-      {catalogue.kind === "problem" && (
-        <aside className="books-problem" aria-label="音色目录不可用">
-          <p role="alert">{catalogueCopy[catalogue.problem]}</p>
-          <button type="button" disabled={busy} onClick={() => setReload((value) => value + 1)}>
-            {catalogueCopy.retry}
-          </button>
-        </aside>
+      {voiceProblem !== null && (
+        <p className="books-problem" role="alert">
+          {voiceProblems[voiceProblem]}
+        </p>
       )}
       <form
         aria-label="音色修订核对"
@@ -665,7 +664,7 @@ function ChapterUnits({
               onChange={(event) => setCreateField("text", event.target.value)}
             />
           </label>
-          {voices.length > 0 && (
+          {voices !== null && voices.length > 0 && (
             <label>
               从已发布音色填入
               <select
@@ -892,7 +891,7 @@ function ChapterUnits({
                         <option value={voiceKey(draft.voiceId, draft.voiceRevision)}>
                           {`当前固定：${voiceKey(draft.voiceId, draft.voiceRevision)}`}
                         </option>
-                        {voices
+                        {(voices ?? [])
                           .filter(
                             (voice) =>
                               voiceKey(voice.voice_id, voice.revision) !==

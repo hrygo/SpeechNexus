@@ -68,13 +68,22 @@ def create_model_router(
             return model_error("model_catalogue_unavailable", request_id)
         try:
             snapshot = await run_in_threadpool(catalogue.snapshot)
+            # The catalogue is small and published-only; filtering keeps one source of truth.
+            entry = next((item for item in snapshot.models if item.get("id") == model), None)
+            if entry is None:
+                return model_error("model_not_found", request_id)
+            etag = catalogue_etag(
+                kind="model",
+                policy=policy,
+                workspace_id=policy.workspace_id,
+                catalog_revision=snapshot.catalog_revision,
+                payload=entry,
+            )
         except PublicationUnavailableError, TypeError, ValueError:
             return model_error("model_catalogue_unavailable", request_id)
-        # The catalogue is small and published-only; filtering keeps one source of truth.
-        for entry in snapshot.models:
-            if entry.get("id") == model:
-                return JSONResponse(entry, headers={"Cache-Control": "no-store"})
-        return model_error("model_not_found", request_id)
+        if matches_if_none_match(request.headers.get("if-none-match"), etag):
+            return Response(status_code=304, headers={**_CACHE_HEADERS, "ETag": etag})
+        return JSONResponse(entry, headers={**_CACHE_HEADERS, "ETag": etag})
 
     @router.get(_CAPABILITIES, operation_id="getCapabilities", tags=["capabilities"])
     async def get_capabilities(request: Request, workspace_id: str | None = None) -> Response:

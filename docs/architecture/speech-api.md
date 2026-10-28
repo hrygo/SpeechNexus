@@ -65,6 +65,8 @@ SpeechCommand
 | `WS /v1/realtime?model={model}` | OpenAI SDK 兼容的 transcription-only 模式；服务端按部署默认值建立会话，不启用 TTS / `nexus.*` 能力 |
 | `GET /v1/nexus/voices`、`GET /v1/nexus/voices/{voice_id}/revisions/{revision}` | 部署共享音色目录与版本详情，含兼容绑定与校验事实 |
 
+`GET /v1/models`、`GET /v1/models/{model}` 与 `GET /v1/nexus/capabilities` 三个端点都支持条件请求：`200` 携带基于部署、工作空间、catalog 与功能策略 revision 及响应事实计算的 `ETag`，`If-None-Match` 按 RFC 9110 弱比较命中时返回无 body 的 `304`；`404` / `503` 等错误路径不受影响。
+
 增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。

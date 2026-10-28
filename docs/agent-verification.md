@@ -29,6 +29,7 @@ pnpm install --frozen-lockfile
 | 协调事务、DDL 或权限 | `make coordination-test` 与 `make integration-test`；先读[目录规则](../tests/integration/AGENTS.md)及[隔离说明](../tests/integration/README.md)，保留双库行为与并发证据 |
 | 部署配置 | `make stack-config` 及受影响镜像或服务的针对性检查 |
 | 完整本机验证 | 条件满足时运行 `make verify`；其入口是 `scripts/dev-env/verify.sh`，CI 调度与范围见 [CI 规则](architecture/ci-validation.md)及 [ci.yml](../.github/workflows/ci.yml) |
+| 发布候选 / 上线前检查 | `./scripts/dev-env/release-preflight.sh`；默认只读，C5/C6 需 `--allow-write`，证据范围与 SKIP 条件见[上线前检查脚本](operations/release-preflight.md) |
 
 格式检查不代替构建，schema 语法不代替语义验证，生成产物不代替生产消费者接入。复用仍有效的验证结果；相关改动、失败或未解疑点才需要扩大或重复验证。
 

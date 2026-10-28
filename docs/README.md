@@ -8,6 +8,7 @@
 | [项目经理接管基线](plans/2026-10-26-project-manager-baseline.md) | 接管时点的组合、能力/缺口、决策队列、三队交接与证据接收快照 |
 | [Agent 工作指南](agent-guide.md) | 根/目录规则、项目技能、任务入口与交付边界 |
 | [Agent 验证指南](agent-verification.md) | 按改动选择检查、锁定依赖、隔离服务前置与证据范围 |
+| [上线前检查脚本](operations/release-preflight.md) | C0–C12 可执行门禁、默认只读边界、`--only` 用法与 SKIP 条件 |
 | [产品与架构设计](speechnexus-product-architecture.md)                                               | 产品范围、AdminUI / 工作台、领域与模块、场景预设、共享访问、部署与验收          |
 | [整体技术方案](architecture/technical-blueprint.md)                                                 | 技术基线、内部协议、执行配方、事务 / 迁移、Web / 内网 LLM、观测、发布与工程交接 |
 | [部署单元与平台规划](architecture/deployment-units.md) | 独立服务、平台与节点边界、当前入口/缺口及跨平台和多机验收 |
@@ -33,7 +34,6 @@
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含公开转写实测 504（worker 只登记 staging、不写终态；120s 是 API 轮询）、11.2.2 的人工 `record_stop` 字段/命令与限制，以及随附 ASR 定义缺真实容量/资格证据的边界 |
-| [对账恢复 runbook](operations/reconciliation-recovery.md) | `reconciliation_required` / `unknown_quarantined` 的只读查证、分支判定、受支持恢复入口缺口、升级路径与当前两条 unknown 的实测结论 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |
 | [整体实施跟踪矩阵](plans/2026-10-23-implementation-tracking.md)                                     | GitHub 总控 #6、6 Epic、25 工作包与 6 Gate 的状态、依赖和证据矩阵               |

@@ -1095,9 +1095,9 @@ revision；304 只对当前 ETag 生效。**没有证明**：HTTP draft → 目�
 | `uv run speechnexus-gateway` 找不到命令 / `.venv/bin` 里没有 `speechnexus-*` | 仓库根是 `package = false` 的 uv workspace；普通 `uv sync` 不装成员包，还会剪掉已装成员 | 用 `uv sync --all-packages`；装完检查 `.venv/bin/speechnexus-gateway` |
 | `python -m speechnexus_gateway.main` 立即退出 0 且无日志 | `main.py` 没有 `if __name__ == "__main__"` 守卫 | 用 `python -c "from speechnexus_gateway.main import main; main()"` 或装好的 `speechnexus-gateway` |
 | 公开请求 503 `backend_unavailable`，启动日志有 `Synchronous transcription is unavailable; missing configuration: ...` | API 仍是 3.1 的基础装配，没有转写配置组 | 按 3.4 补齐七项并重启；只补一部分仍会 503 |
-| 进程内堆栈 `TranscriptionUnavailableError: Transcription admission was refused: quota_exceeded`，公开面 503 | `workspace_quotas.held_attempts` 已达上限；上一请求的尝试没有释放 | 先查 `admission_attempts.quota_state`、`admission_leases`；按 11.2.2 用真实 staging 对账/释放，不要连续重试 |
-| 同上，拒绝码为 `capacity_exhausted` | `engine_instances.held_slots` 已达 `max_slots` | 确认租约是否仍 `reserved`；按 11.2.2 对账释放 |
-| 同上，拒绝码为 `reconciliation_required` | 同一 operation 的持久事实不完整（上一租约/提交未知），准入拒绝继续 | 保留现场，按 11.2.2 的 `record_stop` + `release_in_transaction` 对账；不要插新行绕过 |
+| 进程内堆栈 `TranscriptionUnavailableError: Transcription admission was refused: quota_exceeded`，公开面 503 | `workspace_quotas.held_attempts` 已达上限；上一请求的尝试没有释放 | 先按[对账恢复 runbook](reconciliation-recovery.md)查原 `submit_intent_id`、租约和停止证据；不要连续重试或直接改配额 |
+| 同上，拒绝码为 `capacity_exhausted` | `engine_instances.held_slots` 已达 `max_slots` | 按[对账恢复 runbook](reconciliation-recovery.md)确认租约、执行终态和停止证据；不要直接归还槽位 |
+| 同上，拒绝码为 `reconciliation_required` | 同一 operation 的持久事实不完整（上一租约/提交未知），准入拒绝继续 | 保留现场，按[对账恢复 runbook](reconciliation-recovery.md)查证原身份与停止证据；当前没有通用 `record_stop` / `release_in_transaction` 运维入口，不要插新行或套测试脚本 |
 | 网关日志 `asr_deadline_exceeded`，`AsrCallError(..., request_may_have_run=True)` | recipe 的 `asr.final_deadline_ms=1000` 小于真实模型耗时 | 用 9.5 的真实时延定预算；本轮改成 `10000` 后通过 |
 | 公开请求 120 秒后 `504 operation_timeout`，但网关 `/staging-result` 已有 185 B 结果 | `file_execution_worker._register` 只登记 staging；`execution_state` 仍是 `executing`，成功终态没有写者（11.2.1） | 重试解决不了；见 11.2.2 的人工驱动者字段与边界，不要声称公开转写可用 |
 | 把 `submit_intents.recorded_at` 当成 API 放弃时刻，误判“提交握手阻塞 120s” | `recorded_at` 是提交落库时刻；r9 在请求开始后 0.6s 落库，同连接先 POST 200、再 458 次 GET 200 | 用请求文件 birth/mtime + 网关 access log 定墙钟；不要用 `recorded_at` 当完成时刻（11.2.1） |
@@ -1105,7 +1105,7 @@ revision；304 只对当前 ETag 生效。**没有证明**：HTTP draft → 目�
 | `gateway-lock/*.lock` 存在且被网关进程持有，误判为“上一次请求没释放锁” | 这是 `flock` 进程生命周期锁，不是每请求互斥；每请求 send 锁 `control_timeout_seconds=3s` | `lsof` 确认持有者是当前网关进程；不要删锁或重启网关来“解锁”（11.2.1） |
 | 以为 `execution_gateway_timeout_seconds=10` 造成 120s 重试风暴 | submit 单次不重试；10s/重试预算只作用于幂等读；r9 只有 1 次 POST，随后是 API 轮询 GET | 查 `gateway_execution_client.py` 与网关日志；120s 是 `TranscriptionPlan.timeout_seconds` 的轮询截止（11.2.1） |
 | 504 响应头 `date` 比 `time_total` 早 120s | 本机 uvicorn 的默认 Date 头；本轮没有把它当归因证据 | 用 `-w time_total`、文件 birth/mtime、access log 交叉判定；不要用 `date` 头算完成时刻 |
-| 504 之后下一请求立刻 503 `capacity_exhausted` / `quota_exceeded` | 超时只结束 HTTP，不释放 `admission_leases` 与 `held_slots` | 先按 11.2.2 对账释放，再重试 |
+| 504 之后下一请求立刻 503 `capacity_exhausted` / `quota_exceeded` | 超时只结束 HTTP，不释放 `admission_leases` 与 `held_slots` | 先按[对账恢复 runbook](reconciliation-recovery.md)查证原执行、租约和停止证据；不要手改配额后重试 |
 | 网关 `POST /internal/v1/executions/submit` 一次返回 `422 Unprocessable Content`；同一文档扁平化重放返回 `200 idempotent_replay=true` | 具体触发条件未完全确认（持久文档是 wrapped `{execution_request, output_stream_id}`，HTTP schema 要 flat `execution_request`） | 用持久文档核对字段形状；不要把 422 写成稳定的参数错误 |
 | 重复执行角色脚本报 `role already exists` | 手工 `CREATE ROLE` 非幂等 | 用 2.3 的脚本（先查 `pg_roles`）或 `DROP ROLE` 后重建 |
 
@@ -1741,7 +1741,7 @@ r10 对 `submit_intents`、网关访问日志和 ingress 锁做了交叉核对�
 
 | 轮次 | 公开面 | 实际原因 | 处置 |
 | --- | --- | --- | --- |
-| r8 08:49 | `503 backend_unavailable` | 准入拒绝；进程内 trace 是 `reconciliation_required`，表示池归属或释放事实需要对齐 | 保留现场，按 11.2.2 核对；不要普通重放，也不要用它解释 r9 |
+| r8 08:49 | `503 backend_unavailable` | 准入拒绝；进程内 trace 是 `reconciliation_required`，表示池归属或释放事实需要对齐 | 保留现场，按[对账恢复 runbook](reconciliation-recovery.md)核对；不要普通重放，也不要用它解释 r9 |
 | r9 08:50 | `504 operation_timeout` | 提交已在请求开始后约 0.6 秒落库，执行约 2.586 秒产出 staging，随后 API 轮询满 120 秒；缺少成功终态写者 | 见 11.2.1 / 11.2.2；不是网关慢或 ingress 锁 |
 
 本轮前提：
@@ -1972,6 +1972,10 @@ exit=0
 公开转写成功路径。
 
 ### 11.2.2 人工驱动者：谁调用 `record_stop`，字段怎么来
+
+> 本节是 2026-10-28 的一次本机测试用人工驱动记录，不是通用恢复入口。`unknown_quarantined` /
+> `reconciliation_required` 的只读查证、分支和当前受支持路径见[对账恢复 runbook](reconciliation-recovery.md)；
+> 不要把下面针对 `executing` + staging 样本的成功态脚本套到 unknown 上。
 
 **产品路径**：正确位置是 file execution worker 的成功分支。`stage_result` 返回并登记
 staging 后，worker 必须在同一可信进程内以真实引擎终态响应调用

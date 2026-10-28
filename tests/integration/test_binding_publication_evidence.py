@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -100,7 +100,7 @@ def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
     admin.execute(f'SET search_path TO "{schema}", pg_catalog')
     for role in ROLES:
         admin.execute(f"CREATE ROLE \"{names[role]}\" LOGIN PASSWORD '{PASSWORD}'")
-    grants = (
+    grants: tuple[tuple[str, Callable[[str, str], tuple[str, ...]]], ...] = (
         (names["writer"], binding_draft_grants),
         (names["publication"], binding_draft_grants),
         (names["publication"], publication_grants),

@@ -16,6 +16,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from psycopg.conninfo import make_conninfo
 
@@ -75,6 +76,12 @@ WORKBENCH_RUNTIME_TESTS = (
     "tests/integration/test_workbench_runtime_voice_catalogue.py",
 )
 
+SPEECH_PG_COVERAGE_TESTS = (
+    "tests/integration/test_binding_publication_evidence.py",
+    "tests/integration/test_binding_lifecycle_pg.py",
+    "tests/integration/test_binding_disable_intent_pg.py",
+)
+
 
 def build_pytest_command(
     *,
@@ -91,7 +98,7 @@ def build_pytest_command(
         raise ValueError("coverage modes are mutually exclusive")
     paths = list(WORKBENCH_PG_TESTS)
     if full_coverage:
-        paths = list(NON_INTEGRATION_TEST_PATHS) + paths
+        paths = list(NON_INTEGRATION_TEST_PATHS) + paths + list(SPEECH_PG_COVERAGE_TESTS)
     else:
         paths.extend(DEFAULT_EXTRA_TESTS)
     if workbench_runtime or full_coverage:
@@ -164,8 +171,10 @@ def build_integration_shard_command(*, index: int, count: int, report: Path) -> 
     ]
 
 
-def private_pg_environment(inherited: Mapping[str, str], *, sockets: Path) -> dict[str, str]:
-    """Pin only Workbench to this private cluster; retain explicit dual-DB/MinIO inputs."""
+def private_pg_environment(
+    inherited: Mapping[str, str], *, sockets: Path, full_coverage: bool = False
+) -> dict[str, str]:
+    """Pin coverage PG to this worker; retain dual-DB inputs for integration shards."""
     # libpq also reads PGHOSTADDR/PGSERVICE/PGOPTIONS. Inherited connection defaults
     # must not redirect the disposable socket cluster, even if other tests use DSNs.
     env = {key: value for key, value in inherited.items() if not key.startswith("PG")}
@@ -176,6 +185,13 @@ def private_pg_environment(inherited: Mapping[str, str], *, sockets: Path) -> di
         dbname="speechnexus_workbench_test",
         user="workbench_test_owner",
     )
+    if full_coverage:
+        # Both psycopg and SQLAlchemy consume this URI; quoting the socket path
+        # prevents spaces and reserved characters from changing its destination.
+        env["SPEECHNEXUS_TEST_DATABASE_URL"] = (
+            "postgresql://workbench_test_owner@/speechnexus_workbench_test"
+            f"?host={quote(str(sockets), safe='')}&port=55439"
+        )
     return env
 
 
@@ -355,7 +371,7 @@ def main() -> int:
                 "start",
             ]
         )
-        env = private_pg_environment(os.environ, sockets=sockets)
+        env = private_pg_environment(os.environ, sockets=sockets, full_coverage=args.full_coverage)
         run([str(pg_bin / "createdb"), "speechnexus_workbench_test"], env=env)
         if args.integration_shard is not None:
             command = build_integration_shard_command(

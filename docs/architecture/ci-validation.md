@@ -32,7 +32,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 | job ID | Actions 显示名称 | 实际职责 |
 | --- | --- | --- |
 | `changes` | `Scope routing and CI / design-token checks` | 检查路由边界与 Design Token，按准确差异选择范围 |
-| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 测试，合并覆盖率、媒体工具链及 Python 包构建 |
+| `python_checks` | `Python: tests, coverage and package build` | Python 单元、契约、CI、Workbench PG/Runtime 及选定 Speech PG 测试，合并覆盖率、媒体工具链及 Python 包构建 |
 | `python_contracts` | `Python: lint, types and contract compatibility` | Ruff、mypy、模块边界、生成漂移、协议兼容与 schema 校验 |
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；后两片额外运行浏览器与 Node HTTP 消费者 |
 | `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
@@ -43,7 +43,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 完整范围仍要求原有覆盖率、契约漂移/兼容检查及六个真实双数据库分片。集成汇总继续核对同一提交、完整收集、互斥并集和实际执行结果，不以数量或仅收集代替证据。
 
-Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行原完整非集成测试和 Workbench PG／Runtime 全集。各进程独占临时 PG、Unix socket 与 coverage 文件；不连接 runner 的系统数据库。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
+Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 内并发两个 `workbench-pg-probe.py --full-coverage` 进程，运行原完整非集成测试、Workbench PG／Runtime 全集，以及发布证据、绑定生命周期和停用意图三个 Speech PG 测试文件。各进程独占临时 PG、Unix socket 与 coverage 文件；Speech PG 测试在 full coverage 模式使用同一 worker 的私有 socket，不连接 runner 的系统数据库。集成分片仍使用显式配置的双库地址。作业仍只准备一次依赖、Linux inspection 环境及隔离 MinIO。父进程先准备四个 fixture 共用的 `speechnexus-workbench-saved` 测试桶，避免两个进程首次创建竞态；其对象按随机 project 前缀隔离，其余桶按文件独占或随机命名。测试按完整收集的文件分组，文件内用例不拆开，较大文件先分到当前用例数较少的一组；这是确定性的数量均衡，不是耗时均衡。
 
 每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，再显式组合全部分片并按 `pyproject.toml` 原全项目 **80%** 门槛执行 `coverage report`。缺片、失败、跳过、收集限定或仅有局部高覆盖率均不能放行；`PYTEST_ADDOPTS` 不能缩小集合。执行证据校验通过后，复制各片原始覆盖数据并生成组合产物，以 `workbench-pg-full-coverage` 上传；覆盖率不足仍保留这些产物并失败。若测试或执行证据校验失败，上传日志和已生成的分片／生命周期／汇总报告，不生成合格的组合产物。直接运行原 `workbench-pg-probe.py --full-coverage` 仍是单次 pytest 的全项目 80%；`--coverage` 仍是独立的 C 层 90% 检查。
 

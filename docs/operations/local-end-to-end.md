@@ -101,7 +101,7 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
 | 9 | admin GET 三态 | 已执行 |
 | 10 | 发布后目录读 | **失败：主干缺陷，见 5.1** |
 | 11 | 网关（带 file-ASR）启动 | 已执行 |
-| 12 | 引擎注册 / readiness | **fixture 播种；真实注册 `[未执行]`（DEL-104）** |
+| 12 | 引擎注册 / readiness | **入口已合入 `2f96fb3`（#275），本轮用 fixture 对照；真实 readiness 回执与代次转移仍 `[未执行]`** |
 | 13 | 一次真实转写（网关 internal API） | 已执行 |
 | 14 | 公开 `/v1/audio/transcriptions` | **已执行：504 `operation_timeout`；worker 只登记 staging、未写终态（11.2 / 11.2.1 / 11.2.2）** |
 
@@ -1500,7 +1500,10 @@ http=200 time=1.464986
 
 ## 10. 引擎注册与 readiness：主干做不到，本轮用 fixture 行
 
-> **交付边界（必读）**：`[未执行] 当前主干无受支持的实例注册入口；测试用直接插入 engine_instances 绕过；解除条件见 DEL-104。`
+> **交付边界（必读）**：`[已执行] 实例注册入口已合入主干（2f96fb3 / #275）：speechnexus-register-engine，`
+> `用法见 docs/operations/register-engine.md；本节 fixture 行仅用于对照，运维请走该入口。`
+> `注意：根 pyproject.toml 是 package = false 的 uv workspace，未执行 uv sync --all-packages 时`
+> `uv run speechnexus-register-engine 不可用，需用 python -m speechnexus_backend.engine_registration。`
 > DEL-104（真实引擎经网关全链路，#243 AC5）当前为 `blocked`；本节 fixture 只用于
 > 本地验证，不是运维路径，也不构成注册、readiness 或生产资格。
 
@@ -2146,7 +2149,7 @@ deadline / 租约释放联动；不是“提交握手”或“ingress 锁”。�
 - HTTP draft → publish → 目录可见（主干缺陷，5.1）；
 - 用真实 capacity manifest / qualification report 发布随附 ASR 定义（两类证据均无
   产出物；5.4 的 `local-test-*` 只证明机制）；
-- 受支持的引擎实例注册入口（`[未执行] 当前主干无受支持的实例注册入口；测试用直接插入 engine_instances 绕过；解除条件见 DEL-104`）；
+- ~~受支持的引擎实例注册入口~~ ✅ `[已执行]` `2f96fb3`（#275）提供 `speechnexus-register-engine`，用法见 `docs/operations/register-engine.md`；本节保留 fixture 行仅为对照；
 - node controller 注册、真实 readiness 回执、`preparing → ready` 代次转移；
 - 公开 `/v1/audio/transcriptions` 的**成功响应**：请求能进到执行，但 file worker 在
   staging 登记后没有终态写者，API 轮询 120 秒截止，实测 504；私有 recipe 与 live

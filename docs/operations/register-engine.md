@@ -30,6 +30,18 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
 3. 引擎健康端点可从执行命令的主机访问；命令会把 origin 补成 `/health`，也接受
    显式 `/health` URL。
 4. 同一实例同一 generation 只能有一个 ready 行；同一池不能有另一个存活 owner。
+5. `speechnexus-register-engine` 控制台脚本需要 backend workspace 包已安装。仓库根
+   `pyproject.toml` 是 `package=false` 的 uv workspace，某些 `uv sync` 结果不会在
+   `.venv/bin` 生成 `speechnexus-*`；先用 `uv run speechnexus-register-engine --help`
+   确认，若命令不存在，改用等价的模块入口（本任务实测路径）：
+
+   ```bash
+   PYTHONPATH=backend/src:execution-gateway/src:packages/contracts/src \
+     uv run python -m speechnexus_backend.engine_registration --help
+   ```
+
+   两种入口走同一个 `main()`；下面命令里的 `speechnexus-register-engine` 可整体替换为
+   `PYTHONPATH=... uv run python -m speechnexus_backend.engine_registration`。
 
 ## 推荐命令（配方模式）
 
@@ -144,3 +156,6 @@ WHERE instance_id = '<instance>';
   配方一致，否则准入会以 `recipe_mismatch` 拒绝。
 - 该命令不执行真实转写、不启动节点控制器、不验证 GPU 模型；这些仍由对应执行与
   资格任务分别取证。
+- 单元回归（不连数据库）：`uv run pytest tests/unit/backend/test_engine_registration.py
+  tests/unit/backend/test_engine_registration_transaction.py -q`。真实 PostgreSQL 链路
+  见 `tests/integration/test_engine_registration_pg.py`。

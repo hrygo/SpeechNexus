@@ -10,12 +10,14 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -47,7 +49,11 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sche
     binding_admin_reader_grants,
     publication_evidence_grants,
 )
-from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    SpeechConnection,
+    SpeechPool,
+    speech_pool,
+)
 from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publication_schema import (
     model_catalog_reader_grants,
@@ -204,11 +210,99 @@ def counts(sandbox: Sandbox) -> tuple[int, int, int]:
     return publications, revisions, evidence
 
 
-def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublishIntent:
+class PublicationWaitSampler:
+    """Observe only the actual borrowed connection, using a separate bounded admin session."""
+
+    def __init__(self, pool: SpeechPool) -> None:
+        self.pool = pool
+        self.ready = threading.Event()
+        self.stopping = threading.Event()
+        self.pid: int | None = None
+        self.samples: list[dict[str, object]] = []
+        self.thread = threading.Thread(target=self._sample, daemon=True)
+        self.thread.start()
+
+    @contextmanager
+    def connection(self, *, timeout: float) -> Iterator[SpeechConnection]:
+        with self.pool.connection(timeout=timeout) as connection:
+            self.pid = connection.info.backend_pid
+            self.ready.set()
+            yield connection
+
+    def _sample(self) -> None:
+        try:
+            if not self.ready.wait(timeout=4) or self.stopping.is_set() or self.pid is None:
+                return
+            with psycopg.connect(
+                os.environ[VARIABLE],
+                autocommit=True,
+                connect_timeout=2,
+                options="-c statement_timeout=500",
+            ) as observer:
+                while not self.stopping.is_set() and len(self.samples) < 64:
+                    row = observer.execute(
+                        "SELECT state, wait_event_type, wait_event, "
+                        "cardinality(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid=%s",
+                        (self.pid,),
+                    ).fetchone()
+                    if row is not None:
+                        state, event_type, event, blockers = row
+                        if state not in {
+                            "active",
+                            "idle",
+                            "idle in transaction",
+                            "fastpath function call",
+                            "disabled",
+                            None,
+                        }:
+                            state = "unknown"
+                        if not isinstance(event_type, str) or not re.fullmatch(
+                            r"[A-Za-z0-9_]{1,64}", event_type
+                        ):
+                            event_type = None
+                        if not isinstance(event, str) or not re.fullmatch(
+                            r"[A-Za-z0-9_]{1,64}", event
+                        ):
+                            event = None
+                        sample = {
+                            "state": state,
+                            "wait_event_type": event_type,
+                            "wait_event": event,
+                            "blockers": blockers,
+                        }
+                        if not self.samples or self.samples[-1] != sample:
+                            self.samples.append(sample)
+                    self.stopping.wait(0.05)
+        except Exception:
+            # Diagnostics cannot change test or product behavior.
+            return
+
+    def close(self) -> None:
+        self.stopping.set()
+        self.ready.set()
+        self.thread.join(timeout=3)
+
+
+def publish_intent(
+    sandbox: Sandbox, binding_id: str, key: str, *, sample_waits: bool = False
+) -> BindingPublishIntent:
     pool = sandbox.pools["publication"]
+    sampler = None
+    if sample_waits:
+        # Diagnostic startup must not replace a real publication result.
+        with suppress(Exception):
+            sampler = PublicationWaitSampler(pool)
     started = time.monotonic()
+    finished = started
     try:
-        observation = PostgresPublications(pool).observe_binding_head(binding_id)
+        try:
+            observed_pool = cast(SpeechPool, sampler) if sampler is not None else pool
+            observation = PostgresPublications(observed_pool).observe_binding_head(binding_id)
+        finally:
+            finished = time.monotonic()
+            if sampler is not None:
+                with suppress(Exception):
+                    sampler.close()
     except PublicationUnavailableError as error:
         # Diagnostic data is intentionally limited to types and numeric pool facts;
         # exception text, query text, connection information and parameters stay private.
@@ -222,6 +316,13 @@ def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublis
                 sqlstate = getattr(current, "sqlstate", None)
                 if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate):
                     entry["sqlstate"] = sqlstate
+                if isinstance(current, psycopg.errors.QueryCanceled):
+                    primary = current.diag.message_primary
+                    entry["cancel_reason"] = {
+                        "canceling statement due to statement timeout": "statement_timeout",
+                        "canceling statement due to user request": "user_cancel",
+                        "canceling statement due to lock timeout": "lock_timeout",
+                    }.get(primary or "", "unknown")
                 chain.append(entry)
                 current = current.__context__
             stats = {
@@ -233,9 +334,10 @@ def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublis
                 json.dumps(
                     {
                         "chain": chain,
-                        "elapsed_ms": round((time.monotonic() - started) * 1000),
+                        "elapsed_ms": round((finished - started) * 1000),
                         "pool_closed": pool.closed,
                         "pool_stats": stats,
+                        "wait_samples": sampler.samples if sampler is not None else [],
                     },
                     sort_keys=True,
                 ),
@@ -290,6 +392,33 @@ def test_publish_intent_failure_reports_only_safe_diagnostics(
     assert all(type(value) is int for value in diagnostic["pool_stats"].values())
 
 
+def test_publish_intent_diagnostic_observes_real_table_lock(
+    sandbox: Sandbox, capsys: pytest.CaptureFixture[str]
+) -> None:
+    draft = create_draft(sandbox, "diagnostic-lock")
+    with psycopg.connect(os.environ[VARIABLE]) as holder:
+        holder.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        holder.execute("LOCK TABLE speech_publication_installation IN ACCESS EXCLUSIVE MODE")
+        with pytest.raises(PublicationUnavailableError):
+            publish_intent(sandbox, draft.binding_id, "diagnostic-lock", sample_waits=True)
+    output = capsys.readouterr()
+    assert output.out == ""
+    diagnostic = json.loads(output.err)
+    assert {
+        "type": "QueryCanceled",
+        "sqlstate": "57014",
+        "cancel_reason": "statement_timeout",
+    } in diagnostic["chain"]
+    assert any(
+        sample["state"] == "active"
+        and sample["wait_event_type"] == "Lock"
+        and sample["wait_event"] == "relation"
+        and sample["blockers"] >= 1
+        for sample in diagnostic["wait_samples"]
+    )
+    assert sandbox.schema not in output.err
+
+
 def test_get_reports_draft_published_and_unavailable(sandbox: Sandbox) -> None:
     body = binding_request()
     with TestClient(create_app(settings=settings(sandbox))) as client:
@@ -313,7 +442,7 @@ def test_get_reports_draft_published_and_unavailable(sandbox: Sandbox) -> None:
             capacity_manifest_id=CAPACITY,
             qualification_report_id=REPORT,
             expected_current_revision=None,
-            intent=publish_intent(sandbox, draft.binding_id, "evidence-test"),
+            intent=publish_intent(sandbox, draft.binding_id, "evidence-test", sample_waits=True),
         )
         assert result.created is True
 

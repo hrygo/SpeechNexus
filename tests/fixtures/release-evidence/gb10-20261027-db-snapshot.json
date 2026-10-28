@@ -1,0 +1,129 @@
+{
+  "source": "fixture",
+  "captured_at": "2026-10-28T00:00:00Z",
+  "note": "Synthetic query-path fixture. It is not a live database dump and does not prove publication, registration, or production capacity.",
+  "binding_revision": {
+    "binding_id": "file-asr-qwen3-1p7b",
+    "revision": "1",
+    "revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+    "key_digest": "sha256:35e2e909d6bc29cc79505c47987ced7ebb11750e494710c61639d9530eb049c9",
+    "document_version": 1,
+    "definition_json": "{\"tasks\":[\"asr_file\"],\"execution_recipe\":{\"recipe_revision\":\"1\",\"stage_roles\":[\"asr_batch\"],\"requires_complete_reservation\":true,\"capacity_manifest_id\":\"capm-file-asr-qwen3-1p7b-gb10-20261027\"},\"parameter_domains\":{\"asr\":{\"languages\":[\"auto\",\"zh\",\"en\"],\"max_segment_ms\":30000,\"finalization_modes\":[\"full_segment\"],\"supports_prompt\":true,\"supports_word_timestamps\":false,\"alignment_modes\":[\"off\"],\"diarization_modes\":[\"off\"],\"max_speakers\":null,\"supports_rollback_tokens\":false}},\"release_tier\":\"experimental\",\"parameter_defaults\":{\"asr\":{\"language\":\"auto\",\"preview_interval_ms\":500,\"max_segment_ms\":30000,\"finalization\":\"full_segment\",\"final_deadline_ms\":10000,\"auxiliary_deadline_ms\":5000,\"rollback_tokens\":0,\"turn_detection\":{\"mode\":\"server_vad\",\"silence_duration_ms\":500},\"vocabulary_set_revision\":null,\"alignment\":\"off\",\"diarization\":\"off\"},\"output\":{\"transcript_format\":\"json\",\"save_artifacts\":true}}}",
+    "definition_digest": "sha256:914195d2e92972d3680e9d16c88f118b6c24bc75cac3727c7687f7aabf66ffa1",
+    "request_digest": "sha256:df888653ff06b055a0272aec6e0bbd81c42ea82437f237c027932bd679aef6aa",
+    "created_at_us": 1793133859000000
+  },
+  "publication": {
+    "kind": "binding",
+    "object_id": "file-asr-qwen3-1p7b",
+    "revision": "1",
+    "revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+    "published_at_us": 1793145600000000
+  },
+  "evidence": {
+    "kind": "binding",
+    "object_id": "file-asr-qwen3-1p7b",
+    "revision": "1",
+    "revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+    "capacity_manifest_id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+    "qualification_report_id": "qrep-file-asr-qwen3-1p7b-gb10-20261027",
+    "evidence_source": "operator_cli",
+    "recorded_at_us": 1793145600000000,
+    "capacity_manifest_digest": "sha256:269096a91dd4b4c09e6332bf490889c5e060be67510185c911218042e24ae149",
+    "qualification_report_digest": "sha256:e4f3900bd171eb58c9ac91650f64f2e57b556737f3d715893debc8b210c9cd37"
+  },
+  "engine_instances": [
+    {
+      "instance_id": "ei-file-asr-qwen3-1p7b-gb10-01",
+      "instance_generation": 1,
+      "host_node_id": "cube-ccba",
+      "pool_id": "asr-batch",
+      "gateway_id": "gw-local-01",
+      "binding_revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+      "manifest_id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+      "approved_template_id": "tmpl-qwen3-asr-vllm-0280-arm64",
+      "management_mode": "external",
+      "loading_policy": "resident",
+      "config_digest": "sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e",
+      "instance_state": "ready",
+      "max_slots": 1,
+      "realtime_reserved_slots": 0,
+      "held_slots": 0,
+      "quarantined_slots": 0,
+      "base_budget_kind": "steady",
+      "ready_at_us": 1793145600000000,
+      "stopped_at_us": null,
+      "quarantine_reason": null,
+      "last_fencing_token": 1,
+      "version": 2,
+      "peak_unified_physical_memory_bytes": 12884901888,
+      "peak_device_memory_bytes": 0,
+      "peak_host_memory_bytes": 0,
+      "peak_cpu_decode_millicores": 3000,
+      "peak_host_pcm_buffer_bytes": 2097152,
+      "peak_scratch_disk_bytes": 0,
+      "steady_unified_physical_memory_bytes": 12884901888,
+      "steady_device_memory_bytes": 0,
+      "steady_host_memory_bytes": 0,
+      "steady_cpu_decode_millicores": 2000,
+      "steady_host_pcm_buffer_bytes": 2097152,
+      "steady_scratch_disk_bytes": 0,
+      "per_slot_unified_physical_memory_bytes": 0,
+      "per_slot_device_memory_bytes": 0,
+      "per_slot_host_memory_bytes": 0,
+      "per_slot_cpu_decode_millicores": 500,
+      "per_slot_host_pcm_buffer_bytes": 2097152,
+      "per_slot_scratch_disk_bytes": 0
+    }
+  ],
+  "host_nodes": [
+    {
+      "host_node_id": "cube-ccba",
+      "memory_architecture": "unified_memory",
+      "node_state": "active",
+      "topology_digest": "sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4",
+      "quarantine_threshold_ppm": 250000,
+      "version": 2,
+      "allocatable_unified_physical_memory_bytes": 42949672960,
+      "allocatable_device_memory_bytes": 0,
+      "allocatable_host_memory_bytes": 0,
+      "allocatable_cpu_decode_millicores": 16000,
+      "allocatable_host_pcm_buffer_bytes": 16777216,
+      "allocatable_scratch_disk_bytes": 0,
+      "held_unified_physical_memory_bytes": 12884901888,
+      "held_device_memory_bytes": 0,
+      "held_host_memory_bytes": 0,
+      "held_cpu_decode_millicores": 3000,
+      "held_host_pcm_buffer_bytes": 2097152,
+      "held_scratch_disk_bytes": 0,
+      "quarantined_unified_physical_memory_bytes": 0,
+      "quarantined_device_memory_bytes": 0,
+      "quarantined_host_memory_bytes": 0,
+      "quarantined_cpu_decode_millicores": 0,
+      "quarantined_host_pcm_buffer_bytes": 0,
+      "quarantined_scratch_disk_bytes": 0
+    }
+  ],
+  "resource_pools": [
+    {
+      "pool_id": "asr-batch",
+      "service_class": "batch",
+      "pool_state": "active",
+      "owner_id": "owner-gb10-01",
+      "fencing_token": 1,
+      "owner_expires_at_us": 0,
+      "owner_state": "active",
+      "version": 2
+    }
+  ],
+  "workspace_quotas": [
+    {
+      "workspace_id": "ws-speechnexus-dev",
+      "max_attempts": 8,
+      "held_attempts": 0,
+      "quarantined_attempts": 0,
+      "policy_revision": "quota-20261027-r1",
+      "version": 1
+    }
+  ]
+}

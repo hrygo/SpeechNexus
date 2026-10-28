@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.0.0",
+  "manifest_id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+  "binding_revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+  "pool_id": "asr-batch",
+  "service_class": "batch",
+  "management_mode": "external",
+  "release_tier": "experimental",
+  "loading_policy": "resident",
+  "topology_ref": {
+    "host_node_profile_id": "gb10-cube-ccba-unified-121g",
+    "memory_architecture": "unified_memory",
+    "requires_shared_parent_budget": true,
+    "topology_digest": "sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4"
+  },
+  "supported_tasks": [
+    "asr_file"
+  ],
+  "supported_input_formats": [
+    "wav",
+    "pcm_s16le_16k_mono",
+    "mp3",
+    "flac",
+    "ogg_opus"
+  ],
+  "supported_output_formats": [
+    "utf8_text",
+    "json_segments"
+  ],
+  "stage_graph": [
+    {
+      "stage_id": "stage-qwen3-asr-1p7b-batch",
+      "stage_role": "asr_batch",
+      "engine_kind": "vllm",
+      "model_revision_digest": "sha256:886652c5efb861de36ba18d46f58e9f9a7fb2d4469023264c992b055dd6ac1ca",
+      "required_for_admission": true,
+      "emits_audio_pcm": false,
+      "resident_budget": {
+        "engine_active_slots": 0,
+        "device_memory_bytes": 0,
+        "host_memory_bytes": 0,
+        "unified_physical_memory_bytes": 12884901888,
+        "cpu_decode_millicores": 2000,
+        "host_pcm_buffer_bytes": 2097152,
+        "scratch_disk_bytes": 0,
+        "ingress_bandwidth_bps": 0,
+        "egress_bandwidth_bps": 0,
+        "object_storage_bytes": 0
+      },
+      "loading_peak_budget": {
+        "engine_active_slots": 0,
+        "device_memory_bytes": 0,
+        "host_memory_bytes": 0,
+        "unified_physical_memory_bytes": 12884901888,
+        "cpu_decode_millicores": 3000,
+        "host_pcm_buffer_bytes": 2097152,
+        "scratch_disk_bytes": 0,
+        "ingress_bandwidth_bps": 0,
+        "egress_bandwidth_bps": 0,
+        "object_storage_bytes": 0
+      },
+      "per_slot_incremental_budget": {
+        "engine_active_slots": 1,
+        "device_memory_bytes": 0,
+        "host_memory_bytes": 0,
+        "unified_physical_memory_bytes": 0,
+        "cpu_decode_millicores": 500,
+        "host_pcm_buffer_bytes": 2097152,
+        "scratch_disk_bytes": 0,
+        "ingress_bandwidth_bps": 1000000,
+        "egress_bandwidth_bps": 256000,
+        "object_storage_bytes": 0
+      },
+      "max_active_slots": 1
+    }
+  ],
+  "resource_envelope": {
+    "resident_budget": {
+      "engine_active_slots": 0,
+      "device_memory_bytes": 0,
+      "host_memory_bytes": 0,
+      "unified_physical_memory_bytes": 12884901888,
+      "cpu_decode_millicores": 2000,
+      "host_pcm_buffer_bytes": 2097152,
+      "scratch_disk_bytes": 0,
+      "ingress_bandwidth_bps": 0,
+      "egress_bandwidth_bps": 0,
+      "object_storage_bytes": 0
+    },
+    "loading_peak_budget": {
+      "engine_active_slots": 0,
+      "device_memory_bytes": 0,
+      "host_memory_bytes": 0,
+      "unified_physical_memory_bytes": 12884901888,
+      "cpu_decode_millicores": 3000,
+      "host_pcm_buffer_bytes": 2097152,
+      "scratch_disk_bytes": 0,
+      "ingress_bandwidth_bps": 0,
+      "egress_bandwidth_bps": 0,
+      "object_storage_bytes": 0
+    },
+    "per_slot_incremental_budget": {
+      "engine_active_slots": 1,
+      "device_memory_bytes": 0,
+      "host_memory_bytes": 0,
+      "unified_physical_memory_bytes": 0,
+      "cpu_decode_millicores": 500,
+      "host_pcm_buffer_bytes": 2097152,
+      "scratch_disk_bytes": 0,
+      "ingress_bandwidth_bps": 1000000,
+      "egress_bandwidth_bps": 256000,
+      "object_storage_bytes": 0
+    },
+    "max_active_slots": 1,
+    "realtime_reserved_slots": 0
+  },
+  "rate_and_segment_limits": {
+    "max_prefill_tokens_per_sec": 1952,
+    "max_output_tokens_per_sec": 1952,
+    "max_segment_audio_ms": 30000,
+    "max_render_unit_codepoints": 2000,
+    "max_output_audio_ms": 30000,
+    "hard_output_quota": true
+  },
+  "cancellation_and_fencing": {
+    "cancellation_mode": "connection_drop_with_quarantine",
+    "supports_request_abort": false,
+    "supports_fencing_barrier": false,
+    "worst_case_non_preemptible_ms": 10000,
+    "max_drain_wait_ms": 10000,
+    "idle_reclaim_cooldown_ms": null
+  },
+  "qualification": {
+    "qualification_report_id": "qrep-file-asr-qwen3-1p7b-gb10-20261027",
+    "qualified_at": "2026-10-27T20:44:19Z",
+    "expires_at": "2027-01-25T20:44:19Z",
+    "config_bundle_digest": "sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e",
+    "verified_coexistence_profiles": [
+      "gb10-shared-35b-embedding-reranker"
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    "asr_file"
+  ],
+  "execution_recipe": {
+    "recipe_revision": "1",
+    "stage_roles": [
+      "asr_batch"
+    ],
+    "requires_complete_reservation": true,
+    "capacity_manifest_id": "capm-file-asr-qwen3-1p7b-gb10-20261027"
+  },
+  "parameter_domains": {
+    "asr": {
+      "languages": [
+        "auto",
+        "zh",
+        "en"
+      ],
+      "max_segment_ms": 30000,
+      "finalization_modes": [
+        "full_segment"
+      ],
+      "supports_prompt": true,
+      "supports_word_timestamps": false,
+      "alignment_modes": [
+        "off"
+      ],
+      "diarization_modes": [
+        "off"
+      ],
+      "max_speakers": null,
+      "supports_rollback_tokens": false
+    }
+  },
+  "release_tier": "experimental",
+  "parameter_defaults": {
+    "asr": {
+      "language": "auto",
+      "preview_interval_ms": 500,
+      "max_segment_ms": 30000,
+      "finalization": "full_segment",
+      "final_deadline_ms": 10000,
+      "auxiliary_deadline_ms": 5000,
+      "rollback_tokens": 0,
+      "turn_detection": {
+        "mode": "server_vad",
+        "silence_duration_ms": 500
+      },
+      "vocabulary_set_revision": null,
+      "alignment": "off",
+      "diarization": "off"
+    },
+    "output": {
+      "transcript_format": "json",
+      "save_artifacts": true
+    }
+  }
+}

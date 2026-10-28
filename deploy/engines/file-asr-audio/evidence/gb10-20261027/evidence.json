@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-27T20:44:19Z",
+  "source": {
+    "kind": "issue_comment",
+    "repository": "hrygo/SpeechNexus",
+    "issue": 243,
+    "comment_id": 6453106316,
+    "url": "https://github.com/hrygo/SpeechNexus/issues/243#issuecomment-6453106316",
+    "published_by": "hrygo",
+    "executed_by": "B execution and GPU role",
+    "body_bytes": 13726,
+    "body_sha256": "sha256:42d1c033afe7c266d6450ef4afe39e4b79938c3c3670244b21e8c49edf010dfb",
+    "provenance": "relayed_primary_measurement",
+    "primary_record_retained_by_executor": "DEL-103-evidence.md",
+    "executed_by_reference": "Role identity retained in the source thread; the agent UUID is omitted from the repository copy."
+  },
+  "environment": {
+    "host_node_id": "cube-ccba",
+    "cpu_arch": "arm64",
+    "kernel": "7.0.0-1019-nvidia",
+    "gpu": "NVIDIA GB10",
+    "driver": "580.178.04",
+    "cuda": "13.0",
+    "memory_architecture": "unified_memory",
+    "total_physical_memory_bytes": 130631430307,
+    "total_physical_memory_note": "121.66 GiB as reported; converted to bytes, so precision is limited by the reported value",
+    "available_memory_at_finish_gib": 46,
+    "shared_services": [
+      "cube-ccba-qwen36-35b-nvfp4",
+      "qwenpaw-embedding",
+      "qwenpaw-reranker",
+      "speechnexus-paperclip-minio"
+    ],
+    "shared_services_state": "up throughout; not modified"
+  },
+  "software": {
+    "model_repository": "Qwen/Qwen3-ASR-1.7B",
+    "model_revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+    "model_license": "Apache-2.0",
+    "model_weight_bytes": 4698521512,
+    "model_all_files_bytes": 4703055333,
+    "vad_file_bytes": 2327524,
+    "engine_image": "local/qwen3-asr-vllm:0.28.0-arm64",
+    "engine_image_digest": "sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765",
+    "engine_image_built_at": "2026-09-21T09:35:34Z",
+    "engine_runtime": "vLLM 0.28.0 / Python 3.12.3",
+    "engine_arguments": {
+      "max_model_len": 1952,
+      "gpu_memory_utilization": 0.075,
+      "enforce_eager": true,
+      "served_model_name": "qwen3-asr-1.7b"
+    },
+    "model_load_seconds": 18.40162,
+    "model_load_gib": 3.9,
+    "kv_cache_gib": 2.34,
+    "kv_cache_tokens": 21936,
+    "theoretical_concurrency": 11.24
+  },
+  "scenarios": {
+    "asr-fleurs-zh-baseline": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.1",
+      "corpus": "google/fleurs test zh",
+      "audio_ms": 10380,
+      "latency_ms": 421,
+      "repeat_latency_ms": [
+        418,
+        420,
+        420
+      ],
+      "character_error_rate_percent": 0,
+      "notes": "One clean 16 kHz read sentence; punctuation-only difference. Not a multi-speaker quality estimate."
+    },
+    "asr-long-audio-60-280s": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.2",
+      "corpus": "25 FLEURS zh segments concatenated with 400 ms silence",
+      "runs": [
+        {
+          "audio_ms": 62840,
+          "latency_ms": 1587,
+          "segments": 5,
+          "tail_complete": true
+        },
+        {
+          "audio_ms": 123680,
+          "latency_ms": 1700,
+          "segments": 10,
+          "tail_complete": true
+        },
+        {
+          "audio_ms": 156400,
+          "latency_ms": 1740,
+          "segments": 15,
+          "tail_complete": true
+        },
+        {
+          "audio_ms": 222540,
+          "latency_ms": 1795,
+          "segments": 20,
+          "tail_complete": true
+        },
+        {
+          "audio_ms": 279500,
+          "latency_ms": 1871,
+          "segments": 25,
+          "tail_complete": true
+        }
+      ],
+      "http_200_count": 5,
+      "truncation_count": 0,
+      "notes": "Concatenated read speech, not continuous spontaneous speech. 279.5 s is the largest tested duration; the context limit was not reached."
+    },
+    "asr-narrowband-8k": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.3",
+      "corpus": "FLEURS zh baseline resampled to 8 kHz and 300-3400 Hz band-limited variant",
+      "variants": [
+        {
+          "name": "direct_resample",
+          "audio_ms": 10380,
+          "latency_ms": 417,
+          "character_error_rate_percent": 0
+        },
+        {
+          "name": "telephone_band",
+          "audio_ms": 10380,
+          "latency_ms": 414,
+          "character_error_rate_percent": 0
+        }
+      ],
+      "notes": "Derived from clean 16 kHz speech; this is not evidence for a real telephone channel."
+    },
+    "asr-fleurs-25-distinct": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.8",
+      "sample_count": 25,
+      "distinct_output_count": 25,
+      "notes": "Evidence against fixed-template repetition, not a CER measurement."
+    },
+    "asr-aishell4-farfield": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.7",
+      "corpus": "AISHELL-4 public far-field meeting clips",
+      "samples": [
+        {
+          "sample_id": "clip-01",
+          "audio_ms": 6590,
+          "latency_ms": 430,
+          "character_error_rate_percent": 4.6
+        },
+        {
+          "sample_id": "clip-03",
+          "audio_ms": 5640,
+          "latency_ms": 472,
+          "character_error_rate_percent": 0
+        },
+        {
+          "sample_id": "clip-05",
+          "audio_ms": 9630,
+          "latency_ms": 690,
+          "character_error_rate_percent": 2.3
+        }
+      ],
+      "notes": "Dataset far-field array recordings, not the product microphone or room."
+    },
+    "asr-ascend-code-switch": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.6",
+      "corpus": "CAiRE/ASCEND zh-en code-switching clip",
+      "audio_ms": 10020,
+      "latency_ms": 585,
+      "repeat_latency_ms": [
+        562,
+        564
+      ],
+      "latin_tokens_preserved": true,
+      "content_word_substitution_count": 1,
+      "notes": "Latin words retained their surface form; one Chinese content word was replaced by an English word."
+    },
+    "asr-babble-snr": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.4",
+      "corpus": "Target FLEURS sentence mixed with four-speaker synthetic babble",
+      "samples": [
+        {
+          "snr_db": 10,
+          "audio_ms": 10380,
+          "latency_ms": 753,
+          "target_sentence_complete": true
+        },
+        {
+          "snr_db": 5,
+          "audio_ms": 10380,
+          "latency_ms": 710,
+          "target_sentence_complete": true
+        },
+        {
+          "snr_db": 0,
+          "audio_ms": 10380,
+          "latency_ms": 603,
+          "target_sentence_complete": false
+        }
+      ],
+      "babble_leakage_observed": true,
+      "notes": "Synthetic babble from real voices, not field noise. At 0 dB one target character changed and babble speech leaked into the transcript."
+    },
+    "asr-overlap-two-speaker": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.5",
+      "corpus": "Two FLEURS speakers summed at equal RMS",
+      "audio_ms": 13740,
+      "latency_ms": 677,
+      "speakers_separated": false,
+      "speaker_content_lost": true,
+      "notes": "Single mixed stream; no timestamps or speaker labels. This is a known failure mode, not a supported capability."
+    },
+    "asr-silence-and-noise": {
+      "provenance": "relayed_primary_measurement",
+      "source_section": "2.8",
+      "corpus": "8 s white Gaussian noise, sigma 0.1, seed 20261027",
+      "audio_ms": 8000,
+      "latency_ms": 128,
+      "text_empty": true,
+      "notes": "One synthetic noise sample; not a broad hallucination test."
+    },
+    "asr-gateway-file-e2e": {
+      "provenance": "not_tested",
+      "source_section": "0",
+      "reason": "All requests bypassed the gateway and called the engine at 127.0.0.1:8100 directly.",
+      "not_covered": [
+        "correlation echo",
+        "speech_artifacts persistence",
+        "gateway timeout and retry"
+      ]
+    },
+    "asr-cancel-and-abort": {
+      "provenance": "not_tested",
+      "reason": "No request abort or cancellation was exercised in this run.",
+      "not_covered": [
+        "request abort",
+        "post-abort stop proof",
+        "quarantine recovery"
+      ]
+    },
+    "asr-concurrency-and-throughput": {
+      "provenance": "not_tested",
+      "reason": "Requests were serial. The 11.24x figure is a KV-cache arithmetic bound, not a throughput measurement.",
+      "not_covered": [
+        "concurrent requests",
+        "P95 latency",
+        "sustained throughput",
+        "mixed workload"
+      ]
+    },
+    "asr-real-world-noise": {
+      "provenance": "not_tested",
+      "reason": "No street, restaurant, or product-device recordings were used."
+    },
+    "asr-dialect-and-accent": {
+      "provenance": "not_tested",
+      "reason": "No labelled dialect or accent corpus was available on the host."
+    }
+  },
+  "not_measured": [
+    "CPU decode millicores, PCM buffer high-water mark, scratch disk high-water mark, ingress and egress bandwidth",
+    "GPU or system peak memory during the #243 run; only cgroup-independent model-load and KV-cache figures were reported",
+    "cold start for this exact 1952-token configuration",
+    "context-limit behavior above 279.5 s",
+    "word timestamps, speaker diarization, and alignment",
+    "real telephone channel, real product microphone, dialect and accent coverage",
+    "production load, failover, quarantine, and budget release"
+  ]
+}

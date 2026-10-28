@@ -1,0 +1,353 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "qrep-file-asr-qwen3-1p7b-gb10-20261027",
+  "binding": {
+    "id": "file-asr-qwen3-1p7b",
+    "revision": "1"
+  },
+  "binding_revision_id": "mbrev-file-asr-qwen3-1p7b-gb10-20261027",
+  "capacity_manifest_id": "capm-file-asr-qwen3-1p7b-gb10-20261027",
+  "release_tier": "experimental",
+  "topology": {
+    "host_node_id": "cube-ccba",
+    "cpu_arch": "arm64",
+    "hardware_class": "nvidia-gb10-single-node",
+    "memory_architecture": "unified_memory",
+    "total_physical_memory_bytes": 130631430307,
+    "shared_memory": {
+      "parent_budget_id": "gb10-cube-ccba-parent",
+      "shared_with_roles": [
+        "speech",
+        "workbench_llm",
+        "auxiliary"
+      ]
+    }
+  },
+  "software": {
+    "application_version": "0.1.0.dev0",
+    "contract_version": "1.0.0",
+    "engine_components": {
+      "stage-qwen3-asr-1p7b-batch": {
+        "engine_kind": "vllm",
+        "image_digest": "sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765",
+        "runtime_version": "vllm-0.28.0+py3.12.3"
+      }
+    }
+  },
+  "test_suite": {
+    "revision": "1",
+    "corpus_revision": "audio-corpus-20261024",
+    "scenario_ids": [
+      "asr-fleurs-zh-baseline",
+      "asr-long-audio-60-280s",
+      "asr-narrowband-8k",
+      "asr-fleurs-25-distinct",
+      "asr-aishell4-farfield",
+      "asr-ascend-code-switch",
+      "asr-babble-snr",
+      "asr-overlap-two-speaker",
+      "asr-silence-and-noise",
+      "asr-gateway-file-e2e",
+      "asr-cancel-and-abort",
+      "asr-concurrency-and-throughput",
+      "asr-real-world-noise",
+      "asr-dialect-and-accent"
+    ]
+  },
+  "scenarios": [
+    {
+      "scenario_id": "asr-fleurs-zh-baseline",
+      "required": true,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "character_error_rate",
+          "value": 0,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "latency",
+          "value": 421,
+          "unit": "ms",
+          "percentile": null
+        },
+        {
+          "name": "audio_duration",
+          "value": 10.38,
+          "unit": "s",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 1,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:94ccb30e14898b75aa0250d5dcb968895eff26291a3bab7006c979c8ae9c8e89",
+      "notes": "Pass rule: CER 0 after punctuation normalization; one clean FLEURS zh sample; latency is a single observation, not P95."
+    },
+    {
+      "scenario_id": "asr-long-audio-60-280s",
+      "required": true,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "max_audio_duration",
+          "value": 279.5,
+          "unit": "s",
+          "percentile": null
+        },
+        {
+          "name": "max_latency",
+          "value": 1871,
+          "unit": "ms",
+          "percentile": null
+        },
+        {
+          "name": "truncation_count",
+          "value": 0,
+          "unit": "count",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 5,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:7eff340fc765fb389bbf0cd9cdbcbe6eea869dcfa25986b994f1f4944f7dbae3",
+      "notes": "Pass rule: all five durations return HTTP 200, contain the final segment, and show no truncation. Concatenated read speech only; the model context limit was not reached."
+    },
+    {
+      "scenario_id": "asr-narrowband-8k",
+      "required": false,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "character_error_rate",
+          "value": 0,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "max_latency",
+          "value": 417,
+          "unit": "ms",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 2,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:a45ccafd5656af76816a58436654eea3da86ec8ca62656387918ed7ee20c7376",
+      "notes": "Pass rule: CER 0 for both resampled and 300-3400 Hz band-limited variants. Derived from clean speech; not a real telephone recording."
+    },
+    {
+      "scenario_id": "asr-fleurs-25-distinct",
+      "required": false,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "sample_count",
+          "value": 25,
+          "unit": "count",
+          "percentile": null
+        },
+        {
+          "name": "distinct_output_count",
+          "value": 25,
+          "unit": "count",
+          "percentile": null
+        },
+        {
+          "name": "distinctness",
+          "value": 1,
+          "unit": "ratio",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:c9b04e53087636198bfe9d94e86d2a644bb3480b2a6401c46651fb9e81479a87",
+      "notes": "Pass rule: 25 distinct source segments produce 25 distinct outputs. This is a template-repetition counterexample, not a quality metric."
+    },
+    {
+      "scenario_id": "asr-aishell4-farfield",
+      "required": false,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "max_character_error_rate",
+          "value": 4.6,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "max_latency",
+          "value": 690,
+          "unit": "ms",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 3,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:a6df8bfc71d15b5382178b8599bea088293e9e2e2dca76a3b69758ccaa7c6b56",
+      "notes": "Pass rule: every sample below 5 percent CER. AISHELL-4 dataset far-field array, not the product microphone or room; three samples only."
+    },
+    {
+      "scenario_id": "asr-ascend-code-switch",
+      "required": false,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "latin_token_preservation",
+          "value": 100,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "content_word_substitution_count",
+          "value": 1,
+          "unit": "count",
+          "percentile": null
+        },
+        {
+          "name": "latency",
+          "value": 585,
+          "unit": "ms",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:5e68cf142b8eecd6afc72046341f72c5b4755a853e2e52da14dd930d1c822ca4",
+      "notes": "Pass rule: all Latin terms retain surface form and the single semantic substitution is disclosed. One sample; not a code-switching accuracy estimate."
+    },
+    {
+      "scenario_id": "asr-babble-snr",
+      "required": false,
+      "status": "failed",
+      "metrics": [
+        {
+          "name": "target_sentence_preservation",
+          "value": 66.7,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 3,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:96db64b71bdde7a50641cbc7c2f8e1022ed87e4259a5371494d19b3a3d1ccd6e",
+      "notes": "Fail rule: all three SNRs must retain the complete target sentence. 10 and 5 dB passed; 0 dB changed one target character. Babble speaker content also leaked into the output."
+    },
+    {
+      "scenario_id": "asr-overlap-two-speaker",
+      "required": false,
+      "status": "failed",
+      "metrics": [
+        {
+          "name": "speaker_separation",
+          "value": 0,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "sample_count",
+          "value": 1,
+          "unit": "count",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:32c19f9c6f3d884f0ec37b6f4212919fc42287a9805c6b87d87165ced4de8787",
+      "notes": "Characterization failure: overlapping speakers become one mixed stream and substantial content is lost. The engine exposes no timestamps or speaker labels."
+    },
+    {
+      "scenario_id": "asr-silence-and-noise",
+      "required": false,
+      "status": "passed",
+      "metrics": [
+        {
+          "name": "empty_text_rate",
+          "value": 100,
+          "unit": "percent",
+          "percentile": null
+        },
+        {
+          "name": "latency",
+          "value": 128,
+          "unit": "ms",
+          "percentile": null
+        }
+      ],
+      "evidence_digest": "sha256:00eb2ab6d9242a1fa5a69ffb7365586be106b7c17a9cfbbd9158b6e12b83baf7",
+      "notes": "One 8 s white-noise sample returned empty text. This is a smoke counterexample, not a broad hallucination qualification."
+    },
+    {
+      "scenario_id": "asr-gateway-file-e2e",
+      "required": true,
+      "status": "skipped",
+      "metrics": [],
+      "evidence_digest": "sha256:61c05c1d895912ebc909cffc88e8a2c067a88eb5e65e5a1d833b1b43c9587c52",
+      "notes": "Not executed. All measurements called the engine directly; gateway correlation, artifact persistence, timeout, and retry are uncovered."
+    },
+    {
+      "scenario_id": "asr-cancel-and-abort",
+      "required": true,
+      "status": "skipped",
+      "metrics": [],
+      "evidence_digest": "sha256:b9f9ba009b3a9dbcec2b75eee541d5f8a68cc66174391a62d553a83d30b61ca5",
+      "notes": "Not executed. Request abort, stop proof, quarantine, and budget release remain unverified."
+    },
+    {
+      "scenario_id": "asr-concurrency-and-throughput",
+      "required": true,
+      "status": "skipped",
+      "metrics": [],
+      "evidence_digest": "sha256:630e1aa0492914fbdfac6ea1466f5339bc0875df23d4c574f878e90afb9a421a",
+      "notes": "Not executed. Requests were serial; 11.24x is only the KV-cache arithmetic bound. No P95 or sustained throughput exists."
+    },
+    {
+      "scenario_id": "asr-real-world-noise",
+      "required": false,
+      "status": "skipped",
+      "metrics": [],
+      "evidence_digest": "sha256:fbafccdfb7beaefb70cfb17b3d780a32ed474e58029aa1cfc2cb70dc6c91fcb3",
+      "notes": "Not executed. No street, restaurant, or product-device recordings were used."
+    },
+    {
+      "scenario_id": "asr-dialect-and-accent",
+      "required": false,
+      "status": "skipped",
+      "metrics": [],
+      "evidence_digest": "sha256:414b33db02a657ea6a8327a2bc86883198c56a33db30d5c00da5c59a3409a588",
+      "notes": "Not executed. No labelled dialect or accent corpus was available."
+    }
+  ],
+  "required_scenarios_passed": false,
+  "overall_status": "incomplete",
+  "limitations": [
+    "This report covers direct engine calls only. It does not qualify the public gateway, artifact persistence, correlation, timeout, or retry path.",
+    "Request abort, cancellation confirmation, quarantine recovery, and budget release were not exercised.",
+    "No concurrency or sustained throughput was measured; the 11.24x figure is a KV-cache arithmetic bound.",
+    "CUDA decode millicores, PCM buffer high-water mark, scratch disk, and bandwidth are declared caps, not measured values.",
+    "Peak resident memory for the #243 run was not observed; 12 GiB is the experiment cgroup cap, not a measured peak.",
+    "The 8 kHz evidence is resampled or band-limited clean speech, not a real telephone channel.",
+    "Babble is synthetic from real voices; far-field evidence is AISHELL-4 data, not the product microphone or room.",
+    "Dialect, accent, long spontaneous speech, and real-world noise are untested.",
+    "279.5 s is the longest tested input; behavior at or beyond the context limit is unknown.",
+    "The binding revision, pool instance, and publication do not exist yet. The identifiers in this bundle are proposed; registration must replace/confirm them and digests must be recomputed."
+  ],
+  "evidence_digest": "sha256:082bd34a404c811d179c982df5f9fab1e6dc39f9e495a1b824da67708549d634",
+  "qualified_at": "2026-10-27T20:44:19Z",
+  "expires_at": "2027-01-25T20:44:19Z"
+}

@@ -40,7 +40,7 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
 | C1 | 当前 HEAD 的 `gh run list`、run 状态和 job 数 | `gh`/`jq` 缺失、未认证、该 commit 尚无 run、run 尚未完成，或无法读取 job 列表 |
 | C2 | `127.0.0.1:58030/readyz` 的 `status=ready` 与所有 check `ok` | `curl`/`jq` 缺失，或网关不可访问（例如 `58030` 未监听）；超时或断言失败是 FAIL |
 | C3 | `unknown_quarantined` 必须为 `0`，ready 实例至少 `1` | `docker` 缺失、`del109-pg` 不存在/未运行，或只读查询不可用 |
-| C4 | `complete_successfully(` 是否有生产调用点，而不是只有定义 | 仓库不可读或 `git grep` 执行失败；无匹配或只有定义是 FAIL |
+| C4 | `record_stop(` 是否有生产调用点（非定义、非测试）且能走到 `ExecutionState.SUCCEEDED` 路径 | 仓库不可读或 `git grep` 执行失败；无匹配或只有定义是 FAIL |
 | C5 | 公开 `/v1/audio/transcriptions` 真实 E2E | 默认 SKIP；没有 `--allow-write`，缺少配置或样本，`curl`/`jq` 不可用，或 API 未监听 |
 | C6 | 公开 `/v1/audio/speech` 真实 E2E | 默认 SKIP；没有 `--allow-write`，缺少配置，`curl`/`jq`/`file` 不可用，或 API 未监听 |
 | C7 | 资格报告必须是 `production`、`pass` 且所有 required 场景通过 | `jq` 缺失或报告文件不可读 |

@@ -33,6 +33,7 @@
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含公开转写实测 504（worker 只登记 staging、不写终态；120s 是 API 轮询）、11.2.2 的人工 `record_stop` 字段/命令与限制，以及随附 ASR 定义缺真实容量/资格证据的边界 |
+| [对账恢复 runbook](operations/reconciliation-recovery.md) | `reconciliation_required` / `unknown_quarantined` 的只读查证、分支判定、受支持恢复入口缺口、升级路径与当前两条 unknown 的实测结论 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |
 | [整体实施跟踪矩阵](plans/2026-10-23-implementation-tracking.md)                                     | GitHub 总控 #6、6 Epic、25 工作包与 6 Gate 的状态、依赖和证据矩阵               |

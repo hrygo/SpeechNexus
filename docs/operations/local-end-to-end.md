@@ -1828,7 +1828,7 @@ jq '{execution_state, cleanup_state, engine_request_id, deadline_at, staging_art
 terminal/complete 事实（`execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py:273`、
 `execution-gateway/src/speechnexus_gateway/domain/observation.py:114`）。域模型虽然定义了
 `complete_successfully()`（`execution-gateway/src/speechnexus_gateway/domain/submission.py:801`），
-但全仓没有调用者；`record_stop(SUCCEEDED)` 只在恢复/测试对账路径出现。因此“提交 +
+但**没有生产调用者**（测试会调用）；`record_stop(SUCCEEDED)` 只在恢复/测试对账路径出现。因此“提交 +
 登记 staging”已装配，“成功终态”没有写者。部署单元表对 Scheduler/Job Worker 写的
 “独立启动入口及完整业务装配待补齐”就是这条
 （`docs/architecture/deployment-units.md:31`、`:35`）。
@@ -1974,7 +1974,7 @@ exit=0
 staging 后，worker 必须在同一可信进程内以真实引擎终态响应调用
 `record_stop(..., ExecutionState.SUCCEEDED)`（或提供等价的终态事务），再让 admission
 按该事实释放租约。`c435908` 的 worker 只到 `_register` 登记 staging；
-`complete_successfully()` 全仓无调用者，因此公开请求必然等到 504。这是装配缺口，不是
+`complete_successfully()` **没有生产调用者**（测试会调用），因此公开请求必然等到 504。这是装配缺口，不是
 API 配置错误，也不是网关超时设置。
 
 **人工路径**：只有在没有产品写者、但已有真实 staging 终态结果时，才由持有控制库与网关

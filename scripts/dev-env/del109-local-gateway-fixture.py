@@ -256,7 +256,13 @@ def main() -> int:
         ),
         command=command,
     )
-    (HERE / "submit.json").write_text(json.dumps(request.effective_request["execution_request"]))
+    effective = request.effective_request
+    execution_request = (
+        effective["execution_request"] if isinstance(effective, dict) else None
+    )
+    if not isinstance(execution_request, dict):
+        raise SystemExit("the built request carries no execution_request mapping")
+    (HERE / "submit.json").write_text(json.dumps(execution_request))
     (HERE / "submit.json").chmod(MODE)
 
     source = HERE / "controlled-asr-source.json"

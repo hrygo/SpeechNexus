@@ -12,8 +12,8 @@ date: 2026-10-28
 ## 前置条件
 
 - 数据库已迁移到当前 head，且目标 revision 已由草稿写入产生；
-- 数据库已应用 `0021_publication_evidence` 与 `0022_catalog_revision_state`；
-- 独立非 owner 角色同时具备 `binding_draft_grants`（读取 `speech_binding_revisions`）、`publication_grants`（读写 `speech_publications`）与 `publication_evidence_grants`（读写证据表）；不得复用 Compose bootstrap owner；
+- 数据库已应用 `0021_publication_evidence`、`0022_catalog_revision_state` 与 `0023_publication_lifecycle`；
+- 独立非 owner 角色同时具备 `binding_draft_grants`（读取 `speech_binding_revisions`）、`publication_grants`（写 publication/retirement 并选择 head）与 `publication_evidence_grants`（读写证据表）；不得复用 Compose bootstrap owner；
 - admin GET 另需只读角色与 `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL`，见[证据回填与投影](backfill-binding-publication-evidence.md)；
 - 显式设置发布写入 DSN，缺省不回退到通用数据库身份：
 
@@ -55,7 +55,7 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
 1. `(binding_id, revision)` 已发布且 `revision_id` 不同 → 冲突错误；
 2. `speech_binding_revisions` 中不存在精确的 `(binding_id, revision, revision_id)` 三元组 → 拒绝，并报出缺失的 binding / revision，或报出实际存储的 `revision_id`；
 3. 三元组存在但 `capacity_manifest_id` 与 revision 的 `execution_recipe.capacity_manifest_id` 不一致 → 拒绝，不写任何行；
-4. 三元组存在且容量一致 → 在同一事务里先写 `speech_publications`、再写 `speech_binding_publication_evidence`；publication 插入触发器同时推进 `speech_catalog_state`，证据写入失败则 publication、版本推进与证据一起回滚；
+4. 三元组存在且容量一致 → 在同一事务里写 `speech_publications`、选择 `speech_publication_heads`、再写 `speech_binding_publication_evidence`；publication 插入触发器同时推进 `speech_catalog_state`，证据写入失败则 publication、head、版本推进与证据一起回滚；
 5. 同一 publication 已有证据：内容相同则幂等回放，内容不同则证据冲突；并发写入者先落库时回放其已存事实。
 
 `speech_publications` 没有任何外键，因此“revision 必须存在”只能由本命令在写入端查库保证。发布是 insert-only：同一三元组重复执行**不新增行**；替换版本 = 发布更大的 revision。
@@ -74,7 +74,7 @@ published binding_id=asr-quality revision=1 revision_id=mbrev-... published_at_u
 ## 现状与已知缺口
 
 1. **admin GET 已如实投影**：有 publication 且有匹配证据时返回 `published`；只有 publication、没有证据时返回 `503 binding_unavailable`，不再谎报 `draft`。历史无证据行必须先按[证据回填](backfill-binding-publication-evidence.md)处理。
-2. **生命周期入口仍未接线**：0022 已提供精确退役墓碑、目录版本推进和基础设施级 `retire` 端口，但没有受支持的 CLI/HTTP retire；head 指针、activate 与 rollback 仍未实现，已发布事实保持不可变。该能力属于后续阶段，需单独评审；任何后续可见性变更必须在同一事务推进 `speech_catalog_state`。
+2. **binding 生命周期已接线**：`0023_publication_lifecycle` 提供 head、append-only 审计事件及事务端点；退役不会删除 publication、证据或历史 Job，激活/回滚只选择既有 published revision。配置与请求见[binding 生命周期操作](binding-lifecycle.md)。voice 仍只有契约声明与目录墓碑，尚无生产写路径或激活契约。
 3. **该命令证明的是链路，不构成生产资格**：证据 ID 是发布时记录的事实，不是完整的资格验证；不代表容量、真实引擎或产品准入通过。
 4. **过渡期两个接口可能不一致**：在历史无证据 publication 尚未回填时，公开解析仍能选中它，而 admin GET 返回 `503`。这是已知过渡状态；回填后 unresolved 必须为 0。
 

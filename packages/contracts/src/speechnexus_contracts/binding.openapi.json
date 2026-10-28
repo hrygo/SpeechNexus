@@ -141,6 +141,176 @@
         },
         "description": "Reads only the explicitly named immutable revision; never allocates,\npublishes, activates or selects a current/default revision. Invalid\npath/header/query values or read body/framing return 400. Return 404\nonly when an authoritative read confirms this revision is absent.\nUnreadable metadata returns 503 binding_unavailable with retryable: true\nfor this same fixed GET. It is not absence or evidence that a prior\ncreate did not commit. Host/Origin refusal uses 403; unsupported methods\nuse 405 with Allow. No Operation or keyless recovery is implied.\n"
       }
+    },
+    "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements": {
+      "post": {
+        "tags": ["model-bindings"],
+        "operationId": "retireModelBindingRevision",
+        "summary": "Retire or disable a model binding revision",
+        "description": "Retirement is a selection boundary, not a delete. It clears the active\nbinding pointer so new Jobs cannot select the revision, while the\nimmutable definition, publication, evidence and historical Jobs remain\nreadable. In-flight Jobs are unaffected: they keep the effective\nconfiguration fixed at admission and never re-read the pointer.\n\n`mode: retire` is the normal end of life. `mode: disable` is the same\nselection change with an operator reason and a distinct audit result;\nneither mode cancels or rewrites an admitted Job, and neither releases\nexecution capacity on its own. Repeating the same Idempotency-Key\nreturns the original result; a second retirement with a new key returns\n409 `revision_already_retired`. Retiring a revision that is not the\nactive pointer returns 409 `revision_not_current`.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BindingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBindingRetirementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated binding revision.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_Root"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/BindingCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/BindingReceiveTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/BindingRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/BindingMediaUnsupported"
+          },
+          "429": {
+            "$ref": "#/components/responses/BindingReceiveFull"
+          },
+          "503": {
+            "$ref": "#/components/responses/BindingCreationUnknown"
+          }
+        }
+      }
+    },
+    "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations": {
+      "post": {
+        "tags": ["model-bindings"],
+        "operationId": "activatePublishedModelBindingRevision",
+        "summary": "Roll the current binding pointer back or forward to a published revision",
+        "description": "Activates an existing `published` binding revision without changing its\nimmutable definition, evidence or historical Jobs. This is the explicit\nrollback path; it never creates a new publication. `expected_current_revision`\nis the active binding revision observed by the operator and is a\ncompare-and-swap guard; null is valid only when retirement cleared the\npointer. A mismatch returns 409 `configuration_changed`. Draft, retired\nand disabled revisions cannot be activated.\n\nAn identical Idempotency-Key replay returns the original activation; a\nchanged intent under the same key returns 409 `idempotency_conflict`.\nAn unreadable original result or uncertain commit returns 503\n`binding_result_unknown` with `retryable: false`; it is not evidence that\nthe pointer stayed unchanged. A caller retaining the original\nIdempotency-Key may explicitly replay the same complete POST to recover\nits result. No automatic retry or query-by-key resource is provided.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BindingIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/RevisionPath"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBindingActivationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Published binding revision activated, or the original activation replayed.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/External_model_binding_schema_json_Root"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "405": {
+            "$ref": "#/components/responses/BindingCreateMethodNotAllowed"
+          },
+          "408": {
+            "$ref": "#/components/responses/BindingReceiveTimeout"
+          },
+          "413": {
+            "$ref": "#/components/responses/BindingRequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/BindingMediaUnsupported"
+          },
+          "429": {
+            "$ref": "#/components/responses/BindingReceiveFull"
+          },
+          "503": {
+            "$ref": "#/components/responses/BindingCreationUnknown"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2161,6 +2331,63 @@
             }
           }
         ]
+      },
+      "ModelBindingRetirementRequest": {
+        "$ref": "#/components/schemas/External_shared_lifecycle_schema_json_RetirementRequest"
+      },
+      "External_shared_lifecycle_schema_json_RetirementRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["retire", "disable"]
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "disable"
+                }
+              },
+              "required": ["mode"]
+            },
+            "then": {
+              "required": ["reason"],
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ModelBindingActivationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected_current_revision"],
+        "properties": {
+          "expected_current_revision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
       }
     },
     "headers": {
@@ -2341,6 +2568,16 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/BindingReadUnavailableError"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Revision mismatch, idempotency conflict, or incompatible lifecycle transition.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }

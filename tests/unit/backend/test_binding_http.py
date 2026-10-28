@@ -186,9 +186,12 @@ async def test_only_source_binding_paths_are_exposed_with_namespaced_schemas() -
     async with client(provider()) as http:
         document = (await http.get("/openapi.json")).json()
     paths = {p: v for p, v in document["paths"].items() if p.startswith(PATH)}
-    assert set(paths) == {PATH, PATH + "/{binding_id}/revisions/{revision}"}
+    revision = PATH + "/{binding_id}/revisions/{revision}"
+    assert set(paths) == {PATH, revision, revision + "/retirements", revision + "/activations"}
     assert set(paths[PATH]) == {"post"}
-    assert set(paths[PATH + "/{binding_id}/revisions/{revision}"]) == {"get"}
+    assert set(paths[revision]) == {"get"}
+    assert set(paths[revision + "/retirements"]) == {"post"}
+    assert set(paths[revision + "/activations"]) == {"post"}
     assert "BindingDraft_ModelBindingDraftRevision" in document["components"]["schemas"]
     from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
 

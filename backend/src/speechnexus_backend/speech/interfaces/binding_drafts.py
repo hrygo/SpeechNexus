@@ -40,12 +40,16 @@ def revision_to_wire(
         }
     else:
         publication = {
-            "status": "published",
+            "status": published.status,
             "published_at": _timestamp(published.published_at_us),
-            "retired_at": None,
+            "retired_at": (
+                None
+                if published.retired_at_us is None
+                else _timestamp(published.retired_at_us)
+            ),
             "capacity_manifest_id": published.capacity_manifest_id,
             "qualification_report_id": published.qualification_report_id,
-            "disabled_reason": None,
+            "disabled_reason": published.disabled_reason,
         }
     wire = {
         **decode_document(draft.definition),

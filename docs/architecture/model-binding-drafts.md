@@ -1,14 +1,16 @@
 # Immutable ModelBinding drafts
 
-The PostgreSQL draft registry from #125 now has an opt-in HTTP POST and fixed
-revision GET, using the A00/A02 contract preflight from #122. Publication,
-activation, default selection, qualification and model loading remain separate
+The PostgreSQL draft registry from #125 now has an opt-in HTTP POST, fixed
+revision GET, retirement and explicit activation/rollback, using the A00/A02
+contract preflight from #122. Publication through the operator command selects
+the new head; default selection, qualification and model loading remain separate
 work. The existing Profile draft provider remains a separate resource.
 
-The authoritative sources are admin OpenAPI `0.1.0.dev3` and
+The authoritative sources are admin OpenAPI `0.1.0.dev4` and
 `model-binding.schema.json` (`schema_version: "1.0.0"`). The selected operations
-are `createModelBindingDraft` and `getModelBindingRevision`. The full admin
-TypeScript types already existed; the new runtime entries use these same sources.
+are `createModelBindingDraft`, `getModelBindingRevision`,
+`retireModelBindingRevision` and `activatePublishedModelBindingRevision`. The full
+admin TypeScript types already existed; the runtime entries use these same sources.
 
 ## Creation and recovery
 
@@ -230,10 +232,39 @@ retirement tables. Downgrade refuses when tombstone history exists or when the
 stored version cannot be reconstructed as the legacy count, rather than silently
 moving historical ETags backwards.
 
-This card supplies the revision primitive and infrastructure retire port, not a
-supported CLI/HTTP lifecycle. A future activation, rollback or head-pointer
-implementation must advance the same state row in its visibility-changing
-transaction; updating only a pointer or publication row would leave ETags stale.
+## Selected head and lifecycle (0023)
+
+Migration `0023_publication_lifecycle` adds the mutable
+`speech_publication_heads` pointer, seeds it from each kind/object's newest
+visible publication, and adds the append-only
+`speech_publication_lifecycle_events` audit/idempotency table. Publications and
+their revision documents remain immutable; a head names the exact
+`(kind, object_id, revision, revision_id)` selected for new work.
+
+The supported binding operations are now
+`POST .../revisions/{revision}/retirements` and
+`POST .../revisions/{revision}/activations`. Retirement inserts a permanent
+tombstone and clears the head without deleting the publication, evidence,
+revision or historical Jobs. Activation is the rollback path: it selects an
+already-published, non-retired revision with an explicit
+`expected_current_revision` compare-and-swap. `null` is accepted only after
+retirement cleared the head. A retired revision cannot itself be reactivated;
+roll back to another surviving published revision instead.
+
+Both operations use one short transaction, a transaction-scoped advisory lock
+keyed by the catalogue object and an idempotency-key advisory lock. The head and
+`speech_catalog_state` advance in that same transaction: retirement advances via
+the tombstone trigger, while head changes advance explicitly. A changed head is
+therefore visible to the next catalogue/Job read and changes ETag; no read path
+falls back to an older publication. In-flight Jobs keep the effective
+configuration persisted at admission and never re-read the head.
+
+Every successful first execution appends an event with the binding/revision,
+result status, request ID, actor type/label, policy revision, intent digest,
+optional idempotency digest and `change_summary_json` containing the operator
+reason. Replaying the same key and complete intent returns the original event;
+a changed intent under that key is `409 idempotency_conflict`. See the
+[binding lifecycle operations guide](../operations/binding-lifecycle.md).
 
 ## Opt-in HTTP writer
 
@@ -245,6 +276,14 @@ session and effective identities, table ownership, other speech-table authority
 and exact mutable columns before exposing the provider. It never provisions
 roles, grants or migrations. Failed startup and shutdown close the owned pool
 and remove its diagnostic filter. Profile and Binding roles and pools stay separate.
+
+Configure `SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL` with another explicit
+non-owner role provisioned by `binding_lifecycle_grants`: append-only publication
+and retirement rows, append-only lifecycle events, a mutable head, SELECT on the
+binding revision/evidence history, and column-level UPDATE on the catalogue
+version. Startup rejects owner/schema-creation authority, sequence access, other
+speech-table grants and any broader mutable-column set. A blank value keeps the
+lifecycle routes at a fail-closed `503` and never falls back to the draft writer.
 
 Binding receive byte, concurrency, receive time and transaction time settings
 are independent `SPEECHNEXUS_BINDING_*` configuration. Host/Origin uses the shared
@@ -266,7 +305,7 @@ hard network interruption of COMMIT. A successful but delayed COMMIT may return
 503 unknown; only the original complete intent/key can resolve it. Real PG tests
 cover delay before/after commit, same-key concurrent different intents, original
 writer rollback, lost acknowledgment, pressure, client cancellation and restart.
-The served OpenAPI projects only these two source-selected methods. Same-source
+The served OpenAPI projects the four selected draft/lifecycle methods. Same-source
 TypeScript runs against an actual loopback HTTP server with the minimum-role PG
 writer; CI installs locked Node tools in every partition containing that probe.
 
@@ -279,10 +318,12 @@ It is not an HTTP route and does not implement the frozen
 identities and writes `speech_publications` plus
 `speech_binding_publication_evidence` in one transaction. The fixed GET projects
 that stored state: `draft`, `published`, or `503 binding_unavailable` when a
-publication has no matching evidence. Public lists, activation/CAS, default
-pointers and full qualification are not implemented here. Only the selected
-draft POST and fixed GET are served; other administrative operations do not
-become available through this unit.
+publication has no matching evidence. Binding retirement, activation/rollback,
+head selection and append-only audit events are implemented through the separate
+lifecycle writer described above. Default parameters and full qualification are
+not implemented here. Voice retirement still has only a frozen declaration and no
+production writer/handler; voice activation has no declaration yet. Profile
+lifecycle remains its separate intent/provider surface.
 
 Model parameter domains still do not carry defaults. This unit neither adds that
 field nor fabricates a published registry. Full effective parameter resolution,

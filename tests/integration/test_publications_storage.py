@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -22,6 +21,7 @@ from sqlalchemy.pool import NullPool
 from speechnexus_backend.app import create_app
 from speechnexus_backend.model_catalog_runtime import ModelCatalogRuntime
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
@@ -201,7 +201,7 @@ def create_binding(
             "1",
             "binding-rev-1",
             key,
-            json.dumps(definition, sort_keys=True),
+            encode_document(definition).decode("utf-8"),
             document,
             request,
             1_700_000_000_000_000,
@@ -344,7 +344,7 @@ def create_binding_revision(
             revision,
             revision_id,
             key,
-            json.dumps(definition, sort_keys=True),
+            encode_document(definition).decode("utf-8"),
             document,
             request,
             1_700_000_000_000_000 + int(revision),

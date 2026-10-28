@@ -17,12 +17,12 @@ class CatalogCursor(Protocol):
 
 
 def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
-    """Read the published-only view and return each binding's newest revision.
+    """Read the published-only view and return each family's selected revision.
 
     Matching ``revision_id`` as well as the number keeps the catalogue honest when
-    a publication and the stored document ever disagree. A newer publication that
-    does not name a stored document hides older revisions rather than silently
-    falling back and presenting a stale model as current. The revision document
+    a publication and the stored document ever disagree. The mutable head selects
+    an explicit published revision (including a rollback) and is cleared by
+    retirement; absence never falls back to an older row. The revision document
     comes only from the security-barrier view, so a leaked reader credential
     cannot select unpublished draft revisions.
 
@@ -33,16 +33,14 @@ def list_published_bindings(cursor: CatalogCursor) -> list[dict[str, Any]]:
         "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
         "v.definition_json "
         "FROM speech_publications AS p "
+        "JOIN speech_publication_heads AS h "
+        "  ON h.kind = p.kind AND h.object_id = p.object_id "
+        " AND h.revision = p.revision AND h.revision_id = p.revision_id "
         "JOIN speech_published_binding_revisions AS v "
         "  ON v.binding_id = p.object_id "
         " AND v.revision = p.revision "
         " AND v.revision_id = p.revision_id "
         "WHERE p.kind = 'binding' "
-        "AND NOT EXISTS ("
-        "SELECT 1 FROM speech_publications AS newer "
-        "WHERE newer.kind = 'binding' AND newer.object_id = p.object_id "
-        "AND newer.revision::numeric > p.revision::numeric"
-        ") "
         "AND NOT EXISTS ("
         f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
         "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "

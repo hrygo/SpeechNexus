@@ -112,10 +112,19 @@ class PostgresPublications:
     def append(self, publication: Publication) -> bool:
         return self._run(lambda cursor: append_publication(cursor, publication))
 
-    def retire(self, publication: Publication, *, retired_at_us: int) -> bool:
+    def retire(
+        self,
+        publication: Publication,
+        *,
+        retired_at_us: int,
+        mode: str = "retire",
+        reason: str | None = None,
+    ) -> bool:
         """Hide one current revision; repeating the same retirement is a no-op."""
         return self._run(
-            lambda cursor: retire_publication(cursor, publication, retired_at_us),
+            lambda cursor: retire_publication(
+                cursor, publication, retired_at_us, mode=mode, reason=reason
+            ),
             preserve=(ValueError,),
         )
 

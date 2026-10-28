@@ -57,7 +57,8 @@
         "ModelBindingCreateRequest",
         "ProfilePublicationRequest",
         "ProfileActivationRequest",
-        "ProfilePublishedRevision"
+        "ProfilePublishedRevision",
+        "ModelBindingActivationRequest"
       ]
     },
     "workbench": {
@@ -378,9 +379,16 @@
       "typescript_source": "admin",
       "paths": [
         "/v1/nexus/admin/model-bindings",
-        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}"
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}",
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/retirements",
+        "/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations"
       ],
-      "operations": ["createModelBindingDraft", "getModelBindingRevision"]
+      "operations": [
+        "createModelBindingDraft",
+        "getModelBindingRevision",
+        "retireModelBindingRevision",
+        "activatePublishedModelBindingRevision"
+      ]
     },
     "binding_defaults": {
       "source": "binding-defaults-producer.openapi.yaml",

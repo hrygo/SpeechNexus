@@ -5,6 +5,7 @@ without a publication. Grants are declared here for deployment provisioning and
 are never applied by application startup.
 """
 
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 TABLE = "speech_binding_publication_evidence"
@@ -53,6 +54,7 @@ ADMIN_READER_TABLES = (
     "speech_binding_commands",
     "speech_publications",
     TABLE,
+    RETIREMENT_TABLE,
 )
 
 

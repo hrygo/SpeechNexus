@@ -76,14 +76,12 @@ class PostgresPublicJobs:
         rows = self._read(
             "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
             "r.definition_json FROM speech_publications AS p "
+            "JOIN speech_publication_heads AS h "
+            "  ON h.kind = p.kind AND h.object_id = p.object_id "
+            " AND h.revision = p.revision AND h.revision_id = p.revision_id "
             "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
             "AND r.revision = p.revision AND r.revision_id = p.revision_id "
-            "WHERE p.kind = 'binding' AND p.object_id = %s "
-            "AND NOT EXISTS ("
-            "SELECT 1 FROM speech_publications AS newer "
-            "WHERE newer.kind = p.kind AND newer.object_id = p.object_id "
-            "AND newer.revision::numeric > p.revision::numeric"
-            ") "
+            "WHERE h.kind = 'binding' AND h.object_id = %s "
             "AND NOT EXISTS ("
             f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
             "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
@@ -111,7 +109,12 @@ class PostgresPublicJobs:
     ) -> Publication | None:
         rows = self._read(
             "SELECT kind, object_id, revision, revision_id, published_at_us "
-            "FROM speech_publications WHERE kind = %s AND object_id = %s AND revision = %s",
+            "FROM speech_publications AS p WHERE kind = %s AND object_id = %s AND revision = %s "
+            "AND NOT EXISTS ("
+            f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+            "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
+            "AND retired.revision = p.revision AND retired.revision_id = p.revision_id"
+            ")",
             (kind, object_id, str(revision)),
         )
         if not rows:

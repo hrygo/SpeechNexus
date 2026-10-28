@@ -57,6 +57,7 @@ def publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{RETIREMENT_TABLE} TO {target}',
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON "{schema}".speech_publication_heads TO {target}',
         f'GRANT SELECT, UPDATE (revision, generated_at_us) ON "{schema}".{STATE_TABLE} TO {target}',
     )
 
@@ -73,5 +74,6 @@ def model_catalog_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
         f'GRANT SELECT ON "{schema}".{TABLE}, "{schema}".{READER_VIEW}, '
-        f'"{schema}".{STATE_TABLE}, "{schema}".{RETIREMENT_TABLE} TO "{role}"',
+        f'"{schema}".{STATE_TABLE}, "{schema}".{RETIREMENT_TABLE}, '
+        f'"{schema}".speech_publication_heads TO "{role}"',
     )

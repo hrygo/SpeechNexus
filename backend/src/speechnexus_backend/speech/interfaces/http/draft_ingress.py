@@ -24,6 +24,7 @@ class DraftIngress:
         create_operation: str,
         read_operation: str,
         read_operations: tuple[str, ...] = (),
+        write_operations: tuple[str, ...] = (),
         max_bytes: int,
         concurrency: int,
         receive_timeout_seconds: float,
@@ -37,6 +38,7 @@ class DraftIngress:
             raise ValueError("Draft receive deadline must be bounded")
         self._prefix, self._target, self._error = prefix, target, error
         self._create, self._reads = create_operation, frozenset((read_operation, *read_operations))
+        self._writes = frozenset(write_operations)
         self._app, self._limit, self._timeout = app, max_bytes, receive_timeout_seconds
         self._enabled, self._slots = is_enabled, asyncio.Semaphore(concurrency)
         self._hosts, self._origins = frozenset(allowed_hosts), frozenset(allowed_origins)
@@ -70,7 +72,8 @@ class DraftIngress:
             await refuse("method_not_allowed", allow=selected[1])
             return
         if not self._enabled():
-            await refuse("result_unknown" if operation == self._create else "unavailable")
+            writes = operation == self._create or operation in self._writes
+            await refuse("result_unknown" if writes else "unavailable")
             return
         if operation in self._reads:
             await self._app(scope, receive, send)

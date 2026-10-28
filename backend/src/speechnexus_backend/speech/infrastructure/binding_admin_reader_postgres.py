@@ -27,7 +27,10 @@ from speechnexus_backend.speech.infrastructure.binding_publication_evidence_sql 
     find_evidence,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
-from speechnexus_backend.speech.infrastructure.publications_sql import find_publication
+from speechnexus_backend.speech.infrastructure.publications_sql import (
+    find_publication,
+    find_retirement,
+)
 
 
 class _Cursor:
@@ -107,6 +110,7 @@ class PostgresBindingAdminReader:
                 or evidence.revision_id != draft.revision_id
             ):
                 raise BindingUnavailableError
+            retirement = find_retirement(cursor, "binding", draft.binding_id, revision)
             definition = decode_document(draft.definition)
             recipe = definition.get("execution_recipe")
             declared = recipe.get("capacity_manifest_id") if isinstance(recipe, dict) else None
@@ -116,6 +120,19 @@ class PostgresBindingAdminReader:
                 published_at_us=publication.published_at_us,
                 capacity_manifest_id=evidence.capacity_manifest_id,
                 qualification_report_id=evidence.qualification_report_id,
+                status=(
+                    "published"
+                    if retirement is None
+                    else "disabled"
+                    if retirement["mode"] == "disable"
+                    else "retired"
+                ),
+                retired_at_us=None if retirement is None else int(retirement["retired_at_us"]),
+                disabled_reason=(
+                    str(retirement["reason"])
+                    if retirement is not None and retirement["mode"] == "disable"
+                    else None
+                ),
             )
 
         return self._run(operation)

@@ -7219,6 +7219,40 @@
       "valid": false
     },
     {
+      "id": "binding-activation-request",
+      "profile": "admin",
+      "schema": "ModelBindingActivationRequest",
+      "value": {
+        "expected_current_revision": "2"
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-activation-request-null-after-retirement",
+      "profile": "admin",
+      "schema": "ModelBindingActivationRequest",
+      "value": {
+        "expected_current_revision": null
+      },
+      "valid": true
+    },
+    {
+      "id": "binding-activation-request-missing-cas",
+      "profile": "admin",
+      "schema": "ModelBindingActivationRequest",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "binding-activation-request-wrong-cas-type",
+      "profile": "admin",
+      "schema": "ModelBindingActivationRequest",
+      "value": {
+        "expected_current_revision": 2
+      },
+      "valid": false
+    },
+    {
       "id": "binding-revision-source-0",
       "profile": "model_bindings",
       "schema": "ModelBindingRevision",

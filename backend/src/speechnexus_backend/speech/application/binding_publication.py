@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
@@ -86,6 +86,25 @@ class PublishedBinding:
     published_at_us: int
     capacity_manifest_id: str
     qualification_report_id: str
+    status: Literal["published", "retired", "disabled"] = "published"
+    retired_at_us: int | None = None
+    disabled_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in ("published", "retired", "disabled"):
+            raise ValueError("Invalid published binding status")
+        if self.status == "published" and (
+            self.retired_at_us is not None or self.disabled_reason is not None
+        ):
+            raise ValueError("Published binding cannot carry retirement facts")
+        if self.status == "retired" and (
+            self.retired_at_us is None or self.disabled_reason is not None
+        ):
+            raise ValueError("Retired binding requires its retirement time")
+        if self.status == "disabled" and (
+            self.retired_at_us is None or self.disabled_reason is None
+        ):
+            raise ValueError("Disabled binding requires its reason")
 
 
 class BindingPublicationFacts(Protocol):

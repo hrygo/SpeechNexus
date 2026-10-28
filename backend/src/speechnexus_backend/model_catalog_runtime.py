@@ -2,8 +2,9 @@
 
 The catalogue is public, so its reader must not be able to reach drafts, commands,
 coordination history or any write path. It reads the publication table, the
-published-only security-barrier view, the transactional revision state and the
-visibility tombstones, never the draft revision table. Startup
+published-only security-barrier view, the transactional revision state, the
+visibility tombstones and the selected-revision pointer, never the draft
+revision table. Startup
 verifies the granted surface instead of trusting configuration.
 """
 
@@ -20,6 +21,7 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     STATE_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -32,6 +34,7 @@ READABLE = frozenset(
         "speech_published_binding_revisions",
         STATE_TABLE,
         RETIREMENT_TABLE,
+        HEAD_TABLE,
     }
 )
 

@@ -111,6 +111,22 @@ class FakeConnection:
                     "can_write": False,
                     "can_write_column": False,
                 },
+                {
+                    "schema_name": "speech",
+                    "relname": "speech_catalog_state",
+                    "can_select": True,
+                    "can_select_column": True,
+                    "can_write": False,
+                    "can_write_column": False,
+                },
+                {
+                    "schema_name": "speech",
+                    "relname": "speech_publication_retirements",
+                    "can_select": True,
+                    "can_select_column": True,
+                    "can_write": False,
+                    "can_write_column": False,
+                },
             ]
         )
         self.queries: list[tuple[str, tuple[object, ...]]] = []

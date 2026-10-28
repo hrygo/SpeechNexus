@@ -251,6 +251,9 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_published_binding_revisions",
             # 0021: publish-time evidence, one row per publication.
             "speech_binding_publication_evidence",
+            # 0022: one transactional catalogue version and visibility tombstones.
+            "speech_catalog_state",
+            "speech_publication_retirements",
         }
         if db.dialect == "postgresql"
         else set()

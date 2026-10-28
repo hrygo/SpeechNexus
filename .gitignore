@@ -65,6 +65,7 @@ test-results/
 
 # Runtime, models and user artifacts
 .runtime/
+.paperclip-runtime/
 .cache/
 artifacts/
 models/

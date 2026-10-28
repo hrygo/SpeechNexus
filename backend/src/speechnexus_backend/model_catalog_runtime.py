@@ -1,8 +1,9 @@
 """Read-only model catalogue identity; it may read published facts and nothing else.
 
 The catalogue is public, so its reader must not be able to reach drafts, commands,
-coordination history or any write path. It reads the publication table and the
-published-only security-barrier view, never the draft revision table. Startup
+coordination history or any write path. It reads the publication table, the
+published-only security-barrier view, the transactional revision state and the
+visibility tombstones, never the draft revision table. Startup
 verifies the granted surface instead of trusting configuration.
 """
 
@@ -14,6 +15,10 @@ import uuid
 from typing import Any
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+    RETIREMENT_TABLE,
+    STATE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
@@ -21,7 +26,14 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     speech_pool,
 )
 
-READABLE = frozenset({"speech_publications", "speech_published_binding_revisions"})
+READABLE = frozenset(
+    {
+        "speech_publications",
+        "speech_published_binding_revisions",
+        STATE_TABLE,
+        RETIREMENT_TABLE,
+    }
+)
 
 
 class _PoolDiagnostics(logging.Filter):

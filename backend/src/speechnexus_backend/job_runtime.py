@@ -18,6 +18,8 @@ from speechnexus_backend.speech.infrastructure.public_jobs_postgres import Postg
 REQUIRED_SELECT = (
     "speech_workspaces",
     "speech_publications",
+    "speech_catalog_state",
+    "speech_publication_retirements",
     "speech_binding_revisions",
     "speech_assets",
     "speech_pronunciation_revisions",

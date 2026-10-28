@@ -147,7 +147,9 @@ def test_model_catalog_reader_grants_are_select_only() -> None:
     assert grants == (
         'GRANT USAGE ON SCHEMA "speechnexus_test" TO "catalogue_reader"',
         'GRANT SELECT ON "speechnexus_test".speech_publications, '
-        '"speechnexus_test".speech_published_binding_revisions TO "catalogue_reader"',
+        '"speechnexus_test".speech_published_binding_revisions, '
+        '"speechnexus_test".speech_catalog_state, '
+        '"speechnexus_test".speech_publication_retirements TO "catalogue_reader"',
     )
     assert not any(word in " ".join(grants) for word in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"))
 

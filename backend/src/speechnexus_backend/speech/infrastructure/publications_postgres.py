@@ -34,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.publications_sql import (
     append_publication,
     find_publication,
     list_publications,
+    retire_publication,
 )
 
 
@@ -110,6 +111,13 @@ class PostgresPublications:
 
     def append(self, publication: Publication) -> bool:
         return self._run(lambda cursor: append_publication(cursor, publication))
+
+    def retire(self, publication: Publication, *, retired_at_us: int) -> bool:
+        """Hide one current revision; repeating the same retirement is a no-op."""
+        return self._run(
+            lambda cursor: retire_publication(cursor, publication, retired_at_us),
+            preserve=(ValueError,),
+        )
 
     def publish_binding_revision(
         self,

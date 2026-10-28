@@ -43,9 +43,13 @@ def test_append_uses_an_insert_only_conflict_and_reports_rowcount() -> None:
     cursor = Cursor(rowcount=1)
 
     assert append_publication(cursor, publication) is True
-    assert cursor.calls[0][0].count("INSERT INTO speech_publications") == 1
-    assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in cursor.calls[0][0]
-    assert cursor.calls[0][1][2] == "1"
+    lock_query, lock_parameters = cursor.calls[0]
+    insert_query, insert_parameters = cursor.calls[1]
+    assert "pg_advisory_xact_lock" in lock_query
+    assert lock_parameters == ("binding", "binding-tts")
+    assert insert_query.count("INSERT INTO speech_publications") == 1
+    assert "ON CONFLICT (kind, object_id, revision) DO NOTHING" in insert_query
+    assert insert_parameters[2] == "1"
 
     cursor.rowcount = 0
     assert append_publication(cursor, publication) is False

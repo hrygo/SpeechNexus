@@ -28,6 +28,10 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     PublicationUnavailableError,
 )
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+    RETIREMENT_TABLE,
+    STATE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
@@ -75,6 +79,17 @@ class PostgresPublicJobs:
             "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
             "AND r.revision = p.revision AND r.revision_id = p.revision_id "
             "WHERE p.kind = 'binding' AND p.object_id = %s "
+            "AND NOT EXISTS ("
+            "SELECT 1 FROM speech_publications AS newer "
+            "WHERE newer.kind = p.kind AND newer.object_id = p.object_id "
+            "AND newer.revision::numeric > p.revision::numeric"
+            ") "
+            "AND NOT EXISTS ("
+            f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+            "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
+            "AND retired.revision = p.revision "
+            "AND retired.revision_id = p.revision_id"
+            ") "
             "ORDER BY p.revision::bigint DESC LIMIT 1",
             (model_id,),
         )
@@ -126,7 +141,9 @@ class PostgresPublicJobs:
         return rows[0]["asset_state"], rows[0]["purpose"]
 
     def catalog_revision(self) -> int:
-        rows = self._read("SELECT count(*) AS total FROM speech_publications", ())
+        rows = self._read(
+            f"SELECT revision AS total FROM {STATE_TABLE} WHERE singleton IS TRUE", ()
+        )
         if len(rows) != 1:
             raise PublicJobUnavailableError
         return int(rows[0]["total"])

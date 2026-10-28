@@ -2,9 +2,14 @@
 
 The public catalog reads this table and a published-only revision view. Insert-only
 grants keep published identities immutable: a later revision number is a new row,
-never an edit.
+never an edit.  A separate state table carries the catalogue version, so visible
+retirements can advance it without rewriting publication history.
 """
 
+from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
+    RETIREMENT_TABLE,
+    STATE_TABLE,
+)
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 TABLE = "speech_publications"
@@ -51,17 +56,22 @@ def publication_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{RETIREMENT_TABLE} TO {target}',
+        f'GRANT SELECT, UPDATE (revision, generated_at_us) ON "{schema}".{STATE_TABLE} TO {target}',
     )
 
 
 def model_catalog_reader_grants(schema: str, role: str) -> tuple[str, ...]:
     """Explicit SELECT-only declaration for the public catalogue reader.
 
-    The reader receives the publication facts and the published-only view; it
-    never receives SELECT on the draft revision table itself.
+    The reader receives the publication facts, the published-only view and the
+    visibility state needed to compute a stable catalogue revision.  It never
+    receives SELECT on the draft revision table itself and cannot write the
+    counter or retirement tombstones.
     """
     schema, role = checked_sql_name(schema), checked_sql_name(role)
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"',
-        f'GRANT SELECT ON "{schema}".{TABLE}, "{schema}".{READER_VIEW} TO "{role}"',
+        f'GRANT SELECT ON "{schema}".{TABLE}, "{schema}".{READER_VIEW}, '
+        f'"{schema}".{STATE_TABLE}, "{schema}".{RETIREMENT_TABLE} TO "{role}"',
     )

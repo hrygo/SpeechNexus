@@ -25,7 +25,8 @@ from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.domain.publications import Publication
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
-from speechnexus_backend.speech.infrastructure.postgres_pool import speech_pool
+from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.public_jobs_postgres import PostgresPublicJobs
 from speechnexus_backend.speech.infrastructure.publication_schema import (
     model_catalog_reader_grants,
     publication_grants,
@@ -38,10 +39,23 @@ VARIABLE = "SPEECHNEXUS_TEST_DATABASE_URL"
 PASSWORD = "synthetic_publication_test"
 
 
+def scalar_int(
+    connection: psycopg.Connection[tuple[object, ...]],
+    query: str,
+    parameters: tuple[object, ...] = (),
+) -> int:
+    row = connection.execute(query, parameters).fetchone()
+    assert row is not None
+    value = row[0]
+    assert isinstance(value, int)
+    return value
+
+
 @dataclass
 class Sandbox:
     store: PostgresPublications
     catalog: PostgresModelCatalog
+    pool: SpeechPool
     admin: psycopg.Connection[tuple[object, ...]]
     schema: str
     role: str
@@ -83,7 +97,7 @@ def sandbox() -> Iterator[Sandbox]:
     pool.open()
     try:
         yield Sandbox(
-            PostgresPublications(pool), PostgresModelCatalog(pool), admin, schema, role, url
+            PostgresPublications(pool), PostgresModelCatalog(pool), pool, admin, schema, role, url
         )
     finally:
         pool.close()
@@ -678,3 +692,168 @@ def test_empty_pronunciation_downgrade_reverts_the_kind_constraint(sandbox: Sand
             "(kind, object_id, revision, revision_id, published_at_us) "
             "VALUES ('pronunciation', 'pron-main', '1', 'pron-rev-1', 1)"
         )
+
+
+async def test_retirement_advances_catalog_revision_and_etag(sandbox: Sandbox) -> None:
+    """AC1: a lifecycle tombstone changes the version without another publication row."""
+    create_binding(sandbox.admin, DEFINITION)
+    published = Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    assert sandbox.store.append(published) is True
+    before = sandbox.catalog.snapshot()
+    assert before.catalog_revision == 2
+    assert [model["id"] for model in before.models] == ["tts-quality"]
+    jobs = PostgresPublicJobs(sandbox.pool)
+    assert jobs.catalog_revision() == before.catalog_revision
+    before_job = jobs.latest_binding("tts-quality")
+    assert before_job is not None
+    assert before_job.publication == published
+
+    app = create_app(settings=_http_settings(), catalogue=sandbox.catalog)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        first = await http.get("/v1/models")
+        assert first.status_code == 200, first.text
+        etag_before = first.headers["etag"]
+        assert [item["id"] for item in first.json()["data"]] == ["tts-quality"]
+        count_before = scalar_int(sandbox.admin, "SELECT count(*) FROM speech_publications")
+        retired_at_us = 1_700_000_000_000_100
+
+        assert sandbox.store.retire(published, retired_at_us=retired_at_us) is True
+
+        after = sandbox.catalog.snapshot()
+        count_after = scalar_int(sandbox.admin, "SELECT count(*) FROM speech_publications")
+        assert count_after == count_before
+        assert after.catalog_revision == before.catalog_revision + 1
+        assert after.generated_at_us == retired_at_us
+        assert after.models == ()
+        assert sandbox.store.get("binding", "tts-quality", 1) == published
+        assert jobs.catalog_revision() == after.catalog_revision
+        assert jobs.latest_binding("tts-quality") is None
+
+        retired = await http.get("/v1/models")
+        assert retired.status_code == 200, retired.text
+        etag_after = retired.headers["etag"]
+        assert retired.json()["data"] == []
+        assert etag_after != etag_before
+        old_tag = await http.get("/v1/models", headers={"If-None-Match": etag_before})
+        new_tag = await http.get("/v1/models", headers={"If-None-Match": etag_after})
+        assert old_tag.status_code == 200
+        assert new_tag.status_code == 304
+
+        assert sandbox.store.retire(published, retired_at_us=retired_at_us + 1) is False
+        assert sandbox.catalog.snapshot().catalog_revision == after.catalog_revision
+        print(
+            "catalog_revision_before="
+            f"{before.catalog_revision} etag_before={etag_before} "
+            "catalog_revision_after="
+            f"{after.catalog_revision} etag_after={etag_after} "
+            f"publication_rows={count_after}"
+        )
+
+
+def test_retiring_the_newest_revision_does_not_fall_back_to_an_older_one(
+    sandbox: Sandbox,
+) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    create_binding_revision(
+        sandbox.admin,
+        {
+            **DEFINITION,
+            "revision": "2",
+            "revision_id": "binding-rev-2",
+            "logical_model": "qwen3-tts-customvoice-v2",
+        },
+    )
+    older = publication(1, "binding-rev-1", object_id="tts-quality")
+    newest = publication(2, "binding-rev-2", object_id="tts-quality")
+    assert sandbox.store.append(older) is True
+    assert sandbox.store.append(newest) is True
+    jobs = PostgresPublicJobs(sandbox.pool)
+    resolved = jobs.latest_binding("tts-quality")
+    assert resolved is not None
+    assert resolved.publication == newest
+
+    assert sandbox.store.retire(newest, retired_at_us=1_700_000_000_000_100) is True
+
+    assert jobs.latest_binding("tts-quality") is None
+    assert sandbox.catalog.list_models() == []
+    assert sandbox.store.get("binding", "tts-quality", 1) == older
+
+
+def test_evidence_and_idempotent_publication_do_not_advance_catalog_revision(
+    sandbox: Sandbox,
+) -> None:
+    create_binding(sandbox.admin, DEFINITION)
+    published = Publication("binding", "tts-quality", 1, "binding-rev-1", 1_700_000_000_000_000)
+    assert sandbox.store.append(published) is True
+    after_publication = sandbox.catalog.snapshot().catalog_revision
+    assert after_publication == 2
+
+    sandbox.admin.execute(
+        "INSERT INTO speech_binding_publication_evidence "
+        "(kind, object_id, revision, revision_id, capacity_manifest_id, "
+        "qualification_report_id, evidence_source, recorded_at_us) "
+        "VALUES ('binding', 'tts-quality', '1', 'binding-rev-1', "
+        "'cap-tts-quality-1', 'qrep-tts-quality-1', 'operator_cli', 1700000000000001)"
+    )
+    assert sandbox.catalog.snapshot().catalog_revision == after_publication
+
+    assert sandbox.store.append(published) is False
+    assert sandbox.catalog.snapshot().catalog_revision == after_publication
+
+
+def test_concurrent_publications_receive_distinct_catalog_revisions(sandbox: Sandbox) -> None:
+    import threading
+
+    assert sandbox.catalog.snapshot().catalog_revision == 1
+    url = make_conninfo(sandbox.url, user=sandbox.role, password=PASSWORD)
+    first_inserted = threading.Event()
+    second_started = threading.Event()
+    allow_first_commit = threading.Event()
+    revisions: dict[str, int] = {}
+    errors: list[BaseException] = []
+
+    def insert_and_read(label: str, object_id: str, revision: int) -> None:
+        connection = psycopg.connect(url)
+        try:
+            connection.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+            connection.execute(
+                "INSERT INTO speech_publications "
+                "(kind, object_id, revision, revision_id, published_at_us) "
+                "VALUES ('binding', %s, %s, %s, %s)",
+                (object_id, str(revision), f"binding-rev-{label}", revision),
+            )
+            revisions[label] = scalar_int(
+                connection, "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE"
+            )
+            if label == "a":
+                first_inserted.set()
+                assert allow_first_commit.wait(10)
+            connection.commit()
+        except BaseException as error:
+            connection.rollback()
+            errors.append(error)
+        finally:
+            connection.close()
+
+    first = threading.Thread(target=insert_and_read, args=("a", "concurrent-a", 1))
+
+    def insert_second() -> None:
+        second_started.set()
+        insert_and_read("b", "concurrent-b", 1)
+
+    second = threading.Thread(target=insert_second)
+    first.start()
+    assert first_inserted.wait(10)
+    second.start()
+    assert second_started.wait(10)
+    allow_first_commit.set()
+    first.join(10)
+    second.join(10)
+
+    assert not errors
+    assert not first.is_alive() and not second.is_alive()
+    assert revisions == {"a": 2, "b": 3}
+    assert revisions["a"] != revisions["b"]
+    assert sandbox.catalog.snapshot().catalog_revision == 3
+    assert scalar_int(sandbox.admin, "SELECT count(*) FROM speech_publications") == 2
+    print(f"concurrent_catalog_revisions={revisions}")

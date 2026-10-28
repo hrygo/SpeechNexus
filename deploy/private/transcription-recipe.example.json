@@ -1,0 +1,67 @@
+{
+  "protocol": "transcription_admission_v1",
+  "model_id": "asr-compose-example",
+  "binding_publication_id": "binding-publication-compose-example",
+  "binding_revision_id": "binding-revision-compose-example",
+  "manifest_id": "capacity-manifest-compose-example",
+  "policy_revision_id": "policy-revision-compose-example",
+  "service_class": "batch",
+  "admission_expires_at_us": 4000000000000000,
+  "quota_dimensions": ["concurrent_attempts"],
+  "stage": {
+    "stage_id": "stage-asr-compose-example",
+    "instance_id": "instance-asr-1",
+    "minimum_slots": 1,
+    "reserved_slots": 1
+  },
+  "runtime_plan": {
+    "binding": {
+      "target_node_id": "node-local-1",
+      "pool_id": "asr-batch",
+      "gateway_id": "gateway-1",
+      "approved_template_id": "template-compose-example",
+      "binding_revision_id": "binding-revision-compose-example",
+      "manifest_id": "capacity-manifest-compose-example",
+      "config_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    "topology_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+    "qualification_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+    "memory_architecture": "discrete_device_memory",
+    "service_class": "batch",
+    "loading_policy": "resident",
+    "max_slots": 1,
+    "realtime_reserved_slots": 0,
+    "peak": {
+      "unified_physical_memory_bytes": 0,
+      "device_memory_bytes": 4000000000,
+      "host_memory_bytes": 1000000000,
+      "cpu_decode_millicores": 1000,
+      "host_pcm_buffer_bytes": 0,
+      "scratch_disk_bytes": 0
+    },
+    "steady": {
+      "unified_physical_memory_bytes": 0,
+      "device_memory_bytes": 4000000000,
+      "host_memory_bytes": 1000000000,
+      "cpu_decode_millicores": 1000,
+      "host_pcm_buffer_bytes": 0,
+      "scratch_disk_bytes": 0
+    },
+    "per_slot": {
+      "unified_physical_memory_bytes": 0,
+      "device_memory_bytes": 500000000,
+      "host_memory_bytes": 250000000,
+      "cpu_decode_millicores": 100,
+      "host_pcm_buffer_bytes": 0,
+      "scratch_disk_bytes": 0
+    }
+  },
+  "asr": {
+    "silence_duration_ms": 400,
+    "preview_interval_ms": 1000,
+    "temperature": 0.0,
+    "final_deadline_ms": 1000,
+    "auxiliary_deadline_ms": 5000
+  },
+  "recipe_digest": "sha256:8d520c7de6dcf516809f483141f8eaa183df86c00a5695d74d285f61f6bd9366"
+}

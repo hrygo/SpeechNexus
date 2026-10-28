@@ -37,6 +37,10 @@ date: 2026-10-28
 `uvicorn` factory）。`create_app` 仍只接受注入的 `transcriptions=`，不自行创建运行时。
 配方文件结构错误、摘要不符或权限不符使启动失败；缺失配置不会静默降级为假引擎。
 
+Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
+[最小 Compose 部署面](../operations/compose-minimal.md)。Compose 提供引用和示例，
+不提供已批准配方、模型、引擎或已注册实例。
+
 ## 私有准入配方
 
 配方承载公开 binding 文档不应包含的私有权威：绑定/清单修订、运行时计划、策略修订、

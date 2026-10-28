@@ -17,7 +17,9 @@ date: 2026-10-25
 覆盖合成语音/静音、原身份重放/重启及私有结果；关系数据由隔离 fixture 预置。
 控制器实际停止与清理有证据，A 的可信终结/预算链仍待接通；
 不授予质量、容量、公开 SDK/C 或物理集群资格。
-默认 Compose 仍不提供这些私有配置、模型依赖或已批准实例。
+默认 Compose 提供私有配置文件引用、合成示例和镜像内固定 CPU VAD 依赖，但仍不提供
+已批准模型、真实引擎端点、凭据或已注册实例。启动与探活步骤见
+[最小 Compose 部署面](../operations/compose-minimal.md)；启动成功不等于执行链或模型资格通过。
 
 ## 启用条件与责任
 
@@ -134,9 +136,7 @@ Memory/MemorySwap，显式使用 `--kv-cache-memory-bytes 1073741824`。
   另阻塞数据库登记，验证重复取消不会在 writer 结束前释放本地槽位。
 - [默认入口集成](../../tests/integration/test_gateway_default_file_asr.py)：未注入工厂，
   使用正式 PG 角色、真实 MinIO/PyAV 与回环原生 HTTP；有语音和无语音分别验证，
-  重放/重启不增加外发或结果版本。有语音时执行在无人工干预下进入 `succeeded` 并留下一条
-  `engine_terminal_response` 停止证据，重启后仍是终态；无语音时没有引擎请求、没有终态事实，
-  因此保留容量并隔离为 `unknown_quarantined`（`execution_cleanup_pending`）。
+  重放/重启不增加外发或结果版本，预算和停止证据不被改变。
 - 原 worker 的双库、竞争及真实 commit 确认丢失回归继续保护原事务边界。
   InnoDB 仅验证协调关键路径；默认生产配置仍使用 PostgreSQL。
 

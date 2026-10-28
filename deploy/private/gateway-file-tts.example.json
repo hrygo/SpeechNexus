@@ -1,0 +1,30 @@
+{
+  "protocol": "file_tts_v1",
+  "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-tts-endpoint.json",
+  "objects": {
+    "endpoint": "http://172.28.0.10:9000",
+    "result_bucket": "speechnexus-results",
+    "tls_ca_file": null,
+    "result_timeout_seconds": 30
+  },
+  "tts_policy": {
+    "config_revision": "policy-tts-compose-example",
+    "voice": "Vivian",
+    "task": "CustomVoice",
+    "instructions": "",
+    "speed": 1.0,
+    "engine_format": "wav",
+    "sample_rate_hz": 24000,
+    "language": null,
+    "seed": null,
+    "max_pcm_bytes": 8388608,
+    "max_audio_ms": 600000,
+    "timeout_seconds": 120
+  },
+  "worker_limits": {
+    "max_result_bytes": 4194304,
+    "max_command_bytes": 65536,
+    "max_pending": 2,
+    "shutdown_seconds": 10
+  }
+}

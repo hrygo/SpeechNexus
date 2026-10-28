@@ -45,7 +45,7 @@ DEL-120 上线就绪评估中的 C0–C12 检查变成可执行门禁。脚本�
 | C6 | 公开 `/v1/audio/speech` 真实 E2E | 默认 SKIP；没有 `--allow-write`，缺少配置，`curl`/`jq`/`file` 不可用，或 API 未监听 |
 | C7 | 资格报告必须是 `production`、`pass` 且所有 required 场景通过 | `jq` 缺失或报告文件不可读 |
 | C8 | 候选与随仓 binding 定义各跑一次证据校验，二者都必须精确 `RESULT PASS` | `uv` 缺失、输入文件不可读，或 verifier 未产生任何 `RESULT`；`PASS_WITH_WARNINGS` 和 `FAIL` 都是 FAIL |
-| C9 | `docker compose config --services` 的必需服务集合，以及 gateway 的 file-ASR/file-TTS 私有配置引用 | `docker` 或 compose 命令不可用；compose 无法解析或集合不完整是 FAIL |
+| C9 | `docker compose config --services` 必须恰好覆盖 `api gateway minio minio-init postgres`，明确排除四个未装配单元，并且 gateway 有 file-ASR/file-TTS 私有配置引用 | `docker` 或 compose 命令不可用；compose 无法解析、必需集合不完整、出现排除项或缺私有配置引用是 FAIL |
 | C10 | `speechnexus-publish-binding --help` 是否含 retire/activate/rollback | 命令不可执行且 `uv --no-sync` 也无法读取 help；help 可读但缺选项是 FAIL |
 | C11 | `docs/operations` 中是否存在对账恢复入口 | `rg`/`grep` 不可用；没有匹配是 FAIL |
 | C12 | 最终独立验收 | 始终 SKIP；由独立验收人/agent 在最终候选上判定，脚本不代替 |

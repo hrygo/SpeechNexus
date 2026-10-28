@@ -85,7 +85,9 @@ binding、readiness 资格或准入预算。
 其证据不自动覆盖后续代码或模型组合。公开 `/v1/audio/speech` 路由、公开下载与 A 的发布链、
 真实语料质量、长文本切分、流式/音色素材、生产停止与资源释放、
 GPU 混合负载和物理多节点仍需独立交付。
-默认 Compose 不提供私有配置、模型或已批准实例。
+默认 Compose 现提供 file-TTS 私有配置文件引用与合成示例，但不提供已批准模型、真实
+引擎端点、凭据或已注册实例；公开 TTS 仍等待 DEL-122。装配与探活边界见
+[最小 Compose 部署面](../operations/compose-minimal.md)。
 
 [真实取消与整代次停止联验](../audits/2026-10-26-b03-real-tts-stop-settlement.md)
 已在隔离 PG/MinIO 中证明取消保持占用、控制器双证据由默认网关登记、A 原租约事务只结算

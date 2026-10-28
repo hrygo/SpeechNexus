@@ -450,13 +450,19 @@ check_c3() {
 }
 
 check_c4() {
+  # C4: ensure there is a production path that can write execution state to succeeded.
+  # After #284, the successful terminal driver is application/execution_completion.py
+  # calling ledger.record_stop(RecordStop(evidence, ExecutionState.SUCCEEDED)).
+  # The check requires the SUCCEEDED argument, not merely any record_stop call:
+  # abort/recover also call record_stop (with ABORTED), so matching record_stop
+  # alone would PASS even when no path can write a succeeded terminal state.
   local hits line rest path lineno content
   local grep_rc
   local calls=""
   local definitions=0
   local call_count=0
 
-  hits=$(git grep -n 'complete_successfully(' HEAD -- 'execution-gateway/src/**/*.py' 2>/dev/null)
+  hits=$(git grep -n 'record_stop(.*ExecutionState\.SUCCEEDED' HEAD -- 'execution-gateway/src/**/*.py' 2>/dev/null)
   grep_rc=$?
   if [[ "$grep_rc" -eq 1 ]]; then
     hits=""
@@ -476,7 +482,7 @@ check_c4() {
     rest="${rest#*:}"
     lineno="${rest%%:*}"
     content="${rest#*:}"
-    if [[ "$content" =~ (^|[[:space:]])(async[[:space:]]+)?def[[:space:]]+complete_successfully\( ]]; then
+    if [[ "$content" =~ (^|[[:space:]])(async[[:space:]]+)?def[[:space:]]+record_stop\( ]]; then
       definitions=$((definitions + 1))
       continue
     fi

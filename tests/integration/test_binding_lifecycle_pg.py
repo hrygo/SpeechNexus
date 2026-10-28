@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -34,6 +34,8 @@ from speechnexus_backend.speech.application.public_jobs import (
     ModelNotPublishedError,
     PublicJobs,
 )
+from speechnexus_backend.speech.domain.publications import PublicationUnavailableError
+from speechnexus_backend.speech.infrastructure import publications_postgres
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
     PostgresAuditEvents,
     PostgresBindingLifecycle,
@@ -350,6 +352,98 @@ def _app(sandbox: Sandbox) -> Any:
         catalogue=sandbox.catalogue,
         jobs=sandbox.jobs,
     )
+
+
+def test_observe_head_fresh_singleton_plan_avoids_jit(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(sandbox)
+    sandbox.admin.execute(
+        "GRANT SELECT ON speech_publication_installation, speech_binding_families "
+        f'TO "{sandbox.role}"'
+    )
+    original = publications_postgres._Cursor.execute
+    observed_sql: list[str] = []
+
+    def capture(
+        cursor: publications_postgres._Cursor,
+        query: str,
+        parameters: tuple[object, ...] = (),
+    ) -> object:
+        if query.startswith("SELECT current_database()"):
+            observed_sql.append(query)
+        return original(cursor, query, parameters)
+
+    monkeypatch.setattr(publications_postgres._Cursor, "execute", capture)
+    observation = sandbox.store.observe_binding_head("tts-quality")
+    assert observation["current_revision"] == "2"
+    assert observation["catalog_revision"] == 4
+    assert observation["schema_name"] == sandbox.schema
+    assert len(observed_sql) == 1
+
+    # These freshly migrated singleton tables have not been ANALYZEd: estimate
+    # must remain bounded from the SQL itself, without changing server JIT policy.
+    sandbox.admin.execute("SET jit=on")
+    sandbox.admin.execute("SET jit_above_cost=100000")
+    row = sandbox.admin.execute(
+        "EXPLAIN (FORMAT JSON) " + observed_sql[0], ("tts-quality",)
+    ).fetchone()
+    assert row is not None
+    plan = cast(list[dict[str, Any]], row[0])[0]
+    assert plan["Plan"]["Plan Rows"] <= 4
+    assert plan["Plan"]["Total Cost"] < 100000
+    assert "JIT" not in plan
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_installation",
+        "missing_state",
+        "duplicate_installation",
+        "duplicate_state",
+        "retired",
+    ],
+)
+def test_observe_head_rejects_incomplete_or_inconsistent_singletons(
+    sandbox: Sandbox, mutation: str
+) -> None:
+    _seed(sandbox)
+    sandbox.admin.execute(
+        "GRANT SELECT ON speech_publication_installation, speech_binding_families "
+        f'TO "{sandbox.role}"'
+    )
+    observation = sandbox.store.observe_binding_head("tts-quality")
+    assert observation["current_revision"] == "2"
+    if mutation == "missing_installation":
+        sandbox.admin.execute("DELETE FROM speech_publication_installation")
+    elif mutation == "missing_state":
+        sandbox.admin.execute("DELETE FROM speech_catalog_state")
+    elif mutation == "duplicate_installation":
+        sandbox.admin.execute(
+            "ALTER TABLE speech_publication_installation "
+            "DROP CONSTRAINT speech_publication_installation_pkey"
+        )
+        sandbox.admin.execute(
+            "INSERT INTO speech_publication_installation (singleton, installation_id) "
+            "VALUES (TRUE, gen_random_uuid())"
+        )
+    elif mutation == "duplicate_state":
+        sandbox.admin.execute(
+            "ALTER TABLE speech_catalog_state DROP CONSTRAINT speech_catalog_state_pkey"
+        )
+        sandbox.admin.execute(
+            "INSERT INTO speech_catalog_state (singleton, revision, generated_at_us) "
+            "VALUES (TRUE, 1, 1)"
+        )
+    else:
+        sandbox.admin.execute(
+            "INSERT INTO speech_publication_retirements "
+            "(kind, object_id, revision, revision_id, retired_at_us, mode) "
+            "VALUES ('binding', 'tts-quality', '2', 'binding-rev-2', 1700000000000030, 'retire')"
+        )
+    with pytest.raises(PublicationUnavailableError):
+        sandbox.store.observe_binding_head("tts-quality")
 
 
 @pytest.mark.anyio

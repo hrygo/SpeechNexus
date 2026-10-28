@@ -137,6 +137,7 @@ class PostgresPublications:
         """Read the target, head and catalogue version in one authoritative snapshot."""
 
         def operation(cursor: _Cursor) -> dict[str, Any]:
+            # Bound estimates on fresh databases while retaining duplicate detection.
             cursor.execute(
                 "SELECT current_database() AS database_name, current_schema() AS schema_name, "
                 "i.installation_id::text AS installation_id, s.revision AS catalog_revision, "
@@ -144,10 +145,13 @@ class PostgresPublications:
                 "SELECT 1 FROM speech_publication_retirements r "
                 "WHERE r.kind=h.kind AND r.object_id=h.object_id AND r.revision=h.revision "
                 "AND r.revision_id=h.revision_id) AS head_retired FROM speech_binding_families f "
-                "CROSS JOIN speech_publication_installation i CROSS JOIN speech_catalog_state s "
+                "CROSS JOIN (SELECT installation_id FROM speech_publication_installation "
+                "WHERE singleton IS TRUE LIMIT 2) i "
+                "CROSS JOIN (SELECT revision FROM speech_catalog_state "
+                "WHERE singleton IS TRUE LIMIT 2) s "
                 "LEFT JOIN speech_publication_heads h ON h.kind='binding' "
                 "AND h.object_id=f.binding_id "
-                "WHERE f.binding_id=%s AND i.singleton IS TRUE AND s.singleton IS TRUE",
+                "WHERE f.binding_id=%s",
                 (binding_id,),
             )
             rows = cursor.fetchall()

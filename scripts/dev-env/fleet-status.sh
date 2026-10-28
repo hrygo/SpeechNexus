@@ -62,12 +62,17 @@ run AS (
   ORDER BY r.agent_id, r.created_at DESC
 ),
 open_card AS (
+  -- 三类必须分开数，否则面板会说谎：
+  --   active  = todo/in_progress  真正在办，没动就是唤醒失败
+  --   review  = in_review         等裁决，瓶颈在 SM
+  --   parked  = backlog/blocked   有意停放或环境阻塞，不算「没动」
   SELECT a.id AS agent_id,
-         count(*) FILTER (WHERE i.status IN ('todo','in_progress','backlog')) AS open_cards,
-         count(*) FILTER (WHERE i.status = 'in_review')                      AS review_cards,
-         min(i.updated_at) FILTER (WHERE i.status IN ('todo','in_progress'))  AS oldest_open,
+         count(*) FILTER (WHERE i.status IN ('todo','in_progress')) AS active_cards,
+         count(*) FILTER (WHERE i.status = 'in_review')             AS review_cards,
+         count(*) FILTER (WHERE i.status IN ('backlog','blocked'))  AS parked_cards,
+         min(i.updated_at) FILTER (WHERE i.status IN ('todo','in_progress')) AS oldest_active,
          string_agg(i.identifier || ':' || i.status, ',' ORDER BY i.identifier)
-           FILTER (WHERE i.status NOT IN ('done','cancelled'))               AS cards
+           FILTER (WHERE i.status NOT IN ('done','cancelled'))      AS cards
   FROM agents a
   LEFT JOIN issues i ON i.assignee_agent_id = a.id
   GROUP BY a.id
@@ -98,10 +103,11 @@ SELECT
   coalesce(r.ident, '-')                                   AS running_card,
   coalesce(r.status, '-')                                  AS run_state,
   coalesce(round(extract(epoch FROM (now() - r.created_at)) / 60), -1)::int AS running_min,
-  coalesce(c.open_cards, 0)                                AS open_cards,
+  coalesce(c.active_cards, 0)                              AS active_cards,
   coalesce(c.review_cards, 0)                              AS review_cards,
+  coalesce(c.parked_cards, 0)                              AS parked_cards,
   coalesce(c.cards, '-')                                   AS cards,
-  coalesce(round(extract(epoch FROM (now() - c.oldest_open)) / 60), -1)::int AS open_oldest_min,
+  coalesce(round(extract(epoch FROM (now() - c.oldest_active)) / 60), -1)::int AS active_oldest_min,
   coalesce(bw.status, '-')                                 AS bad_wake_state,
   coalesce(bw.reason, '-')                                 AS bad_wake_reason,
   coalesce(bw.n, 0)                                        AS bad_wake_n
@@ -121,10 +127,10 @@ render() {
   local busy=0 idle_with_card=0 idle_free=0 stuck=0 waiting_me=0 badwake=0
 
   echo "══ 军团状态 ${now} ══"
-  printf '%-14s %-9s %-10s %-9s %-8s %s\n' "AGENT" "状态" "当前卡" "已跑" "开口" "卡详情"
-  printf '%-14s %-9s %-10s %-9s %-8s %s\n' "---------------" "--------" "---------" "--------" "-------" "--------"
+  printf '%-14s %-9s %-10s %-9s %-12s %s\n' "AGENT" "状态" "当前卡" "已跑" "办/审/停" "卡详情"
+  printf '%-14s %-9s %-10s %-9s %-12s %s\n' "---------------" "--------" "---------" "--------" "-----------" "--------"
 
-  while IFS='|' read -r name status rcard rstate rmin open_cards review_cards cards oldest badstate badreason badn; do
+  while IFS='|' read -r name status rcard rstate rmin active_cards review_cards parked_cards cards oldest badstate badreason badn; do
     [[ -n "$name" ]] || continue
     local flags=""
     local shown_run="-"
@@ -137,11 +143,11 @@ render() {
       fi
     else
       shown_run="—"
-      if [[ "$open_cards" -gt 0 ]]; then
+      if [[ "$active_cards" -gt 0 ]]; then
         idle_with_card=$((idle_with_card + 1))
         flags="${flags}有活没动·"
         if [[ "$oldest" -ge $TODO_IDLE ]]; then flags="${flags}积压${oldest}m·"; fi
-      elif [[ "$status" == "paused" ]]; then
+      elif [[ "$active_cards" -gt 0 ]]; then
         flags="${flags}已暂停(需人工恢复)·"
       else
         idle_free=$((idle_free + 1))
@@ -154,8 +160,8 @@ render() {
     fi
     if [[ "$review_cards" -gt 0 ]]; then waiting_me=$((waiting_me + review_cards)); fi
     flags="${flags%·}"
-    printf '%-14s %-9s %-10s %-9s %-8s %s\n' \
-      "$name" "$status" "${rcard}" "${shown_run}" "${open_cards}开/${review_cards}审" "${flags:-—}"
+    printf '%-14s %-9s %-10s %-9s %-12s %s\n' \
+      "$name" "$status" "${rcard}" "${shown_run}" "${active_cards}办/${review_cards}审/${parked_cards}停" "${flags:-—}"
   done <<< "$rows"
 
   echo
@@ -184,13 +190,13 @@ import json, sys
 rows = [r.split('|') for r in sys.argv[1].strip().splitlines() if r.strip()]
 out = []
 for r in rows:
-    if len(r) < 12:
+    if len(r) < 13:
         continue
     out.append({
         "agent": r[0], "status": r[1], "running_card": r[2], "run_state": r[3],
-        "running_min": int(r[4]), "open_cards": int(r[5]), "review_cards": int(r[6]),
-        "cards": r[7], "open_oldest_min": int(r[8]),
-        "bad_wake": {"state": r[9], "reason": r[10], "count": int(r[11])},
+        "running_min": int(r[4]), "active_cards": int(r[5]), "review_cards": int(r[6]),
+        "parked_cards": int(r[7]), "cards": r[8], "active_oldest_min": int(r[9]),
+        "bad_wake": {"state": r[10], "reason": r[11], "count": int(r[12])},
     })
 print(json.dumps({"agents": out}, ensure_ascii=False, indent=2))
 PY

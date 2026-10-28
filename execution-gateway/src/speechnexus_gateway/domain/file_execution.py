@@ -4,7 +4,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from speechnexus_gateway.domain.execution_results import MAX_AUDIO_RESULT_BYTES, StagingResult
+from speechnexus_gateway.domain.execution_results import (
+    MAX_AUDIO_RESULT_BYTES,
+    ExecutionAudioStagingResult,
+    ExecutionStagingResult,
+    StagingResult,
+)
 from speechnexus_gateway.domain.ports import (
     CommandEngineDispatchPort,
     CommittedExecutionStarter,
@@ -19,6 +24,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionIntent,
     SubmitRequest,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +50,25 @@ class FileExecutionLimits:
             raise ValueError("file worker shutdown requires a bounded wait")
 
 
+@dataclass(frozen=True, slots=True)
+class FileStagingOutcome:
+    """The fixed receipt, plus the engine terminal fact only when the adapter observed it.
+
+    A receipt alone never closes an execution: an adapter that cannot attest every
+    terminal engine response leaves ``terminal`` empty and the execution keeps its
+    capacity until trusted evidence exists.
+    """
+
+    result: StagingResult
+    terminal: EngineTerminalResponse | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.result, ExecutionStagingResult | ExecutionAudioStagingResult):
+            raise ValueError("a file staging outcome requires one fixed result receipt")
+        if self.terminal is not None and not isinstance(self.terminal, EngineTerminalResponse):
+            raise ValueError("a file staging outcome requires the adapter terminal fact")
+
+
 class FileCommandExecution[StoreT](Protocol):
     def validate_request(self, request: SubmitRequest) -> SubmitRequest:
         """Freeze supported parameters without reading objects or starting inference."""
@@ -55,7 +80,7 @@ class FileCommandExecution[StoreT](Protocol):
         *,
         store: StoreT,
         cancelled: Callable[[], bool],
-    ) -> StagingResult: ...
+    ) -> FileStagingOutcome: ...
 
 
 class FileExecutionLedger(

@@ -12,6 +12,7 @@ from speechnexus_gateway.domain.execution_inputs import (
     ExecutionObjectReference,
     is_fixed_storage_version,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 
 MAX_ASR_RESULT_BYTES = 4 * 1024 * 1024
 ASR_RESULT_MEDIA_TYPE = "application/json"
@@ -76,6 +77,7 @@ class StagedAsrResult:
     request_digest: str
     reference: ExecutionObjectReference
     storage_version: str
+    terminal: EngineTerminalResponse | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -83,6 +85,7 @@ class StagedAsrResult:
             or _DIGEST.fullmatch(self.request_digest) is None
             or not isinstance(self.reference, ExecutionObjectReference)
             or not is_fixed_storage_version(self.storage_version)
+            or (self.terminal is not None and not isinstance(self.terminal, EngineTerminalResponse))
         ):
             raise AsrResultError("asr_result_identity_mismatch")
 

@@ -44,6 +44,7 @@ async def test_default_entrypoint_consumes_original_command_and_never_reruns_aft
 ) -> None:
     inputs, admin, bucket = object_store
     request = await asyncio.to_thread(original, foundation, admin, bucket)
+    intent_id = request.identity.submit_intent_id
     calls: list[tuple[bytes, bytes]] = []
     server_errors: list[Exception] = []
     handlers: set[asyncio.Task[Any]] = set()
@@ -160,7 +161,11 @@ async def test_default_entrypoint_consumes_original_command_and_never_reruns_aft
             assert await receipt(client) == saved
             replay = await client.post("/internal/v1/executions/submit", json=body)
             assert replay.status_code == 200
-            assert replay.json()["execution_state"] == "unknown_quarantined"
+            # Speech reaches the success terminal state; a file with no engine
+            # request has no terminal fact and keeps its capacity.
+            assert replay.json()["execution_state"] == (
+                "succeeded" if speech else "unknown_quarantined"
+            )
             assert replay.json()["engine_request_id"] == accepted.json()["engine_request_id"]
             assert len(calls) == (2 if speech else 0)
         await asyncio.gather(*handlers)
@@ -170,11 +175,35 @@ async def test_default_entrypoint_consumes_original_command_and_never_reruns_aft
             assert b"Authorization: Bearer " + b"a" * 64 + b"\r\n" in headers
             assert b'name="max_completion_tokens"\r\n\r\n64' in native_body
         assert await asyncio.to_thread(counters, foundation) == before
-        assert (
-            await asyncio.to_thread(
-                foundation.database.query, "SELECT * FROM execution_stop_evidence"
-            )
-            == []
+        assert await asyncio.to_thread(
+            foundation.database.query,
+            "SELECT submit_intent_id, evidence_kind, execution_stopped, resources_released "
+            "FROM execution_stop_evidence",
+        ) == (
+            [
+                {
+                    "submit_intent_id": intent_id,
+                    "evidence_kind": "engine_terminal_response",
+                    "execution_stopped": 1,
+                    "resources_released": 1,
+                }
+            ]
+            if speech
+            else []
+        )
+        assert await asyncio.to_thread(
+            foundation.database.query,
+            "SELECT execution_state, error_code FROM submit_intents WHERE submit_intent_id = %s",
+            (intent_id,),
+        ) == (
+            [{"execution_state": "succeeded", "error_code": None}]
+            if speech
+            else [
+                {
+                    "execution_state": "unknown_quarantined",
+                    "error_code": "execution_cleanup_pending",
+                }
+            ]
         )
         versions = await asyncio.to_thread(
             lambda: list(

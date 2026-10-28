@@ -190,8 +190,10 @@ async def test_private_staging_returns_one_receipt_per_call() -> None:
     assert len(store.results) == 2
     assert store.results[0].workspace_id == "ws-demo"
     assert store.results[0].request_digest.startswith("sha256:")
-    assert first.storage_version == "version-1"
-    assert second.reference.object_key.endswith(".wav")
+    assert first.result.storage_version == "version-1"
+    assert second.result.reference.object_key.endswith(".wav")
+    assert first.terminal is not None
+    assert first.terminal.response_ids == (first.terminal.submit_intent_id,)
 
 
 async def test_expired_deadline_refuses_before_dispatch() -> None:

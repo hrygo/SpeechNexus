@@ -2,7 +2,8 @@
 
 This boundary freezes one supported command, performs at most one engine call and
 can stage the encoded result privately. It does not admit work, record a terminal
-outcome, publish artifacts, or attest engine stop and resource release.
+outcome or publish artifacts; it reports the engine's terminal answer to the
+execution owner, and only that owner records a stop.
 """
 
 from __future__ import annotations
@@ -17,12 +18,13 @@ from speechnexus_contracts.execution import parse
 
 from speechnexus_gateway.application.file_tts import FileTtsResult, FileTtsSynthesis
 from speechnexus_gateway.domain.canonical import command_digest
-from speechnexus_gateway.domain.execution_results import ExecutionAudioStagingResult
+from speechnexus_gateway.domain.file_execution import FileStagingOutcome
 from speechnexus_gateway.domain.submission import (
     MAX_ORIGINAL_COMMAND_BYTES,
     InvalidExecutionRequestError,
     SubmitRequest,
 )
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 from speechnexus_gateway.domain.tts import (
     TtsCallError,
     TtsDeliveryEncoder,
@@ -245,8 +247,12 @@ class CommandFileTts:
         *,
         store: TtsResultStore,
         cancelled: Callable[[], bool],
-    ) -> ExecutionAudioStagingResult:
-        """One synthesis and verified private PUT; never a terminal or meter write."""
+    ) -> FileStagingOutcome:
+        """One synthesis and verified private PUT; never a meter or budget write.
+
+        The outcome carries the engine terminal fact for this execution's single
+        request; only the execution owner may turn that fact into a stop.
+        """
         snapshot, frozen, policy, delivery = self._resolve(request)
         remaining = self._remaining(snapshot)
         if remaining <= 0:
@@ -254,7 +260,7 @@ class CommandFileTts:
         synthesis = self._execution(snapshot, frozen, policy, delivery, cancelled)
         try:
             async with asyncio.timeout(remaining):
-                return await synthesis.stage_result(
+                receipt = await synthesis.stage_result(
                     workspace_id=snapshot.identity.workspace_id,
                     request_digest=snapshot.request_digest,
                     store=store,
@@ -263,3 +269,9 @@ class CommandFileTts:
             raise TtsCallError(
                 TtsFailure.DEADLINE_EXCEEDED, request_may_have_run=synthesis.has_dispatched
             ) from None
+        return FileStagingOutcome(
+            receipt,
+            EngineTerminalResponse(
+                snapshot.identity.submit_intent_id, (frozen.request_id,), self._now()
+            ),
+        )

@@ -1,8 +1,8 @@
 ---
 title: 执行网关：提交、屏障与未知执行恢复
 status: active
-version: "1.16.0"
-date: 2026-10-25
+version: "1.17.0"
+date: 2026-10-28
 ---
 
 # 执行网关：提交、屏障与未知执行恢复
@@ -30,8 +30,9 @@ intent，不能再次外发。PostgreSQL adapter 已按[应用事务方案与契
 该消费者也可将完整结果写入[私有结果存储](file-asr-results.md)，返回读回核验后的固定版本和摘要；
 [原事务登记与版本查询](execution-staging-results.md)可持久保存完整回执，
 文件 worker 和默认配置装配复用该事务，不改变终态或预算权威。
-真实模型默认运行、执行终态、A 发布与公开消费仍待，
-存储回执不作停止或释放证明。
+文件 lane 的成功终态已由 worker 在登记回执后按引擎终态事实调用 `record_stop`
+（见第 5 节）；真实模型默认运行、A 发布与公开消费仍待，
+存储回执本身仍不作停止或释放证明。
 
 ## 1. 代码位置与依赖
 
@@ -154,6 +155,37 @@ commit 前预算耗尽即回滚。事务内不做推理、HTTP、容器控制、
 `not_required`。读取已清理终态却没有证据行时返回 `reconciliation_required`，不从成功状态
 补造证据。状态查询只报告成功/失败而没有资源释放事实时，执行保留隔离与占用；迟到的
 executing 观察可以对账并保存版本，但不触发再次外发。
+
+### 成功终态的驱动者、时机与证据
+
+- **谁记录**：文件执行 worker（`infrastructure/file_execution_worker.py`）在持有该执行的
+  本地协程内，经 `application/execution_completion.py` 的 `ExecutionCompletionService`
+  调用 `record_stop`。节点控制器不参与单个执行的成功终态，也不为该粒度出具事实。
+- **何时记录**：`record_execution_observation` 已确认登记固定 staging 回执之后。顺序固定为
+  “先结果、后停止”：进程若在两者之间退出，执行保持原占用并由恢复扫描按整实例终止证据收敛，
+  不会因为结果对象已存在而被当成成功。
+- **需要什么证据**：`EngineTerminalResponse`（`domain/terminal.py`）。只有发出引擎请求的
+  adapter 才能构造它，条件是本执行派发的每个请求都返回并通过校验，且没有在途请求；它覆盖
+  该执行的全部原始 request ID 与观察时刻。`domain/recovery.py` 的
+  `engine_terminal_stop_evidence` 再按原身份与时间窗转成 `VerifiedStopEvidence`
+  （kind=`engine_terminal_response`，`execution_stopped`/`resources_released` 均为真，
+  摘要覆盖执行身份、全部响应 ID 与时刻，证据 ID 由执行身份派生因而可重放）。
+- **证据强度与表义**：`execution_stop_evidence` 是“已验证停止”的账本，不是观察日志。
+  表约束与 `RecordStop` 都要求两个确认同时为真，写入端也直接取自证据对象而不是常量；
+  因此“停了但没释放”**不写成半真的一行**，而是不写行、执行保持隔离并继续占用容量。
+  按[协调事务](coordination-transactions.md)第 6 节，这两个标志只表示**该次执行停止及其
+  增量资源归还**：`engine_terminal_response` 来自引擎自己的终态事件（ASR 须收到 `[DONE]`
+  且此前已有 `finish_reason` 与最终 usage；TTS 须收到完整响应体），证明该执行的引擎调用
+  已结束、不会继续生成，但不证明共享实例进程/容器退出，也不归还实例基线预算。后者仍只由
+  节点控制器的 `instance_terminated_by_controller` 证据与 A 的独立释放事务处理。
+- **缺证据时**：不调用 `record_stop`；`TerminalStopEvidenceUnavailableError` 是明确错误，
+  worker 把该执行隔离为 `unknown_quarantined`，`error_code=execution_cleanup_pending`，
+  容量不归还，恢复扫描仍只按整实例终止双证据闭合（第 8 节）。
+- **边界**：不新增事务、表、字段或 HTTP 路由，`record_stop` 仍是唯一状态翻转点。staging 回执、
+  对象存储 ACK、引擎连接断开、SSE 半途结束、TTS 响应体截断、本地线程退出与 HTTP 超时都
+  不构成成功或释放证据；只有引擎自己的终态事件可以。
+  整段没有引擎请求的执行（例如全程无语音）没有终态响应，因此不会进入 `succeeded`。
+  整实例终止仍只由节点控制器出具，单个执行的终态事实不能外推为共享实例可释放。
 
 ## 6. 入口屏障与 `seal_barrier`
 
@@ -573,6 +605,11 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
   网关按其 HTTP 边界冻结的映射报 `invalid_execution_request`，fixture oracle 报
   `submit_intent_conflict`。两侧的截止时间与运行资格判定已一致；错误码对齐需与 A 一起
   确认消费者映射后再改，不能单方面放宽任一侧。
+- 文件 lane 的成功终态已实现（见第 5 节）：固定回执登记后，由 adapter 的引擎终态事实经
+  `record_stop` 关闭。仍未覆盖：回执提交与停止提交之间进程退出时，记录保持占用，恢复只按
+  整实例终止证据闭合而不是补推成功；整段没有引擎请求的执行没有终态事实，因此不会 `succeeded`；
+  A 的预算归还仍是其独立事务；本轮验证使用脚本化识别与合成媒体，真实模型、真实 GPU 释放、
+  A 发布与公开消费未验证。
 
 ## 14. 验证
 
@@ -588,7 +625,9 @@ SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
     tests/integration/test_gateway_recovery_sweep.py \
     tests/integration/test_gateway_command_redaction.py \
     tests/integration/test_gateway_output_intervals.py \
-    tests/integration/test_gateway_barrier_http.py tests/integration/test_gateway_drain_http.py -q
+    tests/integration/test_gateway_barrier_http.py tests/integration/test_gateway_drain_http.py \
+    tests/integration/test_gateway_file_worker.py \
+    tests/integration/test_gateway_default_file_asr.py -q
 uv run pytest -m "not integration" -q
 uv run ruff format --check . && uv run ruff check . && uv run mypy && uv run lint-imports
 ```

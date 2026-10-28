@@ -5,6 +5,7 @@ import hashlib
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from speechnexus_gateway.application.command_dispatch import OriginalCommandDispatch
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
@@ -13,8 +14,9 @@ from speechnexus_gateway.domain.execution_results import (
     ExecutionAudioMetadata,
     ExecutionAudioStagingResult,
 )
-from speechnexus_gateway.domain.file_execution import FileExecutionLimits
+from speechnexus_gateway.domain.file_execution import FileExecutionLimits, FileStagingOutcome
 from speechnexus_gateway.domain.submission import ExecutionState, SubmitRequest
+from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 from speechnexus_gateway.infrastructure.file_execution_worker import FileExecutionWorker
 from tests.fake.execution import InMemorySubmissionLedger, fake_ingress
 from tests.unit.gateway.test_file_tts_command import tts_request
@@ -55,10 +57,17 @@ class AudioPipeline:
         *,
         store: object,
         cancelled: Callable[[], bool],
-    ) -> ExecutionAudioStagingResult:
+    ) -> FileStagingOutcome:
         assert not cancelled()
         self.calls += 1
-        return audio_receipt(request, source_samples=self.source_samples)
+        return FileStagingOutcome(
+            audio_receipt(request, source_samples=self.source_samples),
+            EngineTerminalResponse(
+                request.identity.submit_intent_id,
+                (request.identity.submit_intent_id,),
+                datetime.now(UTC),
+            ),
+        )
 
 
 def submit(

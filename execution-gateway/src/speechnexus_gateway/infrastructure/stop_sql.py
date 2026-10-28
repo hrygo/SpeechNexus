@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from typing import Final
 
 from speechnexus_gateway.domain.submission import (
     RecordStop,
@@ -17,6 +18,45 @@ from speechnexus_gateway.infrastructure.submit_sql import (
     lock_submit_intent,
     to_unix_micros,
 )
+
+STOP_EVIDENCE_INSERT_COLUMNS: Final = (
+    "evidence_id",
+    "submit_intent_id",
+    "evidence_kind",
+    "evidence_digest",
+    "observed_at_us",
+    "execution_stopped",
+    "resources_released",
+    "reason",
+)
+
+#: The ledger stores only verified stops; a partial stop is "no row + held capacity".
+STOP_EVIDENCE_INSERT_SQL: Final = (
+    "INSERT INTO execution_stop_evidence ("
+    + ", ".join(STOP_EVIDENCE_INSERT_COLUMNS)
+    + ") VALUES ("
+    + ", ".join("%s" for _ in STOP_EVIDENCE_INSERT_COLUMNS)
+    + ")"
+)
+
+
+def stop_evidence_values(evidence: VerifiedStopEvidence) -> tuple[object, ...]:
+    """Map verified evidence to its stored columns; the flags are the evidence's own.
+
+    ``RecordStop`` already refuses anything without both confirmations, and the table
+    CHECK refuses a partial row. Binding the values here keeps the written row
+    auditable against the domain fact instead of asserting ``1, 1`` at the writer.
+    """
+    return (
+        evidence.evidence_id,
+        evidence.submit_intent_id,
+        evidence.evidence_kind.value,
+        evidence.evidence_digest,
+        evidence.observed_at_us,
+        int(evidence.execution_stopped),
+        int(evidence.resources_released),
+        evidence.reason,
+    )
 
 
 def record_stop_in_transaction(
@@ -50,19 +90,7 @@ def record_stop_in_transaction(
     updated = request.apply(intent, previous_evidence=previous, at=clock())
     if previous is not None:
         return updated  # An exact replay does not rewrite time, version or immutable evidence.
-    cursor.execute(
-        "INSERT INTO execution_stop_evidence "
-        "(evidence_id, submit_intent_id, evidence_kind, evidence_digest, observed_at_us, "
-        "execution_stopped, resources_released, reason) VALUES (%s, %s, %s, %s, %s, 1, 1, %s)",
-        (
-            evidence.evidence_id,
-            evidence.submit_intent_id,
-            evidence.evidence_kind.value,
-            evidence.evidence_digest,
-            evidence.observed_at_us,
-            evidence.reason,
-        ),
-    )
+    cursor.execute(STOP_EVIDENCE_INSERT_SQL, stop_evidence_values(evidence))
     cursor.execute(
         "UPDATE submit_intents SET execution_state = %s, cleanup_state = %s, error_code = %s, "
         "terminated_at_us = %s, updated_at_us = %s, version = version + 1 "

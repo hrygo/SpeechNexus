@@ -1,0 +1,168 @@
+# Release evidence verification — actual run output
+
+Date: 2026-10-28 (Asia/Shanghai)
+Base revision: 9d1b9bbdc1041bfb7c33505a4788490c1db5ea45
+Tool: scripts/dev-env/verify-release-evidence.py
+Runtime: uv --no-project with jsonschema 4.x and rfc8785 0.1.4
+Isolation: local checkout .work/SpeechNexus; no GPU, no model download, no shared database
+
+The positive run uses the synthetic query-path fixture at
+tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json. It proves that the documents and
+the DB rules are internally consistent; it does NOT prove a live publication, real host capacity,
+or production qualification.
+
+The source body was fetched from GitHub comment 6453106316 into an out-of-repo temporary file for
+the SHA-256 check. It is not copied here because it contains deployment paths and an internal role
+identifier. Recipient can re-fetch it with:
+
+    gh api repos/hrygo/SpeechNexus/issues/comments/6453106316 --jq .body > /tmp/gb10-comment.md
+    shasum -a 256 /tmp/gb10-comment.md
+
+Expected: 42d1c033afe7c266d6450ef4afe39e4b79938c3c3670244b21e8c49edf010dfb, 13726 bytes.
+
+## Positive run (fixture; expected PASS_WITH_WARNINGS, exit 0)
+
+PASS expected.manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027
+PASS expected.report_id: qrep-file-asr-qwen3-1p7b-gb10-20261027
+PASS schema.manifest: capacity-manifest.schema.json
+PASS schema.report: qualification-report.schema.json
+PASS manifest.envelope: 3 vectors aggregate exactly; max_active_slots=1
+PASS release.placeholders: no local-test placeholder in release identifiers
+PASS report.scenario_ids: 14 ids match one-to-one
+PASS report.required_scenarios_passed: computed=False
+PASS report.overall_status: incomplete
+WARN report.optional_scenarios: non-passing optional evidence: asr-babble-snr, asr-overlap-two-speaker, asr-real-world-noise, asr-dialect-and-accent
+PASS report.limitations: 10 limitations
+PASS cross.manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.binding_revision_id: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.release_tier: experimental
+PASS cross.memory_architecture: unified_memory
+PASS cross.qualified_at: 2026-10-27T20:44:19Z
+PASS cross.expires_at: 2027-01-25T20:44:19Z
+PASS cross.report_id: qrep-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.engine_components: 1 stages match
+PASS digest.model_pin: sha256:886652c5efb861de36ba18d46f58e9f9a7fb2d4469023264c992b055dd6ac1ca
+PASS digest.config_bundle: sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e
+PASS digest.topology: sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4
+PASS digest.evidence_file: sha256:082bd34a404c811d179c982df5f9fab1e6dc39f9e495a1b824da67708549d634
+PASS digest.scenarios: 14 scenario digests match
+PASS digest.source_body: sha256:42d1c033afe7c266d6450ef4afe39e4b79938c3c3670244b21e8c49edf010dfb
+PASS lifecycle.expiry: expires 2027-01-25T20:44:19Z
+PASS digest.image: sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765
+WARN database.source: fixture; this proves the query path, not production registration or capacity
+PASS database.binding_revision: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+PASS definition.capacity_manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027
+PASS definition.placeholder: no local-test placeholder
+PASS definition.release_tier: experimental
+PASS definition.stage_roles: asr_batch
+PASS definition.tasks: asr_file
+PASS definition.max_segment: 30000
+PASS database.publication: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+PASS database.evidence_identity: IDs match
+PASS database.evidence_placeholder: no local-test placeholder
+PASS database.capacity_manifest_digest: sha256:269096a91dd4b4c09e6332bf490889c5e060be67510185c911218042e24ae149
+PASS database.qualification_report_digest: sha256:e4f3900bd171eb58c9ac91650f64f2e57b556737f3d715893debc8b210c9cd37
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].identity: manifest/revision/pool/mode match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].vectors: peak/steady/per-slot six dimensions match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].max_slots: 1
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].realtime_reserved_slots: match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].state: ready/steady
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].config_digest: sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].slot_accounting: held + quarantined <= max_slots
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host: topology/architecture/node state match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[unified_physical_memory_bytes]: headroom=30064771072
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[device_memory_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[host_memory_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[cpu_decode_millicores]: headroom=13000
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[host_pcm_buffer_bytes]: headroom=14680064
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[scratch_disk_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_total: allocatable <= physical memory
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_peak_held: host held covers declared peak
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].peak_static_fit: peak <= allocatable
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].admission_headroom: 1 remaining slot(s) fit measured headroom
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].base_budget: steady <= peak
+PASS capacity.resource_pool: active service class matches
+NA   capacity.pool_quota: resource_pools has no numeric quota column; quotas are host/workspace ledgers
+PASS capacity.workspace_quota[ws-speechnexus-dev]: attempt headroom=8
+
+Digests:
+  capacity_manifest_file_digest=sha256:269096a91dd4b4c09e6332bf490889c5e060be67510185c911218042e24ae149
+  config_bundle_digest=sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e
+  evidence_file_digest=sha256:082bd34a404c811d179c982df5f9fab1e6dc39f9e495a1b824da67708549d634
+  model_pin_digest=sha256:886652c5efb861de36ba18d46f58e9f9a7fb2d4469023264c992b055dd6ac1ca
+  qualification_report_file_digest=sha256:e4f3900bd171eb58c9ac91650f64f2e57b556737f3d715893debc8b210c9cd37
+  topology_digest=sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4
+
+RESULT PASS_WITH_WARNINGS
+
+
+## Negative run (definition/evidence replaced with local-test-capacity-1; expected FAIL, exit 1)
+
+The negative fixture is a mutated copy of the positive fixture. It is intentionally not committed;
+the run proves that the placeholder is rejected before any release use. The tool is read-only, so
+no database or file was modified by either run.
+
+PASS expected.manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027
+PASS expected.report_id: qrep-file-asr-qwen3-1p7b-gb10-20261027
+PASS schema.manifest: capacity-manifest.schema.json
+PASS schema.report: qualification-report.schema.json
+PASS manifest.envelope: 3 vectors aggregate exactly; max_active_slots=1
+PASS release.placeholders: no local-test placeholder in release identifiers
+PASS report.scenario_ids: 14 ids match one-to-one
+PASS report.required_scenarios_passed: computed=False
+PASS report.overall_status: incomplete
+WARN report.optional_scenarios: non-passing optional evidence: asr-babble-snr, asr-overlap-two-speaker, asr-real-world-noise, asr-dialect-and-accent
+PASS report.limitations: 10 limitations
+PASS cross.manifest_id: capm-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.binding_revision_id: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.release_tier: experimental
+PASS cross.memory_architecture: unified_memory
+PASS cross.qualified_at: 2026-10-27T20:44:19Z
+PASS cross.expires_at: 2027-01-25T20:44:19Z
+PASS cross.report_id: qrep-file-asr-qwen3-1p7b-gb10-20261027
+PASS cross.engine_components: 1 stages match
+PASS digest.model_pin: sha256:886652c5efb861de36ba18d46f58e9f9a7fb2d4469023264c992b055dd6ac1ca
+PASS digest.config_bundle: sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e
+PASS digest.topology: sha256:1510168f01f3e4d3bb098b12dfd4ca33ee096239953b3fe8355e6eacb6c71aa4
+PASS digest.evidence_file: sha256:082bd34a404c811d179c982df5f9fab1e6dc39f9e495a1b824da67708549d634
+PASS digest.scenarios: 14 scenario digests match
+NA   digest.source_body: raw source body not supplied; recorded digest only
+PASS lifecycle.expiry: expires 2027-01-25T20:44:19Z
+PASS digest.image: sha256:61cc94fec25198aeefcd93b96088a8e8db106d61d834a36d3b89ba7bf5b10765
+WARN database.source: fixture; this proves the query path, not production registration or capacity
+PASS database.binding_revision: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+FAIL definition.capacity_manifest_id: declares local-test-capacity-1, expected capm-file-asr-qwen3-1p7b-gb10-20261027
+FAIL definition.placeholder: definition declares placeholder capacity manifest local-test-capacity-1
+PASS definition.release_tier: experimental
+PASS definition.stage_roles: asr_batch
+PASS definition.tasks: asr_file
+PASS definition.max_segment: 30000
+PASS database.publication: mbrev-file-asr-qwen3-1p7b-gb10-20261027
+FAIL database.evidence_identity: evidence IDs/revision differ
+FAIL database.evidence_placeholder: placeholder evidence ids: capacity_manifest_id
+PASS database.capacity_manifest_digest: sha256:269096a91dd4b4c09e6332bf490889c5e060be67510185c911218042e24ae149
+PASS database.qualification_report_digest: sha256:e4f3900bd171eb58c9ac91650f64f2e57b556737f3d715893debc8b210c9cd37
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].identity: manifest/revision/pool/mode match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].vectors: peak/steady/per-slot six dimensions match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].max_slots: 1
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].realtime_reserved_slots: match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].state: ready/steady
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].config_digest: sha256:86626578d8937c895b27a346a9663dd45215bb9146f282d265f7a0c56de4d52e
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].slot_accounting: held + quarantined <= max_slots
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host: topology/architecture/node state match
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[unified_physical_memory_bytes]: headroom=30064771072
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[device_memory_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[host_memory_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[cpu_decode_millicores]: headroom=13000
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[host_pcm_buffer_bytes]: headroom=14680064
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_ledger[scratch_disk_bytes]: headroom=0
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_total: allocatable <= physical memory
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].host_peak_held: host held covers declared peak
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].peak_static_fit: peak <= allocatable
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].admission_headroom: 1 remaining slot(s) fit measured headroom
+PASS capacity.instance[ei-file-asr-qwen3-1p7b-gb10-01].base_budget: steady <= peak
+PASS capacity.resource_pool: active service class matches
+NA   capacity.pool_quota: resource_pools has no numeric quota column; quotas are host/workspace ledgers
+PASS capacity.workspace_quota[ws-speechnexus-dev]: attempt headroom=8
+
+RESULT FAIL

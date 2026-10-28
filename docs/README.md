@@ -34,6 +34,8 @@
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含随附 ASR 定义缺真实容量/资格证据的边界 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
+| [容量 manifest（发布证据）](operations/capacity-manifest.md) | 字段、六维资源、包络聚合、DB 容量账本一致性、真实样例与核验脚本 |
+| [资格报告（发布证据）](operations/qualification-report.md) | 字段、语料/采样/阈值、失败模式、适用范围、artifact pin 摘要关系与样例 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |
 | [整体实施跟踪矩阵](plans/2026-10-23-implementation-tracking.md)                                     | GitHub 总控 #6、6 Epic、25 工作包与 6 Gate 的状态、依赖和证据矩阵               |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | P0–P5、退出条件、工作包、交接产物与预算假设                                     |

@@ -174,7 +174,7 @@ C00–C08 全部约定范围、生产消费者及必要真实验证均有可追�
 
 **第 79 轮把"待人工判断"变成判定**：读代码确认提词页的 `提词阅读` 区域里两个 `role="status"` 含义不同（本地操作状态 / 部署操作状态），**不是重复播报缺陷**；但第三个活区域（部署内已保存快照）**缺可访问名称**——已补 `aria-label="部署提词快照"`，并加单测固化"两个活区域各自可按名称寻址"（web **597**）。据此把陈旧探针的断言从不精确的 `getByRole("status")` 改为指名区域，**修复后实跑通过并接入门禁**（`microphone_calls=0`、`api_requests=0`、`qualification=manual-browser-reading-only`），陈旧清单从 3 项减到 2 项。
 
-**第 81 轮**：两个陈旧探针各自定位到根因。`workbench-tts-host-probe` 修好并接入门禁——先把错误消息改成带方法与路径，一次运行即锁定 `GET /v1/workbench/projects`（页面后来会读项目目录，旧合成服务未建模），按 workbench 契约的 `listProjects` 响应样例补上路由；修复后实跑通过并钉住 `late_content_discarded`、`native_wav_preview_and_download`、`switch_revokes_url`、`real_backend_or_model_qualification=false` 等。`workbench-manuscripts-probe` 只做到部分修复（流程改为先核对目录再选稿件），失败点前移到"`核对当前版本` 禁用"；据 `locked = busy || pending`（`ManuscriptHost.tsx:33`）记录精确诊断，并因**已在门禁的真实运行时探针在同一按钮上成功**（`workbench-manuscripts-real-probe.mjs:109`）而不记为产品缺陷。陈旧清单 **3 → 1**。
+**第 81 轮**：两个陈旧探针各自定位到根因。`workbench-tts-host-probe` 修好并接入门禁——先把错误消息改成带方法与路径，一次运行即锁定 `GET /v1/workbench/projects`（页面后来会读项目目录，旧合成服务未建模），按 workbench 契约的 `listProjects` 响应样例补上路由；修复后实跑通过并钉住 `late_content_discarded`、`native_wav_preview_and_download`、`switch_revokes_url`、`real_backend_or_model_qualification=false` 等。`workbench-manuscripts-probe` 只做到部分修复（流程改为先核对目录再选稿件），失败点前移到"`核对当前版本` 禁用"；据 `locked = busy || pending`（`web/workbench/src/manuscripts/ManuscriptHost.tsx:59`）记录精确诊断，并因**已在门禁的真实运行时探针在同一按钮上成功**（`workbench-manuscripts-real-probe.mjs:109`）而不记为产品缺陷。陈旧清单 **3 → 1**。
 
 **第 82 轮**收尾最后一个陈旧探针的定位：让探针自己产出证据——失败点 dump 显示应用停在它文档化的"结果未定态"（`按原键重放` 未自动发送，**不把未知当成功**，行为正确）；按应用意图补上重放后仍不回恢复，且探针的 `catch {}` 原本吞掉真实原因、只在成功路径输出诊断——已改为保留真实消息并在失败时打印已尝试变更与服务端处理器错误。证据排除了两类原因（`handler errors` 为空 = 非服务端拒绝；同键两次 = 确有重放），但根因仍未解释，**不记为缺陷也不记为通过**；陈旧欠账保持 1 项并附精确诊断。
 

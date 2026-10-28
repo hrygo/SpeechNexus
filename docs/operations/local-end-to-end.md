@@ -1532,9 +1532,9 @@ http=200 time=1.464986
 
 - `create_runtime_intent` 只写 `preparing` 实例 + outbox
   （`backend/src/speechnexus_backend/speech/infrastructure/runtime_postgres.py:154`，
-  `runtime_sql.py:545` 的 `INSERT INTO engine_instances`）；
+  `backend/src/speechnexus_backend/speech/infrastructure/runtime_sql.py:545` 的 `INSERT INTO engine_instances`）；
 - 转 `ready` 需要 `observe_runtime` 的受信 readiness 回执
-  （`runtime_postgres.py:162`），而当前组合根没有对应 provider；
+  （`backend/src/speechnexus_backend/speech/infrastructure/runtime_postgres.py:162`），而当前组合根没有对应 provider；
 - 部署单元表明确写着 Node Controller 存在、Scheduler/Job Worker 的独立启动入口与
   完整业务装配待补齐（`docs/architecture/deployment-units.md:31`、`:35`）；
 - `speechnexus-runtime-delivery-worker` 是投递 worker，不是注册器；本机只执行了

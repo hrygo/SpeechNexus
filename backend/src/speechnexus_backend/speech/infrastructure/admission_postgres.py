@@ -27,11 +27,27 @@ from speechnexus_backend.speech.infrastructure.admission_recovery_sql import (
     read_original,
 )
 from speechnexus_backend.speech.infrastructure.admission_sql import admit_in_transaction
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import (
+    lock_binding,
+    revision_is_disabled,
+)
+from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 from speechnexus_backend.speech.infrastructure.leases_postgres import (
     _BudgetExpiredError,
     _DeadlineCursor,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+
+
+def binding_disable_admission_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Least-privilege provisioning for the synchronous admission barrier."""
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f'GRANT SELECT (binding_id, revision_id) ON "{schema}".speech_binding_revisions '
+        f'TO "{role}"',
+        f"GRANT SELECT (kind, object_id, revision_id, mode) "
+        f'ON "{schema}".speech_publication_retirements TO "{role}"',
+    )
 
 
 class PostgresAdmissionTransactions:
@@ -42,6 +58,7 @@ class PostgresAdmissionTransactions:
         max_command_bytes: int,
         timeout_seconds: float = 3,
         max_attempts: int = 3,
+        enforce_binding_disable: bool = False,
     ) -> None:
         integer(max_command_bytes, minimum=1)
         if not 0 < timeout_seconds <= 30 or not 1 <= max_attempts <= 3:
@@ -50,6 +67,7 @@ class PostgresAdmissionTransactions:
         self._max_bytes = max_command_bytes
         self._timeout = timeout_seconds
         self._max_attempts = max_attempts
+        self._enforce_binding_disable = enforce_binding_disable
 
     def admit_recipe(self, command: AdmitRecipe) -> AdmissionResult:
         identity = command.request.identity
@@ -69,6 +87,34 @@ class PostgresAdmissionTransactions:
                 return rejected(identity, "invalid_execution_request")
         return self._run(
             identity, request_digest=request_digest, deadline=time.monotonic() + self._timeout
+        )
+
+    def _admit(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> AdmissionResult:
+        if self._enforce_binding_disable:
+            request = prepared.command.request
+            existing = read_original(
+                cursor, request.identity, max_command_bytes=self._max_bytes, prepared=prepared
+            )
+            if existing is not None:
+                return existing
+            cursor.execute(
+                "SELECT binding_id FROM speech_binding_revisions WHERE revision_id=%s",
+                (request.binding_revision_id,),
+            )
+            revisions = cursor.fetchall()
+            if len(revisions) != 1:
+                raise AdmissionRejectedError("reconciliation_required")
+            binding_id = revisions[0]["binding_id"]
+            lock_binding(cursor, binding_id)
+            existing = read_original(
+                cursor, request.identity, max_command_bytes=self._max_bytes, prepared=prepared
+            )
+            if existing is not None:
+                return existing
+            if revision_is_disabled(cursor, binding_id, request.binding_revision_id):
+                raise AdmissionRejectedError("policy_or_resource_disabled")
+        return admit_in_transaction(
+            cursor, prepared, clock=cursor.clock, max_command_bytes=self._max_bytes
         )
 
     def _run(
@@ -95,12 +141,7 @@ class PostgresAdmissionTransactions:
                     with connection.cursor() as raw:
                         cursor = _DeadlineCursor(cast(AdmissionCursor, raw), deadline)
                         if prepared is not None:
-                            result = admit_in_transaction(
-                                cursor,
-                                prepared,
-                                clock=cursor.clock,
-                                max_command_bytes=self._max_bytes,
-                            )
+                            result = self._admit(cursor, prepared)
                         else:
                             found = read_original(
                                 cursor,

@@ -16,9 +16,17 @@ from alembic import command as migration
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from tests.integration.test_publications_storage import (
+    DEFINITION,
+    create_binding,
+    create_binding_revision,
+    publication,
+)
+from tests.unit.backend.test_health import _settings
 
 from speechnexus_backend.app import create_app
 from speechnexus_backend.binding_runtime import BindingLifecycleRuntime
@@ -35,6 +43,7 @@ from speechnexus_backend.speech.infrastructure.job_schema import (
     job_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
+from speechnexus_backend.speech.infrastructure.model_catalog_sql import list_published_bindings
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
 from speechnexus_backend.speech.infrastructure.public_job_schema import public_job_grants
 from speechnexus_backend.speech.infrastructure.public_job_submission_schema import (
@@ -45,17 +54,14 @@ from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema impo
     binding_lifecycle_grants,
 )
 from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
+from speechnexus_backend.speech.infrastructure.publications_sql import (
+    append_publication,
+    find_current_publication,
+)
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     ACTIVATE_PATH,
     RETIRE_PATH,
 )
-from tests.integration.test_publications_storage import (
-    DEFINITION,
-    create_binding,
-    create_binding_revision,
-    publication,
-)
-from tests.unit.backend.test_health import _settings
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -85,6 +91,136 @@ def scalar(connection: psycopg.Connection[tuple[object, ...]], query: str) -> in
     row = connection.execute(query).fetchone()
     assert row is not None and isinstance(row[0], int)
     return int(row[0])
+
+
+def test_0022_upgrade_preserves_publications_and_legacy_visibility() -> None:
+    url = os.environ.get(VARIABLE)
+    if not url:
+        pytest.fail("Configure an isolated PostgreSQL DSN; skip is not migration evidence")
+    schema = "sn_life_migration_" + uuid.uuid4().hex[:12]
+    engine = create_engine(
+        url.replace("postgresql://", "postgresql+psycopg://", 1),
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
+    config = Config(str(ROOT / "alembic.ini"))
+    config.attributes["schema"] = schema
+    admin = psycopg.connect(url, autocommit=True)
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.upgrade(config, "0022_catalog_revision_state")
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        create_binding(admin, DEFINITION)
+        for revision in (2, 10):
+            create_binding_revision(
+                admin,
+                {**DEFINITION, "revision": str(revision), "revision_id": f"binding-rev-{revision}"},
+            )
+        # Timestamps deliberately disagree with revision order. The latest
+        # retired voice must remain absent rather than exposing revision 2.
+        admin.execute(
+            "INSERT INTO speech_publications "
+            "(kind, object_id, revision, revision_id, published_at_us) VALUES "
+            "('binding','tts-quality','2','binding-rev-2',200), "
+            "('binding','tts-quality','10','binding-rev-10',100), "
+            "('voice','voice-retired','2','voice-rev-2',200), "
+            "('voice','voice-retired','10','voice-rev-10',100)"
+        )
+        admin.execute(
+            "INSERT INTO speech_publication_retirements "
+            "(kind, object_id, revision, revision_id, retired_at_us) "
+            "VALUES ('voice','voice-retired','10','voice-rev-10',300)"
+        )
+        publications_before = admin.execute(
+            "SELECT * FROM speech_publications ORDER BY kind, object_id, revision::numeric"
+        ).fetchall()
+        retirements_before = admin.execute(
+            "SELECT kind, object_id, revision, revision_id, retired_at_us "
+            "FROM speech_publication_retirements ORDER BY kind, object_id, revision::numeric"
+        ).fetchall()
+        revisions_before = admin.execute(
+            "SELECT * FROM speech_binding_revisions ORDER BY binding_id, revision::numeric"
+        ).fetchall()
+        state_before = admin.execute("SELECT * FROM speech_catalog_state").fetchall()
+        # This is the 0022 visibility rule, before heads exist.
+        visible_before = admin.execute(
+            "SELECT p.kind, p.object_id, p.revision, p.revision_id "
+            "FROM speech_publications p WHERE NOT EXISTS ("
+            "SELECT 1 FROM speech_publications n WHERE n.kind=p.kind "
+            "AND n.object_id=p.object_id AND n.revision::numeric > p.revision::numeric) "
+            "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements r "
+            "WHERE r.kind=p.kind AND r.object_id=p.object_id "
+            "AND r.revision=p.revision AND r.revision_id=p.revision_id) "
+            "ORDER BY p.kind, p.object_id"
+        ).fetchall()
+        assert visible_before == [("binding", "tts-quality", "10", "binding-rev-10")]
+
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.upgrade(config, "0023_publication_lifecycle")
+            migration.upgrade(config, "0023_publication_lifecycle")
+
+        assert (
+            admin.execute(
+                "SELECT * FROM speech_publications ORDER BY kind, object_id, revision::numeric"
+            ).fetchall()
+            == publications_before
+        )
+        assert (
+            admin.execute(
+                "SELECT kind, object_id, revision, revision_id, retired_at_us "
+                "FROM speech_publication_retirements ORDER BY kind, object_id, revision::numeric"
+            ).fetchall()
+            == retirements_before
+        )
+        assert admin.execute("SELECT * FROM speech_catalog_state").fetchall() == state_before
+        assert (
+            admin.execute(
+                "SELECT * FROM speech_binding_revisions ORDER BY binding_id, revision::numeric"
+            ).fetchall()
+            == revisions_before
+        )
+        assert admin.execute(
+            "SELECT mode, reason FROM speech_publication_retirements"
+        ).fetchall() == [("retire", None)]
+        heads = admin.execute(
+            "SELECT kind, object_id, revision, revision_id FROM speech_publication_heads "
+            "ORDER BY kind, object_id"
+        ).fetchall()
+        assert heads == visible_before
+        with admin.cursor(row_factory=dict_row) as cursor:
+            current = find_current_publication(cursor, "binding", "tts-quality")
+            assert current is not None and current.revision == 10
+            assert find_current_publication(cursor, "voice", "voice-retired") is None
+            models = list_published_bindings(cursor)
+        assert [(row["object_id"], row["revision"]) for row in models] == [("tts-quality", "10")]
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            migration.upgrade(config, "0024_binding_publish_intents")
+            migration.upgrade(config, "0024_binding_publish_intents")
+        assert (
+            admin.execute(
+                "SELECT kind, object_id, revision, revision_id FROM speech_publication_heads "
+                "ORDER BY kind, object_id"
+            ).fetchall()
+            == heads
+        )
+        assert admin.execute("SELECT * FROM speech_catalog_state").fetchall() == state_before
+        assert admin.execute("SELECT count(*) FROM speech_binding_publish_intents").fetchone() == (
+            0,
+        )
+        assert admin.execute("SELECT count(*) FROM speech_publication_installation").fetchone() == (
+            1,
+        )
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            with pytest.raises(RuntimeError, match="identity require preservation"):
+                migration.downgrade(config, "0023_publication_lifecycle")
+    finally:
+        admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        admin.close()
+        engine.dispose()
 
 
 @pytest.fixture
@@ -122,7 +258,7 @@ def sandbox() -> Iterator[Sandbox]:
             f"speech_publication_heads, speech_catalog_state, "
             f"speech_publication_retirements, speech_binding_revisions, "
             f"speech_published_binding_revisions, speech_assets, "
-            f"speech_pronunciation_revisions TO \"{role}\"",
+            f'speech_pronunciation_revisions TO "{role}"',
         ):
             admin.execute(grant)
         pool = speech_pool(
@@ -178,8 +314,19 @@ def _seed(sandbox: Sandbox) -> None:
             "execution_recipe": {**recipe, "capacity_manifest_id": "cap-tts-quality-2"},
         },
     )
-    assert sandbox.store.append(publication(1, "binding-rev-1", object_id="tts-quality")) is True
-    assert sandbox.store.append(publication(2, "binding-rev-2", object_id="tts-quality")) is True
+    with sandbox.admin.transaction(), sandbox.admin.cursor(row_factory=dict_row) as cursor:
+        assert append_publication(
+            cursor,
+            publication(1, "binding-rev-1", object_id="tts-quality"),
+            expected_current_revision=None,
+            expected_catalog_revision=1,
+        )
+        assert append_publication(
+            cursor,
+            publication(2, "binding-rev-2", object_id="tts-quality"),
+            expected_current_revision="1",
+            expected_catalog_revision=2,
+        )
     sandbox.admin.execute(
         "INSERT INTO speech_binding_publication_evidence "
         "(kind, object_id, revision, revision_id, capacity_manifest_id, "
@@ -241,7 +388,9 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
         after_retire = sandbox.catalogue.snapshot()
         assert after_retire.catalog_revision == before.catalog_revision + 1
         assert after_retire.models == ()
-        assert scalar(sandbox.admin, "SELECT count(*) FROM speech_publications") == publications_before
+        assert (
+            scalar(sandbox.admin, "SELECT count(*) FROM speech_publications") == publications_before
+        )
         assert scalar(sandbox.admin, "SELECT count(*) FROM speech_publication_heads") == 0
         assert sandbox.store.get("binding", "tts-quality", 2) == publication(
             2, "binding-rev-2", object_id="tts-quality"
@@ -260,9 +409,7 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
             sandbox.jobs.submit(
                 _body(revision=3), request_id="blocked-request", idempotency_key="blocked-key"
             )
-        assert (
-            sandbox.jobs.get(job.job_id).submission.effective_configuration_json == pinned
-        )
+        assert sandbox.jobs.get(job.job_id).submission.effective_configuration_json == pinned
         stored = sandbox.admin.execute(
             "SELECT effective_configuration_json FROM speech_job_submissions WHERE job_id=%s",
             (job.job_id,),
@@ -294,9 +441,7 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
         assert unknown.status_code == 404, unknown.text
         assert unknown.json()["error"]["code"] == "binding_not_found"
 
-        reactivate_retired = await http.post(
-            ACTIVATE_2, json={"expected_current_revision": None}
-        )
+        reactivate_retired = await http.post(ACTIVATE_2, json={"expected_current_revision": None})
         assert reactivate_retired.status_code == 409, reactivate_retired.text
         assert reactivate_retired.json()["error"]["code"] == "revision_not_published"
 
@@ -312,9 +457,7 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
         restored = await http.get("/v1/models")
         assert restored.status_code == 200, restored.text
         assert [item["id"] for item in restored.json()["data"]] == ["tts-quality"]
-        assert restored.json()["data"][0]["nexus"]["logical_model"] == (
-            "qwen3-tts-customvoice"
-        )
+        assert restored.json()["data"][0]["nexus"]["logical_model"] == ("qwen3-tts-customvoice")
         assert restored.headers["etag"] not in (etag_before, etag_retired)
         assert sandbox.catalogue.snapshot().catalog_revision == after_retire.catalog_revision + 1
 

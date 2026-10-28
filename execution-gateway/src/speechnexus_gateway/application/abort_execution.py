@@ -9,11 +9,15 @@ leaves the execution quarantined and holding capacity.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from speechnexus_gateway.application.ingress import GatewayIngress
-from speechnexus_gateway.domain.ports import EngineAbortPort, ExecutionFactLedger
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest as AbortExecutionRequest
+from speechnexus_gateway.domain.ports import (
+    DurableAbortLedger,
+    EngineAbortPort,
+    ExecutionFactLedger,
+)
 from speechnexus_gateway.domain.recovery import ExecutionSnapshot, MarkExecutionUnknown
 from speechnexus_gateway.domain.submission import (
     ExecutionErrorCode,
@@ -21,44 +25,8 @@ from speechnexus_gateway.domain.submission import (
     InvalidExecutionRequestError,
     RecordStop,
     StaleFencingTokenError,
+    SubmissionStoreUnavailableError,
 )
-
-ABORT_REASONS = frozenset(
-    {
-        "client_cancelled",
-        "deadline_exceeded",
-        "quota_exceeded",
-        "resource_force_disabled",
-        "gateway_takeover_reconcile",
-        "stream_disconnected",
-    }
-)
-
-_MIN_WAIT_MS = 100
-_MAX_WAIT_MS = 60000
-
-
-@dataclass(frozen=True, slots=True)
-class AbortExecutionRequest:
-    """One abort of a recorded execution by its own identity and fencing token."""
-
-    submit_intent_id: str
-    operation_id: str
-    attempt_id: str
-    fencing_token: int
-    reason: str
-    wait_timeout_ms: int
-
-    def __post_init__(self) -> None:
-        if self.reason not in ABORT_REASONS:
-            raise InvalidExecutionRequestError("unknown abort reason")
-        if type(self.fencing_token) is not int or self.fencing_token < 1:
-            raise InvalidExecutionRequestError("abort requires a positive fencing token")
-        if (
-            type(self.wait_timeout_ms) is not int
-            or not _MIN_WAIT_MS <= self.wait_timeout_ms <= _MAX_WAIT_MS
-        ):
-            raise InvalidExecutionRequestError("abort wait must be within the contract bounds")
 
 
 class ExecutionAbortService:
@@ -71,14 +39,27 @@ class ExecutionAbortService:
         ledger: ExecutionFactLedger,
         abort: EngineAbortPort,
         now: Callable[[], datetime] | None = None,
+        durable_abort_enabled: bool = False,
     ) -> None:
         self._ingress = ingress
         self._ledger = ledger
         self._abort = abort
         self._now = now or (lambda: datetime.now(UTC))
+        self._durable_abort_enabled = durable_abort_enabled
 
     def abort(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
         """Return the recorded state after one bounded abort attempt, or None if unknown here."""
+        return self._abort_request(request, durable=False)
+
+    def abort_idempotent(self, request: AbortExecutionRequest) -> ExecutionSnapshot | None:
+        """Accept an original abort receipt before claiming one external dispatch."""
+        if not self._durable_abort_enabled or not isinstance(self._ledger, DurableAbortLedger):
+            raise SubmissionStoreUnavailableError("durable abort authority is unavailable")
+        return self._abort_request(request, durable=True)
+
+    def _abort_request(
+        self, request: AbortExecutionRequest, *, durable: bool
+    ) -> ExecutionSnapshot | None:
         self._ingress.check_ownership()
         intent = self._ledger.get(request.submit_intent_id)
         if intent is None or (
@@ -97,28 +78,39 @@ class ExecutionAbortService:
             raise StaleFencingTokenError(
                 "abort carries another fencing token than the recorded execution"
             )
-        if intent.execution_state.is_terminal:
-            # Already closed: report the recorded original identity without touching the engine.
-            return ExecutionSnapshot(intent)
-
-        outcome = self._abort.abort(
-            intent, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
-        )
-        evidence = outcome.evidence
-        if outcome.verified_stop and evidence is not None:
-            if evidence.submit_intent_id != identity.submit_intent_id:
-                raise InvalidExecutionRequestError("stop evidence belongs to another execution")
-            stopped = self._ledger.record_stop(RecordStop(evidence, ExecutionState.ABORTED))
-            return ExecutionSnapshot(stopped)
-
-        # Nothing was verified, so the execution stays unknown and keeps its capacity.
-        # The recorded instant never precedes the fact it replaces.
-        observed_at = max(outcome.observed_at, intent.updated_at)
-        quarantined = self._ledger.mark_execution_unknown(
-            MarkExecutionUnknown.for_intent(
-                intent,
-                reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED,
-                at=observed_at,
+        with self._ingress.abort_dispatch(identity):
+            current = self._ledger.get(request.submit_intent_id)
+            if current is None or current.identity != identity:
+                raise InvalidExecutionRequestError("execution identity changed during abort")
+            if durable:
+                if not isinstance(self._ledger, DurableAbortLedger):
+                    raise SubmissionStoreUnavailableError("durable abort authority is unavailable")
+                self._ledger.receive_abort(request)
+                claimed = self._ledger.claim_abort(request)
+            else:
+                claimed = None if current.execution_state.is_terminal else current
+            if claimed is None:
+                current = self._ledger.get(request.submit_intent_id)
+                if current is None or current.identity != identity:
+                    raise InvalidExecutionRequestError("execution identity changed during abort")
+                return ExecutionSnapshot(current)
+            outcome = self._abort.abort(
+                claimed, reason=request.reason, wait_timeout_ms=request.wait_timeout_ms
             )
-        )
-        return ExecutionSnapshot(quarantined)
+            evidence = outcome.evidence
+            if outcome.verified_stop and evidence is not None:
+                if evidence.submit_intent_id != identity.submit_intent_id:
+                    raise InvalidExecutionRequestError("stop evidence belongs to another execution")
+                stopped = self._ledger.record_stop(RecordStop(evidence, ExecutionState.ABORTED))
+                return ExecutionSnapshot(stopped)
+            if durable:
+                return ExecutionSnapshot(claimed)
+            observed_at = max(outcome.observed_at, claimed.updated_at)
+            quarantined = self._ledger.mark_execution_unknown(
+                MarkExecutionUnknown.for_intent(
+                    claimed,
+                    reason_code=ExecutionErrorCode.CANCELLATION_UNCONFIRMED,
+                    at=observed_at,
+                )
+            )
+            return ExecutionSnapshot(quarantined)

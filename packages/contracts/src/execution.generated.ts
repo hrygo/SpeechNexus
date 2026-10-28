@@ -71,6 +71,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/executions/{submit_intent_id}/abort-intents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Persist and recover an original abort request
+     * @description The gateway persists the exact request before claiming at most one bounded
+     *     engine dispatch. Replaying the identical request is safe, including after
+     *     an unknown response; a different intent for the same submit identity is a
+     *     conflict. A claimed dispatch is uncertain until authoritative stop evidence
+     *     exists and holds capacity in quarantine. A 200 response is the current
+     *     execution state, not proof of stop or release. Older gateways return 404;
+     *     clients must treat missing capability as unresolved and never fall back to
+     *     the legacy abort endpoint for a retry.
+     */
+    post: operations["acceptAbortIntent"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/gateways/{gateway_id}/fencing-barrier": {
     parameters: {
       query?: never;
@@ -833,7 +860,11 @@ export interface operations {
         };
       };
       401: components["responses"]["Unauthorized"];
-      /** @description Fencing token stale, gateway barrier fenced, instance generation mismatch, or conflicting submit intent. */
+      /**
+       * @description Fencing token stale, gateway barrier fenced, instance generation
+       *     mismatch, conflicting submit intent, or the fixed binding revision
+       *     is disabled (`policy_or_resource_disabled`).
+       */
       409: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
@@ -1002,6 +1033,64 @@ export interface operations {
       422: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      503: components["responses"]["ControlUnavailable"];
+    };
+  };
+  acceptAbortIntent: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        submit_intent_id: components["parameters"]["SubmitIntentIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AbortExecutionRequest"];
+      };
+    };
+    responses: {
+      /** @description The original intent was accepted or replayed; execution status is authoritative. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionStatusResponse"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description Original execution or endpoint capability was not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      /** @description Original abort request conflicts with the recorded intent or fencing identity. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionControlErrorResponse"];
+        };
+      };
+      /** @description Abort request failed schema or identity validation. */
+      422: {
+        headers: {
           [name: string]: unknown;
         };
         content: {

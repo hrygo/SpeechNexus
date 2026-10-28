@@ -33,6 +33,9 @@ from tests.integration.test_production_jobs import database as database
 from tests.support.gateway_database import MySQLSubmissionLedger
 from tests.unit.gateway.test_file_asr_command import CapturingRecognizer
 
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_binding_barrier_grants,
+)
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.application.command_dispatch import OriginalCommandDispatch
 from speechnexus_gateway.application.execution_inputs import FileExecutionInputs
@@ -59,6 +62,37 @@ TOKEN = "synthetic-file-worker-component-token"
 
 def original(foundation: Foundation, admin: Minio, bucket: str) -> SubmitRequest:
     seed_file_asr_attempt(foundation)
+    # This fixture exercises the production gateway guard with a synthetic,
+    # published immutable binding and its actual least-privilege role.
+    db = foundation.database
+    key = "sha256:" + "a" * 64
+    db.query(
+        "INSERT INTO speech_binding_families (binding_id,latest_revision) "
+        "VALUES ('asr-synthetic','1')"
+    )
+    db.query(
+        "INSERT INTO speech_binding_commands "
+        "(key_digest,binding_id,document_version,intent_json,request_digest) "
+        "VALUES (%s,'asr-synthetic',1,'{}',%s)",
+        (key, key),
+    )
+    db.query(
+        "INSERT INTO speech_binding_revisions "
+        "(binding_id,revision,revision_id,key_digest,document_version,definition_json,"
+        "definition_digest,request_digest,created_at_us) "
+        "VALUES ('asr-synthetic','1','binding-test',%s,1,%s,%s,%s,1)",
+        (key, '{"binding_id":"asr-synthetic","tasks":["asr_file"]}', key, key),
+    )
+    db.query(
+        "INSERT INTO speech_publications (kind,object_id,revision,revision_id,published_at_us) "
+        "VALUES ('binding','asr-synthetic','1','binding-test',1)"
+    )
+    db.query(
+        "INSERT INTO speech_publication_heads (kind,object_id,revision,revision_id,updated_at_us) "
+        "VALUES ('binding','asr-synthetic','1','binding-test',1)"
+    )
+    for statement in gateway_binding_barrier_grants(db.schema, foundation.gateway_role):
+        db.query(statement)
     command, _ = upload_command(admin, bucket)
     command["audio"]["storage"]["workspace_id"] = "workspace-test"
     command["parameters"]["max_segment_ms"] = 1000

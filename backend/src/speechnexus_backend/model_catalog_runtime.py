@@ -21,12 +21,12 @@ from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     STATE_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.model_catalog_postgres import PostgresModelCatalog
-from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
 from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechConnection,
     SpeechPool,
     speech_pool,
 )
+from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
 
 READABLE = frozenset(
     {

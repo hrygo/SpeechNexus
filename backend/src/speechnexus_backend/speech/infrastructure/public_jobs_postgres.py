@@ -28,6 +28,7 @@ from speechnexus_backend.speech.domain.publications import (
     PublicationKind,
     PublicationUnavailableError,
 )
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import (
     RETIREMENT_TABLE,
     STATE_TABLE,
@@ -164,6 +165,23 @@ class PostgresPublicJobs:
             raise PublicJobUnavailableError
         return _job(rows[0])
 
+    def find_by_key(
+        self, workspace_id: str, key_digest: str, request_digest: str
+    ) -> JobCreateResult | None:
+        rows = self._read(
+            "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
+            "JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+            "WHERE j.workspace_id = %s AND j.idempotency_key_digest = %s",
+            (identifier(workspace_id), key_digest),
+        )
+        if len(rows) > 1:
+            raise PublicJobUnavailableError
+        if not rows:
+            return None
+        if rows[0].get("request_digest") != request_digest:
+            return JobCreateResult("conflict", error_code="idempotency_conflict")
+        return JobCreateResult("replayed", _job(rows[0]))
+
     def create(self, job: NewPublicJob) -> JobCreateResult:
         deadline = time.monotonic() + self._timeout
         for attempt in range(2):
@@ -183,6 +201,20 @@ class PostgresPublicJobs:
                         existing = _existing_by_key(connection, job)
                         if existing is not None:
                             return _replay_or_conflict(existing, job)
+                    selected = _binding_is_still_selected(
+                        connection,
+                        job.kind,
+                        job.model_id,
+                        job.submission.effective_configuration_json,
+                    )
+                    # A concurrent same-key writer can commit while this transaction
+                    # waits for the binding lock. Replay it before rejecting a stale head.
+                    if job.idempotency_key_digest is not None:
+                        existing = _existing_by_key(connection, job)
+                        if existing is not None:
+                            return _replay_or_conflict(existing, job)
+                    if not selected:
+                        return JobCreateResult("rejected", error_code="job_rejected")
                     _insert(connection, job)
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))
@@ -269,6 +301,35 @@ class PostgresPublicJobs:
             PublicationUnavailableError,
         ):
             raise PublicJobUnavailableError from None
+
+
+def _binding_is_still_selected(
+    connection: SpeechConnection, kind: str, model_id: str, configuration_json: str
+) -> bool:
+    """Serialize a new Job write with lifecycle selection changes."""
+    try:
+        configuration = json.loads(configuration_json)
+        reference = configuration["models"][kind]
+        if (
+            not isinstance(reference, dict)
+            or reference.get("id") != model_id
+            or not isinstance(reference.get("revision"), str)
+        ):
+            return False
+        revision = reference["revision"]
+    except ValueError, TypeError, KeyError, RecursionError:
+        return False
+    lock_binding(connection, model_id)
+    row = connection.execute(
+        "SELECT h.revision FROM speech_publication_heads h "
+        "JOIN speech_publications p ON p.kind=h.kind AND p.object_id=h.object_id "
+        "AND p.revision=h.revision AND p.revision_id=h.revision_id "
+        "WHERE h.kind='binding' AND h.object_id=%s AND NOT EXISTS ("
+        f"SELECT 1 FROM {RETIREMENT_TABLE} r WHERE r.kind=h.kind AND r.object_id=h.object_id "
+        "AND r.revision=h.revision AND r.revision_id=h.revision_id)",
+        (model_id,),
+    ).fetchone()
+    return row is not None and row["revision"] == revision
 
 
 def _publication(row: dict[str, Any]) -> Publication:

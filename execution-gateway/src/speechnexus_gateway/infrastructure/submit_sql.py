@@ -30,12 +30,14 @@ from speechnexus_gateway.domain.submission import (
     SubmissionIdentity,
     SubmissionIntent,
     SubmissionStoreError,
+    SubmitIntentConflictError,
     hard_output_ceiling_samples,
     max_output_audio_ms_for,
     verify_result_eligibility,
     verify_submit_eligibility,
     verify_submit_identity,
 )
+from speechnexus_gateway.infrastructure.binding_disable_guard import check_binding, lock_binding
 
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -331,10 +333,19 @@ def create_submit_in_transaction(
     request_document: str,
     *,
     clock: Callable[[], datetime],
-) -> None:
-    """Write one intent for an eligible claim; an existing record is never returned."""
+    enforce_binding_barrier: bool = False,
+) -> SubmissionIntent | None:
+    """Create once, or recover an exact original after waiting for the binding lock."""
     intent.validate_new()
     identity = intent.identity
+    if enforce_binding_barrier:
+        binding_id, revision = lock_binding(cursor, identity.binding_revision_id)
+        existing = read_submit_intent(cursor, identity.submit_intent_id)
+        if existing is not None:
+            if existing.identity != identity or existing.request_digest != intent.request_digest:
+                raise SubmitIntentConflictError("submit intent has another effective request")
+            return existing
+        check_binding(cursor, binding_id, revision, identity.binding_revision_id)
     _lock_authority_rows(cursor, identity)
     facts = _read_lease_facts(cursor, identity.lease_id)
     verify_submit_identity(
@@ -348,6 +359,7 @@ def create_submit_in_transaction(
         raise RuntimeError("submit intent insert columns drifted from the statement")
     cursor.execute(_INSERT_INTENT, tuple(values.values()))
     _create_output_stream_head(cursor, intent)
+    return None
 
 
 def read_submit_intent(cursor: SubmitCursor, submit_intent_id: str) -> SubmissionIntent | None:

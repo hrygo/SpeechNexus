@@ -35,9 +35,7 @@ ACTIVATE_PATH = _OPERATION_PATHS[ACTIVATE_OPERATION]
 
 def _pattern(path: str) -> re.Pattern[str]:
     return re.compile(
-        re.escape(path)
-        .replace(r"\{binding_id\}", r"[^/]+")
-        .replace(r"\{revision\}", r"[^/]+")
+        re.escape(path).replace(r"\{binding_id\}", r"[^/]+").replace(r"\{revision\}", r"[^/]+")
     )
 
 

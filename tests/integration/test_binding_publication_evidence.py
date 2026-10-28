@@ -30,6 +30,7 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.backfill_binding_evidence import main as backfill_main
 from speechnexus_backend.publish_binding import publish_binding
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.application.binding_publication import BindingPublishIntent
 from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
 from speechnexus_backend.speech.infrastructure.binding_draft_schema import binding_draft_grants
 from speechnexus_backend.speech.infrastructure.binding_drafts_postgres import (
@@ -48,6 +49,7 @@ from speechnexus_backend.speech.infrastructure.publication_schema import (
     model_catalog_reader_grants,
     publication_grants,
 )
+from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 from speechnexus_backend.speech.interfaces.binding_drafts import prepare_binding_draft
 
 pytestmark = pytest.mark.integration
@@ -69,7 +71,7 @@ class Sandbox:
 
 
 @pytest.fixture
-def sandbox() -> Iterator[Sandbox]:
+def sandbox(request: pytest.FixtureRequest) -> Iterator[Sandbox]:
     base = os.environ.get(VARIABLE)
     if not base:
         pytest.skip("Configure an isolated PostgreSQL DSN; skip is not evidence")
@@ -83,10 +85,15 @@ def sandbox() -> Iterator[Sandbox]:
     )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
+    legacy_migration_test = (
+        request.node.name == "test_downgrade_refuses_nonempty_evidence_and_preserves_publications"
+    )
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
+            migration.upgrade(
+                config, "0023_publication_lifecycle" if legacy_migration_test else "head"
+            )
     finally:
         engine.dispose()
     admin = psycopg.connect(base, autocommit=True)
@@ -103,6 +110,11 @@ def sandbox() -> Iterator[Sandbox]:
     )
     for role, declaration in grants:
         for statement in declaration(schema, role):
+            if legacy_migration_test and (
+                "speech_publication_installation" in statement
+                or "speech_binding_publish_intents" in statement
+            ):
+                continue
             admin.execute(statement)
     urls = {role: make_conninfo(base, user=names[role], password=PASSWORD) for role in ROLES}
     pools: dict[str, SpeechPool] = {}
@@ -170,6 +182,20 @@ def counts(sandbox: Sandbox) -> tuple[int, int, int]:
     return publications, revisions, evidence
 
 
+def publish_intent(sandbox: Sandbox, binding_id: str, key: str) -> BindingPublishIntent:
+    observation = PostgresPublications(sandbox.pools["publication"]).observe_binding_head(
+        binding_id
+    )
+    return BindingPublishIntent.from_request(
+        installation_id=str(observation["installation_id"]),
+        database=str(observation["database_name"]),
+        schema=sandbox.schema,
+        expected_current_revision=None,
+        expected_catalog_revision=int(observation["catalog_revision"]),
+        idempotency_key=key,
+    )
+
+
 def connection(sandbox: Sandbox, role: str) -> psycopg.Connection[tuple[object, ...]]:
     conn = psycopg.connect(sandbox.urls[role], autocommit=True)
     conn.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
@@ -198,6 +224,8 @@ def test_get_reports_draft_published_and_unavailable(sandbox: Sandbox) -> None:
             revision_id=draft.revision_id,
             capacity_manifest_id=CAPACITY,
             qualification_report_id=REPORT,
+            expected_current_revision=None,
+            intent=publish_intent(sandbox, draft.binding_id, "evidence-test"),
         )
         assert result.created is True
 
@@ -414,14 +442,13 @@ def test_downgrade_refuses_nonempty_evidence_and_preserves_publications(
     sandbox: Sandbox,
 ) -> None:
     draft = create_draft(sandbox, "downgrade-key")
-    publish_binding(
-        database_url=sandbox.urls["publication"],
-        schema=sandbox.schema,
-        binding_id=draft.binding_id,
-        revision=int(draft.revision),
-        revision_id=draft.revision_id,
-        capacity_manifest_id=CAPACITY,
-        qualification_report_id=REPORT,
+    add_legacy_publication(sandbox, draft)
+    sandbox.admin.execute(
+        f'INSERT INTO "{sandbox.schema}".{EVIDENCE} '
+        "(kind, object_id, revision, revision_id, capacity_manifest_id, "
+        "qualification_report_id, evidence_source, recorded_at_us) "
+        "VALUES ('binding', %s, %s, %s, %s, %s, 'operator_cli', 1)",
+        (draft.binding_id, draft.revision, draft.revision_id, CAPACITY, REPORT),
     )
     before = counts(sandbox)
     assert before == (1, 1, 1)

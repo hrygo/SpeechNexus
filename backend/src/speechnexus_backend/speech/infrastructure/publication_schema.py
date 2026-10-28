@@ -57,6 +57,8 @@ def publication_grants(schema: str, role: str) -> tuple[str, ...]:
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{TABLE} TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{RETIREMENT_TABLE} TO {target}',
+        f'GRANT SELECT ON "{schema}".speech_publication_installation TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".speech_binding_publish_intents TO {target}',
         f'GRANT SELECT, INSERT, UPDATE, DELETE ON "{schema}".speech_publication_heads TO {target}',
         f'GRANT SELECT, UPDATE (revision, generated_at_us) ON "{schema}".{STATE_TABLE} TO {target}',
     )

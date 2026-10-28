@@ -206,6 +206,8 @@ def _run(
         )
         wire = _receipt_wire(receipt)
         headers = {"Cache-Control": "no-store"}
+        if operation == RETIRE and receipt.status == "disabled":
+            headers["X-Binding-Disable-Cleanup"] = "pending_or_unknown"
         validate_response(operation, 200, {"body": wire, "headers": headers})
         return JSONResponse(wire, headers=headers)
     except BindingLifecycleNotFoundError:
@@ -245,16 +247,15 @@ def create_binding_lifecycle_router(
             authorization = request.headers.getlist("authorization")
             if len(authorization) > 1:
                 raise ContractValidationError("Ambiguous authorization")
-            actor_type = "shared_credential" if authorization else "anonymous"
-            credential_label = "deployment-shared-credential" if authorization else None
+            # A client-supplied header is not evidence of an authenticated identity.
             return await run_in_threadpool(
                 _run,
                 provider,
                 operation,
                 envelope,
                 request_id,
-                actor_type=actor_type,
-                credential_label=credential_label,
+                actor_type="anonymous",
+                credential_label=None,
             )
         except ContractValidationError, ValueError, TypeError, KeyError, RecursionError:
             return _error("invalid_binding_request", request_id, operation)

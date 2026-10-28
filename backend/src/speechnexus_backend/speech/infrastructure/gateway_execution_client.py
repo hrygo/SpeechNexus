@@ -43,6 +43,7 @@ from speechnexus_contracts.execution_models import (
 from urllib3.response import BaseHTTPResponse
 
 from speechnexus_backend.settings import Settings
+from speechnexus_backend.speech.domain.binding_disable_intent import DisableExecutionTarget
 from speechnexus_backend.speech.infrastructure.assets_minio import _FixedOriginHTTP
 
 _SUBMIT_PATH = "/internal/v1/executions/submit"
@@ -274,6 +275,61 @@ class GatewayExecutionClient:
         payload = await self._send("GET", path, body=None, idempotent=True)
         try:
             return parse("ExecutionStatusResponse", payload)
+        except ValueError:
+            raise self._invalid_response() from None
+
+    async def abort(self, target: DisableExecutionTarget) -> ExecutionStatusResponse:
+        """Request one abort for the persisted target; a timeout remains unknown."""
+        request = parse("AbortExecutionRequest", target.abort_payload())
+        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        path = _EXECUTION_PATH + quote(_identifier(target.submit_intent_id), safe="") + "/abort"
+        payload = await self._send("POST", path, body=body, idempotent=False)
+        return self._target_status(payload, target)
+
+    async def abort_idempotent(self, target: DisableExecutionTarget) -> ExecutionStatusResponse:
+        """Use the versioned durable abort endpoint; never fall back to legacy abort."""
+        request = parse("AbortExecutionRequest", target.abort_payload())
+        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        path = (
+            _EXECUTION_PATH
+            + quote(_identifier(target.submit_intent_id), safe="")
+            + "/abort-intents"
+        )
+        payload = await self._send("POST", path, body=body, idempotent=False)
+        return self._target_status(payload, target)
+
+    async def query_disable_target(self, target: DisableExecutionTarget) -> ExecutionStatusResponse:
+        """Recover only the authoritative original execution, with full identity checks."""
+        path = _EXECUTION_PATH + quote(_identifier(target.submit_intent_id), safe="")
+        payload = await self._send("GET", path, body=None, idempotent=True)
+        return self._target_status(payload, target)
+
+    def _target_status(
+        self, payload: dict[str, Any], target: DisableExecutionTarget
+    ) -> ExecutionStatusResponse:
+        try:
+            response = parse("ExecutionStatusResponse", payload)
+            for name in (
+                "submit_intent_id",
+                "operation_id",
+                "attempt_id",
+                "lease_id",
+                "stage_id",
+                "workspace_id",
+                "pool_id",
+                "gateway_id",
+                "host_node_id",
+                "instance_id",
+                "instance_generation",
+                "binding_revision_id",
+                "policy_revision_id",
+                "voice_revision_id",
+                "fencing_token",
+                "command_digest",
+            ):
+                if payload.get(name) != getattr(target, name):
+                    raise ValueError("abort response identity mismatch")
+            return response
         except ValueError:
             raise self._invalid_response() from None
 

@@ -17,6 +17,7 @@ from typing import Any, TypeVar, cast
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
+from speechnexus_gateway.domain.abort_intent import AbortExecutionRequest
 from speechnexus_gateway.domain.command_redaction import (
     AuthorizedCommandRedaction,
     CommandRedactionResult,
@@ -40,6 +41,7 @@ from speechnexus_gateway.domain.submission import (
     SubmissionStoreUnavailableError,
     SubmitRequest,
 )
+from speechnexus_gateway.infrastructure.abort_intent_sql import claim_abort, receive_abort
 from speechnexus_gateway.infrastructure.barrier_sql import (
     read_barrier,
     seal_barrier_in_transaction,
@@ -116,13 +118,20 @@ class PostgresSubmissionLedger:
     """Implements the gateway's ``SubmissionLedger`` port on the frozen tables."""
 
     def __init__(
-        self, pool: GatewayPool, *, timeout_seconds: float = 3, max_attempts: int = 3
+        self,
+        pool: GatewayPool,
+        *,
+        timeout_seconds: float = 3,
+        max_attempts: int = 3,
+        enforce_binding_barrier: bool = False,
     ) -> None:
         if not 0 < timeout_seconds <= 30 or not 1 <= max_attempts <= 3:
             raise ValueError("Submit transactions need bounded deadlines and retries")
         self._pool = pool
         self._deadline_seconds = timeout_seconds
         self._max_attempts = max_attempts
+        self._enforce_binding_barrier = enforce_binding_barrier
+        self.durable_abort_enabled = False
 
     def get(self, submit_intent_id: str) -> SubmissionIntent | None:
         return self._run(
@@ -187,14 +196,31 @@ class PostgresSubmissionLedger:
             ),
         )
 
-    def add(self, intent: SubmissionIntent, *, request_document: str) -> None:
+    def receive_abort(self, request: AbortExecutionRequest) -> None:
         self._run(
+            read_only=False,
+            work=lambda cursor: receive_abort(
+                cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
+
+    def claim_abort(self, request: AbortExecutionRequest) -> SubmissionIntent | None:
+        return self._run(
+            read_only=False,
+            work=lambda cursor: claim_abort(
+                cursor, request, clock=cast(_DeadlineCursor, cursor).clock
+            ),
+        )
+
+    def add(self, intent: SubmissionIntent, *, request_document: str) -> SubmissionIntent | None:
+        return self._run(
             read_only=False,
             work=lambda cursor: create_submit_in_transaction(
                 cursor,
                 intent,
                 request_document,
                 clock=cast(_DeadlineCursor, cursor).clock,
+                enforce_binding_barrier=self._enforce_binding_barrier,
             ),
         )
 

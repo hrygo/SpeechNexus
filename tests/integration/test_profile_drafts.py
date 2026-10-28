@@ -25,7 +25,6 @@ from tests.integration.test_coordination_foundation import upgrade_sandbox as up
 from tests.integration.test_production_jobs import ROOT, FaultConnection, JobDatabase
 from tests.integration.test_production_jobs import database as database
 from tests.support.job_database import MySQLJobTransactions
-from tests.support.migrations import HEAD
 from tests.support.profile_database import MySQLProfileDrafts, ProfileCursor
 from tests.support.profile_examples import profile_request
 
@@ -352,7 +351,7 @@ def test_runtime_writer_cannot_rewrite_or_delete_immutable_history(profiles: Pro
     assert profiles.snapshot() == before
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize("database", [("postgresql", "0009_profile_drafts")], indirect=True)
 def test_migration_repeat_and_refused_downgrade_preserve_profile_history(
     profiles: Profiles,
 ) -> None:
@@ -366,13 +365,15 @@ def test_migration_repeat_and_refused_downgrade_preserve_profile_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            migration.upgrade(config, "head")
-            with pytest.raises(RuntimeError, match="Binding history downgrade"):
+            migration.upgrade(config, "0009_profile_drafts")
+            with pytest.raises(RuntimeError, match="Profile history downgrade"):
                 migration.downgrade(config, "0008_runtime_delivery")
     finally:
         engine.dispose()
     assert profiles.snapshot() == before
-    assert profiles.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert profiles.db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0009_profile_drafts"}
+    ]
 
 
 def test_full_decimal_revision_range_and_exhaustion_do_not_overflow_or_allocate(

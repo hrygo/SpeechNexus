@@ -293,9 +293,7 @@ def create_app(
     def get_binding_lifecycle() -> BindingLifecycle | None:
         if binding_lifecycle is not None:
             return binding_lifecycle
-        return (
-            binding_lifecycle_runtime.provider if binding_lifecycle_runtime is not None else None
-        )
+        return binding_lifecycle_runtime.provider if binding_lifecycle_runtime is not None else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

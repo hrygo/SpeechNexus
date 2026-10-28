@@ -147,7 +147,7 @@
         "tags": ["model-bindings"],
         "operationId": "retireModelBindingRevision",
         "summary": "Retire or disable a model binding revision",
-        "description": "Retirement is a selection boundary, not a delete. It clears the active\nbinding pointer so new Jobs cannot select the revision, while the\nimmutable definition, publication, evidence and historical Jobs remain\nreadable. In-flight Jobs are unaffected: they keep the effective\nconfiguration fixed at admission and never re-read the pointer.\n\n`mode: retire` is the normal end of life. `mode: disable` is the same\nselection change with an operator reason and a distinct audit result;\nneither mode cancels or rewrites an admitted Job, and neither releases\nexecution capacity on its own. Repeating the same Idempotency-Key\nreturns the original result; a second retirement with a new key returns\n409 `revision_already_retired`. Retiring a revision that is not the\nactive pointer returns 409 `revision_not_current`.\n",
+        "description": "Retirement is a selection boundary, not a delete. It clears the active\nbinding pointer so new Jobs cannot select the revision, while the\nimmutable definition, publication, evidence and historical Jobs remain\nreadable. In-flight Jobs keep their original effective configuration.\n\n`mode: retire` is the normal end of life. `mode: disable` is the same\nselection change with an operator reason and a durable cancellation\nintent. The disabled receipt proves only that new selection is blocked;\ncleanup is pending or unknown, and it does not prove cancellation or\ncapacity release. The response header reports this limitation. Repeating\nthe same Idempotency-Key\nreturns the original result; a second retirement with a new key returns\n409 `revision_already_retired`. Retiring a revision that is not the\nactive pointer returns 409 `revision_not_current`.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/BindingIdPath"
@@ -174,10 +174,17 @@
         },
         "responses": {
           "200": {
-            "description": "Updated binding revision.",
+            "description": "Updated binding revision; disabled status does not prove execution cleanup.",
             "headers": {
               "X-Request-ID": {
                 "$ref": "#/components/headers/XRequestId"
+              },
+              "X-Binding-Disable-Cleanup": {
+                "description": "Present on disable receipts; cancellation completion is not established.",
+                "schema": {
+                  "type": "string",
+                  "const": "pending_or_unknown"
+                }
               }
             },
             "content": {

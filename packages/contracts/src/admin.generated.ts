@@ -399,13 +399,14 @@ export interface paths {
      * @description Retirement is a selection boundary, not a delete. It clears the active
      *     binding pointer so new Jobs cannot select the revision, while the
      *     immutable definition, publication, evidence and historical Jobs remain
-     *     readable. In-flight Jobs are unaffected: they keep the effective
-     *     configuration fixed at admission and never re-read the pointer.
+     *     readable. In-flight Jobs keep their original effective configuration.
      *
      *     `mode: retire` is the normal end of life. `mode: disable` is the same
-     *     selection change with an operator reason and a distinct audit result;
-     *     neither mode cancels or rewrites an admitted Job, and neither releases
-     *     execution capacity on its own. Repeating the same Idempotency-Key
+     *     selection change with an operator reason and a durable cancellation
+     *     intent. The disabled receipt proves only that new selection is blocked;
+     *     cleanup is pending or unknown, and it does not prove cancellation or
+     *     capacity release. The response header reports this limitation. Repeating
+     *     the same Idempotency-Key
      *     returns the original result; a second retirement with a new key returns
      *     409 `revision_already_retired`. Retiring a revision that is not the
      *     active pointer returns 409 `revision_not_current`.
@@ -3990,10 +3991,12 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Updated binding revision. */
+      /** @description Updated binding revision; disabled status does not prove execution cleanup. */
       200: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
+          /** @description Present on disable receipts; cancellation completion is not established. */
+          "X-Binding-Disable-Cleanup"?: "pending_or_unknown";
           [name: string]: unknown;
         };
         content: {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, TypedDict, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -12,16 +12,18 @@ from speechnexus_backend.speech.application.binding_documents import encode_docu
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
     BindingLifecycleConflictError,
+    BindingLifecycleMode,
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
     BindingLifecycleUnavailableError,
     BindingRetirementCommand,
 )
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
+    ACTIVATE_OPERATION,
     ACTIVATE_PATH,
+    RETIRE_OPERATION,
     RETIRE_PATH,
 )
-from speechnexus_backend.speech.interfaces.http.binding_lifecycle import ACTIVATE, RETIRE
 from tests.support.binding_examples import binding_request
 from tests.unit.backend.test_health import _settings
 
@@ -30,9 +32,22 @@ ACTIVATE_URL = ACTIVATE_PATH.format(binding_id="asr-quality", revision="1")
 DIGEST = "sha256:" + "a" * 64
 
 
+class LifecycleFields(TypedDict):
+    binding_id: str
+    revision: str
+    request_id: str
+    actor_type: Literal["anonymous", "shared_credential"]
+    credential_label: str | None
+    key_digest: str | None
+    intent_digest: str
+
+
 def receipt(
-    *, status: str = "retired", retired_at_us: int | None = 1_700_000_000_000_002,
-    disabled_reason: str | None = None, replayed: bool = False,
+    *,
+    status: str = "retired",
+    retired_at_us: int | None = 1_700_000_000_000_002,
+    disabled_reason: str | None = None,
+    replayed: bool = False,
 ) -> BindingLifecycleReceipt:
     return BindingLifecycleReceipt(
         binding_id="asr-quality",
@@ -78,7 +93,7 @@ def client(provider: Provider | None = None) -> AsyncClient:
 
 
 def test_retirement_command_is_strict_about_mode_and_reason() -> None:
-    common = {
+    common: LifecycleFields = {
         "binding_id": "asr-quality",
         "revision": "1",
         "request_id": "request-1",
@@ -94,15 +109,16 @@ def test_retirement_command_is_strict_about_mode_and_reason() -> None:
     with pytest.raises(ValueError):
         BindingRetirementCommand(**common, mode="disable")
     with pytest.raises(ValueError):
-        BindingRetirementCommand(**common, mode="delete")
+        BindingRetirementCommand(**common, mode=cast(BindingLifecycleMode, "delete"))
     with pytest.raises(ValueError):
         BindingRetirementCommand(**common, reason="")
+    invalid_digest: LifecycleFields = {**common, "key_digest": "not-a-digest"}
     with pytest.raises(ValueError):
-        BindingRetirementCommand(**{**common, "key_digest": "not-a-digest"})
+        BindingRetirementCommand(**invalid_digest)
 
 
 def test_activation_command_allows_a_cleared_pointer_but_not_a_bad_revision() -> None:
-    common = {
+    common: LifecycleFields = {
         "binding_id": "asr-quality",
         "revision": "1",
         "request_id": "request-1",
@@ -156,14 +172,13 @@ async def test_retirement_returns_the_stored_projection_and_forwards_the_command
 
 
 async def test_disable_reports_its_reason_and_activation_reaches_the_provider() -> None:
-    disabled = Provider(
-        receipt(status="disabled", disabled_reason="emergency capacity hold")
-    )
+    disabled = Provider(receipt(status="disabled", disabled_reason="emergency capacity hold"))
     async with client(disabled) as http:
         response = await http.post(
             RETIRE_URL, json={"mode": "disable", "reason": "emergency capacity hold"}
         )
     assert response.status_code == 200, response.text
+    assert response.headers["X-Binding-Disable-Cleanup"] == "pending_or_unknown"
     assert response.json()["publication"] == {
         "status": "disabled",
         "published_at": "2023-11-14T22:13:20.000001Z",
@@ -173,9 +188,7 @@ async def test_disable_reports_its_reason_and_activation_reaches_the_provider() 
         "disabled_reason": "emergency capacity hold",
     }
 
-    activation = Provider(
-        receipt(status="published", retired_at_us=None, replayed=True)
-    )
+    activation = Provider(receipt(status="published", retired_at_us=None, replayed=True))
     async with client(activation) as http:
         response = await http.post(ACTIVATE_URL, json={"expected_current_revision": "1"})
     assert response.status_code == 200, response.text
@@ -186,9 +199,55 @@ async def test_disable_reports_its_reason_and_activation_reaches_the_provider() 
 
 
 @pytest.mark.parametrize(
+    "url,body",
+    [
+        (RETIRE_URL, {"mode": "retire"}),
+        (ACTIVATE_URL, {"expected_current_revision": "1"}),
+    ],
+)
+@pytest.mark.parametrize("authorization", [None, "Bearer forged", "Basic Zm9yZ2Vk"])
+async def test_unverified_authorization_does_not_claim_an_authenticated_actor(
+    url: str, body: dict[str, Any], authorization: str | None
+) -> None:
+    provider = Provider()
+    headers = {"Authorization": authorization} if authorization is not None else {}
+    async with client(provider) as http:
+        response = await http.post(url, json=body, headers=headers)
+    assert response.status_code == 200, response.text
+    assert len(provider.commands) == 1
+    assert provider.commands[0].actor_type == "anonymous"
+    assert provider.commands[0].credential_label is None
+
+
+@pytest.mark.parametrize(
+    "url,body",
+    [
+        (RETIRE_URL, {"mode": "retire"}),
+        (ACTIVATE_URL, {"expected_current_revision": "1"}),
+    ],
+)
+async def test_duplicate_authorization_is_rejected_before_the_writer(
+    url: str, body: dict[str, Any]
+) -> None:
+    provider = Provider()
+    async with client(provider) as http:
+        response = await http.post(
+            url,
+            json=body,
+            headers=[("Authorization", "Bearer one"), ("Authorization", "Basic two")],
+        )
+    assert response.status_code == 400, response.text
+    assert provider.commands == []
+
+
+@pytest.mark.parametrize(
     "error,status,code",
     [
-        (BindingLifecycleConflictError("revision_already_retired"), 409, "revision_already_retired"),
+        (
+            BindingLifecycleConflictError("revision_already_retired"),
+            409,
+            "revision_already_retired",
+        ),
         (BindingLifecycleConflictError("revision_not_current"), 409, "revision_not_current"),
         (BindingLifecycleConflictError("configuration_changed"), 409, "configuration_changed"),
         (BindingLifecycleConflictError("idempotency_conflict"), 409, "idempotency_conflict"),
@@ -267,5 +326,5 @@ def test_served_contract_declares_both_lifecycle_operations() -> None:
     from speechnexus_backend.speech.interfaces.http.binding_contract import binding_http_contract
 
     paths = binding_http_contract()["paths"]
-    assert paths[RETIRE_PATH]["post"]["operationId"] == RETIRE
-    assert paths[ACTIVATE_PATH]["post"]["operationId"] == ACTIVATE
+    assert paths[RETIRE_PATH]["post"]["operationId"] == RETIRE_OPERATION
+    assert paths[ACTIVATE_PATH]["post"]["operationId"] == ACTIVATE_OPERATION

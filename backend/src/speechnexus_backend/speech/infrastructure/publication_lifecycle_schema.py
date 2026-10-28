@@ -8,6 +8,7 @@ from speechnexus_backend.speech.infrastructure.publication_schema import TABLE a
 
 HEAD_TABLE = "speech_publication_heads"
 EVENT_TABLE = "speech_publication_lifecycle_events"
+DISABLE_INTENT_TABLE = "speech_binding_disable_intents"
 
 _IDENTIFIER = r"'^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$'"
 
@@ -88,6 +89,10 @@ LIFECYCLE_DDL = (
     WHERE idempotency_key_digest IS NOT NULL""",
     f"""CREATE INDEX {EVENT_TABLE}_audit_order
     ON {EVENT_TABLE} (occurred_at_us DESC, event_id DESC)""",
+    f"""CREATE TABLE {DISABLE_INTENT_TABLE} (
+        event_id VARCHAR(128) COLLATE "C" PRIMARY KEY
+            REFERENCES {EVENT_TABLE} (event_id)
+    )""",
 )
 
 LIFECYCLE_DOWNGRADE_MESSAGE = "Publication lifecycle history requires preservation"
@@ -100,14 +105,15 @@ def binding_lifecycle_grants(schema: str, role: str) -> tuple[str, ...]:
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
         f'GRANT SELECT, INSERT, DELETE ON "{schema}".{HEAD_TABLE} TO {target}',
-        f'GRANT UPDATE (revision, revision_id, updated_at_us) ON '
+        f"GRANT UPDATE (revision, revision_id, updated_at_us) ON "
         f'"{schema}".{HEAD_TABLE} TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{EVENT_TABLE} TO {target}',
+        f'GRANT SELECT, INSERT ON "{schema}".{DISABLE_INTENT_TABLE} TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{PUBLICATION_TABLE} TO {target}',
         f'GRANT SELECT, INSERT ON "{schema}".{RETIREMENT_TABLE} TO {target}',
         f'GRANT SELECT ON "{schema}".speech_binding_revisions, '
         f'"{schema}".speech_binding_publication_evidence TO {target}',
-        f'GRANT SELECT, UPDATE (revision, generated_at_us) ON '
+        f"GRANT SELECT, UPDATE (revision, generated_at_us) ON "
         f'"{schema}".speech_catalog_state TO {target}',
     )
 

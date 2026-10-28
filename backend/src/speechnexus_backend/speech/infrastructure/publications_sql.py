@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from speechnexus_backend.speech.application.binding_publication import (
+    MISSING_HEAD,
+    BindingHeadPreconditionError,
+)
+from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.domain.publications import Publication, PublicationKind
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import HEAD_TABLE
@@ -28,7 +33,13 @@ def _publication(row: dict[str, Any]) -> Publication:
     )
 
 
-def append_publication(cursor: PublicationCursor, publication: Publication) -> bool:
+def append_publication(
+    cursor: PublicationCursor,
+    publication: Publication,
+    *,
+    expected_current_revision: object = MISSING_HEAD,
+    expected_catalog_revision: object = MISSING_HEAD,
+) -> bool:
     """Return whether this call inserted the row; a race resolves to no insert.
 
     An actual insert fires the catalogue-version trigger in this same
@@ -40,6 +51,38 @@ def append_publication(cursor: PublicationCursor, publication: Publication) -> b
         "'speechnexus:catalog:' || current_schema() || ':' || %s || ':' || %s, 0))",
         (publication.kind, publication.object_id),
     )
+    if publication.kind == "binding":
+        existing = find_publication(
+            cursor, publication.kind, publication.object_id, publication.revision
+        )
+        if existing is not None:
+            return False
+        if expected_current_revision is MISSING_HEAD:
+            raise BindingHeadPreconditionError("expected_current_revision_required")
+        if type(expected_catalog_revision) is not int or expected_catalog_revision < 1:
+            raise BindingHeadPreconditionError("expected_catalog_revision_required")
+        if expected_current_revision is not None:
+            if not isinstance(expected_current_revision, str):
+                raise ValueError("Invalid configuration revision")
+            revision_number(expected_current_revision)
+        cursor.execute(
+            "SELECT revision FROM speech_catalog_state WHERE singleton IS TRUE FOR UPDATE"
+        )
+        state = cursor.fetchall()
+        if len(state) != 1:
+            raise ValueError("Publication catalogue state is not unique")
+        if state[0]["revision"] != expected_catalog_revision:
+            raise BindingHeadPreconditionError("configuration_changed")
+        cursor.execute(
+            f"SELECT revision FROM {HEAD_TABLE} WHERE kind = %s AND object_id = %s",
+            (publication.kind, publication.object_id),
+        )
+        rows = cursor.fetchall()
+        if len(rows) > 1:
+            raise ValueError("Publication head is not unique")
+        current = str(rows[0]["revision"]) if rows else None
+        if current != expected_current_revision:
+            raise BindingHeadPreconditionError("configuration_changed")
     cursor.execute(
         "INSERT INTO speech_publications "
         "(kind, object_id, revision, revision_id, published_at_us) "

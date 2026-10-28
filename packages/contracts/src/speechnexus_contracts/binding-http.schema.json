@@ -161,7 +161,8 @@
         "200": {
           "schema": "HttpResponse_retireModelBindingRevision_200",
           "headers": {
-            "x-request-id": "string"
+            "x-request-id": "string",
+            "x-binding-disable-cleanup": "string"
           },
           "json": true
         },
@@ -2875,6 +2876,10 @@
           "properties": {
             "x-request-id": {
               "type": "string"
+            },
+            "x-binding-disable-cleanup": {
+              "type": "string",
+              "const": "pending_or_unknown"
             }
           },
           "required": [],

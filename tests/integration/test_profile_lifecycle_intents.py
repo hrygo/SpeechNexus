@@ -21,7 +21,6 @@ from tests.integration.test_production_jobs import ROOT, FaultConnection
 from tests.integration.test_production_jobs import database as database
 from tests.integration.test_profile_drafts import Profiles
 from tests.integration.test_profile_drafts import profiles as profiles
-from tests.support.migrations import HEAD
 from tests.support.profile_database import MySQLProfileDrafts
 
 from speechnexus_backend.speech.application.profile_lifecycle_intents import ProfileLifecycleIntents
@@ -324,7 +323,9 @@ def migrate(journal: Journal, operation: str, revision: str) -> None:
         engine.dispose()
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0013_profile_lifecycle_intents")], indirect=True
+)
 def test_additive_upgrade_and_empty_only_downgrade_preserve_all_other_history(
     journal: Journal,
 ) -> None:
@@ -335,8 +336,8 @@ def test_additive_upgrade_and_empty_only_downgrade_preserve_all_other_history(
     assert profile.db.query(
         "SELECT to_regclass(%s) AS name", (profile.db.schema + "." + TABLE,)
     ) == [{"name": None}]
-    migrate(journal, "upgrade", "head")
-    migrate(journal, "upgrade", "head")
+    migrate(journal, "upgrade", "0013_profile_lifecycle_intents")
+    migrate(journal, "upgrade", "0013_profile_lifecycle_intents")
     for grant in profile_lifecycle_intent_grants(profile.db.schema, profile.db.role):
         profile.db.query(grant)
     assert journal.rows() == [] and profile.snapshot() == before
@@ -345,7 +346,9 @@ def test_additive_upgrade_and_empty_only_downgrade_preserve_all_other_history(
     with pytest.raises(RuntimeError, match="history requires preservation"):
         migrate(journal, "downgrade", "0012_execution_results")
     assert journal.rows() == original and profile.snapshot() == before
-    assert profile.db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert profile.db.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0013_profile_lifecycle_intents"}
+    ]
 
 
 def wait_for_migration(journal: Journal, minimum: int) -> None:
@@ -362,7 +365,9 @@ def wait_for_migration(journal: Journal, minimum: int) -> None:
     pytest.fail("Expected real journal writer/DDL lock waits were not observed")
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0013_profile_lifecycle_intents")], indirect=True
+)
 def test_downgrade_waits_for_original_writer_then_refuses_to_drop_its_history(
     journal: Journal,
 ) -> None:
@@ -382,7 +387,9 @@ def test_downgrade_waits_for_original_writer_then_refuses_to_drop_its_history(
     assert len(journal.rows()) == 1
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0013_profile_lifecycle_intents")], indirect=True
+)
 def test_downgrade_first_never_silently_erases_a_successful_writer(journal: Journal) -> None:
     # Queue the migration's ACCESS EXCLUSIVE lock before the writer's SELECT.
     blocker = journal.profiles.db.blocker()

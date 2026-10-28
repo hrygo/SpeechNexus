@@ -20,9 +20,11 @@ from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingLifecycleUnavailableError,
     BindingRetirementCommand,
 )
+from speechnexus_backend.speech.infrastructure.binding_disable_barrier import lock_binding
 from speechnexus_backend.speech.infrastructure.catalog_revision_schema import RETIREMENT_TABLE
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    DISABLE_INTENT_TABLE,
     EVENT_TABLE,
     HEAD_TABLE,
 )
@@ -151,7 +153,7 @@ class PostgresBindingLifecycle:
         policy_revision = self._catalog_revision(cursor)
         status = "retired" if command.mode == "retire" else "disabled"
         disabled_reason = command.reason if command.mode == "disable" else None
-        self._record(
+        event_id = self._record(
             cursor,
             command,
             action="model_binding." + command.mode,
@@ -165,6 +167,12 @@ class PostgresBindingLifecycle:
                 "reason": command.reason,
             },
         )
+        if command.mode == "disable":
+            cursor.execute(
+                f"INSERT INTO {DISABLE_INTENT_TABLE} (event_id) VALUES (%s)", (event_id,)
+            )
+            if cursor.rowcount != 1:
+                raise BindingLifecycleUnavailableError
         return self._receipt(
             state,
             status=status,
@@ -283,10 +291,11 @@ class PostgresBindingLifecycle:
         occurred_at_us: int,
         policy_revision: int,
         change_summary: dict[str, object],
-    ) -> None:
+    ) -> str:
         state = self._state(cursor, command.binding_id, command.revision)
         if state is None:
             raise BindingLifecycleUnavailableError
+        event_id = "lifecycle-" + uuid.uuid4().hex
         cursor.execute(
             f"INSERT INTO {EVENT_TABLE} "
             "(event_id, kind, action, binding_id, revision, revision_id, result_status, "
@@ -296,7 +305,7 @@ class PostgresBindingLifecycle:
             "VALUES (%s, 'binding', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
             " %s::jsonb)",
             (
-                "lifecycle-" + uuid.uuid4().hex,
+                event_id,
                 action,
                 command.binding_id,
                 command.revision,
@@ -314,6 +323,9 @@ class PostgresBindingLifecycle:
                 json.dumps(change_summary, sort_keys=True, separators=(",", ":")),
             ),
         )
+        if cursor.rowcount != 1:
+            raise BindingLifecycleUnavailableError
+        return event_id
 
     def _state(self, cursor: _Cursor, binding_id: str, revision: str) -> dict[str, Any] | None:
         cursor.execute(
@@ -356,16 +368,10 @@ class PostgresBindingLifecycle:
         return rows[0]
 
     def _lock(self, cursor: _Cursor, binding_id: str) -> None:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':binding:' || %s, 0))",
-            (binding_id,),
-        )
+        lock_binding(cursor, binding_id)
 
     def _clock(self, cursor: _Cursor) -> int:
-        cursor.execute(
-            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t"
-        )
+        cursor.execute("SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000000 AS BIGINT) AS t")
         rows = cursor.fetchall()
         if len(rows) != 1:
             raise BindingLifecycleUnavailableError

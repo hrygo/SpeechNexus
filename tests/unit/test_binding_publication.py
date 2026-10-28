@@ -9,6 +9,7 @@ from speechnexus_backend.speech.application.binding_publication import (
     BindingPublicationConflictError,
     BindingPublicationResult,
     BindingPublisher,
+    BindingPublishIntent,
     BindingRevisionNotFoundError,
 )
 from speechnexus_backend.speech.domain.binding_publication_evidence import (
@@ -18,6 +19,16 @@ from speechnexus_backend.speech.domain.publications import Publication
 
 CAPACITY = "cap-asr-quality-7"
 REPORT = "qrep-asr-quality-7"
+OBSERVATION_ARGS = [
+    "--expected-catalog-revision",
+    "1",
+    "--observed-installation-id",
+    "00000000-0000-4000-8000-000000000001",
+    "--observed-database",
+    "test",
+    "--idempotency-key",
+    "synthetic-key",
+]
 
 
 class Store:
@@ -31,12 +42,17 @@ class Store:
         self.requested: list[tuple[Publication, BindingPublicationEvidence]] = []
 
     def publish_binding_revision(
-        self, publication: Publication, evidence: BindingPublicationEvidence
-    ) -> tuple[Publication, BindingPublicationEvidence, bool]:
+        self,
+        publication: Publication,
+        evidence: BindingPublicationEvidence,
+        *,
+        expected_current_revision: object = None,
+        intent: BindingPublishIntent | None = None,
+    ) -> tuple[Publication, BindingPublicationEvidence, bool, str, bool]:
         self.requested.append((publication, evidence))
         if self.stored is not None:
-            return self.stored, self.stored_evidence or evidence, False
-        return publication, evidence, True
+            return self.stored, self.stored_evidence or evidence, False, "replay", True
+        return publication, evidence, True, "created", True
 
 
 def publisher(store: Store, clock: int = 1_700_000_000_000_000) -> BindingPublisher:
@@ -50,6 +66,15 @@ def publish(store: Store, *, clock: int = 1_700_000_000_000_000) -> BindingPubli
         "mbrev-abc123",
         capacity_manifest_id=CAPACITY,
         qualification_report_id=REPORT,
+        expected_current_revision=None,
+        intent=BindingPublishIntent.from_request(
+            installation_id="00000000-0000-4000-8000-000000000001",
+            database="test",
+            schema="speech",
+            expected_current_revision=None,
+            expected_catalog_revision=1,
+            idempotency_key="test-key",
+        ),
     )
 
 
@@ -169,6 +194,9 @@ def test_command_fails_when_the_writer_dsn_is_absent(monkeypatch: pytest.MonkeyP
                 CAPACITY,
                 "--qualification-report-id",
                 REPORT,
+                "--expected-current-revision",
+                "none",
+                *OBSERVATION_ARGS,
             ]
         )
 
@@ -191,6 +219,9 @@ def test_command_requires_both_evidence_identifiers(
                 "mbrev-abc123",
                 "--capacity-manifest-id",
                 CAPACITY,
+                "--expected-current-revision",
+                "none",
+                *OBSERVATION_ARGS,
             ]
         )
 
@@ -217,7 +248,31 @@ def test_command_rejects_a_revision_outside_the_stored_decimal_form(
                 CAPACITY,
                 "--qualification-report-id",
                 REPORT,
+                "--expected-current-revision",
+                "none",
+                *OBSERVATION_ARGS,
             ]
         )
 
     assert stopped.value.code == 2
+
+
+def test_command_requires_explicit_observed_head(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main(
+            [
+                "--binding-id",
+                "asr-quality",
+                "--revision",
+                "3",
+                "--revision-id",
+                "mbrev-abc123",
+                "--capacity-manifest-id",
+                CAPACITY,
+                "--qualification-report-id",
+                REPORT,
+                *OBSERVATION_ARGS,
+            ]
+        )
+    assert stopped.value.code == 2
+    assert "--expected-current-revision" in capsys.readouterr().err

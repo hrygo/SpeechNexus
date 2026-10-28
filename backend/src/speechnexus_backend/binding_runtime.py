@@ -34,6 +34,7 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     speech_pool,
 )
 from speechnexus_backend.speech.infrastructure.publication_lifecycle_schema import (
+    DISABLE_INTENT_TABLE,
     EVENT_TABLE,
     HEAD_TABLE,
 )
@@ -325,6 +326,7 @@ _LIFECYCLE_INSERT_ONLY = (
     "speech_publications",
     RETIREMENT_TABLE,
     EVENT_TABLE,
+    DISABLE_INTENT_TABLE,
 )
 _LIFECYCLE_TABLES = (
     *_LIFECYCLE_READ_ONLY,
@@ -338,9 +340,7 @@ _LIFECYCLE_UPDATABLE_COLUMNS = {
 }
 
 
-def _table_privilege(
-    connection: SpeechConnection, role: str, table: str, privileges: str
-) -> bool:
+def _table_privilege(connection: SpeechConnection, role: str, table: str, privileges: str) -> bool:
     row = connection.execute(
         "SELECT pg_catalog.has_table_privilege(%s::name,%s,%s) AS permitted",
         (role, table, privileges),

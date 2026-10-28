@@ -9,6 +9,8 @@ appends the publication row.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -18,7 +20,65 @@ from speechnexus_backend.speech.domain.binding_publication_evidence import (
     BindingPublicationEvidence,
     EvidenceSource,
 )
+from speechnexus_backend.speech.domain.configuration import revision_number
 from speechnexus_backend.speech.domain.publications import Publication
+
+MISSING_HEAD = object()
+
+
+class BindingHeadPreconditionError(ValueError):
+    """A new publication needs the operator's observed current revision."""
+
+
+class BindingIntentConflictError(ValueError):
+    """The same idempotency identity already names a different intent."""
+
+
+@dataclass(frozen=True, slots=True)
+class BindingPublishIntent:
+    installation_id: str
+    database: str
+    schema: str
+    expected_current_revision: str | None
+    expected_catalog_revision: int
+    key_digest: str
+
+    @classmethod
+    def from_request(
+        cls,
+        *,
+        installation_id: str,
+        database: str,
+        schema: str,
+        expected_current_revision: str | None,
+        expected_catalog_revision: int,
+        idempotency_key: str,
+    ) -> BindingPublishIntent:
+        if not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", installation_id
+        ):
+            raise ValueError("Invalid installation identity")
+        if not database or not re.fullmatch(r"[a-z][a-z0-9_]{2,62}", schema):
+            raise ValueError("Invalid database target")
+        if type(expected_catalog_revision) is not int or expected_catalog_revision < 1:
+            raise ValueError("Invalid observed catalogue revision")
+        if expected_current_revision is not None:
+            revision_number(expected_current_revision)
+        if (
+            not 1 <= len(idempotency_key) <= 256
+            or not idempotency_key.isascii()
+            or not idempotency_key.isprintable()
+        ):
+            raise ValueError("Invalid idempotency key")
+        key_digest = "sha256:" + hashlib.sha256(idempotency_key.encode("ascii")).hexdigest()
+        return cls(
+            installation_id,
+            database,
+            schema,
+            expected_current_revision,
+            expected_catalog_revision,
+            key_digest,
+        )
 
 
 class BindingRevisionNotFoundError(LookupError):
@@ -74,7 +134,10 @@ class BindingPublicationStore(Protocol):
         self,
         publication: Publication,
         evidence: BindingPublicationEvidence,
-    ) -> tuple[Publication, BindingPublicationEvidence, bool]:
+        *,
+        expected_current_revision: object = MISSING_HEAD,
+        intent: BindingPublishIntent | None = None,
+    ) -> tuple[Publication, BindingPublicationEvidence, bool, str, bool]:
         """Validate the exact stored revision, then append row and evidence together."""
         ...
 
@@ -120,6 +183,8 @@ class BindingPublicationResult:
     publication: Publication
     evidence: BindingPublicationEvidence
     created: bool
+    outcome: str
+    original_created: bool
 
 
 class BindingPublisher:
@@ -145,7 +210,17 @@ class BindingPublisher:
         capacity_manifest_digest: str | None = None,
         qualification_report_digest: str | None = None,
         evidence_source: EvidenceSource = "operator_cli",
+        expected_current_revision: object = MISSING_HEAD,
+        intent: BindingPublishIntent | None = None,
     ) -> BindingPublicationResult:
+        if expected_current_revision is not MISSING_HEAD and expected_current_revision is not None:
+            if not isinstance(expected_current_revision, str):
+                raise ValueError("Invalid configuration revision")
+            revision_number(expected_current_revision)
+        if intent is None:
+            raise BindingHeadPreconditionError("complete_publication_intent_required")
+        if expected_current_revision != intent.expected_current_revision:
+            raise ValueError("Observation does not match publication intent")
         now_us = self._now_us()
         publication = Publication(
             kind="binding",
@@ -165,7 +240,12 @@ class BindingPublisher:
             capacity_manifest_digest=capacity_manifest_digest,
             qualification_report_digest=qualification_report_digest,
         )
-        stored, stored_evidence, created = self._store.publish_binding_revision(
-            publication, evidence
+        stored, stored_evidence, created, outcome, original_created = (
+            self._store.publish_binding_revision(
+                publication,
+                evidence,
+                expected_current_revision=expected_current_revision,
+                intent=intent,
+            )
         )
-        return BindingPublicationResult(stored, stored_evidence, created)
+        return BindingPublicationResult(stored, stored_evidence, created, outcome, original_created)

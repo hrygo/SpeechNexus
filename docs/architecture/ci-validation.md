@@ -167,7 +167,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 曾尝试固定 v8.0.2 的 `github-token` 公开 REST 路径并限定当前仓库/运行；[运行 40353154527](https://github.com/hrygo/SpeechNexus/actions/runs/40353154527) 的六份文件同样全部成功、摘要匹配，仍在完成日志后挂住。因此 REST 接线没有解决退出异常，不能作为有效修复；故障发生于下载动作完成后的进程生命周期，具体未释放资源未确定。
 
-正式汇总改用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断，只接受精确的六个分片名称；三个并发下载进程各限 15 秒，令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限。全部下载及归档校验成功后才发布报告目录，既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时仍为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
+正式汇总改用 runner 自带 GitHub CLI 和标准库脚本 `download-integration-evidence.py`：只列当前仓库/运行，最多一页 100 个制品且拒绝截断，只接受精确的六个分片名称；三个并发下载进程每次限 15 秒；进程失败或超时最多尝试三次，每次使用独立临时文件，完整性校验失败不放行；令牌仅经环境传入。先核对未过期、所属运行、压缩大小与 API 提供的 SHA-256，再只读 ZIP 内该片的两份固定 JSON，不提取任意路径；单 ZIP 上限 16 MiB，单 JSON 保持原集成报告的 8 MiB 上限。全部下载及归档校验成功后才发布报告目录，既有同提交、完整互斥集合与逐项执行检查继续独立执行。仅汇总作业有 `actions: read`，全局仍仅 `contents: read`，超时仍为两分钟；不以 CLI 下载成功替代业务证据验收。依据：[官方 artifact REST API](https://docs.github.com/en/rest/actions/artifacts)、[GitHub CLI API](https://cli.github.com/manual/gh_api)，核验日期 2026-10-27。
 
 本机只读取上述已结束运行的六份历史制品（单份 27,782–47,262 bytes），全部大小及 SHA-256 匹配，正常退出；继续运行原检查器，确认 **1807 collected / 1785 passed / 22 existing PG-only parameters skipped**，同一合并提交 `2d755ce473c000e7fc613b2fa712b7cf77c4c683`。这验证了真实 API、归档格式和证据检查链，没有重跑数据库或业务测试；Linux 托管效果仍需新提交验收。新增 12 项小型合成检查覆盖缺片、重复、错误运行、摘要、大小、过期、分页截断、路径与超时；超限回归通过缩小测试内限制实现，不构造大文件。
 

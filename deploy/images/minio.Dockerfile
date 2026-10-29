@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.18
 # The pinned community Docker Hub tag is unavailable. Use official, verified
 # release packages; keep runtime data and this session's CA outside the image.
-FROM python:3.14.9-slim-bookworm AS download
+FROM python:3.15.0-slim-bookworm AS download
 ARG TARGETARCH
 RUN --mount=type=secret,id=proxy_ca <<'SH'
 set -eu
@@ -55,7 +55,7 @@ pathlib.Path("/opt/MINIO-LICENSE").write_bytes(data)
 PY
 SH
 
-FROM python:3.14.9-slim-bookworm AS runtime
+FROM python:3.15.0-slim-bookworm AS runtime
 LABEL org.opencontainers.image.source="https://github.com/minio/minio" \
     org.opencontainers.image.version="RELEASE.2025-09-07T16-13-09Z" \
     org.opencontainers.image.licenses="AGPL-3.0-only"

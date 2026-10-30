@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "av>=19,<20",
-  "fastapi>=0.159.1,<0.160",
+  "fastapi>=0.159.1,<0.163",
   "httpx>=0.28.1,<0.29",
   "minio>=7.2.20,<8",
   "psycopg-pool>=3.3,<4",

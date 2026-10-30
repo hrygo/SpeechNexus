@@ -1,50 +1,43 @@
 version: 2
 
+multi-ecosystem-groups:
+  dependencies:
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
 updates:
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      python-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies
 
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      web-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      actions:
-        patterns:
-          - "*"
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies
 
   - package-ecosystem: docker
     directory: /deploy/images
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies
 
   - package-ecosystem: docker
     directory: /deploy
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    patterns: ["*"]
+    multi-ecosystem-group: dependencies

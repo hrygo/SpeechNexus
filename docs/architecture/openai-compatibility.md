@@ -68,7 +68,7 @@ speech.write_to_file("output.wav")
 
 ### 2.2 JavaScript SDK
 
-仓库契约测试锁定 OpenAI JavaScript SDK `7.43.0`，验证 Node 客户端实际发送的
+仓库契约测试锁定 OpenAI JavaScript SDK `7.45.0`，验证 Node 客户端实际发送的
 `models.list()` / `models.retrieve()`、multipart 转写字段、TTS JSON body、二进制响应和
 429 错误映射；标准调用形状与 Python 门禁一致。
 
@@ -92,7 +92,7 @@ const buffer = Buffer.from(await speech.arrayBuffer());
 ### 2.3 Realtime
 
 标准 Realtime SDK 使用 `model` 查询参数连接时，服务端创建一个仅转写的兼容会话。Python
-客户端需要安装 `openai[realtime]`；仓库契约测试锁定并在 OpenAI Python SDK `2.54.0` 上验证
+客户端需要安装 `openai[realtime]`；仓库契约测试锁定并在 OpenAI Python SDK `3.39.0` 上验证
 以下请求形状：
 
 ```python
@@ -112,7 +112,7 @@ with client.realtime.connect(model="asr-quality") as connection:
     # 发送 input_audio_buffer.append / commit，消费声明的事件子集。
 ```
 
-兼容模式只保证声明的标准 ASR 事件；`conversation.item.input_audio_transcription.completed` 包含 OpenAI 形状的 `usage`（由已接受段样本时长计算），不使用虚构 token 数。`session.audio.input` 的层级与官方 SDK 2.x transcription session 形状一致；`include`、semantic VAD 和未声明音频格式显式拒绝。TTS、可修订假设、辅助结果、背压 credit 与整体终态使用 `nexus.*` 事件，必须通过 `POST /v1/nexus/realtime/sessions` 创建会话后再连接 `GET /v1/realtime?session_id=...`。两种模式互斥，同时提供 `session_id` 和 `model` 返回 400。
+兼容模式只保证声明的标准 ASR 事件；`conversation.item.input_audio_transcription.completed` 包含 OpenAI 形状的 `usage`（由已接受段样本时长计算），不使用虚构 token 数。`session.audio.input` 的层级与官方 SDK 3.x transcription session 形状一致；`include`、semantic VAD 和未声明音频格式显式拒绝。TTS、可修订假设、辅助结果、背压 credit 与整体终态使用 `nexus.*` 事件，必须通过 `POST /v1/nexus/realtime/sessions` 创建会话后再连接 `GET /v1/realtime?session_id=...`。两种模式互斥，同时提供 `session_id` 和 `model` 返回 400。
 
 服务拒绝未声明事件而不是静默忽略。依赖 OpenAI LLM response、tool call、conversation history 或 semantic VAD 的客户端不属于兼容范围。
 
@@ -149,7 +149,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 - 429 错误 envelope 能由 SDK 映射为 `RateLimitError`；
 - 未知字段、未声明事件、非法资质组合和克隆确认缺失被拒绝。
 
-REST 测试使用 `httpx.MockTransport`，Realtime 测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；两者共同证明契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端实现后，还须以同一组样例运行 HTTP / WebSocket 集成测试，并记录实际 binding、拓扑和验证范围。
+REST 测试使用 `httpx2.MockTransport`，Realtime 测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；两者共同证明契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端实现后，还须以同一组样例运行 HTTP / WebSocket 集成测试，并记录实际 binding、拓扑和验证范围。
 
 PR CI 使用 `CONTRACT_BASE_REF=<target-branch> make contracts-compat` 对比目标分支：删除标准路径 / 操作 / 字段 / 响应状态 / 事件类型或枚举值、增加必填字段、收紧参数域、改变默认值或字段格式都会失败。门禁会解析本地及 `contracts/shared/` 引用后比较语义，因此把等价的内联域抽到共享 schema 不会被误报为破坏性变更，而引用的共享域真的删除枚举值时仍会失败。对 `speech-openapi.yaml`，门禁只沿 `/v1/models`、`/v1/audio/*` 与 `/v1/realtime` 递归追踪实际可达的组件；对 `realtime-events.schema.json`，只比较声明的标准事件定义、公开 union 中的标准事件及其递归引用，再覆盖 `contracts/shared/` 公共域。标准请求、模型和实时会话中的可选 `nexus` 属性属于增强边界，兼容门禁不沿该属性递归比较；其正例、负例与传输收敛由契约测试单独负责。其余标准字段仍递归检查，因此不能用“扩展”名义删除或改写标准字段。内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
 

@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any, cast
 
-import httpx
+import httpx2
 import pytest
 import rfc8785
 from jsonschema.exceptions import ValidationError
@@ -102,17 +102,17 @@ def test_sync_recovery_requires_original_identity_and_success_receipt(code: str)
     # An SDK consumer that lost the first response recovers identity from 409.
     calls: list[str] = []
 
-    def transport(request: httpx.Request) -> httpx.Response:
+    def transport(request: httpx2.Request) -> httpx2.Response:
         calls.append(request.url.path)
         assert request.headers["Idempotency-Key"] == "synthetic-key"
-        return httpx.Response(409, json=response)
+        return httpx2.Response(409, json=response)
 
     with (
         OpenAI(
             api_key="synthetic-test",
             base_url="http://mock.invalid/v1",
             max_retries=0,
-            http_client=httpx.Client(transport=httpx.MockTransport(transport)),
+            http_client=httpx2.Client(transport=httpx2.MockTransport(transport)),
         ) as client,
         pytest.raises(APIStatusError) as caught,
     ):
@@ -598,17 +598,17 @@ def test_lost_sync_response_recovers_same_operation_through_completion() -> None
     accepted: set[str] = set()
     attempts = 0
 
-    def transport(request: httpx.Request) -> httpx.Response:
+    def transport(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         if request.method == "GET":
             assert request.url.path == "/v1/nexus/operations/op-original"
             operations.validate(operation)
-            return httpx.Response(200, json=operation)
+            return httpx2.Response(200, json=operation)
         attempts += 1
         key = request.headers["Idempotency-Key"]
         if key not in accepted:
             accepted.add(key)
-            raise httpx.ReadTimeout("Synthetic response loss after acceptance", request=request)
+            raise httpx2.ReadTimeout("Synthetic response loss after acceptance", request=request)
         recovery: dict[str, Any] = {"operation_id": operation["id"]}
         code = "operation_in_progress"
         if operation["status"] == "succeeded":
@@ -626,13 +626,13 @@ def test_lost_sync_response_recovers_same_operation_through_completion() -> None
             }
         }
         errors.validate(body)
-        return httpx.Response(409, json=body)
+        return httpx2.Response(409, json=body)
 
     with OpenAI(
         api_key="synthetic-test",
         base_url="http://mock.invalid/v1",
         max_retries=0,
-        http_client=httpx.Client(transport=httpx.MockTransport(transport)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(transport)),
     ) as client:
 
         def submit() -> None:

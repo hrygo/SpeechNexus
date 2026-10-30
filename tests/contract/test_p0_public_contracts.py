@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
 
-import httpx
+import httpx2
 import jsonschema
 import pytest
 import yaml
@@ -500,7 +500,7 @@ def _assert_voice_publication_semantics(
         raise ValueError("publication and voice revision published_at values differ")
 
 
-def _multipart_fields(request: httpx.Request) -> dict[str, bytes]:
+def _multipart_fields(request: httpx2.Request) -> dict[str, bytes]:
     content_type = request.headers["content-type"]
     raw = b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + request.content
     message = BytesParser(policy=HTTP).parsebytes(raw)
@@ -633,7 +633,7 @@ def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
     same assertions against the implemented routes.
     """
     speech = _resolved_yaml(_SPEECH_OPENAPI)
-    captured: list[httpx.Request] = []
+    captured: list[httpx2.Request] = []
     transcription_payload: dict[str, Any] = {
         "text": "hello",
         "languages": [{"code": "en"}],
@@ -685,29 +685,29 @@ def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
         ],
     }
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         captured.append(request)
         assert request.headers["authorization"] == "Bearer test-key"
         if request.url.path == "/v1/models":
-            return httpx.Response(200, json=model_payload)
+            return httpx2.Response(200, json=model_payload)
         if request.url.path == "/v1/models/asr-quality":
-            return httpx.Response(200, json=model_payload["data"][0])
+            return httpx2.Response(200, json=model_payload["data"][0])
         if request.url.path == "/v1/audio/transcriptions":
             fields = _multipart_fields(request)
             response_format = fields.get("response_format", b"json").decode()
             if response_format in {"text", "srt", "vtt"}:
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     content=b"hello text",
                     headers={"content-type": "text/plain"},
                 )
             if response_format == "verbose_json":
-                return httpx.Response(200, json=verbose_payload)
-            return httpx.Response(200, json=transcription_payload)
+                return httpx2.Response(200, json=verbose_payload)
+            return httpx2.Response(200, json=transcription_payload)
         if request.url.path == "/v1/audio/speech":
             body = json.loads(request.content)
             if body.get("input") == "fail":
-                return httpx.Response(
+                return httpx2.Response(
                     429,
                     json={
                         "error": {
@@ -722,7 +722,7 @@ def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
                     },
                     headers={"retry-after": "1"},
                 )
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 content=b"RIFFmock",
                 headers={"content-type": "audio/wav"},
@@ -732,7 +732,7 @@ def test_openai_sdk_requests_and_responses_match_declared_contract() -> None:
     client = OpenAI(
         base_url="http://testserver/v1",
         api_key="test-key",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
 
     models = client.models.list()

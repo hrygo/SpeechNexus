@@ -82,10 +82,12 @@ def _command(admission: AdmissionDatabase) -> AdmitRecipe:
     return AdmitRecipe(request, business, capture.command.approved_recipe)
 
 
+@pytest.mark.parametrize("expiry_case", ["none", "source", "authorization"])
 def test_private_authorized_probe_uses_regular_admission_and_replays(
     admission_database: AdmissionDatabase,
     monkeypatch: pytest.MonkeyPatch,
     tts_inputs: dict[str, Any],
+    expiry_case: str,
 ) -> None:
     admission = admission_database
     db = admission.runtime.foundation.database
@@ -236,6 +238,9 @@ def test_private_authorized_probe_uses_regular_admission_and_replays(
         "WHERE authorization_id='auth-test'",
         (json.dumps(auth),),
     )
+    if expiry_case != "none":
+        _assert_final_lock_expiry_rolls_back(admission, port, command, expiry_case)
+        return
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(port.admit_recipe, command) for _ in range(2)]
         results = [future.result(timeout=10) for future in futures]
@@ -252,6 +257,72 @@ def test_private_authorized_probe_uses_regular_admission_and_replays(
     assert port.admit_recipe(command).outcome == "replayed"
     assert port.query_admission(command.request.identity).outcome == "replayed"
     _exercise_approval_replay(admission, auth, evidence, artifacts, bundle)
+
+
+def _assert_final_lock_expiry_rolls_back(
+    admission: AdmissionDatabase,
+    port: PostgresQualificationAdmission,
+    command: AdmitRecipe,
+    expiry_case: str,
+) -> None:
+    import time
+
+    db = admission.runtime.foundation.database
+    if expiry_case == "source":
+        db.query(
+            "UPDATE speech_builtin_voice_source_approvals SET expires_at="
+            "clock_timestamp()+interval '3 seconds' WHERE source_approval_id='source-test'"
+        )
+        expired_sql = (
+            "SELECT expires_at<=clock_timestamp() AS expired "
+            "FROM speech_builtin_voice_source_approvals WHERE source_approval_id='source-test'"
+        )
+    else:
+        db.query(
+            "UPDATE speech_builtin_voice_probe_authorizations SET intent=jsonb_set(intent,"
+            "'{expires_at_us}',to_jsonb((extract(epoch from clock_timestamp()+"
+            "interval '3 seconds')*1000000)::bigint)) WHERE authorization_id='auth-test'"
+        )
+        expired_sql = (
+            "SELECT (intent->>'expires_at_us')::bigint <= "
+            "floor(extract(epoch from clock_timestamp())*1000000)::bigint AS expired "
+            "FROM speech_builtin_voice_probe_authorizations WHERE authorization_id='auth-test'"
+        )
+    before = admission.snapshot()
+    pools_before = db.query("SELECT * FROM resource_pools ORDER BY pool_id")
+    blocker = db.blocker()
+    try:
+        blocker.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
+            "|| current_schema() || ':' || %s, 0))",
+            (command.request.identity.operation_id,),
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(port.admit_recipe, command)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if db.query(
+                    "SELECT pid FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
+                    (blocker.info.backend_pid,),
+                ):
+                    break
+                if pending.done():
+                    pytest.fail(f"admission did not wait: {pending.result()}")
+                time.sleep(0.01)
+            else:
+                pytest.fail("admission did not wait on settlement lock")
+            while not db.query(expired_sql)[0]["expired"]:
+                if time.monotonic() >= deadline:
+                    pytest.fail("authority did not expire while blocked")
+                time.sleep(0.02)
+            blocker.commit()
+            assert pending.result(timeout=10).outcome == "rejected"
+        assert admission.snapshot() == before
+        assert db.query("SELECT * FROM resource_pools ORDER BY pool_id") == pools_before
+        assert not db.query("SELECT 1 FROM speech_builtin_voice_probe_admissions")
+        assert not db.query("SELECT 1 FROM speech_tts_settlement")
+    finally:
+        blocker.close()
 
 
 def _exercise_original_gateway_recovery(

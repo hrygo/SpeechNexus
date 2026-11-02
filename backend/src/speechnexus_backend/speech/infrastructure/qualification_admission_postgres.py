@@ -59,6 +59,48 @@ class PostgresQualificationAdmission(PostgresAdmissionTransactions):
             cursor, request=request, deadline_at_us=prepared.command.request.deadline_at_us
         )
 
+    def _recheck_before_commit(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
+        """Recheck the locked probe authority after budget and settlement waits."""
+        request = prepared.command.request
+        stage = request.stages[0]
+        cursor.execute(
+            "SELECT 1 FROM speech_builtin_voice_probe_authorizations a "
+            "JOIN speech_builtin_voice_probe_admissions p USING (authorization_id) "
+            "JOIN speech_builtin_voice_source_approvals s "
+            "ON s.source_approval_id=a.source_approval_id AND s.voice_id=a.voice_id "
+            "WHERE a.authorization_id=%s AND p.operation_id=%s AND p.attempt_id=%s "
+            "AND p.request_digest=%s AND a.intent->>'authorization_id'=a.authorization_id "
+            "AND a.intent->>'source_approval_id'=s.source_approval_id "
+            "AND a.intent->>'voice_id'=s.voice_id AND s.native_speaker_id='Vivian' "
+            "AND a.intent->>'native_speaker_id'=s.native_speaker_id "
+            "AND a.intent->>'binding_revision_id'=%s AND a.intent->>'manifest_id'=%s "
+            "AND a.intent->>'policy_revision_id'=%s AND a.intent->>'host_node_id'=%s "
+            "AND a.intent->>'gateway_id'=%s AND a.intent->>'instance_id'=%s "
+            "AND (a.intent->>'instance_generation')::bigint=%s "
+            "AND a.intent->>'operation_id'=p.operation_id AND a.intent->>'attempt_id'=p.attempt_id "
+            "AND a.intent->>'admission_request_digest'=p.request_digest "
+            "AND s.expires_at>clock_timestamp() "
+            "AND (a.intent->>'expires_at_us')::bigint > "
+            "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint "
+            "AND NOT EXISTS (SELECT 1 FROM speech_builtin_voice_source_revocations r "
+            "WHERE r.source_approval_id=s.source_approval_id)",
+            (
+                self._authorization_id,
+                request.identity.operation_id,
+                request.identity.attempt_id,
+                prepared.request_digest,
+                request.binding_revision_id,
+                request.manifest_id,
+                request.policy_revision_id,
+                stage.host_node_id,
+                stage.gateway_id,
+                stage.instance_id,
+                stage.instance_generation,
+            ),
+        )
+        if len(cursor.fetchall()) != 1:
+            raise AdmissionRejectedError("policy_or_resource_disabled")
+
     def query_admission(
         self, identity: AdmissionIdentity, *, request_digest: str | None = None
     ) -> AdmissionResult:

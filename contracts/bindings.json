@@ -144,7 +144,8 @@
         "ExecutionStagingResultResponse",
         "ExecutionAudioMetadata",
         "ExecutionAudioStagingResult",
-        "ExecutionAudioStagingResultResponse"
+        "ExecutionAudioStagingResultResponse",
+        "TtsConfigurationEvidence"
       ]
     },
     "runtime": {

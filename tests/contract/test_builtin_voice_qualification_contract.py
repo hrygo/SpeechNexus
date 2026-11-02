@@ -40,6 +40,7 @@ def authorization() -> dict[str, object]:
         "image_digest": digest,
         "template_id": "template-test",
         "template_config_digest": digest,
+        "gateway_policy_digest": digest,
         "template_digest": digest,
         "controller_artifact_digest": digest,
         "controller_revision": "controller-rev",

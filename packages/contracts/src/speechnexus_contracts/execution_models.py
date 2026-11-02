@@ -285,6 +285,21 @@ class ExecutionAudioStagingResultResponse(TypedDict):
     staging_result: ExecutionAudioStagingResult | None
 
 
+class TtsConfigurationEvidence(TypedDict):
+    gateway_policy_digest: Sha256Digest
+    policy_revision_id: str
+    voice_id: Identifier
+    voice_revision: ExternalSharedIdentifiersSchemaJsonRevision
+    voice_revision_id: Identifier
+    native_speaker_id: str
+    binding_revision_id: Identifier
+    node_id: Identifier
+    gateway_id: Identifier
+    instance_id: Identifier
+    instance_generation: int
+    observed_at: str
+
+
 class ExternalVoiceResourceSchemaJsonPronunciationEntry(TypedDict):
     grapheme: str
     phonemes: str
@@ -554,4 +569,5 @@ type ExecutionContracts = (
     | ExecutionAudioMetadata
     | ExecutionAudioStagingResult
     | ExecutionAudioStagingResultResponse
+    | TtsConfigurationEvidence
 )

@@ -22,6 +22,7 @@
         "binding_revision_id",
         "manifest_id",
         "policy_revision_id",
+        "gateway_policy_digest",
         "host_node_id",
         "gateway_id",
         "instance_id",
@@ -81,6 +82,9 @@
         },
         "policy_revision_id": {
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+        },
+        "gateway_policy_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
         },
         "host_node_id": {
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"

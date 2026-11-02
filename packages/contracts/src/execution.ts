@@ -20,6 +20,7 @@ export type Contracts = Pick<
   | "ExecutionAudioMetadata"
   | "ExecutionAudioStagingResult"
   | "ExecutionAudioStagingResultResponse"
+  | "TtsConfigurationEvidence"
 >;
 const parseValue = createProfileParser(bundle);
 export function parse<K extends keyof Contracts>(name: K, value: unknown): Contracts[K] {

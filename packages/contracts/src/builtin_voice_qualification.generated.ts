@@ -25,6 +25,7 @@ export interface components {
       binding_revision_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
       manifest_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
       policy_revision_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
+      gateway_policy_digest: components["schemas"]["External_shared_identifiers_schema_json_Sha256Digest"];
       host_node_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
       gateway_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];
       instance_id: components["schemas"]["External_shared_identifiers_schema_json_Identifier"];

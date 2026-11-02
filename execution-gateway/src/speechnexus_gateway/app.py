@@ -22,6 +22,7 @@ from speechnexus_gateway.application.readiness import (
 )
 from speechnexus_gateway.application.recover_executions import ExecutionRecoveryService
 from speechnexus_gateway.application.submit_execution import SubmitExecutionService
+from speechnexus_gateway.application.tts_configuration_evidence import TtsConfigurationEvidence
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionRuntime
 from speechnexus_gateway.file_speech_runtime import load_file_speech_configuration
 from speechnexus_gateway.infrastructure.abort_authority import verify_abort_authority
@@ -41,6 +42,7 @@ from speechnexus_gateway.interfaces.http.execution_submit import (
 from speechnexus_gateway.interfaces.http.health import create_health_router
 from speechnexus_gateway.interfaces.http.instance_drain import create_instance_drain_router
 from speechnexus_gateway.interfaces.http.middleware import RequestIdMiddleware
+from speechnexus_gateway.interfaces.http.tts_configuration import create_tts_configuration_router
 from speechnexus_gateway.settings import Settings
 
 
@@ -273,6 +275,14 @@ def create_app(
                     observation=runtime,
                     committed_execution=runtime,
                 )
+                if speech_configuration is not None and speech_configuration.tts is not None:
+                    tts = speech_configuration.tts
+                    target = tts.endpoint.execution_target
+                    if target is None:
+                        raise ValueError("configured TTS target is unavailable")
+                    app.state.tts_configuration_evidence = TtsConfigurationEvidence(
+                        tts.policy, tts.builtin_voice_binding, target
+                    )
                 app.state.abort_execution = ExecutionAbortService(
                     ingress=ingress,
                     ledger=ledger,
@@ -283,6 +293,7 @@ def create_app(
                 worker.start()
             yield
         finally:
+            app.state.tts_configuration_evidence = None
             try:
                 await _finish_control(worker, pool, ownership, file_execution)
             finally:
@@ -290,6 +301,7 @@ def create_app(
                 app.state.execution_query = None
                 app.state.instance_drain = None
                 app.state.recovery_worker = None
+                app.state.tts_configuration_evidence = None
                 app.state.file_execution_runtime = None
                 app.state.submit_execution = None
                 app.state.abort_execution = None
@@ -314,6 +326,7 @@ def create_app(
     app.state.recovery_worker = None
     app.state.file_execution_required = file_execution_factory is not None
     app.state.file_execution_runtime = None
+    app.state.tts_configuration_evidence = None
     resolved_readiness = readiness or _build_readiness(resolved_settings, app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(
@@ -330,5 +343,6 @@ def create_app(
         app.include_router(create_execution_query_router(credential=credential))
         app.include_router(create_execution_submit_router(credential=credential))
         app.include_router(create_instance_drain_router(credential=credential))
+        app.include_router(create_tts_configuration_router(credential=credential))
     app.state.settings = resolved_settings
     return app

@@ -22,6 +22,7 @@ class Root(TypedDict):
     binding_revision_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     manifest_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     policy_revision_id: ExternalSharedIdentifiersSchemaJsonIdentifier
+    gateway_policy_digest: ExternalSharedIdentifiersSchemaJsonSha256Digest
     host_node_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     gateway_id: ExternalSharedIdentifiersSchemaJsonIdentifier
     instance_id: ExternalSharedIdentifiersSchemaJsonIdentifier

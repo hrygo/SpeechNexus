@@ -16,6 +16,7 @@ from speechnexus_gateway.domain.submission import (
     SubmitRequest,
 )
 from speechnexus_gateway.domain.tts import (
+    BuiltinVoiceBinding,
     TtsAudio,
     TtsCallError,
     TtsDelivery,
@@ -144,6 +145,7 @@ def build(
             synthesizer=engine,
             encoder=encoder,
             binding_policy=BINDING,
+            builtin_voice_binding=BuiltinVoiceBinding("voice-demo", "1", "voice-rev-1", "Vivian"),
             max_payload_bytes=1024 * 1024,
             **({} if now is None else {"now": now}),
         ),
@@ -224,6 +226,17 @@ def test_validate_request_freezes_a_copy_without_io() -> None:
     assert encoder.calls == []
 
 
+def test_native_speaker_mismatch_is_rejected_at_construction() -> None:
+    with pytest.raises(ValueError, match="must match the native TTS speaker"):
+        CommandFileTts(
+            synthesizer=Synthesizer(),
+            encoder=Encoder(),
+            binding_policy=BINDING,
+            builtin_voice_binding=BuiltinVoiceBinding("voice-demo", "1", "voice-rev-1", "Serena"),
+            max_payload_bytes=1024 * 1024,
+        )
+
+
 def _mutated(path: tuple[str, ...], value: Any) -> dict[str, Any]:
     command = command_example(0)
     target: dict[str, Any] = command
@@ -286,6 +299,30 @@ def test_command_requires_a_pinned_voice_revision() -> None:
     runner, _, _ = build()
     with pytest.raises(InvalidExecutionRequestError):
         runner.validate_request(tts_request(voice_revision_id=None))
+
+
+@pytest.mark.parametrize(
+    "command,revision_id",
+    [
+        (_mutated(("resources", "voice", "id"), "voice-other"), "voice-rev-1"),
+        (_mutated(("resources", "voice", "revision"), "2"), "voice-rev-1"),
+        (command_example(0), "voice-rev-other"),
+    ],
+)
+async def test_another_voice_never_reaches_the_configured_native_speaker(
+    command: dict[str, Any], revision_id: str
+) -> None:
+    runner, engine, encoder = build()
+    store = Store()
+    with pytest.raises(InvalidExecutionRequestError):
+        await runner.stage_result(
+            tts_request(command=command, voice_revision_id=revision_id),
+            store=store,
+            cancelled=lambda: False,
+        )
+    assert engine.calls == []
+    assert encoder.calls == []
+    assert store.results == []
 
 
 def test_tampered_command_is_rejected() -> None:

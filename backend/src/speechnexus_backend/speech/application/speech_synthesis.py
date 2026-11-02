@@ -233,6 +233,8 @@ class SpeechSynthesis:
         plan = self._plan(
             command,
             request_id=request_id,
+            binding=binding,
+            workspace=workspace,
             voice=voice,
             max_output_audio_ms=max_output_audio_ms,
         )
@@ -256,6 +258,8 @@ class SpeechSynthesis:
         command: SpeechCommand,
         *,
         request_id: str,
+        binding: BindingFact,
+        workspace: WorkspaceFact,
         voice: Publication,
         max_output_audio_ms: int | None,
     ) -> SpeechPlan:
@@ -282,6 +286,10 @@ class SpeechSynthesis:
         )
         return SpeechPlan(
             request_id=correlation_identifier(request_id),
+            model_id=command.model,
+            workspace_id=command.workspace_id,
+            binding_revision_id=binding.publication.revision_id,
+            workspace_policy_revision=workspace.policy_revision,
             text=command.text,
             voice_id=voice.object_id,
             voice_revision_id=voice.revision_id,

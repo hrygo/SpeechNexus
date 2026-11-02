@@ -26,6 +26,7 @@ from speechnexus_gateway.domain.submission import (
 )
 from speechnexus_gateway.domain.terminal import EngineTerminalResponse
 from speechnexus_gateway.domain.tts import (
+    BuiltinVoiceBinding,
     TtsCallError,
     TtsDeliveryEncoder,
     TtsDeliveryFormat,
@@ -71,16 +72,23 @@ class CommandFileTts:
         synthesizer: TtsSynthesizer,
         encoder: TtsDeliveryEncoder,
         binding_policy: TtsPolicy,
+        builtin_voice_binding: BuiltinVoiceBinding,
         max_payload_bytes: int,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         if not isinstance(binding_policy, TtsPolicy):
             raise ValueError("an approved TTS binding policy is required")
+        if (
+            not isinstance(builtin_voice_binding, BuiltinVoiceBinding)
+            or builtin_voice_binding.native_speaker_id != binding_policy.voice
+        ):
+            raise ValueError("the builtin voice binding must match the native TTS speaker")
         if type(max_payload_bytes) is not int or not 1024 <= max_payload_bytes <= 64 * 1024 * 1024:
             raise ValueError("TTS delivery limit is out of range")
         self._synthesizer = synthesizer
         self._encoder = encoder
         self._binding_policy = binding_policy
+        self._builtin_voice_binding = builtin_voice_binding
         self._max_payload_bytes = max_payload_bytes
         self._now = now
 
@@ -125,7 +133,9 @@ class CommandFileTts:
                 or resources["pronunciation"]
                 or resources["vocabulary_source"] is not None
                 or resources["pronunciation_source"] is not None
-                or identity.voice_revision_id is None
+                or identity.voice_revision_id != self._builtin_voice_binding.voice_revision_id
+                or voice["id"] != self._builtin_voice_binding.voice_id
+                or voice["revision"] != self._builtin_voice_binding.voice_revision
             ):
                 raise ValueError
             text = command["text"]

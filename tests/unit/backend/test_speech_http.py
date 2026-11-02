@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import wave
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -164,6 +165,57 @@ def command(**patch: Any) -> SpeechCommand:
     }
     values.update(patch)
     return SpeechCommand(**values)
+
+
+@pytest.mark.parametrize(
+    "model_id,workspace_id,binding_revision_id,policy_revision",
+    [
+        ("tts-quality", "workspace-default", "binding-rev-2", 7),
+        ("tts-selected", "workspace-selected", "binding-selected-9", 13),
+    ],
+)
+def test_synthesizer_receives_the_resolved_binding_and_workspace_policy(
+    model_id: str, workspace_id: str, binding_revision_id: str, policy_revision: int
+) -> None:
+    class SelectedFacts(Facts):
+        def workspace(self, selected: str) -> WorkspaceFact | None:
+            assert selected == workspace_id
+            return WorkspaceFact(policy_revision, True)
+
+        def latest_binding(self, selected: str) -> BindingFact | None:
+            assert selected == model_id
+            return BindingFact(
+                Publication("binding", model_id, 9, binding_revision_id, 1_000), self.definition
+            )
+
+    chain, synth = service(facts=SelectedFacts(), synth=Synthesizer(pcm()))
+    chain.synthesize(command(model=model_id, workspace_id=workspace_id), request_id="request-pin")
+
+    plan = synth.plans[0]
+    assert plan.model_id == model_id
+    assert plan.workspace_id == workspace_id
+    assert plan.binding_revision_id == binding_revision_id
+    assert plan.workspace_policy_revision == policy_revision
+    assert plan.voice_revision_id == VOICE.revision_id
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("model_id", ""),
+        ("model_id", "x" * 129),
+        ("workspace_id", "invalid workspace"),
+        ("binding_revision_id", "invalid revision"),
+        ("workspace_policy_revision", 0),
+        ("workspace_policy_revision", True),
+        ("workspace_policy_revision", 10_000_000_000_000_000_000),
+    ],
+)
+def test_execution_plan_rejects_invalid_resolved_identity(field: str, value: Any) -> None:
+    chain, synth = service(synth=Synthesizer(pcm()))
+    chain.synthesize(command(), request_id="request-pin")
+    with pytest.raises(ValueError):
+        replace(synth.plans[0], **{field: value})
 
 
 async def test_success_returns_complete_audio_with_declared_shape() -> None:

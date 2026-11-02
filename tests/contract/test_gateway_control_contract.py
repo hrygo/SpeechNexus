@@ -30,6 +30,7 @@ SUBMIT_PATH = "/internal/v1/executions/submit"
 ABORT_PATH = "/internal/v1/executions/{submit_intent_id}/abort"
 ABORT_INTENT_PATH = "/internal/v1/executions/{submit_intent_id}/abort-intents"
 DRAIN_PATH = "/internal/v1/instances/{instance_id}/drain"
+TTS_EVIDENCE_PATH = "/internal/v1/tts-configuration-evidence"
 
 
 def frozen_schema(node: Any) -> Any:
@@ -64,6 +65,7 @@ def frozen_schema(node: Any) -> Any:
         (ABORT_PATH, "post"),
         (ABORT_INTENT_PATH, "post"),
         (DRAIN_PATH, "post"),
+        (TTS_EVIDENCE_PATH, "get"),
     ],
 )
 def test_served_control_declares_the_frozen_security_statuses_and_full_constraints(
@@ -119,6 +121,7 @@ def test_served_control_declares_the_frozen_security_statuses_and_full_constrain
         ABORT_PATH,
         ABORT_INTENT_PATH,
         DRAIN_PATH,
+        TTS_EVIDENCE_PATH,
     }
 
 

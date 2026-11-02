@@ -34,6 +34,7 @@
 | [UI/UX 设计框架与设计 Token 系统](architecture/ui-ux-design-framework-and-tokens.md)                | 2026 设计最佳实践、双面品牌调性、VoiceStudio 经验复用与三层 Token 体系          |
 | [SpeechRail 复用边界](architecture/speechrail-reuse.md)                                             | 固定来源、可提取规则、需重写的基础设施和许可证                                  |
 | [Paperclip 工作流与团队](operations/paperclip.md) | 当前项目经理与 A/B/C、QA、审查、证据岗位的协作、工作区、预算及交付约定 |
+| [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立受信审批、不可变发布、精确准入及撤销入口；真实资格 producer 待实现 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含公开转写实测 504（worker 只登记 staging、不写终态；120s 是 API 轮询）、11.2.2 的人工 `record_stop` 字段/命令与限制，以及随附 ASR 定义缺真实容量/资格证据的边界 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
 | [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |

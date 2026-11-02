@@ -65,15 +65,14 @@ grant、pool 创建/open 或测试体失败均尝试释放已取得资源；pool
 后删除本次 schema，再删除本次角色，最后关闭 admin/engine。名称冲突不接管或删除
 已有资源；某项清理失败仍尝试剩余步骤并上报异常，不能保证权限/连接失效时零残留。
 环境 owner 须按本次随机名称核查残留，不扩大清理范围。只能在已批准
-隔离服务执行；缺前置时保持 not_run，不启动共享服务或改其配置。当前交付未
-取得该能力卡/配置，因此下列入口只完成收集和静态检查，真实 PG 未运行。
+隔离服务执行；缺前置时保持 not_run，不启动共享服务或改其配置。2026-10-30
+原交接未取得该配置，当时只完成收集和静态检查，未运行真实 PG。
 
 在固定候选、独立锁定依赖、环境已核验后，从仓库根执行：
 
 ```bash
-source "$SPEECHNEXUS_TOOLCHAIN_ENV"
-test -n "$SPEECHNEXUS_TEST_DATABASE_URL" || exit 2
-/opt/homebrew/share/delegra-managed/speechnexus/native-20261027-v1/bin/uv run --locked pytest -m integration \
+test -n "${SPEECHNEXUS_TEST_DATABASE_URL:-}" || exit 2
+uv run --locked pytest -m integration \
   tests/integration/test_binding_lifecycle_concurrency_pg.py \
   tests/integration/test_binding_activation_semantics_pg.py \
   tests/integration/test_binding_lifecycle_fixture_pg.py \

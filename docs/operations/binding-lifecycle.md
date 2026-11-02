@@ -82,8 +82,9 @@ revision 2 时显示 `expected_current_revision="2"`，已清空时显示
 {"expected_current_revision": null}
 ```
 
-成功只更新 head/目录版本并追加审计，不创建新 publication。对外目录和 Job
-选择立即回到目标 revision 当时的不可变定义、任务、recipe 与证据；ETag 再次变化。
+成功激活不创建新 publication。目标不同于当前 head 时更新 head/目录版本并追加审计；
+对外目录和后续 Job 选择随即切换至目标 revision 当时的不可变定义、任务、recipe 与证据，
+ETag 随之变化。目标已为当前 head 时，新的成功 no-op 只追加审计，不改变目录版本或 ETag。
 已退役或 disabled 的 revision 本身不能激活，应回滚到另一个仍然 published 的
 revision。draft 也不能激活。
 

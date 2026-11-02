@@ -16,11 +16,11 @@ from sqlalchemy.pool import NullPool
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_production_jobs import database as database
-from tests.support.migrations import HEAD
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 MigrationSandbox = tuple[Config, psycopg.Connection[tuple[object, ...]]]
+HISTORICAL_HEAD = "0027_gateway_abort_intents"
 
 
 @pytest.fixture
@@ -81,8 +81,8 @@ def upgrade(config: Config) -> None:
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            command.upgrade(config, "head")
-            command.upgrade(config, "head")
+            command.upgrade(config, HISTORICAL_HEAD)
+            command.upgrade(config, HISTORICAL_HEAD)
     finally:
         engine.dispose()
 
@@ -110,7 +110,7 @@ def test_upgrade_backfills_old_and_new_disable_roots(
     assert admin.execute("SELECT event_id FROM speech_binding_disable_intents").fetchall() == [
         ("event-test",)
     ]
-    assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HEAD,)
+    assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HISTORICAL_HEAD,)
     assert admin.execute("SELECT count(*) FROM speech_binding_disable_targets").fetchone() == (0,)
 
 
@@ -182,7 +182,7 @@ def test_upgrade_waits_for_lifecycle_writer_before_scanning(
             assert not future.done()
             seed_disable(writer)
         future.result(timeout=10)
-    assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HEAD,)
+    assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HISTORICAL_HEAD,)
     assert admin.execute("SELECT event_id FROM speech_binding_disable_intents").fetchall() == [
         ("event-test",)
     ]
@@ -279,7 +279,9 @@ def test_empty_targets_with_disable_root_still_refuse_downgrade(
         assert admin.execute("SELECT event_id FROM speech_binding_disable_intents").fetchall() == [
             ("event-test",)
         ]
-        assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HEAD,)
+        assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            HISTORICAL_HEAD,
+        )
     finally:
         engine.dispose()
 
@@ -376,12 +378,16 @@ def test_disable_downgrade_waits_for_writer_and_preserves_new_root(
         assert admin.execute("SELECT event_id FROM speech_binding_disable_intents").fetchall() == [
             ("event-test",)
         ]
-        assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (HEAD,)
+        assert admin.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            HISTORICAL_HEAD,
+        )
     finally:
         engine.dispose()
 
 
-@pytest.mark.parametrize("database", ["postgresql"], indirect=True)
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0028_execution_release_guards")], indirect=True
+)
 def test_gateway_abort_downgrade_waits_for_committed_receipt(foundation: Foundation) -> None:
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -451,6 +457,8 @@ def test_gateway_abort_downgrade_waits_for_committed_receipt(foundation: Foundat
         assert db.query("SELECT submit_intent_id FROM gateway_abort_intents") == [
             {"submit_intent_id": "intent-a"}
         ]
-        assert db.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+        assert db.query("SELECT version_num FROM alembic_version") == [
+            {"version_num": "0028_execution_release_guards"}
+        ]
     finally:
         engine.dispose()

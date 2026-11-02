@@ -13,6 +13,36 @@ const examples = JSON.parse(
 ).examples;
 const sample = (id) => structuredClone(examples.find((example) => example.id === id));
 
+test("explicit activation recovery retains the original complete POST and key", async () => {
+  const request = sample("activate-original").value;
+  const replies = [sample("activate-unknown"), sample("activate-success")];
+  const calls = [];
+  const client = createValidatedClient("http://deployment.invalid", 262144, async (wire) => {
+    calls.push({
+      method: wire.method,
+      url: wire.url,
+      key: wire.headers.get("Idempotency-Key"),
+      body: await wire.json(),
+    });
+    const reply = replies[calls.length - 1];
+    return Response.json(reply.value.body, { status: reply.status, headers: reply.value.headers });
+  });
+  const invoke = () =>
+    client.POST("/v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision}/activations", {
+      params: { path: request.path, header: request.headers },
+      body: request.body,
+    });
+  const unknown = await invoke();
+  assert.equal(unknown.response.status, 503);
+  assert.equal(unknown.error.error.retryable, false);
+  assert.equal(calls.length, 1);
+  const recovered = await invoke();
+  assert.equal(recovered.response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.deepEqual(calls[0].body, request.body);
+});
+
 for (const example of examples) {
   test(`profile HTTP: ${example.id}`, () => {
     const value = structuredClone(example.value);

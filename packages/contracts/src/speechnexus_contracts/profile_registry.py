@@ -10,6 +10,7 @@ PROFILES = frozenset(
         "realtime_events",
         "scenario_profiles",
         "model_bindings",
+        "release_evidence",
         "audio_inspection",
         "zero_dispatch",
         "gateway_recovery",

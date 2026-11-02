@@ -19,6 +19,16 @@ date: 2026-10-28
 
 本文不修改冻结契约、不修改产品代码，也不把 `local-test-capacity-1` 或“计划中的测试”写成已通过的资格。
 
+产品代码现提供 `speech.interfaces.binding_release_evidence.verify_binding_release_evidence`
+作为只读接入组件：调用者从权威库取得精确 publication、发布证据及 binding 定义，另提供
+同一份 manifest/report、scenario evidence 与 artifact pin 原始字节。每份输入最多 1 MiB，
+拒绝重复 JSON 键、非有限数字和非法形状；manifest/report 必须与库中两个非空摘要匹配。
+它复核固定身份、通过的 required 场景、场景摘要、时间、stage/engine 集合、资源聚合、
+拓扑和配置摘要；实验等级的 incomplete 报告也不能作为通过结果。
+返回值仅证明所读内容一致，不认证证据作者、不复跑测量、不检查实际模型文件、实例代次
+或 speaker，也不签发声音资格。消费者仍须限定所需 release tier 并复核实际部署。
+当前发布 CLI 和正式同步 TTS 工厂尚未接入该组件，后者继续关闭；本组件不追溯改变历史资格。
+
 ## 1. 输入、输出与权威位置
 
 | 角色 | 路径 | 说明 |

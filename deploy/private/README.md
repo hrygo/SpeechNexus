@@ -19,6 +19,13 @@ binding/manifest identities. `recipe_digest` is the RFC 8785 canonical JSON
 SHA-256 with `recipe_digest` removed, as described in
 [synchronous transcription](../../docs/architecture/synchronous-transcription.md).
 
+The TTS gateway requires `file_tts_v2`. Its `builtin_voice_binding` must pin the
+public voice ID/revision, internal revision ID and native speaker from the same
+authoritative immutable revision; the speaker must equal `tts_policy.voice`.
+The mapping restricts execution and does not grant publication or qualification.
+Stop the old worker before activating the replacement snapshot; v1 is rejected.
+See [TTS deployment](../../docs/architecture/file-tts-runtime.md).
+
 | Source example | Required runtime name |
 | --- | --- |
 | `transcription-recipe.example.json` | `transcription-recipe.json` |

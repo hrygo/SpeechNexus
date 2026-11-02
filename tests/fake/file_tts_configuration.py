@@ -39,7 +39,7 @@ def write_tts_configuration(
     )
     endpoint.chmod(0o600)
     document = {
-        "protocol": "file_tts_v1",
+        "protocol": "file_tts_v2",
         "controlled_endpoint_file": str(endpoint),
         "objects": {
             "endpoint": object_endpoint,
@@ -48,6 +48,12 @@ def write_tts_configuration(
             "result_timeout_seconds": 5,
         },
         "tts_policy": asdict(policy or TtsPolicy("policy-tts", "Vivian")),
+        "builtin_voice_binding": {
+            "voice_id": "voice-demo",
+            "voice_revision": "1",
+            "voice_revision_id": "voice-rev-1",
+            "native_speaker_id": "Vivian",
+        },
         "worker_limits": asdict(FileExecutionLimits(1024 * 1024, 16384, 1, 1)),
     }
     path = directory / "runtime.json"

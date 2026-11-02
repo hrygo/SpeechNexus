@@ -132,6 +132,29 @@ class TtsExecutionTarget:
             raise ValueError("invalid configured file TTS execution target")
 
 
+@dataclass(frozen=True, slots=True)
+class BuiltinVoiceBinding:
+    """Restrict one public voice revision to one native speaker; grants no qualification."""
+
+    voice_id: str
+    voice_revision: str
+    voice_revision_id: str
+    native_speaker_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            any(
+                type(value) is not str or _TARGET_IDENTIFIER.fullmatch(value) is None
+                for value in (self.voice_id, self.voice_revision_id)
+            )
+            or type(self.voice_revision) is not str
+            or re.fullmatch(r"[1-9][0-9]{0,18}", self.voice_revision) is None
+            or type(self.native_speaker_id) is not str
+            or _IDENTIFIER.fullmatch(self.native_speaker_id) is None
+        ):
+            raise ValueError("invalid configured builtin voice binding")
+
+
 def pcm16_mono_bytes(duration_ms: int, sample_rate_hz: int) -> int:
     """Exact upper bound in bytes for PCM16 mono audio of one declared duration.
 

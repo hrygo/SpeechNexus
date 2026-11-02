@@ -1,6 +1,12 @@
 {
-  "protocol": "file_tts_v1",
+  "protocol": "file_tts_v2",
   "controlled_endpoint_file": "/run/speechnexus-private/gateway-file-tts-endpoint.json",
+  "builtin_voice_binding": {
+    "voice_id": "voice-compose-example",
+    "voice_revision": "1",
+    "voice_revision_id": "voice-revision-compose-example",
+    "native_speaker_id": "Vivian"
+  },
   "objects": {
     "endpoint": "http://172.28.0.10:9000",
     "result_bucket": "speechnexus-results",

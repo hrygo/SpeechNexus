@@ -160,6 +160,10 @@ chmod 600 "$D"/*.json
    `policy_revision_id`、`stage.instance_id` 与 `runtime_plan.binding` 一致；
 2. ASR endpoint 的 `target` 与 recipe 的 node/gateway/pool/instance/generation 一致；
 3. TTS endpoint 的 `target` 与 TTS policy revision、instance/generation 一致；
+   使用 `file_tts_v2`，`builtin_voice_binding` 的公开 id/revision、内部 revision id 来自
+   同一权威声音版本，`native_speaker_id` 精确匹配 `tts_policy.voice`；旧 v1 不再接受。
+   [升级规则](../architecture/file-tts-runtime.md#私有配置格式)要求停止旧 worker 后激活，
+   样例映射不提供声音资格；
 4. gateway 两份配置里的 `objects.endpoint` 与 `bucket` 与实际 MinIO 一致；
 5. endpoint 的地址、端口、served model 与 bearer token 是部署网络内的受控值。
 

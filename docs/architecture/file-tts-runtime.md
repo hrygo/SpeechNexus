@@ -48,15 +48,23 @@ JSON 与自定义 CA 必须是当前运行 UID 所有、无 group/other 权限�
 
 | 字段 | 含义 |
 | --- | --- |
-| `protocol` | 固定 `file_tts_v1` |
+| `protocol` | 固定 `file_tts_v2`；旧 v1 缺少声音关联，拒绝启动 |
 | `controlled_endpoint_file` | 受控私有描述绝对路径，沿用 `vllm_api_key_v1`、私网 IP 与 64 位小写十六进制生成凭据；目标池固定 `tts-batch` |
 | `objects` | `endpoint`、`result_bucket`、`tls_ca_file`、`result_timeout_seconds`；固定私有 origin、开启版本化的结果桶与累计读回期限 |
 | `tts_policy` | 完整原生 `TtsPolicy` 字段，包含 binding 的 `config_revision`、preset `voice`、`task`、`engine_format`、`sample_rate_hz`、`max_pcm_bytes`、`max_audio_ms`、`timeout_seconds` |
+| `builtin_voice_binding` | 显式固定 `voice_id`、十进制字符串 `voice_revision`、内部 `voice_revision_id` 与 `native_speaker_id`；speaker 必须精确等于 `tts_policy.voice` |
 | `worker_limits` | 完整原生 `FileExecutionLimits` 字段；`max_result_bytes` 同时作为单次交付载荷上限 |
 
 首批装配只接受 `task=CustomVoice`、24,000 Hz、`engine_format=wav|pcm`，交付格式仍由
 命令的 `response_format` 决定。其它采样率、Base、VoiceDesign、流式文本和音色素材不属于
 本单元。`tts_policy` 中即使有原生默认值也必须显式给出全部字段。
+
+升级 v1 时，须从同一权威不可变声音版本取得公开 id/revision、内部 revision id 和原生
+speaker，写入 v2 配置；不能直接复制合成样例作为已发布声音。声音或策略映射变化时使用
+新的相应版本，停止旧 worker 后再激活；不热改正在执行的快照。网关同时匹配命令
+`resources.voice.id/revision`、提交身份的 `voice_revision_id` 和配置中的原生 speaker，
+任一不符在对象写入或引擎调用前拒绝。该配置仅收紧执行能力，不证明声音已发布、
+资格报告有效或配置与批准 binding 的权威关联；这些仍由正式发布和准入链负责。
 
 受限控制器可使用既有 `engine_auth=vllm_api_key_v1` 模板，通过
 `/v1/audio/speech` 的固定、有界 `http_warmup_ok` 注入并验证代次凭据；
@@ -81,7 +89,7 @@ binding、readiness 资格或准入预算。
 
 ## 尚未覆盖
 
-固定版本的真实 CustomVoice 已完成[默认工厂和三格式私有交付实验](../audits/2026-10-26-b03-default-real-tts-probe.md)，
+固定版本的真实 CustomVoice 已完成[默认工厂和三格式私有交付实验](../audits/2026-10-26-b03-default-real-tts-probe.md)（旧 v1 配置），
 其证据不自动覆盖后续代码或模型组合。公开 `/v1/audio/speech` 路由、公开下载与 A 的发布链、
 真实语料质量、长文本切分、流式/音色素材、生产停止与资源释放、
 GPU 混合负载和物理多节点仍需独立交付。

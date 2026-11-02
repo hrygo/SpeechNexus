@@ -291,6 +291,21 @@ class RuntimeInstanceIntentRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeRuntimeEvidence:
+    image_digest: str
+    template_digest: str
+    controller_artifact_digest: str
+    native_auth_kind: str
+    observed_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("image_digest", "template_digest", "controller_artifact_digest"):
+            require_digest(getattr(self, name), name)
+        if self.native_auth_kind != "vllm_api_key_v1" or self.observed_at.utcoffset() is None:
+            raise ValueError("Invalid native runtime evidence")
+
+
+@dataclass(frozen=True, slots=True)
 class InstanceObservation:
     """What the node-local runtime reports for one instance generation."""
 
@@ -302,6 +317,7 @@ class InstanceObservation:
     observed_peak_memory: RuntimeMemoryVector | None = None
     stop_evidence: RuntimeStopEvidence | None = None
     quarantine_reason: str | None = None
+    native_runtime_evidence: NativeRuntimeEvidence | None = None
 
 
 @dataclass(slots=True)
@@ -318,6 +334,7 @@ class RuntimeInstanceIntent:
     stop_evidence: RuntimeStopEvidence | None = None
     error_code: RuntimeIntentErrorCode | None = None
     version: int = field(default=1)
+    native_runtime_evidence: NativeRuntimeEvidence | None = None
 
     def __post_init__(self) -> None:
         if self.request.action is RuntimeActionKind.STOP:
@@ -346,6 +363,13 @@ class RuntimeInstanceIntent:
             raise ValueError("succeeded intent carries no error code")
         if self.intent_state is RuntimeIntentState.FAILED and self.error_code is None:
             raise ValueError("failed intent carries a stable error code")
+        if self.native_runtime_evidence is not None and (
+            self.action is not RuntimeActionKind.PREPARE
+            or self.intent_state is not RuntimeIntentState.SUCCEEDED
+            or self.observed_instance_state is not ObservedInstanceState.READY
+            or not self.created_at <= self.native_runtime_evidence.observed_at <= self.updated_at
+        ):
+            raise ValueError("native evidence requires the matching ready observation")
         if self.stop_evidence is not None:
             if self.action is not RuntimeActionKind.STOP:
                 raise ValueError("only a stop intent carries stop evidence")
@@ -365,6 +389,8 @@ class RuntimeInstanceIntent:
 
     def mark_observed(self, observation: InstanceObservation, *, at: datetime) -> None:
         """Fold one node-local observation into this intent."""
+        if observation.observed_instance_state is not ObservedInstanceState.READY:
+            self.native_runtime_evidence = None
         if observation.observed_instance_state is ObservedInstanceState.QUARANTINED:
             self.intent_state = RuntimeIntentState.QUARANTINED
             self.error_code = RuntimeIntentErrorCode.UNTRACKED_INSTANCE_OBSERVED
@@ -378,6 +404,11 @@ class RuntimeInstanceIntent:
 
         if self.action is RuntimeActionKind.PREPARE:
             self._fold_prepare(observation)
+            self.native_runtime_evidence = (
+                observation.native_runtime_evidence
+                if observation.observed_instance_state is ObservedInstanceState.READY
+                else None
+            )
         else:
             self._fold_stop(observation)
         self._touch(at)

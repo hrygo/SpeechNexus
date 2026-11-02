@@ -17,6 +17,7 @@ from speechnexus_backend.speech.domain.runtime_intents import (
     runtime_timestamp_us,
 )
 from speechnexus_backend.speech.domain.runtime_observations import (
+    NativeRuntimeEvidence,
     RuntimeObservation,
     RuntimeObservedStop,
     VerifiedRuntimeReadiness,
@@ -70,6 +71,7 @@ def prepare_observation(value: Any) -> PreparedRuntimeObservation:
             for name, amount in vector.items():
                 vector[name] = int(amount)
     stop = wire.get("stop_evidence")
+    native = wire.get("native_runtime_evidence")
     if stop is not None and stop.get("exit_code") is not None:
         stop["exit_code"] = int(stop["exit_code"])
     observation = RuntimeObservation(
@@ -98,6 +100,18 @@ def prepare_observation(value: Any) -> PreparedRuntimeObservation:
         wire.get("error_code"),
         created_submicrosecond=runtime_timestamp_key(wire["created_at"])[1],
         updated_submicrosecond=runtime_timestamp_key(wire["updated_at"])[1],
+        native_runtime_evidence=(
+            NativeRuntimeEvidence(
+                native["image_digest"],
+                native["template_digest"],
+                native["controller_artifact_digest"],
+                native["native_auth_kind"],
+                runtime_timestamp_us(native["observed_at"]),
+                runtime_timestamp_key(native["observed_at"])[1],
+            )
+            if native is not None
+            else None
+        ),
     )
     document = _json(wire)
     # The POST-only replay flag and omitted optional nulls are transport

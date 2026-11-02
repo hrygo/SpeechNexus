@@ -60,6 +60,16 @@ class RuntimeStopEvidencePayload(BaseModel):
     verified_at: datetime
 
 
+class NativeRuntimeEvidencePayload(BaseModel):
+    model_config = _MODEL_CONFIG
+
+    image_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    template_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    controller_artifact_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    native_auth_kind: Literal["vllm_api_key_v1"]
+    observed_at: datetime
+
+
 class RuntimeInstanceIntentRequestPayload(BaseModel):
     model_config = _MODEL_CONFIG
 
@@ -107,6 +117,7 @@ class RuntimeInstanceIntentResponse(BaseModel):
     error_code: str | None = Field(default=None, pattern="^[a-z][a-z0-9_]{2,63}$")
     created_at: datetime
     updated_at: datetime
+    native_runtime_evidence: NativeRuntimeEvidencePayload | None = None
 
 
 class ObservedNodeInstanceFactPayload(BaseModel):

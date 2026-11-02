@@ -222,6 +222,16 @@
         "ModelBindingRevision": "#"
       }
     },
+    "builtin_voice_qualification": {
+      "source": "internal/builtin-voice-qualification.schema.json",
+      "version": "1.0.0",
+      "format": "json-schema",
+      "client": false,
+      "schemas": ["BuiltinVoiceQualificationAuthorization"],
+      "schema_refs": {
+        "BuiltinVoiceQualificationAuthorization": "#"
+      }
+    },
     "release_evidence": {
       "source": "qualification-report.schema.json",
       "version": "1.0.0",

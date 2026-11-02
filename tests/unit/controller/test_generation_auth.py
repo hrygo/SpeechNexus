@@ -26,8 +26,34 @@ from speechnexus_node_controller.domain.templates import (
 )
 from speechnexus_node_controller.infrastructure.docker_runtime import DockerNodeRuntime
 from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
+from speechnexus_node_controller.infrastructure.native_evidence import (
+    controller_artifact_digest,
+    template_digest,
+)
 
 CREDENTIALS = EngineCredentials("00" * 32)
+
+
+def test_native_evidence_digests_are_stable_and_template_sensitive(tmp_path: Path) -> None:
+    approved = template(tmp_path, 8000)
+    assert controller_artifact_digest() == controller_artifact_digest()
+    assert template_digest(approved) == template_digest(approved)
+    assert template_digest(replace(approved, gpu_device_count=1)) != template_digest(approved)
+
+
+def test_controller_inventory_refuses_linked_package_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from speechnexus_node_controller.infrastructure import native_evidence
+
+    package = tmp_path / "package"
+    module = package / "infrastructure" / "native_evidence.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("synthetic")
+    (package / "linked").symlink_to(module.parent, target_is_directory=True)
+    monkeypatch.setattr(native_evidence, "__file__", str(module))
+    with pytest.raises(ValueError, match="symlink"):
+        native_evidence.controller_artifact_digest()
 
 
 @pytest.fixture
@@ -109,6 +135,13 @@ def test_prepare_installs_native_key_and_authenticates_actual_warmup(
     observed = adapter.prepare(build_request(), approved)
     key = CREDENTIALS.for_instance(build_request())
     assert observed.observed_instance_state is ObservedInstanceState.READY
+    evidence = observed.native_runtime_evidence
+    assert evidence is not None
+    assert evidence.image_digest == approved.image_digest
+    assert evidence.native_auth_kind == "vllm_api_key_v1"
+    assert evidence.template_digest.startswith("sha256:")
+    assert evidence.controller_artifact_digest.startswith("sha256:")
+    assert key not in repr(evidence)
     assert engine.created[0].environment == ("VLLM_API_KEY=" + key,)
     assert seen == ["Bearer " + key]
     assert key not in repr(engine.inspect_container(engine.created[0].container_id))
@@ -153,6 +186,7 @@ def test_drift_or_unprotected_container_cannot_be_reused_as_ready_and_still_can_
         container.labels["nexus.gateway-id"] = "gateway-other"
     observed = runtime(engine).prepare(build_request(), approved)
     assert observed.observed_instance_state is ObservedInstanceState.QUARANTINED
+    assert observed.native_runtime_evidence is None
     assert observed.stop_evidence is None
     assert len(seen) == len(engine.created) == 1
     if drift != "gateway_label":
@@ -182,6 +216,7 @@ def test_reused_ip_with_next_generation_native_key_cannot_complete_old_warmup(
     )
     observed = runtime(engine).prepare(build_request(), approved)
     assert observed.observed_instance_state is ObservedInstanceState.WARMING_UP
+    assert observed.native_runtime_evidence is None
     assert observed.stop_evidence is None
     assert seen == ["Bearer " + CREDENTIALS.for_instance(build_request())]
 

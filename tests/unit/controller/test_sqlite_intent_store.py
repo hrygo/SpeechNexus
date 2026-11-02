@@ -14,7 +14,9 @@ from tests.fake.controller import (
 )
 
 from speechnexus_node_controller.domain.intents import (
+    InstanceObservation,
     MemoryHold,
+    NativeRuntimeEvidence,
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeInstanceIntent,
@@ -87,6 +89,46 @@ def test_intent_facts_survive_a_controller_restart(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.request == _intent().request
     restarted.close()
+
+
+def test_native_ready_evidence_survives_restart_without_private_data(tmp_path: Path) -> None:
+    evidence = NativeRuntimeEvidence(
+        "sha256:" + "1" * 64,
+        "sha256:" + "2" * 64,
+        "sha256:" + "3" * 64,
+        "vllm_api_key_v1",
+        FIXED_NOW,
+    )
+    intent = RuntimeInstanceIntent(
+        request=build_request(),
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+        intent_state=RuntimeIntentState.SUCCEEDED,
+        observed_instance_state=ObservedInstanceState.READY,
+        memory_hold=MemoryHold.STEADY,
+        native_runtime_evidence=evidence,
+    )
+    first = _store(tmp_path)
+    first.add(intent)
+    first.close()
+    restarted = _store(tmp_path)
+    try:
+        loaded = restarted.get("intent-1")
+        assert loaded is not None and loaded.native_runtime_evidence == evidence
+        assert "VLLM_API_KEY" not in json.dumps(intent_record_payload(loaded))
+    finally:
+        restarted.close()
+    intent.mark_observed(
+        InstanceObservation(
+            instance_id=intent.instance_id,
+            instance_generation=intent.instance_generation,
+            approved_template_id=intent.request.approved_template_id,
+            config_digest=intent.request.config_digest,
+            observed_instance_state=ObservedInstanceState.QUARANTINED,
+        ),
+        at=FIXED_NOW,
+    )
+    assert intent.native_runtime_evidence is None
 
 
 def test_a_succeeded_stop_keeps_its_verified_evidence(tmp_path: Path) -> None:

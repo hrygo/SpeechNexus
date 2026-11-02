@@ -31,6 +31,7 @@ from speechnexus_node_controller.domain.intents import (
     InstanceObservation,
     IntentConflictError,
     MemoryArchitecture,
+    NativeRuntimeEvidence,
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeControllerUnavailableError,
@@ -53,6 +54,10 @@ from speechnexus_node_controller.infrastructure.docker_api import (
     DockerUnavailableError,
 )
 from speechnexus_node_controller.infrastructure.engine_credentials import EngineCredentials
+from speechnexus_node_controller.infrastructure.native_evidence import (
+    controller_artifact_digest,
+    template_digest,
+)
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -494,13 +499,33 @@ class DockerNodeRuntime:
                 observed_peak_memory=self._observed_memory(request, state),
                 quarantine_reason="container resource/network configuration is not approved",
             )
+        observed_state = self._observed_state(request, template, state)
+        native_evidence = None
+        if (
+            observed_state is ObservedInstanceState.READY
+            and request.action is RuntimeActionKind.PREPARE
+            and template.engine_auth is not EngineAuthKind.NONE
+        ):
+            try:
+                assert state.image_id is not None
+                native_evidence = NativeRuntimeEvidence(
+                    state.image_id,
+                    template_digest(template),
+                    controller_artifact_digest(),
+                    template.engine_auth.value,
+                    datetime.now(UTC),
+                )
+            except OSError, ValueError:
+                # Existing readiness remains available; qualification must fail closed.
+                native_evidence = None
         return InstanceObservation(
             instance_id=request.instance_id,
             instance_generation=request.instance_generation,
             approved_template_id=template.template_id,
             config_digest=request.config_digest,
-            observed_instance_state=self._observed_state(request, template, state),
+            observed_instance_state=observed_state,
             observed_peak_memory=self._observed_memory(request, state),
+            native_runtime_evidence=native_evidence,
         )
 
     @staticmethod

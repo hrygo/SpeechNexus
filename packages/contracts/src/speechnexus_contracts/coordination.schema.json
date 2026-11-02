@@ -1468,6 +1468,9 @@
           "type": "boolean",
           "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
         },
+        "native_runtime_evidence": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence"
+        },
         "stop_evidence": {
           "anyOf": [
             {
@@ -1510,6 +1513,24 @@
         }
       },
       "allOf": [
+        {
+          "if": {
+            "required": ["native_runtime_evidence"]
+          },
+          "then": {
+            "properties": {
+              "action": {
+                "const": "prepare"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              },
+              "observed_instance_state": {
+                "const": "ready"
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -1812,6 +1833,35 @@
         "host_memory_bytes": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image_digest",
+        "template_digest",
+        "controller_artifact_digest",
+        "native_auth_kind",
+        "observed_at"
+      ],
+      "properties": {
+        "image_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "template_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "controller_artifact_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "native_auth_kind": {
+          "const": "vllm_api_key_v1"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

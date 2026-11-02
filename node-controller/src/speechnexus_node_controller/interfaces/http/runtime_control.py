@@ -66,6 +66,7 @@ def create_runtime_control_router(
         operation_id="submitRuntimeInstanceIntent",
         summary="Submit an approved instance prepare or stop intent to a target host node",
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         dependencies=[Depends(credential)],
         responses={
             200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
@@ -95,6 +96,7 @@ def create_runtime_control_router(
         operation_id="getRuntimeInstanceIntent",
         summary=("Query observed container/process lifecycle state and verified stop evidence"),
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         response_model_exclude={"idempotent_replay"},
         dependencies=[Depends(credential)],
         responses={
@@ -121,6 +123,7 @@ def create_runtime_control_router(
         operation_id="getVerifiedInstanceStop",
         summary="Query a checkpoint-backed stop fact for one instance generation",
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         response_model_exclude={"idempotent_replay"},
         dependencies=[Depends(credential)],
         responses={

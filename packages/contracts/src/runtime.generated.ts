@@ -196,6 +196,15 @@ export interface components {
       /** Format: date-time */
       deadline_at: string;
     };
+    NativeRuntimeEvidence: {
+      image_digest: components["schemas"]["Sha256Digest"];
+      template_digest: components["schemas"]["Sha256Digest"];
+      controller_artifact_digest: components["schemas"]["Sha256Digest"];
+      /** @constant */
+      native_auth_kind: "vllm_api_key_v1";
+      /** Format: date-time */
+      observed_at: string;
+    };
     RuntimeInstanceIntentResponse: {
       intent_id: components["schemas"]["Identifier"];
       target_node_id: components["schemas"]["Identifier"];
@@ -217,6 +226,7 @@ export interface components {
        *     of an identical earlier intent with the same `intent_id`.
        */
       idempotent_replay?: boolean;
+      native_runtime_evidence?: components["schemas"]["NativeRuntimeEvidence"];
       stop_evidence?: components["schemas"]["RuntimeStopEvidence"] | null;
       observed_peak_memory?: components["schemas"]["RuntimeMemoryVector"] | null;
       error_code?: string | null;
@@ -227,7 +237,7 @@ export interface components {
       created_at: string;
       /** Format: date-time */
       updated_at: string;
-    } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+    } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
     ObservedNodeInstanceFact: {
       instance_id: components["schemas"]["Identifier"];
       instance_generation: number;

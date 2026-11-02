@@ -71,6 +71,27 @@ def test_raw_response_is_complete_and_decimal_time_precision_survives() -> None:
     assert decode_observation(prepared.document) == prepared
 
 
+def test_native_evidence_survives_original_observation_round_trip() -> None:
+    wire = _wire()
+    wire["native_runtime_evidence"] = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": "2026-10-23T12:00:00.500000Z",
+    }
+    prepared = prepare_observation(wire)
+    assert prepared.observation.native_runtime_evidence is not None
+    assert decode_observation(prepared.document) == prepared
+    assert (
+        json.loads(prepared.document)["native_runtime_evidence"] == wire["native_runtime_evidence"]
+    )
+    invalid = copy.deepcopy(wire)
+    invalid["native_runtime_evidence"]["observed_at"] = "2026-10-23T12:00:02Z"
+    with pytest.raises(ValueError):
+        prepare_observation(invalid)
+
+
 def test_post_replay_flag_and_optional_nulls_do_not_change_runtime_facts() -> None:
     first = prepare_observation(_wire())
     second = prepare_observation(

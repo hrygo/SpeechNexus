@@ -74,6 +74,14 @@ type RuntimeMemoryArchitecture = ExternalSharedCapabilityDomainsSchemaJsonMemory
 type ObservedInstanceState = ExternalSharedRuntimeStatesSchemaJsonObservedInstanceState
 
 
+class NativeRuntimeEvidence(TypedDict):
+    image_digest: Sha256Digest
+    template_digest: Sha256Digest
+    controller_artifact_digest: Sha256Digest
+    native_auth_kind: Literal["vllm_api_key_v1"]
+    observed_at: str
+
+
 class ObservedNodeInstanceFact(TypedDict):
     instance_id: Identifier
     instance_generation: int
@@ -106,6 +114,7 @@ class RuntimeInstanceIntentResponse(TypedDict):
     observed_instance_state: ObservedInstanceState
     reserved_memory: RuntimeMemoryReservation
     idempotent_replay: NotRequired[bool]
+    native_runtime_evidence: NotRequired[NativeRuntimeEvidence]
     stop_evidence: NotRequired[RuntimeStopEvidence | None]
     observed_peak_memory: NotRequired[RuntimeMemoryVector | None]
     error_code: NotRequired[str | None]

@@ -71,6 +71,24 @@ class RuntimeObservedStop:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeRuntimeEvidence:
+    image_digest: str
+    template_digest: str
+    controller_artifact_digest: str
+    native_auth_kind: str
+    observed_at_us: int
+    observed_submicrosecond: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("image_digest", "template_digest", "controller_artifact_digest"):
+            digest(getattr(self, name))
+        if self.native_auth_kind != "vllm_api_key_v1":
+            raise ValueError("Invalid native authentication evidence")
+        integer(self.observed_at_us)
+        _fraction(self.observed_submicrosecond)
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeObservation:
     intent_id: str
     binding: RuntimeBinding
@@ -88,6 +106,7 @@ class RuntimeObservation:
     error_code: str | None = None
     created_submicrosecond: str = ""
     updated_submicrosecond: str = ""
+    native_runtime_evidence: NativeRuntimeEvidence | None = None
 
     def __post_init__(self) -> None:
         identifier(self.intent_id)
@@ -118,6 +137,17 @@ class RuntimeObservation:
             raise ValueError("Failed runtime intent requires its actual stable error")
         if self.intent_state == "succeeded" and self.error_code is not None:
             raise ValueError("Successful runtime intent cannot carry an error")
+        if self.native_runtime_evidence is not None:
+            native = self.native_runtime_evidence
+            if (
+                self.action != "prepare"
+                or self.intent_state != "succeeded"
+                or self.observed_instance_state != "ready"
+                or not (self.created_at_us, self.created_submicrosecond)
+                <= (native.observed_at_us, native.observed_submicrosecond)
+                <= (self.updated_at_us, self.updated_submicrosecond)
+            ):
+                raise ValueError("Native evidence must belong to the ready observation")
         if self.observed_peak_memory is not None:
             self.observed_peak_memory.require_architecture(self.reserved_memory.architecture)
             if any(self.observed_peak_memory.values[3:]):

@@ -19,6 +19,10 @@
     "sha256": "e44787aa83a7f24b3c9818b2fde4f83d29c41db41f5b92b343e6a283da5a3a71",
     "version": "1.0.0"
   },
+  "internal/builtin-voice-qualification.schema.json": {
+    "sha256": "28aa064119eb79c01f32d7a9788f957ed8d49ef62b9a47b1ef6bfdbee94074c9",
+    "version": null
+  },
   "internal/coordination-transactions.schema.json": {
     "sha256": "eff818c1c33c4e43704eb0cb7f30aeb3c969d461919df585ab1f061ad83e9753",
     "version": null
@@ -40,7 +44,7 @@
     "version": "1.0.0"
   },
   "internal/runtime-control.openapi.yaml": {
-    "sha256": "dfe00b58de7fbe8a219f5ea8e5145e03c1541cc9f9e42b22ebbae8efb642be97",
+    "sha256": "7e4105b5ce569fe92d929ad44a83828a8c00550124e6e70dd260f839500d50b0",
     "version": "0.1.0.dev1"
   },
   "internal/zero-dispatch.schema.json": {

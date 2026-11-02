@@ -45,6 +45,7 @@ def fake_processes(
     test_code: int = 0,
     stop_mode: str = "ok",
     init_failure: bool = False,
+    start_mode: str = "ok",
 ) -> None:
     """Fake only process execution; exercise the real CLI, lifecycle and filesystem."""
 
@@ -63,8 +64,18 @@ def fake_processes(
             data = Path(command[command.index("-D") + 1])
             pid = data / "postmaster.pid"
             if "start" in command:
+                if start_mode == "failed-no-pid":
+                    raise subprocess.CalledProcessError(1, command)
+                if start_mode == "timeout-no-pid":
+                    raise subprocess.TimeoutExpired(command, 30)
+                if start_mode == "os-error-no-pid":
+                    raise OSError("synthetic start failure")
+                if start_mode == "interrupted-no-pid":
+                    raise KeyboardInterrupt
                 pid.write_text("12345")
                 (data.parent / "postgres.log").write_text("synthetic database log")
+                if start_mode == "failed-with-pid":
+                    raise subprocess.CalledProcessError(1, command)
             elif "stop" in command:
                 if stop_mode == "timeout":
                     raise subprocess.TimeoutExpired(command, 25)
@@ -98,6 +109,7 @@ def test_completed_probe_removes_data_and_preserves_evidence(
     assert (cluster / "pytest.log").read_text() == "synthetic test output"
     assert (cluster / "coverage.json").read_text() == "{}"
     assert result["stopped"] is True and result["data_removed"] is True
+    assert result["shutdown_observed"] is True
     assert result["tests_passed"] is (test_code == 0)
 
 
@@ -123,6 +135,7 @@ def test_unconfirmed_shutdown_retains_data_and_records_failure(
     result = json.loads((workspace / ".runtime/team-c/c00-pg-probe.json").read_text())
     assert (workspace / result["cluster"] / "data/synthetic-table").exists()
     assert result["stopped"] is False and result["data_removed"] is False
+    assert result["shutdown_observed"] is False
     assert result["data_retained_reason"] == "shutdown-unconfirmed"
 
 
@@ -134,21 +147,88 @@ def test_failed_initialization_removes_partial_data(
     result = json.loads((workspace / ".runtime/team-c/c00-pg-probe.json").read_text())
     assert not (workspace / result["cluster"] / "data").exists()
     assert result["failure"] == "CalledProcessError" and result["data_removed"] is True
+    assert result["shutdown_observed"] is None
+
+
+@pytest.mark.parametrize(
+    "start_mode",
+    ["failed-no-pid", "timeout-no-pid", "os-error-no-pid", "failed-with-pid", "interrupted-no-pid"],
+)
+@pytest.mark.parametrize("keep_data", [False, True])
+def test_unconfirmed_start_retains_data_even_after_no_server_observed(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, start_mode: str, keep_data: bool
+) -> None:
+    fake_processes(monkeypatch, workspace, start_mode=start_mode)
+    if keep_data:
+        monkeypatch.setattr(DRIVER.sys, "argv", [*DRIVER.sys.argv, "--keep-data"])
+    if start_mode == "interrupted-no-pid":
+        with pytest.raises(KeyboardInterrupt):
+            DRIVER.main()
+    elif start_mode == "os-error-no-pid":
+        with pytest.raises(OSError, match="synthetic start failure"):
+            DRIVER.main()
+    else:
+        assert DRIVER.main() == 1
+    result = json.loads((workspace / ".runtime/team-c/c00-pg-probe.json").read_text())
+    cluster = workspace / result["cluster"]
+    assert (cluster / "data/synthetic-table").read_text() == "synthetic content"
+    assert result["stopped"] is False and result["data_removed"] is False
+    assert result["data_retained_reason"] == "startup-unconfirmed"
+    assert result["shutdown_observed"] is True
+    assert (
+        result["failure"]
+        == {
+            "failed-no-pid": "CalledProcessError",
+            "timeout-no-pid": "TimeoutExpired",
+            "os-error-no-pid": "OSError",
+            "failed-with-pid": "CalledProcessError",
+            "interrupted-no-pid": "KeyboardInterrupt",
+        }[start_mode]
+    )
+    if start_mode == "failed-with-pid":
+        # A visible process was stopped, but a failed startup is still unconfirmed.
+        assert not (cluster / "data/postmaster.pid").exists()
+        assert (cluster / "postgres.log").read_text() == "synthetic database log"
+
+
+@pytest.mark.parametrize("stop_mode", ["refused", "timeout", "status-error"])
+def test_unconfirmed_start_records_unsuccessful_shutdown_observation(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, stop_mode: str
+) -> None:
+    fake_processes(monkeypatch, workspace, start_mode="failed-with-pid", stop_mode=stop_mode)
+    assert DRIVER.main() == 1
+    result = json.loads((workspace / ".runtime/team-c/c00-pg-probe.json").read_text())
+    cluster = workspace / result["cluster"]
+    assert (cluster / "data/synthetic-table").read_text() == "synthetic content"
+    assert (cluster / "postgres.log").read_text() == "synthetic database log"
+    assert result["failure"] == "CalledProcessError"
+    assert result["shutdown_observed"] is False
+    assert result["stopped"] is False and result["data_removed"] is False
+    assert result["data_retained_reason"] == "startup-unconfirmed"
+    if stop_mode != "status-error":
+        assert (cluster / "data/postmaster.pid").exists()
 
 
 def test_cleanup_failure_is_reported_and_fails_the_probe(
-    workspace: Path, monkeypatch: pytest.MonkeyPatch
+    workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_processes(monkeypatch, workspace)
 
-    def refuse_removal(_path: Path) -> None:
+    def refuse_removal(path: Path) -> None:
+        (path / "synthetic-table").unlink()
         raise PermissionError("synthetic removal refusal")
 
     with monkeypatch.context() as patch:
         patch.setattr(DRIVER.shutil, "rmtree", refuse_removal)
         assert DRIVER.main() == 1
     result = json.loads((workspace / ".runtime/team-c/c00-pg-probe.json").read_text())
+    cluster = workspace / result["cluster"]
+    assert (cluster / "data").is_dir()
+    assert not (cluster / "data/synthetic-table").exists()
+    assert (cluster / "postgres.log").read_text() == "synthetic database log"
+    assert (cluster / "pytest.log").read_text() == "synthetic test output"
     assert result["tests_passed"] is True and result["stopped"] is True
     assert result["data_removed"] is False
     assert result["data_retained_reason"] == "cleanup-failed"
     assert result["cleanup_failure"] == "PermissionError"
+    assert "remaining data may be partial" in capsys.readouterr().err

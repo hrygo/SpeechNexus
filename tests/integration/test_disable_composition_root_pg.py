@@ -1,12 +1,17 @@
 """Production gateway composition root with real restricted PostgreSQL authority."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from pydantic import SecretStr
+from tests.integration.test_binding_lifecycle_pg import Sandbox
+from tests.integration.test_binding_lifecycle_pg import sandbox as sandbox
 from tests.integration.test_coordination_foundation import Foundation
 from tests.integration.test_coordination_foundation import foundation as foundation
 from tests.integration.test_gateway_submit_http import (
@@ -17,22 +22,36 @@ from tests.integration.test_gateway_submit_http import (
     submit_body,
 )
 from tests.integration.test_gateway_submit_ledger import identity_for, seed_second_attempt
-from tests.integration.test_production_jobs import database as database
+from tests.integration.test_production_jobs import JobDatabase
 
 from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
     gateway_abort_grants,
     gateway_binding_barrier_grants,
 )
+from speechnexus_backend.speech.infrastructure.jobs_postgres import PostgresJobTransactions
 from speechnexus_gateway.app import create_app
 from speechnexus_gateway.domain.canonical import command_digest
 from speechnexus_gateway.domain.ports import AbortOutcome, DispatchOutcome, EngineObservation
 from speechnexus_gateway.domain.submission import DispatchResult, SubmissionIntent, SubmitRequest
 from speechnexus_gateway.settings import Settings
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.parametrize("database", ["postgresql"], indirect=True),
-]
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def database(sandbox: Sandbox) -> Iterator[JobDatabase]:
+    """Explicit PG-only composition test; the shared dual-DB gate is unchanged."""
+    with psycopg.connect(sandbox.url, autocommit=True, row_factory=dict_row) as admin:
+        admin.execute(f'SET search_path TO "{sandbox.schema}", pg_catalog')
+        yield JobDatabase(
+            "postgresql",
+            sandbox.url,
+            sandbox.schema,
+            sandbox.role,
+            admin,
+            PostgresJobTransactions(sandbox.pool),
+            sandbox.pool,
+        )
 
 
 class SyntheticEngine:

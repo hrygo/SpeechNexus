@@ -49,11 +49,16 @@ class SubmitReleaseFacts:
     execution_state: str
     cleanup_state: str
     stop: LeaseStop | None = None
+    # Structural corroboration of B's existing failed/not_required fact only.
+    # Default deny. Absence is never zero-dispatch success or stop evidence.
+    no_dispatch_metadata_absent: bool = False
 
     def __post_init__(self) -> None:
         identifier(self.submit_intent_id)
         if self.stop is not None and self.stop.submit_intent_id != self.submit_intent_id:
             raise ValueError("Lease stop belongs to another submit")
+        if type(self.no_dispatch_metadata_absent) is not bool:
+            raise ValueError("Dispatch history must come from the locked storage projection")
 
 
 def require_complete_stages(required: tuple[str, ...], actual: tuple[str, ...]) -> None:
@@ -123,7 +128,7 @@ def release(
     elif execution.execution_state == "failed" and execution.cleanup_state == "not_required":
         # B's native port has proved no dispatch/request ID/staging/output.
         # This authoritative fact cannot discharge a quarantined execution.
-        if isolated or execution.stop is not None:
+        if isolated or execution.stop is not None or not execution.no_dispatch_metadata_absent:
             raise LeaseRejectedError("execution_cleanup_pending")
     else:
         stop = execution.stop

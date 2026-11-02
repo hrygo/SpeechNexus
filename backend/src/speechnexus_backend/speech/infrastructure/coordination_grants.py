@@ -7,6 +7,7 @@ Application transactions enforce cross-record rules; grants do not replace them.
 
 from __future__ import annotations
 
+from speechnexus_backend.speech.infrastructure.execution_release_schema import release_guard_grants
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 DIMENSIONS = (
@@ -124,4 +125,4 @@ def coordination_runtime_grants(
                     grants.append(f'GRANT UPDATE ({columns}) ON {target} TO "{role}"')
             elif "version" in updates.split():
                 grants.append(f'GRANT UPDATE (version) ON {target} TO "{role}"')
-    return tuple(grants)
+    return (*grants, *release_guard_grants(schema, speech_role))

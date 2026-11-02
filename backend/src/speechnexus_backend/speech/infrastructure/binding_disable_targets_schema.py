@@ -1,5 +1,6 @@
 """Durable immutable execution targets for a binding-disable coordinator."""
 
+from speechnexus_backend.speech.infrastructure.execution_release_schema import release_guard_grants
 from speechnexus_backend.speech.infrastructure.job_schema import checked_sql_name
 
 TARGET_TABLE = "speech_binding_disable_targets"
@@ -112,6 +113,7 @@ def disable_settlement_grants(schema: str, role: str) -> tuple[str, ...]:
     }
     return (
         f'GRANT USAGE ON SCHEMA "{schema}" TO {target}',
+        *release_guard_grants(schema, role),
         *(f'GRANT SELECT ON "{schema}".{table} TO {target}' for table in reads),
         f"GRANT SELECT (submit_intent_id, lease_id, operation_id, attempt_id, execution_state, "
         f'cleanup_state, version) ON "{schema}".submit_intents TO {target}',

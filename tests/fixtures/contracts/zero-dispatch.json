@@ -1,0 +1,1685 @@
+{
+  "description": "Synthetic wire-shape examples only; no DB replay, trusted seal or production execution is proven.",
+  "examples": [
+    {
+      "id": "zero-original-key",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": true,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00.000000Z",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000,
+          "voice_revision_id": null
+        },
+        "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+        "output_stream_id": "stream-test"
+      }
+    },
+    {
+      "id": "zero-key-voice-omitted",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": true,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00.000000Z",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000
+        },
+        "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+        "output_stream_id": "stream-test"
+      }
+    },
+    {
+      "id": "zero-key-incomplete",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": false,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test"
+        },
+        "request_digest": "sha256:832fe2bbc2a7cdeb213876e52719c76cec719d8089994bafad4903a6e397347f",
+        "output_stream_id": null
+      }
+    },
+    {
+      "id": "zero-key-broken-audio-pair",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": false,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00.000000Z",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": null,
+          "voice_revision_id": null
+        },
+        "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+        "output_stream_id": "stream-test"
+      }
+    },
+    {
+      "id": "zero-key-stream-mismatch",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": false,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00.000000Z",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000,
+          "voice_revision_id": null
+        },
+        "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+        "output_stream_id": null
+      }
+    },
+    {
+      "id": "zero-reject-epoch-as-authority",
+      "profile": "zero_dispatch",
+      "schema": "OriginalExecutionKey",
+      "valid": false,
+      "value": {
+        "identity": {
+          "submit_intent_id": "submit-test",
+          "lease_id": "lease-test-stage-main",
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "stage_id": "stage-main",
+          "pool_id": "tts-realtime",
+          "host_node_id": "host-test",
+          "gateway_id": "gateway-test",
+          "instance_id": "instance-test",
+          "instance_generation": 1,
+          "workspace_id": "workspace-test",
+          "binding_revision_id": "binding-test",
+          "policy_revision_id": "policy-test",
+          "fencing_token": 1,
+          "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+          "deadline_at": "2026-10-23T12:01:00.000000Z",
+          "max_output_audio_ms": 1000,
+          "sample_rate_hz": 24000,
+          "voice_revision_id": null
+        },
+        "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+        "output_stream_id": "stream-test",
+        "epoch": "trusted-looking-but-unverified"
+      }
+    },
+    {
+      "id": "zero-receive",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationRequest",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "intent": {
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "fencing_token": 1,
+          "reason": "client_cancelled",
+          "wait_timeout_ms": 100
+        }
+      }
+    },
+    {
+      "id": "zero-receive-empty-intent",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationRequest",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "intent": {}
+      }
+    },
+    {
+      "id": "zero-receive-with-expected-version",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationRequest",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "intent": {
+          "operation_id": "operation-test",
+          "attempt_id": "attempt-test",
+          "fencing_token": 1,
+          "reason": "client_cancelled",
+          "wait_timeout_ms": 100
+        },
+        "expected_gate_version": "1"
+      }
+    },
+    {
+      "id": "zero-cancel-recorded",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "cancelled_closed",
+          "gate_version_at_receive": "2"
+        },
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        }
+      }
+    },
+    {
+      "id": "zero-cancel-replay",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "replayed",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "cancelled_closed",
+          "gate_version_at_receive": "2"
+        },
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        }
+      }
+    },
+    {
+      "id": "zero-late-cancel",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "sealed_zero",
+          "gate_version_at_receive": "4"
+        },
+        "gate": {
+          "state": "sealed_zero",
+          "version": "4",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "zero-cancel-engine-possible",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "engine_possible",
+          "gate_version_at_receive": "2"
+        },
+        "gate": {
+          "state": "engine_possible",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-cancel-reopens",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "cancelled_closed",
+          "gate_version_at_receive": "2"
+        },
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-cancel-reverses-seal",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "sealed_zero",
+          "gate_version_at_receive": "4"
+        },
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-resource-closed-bool",
+      "profile": "zero_dispatch",
+      "schema": "ReceiveCancellationResult",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "receive_cancel",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "outcome": "recorded",
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "cancelled_closed",
+          "gate_version_at_receive": "2"
+        },
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        },
+        "resources_closed": true
+      }
+    },
+    {
+      "id": "zero-query-request",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoveryQuery",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-seal-write",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoveryQuery",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "seal_zero",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-query-cas",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoveryQuery",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "expected_gate_version": "1"
+      }
+    },
+    {
+      "id": "zero-query-open",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-missing-gate",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "missing",
+        "reason": "gate_missing",
+        "recovery": "reconcile",
+        "gate": null,
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-original-absent",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "missing",
+        "reason": "original_not_found",
+        "recovery": "reconcile",
+        "gate": null,
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-incomplete-document",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "incomplete",
+        "reason": "original_document_missing",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-incomplete-digest",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "incomplete",
+        "reason": "original_document_unverifiable",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-inconsistent-history",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "incomplete",
+        "reason": "history_inconsistent",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-unknown-submit",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "unknown",
+        "reason": "submit_commit_unknown",
+        "recovery": "query_original",
+        "gate": null,
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-unknown-object-version",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "unknown",
+        "reason": "object_version_unknown",
+        "recovery": "query_original",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-unknown-evidence",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "unknown",
+        "reason": "evidence_unavailable",
+        "recovery": "query_original",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-query-cancelled",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": true,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        },
+        "cancellation": {
+          "intent": {
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "fencing_token": 1,
+            "reason": "client_cancelled",
+            "wait_timeout_ms": 100
+          },
+          "intent_digest": "sha256:89955016ac273bf5c14d7c7269e9cbc183ead418fcfb40f99692c35ebb67e379",
+          "received_at": "2026-10-31T00:00:01Z",
+          "gate_state_at_receive": "cancelled_closed",
+          "gate_version_at_receive": "2"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-missing-as-open",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "missing",
+        "reason": "gate_missing",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-found-without-gate",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": null,
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-found-unknown-commit",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "submit_commit_unknown",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-unknown-retry",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "unknown",
+        "reason": "submit_commit_unknown",
+        "recovery": "retry_transaction",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-cancelled-without-intent",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "cancelled_closed",
+          "version": "2",
+          "recorded_at": "2026-10-31T00:00:01Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-query-with-seal-receipt",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null,
+        "seal_receipt": {
+          "qualified": true
+        }
+      }
+    },
+    {
+      "id": "zero-reject-query-grants-permit",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "1",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null,
+        "may_send": true
+      }
+    },
+    {
+      "id": "zero-reject-initial-version-zero",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": "0",
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-reject-numeric-version",
+      "profile": "zero_dispatch",
+      "schema": "OriginalRecoverySnapshot",
+      "valid": false,
+      "value": {
+        "schema_version": "1",
+        "operation": "query_zero_original",
+        "original": {
+          "identity": {
+            "submit_intent_id": "submit-test",
+            "lease_id": "lease-test-stage-main",
+            "operation_id": "operation-test",
+            "attempt_id": "attempt-test",
+            "stage_id": "stage-main",
+            "pool_id": "tts-realtime",
+            "host_node_id": "host-test",
+            "gateway_id": "gateway-test",
+            "instance_id": "instance-test",
+            "instance_generation": 1,
+            "workspace_id": "workspace-test",
+            "binding_revision_id": "binding-test",
+            "policy_revision_id": "policy-test",
+            "fencing_token": 1,
+            "command_digest": "sha256:e907ce03c776e05f0e436b2a4d2239e69abeae0dd8ec27bed5e30ee3b6490644",
+            "deadline_at": "2026-10-23T12:01:00.000000Z",
+            "max_output_audio_ms": 1000,
+            "sample_rate_hz": 24000,
+            "voice_revision_id": null
+          },
+          "request_digest": "sha256:11dd1c3c4b9a706a452a3502797a75a05449831131adeacc8f9fbe7ecb009fe7",
+          "output_stream_id": "stream-test"
+        },
+        "status": "found",
+        "reason": "facts_available",
+        "recovery": "reconcile",
+        "gate": {
+          "state": "open",
+          "version": 1,
+          "recorded_at": "2026-10-31T00:00:00Z"
+        },
+        "cancellation": null
+      }
+    },
+    {
+      "id": "zero-intent-conflict",
+      "profile": "zero_dispatch",
+      "schema": "ZeroDispatchControlError",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_state_conflict",
+          "message": "Synthetic control result.",
+          "retryable": false,
+          "recovery": "query_current_authority"
+        }
+      }
+    },
+    {
+      "id": "zero-version-conflict",
+      "profile": "zero_dispatch",
+      "schema": "ZeroDispatchControlError",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_state_conflict",
+          "message": "Synthetic control result.",
+          "retryable": false,
+          "recovery": "query_current_authority"
+        }
+      }
+    },
+    {
+      "id": "zero-unknown-error",
+      "profile": "zero_dispatch",
+      "schema": "ZeroDispatchControlError",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_outcome_unknown",
+          "message": "Synthetic control result.",
+          "retryable": false,
+          "recovery": "query_original"
+        }
+      }
+    },
+    {
+      "id": "zero-missing-error",
+      "profile": "zero_dispatch",
+      "schema": "ZeroDispatchControlError",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "control_reconciliation_required",
+          "message": "Synthetic control result.",
+          "retryable": false,
+          "recovery": "reconcile"
+        }
+      }
+    },
+    {
+      "id": "zero-reject-unknown-error-retry",
+      "profile": "zero_dispatch",
+      "schema": "ZeroDispatchControlError",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "control_outcome_unknown",
+          "message": "Synthetic control result.",
+          "retryable": true,
+          "recovery": "retry_transaction"
+        }
+      }
+    }
+  ]
+}

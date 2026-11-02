@@ -248,7 +248,9 @@ def test_job_write_first_commits_before_waiting_disable(
 
     def paused(connection: Any, kind: str, model_id: str, document: str) -> bool:
         selected = original(connection, kind, model_id, document)
-        holder_pid.append(connection.info.backend_pid)
+        row = connection.execute("SELECT pg_backend_pid() AS pid").fetchone()
+        assert row is not None and isinstance(row["pid"], int)
+        holder_pid.append(row["pid"])
         acquired.set()
         if not release.wait(timeout=10):
             raise RuntimeError("test did not release the job transaction")
@@ -260,10 +262,16 @@ def test_job_write_first_commits_before_waiting_disable(
             sandbox.jobs.submit, _body(), request_id="job-first", idempotency_key="job-first-key"
         )
         try:
-            assert acquired.wait(timeout=5)
+            if not acquired.wait(timeout=5):
+                if job.done():
+                    job.result()
+                pytest.fail("job did not acquire the binding lock")
             disabled = workers.submit(sandbox.lifecycle.retire, _command())
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
+                if disabled.done():
+                    disabled.result()
+                    pytest.fail("disable completed without waiting for the job transaction")
                 row = sandbox.admin.execute(
                     "SELECT pid FROM pg_stat_activity WHERE usename=%s AND pid<>%s "
                     "AND %s=ANY(pg_blocking_pids(pid))",

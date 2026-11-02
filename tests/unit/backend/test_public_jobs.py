@@ -13,6 +13,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
     IdempotencyConflictError,
     JobOutcomeUnknownError,
+    ModelBindingError,
     ModelNotPublishedError,
     PublicJobs,
     UnsupportedJobKindError,
@@ -51,6 +52,14 @@ class Facts:
     def latest_binding(self, model_id: str) -> BindingFact | None:
         return self.binding if model_id == "tts-quality" else None
 
+    def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None:
+        fact = self.binding
+        return (
+            fact
+            if fact.publication.reference == {"id": binding_id, "revision": str(revision)}
+            else None
+        )
+
     def publication(self, kind: str, object_id: str, revision: int) -> Publication | None:
         return self.published.get((kind, object_id, revision))
 
@@ -71,6 +80,7 @@ class Store:
     def __init__(self) -> None:
         self.jobs: dict[str, PublicJob] = {}
         self.keys: dict[str, tuple[str, str]] = {}
+        self.requests: list[NewPublicJob] = []
 
     def find_by_key(
         self, workspace_id: str, key_digest: str, request_digest: str
@@ -87,6 +97,7 @@ class Store:
         return JobCreateResult("replayed", job)
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
+        self.requests.append(job)
         if job.idempotency_key_digest is not None:
             original = self.keys.get(job.idempotency_key_digest)
             if original is not None:
@@ -297,3 +308,140 @@ def test_storage_model_rejects_success_without_a_result() -> None:
             NOW,
             submission,
         )
+
+
+def _pinned_body() -> dict[str, Any]:
+    return _body(model="narrator-tts", model_binding=BINDING.reference)
+
+
+def _pin_facts(facts: Facts) -> None:
+    facts.binding = BindingFact(
+        BINDING,
+        {
+            "binding_id": BINDING.object_id,
+            "revision": str(BINDING.revision),
+            "revision_id": BINDING.revision_id,
+            "logical_model": "narrator-tts",
+            "tasks": ["tts_file"],
+        },
+    )
+
+
+def test_pin_resolves_distinct_logical_model_and_preserves_original_request() -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    command = parse("JobCreateRequest", _pinned_body())
+    job = service.submit(command, request_id="req-pin", idempotency_key="idem-pin-0001")
+    assert (
+        json.loads(job.submission.effective_configuration_json)["models"]["tts"]
+        == BINDING.reference
+    )
+    assert json.loads(store.requests[0].request_document)["model_binding"] == BINDING.reference
+    assert store.requests[0].expected_binding == BINDING
+
+
+def test_replay_precedes_changed_facts_and_conflicting_pin_is_not_reresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    command = _pinned_body()
+    first = service.submit(command, request_id="req-pin", idempotency_key="idem-pin-0001")
+
+    # Fail any mutable lookup after the first commit. The original result wins.
+    def unavailable(*args: Any) -> Any:
+        raise AssertionError("Replay must not resolve current facts")
+
+    monkeypatch.setattr(facts, "workspace", unavailable)
+    monkeypatch.setattr(facts, "binding_revision", unavailable)
+    assert service.submit(command, request_id="req-retry", idempotency_key="idem-pin-0001") == first
+    with pytest.raises(IdempotencyConflictError):
+        service.submit(
+            _body(model_binding={**BINDING.reference, "revision": "3"}),
+            request_id="req-retry",
+            idempotency_key="idem-pin-0001",
+        )
+    assert len(store.jobs) == 1
+    assert len(store.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        ({"current": False}, "model_binding_not_current"),
+        ({"retired": True}, "model_binding_retired"),
+        (
+            {"definition": {"logical_model": "other-tts", "tasks": ["tts_file"]}},
+            "model_binding_mismatch",
+        ),
+        (
+            {"definition": {"logical_model": "narrator-tts", "tasks": ["tts_realtime"]}},
+            "model_binding_task_not_supported",
+        ),
+    ],
+)
+def test_invalid_selection_never_writes_or_falls_back(change: dict[str, Any], code: str) -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    facts.binding = replace(facts.binding, **change)
+    with pytest.raises(ModelBindingError) as failure:
+        service.submit(_pinned_body(), request_id="req-pin", idempotency_key=None)
+    assert failure.value.code == code
+    assert not store.requests and not store.jobs
+
+
+def test_missing_pin_is_rejected_even_when_latest_binding_exists() -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    command = _body(model_binding={**BINDING.reference, "revision": "1"})
+    with pytest.raises(ModelBindingError, match="model_binding_not_published"):
+        service.submit(command, request_id="req-pin", idempotency_key=None)
+    assert not store.jobs
+
+
+@pytest.mark.parametrize("revision", ["01", "0", "1\n", "١", "1.0", "1e3", "1" * 20, 2, None])
+def test_application_rejects_non_decimal_or_inexact_pin(revision: Any) -> None:
+    service, _, store = _service()
+    with pytest.raises(ValueError):
+        service.submit(
+            _body(model_binding={"id": BINDING.object_id, "revision": revision}),
+            request_id="req-pin",
+            idempotency_key=None,
+        )
+    assert not store.jobs
+
+
+def test_maximum_decimal_revision_is_not_rounded_or_cast_to_bigint() -> None:
+    service, facts, store = _service()
+    maximum = replace(BINDING, revision=9_999_999_999_999_999_999)
+    facts.binding = BindingFact(maximum, {"logical_model": "narrator-tts", "tasks": ["tts_file"]})
+    job = service.submit(
+        parse("JobCreateRequest", _body(model="narrator-tts", model_binding=maximum.reference)),
+        request_id="req-pin",
+        idempotency_key=None,
+    )
+    assert (
+        json.loads(job.submission.effective_configuration_json)["models"]["tts"]
+        == maximum.reference
+    )
+    assert json.loads(store.requests[0].request_document)["model_binding"] == maximum.reference
+
+
+@pytest.mark.parametrize("field", ["binding_id", "revision", "revision_id"])
+def test_poisoned_embedded_binding_identity_fails_closed(field: str) -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    facts.binding = replace(facts.binding, definition={**facts.binding.definition, field: "wrong"})
+    with pytest.raises(PublicJobUnavailableError):
+        service.submit(_pinned_body(), request_id="req-pin", idempotency_key=None)
+    assert not store.jobs
+
+
+def test_unpinned_legacy_request_keeps_binding_id_resolution() -> None:
+    service, facts, store = _service()
+    _pin_facts(facts)
+    service.submit(_body(), request_id="req-old", idempotency_key=None)
+    assert store.requests[0].expected_binding is None
+    assert "model_binding" not in json.loads(store.requests[0].request_document)
+    with pytest.raises(ModelNotPublishedError):
+        service.submit(_body(model="narrator-tts"), request_id="req-old", idempotency_key=None)

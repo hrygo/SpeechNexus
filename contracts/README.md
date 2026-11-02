@@ -15,6 +15,12 @@ root/semantic limits and does not alter the default request surface.
 
 ## Current scope
 
+- `internal/zero-dispatch.schema.json`: default-disabled identity/cancellation/read-only
+  recovery candidate, generated as `zero_dispatch` without a network client. It reuses
+  the full original submit identity and existing control errors. No sending, seal,
+  success or release producer is provided; production transaction/permission evidence
+  remains pending. See [candidate boundaries](../docs/architecture/zero-dispatch-contract-core.md).
+
 - `internal/audio-inspection.schema.json`: private successful output from the
   isolated media worker, explicitly generated as `audio_inspection`. Consumers
   separately bind original input digest/length, exact source clock, configured

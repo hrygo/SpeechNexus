@@ -68,7 +68,13 @@ def test_terminal_cleanup_requires_one_of_the_verified_stop_kinds(kind: str, sta
 
 
 @pytest.mark.parametrize(
-    "execution", [None, SubmitReleaseFacts("submit-test", "failed", "not_required")]
+    "execution",
+    [
+        None,
+        SubmitReleaseFacts(
+            "submit-test", "failed", "not_required", no_dispatch_metadata_absent=True
+        ),
+    ],
 )
 def test_never_submitted_or_native_no_dispatch_failure_can_release_held_lease(
     execution: Any,
@@ -76,6 +82,27 @@ def test_never_submitted_or_native_no_dispatch_failure_can_release_held_lease(
     settled = result(execution=execution, last=False)
     assert settled.accounting.held == VECTOR and settled.accounting.held_attempts == 1
     assert settled.accounting.quota_version == LEDGER.quota_version
+
+
+def test_no_dispatch_failure_requires_explicit_storage_corroboration() -> None:
+    execution = SubmitReleaseFacts("submit-test", "failed", "not_required")
+    with pytest.raises(LeaseRejectedError, match="execution_cleanup_pending"):
+        result(execution=execution)
+    # Even absent metadata cannot make a successful execution a stopped engine.
+    with pytest.raises(LeaseRejectedError, match="execution_cleanup_pending"):
+        result(
+            execution=SubmitReleaseFacts(
+                "submit-test", "succeeded", "complete", no_dispatch_metadata_absent=True
+            )
+        )
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true"])
+def test_dispatch_corroboration_rejects_non_boolean_internal_values(value: Any) -> None:
+    with pytest.raises(ValueError, match="Dispatch history"):
+        SubmitReleaseFacts(
+            "submit-test", "failed", "not_required", no_dispatch_metadata_absent=value
+        )
 
 
 def test_unknown_quarantine_requires_controller_stop_and_does_not_reactivate_host() -> None:

@@ -48,6 +48,7 @@ from speechnexus_backend.speech.infrastructure.transcription_recipe import (
 from speechnexus_backend.speech.infrastructure.transcription_submit import (
     TranscriptionCommandPlanner,
 )
+from speechnexus_backend.speech_runtime import build_speech
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,7 +171,11 @@ def build_transcription(settings: Settings) -> Transcription | None:
 def create_app_from_env() -> FastAPI:
     """``uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --factory``."""
     settings = Settings()
-    return create_app(settings=settings, transcriptions=build_transcription(settings))
+    return create_app(
+        settings=settings,
+        transcriptions=build_transcription(settings),
+        speech=build_speech(settings),
+    )
 
 
 __all__ = ["build_transcription", "create_app_from_env"]

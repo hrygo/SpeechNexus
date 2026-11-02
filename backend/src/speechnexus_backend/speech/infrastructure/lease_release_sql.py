@@ -111,6 +111,21 @@ def release_in_transaction(
     execution: SubmitReleaseFacts | None = None
     if submits:
         submit = submits[0]
+        # Read AFTER the original submit lock. This owner-defined view exposes
+        # only presence, never the gateway's private result/command or vendor ID.
+        # Missing migration/grant/row fails closed through the normal adapter.
+        metadata_absent = False
+        if submit["execution_state"] == "failed" and submit["cleanup_state"] == "not_required":
+            history = _one(
+                cursor,
+                "SELECT no_dispatch_metadata_absent FROM execution_release_guards "
+                "WHERE submit_intent_id = %s",
+                (submit["submit_intent_id"],),
+            )
+            absent = history["no_dispatch_metadata_absent"]
+            if type(absent) is not int or absent not in (0, 1):
+                raise LeaseRejectedError("reconciliation_required")
+            metadata_absent = absent == 1
         # Immutable evidence needs SELECT only. B takes the already-held pool/
         # submit locks before appending it, and neither runtime role can delete it.
         stops = _rows(
@@ -134,7 +149,11 @@ def release_in_transaction(
                 row["observed_at_us"],
             )
         execution = SubmitReleaseFacts(
-            submit["submit_intent_id"], submit["execution_state"], submit["cleanup_state"], stop
+            submit["submit_intent_id"],
+            submit["execution_state"],
+            submit["cleanup_state"],
+            stop,
+            no_dispatch_metadata_absent=metadata_absent,
         )
     now_us = clock()  # Database time after the last possible submit-lock wait.
     # The attempt lock serializes every A lease mutation/admission. Siblings

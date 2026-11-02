@@ -23,6 +23,31 @@ _ERRORS: dict[str, tuple[int, str, str]] = {
     "workspace_not_found": (422, "invalid_request_error", "The workspace was not found."),
     "workspace_disabled": (422, "invalid_request_error", "The workspace is disabled."),
     "model_not_published": (422, "invalid_request_error", "The model is not published."),
+    "model_binding_not_published": (
+        422,
+        "invalid_request_error",
+        "The selected binding revision is not published.",
+    ),
+    "model_binding_retired": (
+        422,
+        "invalid_request_error",
+        "The selected binding revision is retired.",
+    ),
+    "model_binding_not_current": (
+        422,
+        "invalid_request_error",
+        "The selected binding revision is no longer current.",
+    ),
+    "model_binding_mismatch": (
+        422,
+        "invalid_request_error",
+        "The model does not match the selected binding.",
+    ),
+    "model_binding_task_not_supported": (
+        422,
+        "invalid_request_error",
+        "The selected binding does not support file TTS.",
+    ),
     "voice_not_published": (422, "invalid_request_error", "The voice revision is not published."),
     "profile_not_published": (
         422,

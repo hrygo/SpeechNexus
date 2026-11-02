@@ -1,0 +1,942 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ZeroDispatchContracts",
+  "x-nexus-bindings-version": "1.0.0",
+  "x-nexus-entrypoints": [
+    "OriginalExecutionKey",
+    "ReceiveCancellationRequest",
+    "ReceiveCancellationResult",
+    "OriginalRecoveryQuery",
+    "OriginalRecoverySnapshot",
+    "ZeroDispatchControlError"
+  ],
+  "$defs": {
+    "OriginalExecutionKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "request_digest", "output_stream_id"],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/SubmissionIdentity"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "output_stream_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Exact original identity plus RFC 8785 SHA-256 of SubmitRequest.effective_request (execution_request and output_stream_id). Not command_digest alone. The owner compares its complete immutable request_document, output stream, original worker identity and all authority rows; a matching string is not authorization. No private body is returned here.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identity": {
+                "properties": {
+                  "sample_rate_hz": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "output_stream_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "output_stream_id": {
+                "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SubmissionIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "max_output_audio_ms",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_submit_intent_id"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_lease_id"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_operation_id"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_attempt_id"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_stage_id"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_workspace_id"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_pool_id"
+        },
+        "host_node_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_host_node_id"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_gateway_id"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_instance_id"
+        },
+        "instance_generation": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_instance_generation"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_binding_revision_id"
+        },
+        "policy_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_policy_revision_id"
+        },
+        "voice_revision_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_voice_revision_id"
+        },
+        "fencing_token": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_fencing_token"
+        },
+        "command_digest": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_command_digest"
+        },
+        "deadline_at": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_deadline_at"
+        },
+        "max_output_audio_ms": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_max_output_audio_ms"
+        },
+        "sample_rate_hz": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_sample_rate_hz"
+        }
+      },
+      "description": "Projection of all 19 existing submit identity fields. Property domains and paired audio constraints reference the original canonical request. Omitted/null voice remains compatible. The full original command is retained and verified by its owner, never rebuilt from this projection.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_0"
+        },
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_1"
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_submit_intent_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_Identifier": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Identifier"
+    },
+    "External_shared_identifiers_schema_json_Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 128,
+      "description": "Opaque stable resource identifier. Prefixes are descriptive, not authorization claims."
+    },
+    "External_internal_execution_control_openapi_yaml_lease_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_operation_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_attempt_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_stage_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_workspace_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_pool_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_PoolId"
+    },
+    "External_internal_execution_control_openapi_yaml_PoolId": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_PoolId"
+    },
+    "External_shared_identifiers_schema_json_PoolId": {
+      "type": "string",
+      "enum": [
+        "asr-realtime",
+        "tts-realtime",
+        "asr-batch",
+        "tts-batch",
+        "voice-creation",
+        "auxiliary"
+      ],
+      "description": "Logical capability resource pool identifier. Pools may span multiple host nodes."
+    },
+    "External_internal_execution_control_openapi_yaml_host_node_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_gateway_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_instance_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_instance_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "External_internal_execution_control_openapi_yaml_binding_revision_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_policy_revision_id": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+    },
+    "External_internal_execution_control_openapi_yaml_voice_revision_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "External_internal_execution_control_openapi_yaml_fencing_token": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "External_internal_execution_control_openapi_yaml_command_digest": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Sha256Digest"
+    },
+    "External_internal_execution_control_openapi_yaml_Sha256Digest": {
+      "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+    },
+    "External_shared_identifiers_schema_json_Sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "External_internal_execution_control_openapi_yaml_deadline_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "External_internal_execution_control_openapi_yaml_max_output_audio_ms": {
+      "type": ["integer", "null"],
+      "minimum": 100,
+      "description": "Hard output-audio ceiling for stages that synthesize audio. Use\nnull for ASR, alignment, and other stages that cannot emit audio.\nThe referenced manifest stage must declare `emits_audio_pcm=true`\nfor a non-null value. The gateway stores\n`hard_output_ceiling_samples` as\n`floor(max_output_audio_ms * sample_rate_hz / 1000)`. A manifest\nstage that emits audio PCM rejects a null value.\n"
+    },
+    "External_internal_execution_control_openapi_yaml_sample_rate_hz": {
+      "type": ["integer", "null"],
+      "enum": [16000, 24000, 48000, null],
+      "description": "PCM sample rate used for output metering. Required and non-null\nexactly when `max_output_audio_ms` is non-null; null for text-only\nstages.\n"
+    },
+    "External_internal_execution_control_openapi_yaml_0": {
+      "if": {
+        "properties": {
+          "max_output_audio_ms": {
+            "type": "integer"
+          }
+        },
+        "required": ["max_output_audio_ms"]
+      },
+      "then": {
+        "properties": {
+          "sample_rate_hz": {
+            "enum": [16000, 24000, 48000]
+          }
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_1": {
+      "if": {
+        "properties": {
+          "max_output_audio_ms": {
+            "type": "null"
+          }
+        },
+        "required": ["max_output_audio_ms"]
+      },
+      "then": {
+        "properties": {
+          "sample_rate_hz": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "ReceiveCancellationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation", "original", "intent"],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "receive_cancel"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "intent": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_AbortExecutionRequest"
+        }
+      },
+      "description": "Candidate B receive port, no HTTP/client/production writer. Verify original identity, intent operation/attempt/fencing and original document under the approved shared lock prefix. Serialize first insertion on the existing parent submit plus unique key, never a missing-row lock. Persist full original cancellation and close open gate atomically; fail/unknown never sends, publishes or releases. Missing gate is reconciliation, never insert/backfill. Same original intent replays before current version/state checks. No expected version can turn a cancellation into a later claim."
+    },
+    "External_internal_execution_control_openapi_yaml_AbortExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "attempt_id", "fencing_token", "reason", "wait_timeout_ms"],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_Identifier"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "client_cancelled",
+            "deadline_exceeded",
+            "quota_exceeded",
+            "resource_force_disabled",
+            "gateway_takeover_reconcile",
+            "stream_disconnected"
+          ]
+        },
+        "wait_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        }
+      }
+    },
+    "ReceiveCancellationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation", "original", "outcome", "cancellation", "gate"],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "receive_cancel"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "outcome": {
+          "enum": ["recorded", "replayed"]
+        },
+        "cancellation": {
+          "$ref": "#/$defs/CancellationRecord"
+        },
+        "gate": {
+          "$ref": "#/$defs/GateObservation"
+        }
+      },
+      "description": "A durable receive result, not a stop/permit/seal/release receipt. 'replayed' returns the immutable original cancellation (including its original gate version/time), alongside the current consistent gate observation. Late cancel leaves an existing seal/terminal untouched; it cannot dispatch abort for that terminal. All echoes must match the queried original.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CancellationGateConsistency"
+        }
+      ]
+    },
+    "CancellationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "intent_digest",
+        "received_at",
+        "gate_state_at_receive",
+        "gate_version_at_receive"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_AbortExecutionRequest"
+        },
+        "intent_digest": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Sha256Digest"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gate_state_at_receive": {
+          "enum": ["cancelled_closed", "engine_possible", "sealed_zero"]
+        },
+        "gate_version_at_receive": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      },
+      "description": "Immutable original durable receive, keyed by the original submit. intent_digest covers RFC 8785 of the complete AbortExecutionRequest. Save even a late cancellation after a seal; received/recorded never means cancellation won. Exact replay returns these original bytes/time/version before checking any new-action CAS. Different intent (including wait_timeout_ms) conflicts; never overwrite. claim is a separate external action, not the linearization point or stop proof."
+    },
+    "External_shared_identifiers_schema_json_Revision": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "maxLength": 19,
+      "description": "Monotonic decimal revision represented as a string."
+    },
+    "GateObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "version", "recorded_at"],
+      "properties": {
+        "state": {
+          "enum": ["open", "cancelled_closed", "engine_possible", "sealed_zero"]
+        },
+        "version": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Read projection only. Initial version is Revision '1'; real transitions increment once; replay/query do not change version or recorded_at. engine_possible and both closed states never reopen. sealed_zero is a historical state label, NOT accepted success/zero-egress/stop/resource evidence. This candidate provides no way to create a seal or permit."
+    },
+    "CancellationGateConsistency": {
+      "description": "Structural consistency only; the producer must also compare identity, digest, version arithmetic and immutable history in the same transaction.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": ["gate_state_at_receive"]
+              }
+            },
+            "required": ["cancellation"]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "engine_possible"
+                  }
+                },
+                "required": ["gate_state_at_receive"]
+              }
+            },
+            "required": ["cancellation"]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "engine_possible"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "sealed_zero"
+                  }
+                },
+                "required": ["gate_state_at_receive"]
+              }
+            },
+            "required": ["cancellation"]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "sealed_zero"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": ["state"]
+              }
+            },
+            "required": ["gate"]
+          },
+          "then": {
+            "properties": {
+              "cancellation": {
+                "$ref": "#/$defs/CancellationRecord"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "gate": {
+                "type": "null"
+              }
+            },
+            "required": ["gate"]
+          },
+          "then": {
+            "properties": {
+              "cancellation": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OriginalRecoveryQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation", "original"],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "query_zero_original"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        }
+      },
+      "description": "Independent consistent-snapshot read only: no act/seal/claim, FOR UPDATE, row insertion, timestamps/version touch, decode, object IO, dispatch or budget writes. Use a DB read-only transaction and separately restricted read-only role. COMMIT unknown only queries this original; never retry dispatch, PUT, processing or create a replacement identity."
+    },
+    "OriginalRecoverySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "original",
+        "status",
+        "reason",
+        "recovery",
+        "gate",
+        "cancellation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "query_zero_original"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "status": {
+          "enum": ["found", "missing", "incomplete", "unknown"]
+        },
+        "reason": {
+          "enum": [
+            "facts_available",
+            "original_not_found",
+            "gate_missing",
+            "original_document_missing",
+            "original_document_unverifiable",
+            "history_inconsistent",
+            "submit_commit_unknown",
+            "object_version_unknown",
+            "evidence_unavailable"
+          ]
+        },
+        "recovery": {
+          "enum": ["query_original", "reconcile"]
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cancellation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CancellationRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "All fields come from ONE consistent DB snapshot, bound to the original complete intent/authority. found describes query completeness only, never success/qualification/zero-egress or resource closure. Empty open is a valid read and must remain unchanged. Missing original/gate never proves no work. Unverifiable/missing document or inconsistent history is incomplete; unknown commit or object version remains unknown. A key/latest GET/receipt string cannot recover a lost PUT version. No result authorizes any side effect.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CancellationGateConsistency"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": {
+                  "const": "found"
+                },
+                "reason": {
+                  "const": "facts_available"
+                },
+                "gate": {
+                  "$ref": "#/$defs/GateObservation"
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "reason": {
+                  "enum": ["original_not_found", "gate_missing"]
+                },
+                "gate": {
+                  "type": "null"
+                },
+                "cancellation": {
+                  "type": "null"
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "incomplete"
+                },
+                "reason": {
+                  "enum": [
+                    "original_document_missing",
+                    "original_document_unverifiable",
+                    "history_inconsistent"
+                  ]
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "unknown"
+                },
+                "reason": {
+                  "enum": [
+                    "submit_commit_unknown",
+                    "object_version_unknown",
+                    "evidence_unavailable"
+                  ]
+                },
+                "recovery": {
+                  "const": "query_original"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ZeroDispatchControlError": {
+      "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionControlErrorResponse"
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionControlErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/External_internal_execution_control_openapi_yaml_ExecutionErrorCode"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "control_store_unavailable",
+                    "control_outcome_unknown",
+                    "control_reconciliation_required",
+                    "control_state_conflict",
+                    "control_execution_not_found"
+                  ]
+                }
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "recovery": {
+              "type": "string",
+              "enum": [
+                "none",
+                "retry_transaction",
+                "query_original",
+                "query_current_authority",
+                "reconcile"
+              ]
+            },
+            "observed_fencing_token": {
+              "type": ["integer", "null"]
+            },
+            "submit_intent_id": {
+              "type": ["string", "null"]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "control_store_unavailable",
+                      "control_outcome_unknown",
+                      "control_reconciliation_required",
+                      "control_state_conflict",
+                      "control_execution_not_found"
+                    ]
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "required": ["recovery"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_store_unavailable"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": true
+                  },
+                  "recovery": {
+                    "const": "retry_transaction"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_outcome_unknown"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "query_original"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_reconciliation_required"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "reconcile"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_state_conflict"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "query_current_authority"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "code": {
+                    "const": "control_execution_not_found"
+                  }
+                },
+                "required": ["code"]
+              },
+              "then": {
+                "properties": {
+                  "retryable": {
+                    "const": false
+                  },
+                  "recovery": {
+                    "const": "none"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "External_internal_execution_control_openapi_yaml_ExecutionErrorCode": {
+      "type": "string",
+      "enum": [
+        "stale_fencing_token",
+        "gateway_barrier_fenced",
+        "submit_intent_conflict",
+        "instance_generation_mismatch",
+        "instance_draining",
+        "lease_not_active",
+        "policy_or_resource_disabled",
+        "engine_transport_unknown",
+        "cancellation_unconfirmed",
+        "execution_cleanup_pending",
+        "invalid_execution_request",
+        "component_credential_invalid"
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/OriginalExecutionKey"
+    },
+    {
+      "$ref": "#/$defs/ReceiveCancellationRequest"
+    },
+    {
+      "$ref": "#/$defs/ReceiveCancellationResult"
+    },
+    {
+      "$ref": "#/$defs/OriginalRecoveryQuery"
+    },
+    {
+      "$ref": "#/$defs/OriginalRecoverySnapshot"
+    },
+    {
+      "$ref": "#/$defs/ZeroDispatchControlError"
+    }
+  ]
+}

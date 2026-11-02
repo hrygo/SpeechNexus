@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, TypeVar
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any, Protocol
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
@@ -12,6 +14,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 from speechnexus_backend.speech.application.public_jobs import (
     BindingFact,
     WorkspaceFact,
+    require_pinned_binding,
 )
 from speechnexus_backend.speech.domain.public_jobs import (
     JobCreateResult,
@@ -38,7 +41,6 @@ from speechnexus_backend.speech.infrastructure.postgres_pool import (
     SpeechPool,
 )
 
-_T = TypeVar("_T")
 _JOB_COLUMNS = (
     "j.job_id, j.workspace_id, j.kind, j.model_id, j.request_digest, j.state, "
     "j.status_version, "
@@ -46,6 +48,82 @@ _JOB_COLUMNS = (
     "s.request_id, s.client_reference, s.effective_configuration_json, "
     "s.execution_revision, s.progress_unit, s.progress_total, s.submitted_at_us"
 )
+_PINNED_BINDING_QUERY = (
+    "SELECT p.kind, p.object_id, p.revision, p.revision_id, p.published_at_us, "
+    "r.definition_json, EXISTS ("
+    "SELECT 1 FROM speech_publication_heads AS h "
+    "WHERE h.kind = p.kind AND h.object_id = p.object_id "
+    "AND h.revision = p.revision AND h.revision_id = p.revision_id) AS is_current, "
+    "EXISTS ("
+    f"SELECT 1 FROM {RETIREMENT_TABLE} AS retired "
+    "WHERE retired.kind = p.kind AND retired.object_id = p.object_id "
+    "AND retired.revision = p.revision AND retired.revision_id = p.revision_id) AS is_retired "
+    "FROM speech_publications AS p "
+    "JOIN speech_binding_revisions AS r ON r.binding_id = p.object_id "
+    "AND r.revision = p.revision AND r.revision_id = p.revision_id "
+    "WHERE p.kind = 'binding' AND p.object_id = %s AND p.revision = %s"
+)
+
+
+class _Rows(Protocol):
+    @property
+    def rowcount(self) -> int: ...
+    def fetchall(self) -> list[dict[str, Any]]: ...
+    def fetchone(self) -> dict[str, Any] | None: ...
+
+
+class _Executor(Protocol):
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> _Rows: ...
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise PublicJobUnavailableError
+    return remaining
+
+
+class _DeadlineRows:
+    def __init__(self, raw: _Rows, deadline: float) -> None:
+        self.raw, self.deadline = raw, deadline
+
+    @property
+    def rowcount(self) -> int:
+        _remaining(self.deadline)
+        return self.raw.rowcount
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        _remaining(self.deadline)
+        rows = self.raw.fetchall()
+        _remaining(self.deadline)
+        return rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        _remaining(self.deadline)
+        row = self.raw.fetchone()
+        _remaining(self.deadline)
+        return row
+
+
+class _DeadlineConnection:
+    def __init__(self, raw: SpeechConnection, deadline: float) -> None:
+        self.raw, self.deadline = raw, deadline
+
+    def arm(self) -> None:
+        remaining = _remaining(self.deadline)
+        self.raw.execute(
+            "SELECT set_config('statement_timeout', %s, true)",
+            (str(max(1, int(remaining * 1000))),),
+        )
+        # Control round trips also consume time. Refuse the next SQL/COMMIT
+        # if they exhausted it; this is not a hard network/COMMIT interrupter.
+        _remaining(self.deadline)
+
+    def execute(self, query: str, parameters: tuple[object, ...] = ()) -> _DeadlineRows:
+        self.arm()
+        rows = self.raw.execute(query, parameters)
+        _remaining(self.deadline)
+        return _DeadlineRows(rows, self.deadline)
 
 
 class PostgresPublicJobs:
@@ -88,8 +166,7 @@ class PostgresPublicJobs:
             "WHERE retired.kind = 'binding' AND retired.object_id = p.object_id "
             "AND retired.revision = p.revision "
             "AND retired.revision_id = p.revision_id"
-            ") "
-            "ORDER BY p.revision::bigint DESC LIMIT 1",
+            ")",
             (model_id,),
         )
         if not rows:
@@ -104,6 +181,9 @@ class PostgresPublicJobs:
         if not isinstance(definition, dict):
             raise PublicJobUnavailableError
         return BindingFact(_publication(row), definition)
+
+    def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None:
+        return _pinned_binding(self._read(_PINNED_BINDING_QUERY, (binding_id, str(revision))))
 
     def publication(
         self, kind: PublicationKind, object_id: str, revision: int
@@ -168,19 +248,19 @@ class PostgresPublicJobs:
     def find_by_key(
         self, workspace_id: str, key_digest: str, request_digest: str
     ) -> JobCreateResult | None:
+        identifier(workspace_id)
         rows = self._read(
             "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
-            "JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+            "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
             "WHERE j.workspace_id = %s AND j.idempotency_key_digest = %s",
-            (identifier(workspace_id), key_digest),
+            (workspace_id, key_digest),
+            submission_key=(workspace_id, key_digest),
         )
-        if len(rows) > 1:
-            raise PublicJobUnavailableError
         if not rows:
             return None
-        if rows[0].get("request_digest") != request_digest:
-            return JobCreateResult("conflict", error_code="idempotency_conflict")
-        return JobCreateResult("replayed", _job(rows[0]))
+        if len(rows) != 1:
+            raise PublicJobUnavailableError
+        return _replay_digest(rows[0], request_digest)
 
     def create(self, job: NewPublicJob) -> JobCreateResult:
         deadline = time.monotonic() + self._timeout
@@ -189,32 +269,36 @@ class PostgresPublicJobs:
             if remaining <= 0:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             try:
-                with self._pool.connection(timeout=remaining) as connection:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return JobCreateResult("unknown", error_code="outcome_unknown")
-                    connection.execute(
-                        "SELECT set_config('statement_timeout', %s, true)",
-                        (str(max(1, int(remaining * 1000))),),
-                    )
+                with self._transaction(deadline) as connection:
                     if job.idempotency_key_digest is not None:
+                        _lock_submission_key(
+                            connection, job.workspace_id, job.idempotency_key_digest
+                        )
                         existing = _existing_by_key(connection, job)
                         if existing is not None:
                             return _replay_or_conflict(existing, job)
-                    selected = _binding_is_still_selected(
-                        connection,
-                        job.kind,
-                        job.model_id,
-                        job.submission.effective_configuration_json,
-                    )
-                    # A concurrent same-key writer can commit while this transaction
-                    # waits for the binding lock. Replay it before rejecting a stale head.
-                    if job.idempotency_key_digest is not None:
-                        existing = _existing_by_key(connection, job)
-                        if existing is not None:
-                            return _replay_or_conflict(existing, job)
-                    if not selected:
-                        return JobCreateResult("rejected", error_code="job_rejected")
+                    if job.expected_binding is not None:
+                        lock_binding(connection, job.expected_binding.object_id)
+                        # Retain the defensive lookup for legacy writers that
+                        # do not yet take the public Job key lock.
+                        if job.idempotency_key_digest is not None:
+                            existing = _existing_by_key(connection, job)
+                            if existing is not None:
+                                return _replay_or_conflict(existing, job)
+                        _validate_pinned_create(connection, job)
+                    else:
+                        selected = _binding_is_still_selected(
+                            connection,
+                            job.kind,
+                            job.model_id,
+                            job.submission.effective_configuration_json,
+                        )
+                        if job.idempotency_key_digest is not None:
+                            existing = _existing_by_key(connection, job)
+                            if existing is not None:
+                                return _replay_or_conflict(existing, job)
+                        if not selected:
+                            return JobCreateResult("rejected", error_code="job_rejected")
                     _insert(connection, job)
                     row = _select_job(connection, job.job_id)
                 return JobCreateResult("created", _job(row))
@@ -224,7 +308,9 @@ class PostgresPublicJobs:
                 if attempt == 0:
                     continue
                 return JobCreateResult("unknown", error_code="outcome_unknown")
-            except psycopg.OperationalError, psycopg.InterfaceError:
+            except PublicJobUnavailableError, psycopg.OperationalError, psycopg.InterfaceError:
+                return JobCreateResult("unknown", error_code="outcome_unknown")
+            except psycopg.errors.QueryCanceled:
                 return JobCreateResult("unknown", error_code="outcome_unknown")
             except psycopg.Error:
                 return JobCreateResult("rejected", error_code="job_rejected")
@@ -243,14 +329,7 @@ class PostgresPublicJobs:
     ) -> PublicJob:
         deadline = time.monotonic() + self._timeout
         try:
-            with self._pool.connection(timeout=self._timeout) as connection:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise PublicJobUnavailableError
-                connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
-                    (str(max(1, int(remaining * 1000))),),
-                )
+            with self._transaction(deadline) as connection:
                 changed = connection.execute(
                     "UPDATE speech_jobs SET state = %s, status_version = status_version + 1, "
                     "result_json = %s, error_code = %s, updated_at_us = %s "
@@ -274,18 +353,19 @@ class PostgresPublicJobs:
         except psycopg.Error, PoolClosed, PoolTimeout, TooManyRequests:
             raise PublicJobUnavailableError from None
 
-    def _read(self, query: str, parameters: tuple[object, ...]) -> list[dict[str, Any]]:
+    def _read(
+        self,
+        query: str,
+        parameters: tuple[object, ...],
+        *,
+        submission_key: tuple[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         deadline = time.monotonic() + self._timeout
         try:
-            with self._pool.connection(timeout=self._timeout) as connection:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise PublicJobUnavailableError
+            with self._transaction(deadline) as connection:
                 connection.execute("SET TRANSACTION READ ONLY")
-                connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
-                    (str(max(1, int(remaining * 1000))),),
-                )
+                if submission_key is not None:
+                    _lock_submission_key(connection, *submission_key)
                 rows = connection.execute(query, parameters).fetchall()
                 if time.monotonic() >= deadline:
                     raise PublicJobUnavailableError
@@ -302,9 +382,25 @@ class PostgresPublicJobs:
         ):
             raise PublicJobUnavailableError from None
 
+    @contextmanager
+    def _transaction(self, deadline: float) -> Iterator[_DeadlineConnection]:
+        committing = False
+        try:
+            with self._pool.connection(timeout=_remaining(deadline)) as raw:
+                connection = _DeadlineConnection(raw, deadline)
+                _remaining(deadline)
+                yield connection
+                connection.arm()
+                committing = True
+            _remaining(deadline)
+        except psycopg.Error:
+            if committing:
+                raise PublicJobUnavailableError from None
+            raise
+
 
 def _binding_is_still_selected(
-    connection: SpeechConnection, kind: str, model_id: str, configuration_json: str
+    connection: _Executor, kind: str, model_id: str, configuration_json: str
 ) -> bool:
     """Serialize a new Job write with lifecycle selection changes."""
     try:
@@ -345,6 +441,62 @@ def _publication(row: dict[str, Any]) -> Publication:
         raise PublicJobUnavailableError from None
 
 
+def _pinned_binding(rows: list[dict[str, Any]]) -> BindingFact | None:
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise PublicJobUnavailableError
+    row = rows[0]
+    try:
+        definition = json.loads(row["definition_json"])
+        if (
+            not isinstance(definition, dict)
+            or type(row["is_current"]) is not bool
+            or type(row["is_retired"]) is not bool
+        ):
+            raise PublicJobUnavailableError
+        return BindingFact(_publication(row), definition, row["is_current"], row["is_retired"])
+    except ValueError, TypeError, KeyError, RecursionError:
+        raise PublicJobUnavailableError from None
+
+
+def _lock_submission_key(connection: _Executor, workspace_id: str, key_digest: str) -> None:
+    # Serialize all keyed public creates and rejection reconciliation, including
+    # keyless-binding requests. Never acquire this lock under a catalogue lock.
+    # Canonical tuple encoding prevents ambiguous workspace/key concatenation.
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended("
+        "'speechnexus:public-job-key:' || current_schema() || ':' || %s, 0))",
+        (json.dumps([workspace_id, key_digest], separators=(",", ":")),),
+    )
+
+
+def _validate_pinned_create(connection: _Executor, job: NewPublicJob) -> None:
+    expected = job.expected_binding
+    if expected is None:
+        raise PublicJobUnavailableError
+    reference = (expected.object_id, expected.revision)
+    binding = require_pinned_binding(
+        _pinned_binding(
+            connection.execute(_PINNED_BINDING_QUERY, (reference[0], str(reference[1]))).fetchall()
+        ),
+        reference,
+        job.model_id,
+    )
+    if binding.publication != expected:
+        raise PublicJobUnavailableError
+    intent = json.loads(job.request_document)
+    configuration = json.loads(job.submission.effective_configuration_json)
+    if (
+        job.kind != "tts"
+        or intent.get("kind") != "tts"
+        or intent.get("model") != job.model_id
+        or intent.get("model_binding") != expected.reference
+        or configuration.get("models", {}).get("tts") != expected.reference
+    ):
+        raise PublicJobUnavailableError
+
+
 def _job(row: dict[str, Any] | None) -> PublicJob:
     if row is None or row.get("request_id") is None:
         raise PublicJobUnavailableError
@@ -375,7 +527,7 @@ def _job(row: dict[str, Any] | None) -> PublicJob:
         raise PublicJobUnavailableError from None
 
 
-def _select_job(connection: SpeechConnection, job_id: str) -> dict[str, Any] | None:
+def _select_job(connection: _Executor, job_id: str) -> dict[str, Any] | None:
     rows = connection.execute(
         "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
         "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
@@ -387,10 +539,10 @@ def _select_job(connection: SpeechConnection, job_id: str) -> dict[str, Any] | N
     return rows[0] if rows else None
 
 
-def _existing_by_key(connection: SpeechConnection, job: NewPublicJob) -> dict[str, Any] | None:
+def _existing_by_key(connection: _Executor, job: NewPublicJob) -> dict[str, Any] | None:
     rows = connection.execute(
         "SELECT " + _JOB_COLUMNS + " FROM speech_jobs AS j "
-        "JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
+        "LEFT JOIN speech_job_submissions AS s ON s.job_id = j.job_id "
         "WHERE j.workspace_id = %s AND j.idempotency_key_digest = %s",
         (job.workspace_id, job.idempotency_key_digest),
     ).fetchall()
@@ -400,12 +552,16 @@ def _existing_by_key(connection: SpeechConnection, job: NewPublicJob) -> dict[st
 
 
 def _replay_or_conflict(row: dict[str, Any], job: NewPublicJob) -> JobCreateResult:
-    if row.get("request_digest") != job.request_digest:
+    return _replay_digest(row, job.request_digest)
+
+
+def _replay_digest(row: dict[str, Any], request_digest: str) -> JobCreateResult:
+    if row.get("request_digest") != request_digest:
         return JobCreateResult("conflict", error_code="idempotency_conflict")
     return JobCreateResult("replayed", _job(row))
 
 
-def _insert(connection: SpeechConnection, job: NewPublicJob) -> None:
+def _insert(connection: _Executor, job: NewPublicJob) -> None:
     submission = job.submission
     attempt_id = job.job_id + "-a1"
     connection.execute(
@@ -445,8 +601,9 @@ def _insert(connection: SpeechConnection, job: NewPublicJob) -> None:
             submission.submitted_at_us,
         ),
     )
-    # Private original command: the dispatcher may rebuild the engine request
-    # only from this canonical document, never from a digest or current default.
+    # Private original public intent (including any exact binding selection).
+    # This is NOT the complete effective execution command required by DEL-150;
+    # it must not be dispatched or supplemented using mutable current defaults.
     connection.execute(
         "INSERT INTO admission_operations "
         "(operation_id, workspace_id, request_digest, request_document, "

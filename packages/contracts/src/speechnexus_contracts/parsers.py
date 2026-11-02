@@ -12,6 +12,7 @@ from .models import (
     JobCreateRequest,
     JobEvent,
     JobList,
+    ModelList,
     Operation,
     OperationCancellation,
     PronunciationCreateRequest,
@@ -76,6 +77,10 @@ def parse(
 
 @overload
 def parse(name: Literal["PronunciationRevision"], value: Any) -> PronunciationRevision: ...
+
+
+@overload
+def parse(name: Literal["ModelList"], value: Any) -> ModelList: ...
 
 
 def parse(name: str, value: Any) -> Any:

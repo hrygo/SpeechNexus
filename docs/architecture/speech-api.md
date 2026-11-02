@@ -83,6 +83,16 @@ TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instruct
 
 同步 TTS 的已实现边界（2026-10-27，#239）：路由只从已发布 binding 与 voice revision 解析，缺席即 `model_not_found` / `voice_not_found`，不回退默认模型或草稿；`response_format`、`speed`、`instructions`、`language`、`seed` 逐项以 binding `parameter_domains.tts` 收窄，超出即 422。解析出的音频时长与源 PCM 上界会写入合成策略，合成结果超过请求上界时整条请求失败，不做截断。冻结的 `SpeechRequest` 尚无 `max_output_audio_ms` 字段，当前上界来自部署策略；契约补齐后必须与该值取较小者。该入口尚无持久 operation 身份，因此带 `Idempotency-Key` 的请求返回 422 而不是假装重放；成功响应不伪造 `X-Operation-ID`。生产合成端口待 A 的原子准入与网关同步投递接通，当前未配置时返回 503 `backend_unavailable`。响应状态以契约声明为准并逐项比对：`model_not_found` / `voice_not_found` 使用已声明的 404，该方法只接受 POST，方法不符使用已声明的 405 `speech_method_not_allowed`；`instructions` 超过部署 `max_instructions_chars` 时返回 422 `unsupported_parameter`，不截断改写。`X-Request-ID` 是不受约束的 1–128 字符关联值，不满足部署身份规则时改由服务端生成并回显，不影响请求结果。
 
+DEL-432 查询候选（2026-11-02）：生产工厂显式调用 `build_speech`，该函数无条件返回
+`None`，没有配置启用开关；历史 recipe 或 gateway 配置不能启用同步 TTS，合规请求仍返回
+503 `backend_unavailable`。完整私有提交意图及未知提交恢复、同版权威 voice 来源与资格、
+voice 删除/撤销的共同锁与准入复验尚未闭合，因此不装配可执行 TTS 链。
+`PostgresSpeechFacts` 只提供待审查的查询投影：默认读取完整 head、无 head 不回退，精确历史
+读取保持可读；`voice_for_request` 排除退役 voice，但不认证资格。跨 binding/voice 查询必须
+使用同一个 `snapshot()` 的只读 REPEATABLE READ view；该快照不保护解析后的准入竞争。
+现有 binding disable 屏障保留原身份重放和锁后复验规则，不能代替 voice 的共同锁协议；
+同步 `SpeechRequest` 不增加 Job binding pin。合成测试不证明 PG、引擎、公开 E2E 或 Gate。
+
 增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
 普通同步 ASR/TTS 不建立永久业务记录，也不自动保存源文件或音频。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，客户端使用相同幂等键协调结果，不能盲目新建相同意图。

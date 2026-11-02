@@ -16,4 +16,5 @@ export type FileContracts = Pick<
   | "ErrorResponse"
   | "PronunciationCreateRequest"
   | "PronunciationRevision"
+  | "ModelList"
 >;

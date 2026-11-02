@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 import rfc8785
 
+from speechnexus_backend.speech.domain.publications import Publication
+
 JobState = Literal["pending", "running", "succeeded", "failed", "cancelled", "expired"]
 JobKind = Literal["asr", "tts"]
 ProgressUnit = Literal["audio_ms", "text_codepoints", "items"]
@@ -160,6 +162,7 @@ class NewPublicJob:
     initial_event_digest: str
     idempotency_key_digest: str | None
     submission: JobSubmission
+    expected_binding: Publication | None = None
 
     def __post_init__(self) -> None:
         identifier(self.job_id)
@@ -187,6 +190,15 @@ class NewPublicJob:
             raise ValueError("Invalid public Job request document")
         if canonical_digest(decoded) != self.request_digest:
             raise ValueError("Public Job request document disagrees with its digest")
+        if ("model_binding" in decoded or self.expected_binding is not None) and (
+            self.expected_binding is None
+            or self.expected_binding.kind != "binding"
+            or self.kind != "tts"
+            or decoded.get("kind") != self.kind
+            or decoded.get("model") != self.model_id
+            or decoded.get("model_binding") != self.expected_binding.reference
+        ):
+            raise ValueError("Public Job binding disagrees with its original intent")
 
 
 def check_transition(

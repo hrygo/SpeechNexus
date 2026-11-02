@@ -27,11 +27,16 @@ from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema im
     TARGET_TABLE,
 )
 from speechnexus_backend.speech.infrastructure.coordination_grants import DIMENSIONS
+from speechnexus_backend.speech.infrastructure.execution_release_schema import RELEASE_GUARD_VIEW
 from speechnexus_backend.speech.infrastructure.gateway_execution_client import (
     GatewayExecutionClient,
 )
 from speechnexus_backend.speech.infrastructure.leases_postgres import PostgresLeaseTransactions
-from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool, speech_pool
+from speechnexus_backend.speech.infrastructure.postgres_pool import (
+    SpeechConnection,
+    SpeechPool,
+    speech_pool,
+)
 
 _LOG = logging.getLogger(__name__)
 _SOURCE_COLUMNS = {
@@ -77,6 +82,7 @@ _SETTLEMENT_FULL_READ = {
     "admission_leases",
 }
 _SETTLEMENT_READ = {
+    RELEASE_GUARD_VIEW: {"submit_intent_id", "no_dispatch_metadata_absent"},
     "submit_intents": {
         "submit_intent_id",
         "lease_id",
@@ -191,9 +197,48 @@ class BindingDisableWorkerSettings(BaseSettings):
         return self
 
 
+def _verify_no_role_switch(connection: SpeechConnection, worker: str) -> None:
+    # PG 16 introduced per-membership SET/INHERIT options and pg_has_role(...,'SET').
+    # Use PostgreSQL's recursive semantics rather than approximating a role graph.
+    version = connection.execute(
+        "SELECT pg_catalog.current_setting('server_version_num')::integer AS version"
+    ).fetchone()
+    if version is None or version["version"] < 160000:
+        raise ValueError(f"{worker} requires PostgreSQL 16 or newer")
+    authority = connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r "
+        "WHERE r.rolname <> SESSION_USER "
+        "AND pg_catalog.pg_has_role(SESSION_USER,r.oid,'SET')) AS can_switch, "
+        "EXISTS (SELECT 1 FROM pg_catalog.pg_roles r "
+        "WHERE r.rolname IN (SESSION_USER,CURRENT_USER) AND "
+        "(r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication "
+        "OR r.rolbypassrls)) AS privileged, "
+        "EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname <> SESSION_USER "
+        "AND pg_catalog.pg_has_role(SESSION_USER,r.oid,'MEMBER WITH ADMIN OPTION')) AS can_admin, "
+        "EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE pg_catalog.left(r.rolname,3)='pg_' AND "
+        "(pg_catalog.pg_has_role(SESSION_USER,r.oid,'USAGE') OR "
+        "pg_catalog.pg_has_role(CURRENT_USER,r.oid,'USAGE'))) AS predefined"
+    ).fetchone()
+    # A dedicated worker never needs another effective identity, even a currently
+    # harmless one. SET FALSE grants may still supply the exact inherited ACLs,
+    # but not predefined capabilities (pg_ is PostgreSQL's reserved role prefix).
+    # USAGE follows effective/transitive INHERIT even when SET and ADMIN are false.
+    # Neither worker needs any predefined role, including monitoring/global data
+    # access or future server capabilities exposed by a newer server's catalog.
+    if authority is None or any(
+        authority.get(key) is not False
+        for key in ("can_switch", "privileged", "can_admin", "predefined")
+    ):
+        raise ValueError(
+            f"{worker} requires a restricted identity without SET ROLE, role administration "
+            "or predefined capabilities"
+        )
+
+
 def _verify_principal(pool: SpeechPool, schema: str) -> None:
     with pool.connection(timeout=3) as connection:
         connection.execute("SET LOCAL statement_timeout='3s'")
+        _verify_no_role_switch(connection, "Disable worker")
         identities = connection.execute(
             "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
         ).fetchone()
@@ -253,6 +298,7 @@ def _verify_principal(pool: SpeechPool, schema: str) -> None:
 def _verify_settlement_principal(pool: SpeechPool, schema: str) -> None:
     with pool.connection(timeout=3) as connection:
         connection.execute("SET LOCAL statement_timeout='3s'")
+        _verify_no_role_switch(connection, "Settlement worker")
         identities = connection.execute(
             "SELECT SESSION_USER AS login, CURRENT_USER AS effective"
         ).fetchone()
@@ -278,12 +324,14 @@ def _verify_settlement_principal(pool: SpeechPool, schema: str) -> None:
                 "pg_catalog.has_column_privilege(%s::name,c.oid,a.attnum,'INSERT,REFERENCES') "
                 "AS other_write, "
                 "pg_catalog.has_table_privilege(%s::name,c.oid,'DELETE,TRUNCATE,TRIGGER') "
-                "AS destructive FROM pg_catalog.pg_class c "
+                "AS destructive, "
+                "pg_catalog.has_table_privilege(%s::name,c.oid,'SELECT') AS table_read "
+                "FROM pg_catalog.pg_class c "
                 "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                 "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "
                 "AND a.attnum>0 AND NOT a.attisdropped "
                 "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m')",
-                (role, role, role, role, schema),
+                (role, role, role, role, role, schema),
             ).fetchall()
             seen: dict[str, set[str]] = {}
             for row in rows:
@@ -297,6 +345,8 @@ def _verify_settlement_principal(pool: SpeechPool, schema: str) -> None:
                     or bool(row["can_update"]) != can_update
                     or row["other_write"]
                     or row["destructive"]
+                    # Do not silently expose future projection columns.
+                    or (table == RELEASE_GUARD_VIEW and row["table_read"])
                 ):
                     raise ValueError("Settlement worker privileges do not match the lease port")
                 if can_read or can_update:

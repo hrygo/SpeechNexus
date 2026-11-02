@@ -118,6 +118,69 @@ necessary. The general schema/serialization/status/media/security/WS and real
 qualification limits above apply to this mode too. CI runs it as an explicit
 step in the same Python job; no status name, partition or runtime permission changes.
 
+### Narrow request proof for closed tagged objects
+
+The full-field HTTP policy can prove one additional request-only case rather
+than rejecting every changed `oneOf` tree. Both resolved parents must retain
+`unevaluatedProperties: false`; their other constraints must be identical. The
+parent permits only `oneOf`, that closure, an optional object type and unchanged
+OpenAPI discriminator metadata. The proof derives actual required string
+`const`/finite `enum` tags from each branch's object declarations and `allOf`
+conjuncts. Tags must be nonempty, pairwise disjoint and unchanged, with every old
+branch matched to exactly one new branch. Array order and schema/path names do
+not establish identity; discriminator metadata alone supplies no proof.
+
+Before this proof, both sides must certify a conservative dialect envelope over
+the original OAS document and **all** repository documents loaded by its reference
+resolver. Only a resource with `openapi: "3.1.0"` whose complete document envelope
+passes the existing dependency's bundled OAS 3.1 meta-schema receives an OAS
+default. This local structural check does not follow the document's references,
+fetch dialects or establish full OpenAPI semantic validity. An ordinary `openapi`
+annotation, even alongside `info` and `paths`, cannot certify a bare schema as an
+OAS document. Resource identity is independent of filename and extension.
+Such an OAS document defaults to the OAS 3.1 base dialect; explicit defaults
+may select that canonical URI or the canonical JSON Schema Draft 2020-12 URI.
+A referenced bare JSON Schema must explicitly declare one of those dialects;
+it does not inherit the referring OAS document's default. Its ordinary `openapi`
+and `jsonSchemaDialect` fields remain annotations. Every `$schema`
+declaration in these original snapshots must also name one of those dialects.
+Draft 7 ignores `unevaluatedProperties`, so its false literal cannot establish
+closure. Unknown/missing dialect context cannot establish it either.
+
+This envelope is intentionally conservative: any unsupported declaration in a
+loaded document, including unused definitions or literal data, disables this
+proof. It does not infer mixed-dialect resource scopes or erase ancestor/target
+declarations when resolving a fragment. A supported `$ref` sibling cannot mask
+an unsupported target. The existing structural rejection remains in force when
+the envelope is not certified. These rules follow the dialect boundaries in
+[OAS 3.1.0 §4.8.24.2.3](https://spec.openapis.org/oas/v3.1.0.html#specifying-schema-dialects).
+
+Matched branches retain every existing property predicate, required name and
+conjunct. Only optional property declarations for names absent from **all** old
+conjuncts of that branch can be added. An old valid object cannot contain such a
+name: the selected old branch never evaluates it, and the parent rejects
+unevaluated names. The added declaration therefore never runs on an old valid
+input. Its validity and evaluated property names remain unchanged, while the
+required disjoint tags retain exactly one successful branch. This establishes
+`Old ⊆ New` for this subset without treating zero structural findings as a
+general schema inclusion proof.
+
+At the affected object level, additional/pattern properties, patterns,
+dependencies, conditionals, `not`, property counts, other evaluation keywords,
+unknown keywords and unsupported composition fail closed, even when unchanged.
+Branch-local `unevaluatedProperties` is unsupported. The one supported closure
+is the unchanged false parent; open or schema-valued closures are rejected.
+Existing field-value schemas (including scalar regex predicates) remain exact
+opaque subtrees, and a new optional field's value schema is not evaluated on any
+old valid input. No regex-language inclusion or arbitrary evaluation proof is
+attempted. Unresolved/dynamic/recursive references cannot use this proof.
+
+Responses, the original OpenAI policy, arbitrary branch widening/removal, tag
+changes and other `oneOf` transformations retain their existing conservative
+checks. Independent regressions retain the integer overlap witness, use a
+different path/tag/field vocabulary, exercise rejected constraints and verify
+old/new request acceptance with Draft 2020-12 validators and generated consumers.
+
 ## Separate realtime runtime selection
 
 The [declared realtime constraint check](realtime-contract-change-checks.md)

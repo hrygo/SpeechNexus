@@ -92,7 +92,18 @@ def bundle_contracts(manifest: dict[str, Any]) -> dict[str, Any]:
             if not fragment.startswith("/"):
                 raise ValueError(f"Unsupported reference fragment: {fragment}")
             for token in fragment[1:].split("/"):
-                node = node[unquote(token).replace("~1", "/").replace("~0", "~")]
+                token = unquote(token).replace("~1", "/").replace("~0", "~")
+                if isinstance(node, list):
+                    if (
+                        not token.isascii()
+                        or not token.isdecimal()
+                        or (len(token) > 1 and token.startswith("0"))
+                        or int(token) >= len(node)
+                    ):
+                        raise ValueError("Invalid array index in contract reference")
+                    node = node[int(token)]
+                else:
+                    node = node[token]
         name = (
             (fragment.rsplit("/", 1)[-1] or "Root")
             if path == primary

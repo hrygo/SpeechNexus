@@ -281,6 +281,36 @@ export interface paths {
      *     returns an immutable effective configuration. A repeated Idempotency-Key
      *     with the same canonical intent replays the original job; a different
      *     intent returns 409 `idempotency_conflict`.
+     *
+     *     TTS requests may supply `model_binding` as an exact immutable reference.
+     *     With this field, `model` must equal that binding's `logical_model` and
+     *     the binding must support `tts_file`. A new request accepts only the
+     *     exact authoritative publication head (including its internal revision ID),
+     *     and that revision must be published and non-retired. The head may move
+     *     back to an older non-retired revision; a cleared head selects nothing.
+     *     There is no fallback to the maximum published revision. Missing/unpublished,
+     *     retired, unselected, mismatched-model and unsupported-task pins return
+     *     422 `model_binding_not_published`, `model_binding_retired`,
+     *     `model_binding_not_current`, `model_binding_mismatch` and
+     *     `model_binding_task_not_supported`, respectively. These errors are not
+     *     retryable unchanged. Obtain a fresh selection for a new intent only
+     *     after resolving any earlier unknown submission.
+     *
+     *     Original-key replay is checked before mutable publication/workspace
+     *     facts: the same canonical request returns the stored Job even after
+     *     retirement or supersession. A changed pin is another intent and
+     *     conflicts under the same key. After 503 `job_outcome_unknown`, preserve
+     *     the original key and entire request, replay or query the original Job;
+     *     never switch the key/version to recover. Keyless requests have no such
+     *     replay guarantee. A queued Job/effective configuration is a public
+     *     submission fact, not proof of execution, full resource admission or
+     *     engine readiness. Deployments without an assembled planner remain
+     *     fail-closed for dispatch.
+     *
+     *     Without `model_binding`, existing resolution is unchanged: this
+     *     implementation uses `model` as the binding object ID and selects its
+     *     current non-retired publication. It does not promise a caller-selected
+     *     version or treat object ID and logical model as interchangeable.
      */
     post: operations["createJob"];
     delete?: never;
@@ -1224,6 +1254,13 @@ export interface components {
     TtsJobCreate: components["schemas"]["JobCreateBase"] & {
       /** @constant */
       kind: "tts";
+      /**
+       * @description Optional exact binding for file TTS; revision stays a decimal
+       *     string. `model` must match its logical_model. No default or
+       *     fallback to another binding/version. Older strict servers
+       *     reject this field; deploy the supporting server before clients.
+       */
+      model_binding?: components["schemas"]["ResourceReference"];
       input: components["schemas"]["TtsJobInput"];
       voice: components["schemas"]["ResourceReference"];
       pronunciation?: components["schemas"]["ResourceReference"];

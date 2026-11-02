@@ -32,6 +32,10 @@ def test_valid_deployment_is_one_explicit_snapshot(tmp_path: Path) -> None:
     assert configuration is not None
     assert configuration.policy.config_revision == "policy-tts"
     assert configuration.policy.sample_rate_hz == 24000
+    assert configuration.builtin_voice_binding.voice_id == "voice-demo"
+    assert configuration.builtin_voice_binding.voice_revision == "1"
+    assert configuration.builtin_voice_binding.voice_revision_id == "voice-rev-1"
+    assert configuration.builtin_voice_binding.native_speaker_id == "Vivian"
     assert configuration.worker.max_result_bytes == 1024 * 1024
     target = configuration.endpoint.execution_target
     assert target is not None
@@ -45,7 +49,12 @@ def test_valid_deployment_is_one_explicit_snapshot(tmp_path: Path) -> None:
     [
         "unknown",
         "protocol",
+        "legacy-protocol",
         "missing",
+        "missing-voice-binding",
+        "missing-voice-field",
+        "extra-voice-field",
+        "voice-speaker-mismatch",
         "implicit-policy",
         "extra-policy",
         "payload-bound",
@@ -70,8 +79,18 @@ def test_invalid_deployment_refuses_before_authority_or_network(
         document["unexpected"] = "synthetic-secret"
     elif change == "protocol":
         document["protocol"] = "future-v2"
+    elif change == "legacy-protocol":
+        document["protocol"] = "file_tts_v1"
     elif change == "missing":
         del document["worker_limits"]
+    elif change == "missing-voice-binding":
+        del document["builtin_voice_binding"]
+    elif change == "missing-voice-field":
+        del document["builtin_voice_binding"]["voice_revision_id"]
+    elif change == "extra-voice-field":
+        document["builtin_voice_binding"]["qualification"] = "passed"
+    elif change == "voice-speaker-mismatch":
+        document["builtin_voice_binding"]["native_speaker_id"] = "Serena"
     elif change == "implicit-policy":
         document["tts_policy"].pop("voice")
     elif change == "extra-policy":
@@ -105,9 +124,33 @@ def test_invalid_deployment_refuses_before_authority_or_network(
         document["tts_policy"]["speed"] = float("nan")
     payload = json.dumps(document)
     if change == "duplicate":
-        payload = payload[:-1] + ', "protocol": "file_tts_v1"}'
+        payload = payload[:-1] + ', "protocol": "file_tts_v2"}'
     path.write_text(payload)
     path.chmod(0o600)
+    with pytest.raises(ValueError, match="invalid gateway file TTS configuration"):
+        load_file_tts_configuration(configured(tmp_path, path))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("voice_id", ""),
+        ("voice_id", "voice invalid"),
+        ("voice_revision_id", ""),
+        ("voice_revision_id", "X" * 129),
+        ("voice_revision", "0"),
+        ("voice_revision", "01"),
+        ("voice_revision", "1" * 20),
+        ("voice_revision", True),
+        ("voice_revision", 1),
+        ("native_speaker_id", ""),
+        ("native_speaker_id", "vivian"),
+    ],
+)
+def test_invalid_voice_binding_cannot_activate(tmp_path: Path, field: str, value: Any) -> None:
+    path, document = write_tts_configuration(tmp_path / "deployment")
+    document["builtin_voice_binding"][field] = value
+    path.write_text(json.dumps(document))
     with pytest.raises(ValueError, match="invalid gateway file TTS configuration"):
         load_file_tts_configuration(configured(tmp_path, path))
 

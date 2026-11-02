@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from speechnexus_gateway.application.ingress import GatewayIngress
 from speechnexus_gateway.domain.file_execution import FileExecutionLedger, FileExecutionLimits
 from speechnexus_gateway.domain.tts import (
+    BuiltinVoiceBinding,
     TtsEngineFormat,
     TtsPolicy,
     TtsTask,
@@ -55,10 +56,11 @@ class _Objects(_PrivateConfiguration):
 
 
 class _Deployment(_PrivateConfiguration):
-    protocol: Literal["file_tts_v1"]
+    protocol: Literal["file_tts_v2"]
     controlled_endpoint_file: str
     objects: _Objects
     tts_policy: dict[str, Any]
+    builtin_voice_binding: dict[str, Any]
     worker_limits: dict[str, Any]
 
 
@@ -70,12 +72,14 @@ class FileTtsConfiguration:
     results: MinioTtsResults
     policy: TtsPolicy
     worker: FileExecutionLimits
+    builtin_voice_binding: BuiltinVoiceBinding
 
     def execution(self) -> CommandFileTts:
         return CommandFileTts(
             synthesizer=VllmTtsSynthesizer(self.endpoint),
             encoder=LocalTtsEncoder(),
             binding_policy=self.policy,
+            builtin_voice_binding=self.builtin_voice_binding,
             max_payload_bytes=self.worker.max_result_bytes,
         )
 
@@ -122,6 +126,14 @@ def load_file_tts_configuration(settings: Settings) -> FileTtsConfiguration | No
         )
         if policy.sample_rate_hz != 24000:
             raise ValueError
+        voice_binding = BuiltinVoiceBinding(
+            **explicit_fields(
+                deployment.builtin_voice_binding,
+                {item.name for item in fields(BuiltinVoiceBinding)},
+            )
+        )
+        if voice_binding.native_speaker_id != policy.voice:
+            raise ValueError
         endpoint = load_controlled_tts_endpoint(absolute_path(deployment.controlled_endpoint_file))
         target = endpoint.execution_target
         if (
@@ -150,6 +162,6 @@ def load_file_tts_configuration(settings: Settings) -> FileTtsConfiguration | No
             timeout_seconds=deployment.objects.result_timeout_seconds,
             ssl_context=context,
         )
-        return FileTtsConfiguration(endpoint, results, policy, worker)
+        return FileTtsConfiguration(endpoint, results, policy, worker, voice_binding)
     except Exception:
         raise ValueError("invalid gateway file TTS configuration") from None

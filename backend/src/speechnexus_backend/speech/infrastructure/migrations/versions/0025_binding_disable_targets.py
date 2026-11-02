@@ -56,7 +56,10 @@ def upgrade() -> None:
             "JOIN pg_catalog.pg_attribute e "
             "ON e.attrelid=to_regclass('speech_publication_lifecycle_events') "
             "AND e.attname='event_id' "
-            "WHERE con.conrelid=to_regclass('speech_binding_disable_intents')"
+            "WHERE con.conrelid=to_regclass('speech_binding_disable_intents') "
+            # PostgreSQL 18 records NOT NULL in pg_constraint too. Nullability
+            # was checked above; this check still admits exactly one PK and FK.
+            "AND con.contype <> 'n'"
         )
     ).scalar_one()
     if not constraints_ok:

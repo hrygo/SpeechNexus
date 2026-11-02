@@ -11,8 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from speechnexus_node_controller.domain.intents import (
+    InvalidRuntimeRequestError,
+    require_identifier,
+)
 
 
 class Settings(BaseSettings):
@@ -24,6 +29,7 @@ class Settings(BaseSettings):
         env_prefix="SPEECHNEXUS_CONTROLLER_",
         extra="ignore",
         frozen=True,
+        hide_input_in_errors=True,
     )
 
     environment: Literal["development", "test", "staging", "production"] = "development"
@@ -49,3 +55,17 @@ class Settings(BaseSettings):
     local_observer_enabled: bool = True
     observation_interval_seconds: float = Field(default=2.0, gt=0, le=3600)
     observation_batch_size: int = Field(default=50, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def validate_production_node_identity(self) -> Settings:
+        """Require a configured production identity before opening node resources."""
+        if self.environment == "production":
+            if "node_id" not in self.model_fields_set or self.node_id == "node-local-1":
+                raise ValueError("production requires an explicit non-default node_id")
+            if self.node_id != self.node_id.strip():
+                raise ValueError("production node_id must not have surrounding whitespace")
+            try:
+                require_identifier(self.node_id, "node_id")
+            except InvalidRuntimeRequestError as error:
+                raise ValueError("production node_id must be a valid runtime identifier") from error
+        return self

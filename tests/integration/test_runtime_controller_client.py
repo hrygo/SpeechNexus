@@ -143,7 +143,7 @@ async def test_native_tls_warming_ready_and_stop_preserve_the_single_budget_auth
             assert stopped_fact.observation.stop_evidence is not None
             assert observe(runtime, stopped_fact).outcome == "committed"
             assert held(runtime) == HOST.held.values
-        assert node.methods == ["POST", "GET", "GET", "GET", "GET", "POST"]
+        assert node.methods == ["POST", "GET", "GET", "GET", "GET", "GET", "POST"]
         assert len(node.runtime.prepared) == len(node.runtime.stopped) == 1
 
 

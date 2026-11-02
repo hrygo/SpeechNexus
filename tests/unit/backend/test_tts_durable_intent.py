@@ -472,7 +472,8 @@ def test_deadline_covers_admission_query_and_recovery(slow_phase: str) -> None:
             if slow_phase == "query":
                 await asyncio.sleep(0.03)
             request = build_tts_submit(short_plan, execution())
-            return {**request, "execution_state": "succeeded"}
+            state = "executing" if slow_phase == "recover_expired" else "succeeded"
+            return {**request, "execution_state": state}
 
     class Cancellation:
         def __init__(self) -> None:
@@ -496,8 +497,10 @@ def test_deadline_covers_admission_query_and_recovery(slow_phase: str) -> None:
                 adapter.recover("request-test", timeout_seconds=0.01)
             else:
                 adapter.synthesize(short_plan)
-        if slow_phase in ("admission", "recover_expired", "recover_slow"):
+        if slow_phase in ("admission", "recover_slow"):
             assert gateway.calls == 0
+        if slow_phase == "recover_expired":
+            assert gateway.calls == 1
         if slow_phase == "recover_slow":
             assert time.monotonic() - started < 0.5
         if slow_phase in ("admission", "query"):
@@ -576,3 +579,129 @@ def test_old_persisted_plan_without_authority_still_recovers_original_identity()
     restored, request = reader.recover("request-test")
     assert restored == old
     assert request == original["gateway_request"]
+
+
+@pytest.mark.parametrize("state", ["succeeded", "missing", "executing", "wrong_identity"])
+def test_expired_original_is_queried_before_recovery_decision(state: str) -> None:
+    from speechnexus_contracts.execution_canonical import effective_execution_request
+
+    from speechnexus_backend.speech.application.speech_synthesis import SpeechDeadlineExceededError
+    from speechnexus_backend.speech.infrastructure.transcription_submit import command_digest
+
+    payload = b"\0\0" * 2400
+    request = build_tts_submit(plan(), execution())
+    request["deadline_at"] = "2020-01-01T00:00:00Z"
+
+    class OriginalAdmission(Admission):
+        def recover(self, request_id: str) -> tuple[SpeechPlan, SubmitExecutionRequest]:
+            return plan(), request
+
+    class OriginalGateway(Gateway):
+        queries = 0
+
+        async def query(self, identity: str) -> Any:
+            self.queries += 1
+            if state == "missing":
+                raise GatewayRejectedError("not found", request_may_have_run=False, status_code=404)
+            if state == "wrong_identity":
+                return {**request, "lease_id": "lease-other", "execution_state": "succeeded"}
+            return {**request, "execution_state": state}
+
+        async def audio_staging_result(self, identity: str) -> Any:
+            digest = command_digest(effective_execution_request(request))
+            return {
+                "submit_intent_id": identity,
+                "request_digest": digest,
+                "staging_result": {
+                    "request_digest": digest,
+                    "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
+                    "storage_version": "version-test",
+                    "media_type": "audio/pcm",
+                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                },
+            }
+
+    class Results:
+        def read(self, reference: Any, storage_version: str) -> bytes:
+            return payload
+
+    gateway = OriginalGateway()
+    adapter = GatewaySynthesizer(
+        cast(GatewayExecutionClient, gateway), OriginalAdmission(), Results()
+    )
+    try:
+        if state == "succeeded":
+            assert adapter.recover("request-test", timeout_seconds=1).payload == payload
+        elif state == "wrong_identity":
+            with pytest.raises(SpeechUnavailableError):
+                adapter.recover("request-test", timeout_seconds=1)
+        else:
+            with pytest.raises(SpeechDeadlineExceededError):
+                adapter.recover("request-test", timeout_seconds=1)
+        assert gateway.queries == 1
+        assert gateway.submissions == []
+    finally:
+        adapter.close()
+
+
+@pytest.mark.parametrize("phase", ["query", "receipt", "object"])
+def test_recovery_budget_bounds_original_query_and_result_reads(phase: str) -> None:
+    import asyncio
+    import threading
+    import time
+
+    from speechnexus_contracts.execution_canonical import effective_execution_request
+
+    from speechnexus_backend.speech.application.speech_synthesis import SpeechDeadlineExceededError
+    from speechnexus_backend.speech.infrastructure.transcription_submit import command_digest
+
+    release = threading.Event()
+    request = build_tts_submit(plan(), execution())
+    request["deadline_at"] = "2020-01-01T00:00:00Z"
+    payload = b"\0\0" * 2400
+
+    class OriginalAdmission(Admission):
+        def recover(self, request_id: str) -> tuple[SpeechPlan, SubmitExecutionRequest]:
+            return plan(), request
+
+    class SlowGateway(Gateway):
+        async def query(self, identity: str) -> Any:
+            if phase == "query":
+                await asyncio.sleep(0.2)
+            return {**request, "execution_state": "succeeded"}
+
+        async def audio_staging_result(self, identity: str) -> Any:
+            if phase == "receipt":
+                await asyncio.sleep(0.2)
+            digest = command_digest(effective_execution_request(request))
+            return {
+                "submit_intent_id": identity,
+                "request_digest": digest,
+                "staging_result": {
+                    "request_digest": digest,
+                    "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
+                    "storage_version": "version-test",
+                    "media_type": "audio/pcm",
+                    "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
+                },
+            }
+
+    class Results:
+        def read(self, reference: Any, storage_version: str) -> bytes:
+            if phase == "object":
+                release.wait(1)
+            return payload
+
+    gateway = SlowGateway()
+    adapter = GatewaySynthesizer(
+        cast(GatewayExecutionClient, gateway), OriginalAdmission(), Results()
+    )
+    started = time.monotonic()
+    try:
+        with pytest.raises(SpeechDeadlineExceededError):
+            adapter.recover("request-test", timeout_seconds=0.03)
+        assert time.monotonic() - started < 0.5
+        assert gateway.submissions == []
+    finally:
+        release.set()
+        adapter.close()

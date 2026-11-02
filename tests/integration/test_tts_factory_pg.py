@@ -523,3 +523,188 @@ def test_real_postgres_factory_stays_closed_without_qualification(
 
     monkeypatch.setattr(GatewayExecutionClient, "from_settings", forbid)
     assert speech_runtime.build_speech(settings) is None
+
+
+@pytest.mark.parametrize("blocking_lock", ["pool", "settlement"])
+@pytest.mark.parametrize("expired_authority", ["qualification", "source"])
+def test_tts_admission_rechecks_expiry_after_final_lock(
+    admission_database: AdmissionDatabase,
+    tmp_path: Path,
+    blocking_lock: str,
+    expired_authority: str,
+) -> None:
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+
+    from tests.unit.backend.test_tts_durable_intent import plan
+
+    from speechnexus_backend.speech.application.admission import AdmissionService
+    from speechnexus_backend.speech.application.speech_synthesis import SpeechUnavailableError
+    from speechnexus_backend.speech.infrastructure.admission_postgres import (
+        PostgresAdmissionTransactions,
+    )
+    from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
+        require_builtin_voice,
+    )
+    from speechnexus_backend.speech.infrastructure.tts_admission import (
+        PostgresOriginalTtsCommands,
+        PostgresTtsAdmission,
+        PostgresTtsFacts,
+        _identities,
+    )
+    from speechnexus_backend.speech.infrastructure.tts_recipe import load_tts_recipe
+
+    _voice(admission_database)
+    db = admission_database.runtime.foundation.database
+    path = tmp_path / "tts-expiry.json"
+    _recipe(path, admission_database.runtime.now() + 60_000_000)
+    pool = admission_database.runtime.pool
+    assert pool is not None
+    service = PostgresTtsAdmission(
+        PostgresTtsFacts(pool, timeout_seconds=10),
+        AdmissionService(
+            PostgresAdmissionTransactions(
+                pool,
+                max_command_bytes=1_048_576,
+                timeout_seconds=10,
+                require_builtin_voice=require_builtin_voice,
+            )
+        ),
+        PostgresOriginalTtsCommands(pool),
+        load_tts_recipe(path),
+    )
+    selected = replace(
+        plan(),
+        model_id="asr-quality",
+        voice_id="voice-vivian",
+        voice_revision=1,
+        voice_revision_id="voice-rev-1",
+        native_speaker_id="Vivian",
+        gateway_policy_digest="sha256:" + "1" * 64,
+    )
+    if expired_authority == "qualification":
+        db.query(
+            "UPDATE speech_builtin_voice_approvals SET expires_at=date_trunc('second', "
+            "clock_timestamp()) + interval '5 seconds', facts=jsonb_set(facts,'{expires_at_us}', "
+            "to_jsonb((extract(epoch from (date_trunc('second', clock_timestamp()) "
+            "+ interval '5 seconds')) * 1000000)::bigint)) WHERE approval_id='approval-1'"
+        )
+        table, key = "speech_builtin_voice_approvals", "approval_id"
+        value = "approval-1"
+    else:
+        db.query(
+            "UPDATE speech_builtin_voice_source_approvals SET expires_at="
+            "date_trunc('second', clock_timestamp()) + interval '5 seconds' "
+            "WHERE source_approval_id='source-1'"
+        )
+        table, key = "speech_builtin_voice_source_approvals", "source_approval_id"
+        value = "source-1"
+    before = admission_database.snapshot()
+    blocker = db.blocker()
+    try:
+        if blocking_lock == "pool":
+            blocker.execute(
+                "SELECT * FROM resource_pools WHERE pool_id=%s FOR UPDATE", (PLAN.binding.pool_id,)
+            )
+        else:
+            blocker.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended('speechnexus:tts-cancel:' "
+                "|| current_schema() || ':' || %s, 0))",
+                (_identities(selected.request_id)[0].operation_id,),
+            )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(service.admit, selected)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if db.query(
+                    "SELECT pid FROM pg_stat_activity WHERE %s=ANY(pg_blocking_pids(pid))",
+                    (blocker.info.backend_pid,),
+                ):
+                    break
+                if pending.done():
+                    pending.result()
+                    pytest.fail("admission finished without the expected lock wait")
+                time.sleep(0.01)
+            else:
+                pytest.fail("admission did not wait on the expected lock")
+            while not db.query(
+                f"SELECT expires_at <= clock_timestamp() AS expired FROM {table} WHERE {key}=%s",
+                (value,),
+            )[0]["expired"]:
+                if time.monotonic() >= deadline:
+                    pytest.fail("authority did not expire while admission was blocked")
+                time.sleep(0.02)
+            blocker.commit()
+            with pytest.raises(SpeechUnavailableError):
+                pending.result(timeout=10)
+        assert admission_database.snapshot() == before
+        assert db.query("SELECT count(*) AS n FROM speech_tts_settlement")[0]["n"] == 0
+    finally:
+        blocker.close()
+
+
+def test_original_tts_admission_replays_after_qualification_expires(
+    admission_database: AdmissionDatabase, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    from tests.unit.backend.test_tts_durable_intent import plan
+
+    from speechnexus_backend.speech.application.admission import AdmissionService
+    from speechnexus_backend.speech.domain.admission import AdmissionResult, AdmitRecipe
+    from speechnexus_backend.speech.infrastructure.admission_postgres import (
+        PostgresAdmissionTransactions,
+    )
+    from speechnexus_backend.speech.infrastructure.builtin_voice_qualification import (
+        require_builtin_voice,
+    )
+    from speechnexus_backend.speech.infrastructure.tts_admission import (
+        PostgresOriginalTtsCommands,
+        PostgresTtsAdmission,
+        PostgresTtsFacts,
+    )
+    from speechnexus_backend.speech.infrastructure.tts_recipe import load_tts_recipe
+
+    _voice(admission_database)
+    db = admission_database.runtime.foundation.database
+    path = tmp_path / "tts-replay.json"
+    _recipe(path, admission_database.runtime.now() + 60_000_000)
+    pool = admission_database.runtime.pool
+    assert pool is not None
+
+    class RecordingAdmission(AdmissionService):
+        command: AdmitRecipe | None = None
+
+        def admit(self, command: AdmitRecipe) -> AdmissionResult:
+            self.command = command
+            return super().admit(command)
+
+    admission = RecordingAdmission(
+        PostgresAdmissionTransactions(
+            pool, max_command_bytes=1_048_576, require_builtin_voice=require_builtin_voice
+        )
+    )
+    service = PostgresTtsAdmission(
+        PostgresTtsFacts(pool), admission, PostgresOriginalTtsCommands(pool), load_tts_recipe(path)
+    )
+    selected = replace(
+        plan(),
+        model_id="asr-quality",
+        voice_id="voice-vivian",
+        voice_revision=1,
+        voice_revision_id="voice-rev-1",
+        native_speaker_id="Vivian",
+        gateway_policy_digest="sha256:" + "1" * 64,
+    )
+    service.admit(selected)
+    assert admission.command is not None
+    before = admission_database.snapshot()
+    db.query(
+        "UPDATE speech_builtin_voice_approvals SET "
+        "expires_at=clock_timestamp()-interval '1 second' WHERE approval_id='approval-1'"
+    )
+    replay = admission.admit(admission.command)
+    assert replay.outcome == "replayed"
+    assert admission_database.snapshot() == before
+    assert db.query("SELECT count(*) AS n FROM speech_tts_settlement")[0]["n"] == 1

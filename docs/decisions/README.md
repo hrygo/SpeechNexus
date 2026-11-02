@@ -18,4 +18,6 @@ ADR 记录已确认的范围和理由；[项目主设计](../speechnexus-product
 
 - [0012：公开 Job 面与执行装配的所有权](0012-public-job-surface.md)（accepted，2026-10-27；公开读模型独立于协调事实，状态只前进、终态不回头，提交经持久意图装配；路由与两条链验收待实现）。
 
+- [0013：binding 生命周期管理 HTTP 与激活冲突提示](0013-binding-lifecycle-admin-http.md)（proposed，2026-10-29；补录已合入路由的契约选择及冲突提示，待非作者审查，不结算 #273 或投产 Gate）。
+
 [文档索引](../README.md)

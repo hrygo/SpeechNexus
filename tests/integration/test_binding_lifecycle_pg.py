@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from collections.abc import Iterator
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -232,24 +233,32 @@ def sandbox() -> Iterator[Sandbox]:
         pytest.fail("Configure an isolated PostgreSQL DSN; skip is not lifecycle evidence")
     suffix = uuid.uuid4().hex[:12]
     schema, role = "sn_life_" + suffix, "sn_life_role_" + suffix
-    engine = create_engine(
-        url.replace("postgresql://", "postgresql+psycopg://", 1),
-        poolclass=NullPool,
-        hide_parameters=True,
-    )
     config = Config(str(ROOT / "alembic.ini"))
     config.attributes["schema"] = schema
-    try:
+    with ExitStack() as cleanup:
+        engine = create_engine(
+            url.replace("postgresql://", "postgresql+psycopg://", 1),
+            poolclass=NullPool,
+            hide_parameters=True,
+        )
+        cleanup.callback(engine.dispose)
+        admin = psycopg.connect(url, autocommit=True)
+        cleanup.callback(admin.close)
+        # Drop the new role after its schema, even if DROP OWNED fails.
+        role_cleanup = cleanup.enter_context(ExitStack())
+        # Claim a fresh namespace before migration. On a name collision, never
+        # migrate into or clean up someone else's schema.
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+        cleanup.callback(admin.execute, f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         with engine.connect() as connection:
             config.attributes["connection"] = connection
             migration.upgrade(config, "head")
-    finally:
-        engine.dispose()
-    admin = psycopg.connect(url, autocommit=True)
-    admin.execute(f'SET search_path TO "{schema}", pg_catalog')
-    admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
-    pool = None
-    try:
+        admin.execute(f'SET search_path TO "{schema}", pg_catalog')
+        admin.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{PASSWORD}'")
+        # Register only successfully acquired resources. ExitStack still attempts
+        # remaining cleanup if one callback fails and propagates that failure.
+        role_cleanup.callback(admin.execute, f'DROP ROLE IF EXISTS "{role}"')
+        cleanup.callback(admin.execute, f'DROP OWNED BY "{role}"')
         for grant in (
             *binding_lifecycle_grants(schema, role),
             *job_runtime_grants(schema, role),
@@ -269,6 +278,7 @@ def sandbox() -> Iterator[Sandbox]:
             max_size=2,
             name="life-" + suffix,
         )
+        cleanup.callback(pool.close)
         pool.open()
         adapter = PostgresPublicJobs(pool, timeout_seconds=3)
         yield Sandbox(
@@ -283,13 +293,6 @@ def sandbox() -> Iterator[Sandbox]:
             facts=adapter,
             jobs=PublicJobs(adapter, adapter),
         )
-    finally:
-        if pool is not None:
-            pool.close()
-        admin.execute(f'DROP OWNED BY "{role}"')
-        admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        admin.execute(f'DROP ROLE IF EXISTS "{role}"')
-        admin.close()
 
 
 def _body(*, revision: int = 2) -> dict[str, Any]:
@@ -542,6 +545,8 @@ async def test_retire_rollback_etag_selection_inflight_jobs_and_audit(sandbox: S
         stale_cas = await http.post(ACTIVATE_1, json={"expected_current_revision": "2"})
         assert stale_cas.status_code == 409, stale_cas.text
         assert stale_cas.json()["error"]["code"] == "configuration_changed"
+        assert "expected_current_revision=null" in stale_cas.json()["error"]["message"]
+        assert stale_cas.json()["error"]["retryable"] is False
 
         rolled_back = await http.post(ACTIVATE_1, json={"expected_current_revision": None})
         assert rolled_back.status_code == 200, rolled_back.text

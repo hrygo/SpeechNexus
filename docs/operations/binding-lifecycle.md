@@ -71,14 +71,20 @@ curl -sS -X POST \
 ```
 
 `expected_current_revision` 是操作者看到的当前 head，用于 compare-and-swap；
-不匹配返回 `409 configuration_changed`。当前 head 已被退役清空时传 `null`：
+不匹配返回 `409 configuration_changed`，`retryable: false`。错误 `message`
+说明本次事务持锁检查时需要的 `expected_current_revision`：例如当前 head 为
+revision 2 时显示 `expected_current_revision="2"`，已清空时显示
+`expected_current_revision=null`。此值是拒绝时的观察，收到响应时可能已过时；
+重新核实 binding 状态并确认激活目标后再提交，不自动套用提示值重试，也不解析
+文案驱动客户端逻辑。当前 head 已被退役清空时传 `null`：
 
 ```json
 {"expected_current_revision": null}
 ```
 
-成功只更新 head/目录版本并追加审计，不创建新 publication。对外目录和 Job
-选择立即回到目标 revision 当时的不可变定义、任务、recipe 与证据；ETag 再次变化。
+成功激活不创建新 publication。目标不同于当前 head 时更新 head/目录版本并追加审计；
+对外目录和后续 Job 选择随即切换至目标 revision 当时的不可变定义、任务、recipe 与证据，
+ETag 随之变化。目标已为当前 head 时，新的成功 no-op 只追加审计，不改变目录版本或 ETag。
 已退役或 disabled 的 revision 本身不能激活，应回滚到另一个仍然 published 的
 revision。draft 也不能激活。
 
@@ -88,7 +94,18 @@ Job 在准入时把完整有效配置固化到 `speech_job_submissions.effective
 退役或回滚只影响后续选择；在途 Job 不重读 head，不因退役取消、改写或失败。
 退役也不会自动停止或释放执行算力。
 
-每次成功变更写入 append-only `speech_publication_lifecycle_events`，至少包含
+激活、retire 和 disable 共用部署范围的 binding 生命周期 key 命名空间，跨 binding、
+revision、调用方与 credential label；只绑定已提交结果。先前任一操作成功后，换操作、
+binding、revision 或 canonical body 均返回 `idempotency_conflict`。
+明确拒绝不占 key，也不记拒绝意图或错误回执。
+未提交时后续请求重新判断当前状态；已提交后，同键同完整意图在 CAS 前重放原结果，
+异意图返回 `idempotency_conflict`。这是服务端边界，不授权客户端自动修改被拒绝请求。
+新激活目标已是当前 head 时为成功 no-op：写事件、绑定 key，head/catalogue 不变。
+两个 no-op 可均成功；no-op 先于变更时可均成功，变更先于期待旧 head 的命令时后者拒绝。
+同一初始 head 上两个都要变更的新命令才受单一赢家约束；原结果重放不再改变 head。
+
+每个新的成功激活（包括 no-op）和退役写入 append-only
+`speech_publication_lifecycle_events`，至少包含
 action、binding/revision、result status、请求 ID、actor 类型/标签、发生时间、
 policy revision、intent digest、幂等键摘要与包含 reason 的
 `change_summary_json`。核对命令：
@@ -109,6 +126,9 @@ UPDATE/DELETE。
 超时、连接中断或提交结果未知返回
 `503 binding_result_unknown`，`retryable: false`。客户端不得换 key 或伪造新意图；
 保留原路径、完整 body 和原 `Idempotency-Key` 显式重放同一 POST，以收敛到原结果。
+完整 body 包括原 `expected_current_revision`；不可套用提示值重基 CAS。后一次拒绝
+或当前 head GET 都不能证明先前未知提交的结果。未保留原 key 时不承诺安全自动恢复。
+dev5 的兼容影响与同版测试矩阵见[激活验证说明](binding-activation-verification.md)。
 
 ## 验证与边界
 

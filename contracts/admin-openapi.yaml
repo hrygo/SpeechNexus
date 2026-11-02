@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SpeechNexus administration API
-  version: 0.1.0.dev4
+  version: 0.1.0.dev5
   description: |
     Deployment-scoped administration and observation API. These routes do not
     establish a user identity, role, or tenant boundary. A deployment may expose
@@ -713,16 +713,48 @@ paths:
         rollback path; it never creates a new publication. `expected_current_revision`
         is the active binding revision observed by the operator and is a
         compare-and-swap guard; null is valid only when retirement cleared the
-        pointer. A mismatch returns 409 `configuration_changed`. Draft, retired
-        and disabled revisions cannot be activated.
+        pointer. A mismatch returns 409 `configuration_changed` with
+        `retryable: false`. The human-readable error message names the expected
+        `expected_current_revision` value: the current public revision observed
+        under the activation lock, or JSON null for an empty head. This observation
+        may already be stale when received; refresh the binding state and confirm
+        the intended activation before resubmitting. Message wording is not a
+        machine-readable recovery field. Draft, retired and disabled revisions
+        cannot be activated.
 
-        An identical Idempotency-Key replay returns the original activation; a
-        changed intent under the same key returns 409 `idempotency_conflict`.
+        Activation and retirement (`mode: retire` or `mode: disable`) share one
+        deployment-wide binding lifecycle Idempotency-Key namespace across
+        binding IDs, revisions and callers, including credential labels. A key
+        binds only a committed result from these operations, including a
+        successful activation no-op. A rejected request does not reserve the key
+        or persist its intent or error result. Without a committed lifecycle
+        result, each request is evaluated against the current state. Once
+        committed, identical complete intent under that key returns the original
+        result before checking the current head or CAS. Changing the operation,
+        binding, revision or canonical body returns 409 `idempotency_conflict`,
+        including when a prior retirement or disable result occupies the key.
+
+        A new command whose target already equals the head succeeds as a no-op:
+        it records an activation event but does not advance the head or catalogue
+        revision. For two new commands competing on the same initial head, both
+        intending to change it, at most one succeeds; without other writers and
+        with both targets eligible, exactly one succeeds. Two no-ops may both
+        succeed. A no-op followed by a change may both succeed; a change followed
+        by a command expecting the old head rejects the latter. An original-result
+        replay may succeed in any of these orders without changing the head or
+        adding an event. The guard compares revision equality, not a single-use
+        activation epoch, and does not prevent intervening changes back to a revision.
+
         An unreadable original result or uncertain commit returns 503
         `binding_result_unknown` with `retryable: false`; it is not evidence that
         the pointer stayed unchanged. A caller retaining the original
-        Idempotency-Key may explicitly replay the same complete POST to recover
-        its result. No automatic retry or query-by-key resource is provided.
+        Idempotency-Key must preserve the original path, complete body (including
+        expected_current_revision) and key for explicit replay of the same POST.
+        Do not replace the key, edit the request or rebase CAS to resolve an
+        unknown result. A later rejection or a GET of the current head does not
+        establish the outcome of an earlier unknown submission. Without the
+        original key, no safe automatic recovery is promised. No automatic retry
+        or query-by-key resource is provided.
       parameters:
         - $ref: "#/components/parameters/BindingIdPath"
         - $ref: "#/components/parameters/RevisionPath"
@@ -783,9 +815,15 @@ paths:
         selection change with an operator reason and a durable cancellation
         intent. The disabled receipt proves only that new selection is blocked;
         cleanup is pending or unknown, and it does not prove cancellation or
-        capacity release. The response header reports this limitation. Repeating
-        the same Idempotency-Key
-        returns the original result; a second retirement with a new key returns
+        capacity release. The response header reports this limitation. Activation
+        and retirement (`mode: retire` or `mode: disable`) share one deployment-wide
+        binding lifecycle Idempotency-Key namespace across binding IDs, revisions
+        and callers, including credential labels. Only committed results occupy
+        a key; rejected requests do not reserve it. Repeating the same key and
+        complete canonical intent returns the original result before checking
+        current state. Changing the operation, binding, revision or canonical
+        body returns 409 `idempotency_conflict`, including when a prior activation
+        result occupies the key. A second retirement with a new key returns
         409 `revision_already_retired`. Retiring a revision that is not the
         active pointer returns 409 `revision_not_current`.
       parameters:

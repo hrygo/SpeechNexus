@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0.dev4",
+  "version": "0.1.0.dev5",
   "examples": [
     {
       "id": "create-original",
@@ -1890,6 +1890,289 @@
       },
       "valid": false,
       "status": 409
+    },
+    {
+      "id": "activate-configuration-changed-revision",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "The active binding revision changed. Expected expected_current_revision=\"2\" when this activation was rejected. Refresh the binding state and confirm the intended activation before resubmitting.",
+            "param": null,
+            "request_id": "synthetic-activation-conflict",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "activate-configuration-changed-full-range",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "The active binding revision changed. Expected expected_current_revision=\"9999999999999999999\" when this activation was rejected. Refresh the binding state and confirm the intended activation before resubmitting.",
+            "param": null,
+            "request_id": "synthetic-activation-conflict",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "activate-configuration-changed-empty-head",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "The active binding revision changed. Expected expected_current_revision=null when this activation was rejected. Refresh the binding state and confirm the intended activation before resubmitting.",
+            "param": null,
+            "request_id": "synthetic-activation-conflict",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": true,
+      "status": 409
+    },
+    {
+      "id": "activate-configuration-changed-rejects-extra-error-field",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "configuration_changed",
+            "type": "invalid_request_error",
+            "message": "The active binding revision changed. Expected expected_current_revision=null when this activation was rejected. Refresh the binding state and confirm the intended activation before resubmitting.",
+            "param": null,
+            "request_id": "synthetic-activation-conflict",
+            "retryable": false,
+            "current_revision": null
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": false,
+      "status": 409
+    },
+    {
+      "id": "activate-success",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "schema_version": "1.0.0",
+          "binding_id": "asr-quality",
+          "revision": "1",
+          "revision_id": "mbrev-asr-quality-1",
+          "logical_model": "asr-quality",
+          "description": "File and full-segment review ASR binding.",
+          "tasks": [
+            "asr_file",
+            "asr_full_segment_review"
+          ],
+          "engine": {
+            "kind": "vllm",
+            "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "runtime_version": "vllm-2026.10"
+          },
+          "artifact_set": [
+            {
+              "role": "weights",
+              "artifact_id": "model-qwen3-asr-1.7b",
+              "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "media_type": "application/x-safetensors",
+              "size_bytes": 4000000000
+            }
+          ],
+          "execution_recipe": {
+            "recipe_revision": "3",
+            "capacity_manifest_id": "cap-asr-quality-7",
+            "stage_roles": [
+              "asr_batch",
+              "asr_review"
+            ],
+            "requires_complete_reservation": true
+          },
+          "parameter_domains": {
+            "asr": {
+              "languages": [
+                "zh",
+                "en",
+                "auto"
+              ],
+              "max_segment_ms": 30000,
+              "finalization_modes": [
+                "full_segment"
+              ],
+              "supports_prompt": true,
+              "supports_word_timestamps": true,
+              "alignment_modes": [
+                "off",
+                "required",
+                "best_effort"
+              ],
+              "diarization_modes": [
+                "off",
+                "required",
+                "best_effort"
+              ],
+              "max_speakers": 8,
+              "supports_rollback_tokens": false
+            }
+          },
+          "release_tier": "experimental",
+          "publication": {
+            "status": "published",
+            "published_at": "2026-10-22T09:00:00Z",
+            "retired_at": null,
+            "capacity_manifest_id": "cap-asr-quality-7",
+            "qualification_report_id": "qrep-asr-quality-7",
+            "disabled_reason": null
+          },
+          "supersedes_revision": null,
+          "created_at": "2026-10-22T09:00:00Z"
+        },
+        "headers": {
+          "Cache-Control": "no-store"
+        }
+      },
+      "valid": true,
+      "status": 200
+    },
+    {
+      "id": "activate-unknown",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "value": {
+        "body": {
+          "error": {
+            "code": "binding_result_unknown",
+            "type": "service_unavailable_error",
+            "message": "The activation result is unknown. Preserve the original complete request and key for explicit replay.",
+            "param": null,
+            "request_id": "profile-synthetic-request",
+            "retryable": false
+          }
+        },
+        "headers": {
+          "Cache-Control": "no-store",
+          "X-Should-Retry": "false"
+        }
+      },
+      "valid": true,
+      "status": 503
+    },
+    {
+      "id": "activate-rejected-intent",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "headers": {
+          "Idempotency-Key": "activate-binding-key"
+        },
+        "body": {
+          "expected_current_revision": "3"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-confirmed-new-intent",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "request",
+      "value": {
+        "path": {
+          "binding_id": "asr-quality",
+          "revision": "1"
+        },
+        "headers": {
+          "Idempotency-Key": "activate-binding-key"
+        },
+        "body": {
+          "expected_current_revision": "2"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "activate-cross-operation-key-conflict",
+      "operation": "activatePublishedModelBindingRevision",
+      "kind": "response",
+      "status": 409,
+      "value": {
+        "body": {
+          "error": {
+            "type": "invalid_request_error",
+            "code": "idempotency_conflict",
+            "message": "The lifecycle key already binds a different committed operation.",
+            "param": null,
+            "retryable": false,
+            "request_id": "synthetic-shared-lifecycle-conflict"
+          }
+        },
+        "headers": {
+          "X-Should-Retry": "false",
+          "Cache-Control": "no-store"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "retire-cross-operation-key-conflict",
+      "operation": "retireModelBindingRevision",
+      "kind": "response",
+      "status": 409,
+      "value": {
+        "body": {
+          "error": {
+            "type": "invalid_request_error",
+            "code": "idempotency_conflict",
+            "message": "The lifecycle key already binds a different committed operation.",
+            "param": null,
+            "retryable": false,
+            "request_id": "synthetic-shared-lifecycle-conflict"
+          }
+        },
+        "headers": {
+          "X-Should-Retry": "false",
+          "Cache-Control": "no-store"
+        }
+      },
+      "valid": true
     }
   ]
 }

@@ -21,7 +21,13 @@ def test_runtime_http_surface_includes_original_intents_and_checkpoint_backed_st
     manifest = json.loads((ROOT / "contracts/bindings.json").read_text())
     source = generator().bundle_http_surface(manifest["http_surfaces"]["runtime"])
     assert contract() == source
-    assert len(source["paths"]) == 3
+    assert set(source["paths"]) == {
+        "/internal/v1/nodes/{node_id}/instance-intents",
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}",
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation",
+        "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/"
+        "{instance_generation}/verified-stop",
+    }
     validate(source)
 
 

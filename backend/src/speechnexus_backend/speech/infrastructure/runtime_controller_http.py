@@ -265,13 +265,21 @@ class HttpRuntimeController:
                                 )
                                 old_wire = json.loads(result.original_document)
                                 new_wire = json.loads(enriched.original_document)
-                                old_wire.pop("idempotent_replay", None)
+                                replay = old_wire.pop("idempotent_replay", None)
                                 new_wire.pop("native_runtime_evidence", None)
                                 if prepare_observation(old_wire).semantic_document != (
                                     prepare_observation(new_wire).semantic_document
                                 ):
                                     raise ValueError("Qualification observation changed")
-                                result = enriched
+                                if replay is not None:
+                                    enriched_wire = json.loads(enriched.original_document)
+                                    enriched_wire["idempotent_replay"] = replay
+                                    prepared_enriched = prepare_observation(enriched_wire)
+                                    result = ControllerObservation(
+                                        prepared_enriched.observation, prepared_enriched.document
+                                    )
+                                else:
+                                    result = enriched
                     if asyncio.get_running_loop().time() >= deadline:
                         raise TimeoutError
                     return result

@@ -522,3 +522,34 @@ async def test_qualification_snapshot_is_authenticated_and_matches_original(chan
             assert result.observation.native_runtime_evidence is not None
             assert json.loads(result.original_document)["native_runtime_evidence"] == evidence
     assert len(calls) == 2
+
+
+async def test_submit_replay_receipt_survives_qualification_enrichment() -> None:
+    evidence = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": "2026-10-24T00:00:00.5Z",
+    }
+    calls: list[tuple[str, str]] = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.method == "POST":
+            return response(request, body=observation(ready=True, replay=True))
+        assert request.url.path.endswith("/qualification-observation")
+        return response(
+            request,
+            body=observation(ready=True, replay=None) | {"native_runtime_evidence": evidence},
+        )
+
+    async with HttpRuntimeController(
+        ENDPOINT, timeout_seconds=1, _transport=httpx.MockTransport(handle)
+    ) as client:
+        result = await client.submit(REQUEST)
+    wire = json.loads(result.original_document)
+    assert wire["idempotent_replay"] is True
+    assert wire["native_runtime_evidence"] == evidence
+    assert result.observation.native_runtime_evidence is not None
+    assert [method for method, _ in calls] == ["POST", "GET"]

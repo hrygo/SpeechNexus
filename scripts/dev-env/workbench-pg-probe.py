@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start one disposable Unix-socket-only PG cluster, test it, and stop it.
+"""Test a disposable Unix-socket-only PG cluster, stop it, and remove its data.
 
 Uses existing PostgreSQL binaries. Never discovers or contacts a running service,
 installs software, modifies shared databases, or creates a persistent service.
@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -216,6 +217,40 @@ def run(
     )
 
 
+def stop_cluster(pg_ctl: str, data: Path) -> bool:
+    """Only an explicit no-server status and absent PID file confirm shutdown."""
+    try:
+        status = subprocess.run(
+            [pg_ctl, "-D", str(data), "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if status.returncode == 0:
+            stop = subprocess.run(
+                [pg_ctl, "-D", str(data), "-m", "fast", "-w", "-t", "20", "stop"],
+                capture_output=True,
+                text=True,
+                timeout=25,
+                check=False,
+            )
+            if stop.returncode != 0:
+                return False
+        elif status.returncode != 3:
+            return False
+        status = subprocess.run(
+            [pg_ctl, "-D", str(data), "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        return status.returncode == 3 and not (data / "postmaster.pid").exists()
+    except OSError, subprocess.TimeoutExpired:
+        return False
+
+
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pg-bin", type=Path, required=True)
@@ -251,6 +286,11 @@ def argument_parser() -> argparse.ArgumentParser:
         "--browser",
         action="store_true",
         help="also require production-bundle Chromium qualification",
+    )
+    parser.add_argument(
+        "--keep-data",
+        action="store_true",
+        help="retain this run's stopped database for debugging; logs are always retained",
     )
     parser.add_argument("--output", type=Path, help="independent PG lifecycle evidence JSON")
     return parser
@@ -475,33 +515,25 @@ def main() -> int:
         result["failure"] = type(error).__name__
     finally:
         if started:
-            status = subprocess.run(
-                [pg_ctl, "-D", str(data), "status"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
-            if status.returncode == 0:
-                stop = subprocess.run(
-                    [pg_ctl, "-D", str(data), "-m", "fast", "-w", "-t", "20", "stop"],
-                    capture_output=True,
-                    text=True,
-                    timeout=25,
-                    check=False,
-                )
-                stopped = stop.returncode == 0
-            else:
-                stopped = not (data / "postmaster.pid").exists()
-            status = subprocess.run(
-                [pg_ctl, "-D", str(data), "status"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
-            stopped = stopped and status.returncode != 0 and not (data / "postmaster.pid").exists()
+            stopped = stop_cluster(pg_ctl, data)
         result["stopped"] = stopped
+        result["data_removed"] = False
+        if started and not stopped:
+            result["data_retained_reason"] = "shutdown-unconfirmed"
+            code = 1
+        elif args.keep_data:
+            result["data_retained_reason"] = "requested"
+        else:
+            try:
+                # This path belongs solely to the cluster created above, including a
+                # partial initdb that never started a server. Keep all sibling evidence.
+                if data.exists():
+                    shutil.rmtree(data)
+                result["data_removed"] = True
+            except OSError as error:
+                result["data_retained_reason"] = "cleanup-failed"
+                result["cleanup_failure"] = type(error).__name__
+                code = 1
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
         print(f"evidence: {output.relative_to(ROOT) if output.is_relative_to(ROOT) else output}")
@@ -509,7 +541,10 @@ def main() -> int:
             print(
                 f"probe shutdown unconfirmed; inspect retained cluster: {cluster}", file=sys.stderr
             )
-            code = 1
+        elif not result["data_removed"]:
+            print(
+                f"probe data retained ({result['data_retained_reason']}): {data}", file=sys.stderr
+            )
     return code
 
 

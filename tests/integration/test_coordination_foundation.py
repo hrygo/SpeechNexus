@@ -39,7 +39,10 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
-from speechnexus_backend.speech.infrastructure.execution_release_schema import RELEASE_GUARD_DDL
+from speechnexus_backend.speech.infrastructure.execution_release_schema import (
+    RELEASE_GUARD_DDL,
+    release_guard_grants,
+)
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
@@ -178,9 +181,16 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             else:
                 db.query(f"CREATE USER '{role}'@'%' IDENTIFIED BY 'synthetic_foundation_test'")
             created_roles.append(role)
-        for grant in coordination_runtime_grants(
-            db.schema, speech_role=roles[0], gateway_role=roles[1]
-        ):
+        grants = coordination_runtime_grants(db.schema, speech_role=roles[0], gateway_role=roles[1])
+        if db.dialect == "postgresql" and db.query("SELECT version_num FROM alembic_version") == [
+            {"version_num": "0012_execution_results"}
+        ]:
+            # This historical downgrade test predates the view added in 0028.
+            # The current head must still receive the complete runtime grants.
+            unavailable = set(release_guard_grants(db.schema, roles[0]))
+            assert unavailable <= set(grants)
+            grants = tuple(grant for grant in grants if grant not in unavailable)
+        for grant in grants:
             if db.dialect == "mysql":
                 if "USAGE ON SCHEMA" in grant:
                     continue

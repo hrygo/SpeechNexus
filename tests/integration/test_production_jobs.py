@@ -436,9 +436,34 @@ def test_versioned_migration_cli_is_idempotent_and_downgrade_preserves_history(
     try:
         with engine.connect() as connection:
             config.attributes["connection"] = connection
-            with pytest.raises(RuntimeError, match="Publication intent and installation identity"):
+            with pytest.raises(RuntimeError, match="history requires preservation"):
                 command.downgrade(config, "base")
     finally:
         engine.dispose()
     assert database.query("SELECT version_num FROM alembic_version") == [{"version_num": HEAD}]
+    assert database.counts() == (1, 1)
+
+
+@pytest.mark.parametrize(
+    "database", [("postgresql", "0024_binding_publish_intents")], indirect=True
+)
+def test_0024_downgrade_guard_preserves_job_history(database: JobDatabase) -> None:
+    assert database.port.create_job(REQUEST).outcome == "committed"
+    engine = create_engine(
+        database.url.replace("postgresql://", "postgresql+psycopg://", 1),
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
+    config = Config(str(ROOT / "alembic.ini"))
+    config.attributes["schema"] = database.schema
+    try:
+        with engine.connect() as connection:
+            config.attributes["connection"] = connection
+            with pytest.raises(RuntimeError, match="Publication intent and installation identity"):
+                command.downgrade(config, "base")
+    finally:
+        engine.dispose()
+    assert database.query("SELECT version_num FROM alembic_version") == [
+        {"version_num": "0024_binding_publish_intents"}
+    ]
     assert database.counts() == (1, 1)

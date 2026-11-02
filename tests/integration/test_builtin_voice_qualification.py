@@ -318,11 +318,15 @@ def test_publication_requires_approval_and_replays_original(
     from speechnexus_backend.speech.infrastructure.publications_postgres import PostgresPublications
 
     db, schema, role = pg
-    db.execute(f'ALTER ROLE "{role}" LOGIN')
+    db.execute(f"ALTER ROLE \"{role}\" LOGIN PASSWORD 'synthetic_builtin_voice_test'")
     for grant in (*publication_grants(schema, role), *builtin_publisher_grants(schema, role)):
         db.execute(grant)
     pool = speech_pool(
-        make_conninfo(os.environ["SPEECHNEXUS_TEST_DATABASE_URL"], user=role),
+        make_conninfo(
+            os.environ["SPEECHNEXUS_TEST_DATABASE_URL"],
+            user=role,
+            password="synthetic_builtin_voice_test",
+        ),
         schema=schema,
         max_size=1,
     )

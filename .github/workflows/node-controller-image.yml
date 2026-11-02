@@ -1,0 +1,102 @@
+name: Node Controller image
+
+on:
+  workflow_call:
+    outputs:
+      required:
+        description: Whether the image matrix was required for this change
+        value: ${{ jobs.scope.outputs.required }}
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check image inputs
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo '::error::Missing or invalid PR base SHA'
+            exit 1
+          fi
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          changes="$RUNNER_TEMP/controller-changes"
+          git diff --name-only --no-renames -z "$BASE_SHA" HEAD -- > "$changes"
+          # Empty differences are ambiguous; require the build rather than skip it.
+          required=false
+          if [[ ! -s "$changes" ]]; then required=true; fi
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              node-controller/*|deploy/images/*|.dockerignore|pyproject.toml|uv.lock|\
+              .github/workflows/ci.yml|.github/workflows/node-controller-image.yml|\
+              tests/ci/test_node_controller_image_ci.py|tests/contract/test_ci_workflow.py|\
+              backend/pyproject.toml|backend/README.md|execution-gateway/pyproject.toml|\
+              execution-gateway/README.md|packages/contracts/pyproject.toml|\
+              packages/media/pyproject.toml|packages/media/README.md)
+                required=true; break ;;
+            esac
+          done < "$changes"
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Build and probe (${{ matrix.runner }})
+    needs: [scope]
+    if: ${{ needs.scope.outputs.required == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build image and exercise hash and synthetic CA failure paths
+        run: python3 deploy/images/verify-node-controller-image.py
+
+  gate:
+    name: "Gate: node-controller image evidence"
+    needs: [scope, image]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require valid scope and applicable image results
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          REQUIRED: ${{ needs.scope.outputs.required }}
+          IMAGE_RESULT: ${{ needs.image.result }}
+        run: |
+          if [[ "$SCOPE_RESULT" != success ]]; then
+            echo "::error::Image scope=$SCOPE_RESULT"
+            exit 1
+          fi
+          case "$REQUIRED" in
+            true) expected=success ;;
+            false) expected=skipped ;;
+            *) echo '::error::Missing or invalid image scope'; exit 1 ;;
+          esac
+          if [[ "$IMAGE_RESULT" != "$expected" ]]; then
+            echo "::error::Image required=$REQUIRED; matrix=$IMAGE_RESULT"
+            exit 1
+          fi

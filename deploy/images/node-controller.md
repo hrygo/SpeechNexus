@@ -3,8 +3,8 @@
 此候选仅覆盖 [#225](https://github.com/hrygo/SpeechNexus/issues/225) 的 Controller 制品切片，
 固定源码基线为 `7753c559c1b68c5a9805c27bc39b5a089171af03`。
 原候选已完成离线元数据导出和安装 dry-run。本次返修增加生产身份校验、定向测试及构建 CA 接口。
-当前 checkout 无独立依赖环境，固定 Python 缺 pytest/Pydantic；定向测试尚未执行到收集阶段，
-行为验证为 **not_run**。干净安装、实际安装闭包、镜像构建及所有运行验收也均为 **not_run**。
+原交接时 checkout 无独立依赖环境，定向测试和镜像构建均 **not_run**。后续验证和当前候选
+须按固定提交及其 CI 结果核对；源码、dry-run 和导入不等于节点运行验收。
 
 ## 构建输入与安装边界
 
@@ -13,48 +13,40 @@ Builder 读取原样的根 `pyproject.toml`、`uv.lock`、所有 workspace 成�
 及其声明的 README；仅复制 `node-controller/src` 产品源码。
 其他成员的元数据用于 uv workspace 发现，不安装这些成员，也不复制它们的源码。
 
-安装使用 `uv sync --frozen --package speechnexus-node-controller --no-dev --no-default-groups
---no-editable`，保留包自身声明的 `uvicorn[standard]`。
+先用 `uv build --wheel --build-constraints ... --require-build-hashes` 按
+[专属哈希约束](node-controller-build-constraints.txt)构建 Controller wheel；
+再用 `uv sync --frozen --package speechnexus-node-controller --no-dev --no-default-groups
+--no-install-workspace --no-build` 只安装锁定的运行依赖，最后离线安装该 wheel 并执行
+`uv pip check`。每条 uv 命令均使用空缓存；依赖没有目标平台的 wheel 时失败，不静默构建
+其他 sdist。依赖保留包自身声明的 `uvicorn[standard]`。
 不选择 `--all-packages`、`--all-extras` 或媒体 extra，不追加 CPU VAD requirements。
 最终阶段仅从 builder 复制非 editable 的 `/app/.venv`；不带 uv、构建缓存、workspace 源码、
 backend/gateway/contracts/media 包或 CUDA/GPU runtime。
 Python 基础镜像自身的系统工具不属于应用 venv 的依赖清单。
 
-Builder 中的 `uv pip check`、已安装 console script 的加载和 ASGI 模块导入是后续构建门禁，
-本轮没有执行。导入不会调用 `main()` 或 `create_app()`，不能证明服务已经装配或就绪。
+Builder 中的 `uv pip check`、已安装 console script 的加载和 ASGI 模块导入是构建门禁。
+导入不会调用 `main()` 或 `create_app()`，不能证明服务已经装配或就绪。
 实际入口来自 [包元数据](../../node-controller/pyproject.toml)：
 `speechnexus-node-controller` → `speechnexus_node_controller.main:main`，
 固定使用 `app:create_app`、单 Uvicorn worker；监听参数来自环境变量，不是 CLI 参数。
 该进程没有 `process_role` 服务选择器。
 
-### 不可变镜像引用：not_resolved
+### 不可变镜像引用
 
-frontend `docker/dockerfile:1.18`、uv `ghcr.io/astral-sh/uv:0.13.5` 和
-Python `python:3.14.9-slim-bookworm` 仍是原候选的 tag 引用。
-正式输入没有这三项的获批 digest，本次不访问 registry、不拉取镜像，也没有编造 digest。
-因此候选尚不能声称基础层可复现；这些 tag 不能用于结算制品资格。
-具名镜像/构建平台提供方须交付：frontend 引用及 digest，uv 和 Python 的
-Linux/arm64（CPython 3.14.9）manifest digest、对应 index/manifest 关系、来源及批准记录。
-取得并核验这些材料后，才可将引用改为 `name:tag@sha256:…`，
-并让 builder/runtime 复用同一个 Python digest。该动作仍需非作者复审和构建许可。
+Dockerfile 将 frontend `docker/dockerfile:1.18`、uv `ghcr.io/astral-sh/uv:0.13.5`
+和 Python `python:3.14.9-slim-bookworm` 固定到官方 registry 的 OCI index digest；
+builder、CA 探针及 runtime 复用同一个 Python digest。2026-11-02 对 registry 原始
+index 字节复算 SHA-256，三项均含 Linux amd64 和 arm64 平台。index 不等于实际
+构建时所选 child、签名验证或部署批准；这些仍由镜像/平台提供方核对。
 
-### PEP 517 构建后端：not_resolved
+### PEP 517 构建后端
 
-`--frozen` 固定运行依赖，不验证锁的新鲜度，也不锁定 PEP 517 的隔离构建依赖。
-现有 `node-controller/pyproject.toml` 声明 `hatchling>=1.28,<2`，当前 `uv.lock` 未锁该后端；
-本卡没有获批的精确版本、发行物摘要或完整构建依赖闭包。仅记录构建时选中的版本，
-或仅约束 Hatchling 顶层版本，都不能解决完整构建闭包复现问题。
-本卡不改共享锁、根配置或包元数据，也不关闭隔离构建/哈希/TLS 校验来绕过缺口。
-
-Controller 包依赖所有者与获批包源提供方须提供一份独立构建依赖制品：
-满足上述范围的 Hatchling 精确版本、由该版本 METADATA 确认的全部传递/条件构建依赖、
-每个制品的版本/文件名/来源/SHA-256、适用 Python/平台，以及批准回执。
-可实现路径是任务专属、完整固定且带摘要的 constraints/wheelhouse，在实际 uv 支持的入口
-消费并验证完整闭包；取得材料后再接线，不在本轮放入未经验证的空约束或任意版本。
-本机 uv 0.13.5 的 `uv build --help` 与 `uv pip install --help` 声明
-`--build-constraints`，后者还声明 `--require-build-hashes`；`uv sync --help`
-未声明这些 CLI 选项，不能直接把它们追加到当前 sync 命令就宣称已解决。
-实际闭包安装及后端构建均 **not_run**。
+`--frozen` 不核验锁的新鲜度，也不固定 PEP 517 后端。专属 constraints 固定
+Hatchling 及其静态传递依赖的 wheel SHA-256，`uv build` 强制每个实际构建依赖都有可信哈希；
+动态 hook 需要未列依赖时直接失败。运行依赖禁止 sdist 构建，避免引入未约束的其他后端。
+此策略不修改共享 `pyproject.toml` 或 `uv.lock`。本机 macOS / CPython 3.14.9 / uv 0.13.5
+隔离试验中，正确约束构建成功，错误 Hatchling 哈希和缺失 pluggy 哈希均被拒绝；
+此结果不能替代 Linux amd64/arm64 镜像执行、批准的包源及动态闭包证据。
 
 ### 构建 CA 接口与环境信任
 
@@ -63,8 +55,9 @@ Controller 包依赖所有者与获批包源提供方须提供一份独立构建
 不复制到镜像层、最终 venv、运行环境或日志，不关闭 TLS 验证。
 未提供 secret 时使用 uv 默认信任根；需要组织 CA 的包源必须显式提供此 secret。
 CA 提供方是构建网络/PKI 所有者，须确认 bundle 的有效期、链和对应包源/代理用途。
-本轮只接入接口，没有取得或验证真实 CA，也没有执行 TLS 下载；实际环境信任为
-**not_resolved**。CA 信任不锁定构建后端；后端版本固定也不证明 CA 有效。
+CI 候选以隔离合成 CA、HTTPS wheel 和无缓存的相同 wrapper 验证正确、缺失、错误 CA
+及错误主机名；以实际 workflow 执行结果为准。真实 CA 和包源尚未取得或验证；
+实际环境信任为 **not_resolved**。CA 信任不锁定构建后端；后端版本固定也不证明 CA 有效。
 
 ## 部署配置与权限输入
 
@@ -103,11 +96,11 @@ console entrypoint 和直接 ASGI factory 都先构造同一个 Settings，再�
 初始化错误的文本隐藏输入值，避免新校验打印组件凭据。
 专属定向测试覆盖构造参数、环境变量、拼错 NODE_ID、合成 `.env`、合法边界、
 缺失/默认/无效身份、非法 environment、开发测试兼容和错误文本凭据隐藏；
-本轮没有启动服务来验证入口，测试执行状态见首段。
+原交接未启动服务来验证入口；测试执行状态以对应固定版本的证据为准。
 
 ## 后续独立验收输入与命令
 
-以下操作全部 **not_run**，需要另行授予干净安装/下载、构建及隔离节点运行许可。
+以下命令说明 Linux 干净安装、镜像和节点验收入口；真实节点与生产 PKI 仍须各自的授权和输入。
 验收者须先取得候选 patch/manifest、核验基线与文件摘要，并使用自己的独立 checkout。
 不得复用其他角色的 `.venv`、缓存私有路径、共享 daemon 或真实业务数据。
 
@@ -127,9 +120,16 @@ uv run --offline --no-sync ruff check \
    不复用本轮 dry-run 的结果作为安装证据。
 
    ```bash
-   controller_env="$(mktemp -d "${TMPDIR:-/tmp}/del454-install.XXXXXX")/venv"
-   UV_PROJECT_ENVIRONMENT="$controller_env" uv sync --frozen \
-     --package speechnexus-node-controller --no-dev --no-default-groups --no-editable
+   controller_tmp="$(mktemp -d "${TMPDIR:-/tmp}/controller-install.XXXXXX")"
+   controller_env="$controller_tmp/venv"
+   uv build --no-cache --wheel node-controller --out-dir "$controller_tmp/wheel" \
+     --build-constraints deploy/images/node-controller-build-constraints.txt \
+     --require-build-hashes
+   UV_PROJECT_ENVIRONMENT="$controller_env" uv sync --no-cache --frozen \
+     --package speechnexus-node-controller --no-dev --no-default-groups \
+     --no-install-workspace --no-build
+   uv pip install --no-cache --no-index --no-deps --no-build \
+     --python "$controller_env/bin/python" "$controller_tmp"/wheel/*.whl
    uv pip check --python "$controller_env/bin/python"
    uv pip list --python "$controller_env/bin/python" --format json
    "$controller_env/bin/python" - <<'PY'
@@ -144,9 +144,8 @@ uv run --offline --no-sync ruff check \
    对比锁导出的运行闭包和实际安装清单；本基线 Linux CPython 的 dry-run 选择 25 个包。
    不得含其他 SpeechNexus 部署包、媒体/VAD/GPU 包或 dev group；保存实际版本与原始结果。
 
-2. **镜像构建**：先解除上述 digest 和完整构建后端闭包阻塞，取得获批 BuildKit 窗口、
-   包源及必要的可信 CA；完成专属依赖测试与非作者复审。下列命令仅展示 CA 接口，
-   不使原 tag 或未固定的后端变成可复现输入；上述阻塞解除前不得据此结算构建。
+2. **镜像构建**：取得获批 BuildKit 窗口、包源及必要的可信 CA，完成专属依赖测试与非作者复审。
+   下列命令仅展示 CA 接口；固定 index 与后端哈希不等于目标平台制品或实际网络信任已验收。
 
    ```bash
    # 由构建网络/PKI 所有者在获批环境提供 bundle 路径；不要将证书字节写进仓库。

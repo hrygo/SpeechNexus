@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.18
-FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
+# syntax=docker/dockerfile:1.18@sha256:dabfc0969b935b2080555ace70ee69a5261af8a8f1b4df97b9e7fbcf6722eddf
+FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
 
-FROM python:3.14.9-slim-bookworm AS builder
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae AS builder
 COPY --from=uv /uv /bin/uv
 
 ENV UV_LINK_MODE=copy \
@@ -16,14 +16,18 @@ COPY packages/contracts/pyproject.toml packages/contracts/
 COPY packages/media/README.md packages/media/pyproject.toml packages/media/
 COPY node-controller/README.md node-controller/pyproject.toml node-controller/
 COPY node-controller/src node-controller/src
+COPY deploy/images/node-controller-build-constraints.txt /tmp/node-controller-build-constraints.txt
+COPY deploy/images/node-controller-with-ca.sh /tmp/node-controller-with-ca.sh
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=secret,id=proxy_ca \
-    set -eu; \
-    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
-    uv sync --frozen --package speechnexus-node-controller \
-        --no-dev --no-default-groups --no-editable \
-    && uv pip check --python /app/.venv/bin/python
+RUN --mount=type=secret,id=proxy_ca \
+    sh /tmp/node-controller-with-ca.sh sh -ec '\
+      uv build --no-cache --wheel node-controller --out-dir /tmp/controller-wheel \
+        --build-constraints /tmp/node-controller-build-constraints.txt --require-build-hashes; \
+      uv sync --no-cache --frozen --package speechnexus-node-controller \
+        --no-dev --no-default-groups --no-install-workspace --no-build; \
+      uv pip install --no-cache --no-index --no-deps --no-build \
+        --python /app/.venv/bin/python /tmp/controller-wheel/*.whl; \
+      uv pip check --python /app/.venv/bin/python'
 
 # Check the installed distribution and factory imports without starting the service.
 RUN /app/.venv/bin/python - <<'PY'
@@ -38,7 +42,18 @@ entrypoint = next(
 assert callable(entrypoint.load())
 PY
 
-FROM python:3.14.9-slim-bookworm AS runtime
+# CI can exercise the exact CA wrapper with an isolated synthetic HTTPS wheel.
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae AS ca-probe
+COPY --from=uv /uv /bin/uv
+COPY deploy/images/node-controller-with-ca.sh /tmp/node-controller-with-ca.sh
+ARG PROBE_WHEEL_URL
+RUN --mount=type=secret,id=proxy_ca \
+    test -n "$PROBE_WHEEL_URL" \
+    && uv venv /tmp/ca-venv \
+    && sh /tmp/node-controller-with-ca.sh uv pip install --no-cache --no-index --no-deps \
+         --python /tmp/ca-venv/bin/python "$PROBE_WHEEL_URL"
+
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae AS runtime
 
 RUN groupadd --gid 10001 speechnexus \
     && useradd --uid 10001 --gid speechnexus --no-create-home --shell /usr/sbin/nologin speechnexus \

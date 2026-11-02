@@ -1468,9 +1468,6 @@
           "type": "boolean",
           "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
         },
-        "native_runtime_evidence": {
-          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence"
-        },
         "stop_evidence": {
           "anyOf": [
             {
@@ -1513,24 +1510,6 @@
         }
       },
       "allOf": [
-        {
-          "if": {
-            "required": ["native_runtime_evidence"]
-          },
-          "then": {
-            "properties": {
-              "action": {
-                "const": "prepare"
-              },
-              "intent_state": {
-                "const": "succeeded"
-              },
-              "observed_instance_state": {
-                "const": "ready"
-              }
-            }
-          }
-        },
         {
           "if": {
             "properties": {
@@ -1833,35 +1812,6 @@
         "host_memory_bytes": {
           "type": "integer",
           "minimum": 0
-        }
-      }
-    },
-    "External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "image_digest",
-        "template_digest",
-        "controller_artifact_digest",
-        "native_auth_kind",
-        "observed_at"
-      ],
-      "properties": {
-        "image_digest": {
-          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
-        },
-        "template_digest": {
-          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
-        },
-        "controller_artifact_digest": {
-          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
-        },
-        "native_auth_kind": {
-          "const": "vllm_api_key_v1"
-        },
-        "observed_at": {
-          "type": "string",
-          "format": "date-time"
         }
       }
     },
@@ -2232,13 +2182,323 @@
       "required": ["observation", "expected_instance_version", "expected_intent_version"],
       "properties": {
         "observation": {
-          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeInstanceIntentResponse"
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeCoordinationObservation"
         },
         "expected_instance_version": {
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
         },
         "expected_intent_version": {
           "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        }
+      }
+    },
+    "External_internal_runtime_control_openapi_yaml_RuntimeCoordinationObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "target_node_id",
+        "pool_id",
+        "gateway_id",
+        "approved_template_id",
+        "binding_revision_id",
+        "manifest_id",
+        "config_digest",
+        "instance_id",
+        "instance_generation",
+        "action",
+        "fencing_token",
+        "intent_state",
+        "observed_instance_state",
+        "reserved_memory",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "intent_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "target_node_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "pool_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_PoolId"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "approved_template_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "manifest_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeActionKind"
+        },
+        "fencing_token": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "intent_state": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeIntentState"
+        },
+        "observed_instance_state": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_ObservedInstanceState"
+        },
+        "reserved_memory": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryReservation"
+        },
+        "idempotent_replay": {
+          "type": "boolean",
+          "description": "Present only on POST. True when the response is the stored result\nof an identical earlier intent with the same `intent_id`.\n"
+        },
+        "native_runtime_evidence": {
+          "description": "Valid only for succeeded prepare observations in READY state.",
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence"
+        },
+        "stop_evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeStopEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_peak_memory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_RuntimeMemoryVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{2,63}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time the intent identity was first recorded; immutable across replay."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "prepare"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "properties": {
+              "observed_instance_state": {
+                "const": "ready"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["action", "intent_state"]
+          },
+          "then": {
+            "required": ["stop_evidence"],
+            "properties": {
+              "observed_instance_state": {
+                "enum": ["stopped", "absent"]
+              },
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "stop_evidence": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            },
+            "required": ["stop_evidence"]
+          },
+          "then": {
+            "properties": {
+              "action": {
+                "const": "stop"
+              },
+              "intent_state": {
+                "const": "succeeded"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "failed"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "required": ["error_code"],
+            "properties": {
+              "error_code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{2,63}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "intent_state": {
+                "const": "succeeded"
+              }
+            },
+            "required": ["intent_state"]
+          },
+          "then": {
+            "properties": {
+              "error_code": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "unified_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "device_memory_bytes": {
+                    "const": 0
+                  },
+                  "host_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reserved_memory": {
+                "properties": {
+                  "architecture": {
+                    "const": "discrete_device_memory"
+                  }
+                },
+                "required": ["architecture"]
+              }
+            },
+            "required": ["reserved_memory"]
+          },
+          "then": {
+            "properties": {
+              "observed_peak_memory": {
+                "properties": {
+                  "unified_memory_bytes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "External_internal_runtime_control_openapi_yaml_NativeRuntimeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image_digest",
+        "template_digest",
+        "controller_artifact_digest",
+        "native_auth_kind",
+        "observed_at"
+      ],
+      "properties": {
+        "image_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "template_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "controller_artifact_digest": {
+          "$ref": "#/$defs/External_internal_runtime_control_openapi_yaml_Sha256Digest"
+        },
+        "native_auth_kind": {
+          "const": "vllm_api_key_v1"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

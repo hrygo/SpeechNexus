@@ -76,7 +76,10 @@ def request_payload(request: RuntimeInstanceIntentRequest) -> dict[str, Any]:
 
 
 def intent_response_payload(
-    intent: RuntimeInstanceIntent, *, idempotent_replay: bool | None = None
+    intent: RuntimeInstanceIntent,
+    *,
+    idempotent_replay: bool | None = None,
+    include_native: bool = False,
 ) -> dict[str, Any]:
     """Project one recorded intent onto the contract response fields.
 
@@ -100,7 +103,7 @@ def intent_response_payload(
     }
     if idempotent_replay is not None:
         payload["idempotent_replay"] = idempotent_replay
-    if intent.native_runtime_evidence is not None:
+    if include_native and intent.native_runtime_evidence is not None:
         payload["native_runtime_evidence"] = native_evidence_payload(intent.native_runtime_evidence)
     return payload
 

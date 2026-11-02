@@ -117,6 +117,9 @@ class RuntimeInstanceIntentResponse(BaseModel):
     error_code: str | None = Field(default=None, pattern="^[a-z][a-z0-9_]{2,63}$")
     created_at: datetime
     updated_at: datetime
+
+
+class RuntimeQualificationObservationResponse(RuntimeInstanceIntentResponse):
     native_runtime_evidence: NativeRuntimeEvidencePayload | None = None
 
 

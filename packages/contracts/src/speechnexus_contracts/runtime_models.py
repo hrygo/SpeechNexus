@@ -114,6 +114,30 @@ class RuntimeInstanceIntentResponse(TypedDict):
     observed_instance_state: ObservedInstanceState
     reserved_memory: RuntimeMemoryReservation
     idempotent_replay: NotRequired[bool]
+    stop_evidence: NotRequired[RuntimeStopEvidence | None]
+    observed_peak_memory: NotRequired[RuntimeMemoryVector | None]
+    error_code: NotRequired[str | None]
+    created_at: str
+    updated_at: str
+
+
+class RuntimeCoordinationObservation(TypedDict):
+    intent_id: Identifier
+    target_node_id: Identifier
+    pool_id: PoolId
+    gateway_id: Identifier
+    approved_template_id: Identifier
+    binding_revision_id: Identifier
+    manifest_id: Identifier
+    config_digest: Sha256Digest
+    instance_id: Identifier
+    instance_generation: int
+    action: RuntimeActionKind
+    fencing_token: int
+    intent_state: RuntimeIntentState
+    observed_instance_state: ObservedInstanceState
+    reserved_memory: RuntimeMemoryReservation
+    idempotent_replay: NotRequired[bool]
     native_runtime_evidence: NotRequired[NativeRuntimeEvidence]
     stop_evidence: NotRequired[RuntimeStopEvidence | None]
     observed_peak_memory: NotRequired[RuntimeMemoryVector | None]
@@ -146,9 +170,35 @@ class RuntimeInstanceIntentRequest(TypedDict):
     deadline_at: str
 
 
+class RuntimeQualificationObservationResponse(TypedDict):
+    intent_id: Identifier
+    target_node_id: Identifier
+    pool_id: PoolId
+    gateway_id: Identifier
+    approved_template_id: Identifier
+    binding_revision_id: Identifier
+    manifest_id: Identifier
+    config_digest: Sha256Digest
+    instance_id: Identifier
+    instance_generation: int
+    action: RuntimeActionKind
+    fencing_token: int
+    intent_state: RuntimeIntentState
+    observed_instance_state: ObservedInstanceState
+    reserved_memory: RuntimeMemoryReservation
+    idempotent_replay: NotRequired[bool]
+    native_runtime_evidence: NotRequired[NativeRuntimeEvidence]
+    stop_evidence: NotRequired[RuntimeStopEvidence | None]
+    observed_peak_memory: NotRequired[RuntimeMemoryVector | None]
+    error_code: NotRequired[str | None]
+    created_at: str
+    updated_at: str
+
+
 type RuntimeContracts = (
     RuntimeInstanceIntentRequest
     | RuntimeInstanceIntentResponse
+    | RuntimeQualificationObservationResponse
     | NodeReconcileRequest
     | RuntimeControlErrorResponse
 )

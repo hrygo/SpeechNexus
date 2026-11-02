@@ -201,7 +201,7 @@ def validate_original_observation(document: str, request: RuntimeIntent) -> dict
     if not isinstance(document, str) or len(document.encode()) > 65536:
         raise ValueError("Invalid original runtime observation")
     value: Any = json.loads(document)
-    validate_profile("runtime", "RuntimeInstanceIntentResponse", value)
+    validate_profile("runtime", "RuntimeQualificationObservationResponse", value)
     expected = request_to_wire(request)
     for name in (
         "intent_id",

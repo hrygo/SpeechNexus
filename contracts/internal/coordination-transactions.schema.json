@@ -1099,7 +1099,7 @@
       ],
       "properties": {
         "observation": {
-          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeInstanceIntentResponse"
+          "$ref": "./runtime-control.openapi.yaml#/components/schemas/RuntimeCoordinationObservation"
         },
         "expected_instance_version": {
           "$ref": "../shared/identifiers.schema.json#/$defs/Revision"

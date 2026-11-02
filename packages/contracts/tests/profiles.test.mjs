@@ -9,6 +9,7 @@ import * as runtime from "../src/runtime.ts";
 import * as realtime from "../src/realtime.ts";
 import * as realtime_events from "../src/realtime_events.ts";
 import * as model_bindings from "../src/model_bindings.ts";
+import * as builtin_voice_qualification from "../src/builtin_voice_qualification.ts";
 import * as release_evidence from "../src/release_evidence.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
 import * as gateway_recovery from "../src/gateway_recovery.ts";
@@ -27,6 +28,7 @@ const profiles = {
   realtime_events,
   scenario_profiles,
   model_bindings,
+  builtin_voice_qualification,
   release_evidence,
   gateway_recovery,
   audio_inspection,

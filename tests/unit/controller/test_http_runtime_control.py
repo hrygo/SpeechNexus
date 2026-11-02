@@ -395,3 +395,34 @@ def _snapshot(*facts: dict[str, Any], controller_id: str = _NODE) -> dict[str, A
         "reported_at": datetime(2026, 10, 24, 9, 5, tzinfo=UTC).isoformat(),
         "instances": list(facts),
     }
+
+
+async def test_native_observation_uses_new_authenticated_route_and_legacy_stays_closed(
+    settings: Settings,
+) -> None:
+    from speechnexus_node_controller.domain.intents import NativeRuntimeEvidence
+
+    service, store, _ = _service(runtime=ScriptedNodeRuntime(ready_on_prepare=True))
+    async with _client(settings, service) as client:
+        first = await client.post(
+            _INTENTS_PATH, json=request_payload(build_request()), headers=_HEADERS
+        )
+        intent = store.get("intent-1")
+        assert intent is not None
+        intent.native_runtime_evidence = NativeRuntimeEvidence(
+            "sha256:" + "1" * 64,
+            "sha256:" + "2" * 64,
+            "sha256:" + "3" * 64,
+            "vllm_api_key_v1",
+            FIXED_NOW,
+        )
+        store.save(intent, expected_version=intent.version)
+        old = await client.get(_INTENTS_PATH + "/intent-1", headers=_HEADERS)
+        route = _INTENTS_PATH + "/intent-1/qualification-observation"
+        denied = await client.get(route)
+        new = await client.get(route, headers=_HEADERS)
+    assert first.status_code == old.status_code == new.status_code == 200
+    assert denied.status_code == 401
+    assert "native_runtime_evidence" not in old.json()
+    assert new.json()["native_runtime_evidence"]["native_auth_kind"] == "vllm_api_key_v1"
+    assert {k: v for k, v in new.json().items() if k != "native_runtime_evidence"} == old.json()

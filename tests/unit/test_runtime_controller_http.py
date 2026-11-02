@@ -151,6 +151,8 @@ async def test_complete_original_command_and_correlated_observation_without_retr
             assert request.url.path.endswith("/host-test/instance-intents")
             return response(request, body=observation(replay=True))
         assert request.content == b""
+        if request.url.path.endswith("/qualification-observation"):
+            return response(request, status=404)
         assert request.url.path.endswith("/host-test/instance-intents/runtime-new")
         return response(request, body=observation(ready=True, replay=None))
 
@@ -165,7 +167,7 @@ async def test_complete_original_command_and_correlated_observation_without_retr
         ready = await client.query(REQUEST)
         assert ready.observation.observed_instance_state == "ready"
         assert not hasattr(ready, "readiness")
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert all(call.url.scheme == "https" and call.url.host == "127.0.0.1" for call in calls)
 
 
@@ -485,3 +487,38 @@ async def test_transport_failures_do_not_leak_diagnostics_or_retry(error: httpx.
     assert failure.value.request_may_have_run
     assert "synthetic-private-marker" not in "".join(traceback.format_exception(failure.value))
     assert calls == 1
+
+
+@pytest.mark.parametrize("changed", [False, True])
+async def test_qualification_snapshot_is_authenticated_and_matches_original(changed: bool) -> None:
+    evidence = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": "2026-10-24T00:00:00.5Z",
+    }
+    calls: list[str] = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        assert request.headers["authorization"] == "Bearer " + TOKEN
+        value = observation(ready=True, replay=None)
+        if request.url.path.endswith("/qualification-observation"):
+            value["native_runtime_evidence"] = evidence
+            if changed:
+                value["updated_at"] = "2026-10-24T00:00:01.000000001Z"
+        return response(request, body=value)
+
+    async with HttpRuntimeController(
+        ENDPOINT, timeout_seconds=1, _transport=httpx.MockTransport(handle)
+    ) as client:
+        if changed:
+            with pytest.raises(ControllerCallError) as failure:
+                await client.query(REQUEST)
+            assert failure.value.failure == ControllerFailure.INVALID_RESPONSE
+        else:
+            result = await client.query(REQUEST)
+            assert result.observation.native_runtime_evidence is not None
+            assert json.loads(result.original_document)["native_runtime_evidence"] == evidence
+    assert len(calls) == 2

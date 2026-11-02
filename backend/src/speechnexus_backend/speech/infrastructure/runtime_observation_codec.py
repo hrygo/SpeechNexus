@@ -58,7 +58,7 @@ class PreparedRuntimeObservation:
 
 
 def prepare_observation(value: Any) -> PreparedRuntimeObservation:
-    validate_profile("runtime", "RuntimeInstanceIntentResponse", value)
+    validate_profile("runtime", "RuntimeQualificationObservationResponse", value)
     document = _json(value)
     if len(document.encode()) > 65536:
         raise ValueError("Runtime observation exceeds its bounded metadata record")

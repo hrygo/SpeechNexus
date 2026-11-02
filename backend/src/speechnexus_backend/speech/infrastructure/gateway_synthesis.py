@@ -116,9 +116,7 @@ class GatewaySynthesizer:
         try:
             async with asyncio.timeout_at(deadline):
                 plan, request = await asyncio.to_thread(self._admission.recover, request_id)
-                return await self._execute(
-                    plan, request, min(deadline, started + plan.timeout_seconds)
-                )
+                return await self._execute(plan, request, deadline, recovery=True)
         except TimeoutError:
             raise SpeechDeadlineExceededError from None
 
@@ -134,25 +132,35 @@ class GatewaySynthesizer:
             raise SpeechDeadlineExceededError from None
 
     async def _execute(
-        self, plan: SpeechPlan, request: SubmitExecutionRequest, deadline: float
+        self,
+        plan: SpeechPlan,
+        request: SubmitExecutionRequest,
+        deadline: float,
+        *,
+        recovery: bool = False,
     ) -> SpeechAudio:
         try:
             at = datetime.fromisoformat(request["deadline_at"].replace("Z", "+00:00"))
             if at.tzinfo is None or at.utcoffset() is None:
                 raise ValueError
-            remaining = (at - datetime.now(UTC)).total_seconds()
-            deadline = min(deadline, time.monotonic() + remaining)
-            if deadline <= time.monotonic():
-                raise SpeechDeadlineExceededError
+            execution_deadline = time.monotonic() + (at - datetime.now(UTC)).total_seconds()
+            if not recovery:
+                deadline = min(deadline, execution_deadline)
+                if deadline <= time.monotonic():
+                    raise SpeechDeadlineExceededError
             async with asyncio.timeout_at(deadline):
-                return await self._drive(plan, request, deadline)
+                return await self._drive(plan, request, deadline, execution_deadline)
         except TimeoutError:
             raise SpeechDeadlineExceededError from None
         except ValueError:
             raise SpeechUnavailableError("Stored speech deadline is invalid") from None
 
     async def _drive(
-        self, plan: SpeechPlan, request: SubmitExecutionRequest, deadline: float
+        self,
+        plan: SpeechPlan,
+        request: SubmitExecutionRequest,
+        deadline: float,
+        execution_deadline: float,
     ) -> SpeechAudio:
         submit_id = request["submit_intent_id"]
         try:
@@ -162,7 +170,7 @@ class GatewaySynthesizer:
                 if error.status_code != 404:
                     raise
                 # Only replay the complete command committed with this same identity.
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= min(deadline, execution_deadline):
                     raise SpeechDeadlineExceededError from None
                 if plan.gateway_policy_digest is None or plan.native_speaker_id is None:
                     raise SpeechUnavailableError("Stored speech authority is unavailable") from None
@@ -183,7 +191,10 @@ class GatewaySynthesizer:
                     raise SpeechUnavailableError(
                         "Gateway speech authority is inconsistent"
                     ) from None
-                status = await self._gateway.submit(request)
+                if time.monotonic() >= min(deadline, execution_deadline):
+                    raise SpeechDeadlineExceededError from None
+                async with asyncio.timeout_at(min(deadline, execution_deadline)):
+                    status = await self._gateway.submit(request)
             while True:
                 if time.monotonic() >= deadline:
                     raise SpeechDeadlineExceededError
@@ -218,8 +229,11 @@ class GatewaySynthesizer:
                     raise SpeechEngineError("Speech execution ended without audio")
                 if state == "unknown_quarantined":
                     raise SpeechUnavailableError("Speech execution outcome is unknown")
-                await asyncio.sleep(self._poll_seconds)
-                status = await self._gateway.query(submit_id)
+                if time.monotonic() >= execution_deadline:
+                    raise SpeechDeadlineExceededError
+                async with asyncio.timeout_at(min(deadline, execution_deadline)):
+                    await asyncio.sleep(self._poll_seconds)
+                    status = await self._gateway.query(submit_id)
             receipt = await self._gateway.audio_staging_result(submit_id)
             if time.monotonic() >= deadline:
                 raise SpeechDeadlineExceededError

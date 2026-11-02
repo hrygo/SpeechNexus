@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     transcription_max_command_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
     transcription_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
 
+    speech_recipe_file: Path | None = None
+    speech_settlement_database_url: SecretStr | None = Field(default=None, min_length=1)
+    speech_default_language: str | None = Field(
+        default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,4}$"
+    )
+    speech_poll_seconds: float = Field(default=0.25, gt=0, le=30)
+    speech_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    speech_storage_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    speech_max_command_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
+    speech_max_output_audio_ms: int = Field(default=120_000, ge=100, le=3_600_000)
+    speech_max_payload_bytes: int = Field(default=8 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024)
+
     @field_validator(
         "profile_writer_database_url",
         "model_catalog_reader_database_url",
@@ -127,6 +139,9 @@ class Settings(BaseSettings):
         "execution_gateway_component_credential",
         "transcription_recipe_file",
         "transcription_input_bucket",
+        "speech_recipe_file",
+        "speech_settlement_database_url",
+        "speech_default_language",
         mode="before",
     )
     @classmethod

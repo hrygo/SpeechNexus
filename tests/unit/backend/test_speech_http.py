@@ -439,9 +439,8 @@ def test_deployment_instruction_limit_rejects_instead_of_truncating() -> None:
 async def test_contract_legal_request_id_never_blames_the_synthesizer(client_id: str) -> None:
     """An accepted X-Request-ID must never become a 503.
 
-    The entry point keeps the client value verbatim (so traces line up) and the
-    domain derives a stable identifier for anything the identifier grammar
-    rejects; the old behaviour blamed the synthesizer instead.
+    The entry point echoes the trace identifier, while execution uses an
+    independent server-generated identity.
     """
 
     chain, synth = service()
@@ -458,13 +457,12 @@ async def test_contract_legal_request_id_never_blames_the_synthesizer(client_id:
         # Within the accepted width the client value is echoed verbatim so traces
         # line up; only longer values are replaced by the entry point.
         assert issued == client_id
-        if client_id.islower():
-            assert plan_request_id == client_id
+        assert plan_request_id != client_id
     else:
         assert issued != client_id
 
 
-async def test_conforming_request_id_is_echoed_as_the_plan_identity() -> None:
+async def test_conforming_request_id_is_not_the_execution_identity() -> None:
     chain, synth = service()
     async with client(chain) as http:
         response = await http.post(
@@ -473,7 +471,7 @@ async def test_conforming_request_id_is_echoed_as_the_plan_identity() -> None:
 
     assert response.status_code == 200
     assert response.headers["x-request-id"] == "req-01:tts"
-    assert synth.plans[0].request_id == "req-01:tts"
+    assert synth.plans[0].request_id != "req-01:tts"
 
 
 def test_implemented_response_codes_are_declared_by_the_contract() -> None:
@@ -597,3 +595,43 @@ def test_surface_constants_match_the_frozen_contract() -> None:
     assert planner["max_wait_ms"]["minimum"] == surface.PLANNER_WAIT_MIN
     assert planner["max_wait_ms"]["maximum"] == surface.PLANNER_WAIT_MAX
     assert tts["properties"]["audio_delivery"]["const"] == "complete"
+
+
+async def test_disconnect_records_server_execution_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import threading
+    from types import SimpleNamespace
+
+    from starlette.requests import ClientDisconnect
+
+    released = threading.Event()
+    calls: list[tuple[str, str]] = []
+    execution: list[str] = []
+
+    class Service:
+        def synthesize(self, command: SpeechCommand, *, request_id: str) -> None:
+            execution.append(request_id)
+            released.wait(2)
+
+        def cancel(self, request_id: str, reason: str) -> None:
+            calls.append((request_id, reason))
+            released.set()
+
+    class Request:
+        state = SimpleNamespace(request_id="client-trace")
+        headers = SimpleNamespace(getlist=lambda name: [])
+
+        async def is_disconnected(self) -> bool:
+            await asyncio.sleep(0.05)
+            return True
+
+    async def receive(*args: object) -> bytes:
+        return json.dumps(REQUEST).encode()
+
+    monkeypatch.setattr(surface, "_receive", receive)
+    with pytest.raises(ClientDisconnect):
+        await surface._create(Service(), Request(), 65536, 5)  # type: ignore[arg-type]
+    assert calls == [(execution[0], "stream_disconnected")]
+    assert execution[0] != "client-trace"

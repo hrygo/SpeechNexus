@@ -171,11 +171,17 @@ def build_transcription(settings: Settings) -> Transcription | None:
 def create_app_from_env() -> FastAPI:
     """``uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --factory``."""
     settings = Settings()
-    return create_app(
-        settings=settings,
-        transcriptions=build_transcription(settings),
-        speech=build_speech(settings),
-    )
+    transcriptions = build_transcription(settings)
+    speech = None
+    try:
+        speech = build_speech(settings)
+        return create_app(settings=settings, transcriptions=transcriptions, speech=speech)
+    except BaseException:
+        for service in (speech, transcriptions):
+            if service is not None:
+                with contextlib.suppress(Exception):
+                    service.close()
+        raise
 
 
 __all__ = ["build_transcription", "create_app_from_env"]

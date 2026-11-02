@@ -4,6 +4,8 @@ The caller holds the voice catalogue advisory lock in its admission transaction.
 This module never creates or updates qualification evidence.
 """
 
+from typing import Any, cast
+
 from speechnexus_contracts import ContractValidationError
 from speechnexus_contracts.voice_catalogue_http import validate_response
 
@@ -24,7 +26,11 @@ def require_builtin_voice(
     host_node_id: str,
     gateway_id: str,
     policy_revision_id: str,
-) -> None:
+    command: dict[str, Any] | None = None,
+    sample_rate_hz: int | None = None,
+    gateway_policy_digest: str | None = None,
+    native_speaker_id: str | None = None,
+) -> dict[str, Any]:
     cursor.execute(
         "SELECT a.facts, floor(extract(epoch FROM a.expires_at)*1000000)::bigint AS expiry_us, "
         "floor(extract(epoch FROM clock_timestamp())*1000000)::bigint AS now_us "
@@ -80,5 +86,62 @@ def require_builtin_voice(
             or rows[0]["facts"]["checked_at_us"] > rows[0]["now_us"]
         ):
             raise ValueError("invalid qualification time")
+        if gateway_policy_digest is not None and (
+            rows[0]["facts"].get("gateway_policy_digest") != gateway_policy_digest
+            or rows[0]["facts"].get("native_speaker_id") != native_speaker_id
+        ):
+            raise ValueError("qualification authority mismatch")
+        if command is not None:
+            require_qualified_parameters(rows[0]["facts"], command, sample_rate_hz)
     except ValueError, TypeError, KeyError, ContractValidationError:
+        raise AdmissionRejectedError("policy_or_resource_disabled") from None
+    return cast(dict[str, Any], rows[0]["facts"])
+
+
+def require_qualified_parameters(
+    facts: dict[str, Any], command: dict[str, Any], sample_rate_hz: int | None
+) -> None:
+    """Reject any effective request not covered by the immutable qualification."""
+    try:
+        caps = facts["qualified_capabilities"]
+        public = facts["public_document"]["capabilities"]
+        parameters = command["parameters"]
+        text = command["text"]
+        if (
+            not isinstance(caps, dict)
+            or not isinstance(public, dict)
+            or not isinstance(parameters, dict)
+            or not isinstance(text, str)
+            or type(sample_rate_hz) is not int
+            or parameters.get("text_commit_mode") != "explicit"
+            or parameters.get("audio_delivery") != "complete"
+            or (parameters["instructions"] and caps.get("supports_instructions") is not True)
+            or (parameters["speed"] != 1 and caps.get("supports_speed") is not True)
+            or (parameters["seed"] is not None and caps.get("supports_seed") is not True)
+        ):
+            raise ValueError
+        for allowed in (caps, public):
+            if (
+                any(
+                    type(allowed.get(key)) is not list
+                    for key in ("languages", "audio_formats", "sample_rates_hz", "modes")
+                )
+                or type(allowed.get("max_input_codepoints")) is not int
+                or len(text) > allowed["max_input_codepoints"]
+                or parameters["language"] not in allowed["languages"]
+                or parameters["response_format"] not in allowed["audio_formats"]
+                or sample_rate_hz not in allowed["sample_rates_hz"]
+                or parameters["audio_delivery"] not in allowed["modes"]
+            ):
+                raise ValueError
+        if parameters["speed"] != 1:
+            speed_range = caps.get("speed_range")
+            if (
+                not isinstance(speed_range, dict)
+                or type(speed_range.get("minimum")) not in (int, float)
+                or type(speed_range.get("maximum")) not in (int, float)
+                or not speed_range["minimum"] <= parameters["speed"] <= speed_range["maximum"]
+            ):
+                raise ValueError
+    except ValueError, TypeError, KeyError:
         raise AdmissionRejectedError("policy_or_resource_disabled") from None

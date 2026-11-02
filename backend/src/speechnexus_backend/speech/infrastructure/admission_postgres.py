@@ -44,6 +44,7 @@ from speechnexus_backend.speech.infrastructure.transcription_submit import (
     command_digest,
     deadline_text,
 )
+from speechnexus_backend.speech.infrastructure.tts_settlement_sql import insert_tts_settlement
 
 
 def binding_disable_admission_grants(schema: str, role: str) -> tuple[str, ...]:
@@ -68,6 +69,19 @@ def tts_voice_admission_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
+def _is_tts_business(body: dict[str, object]) -> bool:
+    """A carried TTS submit cannot opt out of the voice admission barrier."""
+    kind = body.get("kind")
+    for gateway in (body, body.get("gateway_request"), body.get("execution_request")):
+        if isinstance(gateway, dict):
+            command = gateway.get("command")
+            if isinstance(command, dict):
+                is_tts = command.get("kind") == "tts" or command.get("task_kind") == "tts_file"
+                if is_tts and kind != "tts_file":
+                    raise AdmissionRejectedError("invalid_execution_request")
+    return kind == "tts_file"
+
+
 class PostgresAdmissionTransactions:
     def __init__(
         self,
@@ -77,7 +91,7 @@ class PostgresAdmissionTransactions:
         timeout_seconds: float = 3,
         max_attempts: int = 3,
         enforce_binding_disable: bool = False,
-        require_builtin_voice: Callable[..., None] | None = None,
+        require_builtin_voice: Callable[..., object] | None = None,
     ) -> None:
         integer(max_command_bytes, minimum=1)
         if not 0 < timeout_seconds <= 30 or not 1 <= max_attempts <= 3:
@@ -110,7 +124,7 @@ class PostgresAdmissionTransactions:
         )
 
     def _admit(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> AdmissionResult:
-        is_tts = json.loads(prepared.command.business_command.document).get("kind") == "tts_file"
+        is_tts = _is_tts_business(json.loads(prepared.command.business_command.document))
         if self._enforce_binding_disable or is_tts:
             request = prepared.command.request
             existing = read_original(
@@ -146,6 +160,11 @@ class PostgresAdmissionTransactions:
             if body.get("kind") != "tts_file":
                 return
             voice = body["voice"]
+            plan = body["plan"]
+            policy_digest = plan["gateway_policy_digest"]
+            speaker_id = plan["native_speaker_id"]
+            if not isinstance(policy_digest, str) or not isinstance(speaker_id, str):
+                raise ValueError
             stages = prepared.command.request.stages
             if len(stages) != 1:
                 raise ValueError
@@ -233,7 +252,18 @@ class PostgresAdmissionTransactions:
             instance_generation=stage.instance_generation,
             host_node_id=stage.host_node_id,
             gateway_id=stage.gateway_id,
+            command=gateway["command"],
+            sample_rate_hz=gateway["sample_rate_hz"],
+            gateway_policy_digest=policy_digest,
+            native_speaker_id=speaker_id,
         )
+
+    def _record_settlement(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
+        body = json.loads(prepared.command.business_command.document)
+        if _is_tts_business(body):
+            insert_tts_settlement(
+                cursor, body["gateway_request"], prepared.command.request.deadline_at_us
+            )
 
     def _run(
         self,
@@ -260,6 +290,8 @@ class PostgresAdmissionTransactions:
                         cursor = _DeadlineCursor(cast(AdmissionCursor, raw), deadline)
                         if prepared is not None:
                             result = self._admit(cursor, prepared)
+                            if result.outcome in ("committed", "replayed"):
+                                self._record_settlement(cursor, prepared)
                         else:
                             found = read_original(
                                 cursor,

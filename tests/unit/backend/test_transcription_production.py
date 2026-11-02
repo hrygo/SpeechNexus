@@ -377,6 +377,45 @@ async def test_verbose_json_without_duration_or_language_is_not_guessed() -> Non
     assert response.json()["error"]["param"] == "response_format"
 
 
+@pytest.mark.parametrize("response_format", ["verbose_json", "srt", "vtt"])
+@pytest.mark.parametrize("evidence", [None, [], "malformed"])
+async def test_required_timestamp_evidence_distinguishes_absent_from_invalid(
+    response_format: str, evidence: Any
+) -> None:
+    calls: list[httpx.Request] = []
+    document: dict[str, Any] = {
+        "text": "engine text",
+        "duration_ms": 1500,
+        "language": "en",
+        "segments": [_FULL_SEGMENT],
+        "words": [{"word": "engine text", "start_ms": 0, "end_ms": 1000}],
+    }
+    if evidence is None:
+        del document["segments"]
+    else:
+        document["segments"] = evidence
+    service, transcriber = service_for(calls, document)
+    fields = FIELDS | {"response_format": response_format}
+    try:
+        app = create_app(settings=_settings(), transcriptions=service)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+            response = await http.post(
+                "/v1/audio/transcriptions",
+                data=fields,
+                files={"file": ("sample.wav", AUDIO, "application/octet-stream")},
+            )
+    finally:
+        transcriber.close()
+    assert any(call.url.path.endswith("/staging-result") for call in calls)
+    if evidence == "malformed":
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "transcription_output_invalid"
+    else:
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "unsupported_parameter"
+        assert response.json()["error"]["param"] == "response_format"
+
+
 def _identity_echo(sent: dict[str, Any]) -> dict[str, Any]:
     response = submit_response()
     for field in _IDENTITY_FIELDS:

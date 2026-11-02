@@ -53,6 +53,8 @@ Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
 - `recipe_digest` 为 `sha256:` 加 RFC 8785 规范 JSON（去掉 `recipe_digest` 自身）的
   SHA-256；不符即拒绝；
 - 顶层 binding/manifest/service_class 必须与 `runtime_plan` 一致；
+- `binding_publication_id` 是公开 publication 的 revision ID，必须与实际执行的
+  `binding_revision_id` 一致；不允许按一个 revision 校验后执行另一个 revision；
 - `quota_dimensions` 当前只接受 `["concurrent_attempts"]`。
 
 合成示例（真实部署必须替换为已批准值）：
@@ -115,6 +117,8 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
    固定版本私有对象读回结果正文并验摘要。
 7. `text` 只来自该结果文档。`language` / `duration_ms` 缺省时保持缺省，不回填请求参数、
    不推断、不估算；`verbose_json` 因此无法渲染时返回 `422 unsupported_parameter`。
+   分段和词时间戳分别要求每个非空转写片段都提供对应证据；缺少任一片段时省略该类
+   时间戳，公开接口拒绝需要它的格式，不返回只覆盖部分正文的字幕或时间戳。
 
 ## 失败语义
 

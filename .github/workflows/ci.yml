@@ -535,11 +535,19 @@ jobs:
             exit 1
           fi
 
+  # The reusable workflow always reports its scope; its own gate requires both
+  # matrix members when applicable and only accepts a skip when inapplicable.
+  node_controller_image:
+    name: "Node Controller image evidence"
+    needs: [changes]
+    if: ${{ always() && needs.changes.result == 'success' }}
+    uses: ./.github/workflows/node-controller-image.yml
+
   # Branch protection must use this gate's display name. Only a successful route
   # can make a lane inapplicable; unexpected skipping or failure cannot pass.
   python:
     name: "Gate: required checks for this change"
-    needs: [changes, python_checks_gate, coordination, web, deployment]
+    needs: [changes, python_checks_gate, coordination, web, deployment, node_controller_image]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -552,11 +560,21 @@ jobs:
           COORDINATION_RESULT: ${{ needs.coordination.result }}
           WEB_RESULT: ${{ needs.web.result }}
           DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+          CONTROLLER_RESULT: ${{ needs.node_controller_image.result }}
+          CONTROLLER_REQUIRED: ${{ needs.node_controller_image.outputs.required }}
         run: |
           if [[ "$ROUTING_RESULT" != success ]]; then
             echo "::error::CI routing=$ROUTING_RESULT"
             exit 1
           fi
+          if [[ "$CONTROLLER_RESULT" != success ]]; then
+            echo "::error::Node Controller image evidence=$CONTROLLER_RESULT"
+            exit 1
+          fi
+          case "$CONTROLLER_REQUIRED" in
+            true|false) ;;
+            *) echo '::error::Missing or invalid Node Controller image scope'; exit 1 ;;
+          esac
           case "$MODE" in
             docs)
               checks=skipped; coordination=skipped; web=skipped; deployment=skipped ;;

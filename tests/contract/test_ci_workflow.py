@@ -108,7 +108,7 @@ def test_integration_evidence_uses_bounded_same_run_cli_with_read_only_access() 
 def _run_gate(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-euo", "pipefail", "-c", _GATE["steps"][0]["run"]],
-        env=env,
+        env={"CONTROLLER_RESULT": "success", "CONTROLLER_REQUIRED": "false", **env},
         capture_output=True,
         text=True,
         check=False,
@@ -128,6 +128,7 @@ def test_protected_status_never_passes_missing_evidence(
         "coordination",
         "web",
         "deployment",
+        "node_controller_image",
     }
     assert _GATE["if"] == "${{ always() }}"
     step = _GATE["steps"][0]
@@ -138,6 +139,8 @@ def test_protected_status_never_passes_missing_evidence(
         "COORDINATION_RESULT": "${{ needs.coordination.result }}",
         "WEB_RESULT": "${{ needs.web.result }}",
         "DEPLOYMENT_RESULT": "${{ needs.deployment.result }}",
+        "CONTROLLER_RESULT": "${{ needs.node_controller_image.result }}",
+        "CONTROLLER_REQUIRED": "${{ needs.node_controller_image.outputs.required }}",
     }
     states = {**_EXPECTED[mode], "CHECKS_RESULT": checks, "COORDINATION_RESULT": coordination}
     result = _run_gate({"MODE": mode, "ROUTING_RESULT": "success", **states})

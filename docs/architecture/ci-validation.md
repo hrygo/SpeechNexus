@@ -27,6 +27,10 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 
 作业级条件让不适用项明确显示 skipped；最终 CI 门禁用 `always()` 执行，核对路由成功和各项实际结果。非法/缺失路由、失败、取消或本应执行却跳过均失败。不适用不表示业务验证已通过。
 
+Node Controller 镜像验证由 CI 以同提交的 [reusable workflow](../../.github/workflows/node-controller-image.yml) 调用，不再单独订阅 PR、push 或手动事件。PR 根据准确 base SHA 与 checkout 的差异选择；控制器源码、镜像文件、构建上下文忽略规则、根锁文件和 workspace 元数据，以及镜像路由或门禁文件变更触发镜像验证。使用 NUL 分隔并关闭重命名检测，确保移出受监控目录的旧路径也被检查；空差异保守执行，base 无效或不可获取时失败。`main` push、手动及未知事件始终执行。fork PR 仍使用调用工作流的事件与 checkout，公开仓库取 base，不传私有凭据。
+
+镜像 workflow 在 amd64 和 arm64 的 GitHub 托管 runner 分别以空缓存构建并运行镜像、哈希拒绝和合成 CA 检查。其内部 `always()` 门禁要求 scope 成功且输出只能为 `true` 或 `false`：前者要求整个矩阵成功，后者要求矩阵 skipped。调用方的既有 `Gate: required checks for this change` 再要求该 workflow 成功并提供合法输出；缺失、失败、取消或不适用范围以外的跳过都不能放行。镜像验证不新增分支保护状态名，也不证明真实部署 CA 或物理节点已通过验证。
+
 显示名称区分执行、证据验收和最终合并门禁；内部 job ID、依赖、命令、范围与超时不随改名改变：
 
 | job ID | Actions 显示名称 | 实际职责 |
@@ -37,6 +41,7 @@ Skill 的说明、参考、合成评测数据及展示元数据不参与产品�
 | `integration_shards` | `Integration 0–3: PG/MySQL/MinIO`；`Integration 4–5: Web + PG/MySQL/MinIO` | 六个真实隔离服务分片；后两片额外运行浏览器与 Node HTTP 消费者 |
 | `coordination` | `Gate: six-shard integration evidence` | 验收六片成功及同提交、完整互斥集合、实际执行证据，不在此节点重新执行测试 |
 | `python_checks_gate` | `Gate: Python execution and static checks` | 要求 Python 执行与静态/契约两个作业均成功，不执行测试 |
+| `node_controller_image` | `Node Controller image evidence` | 调用镜像 scope、双架构构建与内部证据门禁，按输入差异决定是否构建 |
 | `python` | `Gate: required checks for this change` | 按已验证范围核对全部适用结果，阻止失败、取消与意外跳过 |
 | `web` | `Web: lint, types, tests, build and accessibility` | 格式、lint、TypeScript、SDK 契约、workspace 测试和构建、真实浏览器无障碍与对比度 |
 | `deployment` | `Compose: configuration validation` | 执行 `docker compose config --quiet`，不启动服务或发布部署 |

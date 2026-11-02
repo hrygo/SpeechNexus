@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import random
 import time
+from collections.abc import Callable
 from typing import cast
 
 import psycopg
 from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
+from speechnexus_contracts.execution import parse
 
 from speechnexus_backend.speech.domain.admission import (
     AdmissionIdentity,
@@ -37,6 +40,10 @@ from speechnexus_backend.speech.infrastructure.leases_postgres import (
     _DeadlineCursor,
 )
 from speechnexus_backend.speech.infrastructure.postgres_pool import SpeechPool
+from speechnexus_backend.speech.infrastructure.transcription_submit import (
+    command_digest,
+    deadline_text,
+)
 
 
 def binding_disable_admission_grants(schema: str, role: str) -> tuple[str, ...]:
@@ -50,6 +57,17 @@ def binding_disable_admission_grants(schema: str, role: str) -> tuple[str, ...]:
     )
 
 
+def tts_voice_admission_grants(schema: str, role: str) -> tuple[str, ...]:
+    """Read only the publication identities needed under the voice lock."""
+    schema, role = checked_sql_name(schema), checked_sql_name(role)
+    return (
+        f"GRANT SELECT (kind, object_id, revision, revision_id) "
+        f'ON "{schema}".speech_publications TO "{role}"',
+        f"GRANT SELECT (kind, object_id, revision, revision_id) "
+        f'ON "{schema}".speech_publication_retirements TO "{role}"',
+    )
+
+
 class PostgresAdmissionTransactions:
     def __init__(
         self,
@@ -59,6 +77,7 @@ class PostgresAdmissionTransactions:
         timeout_seconds: float = 3,
         max_attempts: int = 3,
         enforce_binding_disable: bool = False,
+        require_builtin_voice: Callable[..., None] | None = None,
     ) -> None:
         integer(max_command_bytes, minimum=1)
         if not 0 < timeout_seconds <= 30 or not 1 <= max_attempts <= 3:
@@ -68,6 +87,7 @@ class PostgresAdmissionTransactions:
         self._timeout = timeout_seconds
         self._max_attempts = max_attempts
         self._enforce_binding_disable = enforce_binding_disable
+        self._require_builtin_voice = require_builtin_voice
 
     def admit_recipe(self, command: AdmitRecipe) -> AdmissionResult:
         identity = command.request.identity
@@ -90,7 +110,8 @@ class PostgresAdmissionTransactions:
         )
 
     def _admit(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> AdmissionResult:
-        if self._enforce_binding_disable:
+        is_tts = json.loads(prepared.command.business_command.document).get("kind") == "tts_file"
+        if self._enforce_binding_disable or is_tts:
             request = prepared.command.request
             existing = read_original(
                 cursor, request.identity, max_command_bytes=self._max_bytes, prepared=prepared
@@ -113,8 +134,105 @@ class PostgresAdmissionTransactions:
                 return existing
             if revision_is_disabled(cursor, binding_id, request.binding_revision_id):
                 raise AdmissionRejectedError("policy_or_resource_disabled")
+        self._lock_tts_voice(cursor, prepared)
         return admit_in_transaction(
             cursor, prepared, clock=cursor.clock, max_command_bytes=self._max_bytes
+        )
+
+    def _lock_tts_voice(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
+        """Serialize new TTS admission with retirement, after original replay checks."""
+        try:
+            body = json.loads(prepared.command.business_command.document)
+            if body.get("kind") != "tts_file":
+                return
+            voice = body["voice"]
+            stages = prepared.command.request.stages
+            if len(stages) != 1:
+                raise ValueError
+            stage = stages[0]
+            voice_id, revision, revision_id = voice["id"], voice["revision"], voice["revision_id"]
+            gateway = parse("SubmitExecutionRequest", body["gateway_request"])
+            wire_voice = gateway["command"]["resources"]["voice"]
+            request = prepared.command.request
+            if (
+                not isinstance(voice_id, str)
+                or type(revision) is not int
+                or revision < 1
+                or not isinstance(revision_id, str)
+                or wire_voice != {"id": voice_id, "revision": str(revision)}
+                or gateway["voice_revision_id"] != revision_id
+                or gateway["binding_revision_id"] != request.binding_revision_id
+                or gateway["policy_revision_id"] != request.policy_revision_id
+                or gateway["workspace_id"] != request.workspace_id
+                or gateway["command"]["kind"] != "tts"
+                or gateway["command"]["task_kind"] != "tts_file"
+                or gateway["deadline_at"] != deadline_text(request.deadline_at_us)
+                or gateway["operation_id"] != request.identity.operation_id
+                or gateway["attempt_id"] != request.identity.attempt_id
+                or any(
+                    gateway[key] != getattr(stage, key)
+                    for key in (
+                        "stage_id",
+                        "lease_id",
+                        "pool_id",
+                        "host_node_id",
+                        "gateway_id",
+                        "instance_id",
+                        "instance_generation",
+                    )
+                )
+                or gateway["fencing_token"] != request.authorities[0].fencing_token
+                or gateway["command_digest"]
+                != command_digest(cast(dict[str, object], gateway["command"]))
+            ):
+                raise ValueError
+        except ValueError, TypeError, KeyError, AttributeError:
+            raise AdmissionRejectedError("reconciliation_required") from None
+        existing = read_original(
+            cursor,
+            prepared.command.request.identity,
+            max_command_bytes=self._max_bytes,
+            prepared=prepared,
+        )
+        if existing is not None:
+            return
+        if self._require_builtin_voice is None:
+            raise AdmissionRejectedError("reconciliation_required")
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended("
+            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+            (voice_id,),
+        )
+        # A duplicate admission can commit while the voice lock is awaited.
+        existing = read_original(
+            cursor,
+            prepared.command.request.identity,
+            max_command_bytes=self._max_bytes,
+            prepared=prepared,
+        )
+        if existing is not None:
+            return
+        cursor.execute(
+            "SELECT p.revision_id FROM speech_publications p WHERE p.kind='voice' "
+            "AND p.object_id=%s AND p.revision=%s AND p.revision_id=%s "
+            "AND NOT EXISTS (SELECT 1 FROM speech_publication_retirements r "
+            "WHERE r.kind=p.kind AND r.object_id=p.object_id AND r.revision=p.revision "
+            "AND r.revision_id=p.revision_id)",
+            (voice_id, str(revision), revision_id),
+        )
+        if len(cursor.fetchall()) != 1:
+            raise AdmissionRejectedError("policy_or_resource_disabled")
+        self._require_builtin_voice(
+            cursor,
+            voice_id=voice_id,
+            revision=revision,
+            revision_id=revision_id,
+            binding_revision_id=prepared.command.request.binding_revision_id,
+            policy_revision_id=prepared.command.request.policy_revision_id,
+            instance_id=stage.instance_id,
+            instance_generation=stage.instance_generation,
+            host_node_id=stage.host_node_id,
+            gateway_id=stage.gateway_id,
         )
 
     def _run(

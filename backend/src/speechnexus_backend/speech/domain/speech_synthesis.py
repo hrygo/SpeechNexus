@@ -160,6 +160,7 @@ class SpeechPlan:
     text: str = field(repr=False)
     voice_id: str
     voice_revision_id: str
+    voice_revision: int
     response_format: SpeechFormat
     sample_rate_hz: int
     channels: int
@@ -195,6 +196,7 @@ class SpeechPlan:
             or _IDENTIFIER.fullmatch(self.voice_revision_id) is None
         ):
             raise ValueError("Invalid speech voice revision identity")
+        revision_number(self.voice_revision)
         if not isinstance(self.response_format, SpeechFormat):
             raise ValueError("Invalid speech response format")
         if type(self.sample_rate_hz) is not int or not 8000 <= self.sample_rate_hz <= 96000:

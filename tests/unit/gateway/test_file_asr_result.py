@@ -115,7 +115,7 @@ async def test_engine_language_and_segments_are_written_without_inventing_eviden
             value = await super().transcribe(audio, policy, cancelled=cancelled)
             clip_ms = round(len(audio.pcm16) / 2 * 1000 / 16000)
             if clip_ms <= 0:
-                return replace(value, language="en")
+                return replace(value, text="", language="en")
             segment = AsrSegment(
                 0,
                 clip_ms,
@@ -172,6 +172,66 @@ async def test_missing_engine_language_is_omitted_not_guessed(setup: Any) -> Non
     document = json.loads(store.results[0].body)
     assert "language" not in document
     assert "unknown" not in document
+
+
+@pytest.mark.parametrize("missing_index,empty", [(None, False), (0, False), (1, False), (1, True)])
+@pytest.mark.parametrize("field", ["segments", "words"])
+async def test_timestamp_evidence_must_cover_every_nonempty_chunk(
+    setup: Any, missing_index: int | None, empty: bool, field: str
+) -> None:
+    request, objects, recognizer = setup
+    async with consumer(objects, recognizer).open(request, cancelled=lambda: False) as run:
+        original = [segment async for segment in run]
+        summary = run.summary
+    assert summary is not None
+    model_mid = summary.output_samples // 2
+    source_mid = summary.source_samples // 2
+    chunks = []
+    for index, text in enumerate(("First.", "Second.")):
+        chunk = replace(
+            original[0],
+            sequence=index + 1,
+            source_sample_span=(0, source_mid)
+            if index == 0
+            else (source_mid, summary.source_samples),
+            model_sample_span=(0, model_mid) if index == 0 else (model_mid, summary.output_samples),
+            text=text,
+            duration_ms=500,
+            segments=(AsrSegment(0, 400, text),),
+            words=(AsrWord(text, 0, 400),),
+        )
+        if index == missing_index:
+            chunk = replace(chunk, segments=()) if field == "segments" else replace(chunk, words=())
+            if empty:
+                chunk = replace(chunk, text="")
+        chunks.append(chunk)
+
+    class Run:
+        def __init__(self) -> None:
+            self.summary = summary
+
+        async def __aiter__(self) -> AsyncIterator[Any]:
+            for chunk in chunks:
+                yield chunk
+
+    store = Store()
+    await stage_file_asr_result(
+        request,
+        cast(FileAsrTranscription, Run()),
+        store=store,
+        max_result_bytes=4096,
+        check=lambda: None,
+    )
+    document = json.loads(store.results[0].body)
+    assert document["text"] == ("First." if empty else "First.\nSecond.")
+    if missing_index is None:
+        assert len(document[field]) == 2
+    elif empty:
+        assert len(document[field]) == 1
+    else:
+        assert field not in document
+    other = "words" if field == "segments" else "segments"
+    assert len(document[other]) == 2
 
 
 async def test_reversed_engine_segments_are_rejected_before_storage(setup: Any) -> None:

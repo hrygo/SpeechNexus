@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,25 @@ def test_valid_private_recipe_loads_frozen_facts(tmp_path: Path) -> None:
 def test_relative_recipe_path_is_rejected() -> None:
     with pytest.raises(ValueError):
         load_transcription_recipe(Path("recipe.json"))
+
+
+def test_publication_cannot_select_a_different_execution_revision(tmp_path: Path) -> None:
+    document = _document()
+    document["binding_publication_id"] = "another-published-revision"
+    document["recipe_digest"] = (
+        "sha256:"
+        + hashlib.sha256(
+            rfc8785.dumps({k: v for k, v in document.items() if k != "recipe_digest"})
+        ).hexdigest()
+    )
+    with pytest.raises(ValueError):
+        load_transcription_recipe(_write(tmp_path, document))
+
+
+def test_in_memory_recipe_cannot_select_a_different_execution_revision(tmp_path: Path) -> None:
+    recipe = load_transcription_recipe(_write(tmp_path, _document()))
+    with pytest.raises(ValueError):
+        replace(recipe, binding_publication_id="another-published-revision")
 
 
 def test_group_readable_recipe_file_is_rejected(tmp_path: Path) -> None:

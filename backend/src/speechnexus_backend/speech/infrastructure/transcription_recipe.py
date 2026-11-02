@@ -213,6 +213,10 @@ class TranscriptionRecipe:
     asr: AsrParameters
     approved: ApprovedAdmissionRecipe
 
+    def __post_init__(self) -> None:
+        if self.binding_publication_id != self.approved.binding_revision_id:
+            raise ValueError("The published and execution binding revisions must match")
+
 
 def load_transcription_recipe(path: Path) -> TranscriptionRecipe:
     """Read one owner-only recipe file; all ambiguity is an explicit failure."""

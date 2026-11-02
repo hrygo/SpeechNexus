@@ -269,8 +269,6 @@ def _to_result(plan: TranscriptionPlan, document: Mapping[str, Any]) -> Transcri
 
 def _segments(plan: TranscriptionPlan, value: Any) -> tuple[TranscriptSegment, ...]:
     if value is None:
-        if plan.require_segments:
-            raise TranscriptionOutputInvalidError("Requested segment evidence is absent")
         return ()
     if type(value) is not list:
         raise TranscriptionOutputInvalidError("Transcript segments are not a list")
@@ -294,15 +292,11 @@ def _segments(plan: TranscriptionPlan, value: Any) -> tuple[TranscriptSegment, .
                 temperature=item["temperature"],
             )
         )
-    if plan.require_segments and not complete:
-        raise TranscriptionOutputInvalidError("Requested segment evidence is absent")
     return tuple(complete)
 
 
 def _words(plan: TranscriptionPlan, value: Any) -> tuple[TranscriptWord, ...]:
     if value is None:
-        if plan.require_words:
-            raise TranscriptionOutputInvalidError("Requested word evidence is absent")
         return ()
     if type(value) is not list:
         raise TranscriptionOutputInvalidError("Transcript words are not a list")
@@ -315,8 +309,6 @@ def _words(plan: TranscriptionPlan, value: Any) -> tuple[TranscriptWord, ...]:
         complete.append(
             TranscriptWord(word=item["word"], start_ms=item["start_ms"], end_ms=item["end_ms"])
         )
-    if plan.require_words and not complete:
-        raise TranscriptionOutputInvalidError("Requested word evidence is absent")
     return tuple(complete)
 
 

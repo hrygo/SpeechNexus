@@ -223,7 +223,7 @@ def recipe_document() -> dict[str, Any]:
     document: dict[str, Any] = {
         "protocol": "transcription_admission_v1",
         "model_id": "asr-quality",
-        "binding_publication_id": "binding-publication-1",
+        "binding_publication_id": "binding-revision-1",
         "binding_revision_id": "binding-revision-1",
         "manifest_id": "manifest-1",
         "policy_revision_id": "policy-revision-1",

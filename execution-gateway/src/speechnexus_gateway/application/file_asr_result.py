@@ -82,6 +82,8 @@ async def stage_file_asr_result(
     segment_ends: list[int] = []
     words: list[bytes] = []
     word_bytes = 0
+    segments_missing = False
+    words_missing = False
     word_ends: list[int] = []
     previous_segment_end = 0
     previous_word_start = 0
@@ -124,6 +126,9 @@ async def stage_file_asr_result(
         source_start_ms = _source_ms(
             segment.source_sample_span[0], segment.source_clock.sample_rate_hz
         )
+        if segment.text:
+            segments_missing |= not segment.segments
+            words_missing |= not segment.words
         for item in segment.segments:
             if item.end_ms > clip_ms:
                 raise AsrResultError("asr_result_invalid")
@@ -197,9 +202,9 @@ async def stage_file_asr_result(
     if speech_segments and not language_missing and len(languages) == 1:
         language = next(iter(languages))
         parts.extend([b',"language":', json.dumps(language).encode("ascii")])
-    if evidence:
+    if evidence and not segments_missing:
         parts.extend([b',"segments":[', b",".join(evidence), b"]"])
-    if words:
+    if words and not words_missing:
         parts.extend([b',"words":[', b",".join(words), b"]"])
     parts.append(b"}")
     completed = b"".join(parts)

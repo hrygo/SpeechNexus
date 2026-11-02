@@ -17,6 +17,7 @@ from tests.integration.test_publications_storage import (
 
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
+    BindingActivationConflictError,
     BindingLifecycleConflictError,
 )
 from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
@@ -27,7 +28,34 @@ from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import
 pytestmark = pytest.mark.integration
 
 
-def test_competing_activations_serialize_and_reject_stale_head(sandbox: Sandbox) -> None:
+@pytest.mark.parametrize(
+    "keyed,first_target,second_target,reject_second,final_head,catalog_delta,event_count,replay_second",
+    [
+        pytest.param(keyed, *scenario, False, id=f"{name}-keyed-{keyed}")
+        for keyed in (False, True)
+        for name, scenario in [
+            ("change-change", ("1", "1", True, "1", 1, 1)),
+            ("noop-noop", ("2", "2", False, "2", 0, 2)),
+            ("noop-change", ("2", "1", False, "1", 1, 2)),
+            ("change-noop", ("1", "2", True, "1", 1, 1)),
+        ]
+    ]
+    + [
+        pytest.param(True, "1", "1", False, "1", 1, 1, True, id="change-replay"),
+        pytest.param(True, "2", "2", False, "2", 0, 1, True, id="noop-replay"),
+    ],
+)
+def test_competing_activations_serialize_and_reject_stale_head(
+    sandbox: Sandbox,
+    keyed: bool,
+    first_target: str,
+    second_target: str,
+    reject_second: bool,
+    final_head: str,
+    catalog_delta: int,
+    event_count: int,
+    replay_second: bool,
+) -> None:
     admin = sandbox.admin
     create_binding(admin, DEFINITION)
     create_binding_revision(admin, {**DEFINITION, "revision": "2", "revision_id": "binding-rev-2"})
@@ -78,14 +106,14 @@ def test_competing_activations_serialize_and_reject_stale_head(sandbox: Sandbox)
             if not release.wait(timeout=10):
                 raise RuntimeError("test did not release the binding lock")
 
-    def command(request_id: str, digest_digit: str) -> BindingActivationCommand:
+    def command(request_id: str, target: str, digest_digit: str) -> BindingActivationCommand:
         return BindingActivationCommand(
             binding_id="tts-quality",
-            revision="1",
+            revision=target,
             request_id=request_id,
             actor_type="anonymous",
             credential_label=None,
-            key_digest=None,
+            key_digest="sha256:" + digest_digit * 64 if keyed else None,
             intent_digest="sha256:" + digest_digit * 64,
             expected_current_revision="2",
         )
@@ -93,10 +121,13 @@ def test_competing_activations_serialize_and_reject_stale_head(sandbox: Sandbox)
     first = PausedActivation(sandbox.pool, timeout_seconds=15)
     second = PostgresBindingLifecycle(sandbox.pool, timeout_seconds=15)
     with ThreadPoolExecutor(max_workers=2) as workers:
-        winner = workers.submit(first.activate, command("activation-winner", "a"))
+        winner = workers.submit(first.activate, command("activation-winner", first_target, "a"))
         try:
             assert acquired.wait(timeout=5), "first activation did not acquire its lock"
-            loser = workers.submit(second.activate, command("activation-loser", "b"))
+            loser = workers.submit(
+                second.activate,
+                command("activation-loser", second_target, "a" if replay_second else "b"),
+            )
             deadline = time.monotonic() + 5
             blocked_pid = None
             while time.monotonic() < deadline:
@@ -114,37 +145,58 @@ def test_competing_activations_serialize_and_reject_stale_head(sandbox: Sandbox)
         finally:
             release.set()
         receipt = winner.result(timeout=10)
-        with pytest.raises(BindingLifecycleConflictError) as rejected:
-            loser.result(timeout=10)
-        assert rejected.value.code == "configuration_changed"
+        if reject_second:
+            with pytest.raises(BindingLifecycleConflictError) as rejected:
+                loser.result(timeout=10)
+            assert rejected.value.code == "configuration_changed"
+            assert isinstance(rejected.value, BindingActivationConflictError)
+            assert rejected.value.current_revision == first_target
+        else:
+            next_receipt = loser.result(timeout=10)
+            assert next_receipt.revision == second_target
+            assert next_receipt.replayed is replay_second
 
     assert (receipt.revision, receipt.revision_id, receipt.status, receipt.replayed) == (
-        "1",
-        "binding-rev-1",
+        first_target,
+        "binding-rev-" + first_target,
         "published",
         False,
     )
     assert admin.execute(
         "SELECT revision, revision_id FROM speech_publication_heads "
         "WHERE kind='binding' AND object_id='tts-quality'"
-    ).fetchone() == ("1", "binding-rev-1")
+    ).fetchone() == (final_head, "binding-rev-" + final_head)
     assert admin.execute("SELECT revision FROM speech_catalog_state").fetchone() == (
-        initial_catalog[0] + 1,
+        initial_catalog[0] + catalog_delta,
     )
     assert admin.execute(
         "SELECT action, binding_id, revision, revision_id, result_status, request_id, "
-        "policy_revision FROM speech_publication_lifecycle_events"
+        "policy_revision FROM speech_publication_lifecycle_events ORDER BY request_id DESC"
     ).fetchall() == [
         (
             "model_binding.activate",
             "tts-quality",
-            "1",
-            "binding-rev-1",
+            first_target,
+            "binding-rev-" + first_target,
             "published",
             "activation-winner",
-            initial_catalog[0] + 1,
+            initial_catalog[0] + (first_target != "2"),
         )
-    ]
+    ] + (
+        [
+            (
+                "model_binding.activate",
+                "tts-quality",
+                second_target,
+                "binding-rev-" + second_target,
+                "published",
+                "activation-loser",
+                initial_catalog[0] + catalog_delta,
+            )
+        ]
+        if event_count == 2
+        else []
+    )
     assert (
         admin.execute(
             "SELECT * FROM speech_publications ORDER BY kind, object_id, revision"

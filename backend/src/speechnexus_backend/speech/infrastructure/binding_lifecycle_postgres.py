@@ -13,6 +13,7 @@ from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
+    BindingActivationConflictError,
     BindingLifecycleConflictError,
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
@@ -196,7 +197,7 @@ class PostgresBindingLifecycle:
         head = self._head(cursor, command.binding_id)
         current_revision = None if head is None else head["revision"]
         if current_revision != command.expected_current_revision:
-            raise BindingLifecycleConflictError("configuration_changed")
+            raise BindingActivationConflictError(current_revision)
         occurred_at_us = self._clock(cursor)
         changed = (
             head is None

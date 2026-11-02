@@ -251,6 +251,31 @@ already-published, non-retired revision with an explicit
 retirement cleared the head. A retired revision cannot itself be reactivated;
 roll back to another surviving published revision instead.
 
+A stale activation returns `409 configuration_changed`, `retryable: false`.
+Its human-readable message names the expected `expected_current_revision` from
+the head observed under that activation's lock, as a decimal string or JSON
+`null` for an empty head. It exposes no internal revision ID or execution state.
+The observation can change before the response arrives: refresh the binding
+state and confirm the intended activation before resubmitting. Consumers branch
+on the stable error code, not the message text. See the proposed
+[binding lifecycle HTTP decision](../decisions/0013-binding-lifecycle-admin-http.md)
+for the route and compatibility review.
+
+Activation, retirement and disable share a deployment-wide binding lifecycle key
+namespace across binding IDs, revisions and callers (including credential labels).
+The event table's non-null key digest is unique within the configured database/schema;
+neither the operation nor the binding nor the caller prefixes that digest.
+Only committed results occupy a key, including successful activation no-ops;
+rejection does not reserve a key or store an error result. Changing operation,
+binding, revision or canonical body under an occupied key is `idempotency_conflict`.
+Committed replay precedes current
+state/CAS checks. A new no-op records an event without advancing head/catalogue.
+Two no-ops can succeed; no-op then change can both succeed; change then an old-head
+command rejects the latter. Two eligible head-changing new commands from the same
+initial head have one winner without intervening writers. Revision equality is
+not an activation epoch or protection against a head changing away and back.
+See the [same-candidate verification matrix](../operations/binding-activation-verification.md).
+
 Both operations use one short transaction, a transaction-scoped advisory lock
 keyed by the catalogue object and an idempotency-key advisory lock. The head and
 `speech_catalog_state` advance in that same transaction: retirement advances via
@@ -262,8 +287,11 @@ configuration persisted at admission and never re-read the head.
 Every successful first execution appends an event with the binding/revision,
 result status, request ID, actor type/label, policy revision, intent digest,
 optional idempotency digest and `change_summary_json` containing the operator
-reason. Replaying the same key and complete intent returns the original event;
-a changed intent under that key is `409 idempotency_conflict`. See the
+reason. Replaying a committed key and complete intent returns the original event;
+a changed intent under that committed key is `409 idempotency_conflict`. An unknown
+activation retains the original complete path/body/key; changing the key or CAS
+does not resolve it. A later rejection or current-head GET cannot settle an earlier
+unknown submission. See the
 [binding lifecycle operations guide](../operations/binding-lifecycle.md).
 
 ## Opt-in HTTP writer

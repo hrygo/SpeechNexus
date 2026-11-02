@@ -29,6 +29,16 @@ class BindingLifecycleConflictError(ValueError):
         super().__init__(code)
 
 
+class BindingActivationConflictError(BindingLifecycleConflictError):
+    """The public head revision observed under the activation transaction's lock."""
+
+    def __init__(self, current_revision: str | None) -> None:
+        if current_revision is not None:
+            revision_number(current_revision)
+        self.current_revision = current_revision
+        super().__init__("configuration_changed")
+
+
 def _digest(value: str | None) -> None:
     if value is not None and re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
         raise ValueError("Invalid lifecycle digest")

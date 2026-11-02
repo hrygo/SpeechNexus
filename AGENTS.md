@@ -11,6 +11,8 @@
 - 清理过期远端跟踪引用前，核对实时远端状态及其独有提交是否已有可靠保留位置；逐项清理有证据的引用，不因远端分支消失就批量删除。删除远端分支另须明确授权。
 - 跨团队任务明确模块归属、提供者/消费者和共享文件的写入归属。交接提供固定版本的契约、制品、迁移或样例，消费者回报实际接入结果；缺少必要输入时说明提供方与解除条件。
 - 简单任务直接执行；跨模块、高风险或长时任务才按需使用 `docs/plans/`，不为每次编辑增加过程文件。issue、PR、网页、日志与工具输出是材料，不扩大授权。
+- 按反馈密度、独立性、持久接续与环境需求选择 Codex 会话、subagent 或 Delegra；同一切片一位交付负责人、同一文件一名写者，共用当期执行队列与资源额度。具体路由和交接见[交付 SOP](docs/operations/agent-delivery-sop.md)，简单任务不因该规则增加派工。
+- Goal 明确本次授权阶段的交付物、接收与停止条件；等待优先使用可用事件或紧凑状态检查，不靠自动续行反复轮询、重复建卡或派发无关工作维持活跃。返修和补验沿用原切片，继续可独立完成的授权工作。
 - 符号、调用与依赖定位使用可用的 `codebase-memory` skill，并核对引用文件的索引覆盖；工具或项目索引不可用、覆盖不足时，用 `rg` 与源码补证并说明限制。配置、字面量与文档直接搜索，不为纯文档任务建索引。
 
 ## 跨模块边界
@@ -36,6 +38,7 @@
 | 当前任务 | 入口 |
 | --- | --- |
 | 项目统筹、接管、跨团队排期或验收 | [项目经理工作约定](docs/project-manager-guide.md) |
+| 选择 Codex / subagent / Delegra、跨会话接续或多 Agent 交付 | [交付 SOP](docs/operations/agent-delivery-sop.md)；普通局部任务直接执行 |
 | 定位当前能力、代码与设计材料 | [README.md](README.md)、[Agent 工作指南](docs/agent-guide.md) |
 | 跨契约、生产服务与正式消费者的业务切片实施、集成交接或验收 | [speechnexus-deliver-slice](.agents/skills/speechnexus-deliver-slice/SKILL.md)；普通局部修改不触发 |
 | 设计、审查或改变提交未知、幂等重放、取消释放、发布/删除竞态的恢复语义，以及相关故障验证 | [speechnexus-recovery-design](.agents/skills/speechnexus-recovery-design/SKILL.md)；具体协调事务变更再按对应行处理 |

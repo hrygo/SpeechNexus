@@ -93,6 +93,11 @@ voice 删除/撤销的共同锁与准入复验尚未闭合，因此不装配可�
 现有 binding disable 屏障保留原身份重放和锁后复验规则，不能代替 voice 的共同锁协议；
 同步 `SpeechRequest` 不增加 Job binding pin。合成测试不证明 PG、引擎、公开 E2E 或 Gate。
 
+内部 `SpeechPlan` 固定本次解析的 `model_id`、`workspace_id`、
+`binding_revision_id`、`workspace_policy_revision` 和 `voice_revision_id`，
+供执行适配器使用；适配器不得重新选择最新绑定或工作空间策略。
+这些字段是已选事实的交接，不认证声音资格，也不替代持久提交、准入锁后复核或恢复记录。
+
 增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
 普通同步 ASR/TTS 不建立永久业务记录，也不自动保存源文件或音频。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，客户端使用相同幂等键协调结果，不能盲目新建相同意图。

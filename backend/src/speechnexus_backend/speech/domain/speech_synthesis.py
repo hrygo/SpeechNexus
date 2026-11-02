@@ -153,6 +153,10 @@ class SpeechPlan:
     """Everything one bounded synthesis may use; the ceiling is already tightened."""
 
     request_id: str
+    model_id: str
+    workspace_id: str
+    binding_revision_id: str
+    workspace_policy_revision: int
     text: str = field(repr=False)
     voice_id: str
     voice_revision_id: str
@@ -173,6 +177,11 @@ class SpeechPlan:
     def __post_init__(self) -> None:
         if type(self.request_id) is not str or _IDENTIFIER.fullmatch(self.request_id) is None:
             raise ValueError("Invalid speech request identity")
+        if type(self.model_id) is not str or not 1 <= len(self.model_id) <= 128:
+            raise ValueError("Invalid speech model identity")
+        identifier(self.workspace_id)
+        identifier(self.binding_revision_id)
+        revision_number(self.workspace_policy_revision)
         if (
             type(self.text) is not str
             or "\x00" in self.text

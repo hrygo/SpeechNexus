@@ -276,6 +276,13 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
             "speech_binding_disable_targets",
             "speech_binding_disable_abort_intents",
             "gateway_abort_intents",
+            # Independent builtin voice trust records are not shared runtime data.
+            "speech_builtin_voice_source_approvals",
+            "speech_builtin_voice_source_revocations",
+            "speech_builtin_voice_approvals",
+            "speech_builtin_voice_revocations",
+            "speech_builtin_voice_qualifications",
+            "speech_builtin_voice_publish_intents",
         }
         if db.dialect == "postgresql"
         else set()

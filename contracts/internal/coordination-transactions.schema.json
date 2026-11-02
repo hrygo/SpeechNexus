@@ -1004,6 +1004,7 @@
     },
     "release_lease": {
       "type": "object",
+      "description": "Consumes persisted authority only; callers cannot supply stop or cleanup flags. For an existing failed/not_required submission, recheck under the original pool and submit locks that request ID, dispatched_at, staging key/receipt, generated samples and all output intervals are absent. Inconsistent or unavailable history retains the lease, quota and instance baseline. Absence corroborates the existing native no-dispatch failure only: it never proves zero-dispatch success, physical resource release or permission to rewrite accepted dispatch history. Other terminal executions require the existing verified stop evidence; no zero-dispatch evidence kind is enabled.",
       "additionalProperties": false,
       "required": [
         "lease_id",

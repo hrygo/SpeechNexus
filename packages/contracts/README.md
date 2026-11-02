@@ -41,6 +41,26 @@ for original-key recovery, unknown results and the remaining producer work.
 
 ## Generate and verify
 
+Model catalogue consumers use the root parser on decoded `/v1/models` 200 JSON:
+
+```ts
+import { parse } from "@speechnexus/contracts";
+
+const catalogue = parse("ModelList", untrustedResponse);
+```
+
+Python exposes the same selection through
+`from speechnexus_contracts import parse; parse("ModelList", value)`.
+The result retains the source `ModelList` shape, including an empty `data` list
+and optional `nexus`. When present, the complete nested binding, task, release
+tier and readiness constraints apply. Both parsers reject unknown fields and
+return the original value without coercion, defaults or mutation. Readiness
+does not establish quality or authorize model selection. The HTTP client still
+requires explicit response parsing; no network call or retry is added here.
+Shared `file-workflow.json` examples compare the source with generated Python
+and TypeScript runtime validation. These checks do not establish Workbench
+integration, a running catalogue endpoint, or real engine readiness.
+
 From the repository root, with locked Python and Node dependencies installed:
 
 ```sh
@@ -71,6 +91,15 @@ shows source changes; it is not a compatibility verdict. The existing OpenAI
 compatibility gate continues to cover only the declared standard subset.
 
 ## Consumer handoff 0.1.0
+
+Speech source `0.1.0.dev1` adds optional `model_binding` to TTS Job creation.
+The root `parse("JobCreateRequest", value)` and generated TTS types preserve
+its exact decimal revision string. With a pin, `model` is the selected binding's
+`logical_model`; old unpinned requests keep their existing binding-ID lookup.
+Deploy a supporting server before enabling pinned consumers; older strict
+servers reject the new field, and clients must never retry without it.
+See [the Job pin handoff](../../docs/architecture/public-job-model-binding.md)
+for rejection, original-key recovery and the remaining admission/execution gaps.
 
 Python consumers install the `speechnexus-contracts` wheel or add it as a uv
 workspace dependency. Its schema bundle ships in the wheel and needs no source
@@ -104,7 +133,7 @@ const response = await client.GET("/v1/nexus/assets/{asset_id}", {
 The caller chooses the deployment URL and authentication/fetch policy. The
 client has no default remote endpoint and does not validate received JSON
 automatically: call `parse` on untrusted data. Full speech OpenAPI static types
-are available, but runtime entrypoints are limited to `bindings.json`: Jobs,
+are available, but runtime entrypoints are limited to `bindings.json`: ModelList, Jobs,
 Job events, cancellation, Assets, Artifacts, Operations and public errors.
 Python additionally exposes `validation.validate_coordination` for the first
 internal `create_job` request and full `TransactionResult`. These use a separate
@@ -181,7 +210,15 @@ new entry. Do not expand the OpenAI compatibility promise through this package.
 
 ## Explicit consumer profiles
 
-Six opt-in JSON profiles extend the default file workflow. Each includes Python
+`zero_dispatch` is an additional opt-in, parser-only candidate for original identity,
+durable cancellation and read-only recovery. Import `speechnexus_contracts.zero_dispatch`
+in Python or `@speechnexus/contracts/zero-dispatch` in TypeScript. Both consume the
+same [synthetic corpus](../../tests/fixtures/contracts/zero-dispatch.json). Shape
+validation does not verify digests, trusted qualification, cross-row identity,
+replay, snapshot isolation or DB permissions. No producer, network client, seal,
+sending or resource release is enabled; see the [candidate contract](../../docs/architecture/zero-dispatch-contract-core.md).
+
+Opt-in JSON profiles extend the default file workflow. Each includes Python
 TypedDicts, a typed parser, an offline schema bundle and generated TypeScript
 types. HTTP profiles additionally expose basic clients; the two public realtime
 profiles parse data without opening connections. Entry points are explicitly listed in `bindings.json`:

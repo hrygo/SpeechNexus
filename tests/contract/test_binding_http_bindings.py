@@ -145,7 +145,7 @@ def test_binding_surface_selects_only_declared_draft_and_lifecycle_operations() 
     actual = contract()
     assert actual == generator().bundle_http_surface(CONFIG)
     validate(actual)
-    assert actual["info"]["version"] == "0.1.0.dev4"
+    assert actual["info"]["version"] == "0.1.0.dev5"
     assert set(actual["paths"]) == set(CONFIG["paths"])
     assert set(actual["paths"]["/v1/nexus/admin/model-bindings"]) == {"post"}
     assert set(
@@ -200,3 +200,35 @@ def test_python_consumer_does_not_auto_retry_or_invent_a_recovery_operation(keye
             assert calls[0] == calls[1]
         else:
             assert calls[0][1] is None
+
+
+def test_activation_unknown_recovery_preserves_original_path_body_and_key() -> None:
+    operation = "activatePublishedModelBindingRevision"
+    request = sample("activate-original")["value"]
+    unknown, success = sample("activate-unknown"), sample("activate-success")
+    calls: list[tuple[str, str, str | None, bytes]] = []
+
+    def respond(wire: httpx.Request) -> httpx.Response:
+        calls.append(
+            (wire.method, wire.url.path, wire.headers.get("Idempotency-Key"), wire.content)
+        )
+        reply = unknown if len(calls) == 1 else success
+        return httpx.Response(
+            reply["status"], json=reply["value"]["body"], headers=reply["value"]["headers"]
+        )
+
+    path = "/v1/nexus/admin/model-bindings/asr-quality/revisions/1/activations"
+    validate_request(operation, request)
+    with httpx.Client(
+        transport=httpx.MockTransport(respond), base_url="http://deployment.invalid"
+    ) as client:
+        for status in (503, 200):
+            response = client.post(path, json=request["body"], headers=request["headers"])
+            assert response.status_code == status
+            validate_response(
+                operation, status, {"body": response.json(), "headers": dict(response.headers)}
+            )
+            assert len(calls) == (1 if status == 503 else 2)
+            if status == 503:
+                assert response.json()["error"]["retryable"] is False
+        assert calls[0] == calls[1]

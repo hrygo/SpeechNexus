@@ -18,6 +18,7 @@ from speechnexus_backend.speech.application.binding_publication import Published
 from speechnexus_backend.speech.domain.binding_drafts import BindingDraft
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
+    BindingActivationConflictError,
     BindingLifecycleConflictError,
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
@@ -94,9 +95,14 @@ def _json(raw: bytes) -> Any:
 
 
 def _error(
-    code: str, request_id: str, operation: str, *, retryable: bool | None = None
+    code: str,
+    request_id: str,
+    operation: str,
+    *,
+    retryable: bool | None = None,
+    message: str | None = None,
 ) -> JSONResponse:
-    status, kind, message = _ERRORS.get(code, _ERRORS["binding_result_unknown"])
+    status, kind, default_message = _ERRORS.get(code, _ERRORS["binding_result_unknown"])
     should_retry = status == 503 if retryable is None else retryable
     headers = {"Cache-Control": "no-store", "X-Should-Retry": str(should_retry).lower()}
     body = dict(
@@ -106,7 +112,7 @@ def _error(
                 "error": {
                     "code": code,
                     "type": kind,
-                    "message": message,
+                    "message": default_message if message is None else message,
                     "param": None,
                     "request_id": request_id,
                     "retryable": should_retry,
@@ -212,6 +218,18 @@ def _run(
         return JSONResponse(wire, headers=headers)
     except BindingLifecycleNotFoundError:
         return _error("binding_not_found", request_id, operation)
+    except BindingActivationConflictError as error:
+        return _error(
+            error.code,
+            request_id,
+            operation,
+            message=(
+                "The active binding revision changed. "
+                f"Expected expected_current_revision={json.dumps(error.current_revision)} "
+                "when this activation was rejected. "
+                "Refresh the binding state and confirm the intended activation before resubmitting."
+            ),
+        )
     except BindingLifecycleConflictError as error:
         return _error(error.code, request_id, operation)
     except BindingLifecycleUnavailableError:

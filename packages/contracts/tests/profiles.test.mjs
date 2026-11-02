@@ -12,6 +12,7 @@ import * as model_bindings from "../src/model_bindings.ts";
 import * as scenario_profiles from "../src/scenario_profiles.ts";
 import * as gateway_recovery from "../src/gateway_recovery.ts";
 import * as audio_inspection from "../src/audio_inspection.ts";
+import * as zero_dispatch from "../src/zero_dispatch.ts";
 import * as binding_defaults from "../src/binding_defaults.ts";
 import * as binding_defaults_producer from "../src/binding_defaults_producer.ts";
 import { exampleValue } from "./contract-examples.mjs";
@@ -27,6 +28,7 @@ const profiles = {
   model_bindings,
   gateway_recovery,
   audio_inspection,
+  zero_dispatch,
   binding_defaults,
   binding_defaults_producer,
 };
@@ -34,6 +36,11 @@ const fixtures = JSON.parse(
   readFileSync(
     new URL("../../../tests/fixtures/contracts/consumer-profiles.json", import.meta.url),
   ),
+);
+fixtures.examples.push(
+  ...JSON.parse(
+    readFileSync(new URL("../../../tests/fixtures/contracts/zero-dispatch.json", import.meta.url)),
+  ).examples,
 );
 test("profile draft consumer preserves original intent and idempotency header", async () => {
   const example = (schema) =>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -50,6 +51,14 @@ class ModelNotPublishedError(LookupError):
     pass
 
 
+class ModelBindingError(ValueError):
+    """A stable, non-retryable rejection of an explicit binding selection."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 class VoiceNotPublishedError(LookupError):
     pass
 
@@ -88,6 +97,40 @@ class WorkspaceFact:
 class BindingFact:
     publication: Publication
     definition: Mapping[str, Any]
+    current: bool = True
+    retired: bool = False
+
+
+def require_pinned_binding(
+    binding: BindingFact | None, reference: tuple[str, int], model: str
+) -> BindingFact:
+    """Validate exact published identity; reuse after the catalogue object lock."""
+    if binding is None:
+        raise ModelBindingError("model_binding_not_published")
+    publication, definition = binding.publication, binding.definition
+    if (
+        publication.kind != "binding"
+        or (publication.object_id, publication.revision) != reference
+        or ("binding_id" in definition and definition["binding_id"] != publication.object_id)
+        or ("revision" in definition and definition["revision"] != str(publication.revision))
+        or ("revision_id" in definition and definition["revision_id"] != publication.revision_id)
+        or not isinstance(definition.get("logical_model"), str)
+        or not isinstance(definition.get("tasks"), list)
+    ):
+        raise PublicJobUnavailableError
+    # Draft storage keeps identity in columns, not necessarily in definition_json.
+    # The adapter's exact three-column join owns that identity; any identity
+    # also embedded in the document must agree. Lifecycle comes from publication
+    # and retirement rows, never the original draft's lifecycle projection.
+    if binding.retired:
+        raise ModelBindingError("model_binding_retired")
+    if not binding.current:
+        raise ModelBindingError("model_binding_not_current")
+    if definition["logical_model"] != model:
+        raise ModelBindingError("model_binding_mismatch")
+    if "tts_file" not in definition["tasks"]:
+        raise ModelBindingError("model_binding_task_not_supported")
+    return binding
 
 
 class JobFacts(Protocol):
@@ -96,6 +139,8 @@ class JobFacts(Protocol):
     def workspace(self, workspace_id: str) -> WorkspaceFact | None: ...
 
     def latest_binding(self, model_id: str) -> BindingFact | None: ...
+
+    def binding_revision(self, binding_id: str, revision: int) -> BindingFact | None: ...
 
     def publication(
         self, kind: PublicationKind, object_id: str, revision: int
@@ -113,7 +158,9 @@ class JobFacts(Protocol):
 class PublicJobStore(Protocol):
     def find_by_key(
         self, workspace_id: str, key_digest: str, request_digest: str
-    ) -> JobCreateResult | None: ...
+    ) -> JobCreateResult | None:
+        """Serialize with keyed create; settle an in-flight writer before absence."""
+        ...
 
     def create(self, job: NewPublicJob) -> JobCreateResult: ...
 
@@ -162,16 +209,63 @@ class PublicJobs:
         request_digest = canonical_digest(intent)
         key_digest = None if idempotency_key is None else idempotency_digest(idempotency_key)
         if key_digest is not None:
-            try:
-                original = self._store.find_by_key(workspace_id, key_digest, request_digest)
-            except PublicJobUnavailableError:
-                raise JobOutcomeUnknownError from None
+            original = self._find_original(workspace_id, key_digest, request_digest)
             if original is not None:
-                if original.outcome == "conflict":
-                    raise IdempotencyConflictError
-                if original.outcome != "replayed" or original.job is None:
-                    raise JobOutcomeUnknownError
-                return original.job
+                return _submission_result(original)
+        try:
+            return self._submit_new(
+                payload,
+                typed_kind=typed_kind,
+                workspace_id=workspace_id,
+                intent=intent,
+                request_digest=request_digest,
+                key_digest=key_digest,
+                request_id=request_id,
+            )
+        except (
+            UnknownWorkspaceError,
+            DisabledWorkspaceError,
+            ModelNotPublishedError,
+            ModelBindingError,
+            VoiceNotPublishedError,
+            ProfileNotPublishedError,
+            PronunciationNotFoundError,
+            AssetNotReadyError,
+        ):
+            # The first lookup can miss a concurrent commit. Before rejecting
+            # changed facts, settle the same-key writer and recover its result.
+            # If coordination fails, propagate unavailable rather than a 422.
+            if key_digest is not None:
+                original = self._find_original(workspace_id, key_digest, request_digest)
+                if original is not None:
+                    return _submission_result(original)
+            raise
+
+    def _find_original(
+        self, workspace_id: str, key_digest: str, request_digest: str
+    ) -> JobCreateResult | None:
+        try:
+            original = self._store.find_by_key(workspace_id, key_digest, request_digest)
+        except PublicJobUnavailableError:
+            raise JobOutcomeUnknownError from None
+        if original is not None and (
+            original.outcome not in ("replayed", "conflict")
+            or (original.outcome == "replayed" and original.job is None)
+        ):
+            raise JobOutcomeUnknownError
+        return original
+
+    def _submit_new(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        typed_kind: JobKind,
+        workspace_id: str,
+        intent: Mapping[str, Any],
+        request_digest: str,
+        key_digest: str | None,
+        request_id: str,
+    ) -> PublicJob:
         workspace = self._facts.workspace(workspace_id)
         if workspace is None:
             raise UnknownWorkspaceError
@@ -181,12 +275,20 @@ class PublicJobs:
         model_id = payload.get("model")
         if not isinstance(model_id, str):
             raise ModelNotPublishedError
-        binding = self._facts.latest_binding(model_id)
-        if binding is None:
-            raise ModelNotPublishedError
-        tasks = binding.definition.get("tasks")
-        if not isinstance(tasks, list) or _REQUIRED_TASK[typed_kind] not in tasks:
-            raise ModelNotPublishedError
+        pin = self._binding_reference(payload.get("model_binding"))
+        if "model_binding" in payload and (pin is None or typed_kind != "tts"):
+            raise ValueError("Invalid model binding")
+        binding: BindingFact
+        if pin is not None:
+            binding = require_pinned_binding(self._facts.binding_revision(*pin), pin, model_id)
+        else:
+            latest = self._facts.latest_binding(model_id)
+            if latest is None:
+                raise ModelNotPublishedError
+            binding = latest
+            tasks = binding.definition.get("tasks")
+            if not isinstance(tasks, list) or _REQUIRED_TASK[typed_kind] not in tasks:
+                raise ModelNotPublishedError
 
         voice = self._reference(payload.get("voice"))
         if typed_kind == "tts":
@@ -255,15 +357,10 @@ class PublicJobs:
             ),
             idempotency_key_digest=key_digest,
             submission=submission,
+            expected_binding=binding.publication if pin is not None else None,
         )
         result = self._store.create(request)
-        if result.outcome == "conflict":
-            raise IdempotencyConflictError
-        if result.outcome == "unknown":
-            raise JobOutcomeUnknownError
-        if result.outcome == "rejected" or result.job is None:
-            raise JobRejectedError
-        return result.job
+        return _submission_result(result)
 
     def get(self, job_id: str) -> PublicJob:
         identifier(job_id)
@@ -289,6 +386,16 @@ class PublicJobs:
             error_code=error_code,
             now_us=self._now_us(),
         )
+
+    @staticmethod
+    def _binding_reference(value: Any) -> tuple[str, int] | None:
+        reference = PublicJobs._reference(value)
+        if reference is not None and (
+            set(value) != {"id", "revision"}
+            or re.fullmatch(r"[1-9][0-9]{0,18}", value["revision"]) is None
+        ):
+            raise ValueError("Invalid model binding reference")
+        return reference
 
     @staticmethod
     def _reference(value: Any) -> tuple[str, int] | None:
@@ -339,6 +446,16 @@ def _text_length(payload: Mapping[str, Any]) -> int | None:
     return len(text) if isinstance(text, str) else None
 
 
+def _submission_result(result: JobCreateResult) -> PublicJob:
+    if result.outcome == "conflict":
+        raise IdempotencyConflictError
+    if result.outcome == "unknown":
+        raise JobOutcomeUnknownError
+    if result.outcome == "rejected" or result.job is None:
+        raise JobRejectedError
+    return result.job
+
+
 def _canonical_intent(payload: Mapping[str, Any], kind: JobKind) -> dict[str, Any]:
     """Apply only contract defaults so omitted and explicit defaults share one key."""
     intent = deepcopy(dict(payload))
@@ -371,6 +488,7 @@ __all__ = [
     "JobFacts",
     "JobOutcomeUnknownError",
     "JobRejectedError",
+    "ModelBindingError",
     "ModelNotPublishedError",
     "ProfileNotPublishedError",
     "PronunciationNotFoundError",
@@ -379,4 +497,5 @@ __all__ = [
     "UnknownWorkspaceError",
     "UnsupportedJobKindError",
     "VoiceNotPublishedError",
+    "require_pinned_binding",
 ]

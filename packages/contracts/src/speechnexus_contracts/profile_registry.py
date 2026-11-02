@@ -11,6 +11,7 @@ PROFILES = frozenset(
         "scenario_profiles",
         "model_bindings",
         "audio_inspection",
+        "zero_dispatch",
         "gateway_recovery",
         "binding_defaults",
         "binding_defaults_producer",

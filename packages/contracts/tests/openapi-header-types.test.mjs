@@ -11,6 +11,8 @@ import {
 } from "../../../scripts/dev-env/normalize-typescript-headers.mjs";
 
 function assertConsumerCompiles(directory, consumer) {
+  // Match this package's ESM mode regardless of the temporary directory's ancestors.
+  writeFileSync(join(directory, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(directory, "consumer.ts"), consumer);
   const program = ts.createProgram([join(directory, "consumer.ts")], {
     noEmit: true,
@@ -77,7 +79,7 @@ test("actual compiler consumers preserve optional referenced headers and require
     assertConsumerCompiles(
       directory,
       `
-      import type {components, operations, paths, BusinessBody} from './types';
+      import type {components, operations, paths, BusinessBody} from './types.js';
       type Direct = operations['getNamed']['responses'][200]['headers'];
       type Reused = components['responses']['Unavailable']['headers'];
       type Anonymous = paths['/anonymous']['get']['responses'][200]['headers'];
@@ -150,7 +152,7 @@ test("external response/header aliases use the same bundled identity as the comp
     assertConsumerCompiles(
       directory,
       `
-      import type {operations} from './types';
+      import type {operations} from './types.js';
       type Headers=operations['getExternal']['responses'][503]['headers'];
       const omitted:Headers={Required:'synthetic'};
       const present:Headers={...omitted,Wait:1};

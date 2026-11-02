@@ -15,7 +15,8 @@
     "OperationCancellation",
     "ErrorResponse",
     "PronunciationCreateRequest",
-    "PronunciationRevision"
+    "PronunciationRevision",
+    "ModelList"
   ],
   "coordination": {
     "version": "1.0.0",
@@ -229,6 +230,21 @@
       "definitions_prefix": "/$defs/",
       "schemas": [
         "AudioInspectionSuccess"
+      ]
+    },
+    "zero_dispatch": {
+      "source": "internal/zero-dispatch.schema.json",
+      "version": "1.0.0",
+      "format": "json-schema",
+      "client": false,
+      "definitions_prefix": "/$defs/",
+      "schemas": [
+        "OriginalExecutionKey",
+        "ReceiveCancellationRequest",
+        "ReceiveCancellationResult",
+        "OriginalRecoveryQuery",
+        "OriginalRecoverySnapshot",
+        "ZeroDispatchControlError"
       ]
     },
     "gateway_recovery": {

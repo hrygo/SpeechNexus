@@ -1281,6 +1281,2076 @@
         ],
         "created_at": "2026-10-25T00:00:00Z"
       }
+    },
+    {
+      "id": "tts-model-binding-exact",
+      "schema": "JobCreateRequest",
+      "valid": true,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "9999999999999999999"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-number",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": 7
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-leading-zero",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "07"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-zero",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "0"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-unicode",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "٧"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-too-long",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "11111111111111111111"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-null",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": null,
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-missing-revision",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-private-id",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "tts",
+        "model": "narrator-tts",
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "9999999999999999999",
+          "revision_id": "private-revision"
+        },
+        "input": {
+          "text": "synthetic pin"
+        },
+        "voice": {
+          "id": "voice-demo",
+          "revision": "2"
+        }
+      }
+    },
+    {
+      "id": "tts-model-binding-asr",
+      "schema": "JobCreateRequest",
+      "valid": false,
+      "value": {
+        "kind": "asr",
+        "model": "asr-demo",
+        "input": {
+          "audio_asset_id": "asset-demo"
+        },
+        "model_binding": {
+          "id": "binding-narrator",
+          "revision": "9999999999999999999"
+        }
+      }
+    },
+    {
+      "id": "model-list-full",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-empty",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": []
+      }
+    },
+    {
+      "id": "model-list-standard-without-nexus",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus"
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-state-available",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "available"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-state-capacity_full",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "capacity_full"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-state-unavailable",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "unavailable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-revision-large",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "9223372036854775807"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-id-upper-bound",
+      "schema": "ModelList",
+      "valid": true,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-root-type",
+      "schema": "ModelList",
+      "valid": false,
+      "value": null
+    },
+    {
+      "id": "model-list-data-type",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": {}
+      }
+    },
+    {
+      "id": "model-list-null-item",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "model-list-id-type",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": 7,
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-id-empty",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-id-too-long",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-created-negative",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": -1,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-created-fractional",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0.5,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-created-string",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": "0",
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-model-object",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "list",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-list-object",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "model",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-owner-empty",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-null",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-logical-model-empty",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-id-pattern",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "INVALID ID",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-id-short",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "ab",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-revision-number",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": 1
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-revision-zero",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "0"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-revision-leading-zero",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "01"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-revision-over-bound",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "11111111111111111111"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-task-unknown",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-task-type",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                1
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-tasks-empty",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-tasks-duplicate",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_file"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-tasks-not-array",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": "tts_file",
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-tier-unknown",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "qualified",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-null",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-admission-state-unknown",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "ready"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-configured-string",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": "true",
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-engine-ready-number",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": 1,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-quality-null",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": null,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-root-missing-object",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-root-missing-data",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list"
+      }
+    },
+    {
+      "id": "model-list-root-extra-field",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ],
+        "unexpected": true
+      }
+    },
+    {
+      "id": "model-list-model-missing-id",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-model-missing-object",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-model-missing-created",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-model-missing-owned_by",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-model-extra-field",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            },
+            "unexpected": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-missing-logical_model",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-missing-binding",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-missing-tasks",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-missing-release_tier",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-missing-readiness",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-nexus-extra-field",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              },
+              "unexpected": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-missing-id",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-missing-revision",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-binding-extra-field",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1",
+                "unexpected": true
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-missing-configured",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-missing-engine_ready",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "quality_qualified": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-missing-quality_qualified",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "admission_state": "queueable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-missing-admission_state",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "model-list-readiness-extra-field",
+      "schema": "ModelList",
+      "valid": false,
+      "value": {
+        "object": "list",
+        "data": [
+          {
+            "id": "tts-demo",
+            "object": "model",
+            "created": 0,
+            "owned_by": "speechnexus",
+            "nexus": {
+              "logical_model": "tts-demo",
+              "binding": {
+                "id": "binding-demo",
+                "revision": "1"
+              },
+              "tasks": [
+                "tts_file",
+                "tts_realtime"
+              ],
+              "release_tier": "production",
+              "readiness": {
+                "configured": true,
+                "engine_ready": false,
+                "quality_qualified": false,
+                "admission_state": "queueable",
+                "unexpected": true
+              }
+            }
+          }
+        ]
+      }
     }
   ]
 }

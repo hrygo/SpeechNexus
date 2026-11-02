@@ -1,0 +1,688 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/internal/zero-dispatch.schema.json",
+  "title": "ZeroDispatchContractCoreCandidate",
+  "x-nexus-version": "1.0.0",
+  "description": "Default-disabled A/B candidate. Parsing validates wire shape only, not identity authenticity, digest equality, database consistency or trusted qualification. No new success, stopping, cleanup, release, seal or sending authority; existing execution/control semantics remain authoritative.",
+  "x-nexus-protocol": {
+    "default_enabled": false,
+    "implemented_writers": [],
+    "replay_order": [
+      "verify_original_identity_and_intent",
+      "return_exact_original_receipt_if_present",
+      "check_current_state_and_version_for_new_action"
+    ],
+    "gate_transitions": [
+      {
+        "cause": "receive_cancel",
+        "from": "open",
+        "to": "cancelled_closed"
+      },
+      {
+        "cause": "receive_cancel",
+        "from": "cancelled_closed",
+        "to": "cancelled_closed"
+      },
+      {
+        "cause": "receive_cancel",
+        "from": "engine_possible",
+        "to": "engine_possible"
+      },
+      {
+        "cause": "receive_cancel",
+        "from": "sealed_zero",
+        "to": "sealed_zero"
+      },
+      {
+        "cause": "first_committed_permit",
+        "from": "open",
+        "to": "engine_possible"
+      }
+    ],
+    "missing_gate": "reconcile_without_backfill",
+    "gate_versions": "Revision string, initial 1; open to cancelled_closed increments once using DB time; cancellation on engine_possible or sealed_zero preserves gate version/time; replay/query never mutate; signed-64-bit exhaustion rejects without wrap",
+    "submit_commit_unknown": "query_original_only",
+    "late_cancel": "persist_original_intent_preserve_seal_and_terminal_exact_replay_or_intent_conflict",
+    "permit_history": "first committed permit permanently excludes zero seal; exact replay/query grants no sending rights; later segment keys require the future trusted boundary; unknown sends are never retried",
+    "seal": "no positive seal input or producer defined; sealed_zero is observational only",
+    "resources": "processing completion precedes object PUT/GET/verification/buffers/join; final resource closure must cover the last IO and joined task. Neither is stop/release evidence here",
+    "lock_graph": "mutable epoch authority lock position and upstream fan-out unresolved; no production wiring or DDL supplied",
+    "snapshot": "single consistent read-only transaction with a separate no-DML role; query never mutates or calls an action",
+    "errors": {
+      "original_identity_or_intent_conflict": "control_state_conflict/query_current_authority; do not rebase or overwrite original",
+      "current_version_conflict": "control_state_conflict/query_current_authority; exact original replay first",
+      "missing_or_unverifiable": "control_reconciliation_required/reconcile",
+      "commit_unknown": "control_outcome_unknown/query_original",
+      "confirmed_rollback": "control_store_unavailable/retry_transaction; same intent only; no sending"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ReceiveCancellationRequest"
+    },
+    {
+      "$ref": "#/$defs/ReceiveCancellationResult"
+    },
+    {
+      "$ref": "#/$defs/OriginalRecoveryQuery"
+    },
+    {
+      "$ref": "#/$defs/OriginalRecoverySnapshot"
+    },
+    {
+      "$ref": "#/$defs/ZeroDispatchControlError"
+    }
+  ],
+  "$defs": {
+    "SubmissionIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submit_intent_id",
+        "lease_id",
+        "operation_id",
+        "attempt_id",
+        "stage_id",
+        "workspace_id",
+        "pool_id",
+        "host_node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "binding_revision_id",
+        "policy_revision_id",
+        "fencing_token",
+        "command_digest",
+        "deadline_at",
+        "max_output_audio_ms",
+        "sample_rate_hz"
+      ],
+      "properties": {
+        "submit_intent_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/submit_intent_id"
+        },
+        "lease_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/lease_id"
+        },
+        "operation_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/operation_id"
+        },
+        "attempt_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/attempt_id"
+        },
+        "stage_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/stage_id"
+        },
+        "workspace_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/workspace_id"
+        },
+        "pool_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/pool_id"
+        },
+        "host_node_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/host_node_id"
+        },
+        "gateway_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/gateway_id"
+        },
+        "instance_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/instance_id"
+        },
+        "instance_generation": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/instance_generation"
+        },
+        "binding_revision_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/binding_revision_id"
+        },
+        "policy_revision_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/policy_revision_id"
+        },
+        "voice_revision_id": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/voice_revision_id"
+        },
+        "fencing_token": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/fencing_token"
+        },
+        "command_digest": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/command_digest"
+        },
+        "deadline_at": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/deadline_at"
+        },
+        "max_output_audio_ms": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/max_output_audio_ms"
+        },
+        "sample_rate_hz": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/properties/sample_rate_hz"
+        }
+      },
+      "description": "Projection of all 19 existing submit identity fields. Property domains and paired audio constraints reference the original canonical request. Omitted/null voice remains compatible. The full original command is retained and verified by its owner, never rebuilt from this projection.",
+      "allOf": [
+        {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/allOf/0"
+        },
+        {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/SubmitExecutionRequest/allOf/1"
+        }
+      ]
+    },
+    "OriginalExecutionKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "request_digest",
+        "output_stream_id"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/SubmissionIdentity"
+        },
+        "request_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "output_stream_id": {
+          "anyOf": [
+            {
+              "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Exact original identity plus RFC 8785 SHA-256 of SubmitRequest.effective_request (execution_request and output_stream_id). Not command_digest alone. The owner compares its complete immutable request_document, output stream, original worker identity and all authority rows; a matching string is not authorization. No private body is returned here.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identity": {
+                "properties": {
+                  "sample_rate_hz": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "output_stream_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "output_stream_id": {
+                "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "GateObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "version",
+        "recorded_at"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "open",
+            "cancelled_closed",
+            "engine_possible",
+            "sealed_zero"
+          ]
+        },
+        "version": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Read projection only. Initial version is Revision '1'; real transitions increment once; replay/query do not change version or recorded_at. engine_possible and both closed states never reopen. sealed_zero is a historical state label, NOT accepted success/zero-egress/stop/resource evidence. This candidate provides no way to create a seal or permit."
+    },
+    "CancellationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "intent_digest",
+        "received_at",
+        "gate_state_at_receive",
+        "gate_version_at_receive"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/AbortExecutionRequest"
+        },
+        "intent_digest": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gate_state_at_receive": {
+          "enum": [
+            "cancelled_closed",
+            "engine_possible",
+            "sealed_zero"
+          ]
+        },
+        "gate_version_at_receive": {
+          "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+        }
+      },
+      "description": "Immutable original durable receive, keyed by the original submit. intent_digest covers RFC 8785 of the complete AbortExecutionRequest. Save even a late cancellation after a seal; received/recorded never means cancellation won. Exact replay returns these original bytes/time/version before checking any new-action CAS. Different intent (including wait_timeout_ms) conflicts; never overwrite. claim is a separate external action, not the linearization point or stop proof."
+    },
+    "CancellationGateConsistency": {
+      "description": "Structural consistency only; the producer must also compare identity, digest, version arithmetic and immutable history in the same transaction.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": [
+                  "gate_state_at_receive"
+                ]
+              }
+            },
+            "required": [
+              "cancellation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "engine_possible"
+                  }
+                },
+                "required": [
+                  "gate_state_at_receive"
+                ]
+              }
+            },
+            "required": [
+              "cancellation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "engine_possible"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "cancellation": {
+                "type": "object",
+                "properties": {
+                  "gate_state_at_receive": {
+                    "const": "sealed_zero"
+                  }
+                },
+                "required": [
+                  "gate_state_at_receive"
+                ]
+              }
+            },
+            "required": [
+              "cancellation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "sealed_zero"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "gate": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "cancelled_closed"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            },
+            "required": [
+              "gate"
+            ]
+          },
+          "then": {
+            "properties": {
+              "cancellation": {
+                "$ref": "#/$defs/CancellationRecord"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "gate": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "gate"
+            ]
+          },
+          "then": {
+            "properties": {
+              "cancellation": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ReceiveCancellationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "original",
+        "intent"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "receive_cancel"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "intent": {
+          "$ref": "./execution-control.openapi.yaml#/components/schemas/AbortExecutionRequest"
+        }
+      },
+      "description": "Candidate B receive port, no HTTP/client/production writer. Verify original identity, intent operation/attempt/fencing and original document under the approved shared lock prefix. Serialize first insertion on the existing parent submit plus unique key, never a missing-row lock. Persist full original cancellation and close open gate atomically; fail/unknown never sends, publishes or releases. Missing gate is reconciliation, never insert/backfill. Same original intent replays before current version/state checks. No expected version can turn a cancellation into a later claim."
+    },
+    "ReceiveCancellationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "original",
+        "outcome",
+        "cancellation",
+        "gate"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "receive_cancel"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "outcome": {
+          "enum": [
+            "recorded",
+            "replayed"
+          ]
+        },
+        "cancellation": {
+          "$ref": "#/$defs/CancellationRecord"
+        },
+        "gate": {
+          "$ref": "#/$defs/GateObservation"
+        }
+      },
+      "description": "A durable receive result, not a stop/permit/seal/release receipt. 'replayed' returns the immutable original cancellation (including its original gate version/time), alongside the current consistent gate observation. Late cancel leaves an existing seal/terminal untouched; it cannot dispatch abort for that terminal. All echoes must match the queried original.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CancellationGateConsistency"
+        }
+      ]
+    },
+    "OriginalRecoveryQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "original"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "query_zero_original"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        }
+      },
+      "description": "Independent consistent-snapshot read only: no act/seal/claim, FOR UPDATE, row insertion, timestamps/version touch, decode, object IO, dispatch or budget writes. Use a DB read-only transaction and separately restricted read-only role. COMMIT unknown only queries this original; never retry dispatch, PUT, processing or create a replacement identity."
+    },
+    "OriginalRecoverySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "original",
+        "status",
+        "reason",
+        "recovery",
+        "gate",
+        "cancellation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "query_zero_original"
+        },
+        "original": {
+          "$ref": "#/$defs/OriginalExecutionKey"
+        },
+        "status": {
+          "enum": [
+            "found",
+            "missing",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "facts_available",
+            "original_not_found",
+            "gate_missing",
+            "original_document_missing",
+            "original_document_unverifiable",
+            "history_inconsistent",
+            "submit_commit_unknown",
+            "object_version_unknown",
+            "evidence_unavailable"
+          ]
+        },
+        "recovery": {
+          "enum": [
+            "query_original",
+            "reconcile"
+          ]
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateObservation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cancellation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CancellationRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "All fields come from ONE consistent DB snapshot, bound to the original complete intent/authority. found describes query completeness only, never success/qualification/zero-egress or resource closure. Empty open is a valid read and must remain unchanged. Missing original/gate never proves no work. Unverifiable/missing document or inconsistent history is incomplete; unknown commit or object version remains unknown. A key/latest GET/receipt string cannot recover a lost PUT version. No result authorizes any side effect.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CancellationGateConsistency"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": {
+                  "const": "found"
+                },
+                "reason": {
+                  "const": "facts_available"
+                },
+                "gate": {
+                  "$ref": "#/$defs/GateObservation"
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "missing"
+                },
+                "reason": {
+                  "enum": [
+                    "original_not_found",
+                    "gate_missing"
+                  ]
+                },
+                "gate": {
+                  "type": "null"
+                },
+                "cancellation": {
+                  "type": "null"
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "incomplete"
+                },
+                "reason": {
+                  "enum": [
+                    "original_document_missing",
+                    "original_document_unverifiable",
+                    "history_inconsistent"
+                  ]
+                },
+                "recovery": {
+                  "const": "reconcile"
+                }
+              }
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "unknown"
+                },
+                "reason": {
+                  "enum": [
+                    "submit_commit_unknown",
+                    "object_version_unknown",
+                    "evidence_unavailable"
+                  ]
+                },
+                "recovery": {
+                  "const": "query_original"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ZeroDispatchControlError": {
+      "$ref": "./execution-control.openapi.yaml#/components/schemas/ExecutionControlErrorResponse"
+    }
+  }
+}

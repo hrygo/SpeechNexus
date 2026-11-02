@@ -16,7 +16,8 @@
     "OperationCancellation",
     "ErrorResponse",
     "PronunciationCreateRequest",
-    "PronunciationRevision"
+    "PronunciationRevision",
+    "ModelList"
   ],
   "$defs": {
     "JobCreateRequest": {
@@ -371,6 +372,10 @@
           "properties": {
             "kind": {
               "const": "tts"
+            },
+            "model_binding": {
+              "$ref": "#/$defs/ResourceReference",
+              "description": "Optional exact binding for file TTS; revision stays a decimal\nstring. `model` must match its logical_model. No default or\nfallback to another binding/version. Older strict servers\nreject this field; deploy the supporting server before clients.\n"
             },
             "input": {
               "$ref": "#/$defs/TtsJobInput"
@@ -3517,6 +3522,125 @@
     },
     "PronunciationRevision": {
       "$ref": "#/$defs/External_voice_resource_schema_json_PronunciationRevision"
+    },
+    "ModelList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "data"],
+      "properties": {
+        "object": {
+          "const": "list"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Model"
+          }
+        }
+      }
+    },
+    "Model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "object", "created", "owned_by"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "object": {
+          "const": "model"
+        },
+        "created": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "owned_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "nexus": {
+          "$ref": "#/$defs/ModelNexus"
+        }
+      }
+    },
+    "ModelNexus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_model", "binding", "tasks", "release_tier", "readiness"],
+      "properties": {
+        "logical_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "binding": {
+          "$ref": "#/$defs/ResourceReference"
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SpeechTaskKind"
+          }
+        },
+        "release_tier": {
+          "$ref": "#/$defs/ReleaseTier"
+        },
+        "readiness": {
+          "$ref": "#/$defs/ModelReadiness"
+        }
+      }
+    },
+    "SpeechTaskKind": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_SpeechTaskKind"
+    },
+    "External_shared_capability_domains_schema_json_SpeechTaskKind": {
+      "type": "string",
+      "enum": [
+        "asr_realtime",
+        "asr_full_segment_review",
+        "asr_file",
+        "tts_realtime",
+        "tts_file",
+        "voice_design",
+        "voice_clone",
+        "voice_validation",
+        "forced_alignment",
+        "speaker_diarization",
+        "vad"
+      ]
+    },
+    "ReleaseTier": {
+      "$ref": "#/$defs/External_shared_capability_domains_schema_json_ReleaseTier"
+    },
+    "External_shared_capability_domains_schema_json_ReleaseTier": {
+      "type": "string",
+      "enum": ["experimental", "best_effort", "production"]
+    },
+    "ModelReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured", "engine_ready", "quality_qualified", "admission_state"],
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "engine_ready": {
+          "type": "boolean"
+        },
+        "quality_qualified": {
+          "type": "boolean"
+        },
+        "admission_state": {
+          "type": "string",
+          "enum": ["available", "queueable", "capacity_full", "unavailable"],
+          "description": "available means currently admissible; queueable means the binding can\naccept work that waits for capacity; capacity_full means a required\nreservation is currently unavailable; unavailable means the model\ncannot be admitted now. None of these fields implies quality.\n"
+        }
+      }
     }
   },
   "anyOf": [
@@ -3561,6 +3685,9 @@
     },
     {
       "$ref": "#/$defs/PronunciationRevision"
+    },
+    {
+      "$ref": "#/$defs/ModelList"
     }
   ]
 }

@@ -11,12 +11,16 @@ from speechnexus_backend.app import create_app
 from speechnexus_backend.speech.application.binding_documents import encode_document
 from speechnexus_backend.speech.domain.binding_lifecycle import (
     BindingActivationCommand,
+    BindingActivationConflictError,
     BindingLifecycleConflictError,
     BindingLifecycleMode,
     BindingLifecycleNotFoundError,
     BindingLifecycleReceipt,
     BindingLifecycleUnavailableError,
     BindingRetirementCommand,
+)
+from speechnexus_backend.speech.infrastructure.binding_lifecycle_postgres import (
+    PostgresBindingLifecycle,
 )
 from speechnexus_backend.speech.interfaces.http.binding_ingress import (
     ACTIVATE_OPERATION,
@@ -268,6 +272,65 @@ async def test_lifecycle_errors_are_explicit_and_never_leak_details(
     assert body["error"]["code"] == code
     assert body["error"]["retryable"] is False
     assert "private-dsn" not in response.text
+
+
+@pytest.mark.parametrize("value", ["01", "private-dsn", "10000000000000000000", 2, True])
+def test_activation_conflict_only_carries_a_public_revision(value: Any) -> None:
+    with pytest.raises(ValueError):
+        BindingActivationConflictError(value)
+
+
+@pytest.mark.parametrize("current_revision", ["2", "9999999999999999999", None])
+async def test_activation_conflict_explains_the_head_observed_by_the_adapter(
+    current_revision: str | None,
+) -> None:
+    class Cursor:
+        query = ""
+
+        def execute(self, query: str, parameters: tuple[object, ...] = ()) -> None:
+            assert query.startswith("SELECT "), "a stale activation must not write"
+            self.query = query
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            if "FROM speech_publications AS p" in self.query:
+                return [{"published_at_us": 1, "retired_at_us": None}]
+            assert "FROM speech_publication_heads" in self.query
+            return (
+                []
+                if current_revision is None
+                else [{"revision": current_revision, "revision_id": "private-revision-identity"}]
+            )
+
+    command = BindingActivationCommand(
+        binding_id="asr-quality",
+        revision="1",
+        request_id="activation-conflict",
+        actor_type="anonymous",
+        credential_label=None,
+        key_digest=None,
+        intent_digest=DIGEST,
+        expected_current_revision="3",
+    )
+    # Exercise production conflict detection with synthetic SQL rows, without a live DB.
+    adapter = PostgresBindingLifecycle(cast(Any, None))
+    with pytest.raises(BindingLifecycleConflictError) as rejected:
+        adapter._activate(cast(Any, Cursor()), command)
+    assert isinstance(rejected.value, BindingActivationConflictError)
+    assert rejected.value.current_revision == current_revision
+    provider = Provider()
+    provider.error = rejected.value
+    async with client(provider) as http:
+        response = await http.post(ACTIVATE_URL, json={"expected_current_revision": "3"})
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "configuration_changed"
+    expected = "null" if current_revision is None else f'"{current_revision}"'
+    assert f"expected_current_revision={expected}" in error["message"]
+    assert "Refresh" in error["message"]
+    assert error["retryable"] is False
+    assert response.headers["x-should-retry"] == "false"
+    assert response.headers["cache-control"] == "no-store"
+    assert "private-revision-identity" not in response.text
 
 
 @pytest.mark.parametrize(

@@ -230,6 +230,21 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 不能伪造 stop 代替 pre-dispatch 失败。版本、时间与原外发关联的规则见
 [执行网关](execution-gateway.md#9-record_execution_observation)。
 
+A 的 release 消费者还在原 submit 锁后通过 `0028_execution_release_guards` 的只读
+presence 投影复核该失败分支：接受/派发、staging、样本及任意输出区间都必须为空。
+投影缺失、权限不足或不一致则保留账目；不读取 B 私有正文，不新增停止种类。
+只授予投影两列 SELECT；正式停用 worker 校验同一列集合并拒绝表级 SELECT/额外写权。
+scanner/settlement 专用身份的启动检查要求 PostgreSQL >= 16，并以原生递归 SET 权限判定
+拒绝切换到任一其他角色及角色管理/高权限身份；允许普通 ACL 分组 SET FALSE 的精确继承授权。
+两类身份都拒绝有效继承任何 PostgreSQL 预定义角色能力（保留前缀 `pg_`），以 login/effective
+两者的原生 USAGE 判定覆盖传递继承；服务器文件读写/程序、监控、全局数据、信号等均无例外。
+查询或版本无法确认时默认拒绝，在 gateway 构造和 worker 循环前终止；该快照不代替部署身份
+完整性和后续授权变更的停用/重启核验，详见上述固定边界文档的 DEL-370 P2 返修。
+升级前必须停用、排空并以独立数据库身份栅栏全部旧释放消费者，再迁移/授权和恢复新消费者；
+旧进程不读取新投影，滚动混跑不能声明保护生效，回滚也保持释放暂停。
+该附加拒绝条件不能证明合法静音成功或资源停止。当前正向零外发路径仍关闭，见
+[固定边界与跨方输入](../plans/2026-10-30-zero-dispatch-settlement.md)。
+
 gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃只会多占预算，不能提前释放。
 从未创建 submit 的 lease 可以在锁定 lease 后直接释放，后续 submit 必须拒绝。
 已隔离 lease 只有全部附属执行终止并取得释放事实后才减少隔离量。

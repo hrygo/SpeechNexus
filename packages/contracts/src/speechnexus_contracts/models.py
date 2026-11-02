@@ -312,6 +312,31 @@ type ExternalSharedErrorsSchemaJsonErrorType = Literal[
     "service_unavailable_error",
 ]
 type ExternalVoiceResourceSchemaJsonLanguageTag = ExternalSharedLanguageSchemaJsonLanguageTag
+type ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind = Literal[
+    "asr_realtime",
+    "asr_full_segment_review",
+    "asr_file",
+    "tts_realtime",
+    "tts_file",
+    "voice_design",
+    "voice_clone",
+    "voice_validation",
+    "forced_alignment",
+    "speaker_diarization",
+    "vad",
+]
+type ExternalSharedCapabilityDomainsSchemaJsonReleaseTier = Literal[
+    "experimental", "best_effort", "production"
+]
+
+
+class ModelReadiness(TypedDict):
+    configured: bool
+    engine_ready: bool
+    quality_qualified: bool
+    admission_state: Literal["available", "queueable", "capacity_full", "unavailable"]
+
+
 type Identifier = ExternalSharedIdentifiersSchemaJsonIdentifier
 
 
@@ -544,6 +569,8 @@ class ExternalVoiceResourceSchemaJsonPronunciationRevision(TypedDict):
 
 
 type PronunciationRevision = ExternalVoiceResourceSchemaJsonPronunciationRevision
+type SpeechTaskKind = ExternalSharedCapabilityDomainsSchemaJsonSpeechTaskKind
+type ReleaseTier = ExternalSharedCapabilityDomainsSchemaJsonReleaseTier
 type ResourceReference = ExternalSharedReferencesSchemaJsonResourceReference
 type AsrOverrides = ExternalSharedSpeechOverridesSchemaJsonAsrOverrides
 type TtsOverrides = ExternalSharedSpeechOverridesSchemaJsonTtsOverrides
@@ -735,6 +762,14 @@ class PronunciationCreateRequest(TypedDict):
     publish: NotRequired[bool]
 
 
+class ModelNexus(TypedDict):
+    logical_model: str
+    binding: ResourceReference
+    tasks: list[SpeechTaskKind]
+    release_tier: ReleaseTier
+    readiness: ModelReadiness
+
+
 class JobOverrides(TypedDict):
     asr: NotRequired[AsrOverrides]
     tts: NotRequired[TtsOverrides]
@@ -792,6 +827,14 @@ class ExternalSharedErrorsSchemaJsonErrorBody(TypedDict):
     nexus: NotRequired[ExternalSharedErrorsSchemaJsonOperationRecovery]
 
 
+class Model(TypedDict):
+    id: str
+    object: Literal["model"]
+    created: int
+    owned_by: str
+    nexus: NotRequired[ModelNexus]
+
+
 class JobCreateBase(TypedDict):
     kind: NotRequired[JobKind]
     workspace_id: NotRequired[Identifier]
@@ -812,6 +855,7 @@ class TtsJobCreate(TypedDict):
     overrides: NotRequired[JobOverrides]
     constraints: NotRequired[JobConstraints]
     draft_target: NotRequired[DraftTarget]
+    model_binding: NotRequired[ResourceReference]
     input: TtsJobInput
     voice: ResourceReference
     pronunciation: NotRequired[ResourceReference]
@@ -901,6 +945,11 @@ class ExternalSharedErrorsSchemaJsonErrorResponse(TypedDict):
     error: ExternalSharedErrorsSchemaJsonErrorBody
 
 
+class ModelList(TypedDict):
+    object: Literal["list"]
+    data: list[Model]
+
+
 class AsrJobCreate(TypedDict):
     kind: Literal["asr"]
     workspace_id: NotRequired[Identifier]
@@ -987,4 +1036,5 @@ type FileContract = (
     | ErrorResponse
     | PronunciationCreateRequest
     | PronunciationRevision
+    | ModelList
 )

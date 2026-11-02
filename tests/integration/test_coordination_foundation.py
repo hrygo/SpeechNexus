@@ -39,6 +39,7 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
     coordination_runtime_grants,
 )
 from speechnexus_backend.speech.infrastructure.coordination_schema import COORDINATION_DDL
+from speechnexus_backend.speech.infrastructure.execution_release_schema import RELEASE_GUARD_DDL
 from speechnexus_backend.speech.infrastructure.execution_result_schema import EXECUTION_RESULT_DDL
 from speechnexus_backend.speech.infrastructure.job_schema import job_runtime_grants
 from speechnexus_backend.speech.infrastructure.jobs_sql import JobCursor, create_in_transaction
@@ -162,6 +163,7 @@ def foundation(database: JobDatabase) -> Iterator[Foundation]:
             *ADMISSION_COMMAND_DDL,
             *RUNTIME_DELIVERY_DDL,
             *EXECUTION_RESULT_DDL,
+            RELEASE_GUARD_DDL,
         ):
             ddl = ddl.replace('COLLATE "C"', "COLLATE utf8mb4_0900_bin")
             ddl = ddl.replace(
@@ -276,7 +278,8 @@ def test_complete_foundation_has_exact_owned_tables_and_binary_identifiers(
     assert publication_tables <= {row["name"] for row in rows}
     assert artifact_tables <= {row["name"] for row in rows}
     assert {row["name"] for row in rows} - {
-        "alembic_version"
+        "alembic_version",
+        "execution_release_guards",
     } - asset_tables - profile_tables - binding_tables - publication_tables - artifact_tables == (
         set(SPEECH_UPDATES) | set(GATEWAY_UPDATES)
     )

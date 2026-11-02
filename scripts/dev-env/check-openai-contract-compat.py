@@ -12,6 +12,7 @@ from typing import Any, NamedTuple, cast
 from urllib.parse import unquote
 
 import yaml
+from openapi_spec_validator import OpenAPIV31SpecValidator
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PUBLIC_CONTRACTS = (
@@ -432,6 +433,226 @@ def _closed_schema_tree(value: object) -> bool:
     return True
 
 
+def _object_conjuncts(schema: object) -> list[Mapping[str, Any]] | None:
+    """Only property declarations, required names and object allOf are modelled.
+
+    Do not flatten additional/pattern/unevaluated properties, conditionals or
+    unknown object keywords: they can constrain a newly declared name or change
+    evaluation. Property *values* stay opaque and must remain identical below.
+    """
+    node = _mapping(schema)
+    if node is None or node.keys() - {"type", "properties", "required", "allOf"}:
+        return None
+    if "type" in node and node["type"] != "object":
+        return None
+    if "properties" in node and (
+        not isinstance(node["properties"], Mapping)
+        or not all(isinstance(name, str) for name in node["properties"])
+    ):
+        return None
+    if "required" in node and (
+        not isinstance(node["required"], list)
+        or not all(isinstance(name, str) for name in node["required"])
+    ):
+        return None
+    parts: list[Mapping[str, Any]] = [node]
+    if "allOf" in node:
+        children = _sequence(node["allOf"])
+        if not children:
+            return None
+        for child in children:
+            resolved = _object_conjuncts(child)
+            if resolved is None:
+                return None
+            parts.extend(resolved)
+    return parts
+
+
+def _required_string_tags(parts: list[Mapping[str, Any]]) -> dict[str, frozenset[str]]:
+    """Intersect actual required const/enum constraints, ignoring OAS metadata."""
+    required = {name for part in parts for name in part.get("required", [])}
+    tags: dict[str, frozenset[str]] = {}
+    for name in required:
+        values: set[str] | None = None
+        for part in parts:
+            if name not in part.get("properties", {}):
+                continue
+            prop = _mapping(part["properties"][name])
+            if (
+                prop is None
+                or prop.keys() - {"type", "const", "enum"}
+                or ("type" in prop and prop["type"] != "string")
+            ):
+                break
+            allowed: set[str] | None = None
+            if "enum" in prop:
+                if not isinstance(prop["enum"], list) or not all(
+                    isinstance(value, str) for value in prop["enum"]
+                ):
+                    break
+                allowed = set(prop["enum"])
+            if "const" in prop:
+                if not isinstance(prop["const"], str):
+                    break
+                allowed = {prop["const"]} if allowed is None else allowed & {prop["const"]}
+            if allowed is not None:
+                values = allowed if values is None else values & allowed
+        else:
+            if values:
+                tags[name] = frozenset(values)
+    return tags
+
+
+def _optional_declarations_only(old: object, new: object, old_names: set[str]) -> bool:
+    left, right = _mapping(old), _mapping(new)
+    if left is None or right is None or left.keys() != right.keys():
+        return False
+    for key in left:
+        if key == "properties":
+            before, after = left[key], right[key]
+            if not before.keys() <= after.keys():
+                return False
+            for name, schema in after.items():
+                if name in before:
+                    if not _same_json_tree(before[name], schema, numeric_equivalent=True):
+                        return False
+                elif name in old_names or not isinstance(schema, Mapping | bool):
+                    return False
+        elif key == "allOf":
+            if len(left[key]) != len(right[key]) or not all(
+                _optional_declarations_only(a, b, old_names)
+                for a, b in zip(left[key], right[key], strict=True)
+            ):
+                return False
+        elif not _same_json_tree(left[key], right[key], numeric_equivalent=True):
+            return False
+    return True
+
+
+def _request_dialects_support_closure(side: _SchemaSide | None) -> bool:
+    """Certify a conservative document-wide dialect envelope before erasing refs.
+
+    The resolver flattens schemas, losing ancestor/target dialect declarations.
+    Inspect its original document snapshots, including every loaded reference
+    document. Any unknown declaration disables only the new request proof.
+    This deliberately also rejects unknown declarations in unused/literal data;
+    it does not attempt to reconstruct mixed-dialect schema resource scopes.
+    """
+    if side is None:
+        return False
+    supported = {
+        "https://spec.openapis.org/oas/3.1/dialect/base",
+        "https://json-schema.org/draft/2020-12/schema",
+    }
+
+    def known(value: object) -> bool:
+        return isinstance(value, str) and value in supported
+
+    def declarations_known(value: object) -> bool:
+        if isinstance(value, Mapping):
+            return ("$schema" not in value or known(value["$schema"])) and all(
+                declarations_known(child) for child in value.values()
+            )
+        if isinstance(value, list):
+            return all(declarations_known(child) for child in value)
+        return True
+
+    documents = [side.document, *(side.documents or {}).values()]
+    for document in documents:
+        if document is None:
+            return False
+        if document.get("openapi") == "3.1.0" and OpenAPIV31SpecValidator.schema_validator.is_valid(
+            document
+        ):
+            # Validate the resource's OAS envelope, not just an annotation that
+            # is also legal in a bare JSON Schema. The bundled meta-schema only
+            # resolves its own definitions: it never follows document $refs or
+            # fetches a schema dialect. Keep normal repository resolution above.
+            dialect = document.get(
+                "jsonSchemaDialect", "https://spec.openapis.org/oas/3.1/dialect/base"
+            )
+        else:
+            # A bare schema (even with OAS-looking annotations) needs its own
+            # explicit supported declaration; it cannot borrow an OAS default.
+            dialect = document.get("$schema")
+        if not known(dialect) or not declarations_known(document):
+            return False
+    return True
+
+
+def _closed_tagged_request_extension(
+    base: Mapping[str, Any],
+    current: Mapping[str, Any],
+    *,
+    base_side: _SchemaSide | None,
+    current_side: _SchemaSide | None,
+) -> bool:
+    """Prove Old <= New for one narrow, evaluation-preserving request subset.
+
+    A false parent unevaluatedProperties closes each old selected branch. Its
+    valid objects cannot contain a newly declared name. With all old property
+    predicates/required names unchanged, adding optional declarations therefore
+    preserves both validity and evaluated names on every old valid input.
+    Required disjoint string tags preserve exactly one successful branch.
+    This is a proof, not the partial comparator's absence of findings.
+    """
+    if not all(_request_dialects_support_closure(side) for side in (base_side, current_side)):
+        return False
+    old = _mapping(_compatibility_shape(base, standard_only=False))
+    new = _mapping(_compatibility_shape(current, standard_only=False))
+    if old is None or new is None or not _closed_schema_tree([old, new]):
+        return False
+    allowed = {"oneOf", "unevaluatedProperties", "discriminator", "type"}
+    if old.keys() - allowed or new.keys() - allowed:
+        return False
+    if (
+        old.get("unevaluatedProperties") is not False
+        or new.get("unevaluatedProperties") is not False
+    ):
+        return False
+    if not _same_json_tree(
+        {k: v for k, v in old.items() if k != "oneOf"},
+        {k: v for k, v in new.items() if k != "oneOf"},
+    ) or ("type" in old and old["type"] != "object"):
+        return False
+    variants = [_sequence(side.get("oneOf")) for side in (old, new)]
+    if any(not branches for branches in variants):
+        return False
+    branches = [list(side or []) for side in variants]
+    parts = [[_object_conjuncts(branch) for branch in side] for side in branches]
+    if any(
+        not group or not any(p.get("type") == "object" for p in group)
+        for side in parts
+        for group in side
+    ):
+        return False
+    tags = [[_required_string_tags(group or []) for group in side] for side in parts]
+    common = set.intersection(*(set(tag) for side in tags for tag in side))
+    for name in common:
+        indexes = [{tag[name]: i for i, tag in enumerate(side)} for side in tags]
+        if any(len(index) != len(side) for index, side in zip(indexes, branches, strict=True)):
+            continue
+        if indexes[0].keys() != indexes[1].keys():
+            continue
+        values = list(indexes[0])
+        if any(a & b for i, a in enumerate(values) for b in values[i + 1 :]):
+            continue
+        if all(
+            _optional_declarations_only(
+                branches[0][i],
+                branches[1][indexes[1][value]],
+                {
+                    field
+                    for part in parts[0][i] or []
+                    for field in (*part.get("properties", {}), *part.get("required", []))
+                },
+            )
+            for value, i in indexes[0].items()
+        ):
+            return True
+    return False
+
+
 def _compare_schema(
     base: object,
     current: object,
@@ -694,6 +915,12 @@ def _compare_schema(
                 _compatibility_shape(base_variants, standard_only=standard_only),
                 _compatibility_shape(current_variants, standard_only=standard_only),
                 numeric_equivalent=True,
+            ) and not (
+                direction == "request"
+                and not standard_only
+                and _closed_tagged_request_extension(
+                    base_schema, current_schema, base_side=base_side, current_side=current_side
+                )
             ):
                 _issue(
                     issues,

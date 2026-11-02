@@ -20,6 +20,7 @@ from speechnexus_backend.speech.application.public_jobs import (
     IdempotencyConflictError,
     JobOutcomeUnknownError,
     JobRejectedError,
+    ModelBindingError,
     ModelNotPublishedError,
     ProfileNotPublishedError,
     PronunciationNotFoundError,
@@ -196,6 +197,8 @@ async def _create(
         return job_error("workspace_disabled", request_id)
     except ModelNotPublishedError:
         return job_error("model_not_published", request_id)
+    except ModelBindingError as error:
+        return job_error(error.code, request_id)
     except VoiceNotPublishedError:
         return job_error("voice_not_published", request_id)
     except ProfileNotPublishedError:

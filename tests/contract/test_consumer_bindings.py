@@ -19,9 +19,10 @@ from tests.support.contracts import retrieve
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = json.loads((ROOT / "contracts/bindings.json").read_text())
-EXAMPLES = json.loads((ROOT / "tests/fixtures/contracts/consumer-profiles.json").read_text())[
-    "examples"
-]
+EXAMPLES = (
+    json.loads((ROOT / "tests/fixtures/contracts/consumer-profiles.json").read_text())["examples"]
+    + json.loads((ROOT / "tests/fixtures/contracts/zero-dispatch.json").read_text())["examples"]
+)
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example["id"])

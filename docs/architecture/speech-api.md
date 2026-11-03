@@ -155,6 +155,10 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 能力快照包含 `snapshot_id`、`catalog_revision`、`policy_revision`、生成时间、逻辑模型绑定、参数域、音色 revision、预设 revision、格式、辅助能力及限制。readiness 分别报告配置完整、引擎就绪、质量资格、当前可准入状态；`available` 不等于业务生产质量已通过。
 
+当前 PostgreSQL 目录投影提供已发布 binding 的模型信息，`profiles` 和 `voices` 暂为空；
+能力接口对传入的 `workspace_id` 只检查标识格式，不查询其是否存在或按其过滤目录。
+因此返回快照不证明该工作空间存在、可访问或具备准入资格；提交时仍须经过各自的权威检查。
+
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
 模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；普通 `retire` 只影响后续选择，在途 Job 保持准入时固化的有效配置。`disable` 还登记持久停用意图，受停用屏障和清理流程约束，其回执不证明执行已停止或容量已释放，见[绑定生命周期](../operations/binding-lifecycle.md)。内建声音已有独立资格与发布路径，受控证据见[声音资格说明](../operations/builtin-voice-qualification.md)；不能把 binding 的验证结果外推为 voice 资格，声音创建等其他路径须各自验收。
@@ -163,7 +167,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 场景预设的目标契约采用同样的不可变 revision / 当前指针分离规则。当前实现仅提供 `POST /v1/nexus/admin/profiles` 根据 `expected_latest_revision` 原子分配只读 draft revision 和固定 revision 读取；发布、激活及公共列表仍属未交付范围，见[Profile 草稿](../components/profile-drafts.md)。目标契约要求 `POST .../revisions/{revision}/publications` 提交对应的 `ProfileValidation`，核对参数域、能力组合、override 范围和 production 资格后才切换当前指针；回滚通过 `.../activations` 选择已发布 revision，退役通过 `.../retirements` 清除当前指针而不自动回退。已固定的 Job / 实时会话继续使用其 revision，管理操作只影响后续选择。
 
-快照按部署、工作空间、catalog 与功能策略生成；ETag 与缓存键包含这些 revision，不混用不同部署配置。配置了外部网关或共享服务密钥时，入口检查先于 304。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
+快照按部署、工作空间标识、catalog 与功能策略生成；ETag 包含这些身份、revision 和响应事实，不混用不同部署配置。当前响应使用 `Cache-Control: no-store`；条件请求支持 304，但这不是允许共享缓存的指令。外部入口保护须按实际部署核验，当前公开语音处理器不验证共享服务密钥。读取不触发加载、下载或卸载，不承诺未来槽位。提交可提供 expected_catalog_revision，不匹配为 `409 configuration_changed`；执行前重新检查资源状态、功能策略和容量。首期没有按用户投影或 authorization_revision。
 
 Profile、voice 和 model binding revision 不可变；升级只影响后续新会话与新 Job。运行中的实时会话不热换模型、采样率或音色版本。队列中的固定版本不可用时明确失败或等待恢复；不得静默漂移到新版本。
 

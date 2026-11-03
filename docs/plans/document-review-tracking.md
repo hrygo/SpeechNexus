@@ -150,7 +150,7 @@
 | `docs/operations/paperclip/roles/workbench.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
 | `docs/operations/paperclip/runtime-incidents.md` | 部分核对 | 全文阅读并修正旧保全脚本及删除检查的适用边界；历史事故原件未核验 |
 | `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界；岗位、配置与平台映射尚未逐项核实 |
-| `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 迁移、head、基础 DDL、授权生成器及释放守卫视图投影；全部字段待核对 |
+| `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 的 13 张新增表和 4 个查询索引、迁移 head、运行角色列级授权及释放守卫视图投影；跨表约束与其他生产事务细节待核对 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 部分核对 | 核对 CLI 观察、退出分类及 publication 与草稿检查顺序、发布意图重放和已有事实分支的 CAS 边界；补充连接池未捕获异常的退出码限制，其他事务分支及数据库实测待核对 |
 | `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期、notes 及 limitations 校验边界，明确通用发布命令不读取报告，并区分快照 fixture、离线脚本退出码和产品组件的覆盖范围；其余内容待核对 |

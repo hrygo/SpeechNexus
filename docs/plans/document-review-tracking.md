@@ -279,9 +279,9 @@
 | `docs/plans/2026-10-25-team-c-saved-asset-read-back-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-teleprompter-state-consumer-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-voice-revision-consumer-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
-| `docs/plans/2026-10-25-web-accessibility-gate.md` | 待核对 | — |
-| `docs/plans/2026-10-26-a02-audio-receipt-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-26-a02-media-kernel-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-web-accessibility-gate.md` | 历史保留 | 全文阅读，为当时门禁实施记录；历史验证未重跑 |
+| `docs/plans/2026-10-26-a02-audio-receipt-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
+| `docs/plans/2026-10-26-a02-media-kernel-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-ci-resource-partitions.md` | 待核对 | — |
 | `docs/plans/2026-10-26-paperclip-bootstrap-plan.md` | 待核对 | — |
 | `docs/plans/2026-10-26-project-manager-baseline.md` | 待核对 | — |

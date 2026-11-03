@@ -56,6 +56,8 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 生产者 / 消费者须另行校验来源和内容的一致性。当前文件 ASR/TTS 消费者均拒绝这些资源。
 Diarization 的 `min_speakers` 和 `max_speakers` 均非空时，前者不得大于后者；
 当前命令 schema 仅分别约束其范围，不校验两者的大小关系，生产者 / 消费者须另做语义校验。
+ASR 命令 schema 分别枚举 `task_kind` 和 `stage_role`，不限定二者的有效配对；通过结构校验
+不能证明该配对受支持，当前文件 ASR 消费者仍要求 `asr_file` / `asr_batch`。
 TTS/codec 等会输出 PCM 的 stage 与 manifest.emits_audio_pcm、sample_rate_hz 和
 max_output_audio_ms 必须一致。提交 schema 只约束时长和采样率同时为空或同时非空，
 不能单凭它确认 stage 与 manifest 一致；后者须在资源资格和准入边界另行核验。契约级 fake

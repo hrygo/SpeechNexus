@@ -506,7 +506,7 @@ readiness失败，不新增运营DTO。循环存活不证明来源可用、实�
 删除账本重放或对象删除。入口必须注入 `ExecutionCommandDeletionAuthorizer`：
 由服务端删除协调器先核验权威删除任务、确认范围和固定依赖，并在已接受的持久删除范围内
 阻断新引用/执行，才签发绑定完整执行身份及确切请求的 `AuthorizedCommandRedaction`。
-该值对象不是密码学凭据，不能从客户端 DTO 直接构造来替代授权。
+该值对象不是密码学凭据，不能从客户端 DTO 直接构造来替代授权。内部 `deletion_job_id` 是清理许可关联字段，不将公开删除资源定义为推理 Job。
 仓库未提供默认 authorizer，组合根不装配本端口，HTTP 未暴露此操作；
 A 的真实删除协调器仍待交付。测试使用明确命名的合成 authorizer。
 
@@ -516,10 +516,10 @@ A 的真实删除协调器仍待交付。测试使用明确命名的合成 autho
 1. 只有 terminal + cleanup complete/not_required，且 A 已将原 lease 置为 released，才可清除正文。
    停止证据不能代替 lease release，released 也不能代替执行清理。B 不归还或改写任何预算。
 2. 首次清理必须命中 `expected_version`，并确认尚无 tombstone。只将 `request_document`
-   置空，同事务写 `command_redacted_at_us`、删除 Job/证据摘要、更新时间和一个新版本。
+   置空，同事务写 `command_redacted_at_us`、内部 `deletion_job_id`、证据摘要、更新时间和一个新版本。
    完整执行身份、原 request/command digest、输出边界、计量、停止证据与历史保留。
-3. 同删除 Job/证据摘要重放返回原 tombstone，先识别已提交事实，不因旧版本拒绝原重放，
-   不重写时间/版本。不同 Job 或证据摘要返回 idempotency_conflict/query_original；
+3. 同 `deletion_job_id` / 证据摘要重放返回原 tombstone，先识别已提交事实，不因旧版本拒绝原重放，
+   不重写时间/版本。不同 `deletion_job_id` 或证据摘要返回 idempotency_conflict/query_original；
    尚未清理的版本冲突返回 version_conflict/query_current_authority。
 4. 提交确认丢失仅报告 unknown/query_original，adapter 不自动重写。原执行查询给出当前
    执行状态及版本，不投影私有正文或删除 tombstone，也不能独自证明哪次清理已提交。

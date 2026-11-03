@@ -89,7 +89,7 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `mark_execution_unknown` | gateway adapter/reconciler → execution transaction | 活动执行转 unknown/quarantined，保留全部身份 | 原 submit ID；终态不得降为 unknown |
 | `record_stop` | 经核验的 engine/controller/operator 观察 → gateway transaction | 只追加停止事实，并关闭对应执行 | 原 submit/evidence ID 与完整事实；同 ID 不同事实拒绝 |
 | `record_execution_observation` | gateway adapter → execution transaction | 沿用既有 ExecutionStatus 的完整身份/状态矩阵，记录外发事实或从未外发的失败 | 期望 version 和原 submit；已观察的外发关联不可变，不能反转终态 |
-| `redact_execution_command` | 服务端删除协调器 → gateway cleanup transaction | 关闭执行且 lease 已释放后，清除规范请求正文并同事务留下删除 tombstone | 删除 Job 与证据摘要；相同返回原事实，清理不授予重新执行权限 |
+| `redact_execution_command` | 服务端删除协调器 → gateway cleanup transaction | 关闭执行且 lease 已释放后，清除规范请求正文并同事务留下删除 tombstone | `deletion_job_id` 与证据摘要；相同返回原事实，清理不授予重新执行权限 |
 | `quarantine_lease` | Scheduler reconciler → admission transaction | 已提交 unknown 执行的 held → quarantine 投影 | lease ID，首次观察与原因不改写；总占用不减少 |
 | `release_lease` | Scheduler reconciler → admission transaction | 核验证据，关闭 lease，扣减所属账目；最后 stage 再释放 quota | lease ID/期望 version；已释放返回原事实，不能再扣一次 |
 | `append_interval` | 计量所有者 → interval transaction | 按流串行检查重叠和硬上限，追加区间，推进 generated 水位 | interval ID +完整区间身份；相邻合法，部分重叠拒绝 |
@@ -256,7 +256,7 @@ gateway 先提交执行事实，Scheduler 后核对并释放；两步间崩溃�
 删除协调器先按既有删除契约核验当前删除任务及依赖范围，再向 Gateway 的受信应用
 边界提交绑定 submit 的清理许可；不能让公开客户端自行构造许可或指定任意记录。
 Gateway 不查询工作台或语音业务表，只在自己的清理事务中重核对 lease 已释放、
-执行已终止以及期望 version，清除正文并保存删除 Job/证据/时间。隔离中的执行继续等待
+执行已终止以及期望 version，清除正文并保存 `deletion_job_id`、证据摘要和时间。该字段是内部清理许可关联，不表示公开删除资源是推理 Job。隔离中的执行继续等待
 清理，不能先报内容删除完成；已清理命令不再恢复正文或重新 dispatch，公开恢复语义
 继续遵循 Operation/receipt 与 `response_not_replayable` 契约。Gateway 正文清理窄事务已有原生实现，测试使用受信合成许可；真实删除协调器和许可签发尚未接入。许可的实际跨进程投影、完整删除流程和备份恢复资格仍须在生产接入时验收。
 

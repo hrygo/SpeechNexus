@@ -161,9 +161,9 @@ instance/intent version，以及显式服务端 owner。现有 create/query 组�
 | 实际观察与前提 | A 的动作 | 持续限制 |
 | --- | --- | --- |
 | preparing/loading/warming_up | 保存原观察与完整 peak | 不提前归还 transient budget |
-| ready 且受信 gateway warmup/资格 receipt 有效 | 原子 peak→steady、写首次 ready_at | 当前 owner 必须 active；receipt 与实例、绑定、拓扑、qualification、fencing 一致 |
+| ready 且受信 gateway warmup/资格 receipt 有效 | 原子 peak→steady、写首次 ready_at | 当前 owner、host 必须 active；receipt 与实例、绑定、拓扑、qualification、fencing 一致，且无占用槽位、未释放 lease 或未终结 submit |
 | failed、没有停止释放证据 | 标记 failed，保留原 peak/steady | 失败不代表资源消失 |
-| quarantined、旧 owner epoch 或观测超限 | 原已保留 base 转入隔离、保留 peak/steady 依据 | 旧 epoch 的实际终态可结束原 intent，便于当前 fencing 清理；不得恢复 ready |
+| quarantined、旧 owner epoch 或非成功 stop 的观测超限 | 原已保留 base 转入隔离、保留 peak/steady 依据 | 旧 epoch 的实际终态可结束原 intent，便于当前 fencing 清理；不得恢复 ready 或直接返还基线 |
 | stop 成功但 lease/submit 清理尚未完成 | 保存原停止事实，intent 为 reconciling，base 继续占用 | 不写 stopped_at、不归还 base，不允许后继 generation |
 | stop 成功、全部 lease released、submit 正确终结且其他 runtime intent 终态 | 从正确 held/quarantine 分量扣除原 base，写首次 stopped_at | 不扣减其他实例或 slot 预算；host 不自动恢复 active |
 | 同一已记录事实重放 | 终态或旧版本请求可只读返回原事实；仍在协调的观察会重新核对前提，必要时完成状态与预算转换 | POST replay flag/等价可选 null 不构成新事实；完成后不重复返还 |

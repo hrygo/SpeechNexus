@@ -7,7 +7,7 @@ date: 2026-10-28
 
 # 资格报告（发布证据）
 
-`qualification_report` 记录某一个不可变 binding revision、引擎镜像/运行时、模型制品、拓扑和契约版本的测试场景及其结果；报告也可以是 `fail` 或 `incomplete`，不能仅凭报告存在就认定场景通过。它不是模型排行榜，也不是“跑过一次就算生产可用”。发布命令必须同时收到 manifest id 与 report id；报告与 manifest 的 binding revision、release tier、时间、stage/engine 组件必须一致。
+`qualification_report` 记录某一个不可变 binding revision、引擎镜像/运行时、模型制品、拓扑和契约版本的测试场景及其结果；报告也可以是 `fail` 或 `incomplete`，不能仅凭报告存在就认定场景通过。它不是模型排行榜，也不是“跑过一次就算生产可用”。通用 binding 发布命令必须收到 manifest id 与 report id，但不读取报告原文或自动验证两份制品：首次登记意图时核对 manifest id 与 binding 定义，并登记证据 ID 和可选摘要；重放不重新执行这项校验。报告与 manifest 的 binding revision、release tier、时间及 stage/engine 组件须由独立核验和评审确认，见本文末尾的边界说明。
 
 本文回答：
 

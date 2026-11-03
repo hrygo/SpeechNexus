@@ -1,9 +1,8 @@
 # SpeechNexus 审查记录
 
+下列条目为选编，并非本目录全部记录。审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
+
 - [2026-10-26 团队 C 收尾 issue 核对](2026-10-26-team-c-closeout-issue-audit.md)：全部 40 个 issue 的进度/状态、正文就地维护及目标/AC/元数据保留结果。
-
-审查结论以记录中的时间、范围和证据为限；文档审查不等于实际系统通过验收。
-
 - [2026-10-26 项目完整工作交接](2026-10-26-project-handoff.md)：当时 A/B/C 集成与待审交付、40 个 issue、决定、风险及接管验证的快照；当前交付状态见[交付跟踪矩阵](../plans/delivery-tracking.md)。
 - [2026-10-26 团队 B 收尾与负责人交接](2026-10-26-team-b-handoff.md)：B00–B07 完整剩余范围、真实执行/停止证据、C 审查回执、指令长度差异及私有证据/旧工作树归档。
 
@@ -15,8 +14,6 @@
 - [2026-10-22 开发环境就绪审查](2026-10-22-development-environment-readiness.md)：当时的工具链、独立服务与验证快照，不代表当前主机状态。
 - [2026-10-23 架构与契约合规审查](2026-10-23-architecture-contract-compliance.md)：上一轮阻断项复核、OpenAI SDK 兼容、契约严格性、SOLID / DRY、容量账目收口与残余风险。
 - [2026-10-23 UI/UX 设计框架与 CI 门禁终审](2026-10-23-ui-ux-design-framework-audit.md)：多层次排版对比度审查、DTCG Token 资产、矢量品牌、响应式与 CI 拦截能力。
-
-[项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)
 
 - [2026-10-23 架构与契约修复闭环](2026-10-23-architecture-contract-repair-closure.md)：F01–F10、R1/R2 的修复、实际验证和运行资格边界。
 - [2026-10-23 集群协调重构后的架构与契约审查](2026-10-23-architecture-contract-post-refactor-review.md)：运行角色最小权限、双库门禁、契约结果覆盖与端口原型一致性、SOLID / DRY 与开放项。
@@ -32,3 +29,5 @@
 - [2026-10-24 B01/B03 原命令与核验文件输入](2026-10-24-b03-frozen-inputs.md)：原持久请求、固定版本 MinIO、隔离双库与既有文件消费者的输入接入验证及真实执行剩余范围。
 - [2026-10-25 B03 默认网关的真实文件 ASR 实验](2026-10-25-b03-default-real-asr-probe.md)：固定 cache 修正、真实 1.7B/CPU VAD、隔离 PG/MinIO、合成语音/静音、重放/重启与控制器停止；保留失败及生产准入、预算和公开链缺口。
 - [2026-11-03 受控 TTS 验收与资源收尾](2026-11-03-controlled-tts-prepare.md)：各次受控窗口的结果、失败与清理证据；第六次窗口仅覆盖固定声音的单节点短英文同步最小链。
+
+[项目主设计](../speechnexus-product-architecture.md) · [文档索引](../README.md)

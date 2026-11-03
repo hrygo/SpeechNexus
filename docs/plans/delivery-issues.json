@@ -1698,11 +1698,21 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "Python 镜像使用冻结的 workspace 依赖与带摘要的 CPU VAD 依赖；当前镜像同步全部 workspace 包。",
+      "integration": "CI 有 Compose 配置检查；按角色裁剪依赖、干净安装及跨平台部署仍需验收。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "模型制品、角色权限、迁移回滚和目标平台须按实际发布制品验证；静态镜像配置不能证明运行资格。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/images/python.Dockerfile",
+          "label": "Python 镜像定义",
+          "note": "冻结 workspace 和哈希校验依赖；尚非按角色裁剪证明"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/.github/workflows/ci.yml",
+          "label": "CI 工作流",
+          "note": "Compose 配置检查不启动部署服务"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

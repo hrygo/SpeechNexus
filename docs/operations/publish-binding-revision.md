@@ -46,7 +46,7 @@ uv run speechnexus-publish-binding \
 
 `--expected-current-revision none` 仅表示先前明确观察到空 head；有 head 时传其十进制 revision。`--capacity-manifest-digest` 和 `--qualification-report-digest` 可选，格式为 `sha256:<64 位小写十六进制>`。等价入口为 `uv run python -m speechnexus_backend.publish_binding`。
 
-同一事务在对象锁内检查先前 head 与 catalogue revision，校验固定草稿和证据，并写 publication、head、证据和原意图；任一步失败均不提交这些写入。catalogue revision 也是 ABA 保护：受控写者在 head 经中间状态返回原值时仍会推进它。其他对象的变更也可能推进全局 revision 并导致保守冲突，此时重新观察和确认。直接修改 head 而不推进版本的旧写者仍可绕过保护。
+同一事务在对象锁内校验固定草稿和证据；新建 publication 时检查先前 head 与 catalogue revision，并写 publication、head、证据和原意图。已有 publication 的 `existing_fact` 路径不会更新 head，也不会执行这项 head/catalogue CAS，不能把成功登记当作观察值仍然有效。事务在提交前失败时不会提交其中的写入；提交回执丢失须按下文处理。catalogue revision 也是 ABA 保护：受控写者在 head 经中间状态返回原值时仍会推进它。其他对象的变更也可能推进全局 revision 并导致保守冲突，此时重新观察和确认。直接修改 head 而不推进版本的旧写者仍可绕过保护。
 
 结果中的 `outcome=created` 是新建事实，`outcome=replay` 是同 key、同完整意图的已登记结果，`original_created` 保留原操作是否新建事实。`outcome=existing_fact` 表示所请求的 publication 早已存在，本次登记的是当前调用，**不证明历史 publication 由这个 key 或观察产生**；若此前无证据，本次会补录证据，但不会重设 head。已有不同证据保持冲突。重放不会把后续变更过的 head 改回原值。
 

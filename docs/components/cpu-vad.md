@@ -9,7 +9,8 @@ date: 2026-10-24
 
 这是 [B06 #33](https://github.com/hrygo/SpeechNexus/issues/33) 的原生消费接口。
 领域切段、CPU ONNX adapter 和合成探针已实现；另有[原生文件识别消费者](file-asr-recognition.md)。
-文件执行已接入持久 worker 与原命令，见[文件 ASR 装配](../operations/file-asr-runtime.md)；公开实时入口及流式重采样、完整实时链路仍须分别接入和验收。
+文件执行已接入持久 worker 与原命令，见[文件 ASR 装配](../operations/file-asr-runtime.md)；
+VAD 接入公开实时入口、流式重采样及完整实时链路仍须分别实现和验收。
 合成结果不能替代真实录音质量或集群资格。
 
 ## 代码与消费接口
@@ -37,7 +38,7 @@ segments = session.push(pcm16, sample_start=session.accepted_samples)
 每个 `VadSegment` 包含单调 sequence、16 kHz 半开样本区间、关闭原因、`config_revision`、
 策略摘要及私有 PCM。**仅 `has_speech=true` 的段可以进入 ASR**。无语音段不保留 PCM；
 调用方应按既有协议产生空正文 / `no_speech`，不能把原静音绕过门禁再次发给 ASR。
-创建 Operation、计量实际接受样本以及发布最终事件仍属于后续集成工作。
+实时链路中创建 Operation、计量实际接受样本以及发布最终事件仍属于后续集成工作。
 
 `commit()` 处理尾帧并关闭剩余段；没有未提交音频时报 `EmptyVadBufferError`，客户端 event_id
 去重必须在调用前完成。`clear()` 丢弃尚未提交的音频和模型状态，保留输入时钟与段序号。

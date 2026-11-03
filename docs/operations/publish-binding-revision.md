@@ -73,4 +73,4 @@ uv run speechnexus-publish-binding \
 
 `0024` 的安装身份与发布意图是恢复证据，迁移拒绝向旧版本降级；回退须另行设计和审查。当前实现只在 PostgreSQL 测试环境验证；旧写者切换、恢复/克隆环境识别、部署权限、HTTP 发布消费者和真实拓扑仍需单独验收。公共 HTTP 契约没有本 CLI 使用的 catalogue revision 字段，不能把该 CLI 证明当作 HTTP 端到端实现。
 
-公开目录和 Job 读取 head；退役不删除既有 publication、证据和已固定的 Job。内容解析成功不代表 recipe、instance、真实引擎或容量已经就绪；相关验证见 [binding 生命周期操作](binding-lifecycle.md) 和 [证据回填](backfill-binding-publication-evidence.md)。
+公开目录和 Job 读取 head；退役不删除既有 publication、证据和已固定的 Job。当前代码中 HTTP 草稿保存的定义缺少目录投影所需的 `binding_id`，发布成功不能证明该草稿已能通过公开目录读取；历史复现与当前静态判断见[语音接口说明](../architecture/speech-api.md#15-能力协商与版本)。内容解析成功也不代表 recipe、instance、真实引擎或容量已经就绪；相关验证见 [binding 生命周期操作](binding-lifecycle.md) 和 [证据回填](backfill-binding-publication-evidence.md)。

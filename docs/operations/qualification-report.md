@@ -403,7 +403,7 @@ fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision
 5. **gateway/cancel/concurrency 是 required 但未执行**：这是当前 `incomplete` 的主因。后续卡应先在隔离环境补这三类证据，再谈生产。
 6. **资源峰值/带宽未测**：12 GiB 是 cgroup 上限；CPU/PCM/scratch/带宽是声明；建议补资源高水位测量，尤其是 `host_pcm_buffer_bytes` 和 ingress/egress。
 7. **原始主记录未提供**：`DEL-103-evidence.md` 未随任务提供；本报告只能标“转述”。建议证据接收人补原始记录或明确其保留位置，否则不能升级为独立复核。
-8. **产品发布校验只检查 capacity manifest id**：发布 CLI 不校验报告完整性、摘要、DB 账本；脚本是补强，不是产品门禁。建议后续卡把关键检查接入发布路径。
+8. **通用 binding 发布入口不验证报告原文件**：`speechnexus-publish-binding` 记录证据 ID 和可选摘要，并核对容量 manifest ID 与 binding 定义；它不读取报告文件核验完整性或摘要。离线脚本提供额外核对，不能单独当作产品门禁。内建声音资格的授权、签发和发布入口另行调用上述只读 release 核验组件，仍须遵守各自的部署和资格边界。
 9. **`local-test-capacity-1` 禁止进入真实路径**：测试可以用，但真实 manifest/report/definition/evidence 的 id 必须是稳定、可追溯的真实 ID；脚本会拒绝 `local-test-*`。
 
 ## 12. 文件清单（本任务新增/修改）

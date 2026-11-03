@@ -153,7 +153,7 @@
 | `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 迁移、head、基础 DDL、授权生成器和测试入口，补充释放守卫视图及执行边界；全部字段待核对 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
 | `docs/operations/publish-binding-revision.md` | 部分核对 | 全文阅读并核对 CLI 观察、退出分类、发布意图与部分授权；事务全部分支及数据库实测待核对 |
-| `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期及 limitations 校验边界，澄清报告本身不代表通过；其余内容待核对 |
+| `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期及 limitations 校验边界，区分通用 binding 发布与内建声音资格的报告校验；其余内容待核对 |
 | `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |
 | `docs/operations/register-engine.md` | 部分核对 | 核对健康探测、注册事务及验证查询的表字段，补齐 schema 限定并收窄输出；其余内容待核对 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |

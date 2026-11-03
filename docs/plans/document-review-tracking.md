@@ -292,7 +292,7 @@
 | `docs/plans/2026-10-27-delegra-legion-closed-loop.md` | 历史保留 | 全文阅读，标明历史配置、授权和现行入口；平台状态未复验 |
 | `docs/plans/2026-10-30-zero-dispatch-settlement.md` | 历史保留 | 全文阅读，标明固定基线和候选方案的时点边界；历史验证及部署未复验 |
 | `docs/plans/README.md` | 已核对 | 核对当前 PRD、需求矩阵、结构化来源和只读刷新入口及 77 个本地链接；带日期条目作为历史索引，原时点摘要未逐项重验 |
-| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 锁、Compose 入口和当前需求修正旧描述及已取消排期的 issue 入口；其余协调和验收细节待核对 |
+| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 锁、Compose 入口、网关取消接收和当前需求，修正旧描述及已取消排期的 issue 入口；其余协调和验收细节待核对 |
 | `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
 | `docs/po-sm-operating-playbook.md` | 已核对 | 全文对照交付 SOP 和 fleet-status 查询、分类及输出；修正门禁、等待、跨公司计数和模式差异，未连接平台数据库验证运行状态 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；逐项验收语义待核对 |

@@ -6,7 +6,7 @@
 
 - disable 的生命周期事件、退役事实和原取消意图在同一 PostgreSQL 事务写入；Job 创建与 binding 选择变更使用同一锁，并在锁内重新验证所选 revision。原幂等键重放先查询已有 Job。
 - 0025 增加按原 lifecycle event 和 submit 身份保存的逐目标账本及 backend abort 意图。独立 `binding_disable_worker` 限定自身 gateway/node，扫描原身份并使用单独的受限角色调用既有租约释放事务。Compose 的 `binding-disable` profile 需要运维显式启用和配置，默认部署不会启动该 worker。
-- 0027 增加 Gateway abort 原请求及 dispatch 标记；`/internal/v1/executions/{submit_intent_id}/abort-intents` 只对完全相同的原请求提供重放。同键异意图冲突；dispatch 标记和 unknown quarantine 同事务提交，未取得可信停止证据不能释放资源。旧 `/abort` 维持原有语义；新 worker 不以旧端点作为回退。Gateway 启动时检查该能力所需权限，不满足时新端点返回不可用。
+- 0027 增加 Gateway abort 原请求及 dispatch 标记；`/internal/v1/executions/{submit_intent_id}/abort-intents` 只对完全相同的原请求提供重放。同键异意图冲突；dispatch 标记和 unknown quarantine 同事务提交，未取得可信停止证据不能释放资源。`/abort` 与 `/abort-intents` 共用持久取消接收及原意图冲突规则；新 worker 使用后者，不以旧端点作为回退。Gateway 启动时检查该能力所需权限，不满足时新端点返回不可用。
 - 隔离 PostgreSQL 集成测试覆盖受限角色、Job 与同步 ASR 的准入屏障、Gateway 提交屏障、原键重放、目标恢复和 dispatch 标记后的故障窗口。真实 worker 和 Gateway 组合根通过 loopback HTTP 完成取消及重启重放测试；引擎是合成适配器，不能证明真实引擎停止或多机行为。
 
 ## 固定事实和边界

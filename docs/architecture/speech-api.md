@@ -221,7 +221,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 契约中的分页列表使用 `data`、`has_more`、`next_cursor`，共用的 `limit` 为 1–100，默认 50；Job 列表按 `(created_at,id)` 排序。OpenAI 兼容的 `/v1/models` 列表使用 `object` 和 `data`，不声明这些分页字段或游标参数。分页游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
-`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的严格 data schema，状态、错误、进度、产物和终态 `cleanup_state` 必须与该事件类型匹配。`job.succeeded` 至少携带一个 committed Artifact 和与 Job kind 匹配的结构化 `result`，与 REST Job 终态使用同一判别规则；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
+`JobEvent.data` 不是任意 JSON：每个 `job.*` / `artifact.published` 类型都有独立的封闭 data schema，分别约束其声明的字段和状态。目标语义要求 `job.succeeded` 至少携带一个 committed Artifact 和与权威 Job kind 匹配的结构化 `result`；`job.failed` 即使进入 `cleanup_state=quarantined` 也保持失败结果与结构化错误；`job.cancelled` 只允许 `not_required` / `complete`。未知嵌套字段和不匹配的 `type` / `status` 组合按契约错误拒绝，不能借事件扩展绕过稳定字段。工作台的 MinutesJob、AssistantTurn、ExportJob 与 ExportEvent 使用同一原则：失败错误为结构化 `code / message / retryable / param`，非 failed 状态不得携带非空错误对象。
 
 这些成功语义还需生产者校验：当前 `job.succeeded` 事件 schema 要求非空产物和结构化结果，但不限制成功事件的 `cleanup_state`，也不单独验证结果引用与产物数组的一致性。契约测试另以辅助检查验证产物 ID、kind 和 receipt 的跨数组关系；测试辅助函数不等于生产事件写入路径已接入这些检查。事件本身也没有 Job kind 字段，消费者需结合权威 Job 核对类型。
 

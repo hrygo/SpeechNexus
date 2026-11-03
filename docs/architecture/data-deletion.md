@@ -71,6 +71,9 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 声音特征或凭据。临时对象失败可以重试；不把部分清理声明为 succeeded。成功必须
 `cleanup_state=complete`，result 包含确切 deleted 集合、保留副本和 ledger_id；
 结果不得漏掉计划确认的目标或包含未确认资源。
+`DeletionResult` schema 只校验各数组的形状、非空要求和数组内完整对象去重，不能
+比较原 plan、确认集合与结果，也不检查 deleted 与保留副本之间是否重叠；生产者须
+在发布结果前按资源身份和版本执行这些跨记录校验。
 
 删除只移除业务内容与允许删除的配置投影；执行/计量/租约/fencing 的不变量证据
 不在级联范围。`operation_content` 删除正文/制品，不删除执行身份、状态、脱敏

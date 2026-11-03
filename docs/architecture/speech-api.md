@@ -217,7 +217,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 413 | `payload_too_large` | 分段或改用有配额的文件上传 |
 | 422 | `unsupported_parameter`、`incompatible_profile`、`async_required` | 改请求；不得静默删参数 |
 | 429 | `quota_exceeded`、`queue_limit_exceeded` | 遵循 Retry-After，受总重试期限约束 |
-| 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 先协调原意图；`retryable` 为 true 本身不保证重发安全，还须确认该入口提供适用的安全重放机制 |
+| 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 写入或执行结果未知时先协调原意图；`retryable` 为 true 本身不保证重发安全。固定只读查询按对应接口规则可显式重试，不凭读取失败创建新意图 |
 
 契约中的分页列表使用 `data`、`has_more`、`next_cursor`，共用的 `limit` 为 1–100，默认 50；Job 列表按 `(created_at,id)` 排序。OpenAI 兼容的 `/v1/models` 列表使用 `object` 和 `data`，不声明这些分页字段或游标参数。分页游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 

@@ -132,7 +132,7 @@
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 已核对 | 对照授权、生命周期事务、幂等重放、并发矩阵与恢复测试；澄清连接中断可能无响应，未运行 PG 或部署 |
 | `docs/operations/builtin-voice-qualification.md` | 已核对 | 对照资格入口、授权、退出分支、制品脚本摘要、probe 音频与终态验证及受控窗口；未运行探针或核验部署权限 |
-| `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码、账本检查及发布前后步骤；澄清发布事务与独立校验的范围、fixture、live 查询隔离和工作区配额限制，其余内容待核对 |
+| `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码、账本检查及发布前后步骤；澄清发布事务与独立校验的范围、fixture、live 查询隔离和工作区配额限制，修正内部 VAD 与独立阶段的区别；其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |
 | `docs/operations/file-asr-binding-handoff.md` | 已核对 | 对照固定制品、绑定定义、离线工具、命令消费及交接测试，补充后续旧入口屏障联验证据及故障注入限制；未重跑实验或测试 |
 | `docs/operations/file-asr-runtime.md` | 已核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消、结果恢复及停止联验；修正集成测试的停止证据描述，未运行测试或部署 |

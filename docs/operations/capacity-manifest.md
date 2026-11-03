@@ -53,7 +53,7 @@ date: 2026-10-28
 | `supported_tasks` | 是 | 该 revision 接受的任务，例如 `asr_file` | 产品/定义作者 | 必须是定义 `tasks` 的子集；当前样例只有 `asr_file` |
 | `supported_input_formats` | 是 | 接受的输入容器/采样格式 | 产品/引擎负责人 | Schema 枚举；必须与真实引擎能力一致，不能把“计划支持”写成“已支持” |
 | `supported_output_formats` | 是 | 接受的输出格式 | 产品/引擎负责人 | Schema 枚举；若 stage `emits_audio_pcm=true`，必须包含 PCM/WAV 等音频格式 |
-| `stage_graph` | 是 | 完整执行阶段图；每个引擎/模型阶段一条 | 模型/引擎负责人，平台补充资源 | 见 §3；stage id 必须与报告 `software.engine_components` 一一对应 |
+| `stage_graph` | 是 | 与执行配方对应的阶段图；内部工作也须纳入对应阶段的资源证据 | 模型/引擎负责人，平台补充资源 | 见 §3；stage id 必须与报告 `software.engine_components` 一一对应 |
 | `resource_envelope` | 是 | 由 `stage_graph` 聚合出的准入包络 | 证据产出人用脚本生成 | 见 §3；不得手填与 stage 不一致的数 |
 | `rate_and_segment_limits` | 是 | 速率、segment、渲染单元和硬输出配额 | 产品/引擎负责人 | 与定义的 `parameter_domains.asr.max_segment_ms` 一致；引擎是否真的硬限制要单独取证 |
 | `cancellation_and_fencing` | 是 | 取消模式、是否支持 abort/fencing、最坏不可抢占时长、drain 与回收冷却 | 引擎/平台实测负责人 | 必须有实际取消/隔离证据；样例只有 `connection_drop_with_quarantine`，不能声明 abort/fencing |
@@ -116,7 +116,7 @@ date: 2026-10-28
 | --- | --- | --- | --- |
 | `artifact-pin.json` → `model.license` | 样例为 `Apache-2.0` | 模型 pin 负责人 | 读取 pin；与模型卡/模型仓库声明核对；许可证接受记录属于发布前检查，不在 schema 内 |
 | `artifact-pin.json` → `model.model_card.digest` | 模型卡文件摘要 | 模型 pin 负责人 | 与模型卡原始字节核对 |
-| `artifact-pin.json` → `vad.license` | 样例为 `MIT` | 资产 pin 负责人 | 仅当 VAD 进入 stage graph 时才作为该 stage 的 artifact 证据 |
+| `artifact-pin.json` → `vad.license` | 样例为 `MIT` | 资产 pin 负责人 | VAD 实际使用时核对其许可与制品证据，无论是否为独立 stage |
 | `artifact-pin.json` → `model.files[].artifact.digest` | 每个权重/配置/词表文件摘要 | 模型 pin 负责人 | 与下载/制品存储中的字节核对；本任务未下载模型，不能声称已重算这些字节 |
 
 如果产品要求“许可证审批”成为机器门禁，应新增独立证据字段或发布检查卡；不要把它塞进 manifest 的 `additionalProperties: false` 对象，也不要用注释伪装成字段。
@@ -225,7 +225,7 @@ live 查询按 binding revision 选取所有 `engine_instances` 行，没有过�
 
 1. **固定模型与引擎**：更新/确认 `artifact-pin.json` 的 `model`（repository、revision、license、model_card、files）与 engine pin；不要用浮动 tag。
 2. **拿完整 revision id**：从 binding 草稿/发布系统取得不可变的 `binding_revision_id`；manifest 不能先于 revision 编造一个。
-3. **列 stage**：按真实执行路径列全 stage；文件 ASR 当前样例只有 `asr_batch`。若 VAD、对齐、说话人分离实际参与，必须各自成 stage，不能藏在 `parameter_defaults` 里。
+3. **列 stage**：按实际配方列出阶段及其资源；文件 ASR 当前样例只有 `asr_batch`，CPU 解码和 VAD 是消费者内部工作，其资源和制品证据仍须覆盖。若对齐、说话人分离等由独立配方阶段执行，须在定义和 manifest 中一致声明并重新资格，不能仅依赖 `parameter_defaults`。
 4. **填三组向量**：每个 stage 填 `resident`、`loading_peak`、`per_slot`；每个值标注“实测 / 声明上界 / 未知”。未知的 CPU/PCM/scratch/带宽不能写成 0 冒充实测；要么给保守声明并注明，要么阻塞该项。
 5. **聚合**：用脚本或 §3.3 规则生成 `resource_envelope`；不要手填。
 6. **填限额与取消**：`max_segment_audio_ms` 与定义 `parameter_domains.asr.max_segment_ms` 对齐；`hard_output_quota` 只在引擎真的先验限流时为 true；取消/fencing 只在有证据时为 true。
@@ -499,7 +499,7 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 2. **当前 `binding-definition.json` 缺 `capacity_manifest_id` 且声明 `production`**：本任务用 `binding-definition.candidate.json` 展示未来 revision 的声明，不修改历史定义。建议由绑定作者新建 revision；发布前重算 `config_bundle_digest`。
 3. **许可不是 schema 字段**：建议在发布检查清单或独立证据表中记录许可证接受；不要在 manifest 中新增自由字段。
 4. **阈值不可机器读**：报告只记录 `status` 与 `notes`，没有 `threshold` 字段；建议后续 schema 演进时增加机器可读阈值，本任务不改变冻结契约。
-5. **stage graph 未表达 VAD/对齐/分离**：如果实际执行路径包含这些阶段，必须新增 stage 并重新资格；不能仅靠 `parameter_defaults`。
+5. **内部工作与辅助阶段的覆盖**：样例未单列 VAD；实际使用时仍须在所属阶段的资源、制品与资格证据中覆盖。独立执行的对齐或分离阶段须在配方与 manifest 中声明并重新资格，不能仅靠 `parameter_defaults`。
 6. **通用 binding 发布事务不验证证据原文件**：事务核对定义中的 capacity manifest ID 并记录证据 ID 与可选摘要，但不读取原文件核对 release tier、topology、摘要或 host/instance 账本。脚本是补充核对，不是产品门禁；内建声音资格入口另有只读 release 校验，见[资格报告](qualification-report.md)。
 7. **带宽/对象存储没有 host 账本列**：manifest 有声明，但主机层无法按列扣减；需要平台监控/后续 schema 演进。
 8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只用于验证快照上的规则；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。

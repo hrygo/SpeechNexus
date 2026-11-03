@@ -295,7 +295,7 @@ VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本
 
 ### 2.1 创建、入口检查与连接
 
-创建会话时提交可选 workspace_id / client_reference、profile、modalities（asr、tts 或两者）、逻辑模型和输出需求。REST 校验部署入口、参数、资源状态、版本与能力，固定配置并建立 created 会话，30 秒内未连接即过期；此时不占推理槽。
+创建会话时提交可选 workspace_id / client_reference、profile、modalities（asr、tts 或两者）、逻辑模型和输出需求。REST 校验部署入口、参数、资源状态、版本与能力，固定配置并建立 created 会话；未在 `expires_in_s` 内连接即过期，该值允许 5–300 秒，默认 30 秒。此时不占推理槽。
 
 标准 OpenAI Realtime SDK 可省略 REST 会话创建，直接连接 `/v1/realtime?model={model}`。该兼容模式只建立 transcription-only 会话，使用部署默认工作空间、ASR 预设和音频格式；连接握手时完成准入并返回标准 `session.created`。它不接受 TTS、nexus 假设 / 辅助事件或双工能力。需要固定 profile、workspace、音色或 TTS 时，调用方必须先创建 nexus 会话。`session_id` 与 `model` 互斥，同时提供返回 400，两者都不进入 URL 作为凭据。
 

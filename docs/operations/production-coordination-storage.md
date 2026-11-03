@@ -92,10 +92,10 @@ make coordination-test
 make integration-test
 ```
 
-`test_coordination_foundation.py` 的同组约束/最小角色行为在 PG/InnoDB 执行；PG 使用
+[`test_coordination_foundation.py`](../../tests/integration/test_coordination_foundation.py) 的同组约束/最小角色行为设计为在 PG/InnoDB 执行；PG 使用
 实际包内迁移。升级故障测试在新表创建中途制造冲突，验证 DDL/版本全部回滚、既有
 Job/outbox 与授权保留，再重复升级。两个独立迁移进程先观测真实 advisory lock wait，
-释放后串行完成；这证明迁移互斥，不等于 HA 或恢复资格。
+释放后串行完成；这证明迁移互斥，不等于 HA 或恢复资格。测试文件存在不等于本次或目标环境已运行通过，结果须以对应执行记录为准。
 
 ADR 0007 复核：本轮只迁入存储和权限基础，其他旧业务不变量仍未全部进入生产端口，
 保留旧必跑门禁。B 的 PG adapter、A 的准入/runtime 等后续实现与联合验收

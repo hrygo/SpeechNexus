@@ -319,18 +319,18 @@
 | --- | --- | --- |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 已核对 | 对照综合报告和脚本核对检查项目、状态及 SVG / PNG 摘要；是历史渲染记录，未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 部分核对 | 确认 4K 尺寸、文档引用及与预览缩放后的像素接近；预览图面的部分语义已核对，其余拓扑待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 查看图面，对照部署图说明核对目标架构标记、主机角色、数据库及对象存储、同事务准入和示例容量边界；实际部署与其他拓扑细节待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 已核对 | 核对尺寸、历史摘要及预览缩放关系；图面按目标架构审阅，数量是示例，不证明实际部署 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 已核对 | 查看完整图面，对照图示说明、构图源及 ADR 0004 核对角色、节点、存储与预算；不证明实际部署或资格 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 已核对 | 核对构图源、历史摘要与渲染图面；为目标拓扑示意，不证明实际装配 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 已核对 | 对照综合报告和脚本核对检查项目、状态及 SVG / PNG 摘要；是历史渲染记录，未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 部分核对 | 确认 4K 尺寸、文档引用及与预览缩放后的像素接近；预览图面的部分语义已核对，其余拓扑待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 查看图面，对照 ADR 0002 与实例 schema 核对模型、运行时、实例与池归属；数量和容量为示例，实际部署及其他拓扑细节待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 已核对 | 核对尺寸、历史摘要及预览缩放关系；图面按目标架构审阅，不证明模型部署或资格 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 已核对 | 查看完整图面，对照构图源、ADR 0002 / 0004 与实例契约核对模型、运行时、实例、资源池和依赖；数量与容量为示例 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.svg` | 已核对 | 核对构图源、历史摘要与渲染图面；为目标拓扑示意，不证明实际装配 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/application.png` | 已核对 | 核对构图脚本用途，素材字节与总览 SVG 内嵌图一致；仅作装饰，不表达部署事实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/compute.png` | 已核对 | 核对构图脚本用途，素材字节与总览 SVG 内嵌图一致；仅作装饰，不表达部署事实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/data.png` | 已核对 | 核对构图脚本用途，素材字节与总览 SVG 内嵌图一致；仅作装饰，不表达部署事实 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 部分核对 | 核对 SVG、内容清单及模型清单输出入口；未重新生成或逐项审查绘图逻辑 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 已核对 | 全文核对模型、布局、连接和输出逻辑，对照图面、模型清单及目标架构；未重新生成图文件 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 已核对 | 核对 JSON 及三个素材键与构图用途；提示词是历史制作资料，不代表当前部署事实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 已核对 | 8 项的全部字段与构图脚本生成源一致，模型、引擎及加载方向与 ADR 0002 对照一致；这是目标选型，实际制品和部署资格未验证 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 已核对 | 全文核对渲染、标记元素布局、素材与模型目录断言及报告输出；语法检查通过，未重跑浏览器渲染 |

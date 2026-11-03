@@ -1,10 +1,12 @@
 ---
 title: "B01/B03 原命令与对象输入接入"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 
 # 原命令与对象输入接入
+
+> 历史实施单元：以下方案和剩余验收保留原时点，当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 基线 main `08c77de`，承接 #127。此前真实执行的必要缺口是：dispatch 只有 intent，
 没有读取已持久化完整命令的窄端口；原生文件ASR仍接调用方提供的本地流。

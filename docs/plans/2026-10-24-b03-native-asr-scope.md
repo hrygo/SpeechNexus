@@ -1,10 +1,12 @@
 ---
 title: "B01/B03 原生 ASR 请求作用域与生命周期接入"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 
 # B01/B03 原生 ASR 请求作用域与生命周期接入
+
+> 历史实施单元：以下实现状态与后续安排保留原时点，当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 承接 [团队 B 目标](2026-10-23-team-b-goal.md)、#28 与 #30。基线 main `fcb0670`，
 #130 已合并，不重复输入核验单元。整包、Gate 与 Goal 继续开放。

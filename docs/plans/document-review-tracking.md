@@ -88,7 +88,7 @@
 | `docs/components/node-controller.md` | 部分核对 | 全文阅读并核对节点配置默认值，限定历史 warmup 探针的预算结论；容器、协议及恢复细节待核对 |
 | `docs/components/node-stop-recovery.md` | 部分核对 | 全文阅读并核对 SQLite schema 版本、检查点表与 reconcile/stop 入口；崩溃恢复各分支及历史探针待核对 |
 | `docs/components/production-admission-storage.md` | 部分核对 | 全文阅读并核对迁移、准入表授权及测试入口；锁序、恢复和删除边界待逐项核对 |
-| `docs/components/production-admission.md` | 部分核对 | 全文阅读并核对配额维度、业务/信封摘要、同步语音与转写适配入口；锁序、重放及集成证据待核对 |
+| `docs/components/production-admission.md` | 已核对 | 静态对照配额、锁序、原身份恢复及同步 TTS settlement 重放；未运行服务 |
 | `docs/components/production-assets.md` | 部分核对 | 全文阅读并核对默认 inspector、TTL/维护配置与 CI 分片，修正 CI 描述；事务、权限与完整验证范围待核对 |
 | `docs/components/production-jobs.md` | 已核对 | 对照创建、认领、派发、发布、worker 配置和测试入口；说明停止竞态与状态摘要检查限制，未运行集成测试 |
 | `docs/components/production-leases.md` | 已核对 | 静态对照隔离与释放事务、停止事实、0028 视图授权及测试定义；未运行服务 |

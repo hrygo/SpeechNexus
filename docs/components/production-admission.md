@@ -41,6 +41,8 @@ JSON 对象键序不改变规范摘要；数组顺序、租约、期限或版本
 [全局锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)取得全部 pool、quota、
 host、head、generation、相关runtime intent及operation。同表键排序，不逐stage锁完整链；
 锁后重核对父键、当前generation和全部版本。operation主键跨workspace/pool/host排斥身份。
+同步 TTS 的实际适配器在资源锁之前还串行化 binding 禁用与声音退役，检查固定声音版本及资格；
+新准入在写入 settlement 后再次检查声音资格。具体范围见[同步 TTS](synchronous-speech.md)。
 
 核对 active owner/token/期限、active pool/host、policy/quota版本、完整阶段集合及
 gateway/binding/manifest/topology。runtime须是当前且没有stop intent的ready/steady
@@ -76,10 +78,12 @@ operation/lease/Job/outbox唯一键与FK均可能等待。最后一次可能等�
 
 ## 重放、未知与释放
 
-同operation/attempt、业务摘要及完整信封精确匹配时，只读返回原lease与预留，不因
+同operation/attempt、业务摘要及完整信封精确匹配时，准入核心返回原lease与预留，不因
 owner、当前策略或runtime改变而重新分配。物理向量保留，快照version反映当前attempt
 版本；隔离/释放后查询不能推导出仍可执行。原请求、阶段集合、lease或Job/outbox缺失/
 不一致时进入协调，不修补数据。私有正文tombstone不恢复内容、不授权派发。
+同步 TTS 通过适配器重放准入时还会在同一事务检查或插入缺失的 settlement 根，并核对固定目标；
+这一步可能写入且不会重新检查当前声音资格。单独的 `query_outcome(attempt)` 才是只读恢复查询。
 
 异命令或异分配/期限/版本冲突。已存在operation的新attempt当前保持关闭，即使原lease
 释放也不自动获得许可；以后须由受控业务用例证明尚未终态的Operation可安全重试，
@@ -104,11 +108,11 @@ quota。runtime基线另走停止流程。A07预检、正文删除许可和恢�
 复用既有 schema 及最小角色；包内迁移 head 截至 2026-11-03 为 `0031_tts_settlement`，后续以迁移链为准。本单元不改历史迁移、不扩权；B 不读私有原正文，
 C继续通过公开业务协议消费。
 
-`test_production_admission.py`验证PG/InnoDB真实父锁/operation/唯一键等待、共享末预算、
+`test_production_admission.py`定义了PG/InnoDB父锁/operation/唯一键等待、共享末预算、
 完整配方回滚、两架构六维、最后等待后的四类有效期、原身份查询及native runtime→admit→
 B提交/观察/unknown/stop→A隔离/last-stage释放。PG另验证实际提交后丢确认，含取消错误。
 批准/readiness/停止证据为合成事实，不是引擎或网络资格；单元故障游标只验证驱动分界。
-统一26个请求正例、24个负例和22个结果由Python/TypeScript同版parser消费，不改写输入。
+共享请求和结果样例由Python/TypeScript同版parser消费，不改写输入。测试定义不代表当前环境已通过。
 
 运行完整coordination/integration、Python、契约/漂移/兼容和Web门禁后交付。
 ADR0007退出条件尚未满足，保留旧必跑门禁；完整消费者与真实资格继续验收。

@@ -174,6 +174,8 @@ class SpeechPlan:
     max_source_pcm_bytes: int = MAX_PAYLOAD_BYTES
     max_payload_bytes: int = MAX_PAYLOAD_BYTES
     timeout_seconds: float = 120.0
+    gateway_policy_digest: str | None = None
+    native_speaker_id: str | None = None
 
     def __post_init__(self) -> None:
         if type(self.request_id) is not str or _IDENTIFIER.fullmatch(self.request_id) is None:
@@ -197,6 +199,14 @@ class SpeechPlan:
         ):
             raise ValueError("Invalid speech voice revision identity")
         revision_number(self.voice_revision)
+        if (self.gateway_policy_digest is None) != (self.native_speaker_id is None):
+            raise ValueError("Incomplete pinned voice authority")
+        if self.gateway_policy_digest is not None and (
+            re.fullmatch(r"sha256:[0-9a-f]{64}", self.gateway_policy_digest) is None
+            or not isinstance(self.native_speaker_id, str)
+            or not self.native_speaker_id
+        ):
+            raise ValueError("Invalid pinned voice authority")
         if not isinstance(self.response_format, SpeechFormat):
             raise ValueError("Invalid speech response format")
         if type(self.sample_rate_hz) is not int or not 8000 <= self.sample_rate_hz <= 96000:

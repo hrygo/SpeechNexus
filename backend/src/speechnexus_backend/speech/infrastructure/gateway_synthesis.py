@@ -42,6 +42,10 @@ class TtsResultObjects(Protocol):
     def read(self, reference: ArtifactStorageReference, storage_version: str) -> bytes: ...
 
 
+class TtsCancellationStore(Protocol):
+    def request_cancellation(self, operation_id: str, reason: Any) -> None: ...
+
+
 class GatewaySynthesizer:
     """Recover using the persisted submit identity; never release held capacity."""
 
@@ -52,11 +56,15 @@ class GatewaySynthesizer:
         results: TtsResultObjects,
         *,
         poll_seconds: float = 0.25,
+        cancellation: TtsCancellationStore | None = None,
+        settlement_runtime: Any | None = None,
     ) -> None:
         if not 0 < poll_seconds <= 30:
             raise ValueError("Speech polling must be bounded")
         self._gateway, self._admission, self._results = gateway, admission, results
         self._poll_seconds = float(poll_seconds)
+        self._cancellation = cancellation
+        self._settlement_runtime = settlement_runtime
         self._bridge = _GatewayLoop(gateway)
 
     def close(self) -> None:
@@ -66,7 +74,23 @@ class GatewaySynthesizer:
                 if callable(closer):
                     closer()
         finally:
-            self._bridge.close()
+            try:
+                self._bridge.close()
+            finally:
+                if self._settlement_runtime is not None:
+                    self._settlement_runtime.close()
+
+    def cancel(self, request_id: str, reason: str) -> None:
+        from speechnexus_backend.speech.infrastructure.tts_admission import _identities
+
+        if self._cancellation is None:
+            raise SpeechUnavailableError("Speech cancellation is unavailable")
+        if reason not in ("client_cancelled", "stream_disconnected", "deadline_exceeded"):
+            raise ValueError("Invalid speech cancellation reason")
+        try:
+            self._cancellation.request_cancellation(_identities(request_id)[0].operation_id, reason)
+        except Exception:
+            raise SpeechUnavailableError("Speech cancellation is unavailable") from None
 
     def synthesize(self, plan: SpeechPlan) -> SpeechAudio:
         started = time.monotonic()
@@ -92,9 +116,7 @@ class GatewaySynthesizer:
         try:
             async with asyncio.timeout_at(deadline):
                 plan, request = await asyncio.to_thread(self._admission.recover, request_id)
-                return await self._execute(
-                    plan, request, min(deadline, started + plan.timeout_seconds)
-                )
+                return await self._execute(plan, request, deadline, recovery=True)
         except TimeoutError:
             raise SpeechDeadlineExceededError from None
 
@@ -104,29 +126,41 @@ class GatewaySynthesizer:
             async with asyncio.timeout_at(deadline):
                 request = await asyncio.to_thread(self._admission.admit, plan)
                 return await self._execute(plan, request, deadline)
-        except TimeoutError:
+        except TimeoutError, SpeechDeadlineExceededError:
+            if self._cancellation is not None:
+                await asyncio.to_thread(self.cancel, plan.request_id, "deadline_exceeded")
             raise SpeechDeadlineExceededError from None
 
     async def _execute(
-        self, plan: SpeechPlan, request: SubmitExecutionRequest, deadline: float
+        self,
+        plan: SpeechPlan,
+        request: SubmitExecutionRequest,
+        deadline: float,
+        *,
+        recovery: bool = False,
     ) -> SpeechAudio:
         try:
             at = datetime.fromisoformat(request["deadline_at"].replace("Z", "+00:00"))
             if at.tzinfo is None or at.utcoffset() is None:
                 raise ValueError
-            remaining = (at - datetime.now(UTC)).total_seconds()
-            deadline = min(deadline, time.monotonic() + remaining)
-            if deadline <= time.monotonic():
-                raise SpeechDeadlineExceededError
+            execution_deadline = time.monotonic() + (at - datetime.now(UTC)).total_seconds()
+            if not recovery:
+                deadline = min(deadline, execution_deadline)
+                if deadline <= time.monotonic():
+                    raise SpeechDeadlineExceededError
             async with asyncio.timeout_at(deadline):
-                return await self._drive(plan, request, deadline)
+                return await self._drive(plan, request, deadline, execution_deadline)
         except TimeoutError:
             raise SpeechDeadlineExceededError from None
         except ValueError:
             raise SpeechUnavailableError("Stored speech deadline is invalid") from None
 
     async def _drive(
-        self, plan: SpeechPlan, request: SubmitExecutionRequest, deadline: float
+        self,
+        plan: SpeechPlan,
+        request: SubmitExecutionRequest,
+        deadline: float,
+        execution_deadline: float,
     ) -> SpeechAudio:
         submit_id = request["submit_intent_id"]
         try:
@@ -136,9 +170,31 @@ class GatewaySynthesizer:
                 if error.status_code != 404:
                     raise
                 # Only replay the complete command committed with this same identity.
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= min(deadline, execution_deadline):
                     raise SpeechDeadlineExceededError from None
-                status = await self._gateway.submit(request)
+                if plan.gateway_policy_digest is None or plan.native_speaker_id is None:
+                    raise SpeechUnavailableError("Stored speech authority is unavailable") from None
+                evidence = await self._gateway.query_tts_configuration_evidence()
+                if (
+                    evidence["gateway_policy_digest"] != plan.gateway_policy_digest
+                    or evidence["native_speaker_id"] != plan.native_speaker_id
+                    or evidence["voice_id"] != plan.voice_id
+                    or evidence["voice_revision"] != str(plan.voice_revision)
+                    or evidence["voice_revision_id"] != plan.voice_revision_id
+                    or evidence["policy_revision_id"] != request["policy_revision_id"]
+                    or evidence["binding_revision_id"] != request["binding_revision_id"]
+                    or evidence["node_id"] != request["host_node_id"]
+                    or evidence["gateway_id"] != request["gateway_id"]
+                    or evidence["instance_id"] != request["instance_id"]
+                    or evidence["instance_generation"] != request["instance_generation"]
+                ):
+                    raise SpeechUnavailableError(
+                        "Gateway speech authority is inconsistent"
+                    ) from None
+                if time.monotonic() >= min(deadline, execution_deadline):
+                    raise SpeechDeadlineExceededError from None
+                async with asyncio.timeout_at(min(deadline, execution_deadline)):
+                    status = await self._gateway.submit(request)
             while True:
                 if time.monotonic() >= deadline:
                     raise SpeechDeadlineExceededError
@@ -173,8 +229,11 @@ class GatewaySynthesizer:
                     raise SpeechEngineError("Speech execution ended without audio")
                 if state == "unknown_quarantined":
                     raise SpeechUnavailableError("Speech execution outcome is unknown")
-                await asyncio.sleep(self._poll_seconds)
-                status = await self._gateway.query(submit_id)
+                if time.monotonic() >= execution_deadline:
+                    raise SpeechDeadlineExceededError
+                async with asyncio.timeout_at(min(deadline, execution_deadline)):
+                    await asyncio.sleep(self._poll_seconds)
+                    status = await self._gateway.query(submit_id)
             receipt = await self._gateway.audio_staging_result(submit_id)
             if time.monotonic() >= deadline:
                 raise SpeechDeadlineExceededError

@@ -182,6 +182,17 @@ class SpeechSynthesis:
     def limits(self) -> SpeechLimits:
         return self._limits
 
+    def close(self) -> None:
+        closer = getattr(self._synthesizer, "close", None)
+        if callable(closer):
+            closer()
+
+    def cancel(self, request_id: str, reason: str) -> None:
+        cancel = getattr(self._synthesizer, "cancel", None)
+        if not callable(cancel):
+            raise SpeechUnavailableError("Speech cancellation is unavailable")
+        cancel(request_id, reason)
+
     def synthesize(
         self,
         command: SpeechCommand,
@@ -284,7 +295,11 @@ class SpeechSynthesis:
             self._limits.max_payload_bytes,
             _delivery_bytes(command.response_format, source_pcm),
         )
+        authority_reader = getattr(self._facts, "voice_execution_authority", None)
+        authority = authority_reader(voice) if callable(authority_reader) else (None, None)
         return SpeechPlan(
+            gateway_policy_digest=authority[0],
+            native_speaker_id=authority[1],
             request_id=correlation_identifier(request_id),
             model_id=command.model,
             workspace_id=command.workspace_id,

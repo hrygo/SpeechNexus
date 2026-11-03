@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
@@ -125,6 +126,7 @@ class PostgresTtsAdmission:
         *,
         max_command_bytes: int = 65536,
         default_language: str | None = None,
+        close: Callable[[], None] | None = None,
     ) -> None:
         if not 1024 <= max_command_bytes <= 1048576:
             raise ValueError("Speech command limit must be bounded")
@@ -136,6 +138,12 @@ class PostgresTtsAdmission:
         )
         self._max_bytes = max_command_bytes
         self._default_language = default_language
+        self._close = close
+
+    def close(self) -> None:
+        if self._close is not None:
+            close, self._close = self._close, None
+            close()
 
     def admit(self, plan: SpeechPlan) -> SubmitExecutionRequest:
         identity, job_id, event_id, event_digest, submit_id = _identities(plan.request_id)
@@ -250,8 +258,30 @@ class PostgresTtsAdmission:
     def _recover(
         self, plan: SpeechPlan, identity: AdmissionIdentity, original: dict[str, Any]
     ) -> SubmitExecutionRequest:
+        return OriginalTtsRecovery(self._originals, self._service)._recover(
+            plan, identity, original
+        )
+
+    def recover(self, request_id: str) -> tuple[SpeechPlan, SubmitExecutionRequest]:
+        return OriginalTtsRecovery(self._originals, self._service).recover(request_id)
+
+
+class OriginalTtsRecovery:
+    """Recover a committed operation without mutable catalog, defaults or admission recipe."""
+
+    def __init__(self, originals: OriginalTtsCommands, service: AdmissionService) -> None:
+        self._originals, self._service = originals, service
+
+    def admit(self, plan: SpeechPlan) -> SubmitExecutionRequest:
+        raise SpeechUnavailableError("Recovery cannot admit new speech")
+
+    def _recover(
+        self, plan: SpeechPlan, identity: AdmissionIdentity, original: dict[str, Any]
+    ) -> SubmitExecutionRequest:
         try:
-            if original["kind"] != "tts_file" or original["plan"] != asdict(plan):
+            stored_plan = dict(original["plan"])
+            stored_plan["response_format"] = SpeechFormat(stored_plan["response_format"])
+            if original["kind"] != "tts_file" or SpeechPlan(**stored_plan) != plan:
                 raise ValueError
             request = parse("SubmitExecutionRequest", original["gateway_request"])
             if (request["operation_id"], request["attempt_id"]) != (

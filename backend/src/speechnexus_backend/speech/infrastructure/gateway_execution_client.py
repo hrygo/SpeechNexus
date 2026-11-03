@@ -39,11 +39,13 @@ from speechnexus_contracts.execution_models import (
     ExecutionStatusResponse,
     SubmitExecutionRequest,
     SubmitExecutionResponse,
+    TtsConfigurationEvidence,
 )
 from urllib3.response import BaseHTTPResponse
 
 from speechnexus_backend.settings import Settings
 from speechnexus_backend.speech.domain.binding_disable_intent import DisableExecutionTarget
+from speechnexus_backend.speech.domain.tts_settlement import AbortReason, TtsSettlementTarget
 from speechnexus_backend.speech.infrastructure.assets_minio import _FixedOriginHTTP
 
 _SUBMIT_PATH = "/internal/v1/executions/submit"
@@ -269,6 +271,16 @@ class GatewayExecutionClient:
             raise ValueError("Execution submission is not strict JSON") from None
         return await self._send("POST", _SUBMIT_PATH, body=encoded, idempotent=False)
 
+    async def query_tts_configuration_evidence(self) -> TtsConfigurationEvidence:
+        """Read the authenticated, schema-validated live gateway TTS configuration."""
+        payload = await self._send(
+            "GET", "/internal/v1/tts-configuration-evidence", body=None, idempotent=True
+        )
+        try:
+            return parse("TtsConfigurationEvidence", payload)
+        except ValueError:
+            raise self._invalid_response() from None
+
     async def query(self, submit_intent_id: str) -> ExecutionStatusResponse:
         """Read authoritative execution state by the original submit identity."""
         path = _EXECUTION_PATH + quote(_identifier(submit_intent_id), safe="")
@@ -304,8 +316,36 @@ class GatewayExecutionClient:
         payload = await self._send("GET", path, body=None, idempotent=True)
         return self._target_status(payload, target)
 
+    async def abort_tts(
+        self, target: TtsSettlementTarget, *, reason: AbortReason, wait_timeout_ms: int
+    ) -> ExecutionStatusResponse:
+        """Replay the exact durable TTS abort against its original execution identity."""
+        request = parse(
+            "AbortExecutionRequest",
+            {
+                "operation_id": target.operation_id,
+                "attempt_id": target.attempt_id,
+                "fencing_token": target.fencing_token,
+                "reason": reason,
+                "wait_timeout_ms": wait_timeout_ms,
+            },
+        )
+        body = json.dumps(request, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        path = (
+            _EXECUTION_PATH
+            + quote(_identifier(target.submit_intent_id), safe="")
+            + "/abort-intents"
+        )
+        payload = await self._send("POST", path, body=body, idempotent=False)
+        return self._target_status(payload, target)
+
+    async def query_tts_target(self, target: TtsSettlementTarget) -> ExecutionStatusResponse:
+        path = _EXECUTION_PATH + quote(_identifier(target.submit_intent_id), safe="")
+        payload = await self._send("GET", path, body=None, idempotent=True)
+        return self._target_status(payload, target)
+
     def _target_status(
-        self, payload: dict[str, Any], target: DisableExecutionTarget
+        self, payload: dict[str, Any], target: DisableExecutionTarget | TtsSettlementTarget
     ) -> ExecutionStatusResponse:
         try:
             response = parse("ExecutionStatusResponse", payload)

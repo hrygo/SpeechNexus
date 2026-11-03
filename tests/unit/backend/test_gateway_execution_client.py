@@ -460,3 +460,33 @@ def test_result_reader_rejects_a_different_storage_version() -> None:
         result_reader(fake).read(result_reference(body), "version-1")
 
     assert caught.value.code == "result_object_mismatch"
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+async def test_tts_configuration_evidence_is_authenticated_and_validated(malformed: bool) -> None:
+    evidence = {
+        "gateway_policy_digest": DIGEST,
+        "policy_revision_id": "policy-1",
+        "voice_id": "voice-1",
+        "voice_revision": "1",
+        "voice_revision_id": "voice-revision-1",
+        "native_speaker_id": "speaker-1",
+        "binding_revision_id": "binding-1",
+        "node_id": "node-1",
+        "gateway_id": "gateway-1",
+        "instance_id": "instance-1",
+        "instance_generation": 0 if malformed else 1,
+        "observed_at": "2026-11-02T10:00:00Z",
+    }
+
+    def handler(sent: httpx.Request) -> httpx.Response:
+        assert sent.url.path == "/internal/v1/tts-configuration-evidence"
+        assert sent.headers["authorization"] == f"Bearer {TOKEN}"
+        return httpx.Response(200, json=evidence)
+
+    async with client(handler) as gateway:
+        if malformed:
+            with pytest.raises(GatewayResponseError):
+                await gateway.query_tts_configuration_evidence()
+        else:
+            assert await gateway.query_tts_configuration_evidence() == evidence

@@ -296,7 +296,7 @@
 | `docs/plans/2026-10-27-delegra-legion-closed-loop.md` | 历史保留 | 全文阅读，标明历史配置、授权和现行入口；平台状态未复验 |
 | `docs/plans/2026-10-30-zero-dispatch-settlement.md` | 历史保留 | 全文阅读，标明固定基线和候选方案的时点边界；历史验证及部署未复验 |
 | `docs/plans/README.md` | 已核对 | 核对当前 PRD、需求矩阵、结构化来源和只读刷新入口及 77 个本地链接；带日期条目作为历史索引，原时点摘要未逐项重验 |
-| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 与同步转写屏障、Compose 入口、网关取消窗口、目标分批扫描、组合根测试和当前需求；区分扫描、测试设计与实际完成证据，其余协调和验收细节待核对 |
+| `docs/plans/binding-disable-cancellation.md` | 部分核对 | 全文阅读，对照 public Job 与同步转写屏障、Compose 入口、网关取消的先持久接收 / 唯一外发及停止证据条件、目标分批扫描、组合根测试和当前需求；区分扫描、测试设计与实际完成证据，其余协调和验收细节待核对 |
 | `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
 | `docs/po-sm-operating-playbook.md` | 已核对 | 全文对照交付 SOP 和 fleet-status 查询、分类及输出；修正门禁、等待、跨公司计数和模式差异，未连接平台数据库验证运行状态 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；对照部署单元澄清持久内容与实时流的跨进程传输及代理独立上游缺口，对照 CPU VAD 与辅助能力设计限定输入规格并合并重复验收项，对照保留策略限定普通生成音频 30 天目标；对照节点控制器区分预热目标期限与当前分段超时，对照资源治理限定 full_segment 预算条件，补全实时 ASR 首预览计时起点，修正 TTS 默认 pipeline 指令上限归属，补全工作台恢复的执行入口屏障及当前缺口；区分有声书生成 v1 契约和 v2 实际接线，去除对历史 GPU 主机服务的固定假设，核对 binding 管理操作、能力目录字段类型与边界及 profile 范围和当前发布缺口；其余验收语义待核对 |

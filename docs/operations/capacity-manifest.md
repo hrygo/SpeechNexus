@@ -178,7 +178,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | R9 | instance `config_digest` = manifest `qualification.config_bundle_digest` | `FAIL` |
 | R10 | `host_nodes.node_state=active`；`memory_architecture`、`topology_digest` 与 manifest 相等 | `FAIL` |
 | R11 | 对每个物理维度：`held + quarantined <= allocatable`；`held >= instance.peak`（host 已为峰值预留）；`peak <= allocatable`；剩余 slot 的 `per_slot * remaining_slots <= allocatable - held - quarantined` | `FAIL` |
-| R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | `FAIL` |
+| R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | 配额超限或池不匹配为 `FAIL`；没有工作区配额行为 `NA` |
 
 脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`。该警告中的“证明查询路径”措辞过宽：fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
 
@@ -410,7 +410,7 @@ uv run --no-project \
   --require-published --require-digests --show-digests
 ```
 
-`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
+`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。脚本未显式设定可重复读隔离级别；并发变更时，各查询不一定反映同一时点，须在受控窗口核对。live 模式只有传入 `--workspace-id` 才查询对应配额；未指定或未查到行均输出 `capacity.workspace_quota=NA`，不能视为配额通过。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
 
 退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误，live 模式缺少 `psycopg` 也计入此类；`2` 表示参数错误或启动时缺少 `jsonschema`、`referencing`、`rfc8785` 依赖。数据库连接等未捕获异常也可能使进程异常退出，不能只看退出码判断检查是否完整。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
 

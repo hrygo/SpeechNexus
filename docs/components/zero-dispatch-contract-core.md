@@ -7,6 +7,10 @@ date: 2026-10-31
 
 # 零外发契约核心候选（DEL-417）
 
+本文记录 2026-10-31 的候选及交接边界，实施安排和交付包状态不代表当前进度。
+当前网关已有独立的[持久取消接收与恢复路径](execution-gateway.md)，不能将其等同于
+本文候选的零外发 gate、seal 或资源结算；当前交付范围见[跟踪矩阵](../plans/delivery-tracking.md)。
+
 本候选交付 [canonical](../../contracts/internal/zero-dispatch.schema.json)、
 `zero_dispatch` 生成类型/严格校验器及[合成样例](../../tests/fixtures/contracts/zero-dispatch.json)。
 它没有 HTTP 路由、生产事务适配器、DDL 或运行配置；默认不可启用。

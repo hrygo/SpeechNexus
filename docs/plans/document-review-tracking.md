@@ -108,7 +108,7 @@
 | `docs/components/workbench-content-downloads.md` | 已核对 | 逐节静态对照下载事务、HTTP、对象存储、浏览器消费者及公开契约；未运行服务 |
 | `docs/components/workbench-export-integrity.md` | 已核对 | 逐节静态对照导出 worker、媒体校验、配置、组合根、持久写入及测试清单；未运行服务 |
 | `docs/components/workbench-voice-catalogue.md` | 已核对 | 逐节静态对照公开契约、适配器、运行配置及 Web 消费者；未运行服务 |
-| `docs/components/zero-dispatch-contract-core.md` | 部分核对 | 全文阅读并对照候选 schema、六个生成入口与索引；尚未逐项核对契约约束和历史接收证据 |
+| `docs/components/zero-dispatch-contract-core.md` | 部分核对 | 对照候选 schema、生成入口与当前取消路径，明确历史交接和零外发边界；契约约束及历史接收证据待逐项核对 |
 | `docs/decisions/0001-product-boundaries-and-authentication-scope.md` | 已核对 | 逐项对照当前 PRD 与产品架构的底座、工作台、身份和硬件边界；ADR 限定产品决定，不代表实现或部署已验收 |
 | `docs/decisions/0002-speech-models-engines-and-loading.md` | 部分核对 | 全文阅读并对照产品架构与资格边界，明确首个硬件验证目标的历史时点；模型运行资格仍需按目标部署取证 |
 | `docs/decisions/0003-workbench-llm-network-boundary.md` | 已核对 | 逐项对照 PRD、产品架构和技术方案的默认关闭、内容网络与资源边界，并抽核配置和 HTTP 投影；未实测部署出站限制 |

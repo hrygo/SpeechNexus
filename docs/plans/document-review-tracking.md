@@ -19,7 +19,7 @@
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要、重放、文本流及文件 ASR/TTS 消费入口；区分 codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
 | `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录转写未知字段的契约与实现错误码差异，其他扩展语义待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
-| `docs/architecture/speech-api.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
+| `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界并明确标注；其余内容待核对 |
 | `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、10 个路径与许可证；上游行为及消费者待核对 |
 | `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |

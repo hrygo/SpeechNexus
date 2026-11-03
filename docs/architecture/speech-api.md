@@ -23,7 +23,7 @@ date: 2026-10-23
 | SpeechNexus 增强层 | 音色创作、版本 / 预设、durable Job、能力 / 资源、管理；实时 nexus 扩展 | 公开增强 DTO / SDK；不依赖工作台 |
 | 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 `/v1/workbench` 和契约声明的 `/v2/workbench`；不宣称 OpenAI 兼容 |
 
-Realtime 提供两条连接路径：预创建 SpeechNexus 会话后使用 `session_id`，或标准 SDK 直接以 `model` 打开仅转写的兼容会话。两者都只兼容本文声明的 ASR 事件和配置子集；不承诺依赖 `response.*`、conversation history 或 tool call 的 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。完整 SDK 调用与增强边界见 [OpenAI 兼容与增强边界](openai-compatibility.md)。
+Realtime 契约定义两条连接路径：预创建 SpeechNexus 会话后使用 `session_id`，或标准 SDK 直接以 `model` 打开仅转写的兼容会话。当前生产组合根尚未装配公开 Realtime WebSocket 路由及真实实时执行链；下文的实时协议与示例描述目标，不证明入口可用。两种路径都只兼容本文声明的 ASR 事件和配置子集；不承诺依赖 `response.*`、conversation history 或 tool call 的 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。完整 SDK 调用与增强边界见 [OpenAI 兼容与增强边界](openai-compatibility.md)。
 
 ```text
 SpeechCommand

@@ -34,7 +34,7 @@ TTS planner 的子字段也完整填写。标准 TTS instructions 的 4096 上�
 存储读取并验证。不能使用任意 URL、临时 vendor 字典或共享业务表补全命令。
 语音材料格式必须由固定 binding/manifest 约定的 adapter 解码并验证；不把私有
 特征暴露为公开 receipt。跨 workspace 引用、摘要或长度不匹配均拒绝执行。
-ASR 的 `AudioSource` schema 也允许 `stream_id` / `stream_epoch` 流身份；当前文件 ASR
+ASR 和 VAD 的 `AudioSource` schema 也允许 `stream_id` / `stream_epoch` 流身份；当前文件 ASR
 消费者要求带 `storage` 的对象输入，流式消费仍须另行装配和验收。
 
 命令中的对象引用固定 bucket、key、长度和摘要，但不携带 S3 version ID。当前文件 ASR

@@ -157,7 +157,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 
 ### 3.2 与内部控制错误模型的边界
 
-公共入口的 `ErrorResponse` 保持 OpenAI 可解析的 `error.code/type/message/param` envelope；共享 schema 还要求 `request_id` 和 `retryable`，允许 `retry_after_ms` 及恢复信息 `nexus`。其中 `operation_in_progress` 和 `response_not_replayable` 要求 `nexus.operation_id`，后者还要求 receipt。speech、Realtime、admin 与 workbench 的公共错误统一引用 `contracts/shared/errors.schema.json`，避免各命名空间独立漂移；该错误域包含官方 503 使用的 `service_unavailable_error`，并由契约测试验证。内部 `execution-control` / `runtime-control` 不是 OpenAI SDK 消费者，错误中还需要 fencing、generation、submit-intent 与清理证据等控制事实，因此不强制压成公共 envelope。两边可以复用稳定公共错误码的语义，但不能为了“形状统一”改变 OpenAI 标准错误的含义，也不能把内部端点、实例或 token 泄漏到公共响应。
+公共入口的 `ErrorResponse` 保持 OpenAI 可解析的 `error.code/type/message/param` envelope；共享 schema 还要求 `request_id` 和 `retryable`，允许 `retry_after_ms` 及恢复信息 `nexus`。其中 `operation_in_progress` 和 `response_not_replayable` 要求 `nexus.operation_id`，后者还要求 receipt。speech、Realtime、admin 与 workbench 的公共错误统一引用 `contracts/shared/errors.schema.json`，避免各命名空间独立漂移；该错误域包含官方 503 使用的 `service_unavailable_error`，并由契约测试验证。内部 `execution-control` / `runtime-control` 使用各自的控制错误域，不强制压成公共 envelope：两者均要求 `code`、`message` 和 `retryable`，可携带 `observed_fencing_token`；前者还声明 `recovery` 和 `submit_intent_id`，其中部分控制错误要求 `recovery`。generation、清理和停止证据等事实应按各自请求、状态或回执契约取得，不能假设错误响应携带这些字段。两边可以复用稳定公共错误码的语义，但不能为了“形状统一”改变 OpenAI 标准错误的含义，也不能把内部端点、实例或 token 泄漏到公共响应。
 
 ## 4. 契约门禁
 

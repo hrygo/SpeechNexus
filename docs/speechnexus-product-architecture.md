@@ -288,6 +288,8 @@ Profile revision 包含 schema_version、required_capabilities、parameters、ov
 
 管理面把预设编辑建模为不可变 revision：创建 draft 时以 `expected_latest_revision` 防止并发覆盖；发布时提交目标 revision、当前指针 CAS 与验证证据，原子切换默认指针；回滚通过激活既有 published revision 完成；退役 / 禁用不删除历史。公共 `/v1/nexus/profiles` 只列出当前发布 revision，draft 只能从管理面读取。这样既保留 AdminUI 的草稿、校验、发布、退役流程，也不把管理写能力塞进 OpenAI 标准字段或普通推理请求。
 
+这些生命周期规则是契约与设计目标。当前产品装配支持显式配置的草稿创建和固定版本读取；发布、激活、退役及公共已发布预设列表尚未形成生产链路。已有的私有发布 / 激活意图日志只记录原始意图，不执行发布或切换指针，见[预设生命周期契约](components/profile-lifecycle-contract.md)与[意图日志](components/profile-lifecycle-intents.md)。
+
 ## 6. 首期访问边界与身份体系演进
 
 ### 6.1 首期明确不建设的体系

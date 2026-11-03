@@ -1547,11 +1547,16 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "完整配方准入事务核算全部阶段与父预算，并限制非实时请求借用实时保留槽位。",
+      "integration": "同步 TTS 与转写已接入各自准入装配；公开实时链与完整调度仍需接通。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "实时复核、双工整体验收及 VoiceDesign 峰值、排队和停止释放仍需真实链路与目标拓扑证据。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/327d7788e84f9fafe40e026006c95890869840ba/docs/components/production-admission.md",
+          "label": "完整配方准入",
+          "note": "固定版本事务说明；合成值不证明实时负载或真实引擎资格。"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

@@ -3,7 +3,7 @@
 本文件配合 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)。机器矩阵为
 [`coordination-ownership.json`](../../contracts/coordination-ownership.json)，
 测试核对 18 端口、18 张生产协调表和 `query_outcome` 快照映射；根目录草案仍为原15表。
-矩阵描述目标归属，不证明端口已实现。生产事务进度继续在 A01/B00–B06 跟踪。
+矩阵描述目标归属，不证明端口已实现。A01/B00–B06 是历史工作包；当前需求、实现与证据关联见[交付跟踪矩阵](../plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
 
 冻结 main `7dc276a` 的实际端口、7 类查询、正式消费者及双库证据见
 [2026-10-25 取证快照](../audits/2026-10-25-coordination-port-evidence.md)。

@@ -64,8 +64,8 @@ publication lifecycle projections; it never creates, publishes or activates one.
   original OpenAPI independently; Python and TypeScript consume the same cases.
   `consumer-profiles.json` covers the DTO entrypoints and source binding examples.
 
-The generator remains datamodel-code-generator 0.86.0 / openapi-typescript 7.13.0,
-static projection revision 1. Package versions and lockfiles are unchanged. Run
+The generators are pinned to datamodel-code-generator 0.86.0 and
+openapi-typescript 7.13.0, with static projection revision 1. Run
 `make contracts-generate` and `make contracts-drift`; do not edit generated files.
 
 The finite HTTP structural gate recognizes this response refinement only when an

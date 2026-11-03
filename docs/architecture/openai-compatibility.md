@@ -124,7 +124,7 @@ with client.realtime.connect(model="asr-quality") as connection:
     # 发送 input_audio_buffer.append / commit，消费声明的事件子集。
 ```
 
-兼容模式只保证声明的标准 ASR 事件；`conversation.item.input_audio_transcription.completed` 包含 OpenAI 形状的 `usage`（由已接受段样本时长计算），不使用虚构 token 数。`session.audio.input` 的层级与官方 SDK 3.x transcription session 形状一致；`include`、semantic VAD 和未声明音频格式显式拒绝。TTS、可修订假设、辅助结果、背压 credit 与整体终态使用 `nexus.*` 事件，必须通过 `POST /v1/nexus/realtime/sessions` 创建会话后再连接 `GET /v1/realtime?session_id=...`。两种模式互斥，同时提供 `session_id` 和 `model` 返回 400。
+兼容模式只保证声明的标准 ASR 事件；`conversation.item.input_audio_transcription.completed` 包含 OpenAI 形状的 `usage`，默认由已接受段样本时长计算，仅在绑定提供真实 token 证据时才允许 token 用量，不使用虚构 token 数。`session.audio.input` 的层级与官方 SDK 3.x transcription session 形状一致；`include`、semantic VAD 和未声明音频格式显式拒绝。TTS、可修订假设、辅助结果、背压 credit 与整体终态使用 `nexus.*` 事件，必须通过 `POST /v1/nexus/realtime/sessions` 创建会话后再连接 `GET /v1/realtime?session_id=...`。两种模式互斥，同时提供 `session_id` 和 `model` 返回 400。
 
 服务拒绝未声明事件而不是静默忽略。依赖 OpenAI LLM response、tool call、conversation history 或 semantic VAD 的客户端不属于兼容范围。
 

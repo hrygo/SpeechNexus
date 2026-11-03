@@ -133,7 +133,7 @@
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；并发、审计和恢复事务待核对 |
 | `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口和制品脚本摘要；权限及异常分支待核对 |
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、示例命令、校验器退出码及生命周期回滚描述；说明峰值断言与运行期聚合账本的区别，其余内容待核对 |
-| `docs/operations/compose-minimal.md` | 部分核对 | 已核对实例配置与探活边界；其余内容待核对 |
+| `docs/operations/compose-minimal.md` | 部分核对 | 对照 Compose 服务、迁移链、配置准备、基础角色授权与查询代码，修正权限及失败边界并更新章节引用；未执行部署，停用 worker 和其他恢复细节待核对 |
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 已核对网关输出格式与停止证据边界；其余内容待核对 |
 | `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、共享媒体类型与 worker 取消/登记路径；恢复、停止及集成测试证据待核对 |
 | `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 已核对后续 SDK 与租约结算证据；其余内容待核对 |

@@ -69,6 +69,20 @@ def test_reserves_only_stage_increments_and_preserves_baseline_and_quarantine() 
     assert HOSTS[0].held != PLAN.per_slot and HOSTS[0].quarantined.values[0] == 7
 
 
+def test_expired_readiness_rejects_new_admission_even_when_instance_remains_ready() -> None:
+    expiry = NOW + 100
+    runtime = replace(RUNTIMES[0], readiness=replace(RUNTIMES[0].readiness, expires_at_us=expiry))
+
+    fresh = _decide(runtimes=(runtime,), now_us=expiry - 1)
+    assert fresh.reservations[0].stage == STAGE
+
+    # A ready instance and its earlier observation are not a renewed receipt.
+    assert runtime.instance.instance_state == "ready"
+    for now_us in (expiry, expiry + 1):
+        with pytest.raises(AdmissionRejectedError, match="reconciliation_required"):
+            _decide(runtimes=(runtime,), now_us=now_us)
+
+
 def test_all_stages_sharing_generation_accumulate_every_dimension_once() -> None:
     second = replace(
         STAGE, stage_id="stage-review", lease_id="lease-admit-review", reserved_slots=2

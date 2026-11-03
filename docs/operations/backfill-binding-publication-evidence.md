@@ -92,7 +92,7 @@ unresolved object_id=... revision=... revision_id=...
 ```
 
 - `kind` 可省略，缺省且只能是 `binding`；
-- `revision` 可用十进制字符串或整数；
+- `revision` 可用十进制字符串或整数，必须是 1 至 19 位正整数，不能有前导零；
 - 两个证据 ID **没有默认值**，digest 可省略；
 - 数组不能为空，未知字段会被拒绝；
 - 同一 `(object_id, revision)` 重复映射且内容不同 → 拒绝；

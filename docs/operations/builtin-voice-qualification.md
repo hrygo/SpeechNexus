@@ -78,5 +78,7 @@ uv run python scripts/dev-env/verify-file-tts-sdk.py \
 实例基础预算，并核对所有 held/quarantined 维度、slots 和 quota。独立安全守护仍须
 预先准备；若守护先物理停止，如实标注事后协调，不能补记成正常先持久化再外发。
 
-2026-11-03 两次窗口及剩余缺口见 [PR #331](https://github.com/hrygo/SpeechNexus/pull/331)。
+2026-11-03 三次窗口及剩余缺口见 [受控验收记录](../audits/2026-11-03-controlled-tts-prepare.md)。
+第三次窗口的标准 SDK 在原 readiness 有效期内仍返回 503，尚未证明内部拒绝原因；
+不能将 readiness 过期作为全部现场失败的解释。下一次运行前先完成隔离数据库准入诊断。
 首次原生资格、正式资格 probe 或合成 transport 测试都不能替代标准 SDK 的真实链路验收。

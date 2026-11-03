@@ -127,3 +127,33 @@ instance generation 绕过。实际 SDK 成功、有效输出上限及引擎失�
 非作者 Sol 已只读复核 g1 原 WAV 哈希/解码、401、原时序、cgroup 原快照、场景摘要与
 发布回执；该接收仅覆盖原生预资格，不代表正式公开 SDK 成功。最终结算与收尾另以
 上述证据快照审阅，不将已删除的远端现场冒充独立重测。
+
+## 第三次授权窗口：排除 readiness 过期，SDK 仍被拒绝
+
+用户明确授权新窗口，并要求已授权、无新增风险的工作直接执行。生产源码仍固定
+`90f53c4ead3236ccba61bc353259dc7f05e3a179`，标准 SDK 客户端来自
+`ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291`；原模型、镜像、Vivian、
+12 GiB / 单实例 / 并发 1 及来源截止均未改变。运行前可用 RAM 32.27 GiB。
+
+| 检查 | 本轮实际结果 |
+| --- | --- |
+| 原生预资格 g1 | 三份完整 PCM16 / mono / 24kHz WAV，1600、1600、3600ms；鉴权 401×2；同代停止双证据通过 |
+| cgroup g1 | memory.peak 7082033152 bytes，memory.max 12884901888 bytes |
+| 正式 g2 | 持久 prepare/outbox、真实 READY、网关证据、声音资格 probe 与发布通过；公开 model 使用真实 binding ID |
+| 标准 SDK | 正式 `create_app_from_env()`，OpenAI 3.39.0，零重试；返回 503 / backend_unavailable，无成功 WAV |
+| 拒绝时间 | SDK 结果文件时间位于数据库原 readiness 的 60 秒有效区间；本轮不能归因于过期 |
+| 正式请求记录 | 始终只有 probe 的 1 operation / lease / submit；未出现 SDK 准入记录，内部拒绝原因尚未证明 |
+| 拒绝与退役 | 未知声音、非法 speed、不支持 instructions 均为 4xx，保留具体 code；正式退役返回 404 / voice_not_found，计数不变 |
+| 请求释放 | probe lease released / cleanup complete，正常结算；按原 lease 重放前后快照相等 |
+| 正式停止 | 先持久化 stop，再标记 submission_started，之后外发原 stop；认证 GET / ACK 与正式观察完成，未走事后补建 |
+| 最终预算 | instance stopped / base released；host 12 个 held/quarantined 维度、slots、quota 均为 0 |
+| 远端收尾 | 服务、进程、CPU 容器与网络在 776.502 秒内清理；含整个临时目录在 868.396 秒内清理；18 个共享容器基线一致 |
+
+单份脱敏快照、原字节 SHA、SDK 回执时间、原 readiness、两条正式 delivery 和最终计数见
+[第三次窗口证据](evidence/2026-11-03-tts-window-3.json)。未保留临时数据库、连接串、
+密钥、原生音频或备份目录。独立审计仅使用既有管理连接的强制 READ ONLY / REPEATABLE READ
+事务；API、gateway、probe 和 settlement 的生产角色权限没有扩大。
+
+停止和释放通过不改变 SDK 失败结论。后续先在 CPU / 隔离数据库复现正式公开准入，
+记录内部拒绝码及 SQLSTATE，补足正式工厂与真实受限角色的成功路径覆盖；在原因明确和
+必要修复通过后再安排真实引擎补验，不延长 TTL 或重复碰运气。同步 TTS Goal 保持未完成。

@@ -1,0 +1,1241 @@
+{
+  "cleanup": {
+    "cpu": [
+      {
+        "name": "snx-tts-45rrnwkh-minio",
+        "outcome": "removed"
+      },
+      {
+        "name": "snx-tts-45rrnwkh-pg",
+        "outcome": "removed"
+      }
+    ],
+    "elapsed_window_seconds": 776.5022847652435,
+    "finished_at_epoch": 1793674312.4303353,
+    "gpu": [
+      {
+        "generation": 1,
+        "outcome": "absent"
+      },
+      {
+        "generation": 2,
+        "outcome": "absent"
+      }
+    ],
+    "network": "removed",
+    "outcome": "completed",
+    "physical_cleanup_only": true,
+    "processes": [
+      {
+        "kind": "controller",
+        "outcome": "exited",
+        "pid": 993185
+      },
+      {
+        "kind": "prepare1",
+        "outcome": "exited",
+        "pid": 1007982
+      },
+      {
+        "kind": "gateway-serve2",
+        "outcome": "exited",
+        "pid": 1041961
+      },
+      {
+        "kind": "api-serve",
+        "outcome": "exited",
+        "pid": 1049026
+      },
+      {
+        "kind": "controller-child",
+        "outcome": "exited",
+        "pid": 1008091
+      },
+      {
+        "kind": "controller-child",
+        "outcome": "exited",
+        "pid": 1008092
+      }
+    ],
+    "shared_baseline_consistent": true,
+    "started_at_epoch": 1793674310.4556575
+  },
+  "evidence": {
+    "gateway-evidence-2.json": {
+      "byte_count": 527,
+      "observed_file_mtime_ns": 1793673790919024126,
+      "sha256": "sha256:d3b2ac1933004428a6fd05b6cf06f9be3565a37a78b13d119c16dc11662b2ac9",
+      "value": {
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "gateway_policy_digest": "sha256:32e2793f77db7fb66408a721870d8af1197c6a159972f6219f6f52023faa6c43",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "native_speaker_id": "Vivian",
+        "node_id": "node-snx-tts-45rrnwkh",
+        "observed_at": "2026-11-03T02:43:10.917311+00:00",
+        "policy_revision_id": "policy-snx-tts-45rrnwkh",
+        "voice_id": "voice-snx-vivian",
+        "voice_revision": "1",
+        "voice_revision_id": "voice-revision-snx-vivian-20261103"
+      }
+    },
+    "native-after-stop.json": {
+      "byte_count": 537,
+      "observed_file_mtime_ns": 1793673666892336866,
+      "sha256": "sha256:5722b9f38cf5342bce0af3bb1d1e876ba8a90ed7247c2e2b56445f76d9e3ba67",
+      "value": {
+        "budget_release_inferred": false,
+        "intent_state": "succeeded",
+        "memory_max": {
+          "sha256": "sha256:a630e4856aa63a81f6d753cdda664d7488fcf285b0091c48d498b0f430f9ecd1",
+          "value": 12884901888
+        },
+        "memory_peak": {
+          "sha256": "sha256:5f3b8b1ab34fe5b50d53faa7bebd6ece666b58cf73f3d07673c316ac42a5d3ba",
+          "value": 7082033152
+        },
+        "original_stop_response_sha256": "sha256:215c29935a748c60b5463e8928e2529d789ef2c0b07e4a9e2ccdbef94f84d413",
+        "process_or_container_exited": true,
+        "resources_released_confirmed": true,
+        "running_enumeration_succeeded": true,
+        "target_not_running": true
+      }
+    },
+    "native-cancel.json": {
+      "byte_count": 505,
+      "observed_file_mtime_ns": 1793673655415451993,
+      "sha256": "sha256:555381b23bb268350fe21911fb69cc164a3a18c5ae12021a1037a4fad25bb21f",
+      "value": {
+        "budget_release_inferred": false,
+        "cancel_epoch_ns": 1793673655415182908,
+        "cancel_monotonic_ns": 3715113532804710,
+        "elapsed_ms": 58,
+        "end_epoch_ns": 1793673655415299913,
+        "end_monotonic_ns": 3715113532921459,
+        "engine_stop_inferred": false,
+        "http_connection_cancel_requested": true,
+        "request_start_epoch_ns": 1793673655357393396,
+        "request_start_monotonic_ns": 3715113475015214,
+        "running_count": 1.0,
+        "running_elapsed_ms": 58,
+        "running_epoch_ns": 1793673655415180828,
+        "running_monotonic_ns": 3715113532802694,
+        "running_observed": true
+      }
+    },
+    "native-measure.json": {
+      "byte_count": 881,
+      "observed_file_mtime_ns": 1793673655180236029,
+      "sha256": "sha256:ca54be085c1008adf9e9f52112fd3db4c33b3d71a472f09d3ca807ec35c4af24",
+      "value": {
+        "keyless_status": 401,
+        "waves": [
+          {
+            "byte_count": 76844,
+            "channels": 1,
+            "duration_ms": 1600.0,
+            "elapsed_ms": 778,
+            "frames": 38400,
+            "http_status": 200,
+            "name": "warmup-1",
+            "pcm_bytes": 76800,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:b94c75de7afb8a47d9e8de9d688454ea2f7881b12c02e930e5a75a5b701f0e2f"
+          },
+          {
+            "byte_count": 76844,
+            "channels": 1,
+            "duration_ms": 1600.0,
+            "elapsed_ms": 773,
+            "frames": 38400,
+            "http_status": 200,
+            "name": "warmup-2",
+            "pcm_bytes": 76800,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:0ac19cfca0eeacfe55e494204a4d15ee6b11d9f1e794fd30b32c1cc03dd582c0"
+          },
+          {
+            "byte_count": 172844,
+            "channels": 1,
+            "duration_ms": 3600.0,
+            "elapsed_ms": 1992,
+            "frames": 86400,
+            "http_status": 200,
+            "name": "english-short",
+            "pcm_bytes": 172800,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:419283b2799d69ab305be066a9a95113066de4f8e6b160e12cb7da92ac5cc681"
+          }
+        ],
+        "wrong_generation_status": 401
+      }
+    },
+    "prepare-1-request.json": {
+      "byte_count": 756,
+      "observed_file_mtime_ns": 1793673535724730547,
+      "sha256": "sha256:9d22c270c736b314d58633df46bac2a2c3d21214638e49701d72d6fe23796994",
+      "value": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "deadline_at": "2026-11-03T02:48:55.720029Z",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 1,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "prepare-snx-tts-g1",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh"
+      }
+    },
+    "prepare-1-response.json": {
+      "byte_count": 1002,
+      "observed_file_mtime_ns": 1793673649973708566,
+      "sha256": "sha256:844e7bb1306ce0f9e3d90125b7b7346ebfc402a6a56620b769f00dc39934c259",
+      "value": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "created_at": "2026-11-03T02:38:56.427972Z",
+        "error_code": null,
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 1,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "prepare-snx-tts-g1",
+        "intent_state": "succeeded",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "observed_instance_state": "ready",
+        "observed_peak_memory": {
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0,
+          "unified_memory_bytes": 7060000768
+        },
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "stop_evidence": null,
+        "target_node_id": "node-snx-tts-45rrnwkh",
+        "updated_at": "2026-11-03T02:40:49.292294Z"
+      }
+    },
+    "prepare-2-request.json": {
+      "byte_count": 761,
+      "observed_file_mtime_ns": 1793673668489985212,
+      "sha256": "sha256:ded77850375de6d0d93b5aacc75cd52debf4a0ef692dbf1865780fbcf7085b9e",
+      "value": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "deadline_at": "2026-11-03T02:50:35.928051+00:00",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "prepare-snx-tts-g2",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh"
+      }
+    },
+    "prepare-2-response.json": {
+      "byte_count": 1395,
+      "observed_file_mtime_ns": 1793673789400949096,
+      "sha256": "sha256:ae3de49e20057eecd85f56cd3c67fda2e8da30275f3b05769b1669d6d55bc8ba",
+      "value": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "created_at": "2026-11-03T02:41:09.182526Z",
+        "error_code": null,
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "prepare-snx-tts-g2",
+        "intent_state": "succeeded",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "native_runtime_evidence": {
+          "controller_artifact_digest": "sha256:6235a3e219ef8d26ca80a2ef7581ca55876772c977dc93a42b97c4decad24a78",
+          "image_digest": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+          "native_auth_kind": "vllm_api_key_v1",
+          "observed_at": "2026-11-03T02:43:04.591516Z",
+          "template_digest": "sha256:bbb909e82b78a1946d237b1348bc829e9b378517e9c6569f8e29b9e2f429b131"
+        },
+        "observed_instance_state": "ready",
+        "observed_peak_memory": {
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0,
+          "unified_memory_bytes": 7954440192
+        },
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "stop_evidence": null,
+        "target_node_id": "node-snx-tts-45rrnwkh",
+        "updated_at": "2026-11-03T02:43:04.591553Z"
+      }
+    },
+    "private/final-counters-final-release.json": {
+      "byte_count": 2385,
+      "observed_file_mtime_ns": 1793674206477872465,
+      "sha256": "sha256:c431f891ea74c362bd513799c42b3ebd0a9487fb108fd9787d9544b62b10147a",
+      "value": {
+        "counts": {
+          "leases": 1,
+          "operations": 1,
+          "outbox": 3,
+          "submits": 1
+        },
+        "host": {
+          "held_cpu_decode_millicores": 0,
+          "held_device_memory_bytes": 0,
+          "held_host_memory_bytes": 0,
+          "held_host_pcm_buffer_bytes": 0,
+          "held_scratch_disk_bytes": 0,
+          "held_unified_physical_memory_bytes": 0,
+          "host_node_id": "node-snx-tts-45rrnwkh",
+          "node_state": "active",
+          "quarantined_cpu_decode_millicores": 0,
+          "quarantined_device_memory_bytes": 0,
+          "quarantined_host_memory_bytes": 0,
+          "quarantined_host_pcm_buffer_bytes": 0,
+          "quarantined_scratch_disk_bytes": 0,
+          "quarantined_unified_physical_memory_bytes": 0,
+          "version": 6
+        },
+        "identity": {
+          "database": "sn_live",
+          "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+          "schema": "sn_live"
+        },
+        "instance": {
+          "base_budget_kind": "released",
+          "held_slots": 0,
+          "instance_generation": 2,
+          "instance_id": "snx-tts-45rrnwkh",
+          "instance_state": "stopped",
+          "peak_cpu_decode_millicores": 3000,
+          "peak_device_memory_bytes": 0,
+          "peak_host_memory_bytes": 0,
+          "peak_host_pcm_buffer_bytes": 1048576,
+          "peak_scratch_disk_bytes": 0,
+          "peak_unified_physical_memory_bytes": 12884901888,
+          "per_slot_cpu_decode_millicores": 1000,
+          "per_slot_device_memory_bytes": 0,
+          "per_slot_host_memory_bytes": 0,
+          "per_slot_host_pcm_buffer_bytes": 480000,
+          "per_slot_scratch_disk_bytes": 0,
+          "per_slot_unified_physical_memory_bytes": 0,
+          "quarantined_slots": 0,
+          "steady_cpu_decode_millicores": 2000,
+          "steady_device_memory_bytes": 0,
+          "steady_host_memory_bytes": 0,
+          "steady_host_pcm_buffer_bytes": 1048576,
+          "steady_scratch_disk_bytes": 0,
+          "steady_unified_physical_memory_bytes": 12884901888,
+          "stopped_at_us": 1793674087176291,
+          "version": 6
+        },
+        "leases": [
+          {
+            "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "budget_released_at_us": 1793673799720915,
+            "cleanup_state": "complete",
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "lease_state": "released",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "reserved_slots": 1,
+            "stage_id": "stage-snx-tts-customvoice",
+            "version": 2
+          }
+        ],
+        "quota": {
+          "held_attempts": 0,
+          "max_attempts": 1,
+          "quarantined_attempts": 0,
+          "version": 3,
+          "workspace_id": "workspace-default"
+        },
+        "settlements": [
+          {
+            "abort_reason": null,
+            "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "settled_at_us": 1793673799729504,
+            "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+          }
+        ]
+      }
+    },
+    "private/final-counters-request-replay.json": {
+      "byte_count": 4832,
+      "observed_file_mtime_ns": 1793674074390150331,
+      "sha256": "sha256:4ca9e546eafa5e40088290c5bee35847d982abacb9dfe6358bc1709e97d95912",
+      "value": {
+        "after": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 2,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 2000,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 1048576,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 12884901888,
+            "host_node_id": "node-snx-tts-45rrnwkh",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 5
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "steady",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-45rrnwkh",
+            "instance_state": "ready",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": null,
+            "version": 4
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793673799720915,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793673799729504,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "before": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 2,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 2000,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 1048576,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 12884901888,
+            "host_node_id": "node-snx-tts-45rrnwkh",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 5
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "steady",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-45rrnwkh",
+            "instance_state": "ready",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": null,
+            "version": 4
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793673799720915,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793673799729504,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "lease_count": 1,
+        "outcome": "replayed"
+      }
+    },
+    "private/final-counters-retired-voice.json": {
+      "byte_count": 4847,
+      "observed_file_mtime_ns": 1793674207082787059,
+      "sha256": "sha256:d18766837549fd3f9b2472b6f59e3e269cf3df766b8793b1e0746b59d52270c5",
+      "value": {
+        "after": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 3,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 0,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 0,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 0,
+            "host_node_id": "node-snx-tts-45rrnwkh",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 6
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "released",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-45rrnwkh",
+            "instance_state": "stopped",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": 1793674087176291,
+            "version": 6
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793673799720915,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793673799729504,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "before": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 3,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 0,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 0,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 0,
+            "host_node_id": "node-snx-tts-45rrnwkh",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 6
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "released",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-45rrnwkh",
+            "instance_state": "stopped",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": 1793674087176291,
+            "version": 6
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793673799720915,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793673799729504,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "code": "voice_not_found",
+        "outcome": "retired",
+        "status": 404
+      }
+    },
+    "private/probe-authorization.json": {
+      "byte_count": 2221,
+      "observed_file_mtime_ns": 1793673791505532029,
+      "sha256": "sha256:cddada473a91ed2fcae0759721dc8c483f0c31ac79b6487e63b0e9b0cf5686d7",
+      "value": {
+        "admission_request_digest": "sha256:d97da171bf32a00a5bf1db89f075b51d149c76429f310329e3dc0b2f52baf3f6",
+        "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+        "authorization_id": "authorization-snx-tts-probe-20261103",
+        "binding_id": "binding-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "business_request_digest": "sha256:1a7e801c1a1001120cddc631dde75f28c1d6f4ed69e77e5828d351ad9a001c8c",
+        "command_digest": "sha256:c50d9708312099d612a4b1a36187eeffbcd0076ad1932f6760e296e8155cd361",
+        "controller_artifact_digest": "sha256:6235a3e219ef8d26ca80a2ef7581ca55876772c977dc93a42b97c4decad24a78",
+        "controller_revision": "90f53c4ead3236ccba61bc353259dc7f05e3a179",
+        "database": "sn_live",
+        "expires_at_us": 1793674375928050,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "gateway_policy_digest": "sha256:32e2793f77db7fb66408a721870d8af1197c6a159972f6219f6f52023faa6c43",
+        "gateway_request_digest": "sha256:3199562a581f4fb0b0591f5fa4aa764a34de4da572aab723c6c534923d13163d",
+        "host_node_id": "node-snx-tts-45rrnwkh",
+        "image_digest": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+        "installation_id": "d9c5bc61-6a11-4c2e-9036-7d038d590c4b",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "manifest_digest": "sha256:824a66971805bd71a02e9d8920f9b5ce4c8427cdd2df57b29a8e1d9c75b7dc90",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "model_artifact_digest": "sha256:cf93cb8c3355147085b88cc95716e322951197e12481680ac5cb70f508ac697b",
+        "native_authority": true,
+        "native_speaker_id": "Vivian",
+        "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+        "policy_revision_id": "policy-snx-tts-45rrnwkh",
+        "purpose": "builtin_voice_qualification",
+        "report_digest": "sha256:ff8675d3d12333fdfb0ecaff6268b907067118500b5459186fa0756dac124625",
+        "report_id": "qrep-snx-tts-profile2-20261103",
+        "schema": "sn_live",
+        "source_approval_id": "source-snx-vivian-20261103",
+        "template_config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "template_digest": "sha256:bbb909e82b78a1946d237b1348bc829e9b378517e9c6569f8e29b9e2f429b131",
+        "template_id": "template-snx-tts-45rrnwkh",
+        "voice_id": "voice-snx-vivian",
+        "voice_revision": "1",
+        "voice_revision_id": "voice-revision-snx-vivian-20261103"
+      }
+    },
+    "private/profile-identities.json": {
+      "byte_count": 579,
+      "observed_file_mtime_ns": 1793673216737691213,
+      "sha256": "sha256:4f32bc9b426669c0cf5a1c49e5ca13b215c6ecac22405515041d5165c91e29ab",
+      "value": {
+        "binding_id": "binding-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_id": "snx-tts-45rrnwkh",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "node_id": "node-snx-tts-45rrnwkh",
+        "policy_revision_id": "policy-snx-tts-45rrnwkh",
+        "stage_id": "stage-snx-tts-customvoice",
+        "topology_digest": "sha256:23e237cde4d9c43d3691efc30c87e5c7a1c47405ef80a897703f41ed086e5374",
+        "voice_revision_id": "voice-revision-snx-vivian-20261103"
+      }
+    },
+    "private/public-phase-readiness.json": {
+      "byte_count": 126,
+      "observed_file_mtime_ns": 1793673789530284845,
+      "sha256": "sha256:543a1e089a99f2cfb6b149a5b425c2be8db661f2c91119f3c6aff23bd95df11d",
+      "value": {
+        "expires_at_us": 1793673849387315,
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "verified_at_us": 1793673789387315
+      }
+    },
+    "private/read-only-sdk-diagnostic.json": {
+      "byte_count": 103,
+      "observed_file_mtime_ns": 1793674192695071752,
+      "sha256": "sha256:6224c6c3e95f541fb6c9725599d86984c0e19724917a64a2616a58e9908d330c",
+      "value": {
+        "locked_voice_check": "passed",
+        "scope": "read-only diagnostic after stop; not original SDK acceptance"
+      }
+    },
+    "private/source-verification.json": {
+      "byte_count": 310,
+      "observed_file_mtime_ns": 1793673215851150894,
+      "sha256": "sha256:2dad77732e069c3a0a0b64ad6417f06d2da4011ae44246dfbae8f2f5d5480aaa",
+      "value": {
+        "all_blobs_match": true,
+        "commit": "90f53c4ead3236ccba61bc353259dc7f05e3a179",
+        "extra_operator_tool": {
+          "commit": "ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291",
+          "path": "scripts/dev-env/verify-file-tts-sdk.py",
+          "sha256": "2d48e66613d43cde64e631f0f1d64874624a37324dae979b76b88fc1ad14c911"
+        },
+        "files_verified": 2002
+      }
+    },
+    "sdk-evidence/result.json": {
+      "byte_count": 139,
+      "observed_file_mtime_ns": 1793673800657460260,
+      "sha256": "sha256:5c12c3b60ea24594497a3a1fb5e6711824ce58d5a2232a35fddc4f567313a361",
+      "value": {
+        "code": "backend_unavailable",
+        "kind": "api_status",
+        "outcome": "failed",
+        "request_id": "sdk-tts-99bf200925f14839adf7602c9d12e156",
+        "status": 503
+      }
+    },
+    "sdk-evidence/started.json": {
+      "byte_count": 439,
+      "observed_file_mtime_ns": 1793673800554993307,
+      "sha256": "sha256:19551857f8775fd569c0e44698bde573e6bc2e0cc7f65b9391ea5bee4712e560",
+      "value": {
+        "binding_id": "binding-snx-tts-45rrnwkh",
+        "client_reference": "sdk-tts-d306c35ed51243369347cdeaf75f1229",
+        "identity_note": "correlation only; do not resend or assume execution identity",
+        "request_id": "sdk-tts-99bf200925f14839adf7602c9d12e156",
+        "request_sha256": "sha256:d2e71af1ad310af1ac162422161cd7bbaf32dd1a2ae723abc422c81963c69245",
+        "sdk_version": "3.39.0",
+        "voice_id": "voice-snx-vivian",
+        "voice_revision": "1",
+        "workspace_id": "workspace-default"
+      }
+    },
+    "sdk-negative-instructions_unsupported.json": {
+      "byte_count": 94,
+      "observed_file_mtime_ns": 1793674073806985471,
+      "sha256": "sha256:c6b161b839e0960d542bc3ded409c304fbac118c222291747cce26a1ccdc6273",
+      "value": {
+        "code": "unsupported_parameter",
+        "request_id": "abfd31fab3c6401d96b6d2c1f2323ea7",
+        "status": 422
+      }
+    },
+    "sdk-negative-speed_out_of_range.json": {
+      "byte_count": 88,
+      "observed_file_mtime_ns": 1793674073803264391,
+      "sha256": "sha256:e2e239da712423c2d38b7869a8aede40a3bcf35c6785e02367bf3df800e0f36c",
+      "value": {
+        "code": "invalid_request",
+        "request_id": "acf17c06864545e183047cee4a2bdf8f",
+        "status": 400
+      }
+    },
+    "sdk-negative-unknown_voice.json": {
+      "byte_count": 88,
+      "observed_file_mtime_ns": 1793674073801981282,
+      "sha256": "sha256:4939d3659e01a7e2bcbfdcefa1f4b96c8c97bb9246b7f65fd5298d9a27d4e731",
+      "value": {
+        "code": "voice_not_found",
+        "request_id": "78f815980e0645769154c7a0ab81b63c",
+        "status": 404
+      }
+    },
+    "stop-1-request.json": {
+      "byte_count": 750,
+      "observed_file_mtime_ns": 1793673535724825970,
+      "sha256": "sha256:a7582e89f270851dd1316990f20c7d2395d41d5205c2c82170c6e9154735cb82",
+      "value": {
+        "action": "stop",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "deadline_at": "2026-11-03T02:58:05.720029Z",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 1,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "stop-snx-tts-g1",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh"
+      }
+    },
+    "stop-1-response.json": {
+      "byte_count": 1137,
+      "observed_file_mtime_ns": 1793673666677309776,
+      "sha256": "sha256:215c29935a748c60b5463e8928e2529d789ef2c0b07e4a9e2ccdbef94f84d413",
+      "value": {
+        "action": "stop",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "created_at": "2026-11-03T02:40:55.762429Z",
+        "error_code": null,
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 1,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "stop-snx-tts-g1",
+        "intent_state": "succeeded",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "observed_instance_state": "stopped",
+        "observed_peak_memory": null,
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "stop_evidence": {
+          "exit_code": 0,
+          "process_or_container_exited": true,
+          "resources_released_confirmed": true,
+          "runtime_container_id": "6c5e3a23d4b599835a7e02ca74af222325e543674f106ea7fa9daa5ed1449459",
+          "verified_at": "2026-11-03T02:41:06.673142Z"
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh",
+        "updated_at": "2026-11-03T02:41:06.674509Z"
+      }
+    },
+    "stop-2-request.json": {
+      "byte_count": 755,
+      "observed_file_mtime_ns": 1793673668490032129,
+      "sha256": "sha256:2067c30d920b60fc10212a90fa6754272e2d0e37ea86804c3826db5aa5af2e7e",
+      "value": {
+        "action": "stop",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "deadline_at": "2026-11-03T02:58:05.928051+00:00",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "stop-snx-tts-g2",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh"
+      }
+    },
+    "stop-2-response.json": {
+      "byte_count": 1137,
+      "observed_file_mtime_ns": 1793674086347983152,
+      "sha256": "sha256:02dcab3918503b3a86c833f2de151b909475a19fe1c347523b56f2124f33ec5a",
+      "value": {
+        "action": "stop",
+        "approved_template_id": "template-snx-tts-45rrnwkh",
+        "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+        "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+        "created_at": "2026-11-03T02:47:55.516789Z",
+        "error_code": null,
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-45rrnwkh",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "stop-snx-tts-g2",
+        "intent_state": "succeeded",
+        "manifest_id": "manifest-snx-tts-45rrnwkh",
+        "observed_instance_state": "stopped",
+        "observed_peak_memory": null,
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "stop_evidence": {
+          "exit_code": 0,
+          "process_or_container_exited": true,
+          "resources_released_confirmed": true,
+          "runtime_container_id": "e9ee279adb350ecb015a07a44c0718168ae65ebb890a72cb23cb28c77d81954e",
+          "verified_at": "2026-11-03T02:48:06.343275Z"
+        },
+        "target_node_id": "node-snx-tts-45rrnwkh",
+        "updated_at": "2026-11-03T02:48:06.345216Z"
+      }
+    },
+    "watchdog-started": {
+      "byte_count": 59,
+      "observed_file_mtime_ns": 1793673535960355934,
+      "sha256": "sha256:1f06a0dd08b50be579c8c2d352671e93cfdef77b265bd15af2d72ea689ae4bb1",
+      "value": {
+        "epoch": 1793673535.9280505,
+        "monotonic": 3714994.045672297
+      }
+    }
+  },
+  "formal_runtime": {
+    "deliveries": [
+      {
+        "created_at_us": 1793673668487499,
+        "delivery_phase": "acknowledged",
+        "event_id": "runtime-event-81c2ec7c8f785760fa4b9d2d146ce2499cdd9911f63b59e24b49cc7bd377ec72",
+        "submission_started_at_us": 1793673668926432,
+        "updated_at_us": 1793673670567143
+      },
+      {
+        "created_at_us": 1793674074804867,
+        "delivery_phase": "acknowledged",
+        "event_id": "runtime-event-ec10f4773ffc51f3b8d933e0dde12154495e3d23458b69d40049bea7e60110c7",
+        "submission_started_at_us": 1793674075164224,
+        "updated_at_us": 1793674086766698
+      }
+    ],
+    "intents": [
+      {
+        "action": "prepare",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "prepare-snx-tts-g2",
+        "intent_state": "succeeded",
+        "readiness_document": {
+          "binding": {
+            "approved_template_id": "template-snx-tts-45rrnwkh",
+            "binding_revision_id": "mbrev-709cf8d9a2de4804aec264b1ba6cf56c",
+            "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+            "gateway_id": "gateway-snx-tts-45rrnwkh",
+            "manifest_id": "manifest-snx-tts-45rrnwkh",
+            "pool_id": "tts-batch",
+            "target_node_id": "node-snx-tts-45rrnwkh"
+          },
+          "evidence_digest": "sha256:755a33b3e97fcc8c2a6b27ab93610d318028ba9e4a663e2314f6df0d30776b4b",
+          "expires_at_us": 1793673849387315,
+          "fencing_token": 1,
+          "instance_generation": 2,
+          "instance_id": "snx-tts-45rrnwkh",
+          "qualification_digest": "sha256:ff8675d3d12333fdfb0ecaff6268b907067118500b5459186fa0756dac124625",
+          "record_version": 1,
+          "topology_digest": "sha256:23e237cde4d9c43d3691efc30c87e5c7a1c47405ef80a897703f41ed086e5374",
+          "verified_at_us": 1793673789387315
+        },
+        "updated_at_us": 1793673789397170
+      },
+      {
+        "action": "stop",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-45rrnwkh",
+        "intent_id": "stop-snx-tts-g2",
+        "intent_state": "succeeded",
+        "readiness_document": null,
+        "updated_at_us": 1793674087176291
+      }
+    ],
+    "outbox": [
+      {
+        "delivered_at_us": null,
+        "event_id": "event-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+        "event_kind": "job",
+        "intent_id": null
+      },
+      {
+        "delivered_at_us": 1793673670567143,
+        "event_id": "runtime-event-81c2ec7c8f785760fa4b9d2d146ce2499cdd9911f63b59e24b49cc7bd377ec72",
+        "event_kind": "runtime",
+        "intent_id": "prepare-snx-tts-g2"
+      },
+      {
+        "delivered_at_us": 1793674086766698,
+        "event_id": "runtime-event-ec10f4773ffc51f3b8d933e0dde12154495e3d23458b69d40049bea7e60110c7",
+        "event_kind": "runtime",
+        "intent_id": "stop-snx-tts-g2"
+      }
+    ]
+  },
+  "limitations": [
+    "SDK rejected backend_unavailable while readiness fresh; no SDK operation persisted. Internal root cause not yet proven.",
+    "Native WAV and builtin probe approval are not SDK acceptance.",
+    "Administrative audit reads used READ ONLY RR; no production privilege expansion."
+  ],
+  "maximum_memory_bytes": 12884901888,
+  "maximum_own_instances": 1,
+  "private_helper_sha256": {
+    "assemble_profile.py": "6c5b62cf81e3de33660aa47cde75c79014f81d2b8ff341b0ef64c23102bf0266",
+    "binding_bundle.py": "f875fc4b66ec74c261734046c9b574b4fbcab520aea30a4d17e8b54a98b6a2f2",
+    "bootstrap.py": "d8d949f70c3e8b58f940964e8e67f8c3fa72e73c47cd87c7a055b725892ca605",
+    "cleanup_window.py": "6df04ef2460dacfa27d6fc4623531f85c20ca4823379aa30ce50e1e83ea177f8",
+    "controller_runtime.py": "f643670da4a5cd90746706f46774f12d79d9b02736c0179262b6787fa4a6cb83",
+    "final_api.py": "4c22f0315bdc224cf95199a7bb7f6c49e5658dce236e6c3453a2fa4f969c05a2",
+    "final_checks.py": "1edf97389aea4a1eb437704a4b935d66ed7758ebfa2c7963ff039a4b2a431b72",
+    "gateway_runtime.py": "f902f0123c9deb05df816d35294962c3271a87015630eb19962788956d39565a",
+    "native_profile.py": "b70333d87895a428e63f0d9105387bd6b9032787ca494f2356595b2a7b9ae759",
+    "native_to_prepare.py": "9147ee1a7efd4b48927caf98c2da8cd8963133661f2603e2f65ac8b699bf038f",
+    "operator_dispatch.py": "0e5e80e88e7b84f98e99d4b3f7768321264686e03769750a4ab8278d26baf863",
+    "phase2_inputs.py": "f051697c3aa5d0dd46dcd0bbf9cc71715092a91efccd21fbd9421ed6fa2bea81",
+    "prepare_profile_inputs.py": "18bfcc4360bd4ef9bec98b727f6c0d9dbc449121b4552de4546c311cad048e84",
+    "probe_inputs.py": "a9c6804c4d9ad5ee2c550a655084eea08cad2044ddfe8a01c4779ae4fa820c46",
+    "public_phase.py": "b6153a0a04de3cf645bee1fca30ec9a43f5b7518563f2cc4854d4fb4278ecf93",
+    "publish_binding_operator.py": "59a52e6c69ef9f40aeee1a221a9d258404c0aa538b3d66f63178c9db39c16b33",
+    "report_inputs.py": "785bb3a01397d91a31ab9cfb9735dddf9528764820af9882bce693164208875f",
+    "runtime_delivery.py": "3dbc39d84e8d8e14767a6fc645493e53ada6e1dbf36d6ef9c3b24fa00e861282",
+    "runtime_plan.py": "4eec953c4e7be9c2dbb4e0c14d043a89b151c6063c97906703187b123af7d2de",
+    "sdk_association.py": "7f35dd3c4a1d647566b0c07d2a95a836abd406121e8fc4668d7ff00b5674ad85",
+    "setup_isolated.py": "b9620a58db82aa0d4fe89bc684c47522cf9a3e0d5470f5a5ee4ff3df606f9845",
+    "trusted_readiness.py": "799f4302a8589c3d939ebc5e894c279ad91b24cfce24da290cc1722d0c6a1008"
+  },
+  "production_commit": "90f53c4ead3236ccba61bc353259dc7f05e3a179",
+  "remote_directory_cleanup": {
+    "all_remote_cleanup_seconds": 868.39637,
+    "no_own_process_or_container_or_network": true,
+    "root_removed": true
+  },
+  "schema_version": "1",
+  "sdk_acceptance_passed": false,
+  "sdk_tool_commit": "ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291",
+  "source_expiry_unchanged": "2026-11-03T23:33:12Z",
+  "status": "failed-sdk-503",
+  "window": "3"
+}

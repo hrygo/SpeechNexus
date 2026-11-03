@@ -78,12 +78,12 @@ speechnexus-register-engine \
 | `--workspace` | 准入 workspace（默认 `workspace-default`） |
 | `--max-attempts` | 该 workspace 首次创建时的并发 attempt 上限；已有上限必须大于或等于请求值，不会被该命令调大 |
 | `--owner-id` | 池 owner 身份；默认 `speechnexus-operator` |
-| `--fencing-token` | 可选；已有池必须与当前 token 一致，接管已过期 owner 时必须更大 |
-| `--owner-ttl-seconds` | 池 owner 租约，默认 86400 秒 |
-| `--readiness-ttl-seconds` | readiness 收据有效期，默认 86400 秒 |
-| `--intent-deadline-seconds` | 注册 prepare intent 的期限，默认 300 秒 |
+| `--fencing-token` | 可选；同一 owner 必须与当前 token 一致；接管另一已过期 owner 时必须更大，不传则自动递增 |
+| `--owner-ttl-seconds` | 池 owner 租约，默认 86400 秒，范围 1–31536000 秒 |
+| `--readiness-ttl-seconds` | readiness 收据有效期，默认 86400 秒，范围 1–31536000 秒 |
+| `--intent-deadline-seconds` | 注册 prepare intent 的期限，默认 300 秒，范围 1–3600 秒 |
 | `--intent-id` | 可选；缺省为 `register-<instance>-g<generation>` |
-| `--health-timeout-seconds` | 健康探测超时，默认 5 秒 |
+| `--health-timeout-seconds` | 健康探测超时，默认 5 秒，大于 0 且不超过 30 秒 |
 | `--transaction-timeout-seconds` | 数据库事务超时，默认 10 秒 |
 
 命令成功时输出 JSON，包含 `outcome`、实例身份、fencing token、readiness 摘要，以及

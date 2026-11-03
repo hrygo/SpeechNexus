@@ -111,6 +111,7 @@ binding、readiness 资格或准入预算。
 - `tests/unit/gateway/test_controlled_tts_target.py`：私有描述、池与 generation 匹配。
 - `tests/unit/gateway/test_file_tts_command.py`：音频身份、时钟/上界与参数子集。
 - `tests/unit/gateway/test_file_tts_worker.py`：先区间后回执，以及越过上界时隔离且不登记回执。
-- `tests/integration/test_gateway_tts_results.py`：隔离 MinIO 与协调库中的音频回执路径。
+- `tests/integration/test_gateway_tts_results.py`：通过合成替身和真实 MinIO、协调库验证生成区间、
+  音频回执及认证查询；该测试直接调用组件，不经过默认 worker，成功回执本身不登记停止证据或结算预算。
 
 这些测试使用合成音频与替身合成器，不加载权重、不访问真实 GPU，也不证明公开链或模型资格。

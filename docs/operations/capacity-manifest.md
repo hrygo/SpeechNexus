@@ -226,9 +226,9 @@ R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当
 5. **聚合**：用脚本或 §3.3 规则生成 `resource_envelope`；不要手填。
 6. **填限额与取消**：`max_segment_audio_ms` 与定义 `parameter_domains.asr.max_segment_ms` 对齐；`hard_output_quota` 只在引擎真的先验限流时为 true；取消/fencing 只在有证据时为 true。
 7. **写资格引用**：填入配对报告的 `report_id`、`qualified_at`、`expires_at`、`config_bundle_digest`、已验证共存 profile。
-8. **静态校验**：跑 JSON Schema 与 `verify-release-evidence.py`（至少 `--database-snapshot` 或 live DB）；先让所有 `FAIL` 清零，`NA/WARN` 逐条解释。
-9. **登记数据库**：新 revision 的 `definition_json` 写入 `execution_recipe.capacity_manifest_id`；`engine_instances` 三组向量/`max_slots`/`config_digest` 与 manifest 一致；`host_nodes` 的 allocatable/held/quarantine 反映真实预算；`resource_pools` active；`workspace_quotas` 有界。
-10. **发布**：用 `speechnexus-publish-binding` 传入 manifest/report id 与两个摘要；保存命令输出、退出码与 publication/evidence 行。发布是 insert-only，旧 revision 不修改。
+8. **先核对文件**：校验 JSON Schema 与文件间的身份、摘要和聚合。`verify-release-evidence.py` 还要求数据库或快照中有匹配实例；实例尚未登记时会失败，fixture 只能帮助检查规则，不能证明目标部署。
+9. **登记并核对目标数据库**：新 revision 的 `definition_json` 写入 `execution_recipe.capacity_manifest_id`；`engine_instances` 三组向量/`max_slots`/`config_digest` 与 manifest 一致；`host_nodes` 的 allocatable/held/quarantine 反映真实预算；`resource_pools` active；`workspace_quotas` 有界。登记后用 live 数据执行校验，检查每项 `FAIL`、`NA` 和 `WARN`；发布前无 publication 可按 §5 识别为 `NA`。
+10. **发布并复核**：用 `speechnexus-publish-binding` 传入 manifest/report id 与两个摘要；保存命令输出、退出码与 publication/evidence 行。发布后以 `--require-published --require-digests` 对目标数据库复核，并逐项处理 `NA/WARN`。发布是 insert-only，旧 revision 不修改。
 
 ### 6.3 模板（把 `<...>` 换成真实值）
 

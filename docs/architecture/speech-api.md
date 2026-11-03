@@ -321,7 +321,7 @@ VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本
 
 首期浏览器无登录 cookie、access token 或用户会话，使用同源入口并校验 WebSocket Origin / Host；SDK 直接连接部署地址。若部署选择共享服务密钥，SDK 使用 Authorization Bearer，浏览器经同源部署代理注入服务端凭据。密钥不进入 URL、页面包、localStorage、日志或 WS 子协议。session_id 只用于路由；连接时检查存在性、工作空间、过期和是否已有活跃连接，不把它当作用户所有权或隐式秘密。
 
-WS 建立后进入 `admitting`，原子申请所需资源；最多等待已批准的实时等待预算。只有分配成功才发送 `session.created` 与 `nexus.session.ready`。失败发送结构化错误并关闭，不让客户端持续发送无人消费的音频。会话状态为：
+WS 建立后进入 `admitting`，原子申请所需资源；最多等待已批准的实时等待预算。只有分配成功才发送 `session.created`；预先创建的 Nexus 会话还发送 `nexus.session.ready`，标准兼容模式不发送 Nexus 事件。失败发送结构化错误并关闭，不让客户端持续发送无人消费的音频。会话状态为：
 
 ```text
 created → admitting → active → draining → closed

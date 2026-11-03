@@ -97,6 +97,6 @@ node render_and_validate.cjs --channel chrome
 使用 Playwright 自带 Chromium 时省略 `--channel chrome`。字体为 `Arial`、`PingFang SC` 或 `Hiragino Sans GB`；
 其他环境重绘时需提供这些字体或重新核对替代字体的换行和间距。
 
-检查覆盖原生像素尺寸、全部文字与模型标识、逐容器内边距、文字与图标间距、连线避让文字和插画、资源加载，以及图面过程性内容排除。
+脚本检查原生像素尺寸、预期文字清单与模型目录，并对带检查标记的文字、所属容器、图标和插画检查边界及间距；带标记的连线通过路径采样检查与文字、插画的避让。它还检查资源加载失败和所选文字中的过程性内容；这些检查不覆盖未标记元素，也不能证明拓扑语义正确。
 机械检查后打开两张 PNG 人工核对分区、模型归属、连线路径与阅读密度。
 结果见[总览检查](01-cluster-overview-4k.check.json)、[模型检查](02-model-instance-topology-4k.check.json)与[综合验证](validation.json)。

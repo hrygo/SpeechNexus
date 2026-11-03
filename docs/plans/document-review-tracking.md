@@ -173,9 +173,9 @@
 | `docs/plans/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读并标明原方案时点；未重跑历史验证 |
 | `docs/plans/2026-10-24-b03-frozen-inputs.md` | 历史保留 | 全文阅读并标明原接入范围和验收时点；未重跑历史验证 |
 | `docs/plans/2026-10-24-b03-native-asr-scope.md` | 历史保留 | 全文阅读并标明原实现和后续安排时点；未重跑历史验证 |
-| `docs/plans/2026-10-24-team-c-2874-integration-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-7cd-integration-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-9ee-integration-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
+| `docs/plans/2026-10-24-team-c-2874-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
+| `docs/plans/2026-10-24-team-c-7cd-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
+| `docs/plans/2026-10-24-team-c-9ee-integration-handoff.md` | 历史保留 | 全文阅读，固定基线和日期的集成交接；计划索引已说明历史材料范围，未重跑验证 |
 | `docs/plans/2026-10-24-team-c-a98-integration-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-c00-c1-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-c00-c1-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

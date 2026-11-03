@@ -50,6 +50,10 @@ codebook_count；codebook_count 与命令一致，词表上界和帧时钟由固
 
 ## 内部文本流
 
+本节描述内部流契约与目标语义，不代表流式执行链已经装配。当前文件 TTS 的
+`CommandFileTts` 只接受完整 `text` 且要求 `text_stream=null`；增量文本消费与断线恢复
+须单独实现和验收，见[文件 TTS 原命令消费](../components/file-tts.md#原命令消费)。
+
 [execution-stream.schema.json](../../contracts/internal/execution-stream.schema.json)
 1.1.0 显式区分 pcm/text 输入。两个方向分别递增 envelope.seq；epoch 不复用。
 text 模式 input=null、input_credit_samples=0；pcm 模式字符额度为零。

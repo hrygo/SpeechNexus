@@ -145,7 +145,8 @@ Memory/MemorySwap，显式使用 `--kv-cache-memory-bytes 1073741824`。
   另阻塞数据库登记，验证重复取消不会在 writer 结束前释放本地槽位。
 - [默认入口集成](../../tests/integration/test_gateway_default_file_asr.py)：未注入工厂，
   使用正式 PG 角色、真实 MinIO/PyAV 与回环原生 HTTP；有语音和无语音分别验证，
-  重放/重启不增加外发或结果版本，预算和停止证据不被改变。
+  重放/重启不增加外发或结果版本，预算计数不变；有语音场景登记引擎终态停止证据，
+  无语音场景没有该证据并保持 `unknown_quarantined`。
 - 原 worker 的双库、竞争及真实 commit 确认丢失回归继续保护原事务边界。
   InnoDB 仅验证协调关键路径；默认生产配置仍使用 PostgreSQL。
 

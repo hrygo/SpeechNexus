@@ -29,12 +29,12 @@
 | `docs/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 历史保留 | 固定基线的重构后审查，已注明当前入口；原审查证据未逐项复核 |
 | `docs/audits/2026-10-23-architecture-contract-repair-closure.md` | 历史保留 | 固定基线的修复验收记录，已注明当前入口；原验收证据未逐项复核 |
 | `docs/audits/2026-10-23-ui-ux-design-framework-audit.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 历史保留 | 全文阅读，固定时点的环境前检与首次 ASR 探针；补充 TTS 在线服务判断的后续纠正，未重跑实验 |
 | `docs/audits/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读，固定集成基线的默认恢复驱动与进程验证；组件入口引用其当时实测，未重跑测试 |
 | `docs/audits/2026-10-24-b01-recovery-progress.md` | 历史保留 | 全文阅读，固定基线的恢复扫描公平性和计数回归；已链接后续驱动验证，未重跑测试 |
 | `docs/audits/2026-10-24-b02-controller-container-lifecycle-probe.md` | 历史保留 | 全文阅读，合成容器的生命周期与停止证据；入口按历史探针引用，未重跑实验 |
 | `docs/audits/2026-10-24-b02-controller-http-shell-probe.md` | 历史保留 | 全文阅读，固定基线的控制器进程、重启和持久意图探针；已标明后续语义变化，未重跑实验 |
-| `docs/audits/2026-10-24-b02-real-asr-controller-probe.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-24-b02-real-asr-controller-probe.md` | 历史保留 | 全文阅读，固定基线的真实 ASR 控制器生命周期探针；入口保留合成输入和资格边界，未重跑实验 |
 | `docs/audits/2026-10-24-b02-reconcile-proof-source.md` | 历史保留 | 全文阅读，固定基线的快照证据来源与回归记录；组件文档作为历史证据引用，未重跑测试 |
 | `docs/audits/2026-10-24-b02-stop-recovery-probe.md` | 历史保留 | 全文阅读，固定版本的合成容器停止崩溃与恢复探针；后续变化另有引用，未重跑实验 |
 | `docs/audits/2026-10-24-b02-trusted-node-stop-probe.md` | 历史保留 | 全文阅读，固定基线的节点停止事实与网关消费分层证据；组件文档按实验范围引用，未重跑测试 |

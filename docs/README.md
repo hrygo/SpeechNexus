@@ -67,7 +67,7 @@
 | [UI/UX 设计框架终审](audits/2026-10-23-ui-ux-design-framework-audit.md)                             | 历史设计与 CI 审查；报告中的绝对化无障碍和拦截评级超出所列证据 |
 | [开发与测试环境](development-environment.md)                                                        | Linux 参考开发环境、独立服务、初始化和隔离边界；宿主状态需实测                |
 | [开发环境就绪审查](audits/2026-10-22-development-environment-readiness.md)                          | 2026-10-22 的环境验证与隔离边界快照，不代表当前主机状态                     |
-| [架构决策](decisions/README.md)                                                                     | 已确认范围、决策原因和影响                                                      |
+| [架构决策](decisions/README.md)                                                                     | 架构决定、理由和影响；区分已接受与拟议状态 |
 | [语音模型、推理引擎与加载策略](decisions/0002-speech-models-engines-and-loading.md)                 | 已接受的首选验证矩阵、常驻 / 按需加载、音色创作闭环与待验证范围                 |
 | [工作台 LLM 与业务内容的网络边界](decisions/0003-workbench-llm-network-boundary.md)                 | 仅本机 / 内网 LLM、内容不出网、可选集成与部署责任                               |
 | [集群就绪架构与单机 MVP 同构部署](decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) | 架构层集群原生、三级资源拓扑、分池租约、节点控制器与单机 MVP 演进边界           |

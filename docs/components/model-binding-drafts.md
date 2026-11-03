@@ -75,7 +75,7 @@ the explicitly selected speech HTTP surface. Requests, other unions, lost
 guarantees and the original OpenAI standard-only comparison retain their existing
 checks. It is not general JSON Schema inclusion or runtime proof.
 
-## Process-local registry
+## Draft registry and preparation
 
 `prepare_binding_draft(request, idempotency_key)` validates the existing admin
 request and the complete draft revision. Full-source conditions, including the

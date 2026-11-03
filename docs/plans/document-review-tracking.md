@@ -140,14 +140,14 @@
 | `docs/operations/file-tts-runtime.md` | 已核对 | 对照配置、双 lane 共享 worker、关闭边界、音频上限、测试及真实停止和结算证据；明确组件集成测试范围，未运行测试或部署 |
 | `docs/operations/local-end-to-end.md` | 历史保留 | 2026-10-28 指定基线的隔离装配与失败记录；已提示旧发布命令不适用于当前版本，现行入口按历史证据引用，原始输出未逐项复核 |
 | `docs/operations/paperclip/environment-readiness.md` | 历史保留 | 已明确标注为旧环境与部署快照，当前流程指向交付 SOP；原始证据未逐项复核 |
-| `docs/operations/paperclip/roles/common.md` | 部分核对 | 全文对照工作流与交付 SOP；实际部署未核实 |
-| `docs/operations/paperclip/roles/evidence.md` | 部分核对 | 全文对照岗位与证据边界；部署配置及实际原件未核实 |
-| `docs/operations/paperclip/roles/execution.md` | 部分核对 | 全文对照工作约定和交付 SOP；实际部署配置与运行权限未核实 |
-| `docs/operations/paperclip/roles/manager.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
-| `docs/operations/paperclip/roles/platform.md` | 部分核对 | 全文对照工作约定和交付 SOP；实际部署配置与运行权限未核实 |
-| `docs/operations/paperclip/roles/qa.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
-| `docs/operations/paperclip/roles/reviewer.md` | 部分核对 | 全文对照工作约定和交付 SOP；实际部署配置与运行权限未核实 |
-| `docs/operations/paperclip/roles/workbench.md` | 部分核对 | 全文对照项目约定及交付 SOP；实际部署和岗位权限未核实 |
+| `docs/operations/paperclip/roles/common.md` | 已核对 | 全文对照军团工作流与交付 SOP；这是岗位共用规范，不证明实际部署或权限 |
+| `docs/operations/paperclip/roles/evidence.md` | 已核对 | 全文对照岗位与证据边界；这是职责规范，不证明部署配置或证据原件 |
+| `docs/operations/paperclip/roles/execution.md` | 已核对 | 全文对照军团工作流、执行与交接边界；实际部署配置及权限按任务核实 |
+| `docs/operations/paperclip/roles/manager.md` | 已核对 | 全文对照军团工作流、授权与交付 SOP；实际岗位及权限按任务核实 |
+| `docs/operations/paperclip/roles/platform.md` | 已核对 | 全文对照军团工作流、契约与交接边界；实际部署配置及权限按任务核实 |
+| `docs/operations/paperclip/roles/qa.md` | 已核对 | 全文对照军团工作流和验收证据边界；实际岗位及权限按任务核实 |
+| `docs/operations/paperclip/roles/reviewer.md` | 已核对 | 全文对照军团工作流和独立审查边界；实际部署配置及权限按任务核实 |
+| `docs/operations/paperclip/roles/workbench.md` | 已核对 | 全文对照军团工作流和工作台职责边界；实际部署及权限按任务核实 |
 | `docs/operations/paperclip/runtime-incidents.md` | 历史保留 | 历史故障、处置与后续证伪记录；已限定旧操作不构成当前授权，并指向现行交付 SOP；事故原件未逐项核验 |
 | `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界，修正已取消排期的文件语音 issue 入口；岗位、配置与平台映射尚未逐项核实 |
 | `docs/operations/production-coordination-storage.md` | 已核对 | 对照 0002 表与索引、迁移链、列级授权、组合约束及释放守卫；区分基础约束与受控事务职责，未运行数据库测试 |

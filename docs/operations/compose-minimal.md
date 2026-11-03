@@ -343,6 +343,9 @@ from speechnexus_backend.speech.infrastructure.coordination_grants import (
 from speechnexus_backend.speech.infrastructure.gateway_query_grants import (
     gateway_query_grants, gateway_query_target_grants,
 )
+from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
+    gateway_abort_grants, gateway_binding_barrier_grants,
+)
 
 schema = "speech"
 roles = {
@@ -410,6 +413,11 @@ with psycopg.connect(os.environ["SN_ADMIN_DSN"], autocommit=True) as conn:
     for statement in gateway_query_grants(schema, "sn_gateway_query"):
         conn.execute(statement)
     for statement in gateway_query_target_grants(schema, "sn_gateway"):
+        conn.execute(statement)
+    for statement in (
+        *gateway_abort_grants(schema, "sn_gateway"),
+        *gateway_binding_barrier_grants(schema, "sn_gateway"),
+    ):
         conn.execute(statement)
 
     # Transcription resolves the selected published binding and checks its
@@ -578,8 +586,8 @@ head，不套用其他发布版本的值。在 `sn_api` 和 `sn_gateway` 所在 
 不能仅凭这些字段相同排除代理或复制环境中的多权威问题。
 
 通过部署批准的秘密管理流程创建这两个角色。以下可选授权脚本使用第 6 节准备的 owner DSN，
-不创建角色或处理口令。核对发布版本的授权函数后，仅对目标部署数据库执行；脚本不创建或
-授权生命周期写入角色。
+不创建角色或处理口令。基础 gateway 授权已在第 6 节安装；核对发布版本的授权函数后，
+仅对目标部署数据库执行。脚本不创建或授权生命周期写入角色。
 
 ```bash
 # SN_ADMIN_DSN 通过第 6 节所述的获准秘密渠道提供。
@@ -590,16 +598,10 @@ from speechnexus_backend.speech.infrastructure.admission_postgres import binding
 from speechnexus_backend.speech.infrastructure.binding_disable_targets_schema import (
     disable_coordinator_grants, disable_settlement_grants,
 )
-from speechnexus_backend.speech.infrastructure.gateway_abort_intent_schema import (
-    gateway_abort_grants, gateway_binding_barrier_grants,
-)
-
 with psycopg.connect(os.environ["SN_ADMIN_DSN"]) as conn:
     for grant in (
         *disable_coordinator_grants("speech", "sn_disable_scan"),
         *disable_settlement_grants("speech", "sn_disable_settle"),
-        *gateway_abort_grants("speech", "sn_gateway"),
-        *gateway_binding_barrier_grants("speech", "sn_gateway"),
         *binding_disable_admission_grants("speech", "sn_api"),
     ):
         conn.execute(grant)

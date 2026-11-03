@@ -23,3 +23,62 @@
 当前受控入口要求使用已核验的源码 checkout：离线模型检查复用 `scripts/dev-env/verify-file-asr-artifacts.py`，本次验证文件 SHA-256 为 `44c92419824c1382fcf8847135c7f39ee18de8b2b9beeb7fd4d054b023185587`。脚本缺失时检查失败关闭；当前 wheel 不包含此脚本，不能作为已完成的 wheel 部署交付。隔离 PostgreSQL 上的新链测试使用合成模型文件、合成网关及终止证据，并运行真实 release 验证器；尚未实连网关或引擎，不能作为真实物理资格。
 
 controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或安装制品清单摘要，不证明已加载字节码、依赖或整个镜像。网关证据仅反映认证后读取时的 live policy 和映射，不代表 GPU 健康或声音资格。
+
+## 正式公开 SDK 验收
+
+资格 probe、公开 SDK 和最终停止结算分别取证。真实引擎仍需单独运行授权；下面的
+客户端既不启动引擎，也不产生来源、资格、发布或预算事实。
+
+运行前使用锁定依赖，完成来源决定、受限角色、原文件/摘要、安装身份、配方及控制器
+退出路径的检查。公开请求的 `model` 使用已发布 **binding_id**，不能使用其
+`logical_model` 展示名；私有 TTS recipe 的 `model_id` 必须与公开请求一致，并按
+正式 loader 的算法计算 `recipe_digest`。资格 probe 的原 recipe、原身份和字节保留，
+不因客户端配置修正而覆盖。
+
+API 使用正式组合根；通过已有的仓库外配置注入 speech recipe、独立 settlement DSN、
+对象存储和网关配置，不能用基础 `app.create_app` 创建一个未装 speech 的临时服务：
+
+```bash
+uv run uvicorn speechnexus_backend.transcription_runtime:create_app_from_env --factory --host 127.0.0.1 --port 18430
+```
+
+`/healthz` 和 `/readyz` 不证明 speech 已装配。启动后先核对资格 probe 的原 lease 已经
+由正式 settlement worker 释放，不能通过修改计数腾槽。核对当前持久 readiness 期限；
+准入到期会拒绝，即使实例仍是 `ready`。将客户端截止设为 readiness、recipe、来源/资格
+及本轮运行窗口最早的截止，预留完成请求和可信停止/结算的时间；不足则不发新请求。
+不能延长旧证据 TTL 或重写 READY 时间来通过验收。
+
+```bash
+uv run python scripts/dev-env/verify-file-tts-sdk.py \
+  --base-url http://127.0.0.1:18430/v1 \
+  --binding-id "$TTS_BINDING_ID" \
+  --workspace-id "$TTS_WORKSPACE_ID" \
+  --voice-id "$TTS_VOICE_ID" \
+  --voice-revision "$TTS_VOICE_REVISION" \
+  --deadline-at "$TTS_ACCEPTANCE_DEADLINE" \
+  --timeout-seconds 15 \
+  --output-dir "$TTS_PRIVATE_EVIDENCE_DIRECTORY"
+```
+
+这些变量是已核对的本轮输入，不是客户端授予的权限或资格。输出目录必须是新目录，
+且位于仓库外。客户端使用固定合成英文、标准 OpenAI SDK、单次请求和有界 WAV 读取，
+保留开始标记、成功音频/摘要或脱敏失败状态；退出非零不是已知未提交的证明。遇到超时、
+断线或缺失回执，先由操作员核对正式数据库中唯一的原 operation / attempt / submit，
+保全其完整原命令。客户端关联 ID、X-Request-ID 和 client_reference 均不等于内部执行
+身份，当前 SpeechPlan 也不持久化 client_reference，不能据此直接恢复。无法唯一关联时
+保持 unknown，不新建目录、换 client_reference 或原样盲重发。
+
+公开成功后仍须检查 operation / submit / lease 与 voice/binding revision、generation、
+结果摘要和版本化对象的关联，检查上限、未发布/退役、失败及未知恢复语义。客户端
+不验证这些数据库和引擎事实，其一次 200 不结算整个 Goal。
+
+完成业务请求后先等待原 lease 已释放、submit 已终态，再在允许停止的状态下，经正式
+事务登记原 stop intent/outbox，然后调用 controller；创建 stop 会进入 draining，不能
+在资格 probe / SDK 前提前登记。停止先完成进程退出和资源释放双证据，再正式结算
+实例基础预算，并核对所有 held/quarantined 维度、slots 和 quota。独立安全守护仍须
+预先准备；若守护先物理停止，如实标注事后协调，不能补记成正常先持久化再外发。
+
+2026-11-03 三次窗口及剩余缺口见 [受控验收记录](../audits/2026-11-03-controlled-tts-prepare.md)。
+第三次窗口的标准 SDK 在原 readiness 有效期内仍返回 503，尚未证明内部拒绝原因；
+不能将 readiness 过期作为全部现场失败的解释。下一次运行前先完成隔离数据库准入诊断。
+首次原生资格、正式资格 probe 或合成 transport 测试都不能替代标准 SDK 的真实链路验收。

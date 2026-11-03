@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "candidate_commit": "90f53c4ead3236ccba61bc353259dc7f05e3a179",
+  "source_revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+  "artifact_pin_sha256": "e6c898aab968ddadae2ce330437032265b5d8192c23ec4f10c4d1b225296e779",
+  "source_approval_id": "source-snx-vivian-20261103",
+  "source_approval_expires_at": "2026-11-03T23:33:12Z",
+  "source_verification": {
+    "commit": "90f53c4ead3236ccba61bc353259dc7f05e3a179",
+    "all_blobs_match": true,
+    "files_verified": 2002
+  },
+  "records": {
+    "prepare-1-request.json": {
+      "target_node_id": "node-snx-tts-45rrnwkh",
+      "pool_id": "tts-batch",
+      "gateway_id": "gateway-snx-tts-45rrnwkh",
+      "instance_id": "snx-tts-45rrnwkh",
+      "instance_generation": 1,
+      "approved_template_id": "template-snx-tts-45rrnwkh",
+      "binding_revision_id": "mbrev-e041085b6e75424f915d05b2257b12f0",
+      "manifest_id": "manifest-snx-tts-45rrnwkh",
+      "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+      "fencing_token": 1,
+      "reserved_memory": {
+        "architecture": "unified_memory",
+        "peak": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        },
+        "steady": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        }
+      },
+      "intent_id": "prepare-snx-tts-g1",
+      "action": "prepare",
+      "deadline_at": "2026-11-03T00:28:23.813210Z"
+    },
+    "prepare-1-response.json": {
+      "intent_id": "prepare-snx-tts-g1",
+      "target_node_id": "node-snx-tts-45rrnwkh",
+      "pool_id": "tts-batch",
+      "gateway_id": "gateway-snx-tts-45rrnwkh",
+      "approved_template_id": "template-snx-tts-45rrnwkh",
+      "binding_revision_id": "mbrev-e041085b6e75424f915d05b2257b12f0",
+      "manifest_id": "manifest-snx-tts-45rrnwkh",
+      "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+      "instance_id": "snx-tts-45rrnwkh",
+      "instance_generation": 1,
+      "action": "prepare",
+      "fencing_token": 1,
+      "intent_state": "failed",
+      "observed_instance_state": "stopped",
+      "reserved_memory": {
+        "architecture": "unified_memory",
+        "peak": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        },
+        "steady": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        }
+      },
+      "stop_evidence": null,
+      "observed_peak_memory": {
+        "unified_memory_bytes": 3226693632,
+        "device_memory_bytes": 0,
+        "host_memory_bytes": 0
+      },
+      "error_code": "instance_prepare_failed",
+      "created_at": "2026-11-03T00:18:45.501760Z",
+      "updated_at": "2026-11-03T00:21:58.144257Z"
+    },
+    "stop-1-request.json": {
+      "target_node_id": "node-snx-tts-45rrnwkh",
+      "pool_id": "tts-batch",
+      "gateway_id": "gateway-snx-tts-45rrnwkh",
+      "instance_id": "snx-tts-45rrnwkh",
+      "instance_generation": 1,
+      "approved_template_id": "template-snx-tts-45rrnwkh",
+      "binding_revision_id": "mbrev-e041085b6e75424f915d05b2257b12f0",
+      "manifest_id": "manifest-snx-tts-45rrnwkh",
+      "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+      "fencing_token": 1,
+      "reserved_memory": {
+        "architecture": "unified_memory",
+        "peak": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        },
+        "steady": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        }
+      },
+      "intent_id": "stop-snx-tts-g1",
+      "action": "stop",
+      "deadline_at": "2026-11-03T00:37:33.813210Z"
+    },
+    "stop-1-response.json": {
+      "intent_id": "stop-snx-tts-g1",
+      "target_node_id": "node-snx-tts-45rrnwkh",
+      "pool_id": "tts-batch",
+      "gateway_id": "gateway-snx-tts-45rrnwkh",
+      "approved_template_id": "template-snx-tts-45rrnwkh",
+      "binding_revision_id": "mbrev-e041085b6e75424f915d05b2257b12f0",
+      "manifest_id": "manifest-snx-tts-45rrnwkh",
+      "config_digest": "sha256:6265b15e4169876dc1c4320d0297cbb465b8004c83e1a4c5c058995a849f58bb",
+      "instance_id": "snx-tts-45rrnwkh",
+      "instance_generation": 1,
+      "action": "stop",
+      "fencing_token": 1,
+      "intent_state": "succeeded",
+      "observed_instance_state": "stopped",
+      "reserved_memory": {
+        "architecture": "unified_memory",
+        "peak": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        },
+        "steady": {
+          "unified_memory_bytes": 12884901888,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        }
+      },
+      "stop_evidence": {
+        "process_or_container_exited": true,
+        "resources_released_confirmed": true,
+        "exit_code": 1,
+        "runtime_container_id": "adb5a0e6b7577e59f2b0d4825c064f4d70ae2483b452aa4e163cda9109b92dae",
+        "verified_at": "2026-11-03T00:22:16.579333Z"
+      },
+      "observed_peak_memory": null,
+      "error_code": null,
+      "created_at": "2026-11-03T00:22:16.478414Z",
+      "updated_at": "2026-11-03T00:22:16.582013Z"
+    }
+  },
+  "original_file_sha256": {
+    "prepare-1-request.json": "sha256:1bbbf71704eeb09fa02b38924532e09a3a878a442b9146624524fd5ae314ce26",
+    "prepare-1-response.json": "sha256:721220769f49ebb85a653932e84a26932809b7d6735cd6d2dd098754da22e5c6",
+    "stop-1-request.json": "sha256:73b31c9908a7c96a380f9404c10691be3f812e09b778315e32f0f053328cc783",
+    "stop-1-response.json": "sha256:aca4c1f490009181156ebffece075623471aec7c74a4ca214b4806f8a81d3fe5"
+  },
+  "database_counts_before_cleanup": {
+    "speech_builtin_voice_source_approvals": 1,
+    "speech_binding_revisions": 1,
+    "speech_builtin_voice_approvals": 0,
+    "speech_builtin_voice_qualifications": 0,
+    "speech_publications": 0,
+    "runtime_instance_heads": 0,
+    "admission_attempts": 0,
+    "admission_leases": 0
+  },
+  "profile_result": {
+    "steps": [],
+    "complete": false,
+    "error_type": "AssertionError",
+    "stop_exit_code": 0
+  },
+  "templates": {
+    "failed": {
+      "template_digest": "sha256:0d20db0ed930fd617ee64ccb7efc27743f3538943d8c5a85644c63d234be01a6",
+      "max_model_len": 4096,
+      "max_num_seqs": null,
+      "enforce_eager": false
+    },
+    "cpu_prepared_unverified": {
+      "template_digest": "sha256:33da0d797d27dbe2e2cac981989a17abe69d96ee0849bbd787de3c3e2c7b2cbe",
+      "max_model_len": 1536,
+      "max_num_seqs": 1,
+      "enforce_eager": true
+    }
+  },
+  "limitations": [
+    "Prepare failed before any profile measurement or WAV synthesis; no READY/voice qualification/publication/SDK acceptance.",
+    "Controller observed memory is a sampled observation, not proof of the actual peak or a final OOM cause.",
+    "Engine stdout/stderr was not captured before controller stop removed the failed container; root cause remains unconfirmed.",
+    "Conservative eager/single-sequence configuration was only parsed and loaded into a CPU controller; no gen2 or gen3 GPU run occurred.",
+    "Latest explicit source approval does not grant a new GPU window."
+  ],
+  "cleanup": {
+    "controlled_instances_all_states_absent": true,
+    "task_processes_stopped": [
+      528585,
+      528586,
+      551586
+    ],
+    "no_task_processes_running": true,
+    "removed_containers": [
+      "snx-tts-45rrnwkh-pg",
+      "snx-tts-45rrnwkh-minio"
+    ],
+    "network_removed": true,
+    "shared_container_count": 13,
+    "all_shared_ids_images_started_at_unchanged": true,
+    "controller_port_closed": true,
+    "remote_task_directory_removed": true,
+    "temporary_database_and_credentials_removed": true,
+    "local_task_temporary_directory_removed": true,
+    "local_helper_file_count_removed": 17
+  }
+}

@@ -52,7 +52,7 @@ Python 测试作业通过 `python-coverage.py run --workers 2` 在同一 runner 
 
 每片保留原完整覆盖源与 branch 配置，只在片内使用 `--cov-fail-under=0` 采集局部数据。父进程必须确认两片执行成功、私有 PG 已停止、同一 SHA/配置、相同完整 collection、精确分配且互斥并集覆盖全集、每个结果实际通过及覆盖数据摘要一致，再显式组合全部分片并按 `pyproject.toml` 原全项目 **80%** 门槛执行 `coverage report`。缺片、失败、跳过、收集限定或仅有局部高覆盖率均不能放行；`PYTEST_ADDOPTS` 不能缩小集合。执行证据校验通过后，复制各片原始覆盖数据并生成组合产物，以 `workbench-pg-full-coverage` 上传；覆盖率不足仍保留这些产物并失败。若测试或执行证据校验失败，上传日志和已生成的分片／生命周期／汇总报告，不生成合格的组合产物。直接运行原 `workbench-pg-probe.py --full-coverage` 仍是单次 pytest 的全项目 80%；`--coverage` 仍是独立的 C 层 90% 检查。
 
-集成分片在安装 Python 依赖后，使用 `uv run python integration-shards.py requirements` 实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与 SHA-256 分片算法输出 `node_contracts` 与 `browser` 需求。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或外部 `PYTEST_ADDOPTS` 缩窄选择会失败，不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。
+集成分片在安装 Python 依赖后，通过 `uv run python scripts/dev-env/integration-shards.py requirements --index 0 --count 6` 等命令实际收集完整 integration nodeid（包括参数化身份），以执行时相同的资源分组与 SHA-256 分片算法输出对应分片的 `node_contracts` 与 `browser` 需求；工作流分别传入各分片的 index。`*_browser.py` 与两个合成浏览器探针模块声明浏览器依赖；回归核对当前所有 Node 浏览器探针消费者均被分类。收集错误或外部 `PYTEST_ADDOPTS` 缩窄选择会失败，不能输出“无需工具”放行。该步骤只收集，实际执行和六份报告的互斥并集核验仍独立必需。
 
 完整集合同时含普通用例与 Web 工具消费者时，普通用例分到前四片，浏览器及显式 Node 契约消费者分到后两片，各组内继续按 nodeid 的 SHA-256 取模；一类用例单独存在时使用全部分片。通用入口仍接受 1–16 片，混合类别为 Web 工具保留 `max(1, count // 3)` 片；单片执行整个集合。预检、执行和报告检查使用同一个 `partition`，工具需求仍根据实际选中用例计算，不能在工作流里按编号跳过工具或业务测试。该分组依据工具成本，不宣称按用例耗时均衡。
 

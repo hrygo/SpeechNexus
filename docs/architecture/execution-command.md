@@ -31,7 +31,8 @@ TTS planner 的子字段也完整填写。标准 TTS instructions 的 4096 上�
 
 资源词表和发音规则携带明确的 typed entries；音色材料和文件音频输入引用不可变对象，
 包含所属 workspace、精确对象、非空长度与内容摘要，网关仅使用服务端配置的对象
-存储读取并验证。不能使用任意 URL、临时 vendor 字典或共享业务表补全命令。
+存储读取并验证。这是各类对象输入的设计要求；当前文件 ASR 输入路径已检查 workspace、
+对象长度和摘要，其他命令的对象读取与校验仍需各自装配和验收。不能使用任意 URL、临时 vendor 字典或共享业务表补全命令。
 语音材料格式必须由固定 binding/manifest 约定的 adapter 解码并验证；不把私有
 特征暴露为公开 receipt。跨 workspace 引用、摘要或长度不匹配均拒绝执行。
 ASR 和 VAD 的 `AudioSource` schema 也允许 `stream_id` / `stream_epoch` 流身份；当前文件 ASR

@@ -140,6 +140,8 @@ with client.realtime.connect(model="asr-quality") as connection:
 6. **职责分离**：`nexus` 只承载语音底座增强；项目、会议、助手和有声书编排留在工作台命名空间，不反向写入底座表。
 7. **可验证等价**：目标设计要求便捷入口与 `POST /v1/nexus/jobs` 映射到同一规范意图和幂等摘要。当前同步入口拒绝客户端幂等键，不能据此声称等价恢复已交付。新增扩展必须同时提供正例、负例、事件序列和所有消费者的等价测试。
 
+实时更新的 schema 还声明了 `tts` overrides 的结构；通过结构校验不代表活动会话允许热换 TTS 配方，仍须满足[实时会话的语义限制](speech-api.md#23-事件字典)。
+
 ### 3.1 SpeechRail 参考
 
 SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名空间扩展”的方式：保留 OpenAI 的 `session.update`、`input_audio_buffer.*` 与转写事件名称，把增量 TTS、可替换假设和辅助控制放在 `speechrail.*` 事件与 `session.speechrail` 配置中；[MCP 只做无状态 REST 代理，不持有实时连接](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/docs/architecture/speechrail-mcp-proxy.md)。SpeechNexus 借鉴命名空间隔离，但并非简单替换前缀：例如 SpeechRail 使用 `session.update` 更新扩展配置，而 SpeechNexus 另定义 `nexus.session.update`，并把能力发现、revision pin、持久 Job 和租约语义纳入底座契约。固定版本的[上游实时契约](https://github.com/hrygo/SpeechRail/blob/3f57647a3ee79c04318d8bf097489b2b5185da4f/contracts/realtime-openai.md)和[复用边界](speechrail-reuse.md)提供来源及差异。

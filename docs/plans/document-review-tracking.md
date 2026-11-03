@@ -329,10 +329,10 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 部分核对 | 模型、引擎及加载方向与 ADR 0002 对照一致；实际制品和部署资格未验证 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 部分核对 | 核对浏览器渲染、布局及素材检查入口；未重跑或逐项审查所有断言 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | 2026-10-26 报告中的三份素材摘要匹配当前文件；未重跑渲染或验证全部结论 |
-| `docs/audits/2026-10-25-team-c-acceptance-map.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/audits/2026-10-25-team-c-acceptance-map.json` | 历史保留 | 对照原 AC 说明核对 41 项、278 子条件及 not_run 状态；未复核原始证据 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
-| `docs/audits/2026-10-26-team-c-operation-coverage.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/audits/2026-10-26-team-c-operation-coverage.json` | 历史保留 | 对照固定 head 的报告核对 52 项及 42/10 状态；不代表当前操作覆盖 |
 | `docs/audits/evidence/2026-11-03-tts-prepare.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/evidence/2026-11-03-tts-window-2.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/evidence/2026-11-03-tts-window-3.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

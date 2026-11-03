@@ -37,7 +37,7 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    稿件、会议和有声书也按各自依赖规则处理。
 5. `POST deletions` 携带 `plan_id`、`expected_plan_revision`、`plan_digest`、
    `confirm_targets` 和 `Idempotency-Key`。确认集合必须恰好等于目标加全部
-   cascade 依赖，不能确认 blockers 或独立副本。它是明确级联确认，不提供绕过
+   cascade 依赖，不能确认 blockers 或标记为 `independent_copy / retain` 的依赖。它是明确级联确认，不提供绕过
    停止证据的 force 标志。确认缺失、多余、重复或跨 owner 返回
    `422 deletion_confirmation_mismatch`。
 6. 首次接受时，同事务验证 plan 未过期、目标和所有依赖版本仍一致、依赖集合未

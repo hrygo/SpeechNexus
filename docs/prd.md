@@ -562,7 +562,7 @@
 **验收：**
 
 - 版本化预检/确认、删除账本、对象擦除、运行sweeper和启动重放一致；清理身份未配置返回deletions_unavailable 503并拒绝受理。
-- 不误删独立副本；对象/依赖图与底座恢复恢复账本水位一致，重放完成后开放读取，不承诺撤销已擦除内容。
+- 不误删独立副本；恢复时对象与依赖图须反映删除账本重放结果，重放完成后开放读取，不承诺撤销已擦除内容。
 - 真实清理DSN、非owner角色和迁移，PG/对象存储下故障、未知PUT、迟到写入、重启和跨模块联验。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[data-deletion.md](architecture/data-deletion.md)。

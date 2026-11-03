@@ -330,12 +330,12 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | --- | --- |
 | S→C `nexus.session.ready` | `session_id`、`stream_epoch`、`effective_configuration`、limits、input credit；可开始发送 |
 | C→S `nexus.session.update` | `event_id`、`expected_config_revision`、ASR 策略白名单 overrides；在下一段边界生效 |
-| S→C `nexus.session.updated` | 新 config revision、effective 值和 `effective_from_segment_id`；无回显即未生效 |
+| S→C `nexus.session.updated` | 新 config revision、effective 值；`effective_from_segment_id` 可省略或为 null，未收到更新事件不能认定已生效 |
 | S→C `nexus.input.ack` | `stream_epoch`、`accepted_through_sample`、`credit_samples`；确认进入会话有界缓冲，不代表已识别或保存 |
 | S→C `nexus.transcription.segment_closed` | `operation_id`、`segment_id`、wire sample_span、`reason=vad/client_commit/budget_rollover` |
 | S→C `nexus.transcription.hypothesis` | `segment_id`、`revision`、完整 `text`、`sample_span`；替换该段上一个预览 |
 | S→C `nexus.transcription.metadata` | `segment_id`、`text_revision`、`metadata_revision`、alignment / diarization status 与结果 |
-| C→S `nexus.tts.start` | `event_id`、`utterance_id`；可重申会话固定的 voice revision / text policy / 格式，值必须一致；成功后返回 operation_id |
+| C→S `nexus.tts.start` | `event_id`、`utterance_id`；可重申会话固定的 voice、`text_commit_mode` 和 `audio_delivery`，值必须一致；音频格式不在此事件中指定，成功后返回 operation_id |
 | S→C `nexus.tts.started` | `utterance_id`、`operation_id`、实际音频 descriptor、text credit |
 | C→S `nexus.tts.append_text` | `event_id`、`utterance_id`、`text_seq`、`text`；仅接受连续序号 |
 | S→C `nexus.tts.text_ack` | 已接受 text_seq 与仍可发送的字符 credit；不表示音频已生成 |

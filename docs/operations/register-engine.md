@@ -173,7 +173,9 @@ WHERE instance_id = '<instance>';
 
 `engine_instances.instance_state` 应为 `ready`、`base_budget_kind` 为 `steady`，
 `runtime_instance_heads.current_generation` 等于注册的 generation，intent 为
-`succeeded` 且 observation/readiness 均非空。
+`succeeded` 且 observation/readiness 均非空。这些查询只检查登记状态和文档是否存在，
+不检查 readiness 的有效期，也不证明当前仍可准入；还须按当前数据库时间核对收据有效期、
+池 owner 租约及实际资源与资格事实。
 
 ## 边界
 

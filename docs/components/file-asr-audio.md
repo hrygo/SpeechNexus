@@ -16,8 +16,8 @@ date: 2026-10-24
 
 | 层 | 接口 | 职责 |
 | --- | --- | --- |
-| domain | `media.AudioDecoder` / `AudioDecodeStream` | 有界块、源样本时钟、完整解码摘要 |
-| infrastructure | `pyav_audio.PyAvAudioDecoder` | PyAV 解复用、解码、混为 mono、重采样与 flush |
+| 共享媒体领域 | `speechnexus_media.domain.AudioDecoder` / `AudioDecodeStream` | 有界块、源样本时钟、完整解码摘要；gateway 的 `domain.media` 保留兼容导出 |
+| 共享媒体实现 | `speechnexus_media.decoder.PyAvAudioDecoder` | PyAV 解复用、解码、混为 mono、重采样与 flush；gateway 的 `infrastructure.pyav_audio` 保留兼容导入 |
 | application | `file_asr_audio.FileAsrAudio` | 将 16 kHz PCM 顺序交给 VAD，映射源区间，处理尾部和清理 |
 | 消费者 | 文件识别消费者及可配置的 gateway worker | 受控对象下载与摘要校验、识别和回执登记；准入、停止、发布和公开错误转换分别由各自边界负责 |
 

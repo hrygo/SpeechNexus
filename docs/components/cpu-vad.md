@@ -86,7 +86,9 @@ wrapper 的可变全局状态。每次 ONNX 调用显式传入状态，CPU intra
 只允许 `CPUExecutionProvider`，不下载、不访问 GPU、不尝试其他 provider。
 
 vendor 运行依赖由 [独立环境说明](../../deploy/engines/cpu-vad/README.md)固定，
-不改变应用 workspace 的锁文件，也不代表默认 Compose 已装配此能力。
+不改变应用 workspace 的锁文件。默认 Compose 的 Python 镜像安装这份锁定依赖，gateway
+配置引用文件 ASR 工厂；实际启用仍需提供获准的 ONNX 模型和一致的私有配置，见
+[部署说明](../operations/compose-minimal.md)。依赖安装和配置引用不证明模型或公开链已验收。
 I/O 参考官方固定版本的 `src/silero_vad/utils_vad.py`；新代码独立实现会话状态与本项目切段，
 没有移植 SpeechRail/macOS 的代码。上游 MIT 文本见同目录 `SILERO_LICENSE`。
 

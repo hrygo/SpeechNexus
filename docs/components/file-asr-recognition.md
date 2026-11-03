@@ -105,8 +105,9 @@ Bearer 凭据可由服务端注入，隐藏于 `repr`，不进入公共 DTO。
 5. 实际 completion tokens 不得超过请求上限；拒绝布尔计数、无效和重复 JSON 字段、
    非有限值、缺失/重复终态、错误身份和异常事件。
 
-关闭 `require_correlation_echo` 后，响应与请求的绑定只依赖 HTTP 连接本身、
-`content-type: text/event-stream`、SSE 帧结构与转写 schema，不再有请求级回显证明。
+关闭 `require_correlation_echo` 后，允许响应缺少 `X-Request-ID` 头；响应仍须经 HTTP
+连接、`content-type: text/event-stream`、SSE 帧结构与转写 schema 校验，且每个数据事件的
+`id` 仍须等于 `transcribe-` 加原请求 ID。此时没有响应头级的请求 ID 回显证明。
 这适用于由 vLLM 原生 OpenAI 兼容 serving 直接提供、不实现该头回显的第三方端点；
 由我们自己的服务保证回显的第一方端点应保持 `true`，不要为了省事统一关闭。
 该开关不是协议放宽：公开请求、事件 ID、模型别名、终态和 token 校验都不变。

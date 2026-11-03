@@ -9,7 +9,7 @@
 
 恢复调用须显式提供读取与跟随的时间预算；它与原执行截止时间独立，不能延长持久请求中的截止时间。预算从进入恢复时起覆盖原命令读取；超时后后台读取可能结束，但不得因此外发执行或释放预算。音频回执的请求摘要须匹配完整持久网关请求（含派生输出流和规范化日期）。
 
-新准入与声音退役使用同一 voice catalog 事务锁；在该锁后重新检查精确发布版本、退役记录及内建声音可信资格。已有原身份的重放先于当前资格检查。启用 binding 禁用屏障时，锁序为 binding、voice、resource pool、workspace quota、host、runtime instance，再到 operation、attempt 与 lease。资格校验缺失时新准入失败。部署角色须具备声音发布记录、退役记录和资格证据的必要只读权限。
+新准入与声音退役使用同一 voice catalog 事务锁；在该锁后重新检查精确发布版本、退役记录及内建声音可信资格。已有原身份的重放先于当前资格检查。启用 binding 禁用屏障时，先取 binding、voice 锁，再按 resource pool、workspace quota、host、runtime instance head、instance 和相关 runtime intent 顺序锁定准入父事实，随后处理 operation、attempt 与 lease。资格校验缺失时新准入失败。部署角色须具备声音发布记录、退役记录和资格证据的必要只读权限。
 
 `SpeechPlan` 固定声音的数字 revision 和 revision ID。公开请求未指定语言时，只有明确提供的部署默认语言可用于首次准入，并随命令固定；未配置时拒绝准入。执行网关的 file TTS 要求非空语言且文本不能超过固定 planner 上限，适配器在准入前检查这些条件。
 

@@ -435,6 +435,7 @@ commit reply loss/read pressure, cancellation, delayed committed replies, partia
 rollback, parent FK, permission refusal and migration preservation.
 
 The opt-in [producer HTTP mode](binding-defaults-producer.md) now consumes this
-port. Published/default registry, merged parameter resolution and actual
-engine/quality evidence remain separate acceptance. This port neither publishes
-nor activates revisions and does not rewrite historical Jobs.
+port. Binding publication and head selection use the separate lifecycle paths
+described above; merged default-parameter resolution and actual engine/quality
+evidence remain separate acceptance. This port neither publishes nor activates
+revisions and does not rewrite historical Jobs.

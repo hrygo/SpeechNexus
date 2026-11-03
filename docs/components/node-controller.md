@@ -260,7 +260,7 @@ TLS＋PG/InnoDB 回归分别验证自动 ready 无资格不得缩减、自动 ab
   `loading → warming_up → ready` 序列与首轮/立即重复耗时（0.6B 约 30–32 秒 → 0.4 秒，
   1.7B 约 50 秒 → 2.2 秒），见
   [B02 预热门探针](../audits/2026-10-24-b02-warmup-gate-probe.md)。这些是一次性单并发证据，
-  不是稳态 P95、并发资格或 A 控制循环下的预算缩减；peak→steady 仍未取得。
+  不是稳态 P95、并发资格，也不能单凭该探针证明 A 控制循环中的 peak→steady 预算缩减。
 - 已有 Qwen3-ASR 0.6B/1.7B 的真实 GPU `DeviceRequests`、固定容器上限、HTTP ready、合成
   语音、回执重建、warmup 与停止证据。文件 CustomVoice TTS 适配器另有真实探针；
   请求级 abort、GPU/统一内存完整隔离、真实 ASR 进程故障恢复与 A 完整控制循环仍未验证；

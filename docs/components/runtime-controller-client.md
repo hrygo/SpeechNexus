@@ -22,8 +22,9 @@ runtime HTTP surface：
 | `getRuntimeQualificationObservation` | `GET /internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation` | 固定意图的资格观察 |
 | `getVerifiedInstanceStop` | `GET /internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop` | 固定实例代次的停止证据查询 |
 
-表格列出生成的 runtime HTTP surface；本文的 `HttpRuntimeController` 窄端口只实现前两项，
-不能据此推断另外两项已由该客户端消费。
+表格列出生成的 runtime HTTP surface。`HttpRuntimeController` 暴露 submit/query；当观察为
+prepare 成功且实例 ready 时，它会在同一调用预算内查询资格观察以补充证据。资格观察返回
+404 时保留原观察；其他响应仍须通过契约和原观察一致性校验。该客户端不查询 verified-stop。
 
 Python 使用 `speechnexus_contracts.runtime_http` 的 `validate_request` /
 `validate_response`；TypeScript 使用 `@speechnexus/contracts/runtime-http`。
@@ -61,7 +62,8 @@ UTF-8，拒绝压缩、重复键、非有限数、重复/不匹配的相关 ID�
 
 ## 结果未知与预算
 
-一次调用只发一个 HTTP 请求。`ControllerCallError` 是调用未取得可用事实，不是物理停止、
+一次调用先发送原意图 submit 或 query；符合上述 ready 条件时还会发送资格观察 GET。
+`ControllerCallError` 是调用未取得可用事实，不是物理停止、
 执行失败、未外发证明、派发许可或预算释放证明。包括401、409、503和原身份404，都不修改
 A 的预算。`request_may_have_run=False` 只说明本次调用尚未发出，不能推断早先的调用未执行。
 断连/超时后查询原 node/intent；不自动重发 POST，不换 intent/generation。

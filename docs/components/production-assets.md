@@ -242,8 +242,9 @@ object confirmation loss, real PG session termination, simulated lost replies
 after real commits, durable rejection, process-service reconstruction, Range,
 blocked references, uncertain cleanup and pinned-version preservation. The
 InnoDB gate remains mandatory for coordination; this product asset path is PG
-only. CI starts MinIO in the existing integration job and retains the protected
-aggregate and 80% unit/contract coverage requirement.
+only. Full CI starts MinIO in each integration partition and retains the protected
+aggregate and unit/contract coverage gate; the current partitioning and gate scope
+are defined in [CI validation](../validation/ci-validation.md).
 
 
 ## Shared workspace reads

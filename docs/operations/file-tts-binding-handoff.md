@@ -106,7 +106,7 @@ A 负责权威注册、资格校验、发布/激活与默认选择，B 提供固
 | 语言 | `zh` / `en`，默认 `zh`；vendor 边界转换为 `Chinese` / `English` |
 | 文本/交付 | `explicit` / `complete`，一次 intent 一次合成，最多 400 codepoints |
 | planner | 显式 `max_chars=400`、`max_wait_ms=1000`；不实现等待窗口或长文本切分 |
-| 交付格式 | `mp3` / `wav` / `pcm`，默认 MP3；24,000 Hz mono PCM16 |
+| 交付格式 | `mp3` / `wav` / `pcm`，默认 MP3；源音频为 24,000 Hz 单声道 PCM16，MP3 由本地编码产生 |
 | 速度 | 公共交集 0.5–2.0，默认 1.0；原生领域更宽范围不扩大本声明 |
 | 风格/seed | 默认 `instructions=null`、`seed=null`；支持显式指令和公共非负 31 位 seed，不承诺位级复现 |
 | 发音资源 | `pronunciation_revision=null`，无词表、发音资源或声音参考材料 |

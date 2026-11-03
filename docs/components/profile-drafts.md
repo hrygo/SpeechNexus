@@ -120,7 +120,7 @@ reuses the full `admin.generated` types instead of maintaining another DTO copy.
 | --- | --- |
 | New or original-key replayed create | 201, complete source revision with publication status fixed to draft |
 | Invalid envelope/schema/header or fixed-read path/query | 400; no revision allocation from invalid input |
-| Source shared-service credential refusal | Existing 401 envelope; this unit adds no login or identity boundary |
+| Source shared-service credential refusal | 401 envelope declared by the contract; this unit implements no authentication or identity boundary |
 | Host / Origin refusal | 403 |
 | Unsupported method | 405, required Allow: POST or GET for the selected source operation |
 | POST receive timeout / bytes exceeded / non-JSON media / receive capacity full | 408 / 413 / 415 / 429; no create retry permission |
@@ -201,7 +201,9 @@ The canonical stored command/definition still has its existing 262144-byte bound
 raising the HTTP receive limit does not enlarge storage. Existing
 `ASSET_ALLOWED_HOSTS` / `ASSET_ALLOWED_ORIGINS` also govern profile requests, using
 the same policy as asset/workspace routes. These deployment boundaries do not
-introduce authentication or private spaces. Invalid JSON, duplicate keys, nonfinite
+introduce authentication or private spaces. After Host, path and method checks,
+an unavailable provider returns 503 before body and query validation. With the
+provider enabled, invalid JSON, duplicate keys, nonfinite
 numbers, ambiguous framing/headers/query parameters, unknown fields and invalid
 path values fail before the writer. POST reception checks actual bytes, declared
 length, a 4096-frame bound and the configured deadline. Fixed GETs accept no body.
@@ -215,4 +217,5 @@ original-key request. Responses carry shared error envelopes and request IDs;
 success/error responses are `Cache-Control: no-store`. No response invents a
 Location, Operation or original-key lookup endpoint. Publication, activation,
 default-pointer changes, real validation/qualification and the complete A02 package
-remain separate work.
+remain separate work. The test definitions above describe their intended coverage;
+they do not establish a passing run in the current environment.

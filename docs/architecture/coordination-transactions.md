@@ -18,7 +18,7 @@ MySQL/InnoDB 是协调路径迁移验证目标。
 
 ## 1. 实现位置与依赖
 
-| 职责 | 后续程序位置 | 允许依赖与边界 |
+| 职责 | 程序位置 | 允许依赖与边界 |
 | --- | --- | --- |
 | 配方完整性、预算计算、状态转换、证据裁决 | `speech/domain`；执行事实规则在 gateway domain | 框架无关的值对象和纯函数；不导入 SQL、Pydantic、生成 DTO 或 vendor SDK |
 | owner、准入、释放、任务恢复 | `speech/application` | 按用例定义窄事务端口；一次完整准入只能用一个事务会话 |
@@ -97,7 +97,7 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `observe_runtime` | controller/gateway 观察 → runtime transaction | 核对完整身份、证据、实例/意图版本，再改变基线预算/状态 | 同意图观察；旧 generation 的迟到响应不修改当前 generation |
 | `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要，不引发执行；目标分支用 `x-nexus-result-kind` 声明对应快照：pool→OwnerSnapshot、attempt→AdmissionSnapshot、job→ClaimSnapshot、submit→ExecutionSnapshot、lease→LeaseSnapshot、interval→FactSnapshot、runtime_intent→RuntimeSnapshot | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
 
-后续实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口。
+实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口；上表列的是事务契约，不表示每个端口均已完成生产装配或端到端验收。
 其中 [quarantine_lease、release_lease 与原租约查询](../components/production-leases.md)已有独立生产实现，
 只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)也已实现并接入同步 TTS，完整调度及其他业务链仍须分别验收。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，

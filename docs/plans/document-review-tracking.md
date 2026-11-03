@@ -27,7 +27,7 @@
 | `docs/architecture/runtime-governance.md` | 部分核对 | 全文阅读并核对 Asset 检查与 TTL、Job 派发及公开路由、binding 发布与资格核验、实时入口、输出区间计量及调度装配边界；补充现行容量清单和公开能力契约的回收、排队字段及 Job 请求 schema 的策略比较限制，明确 Asset 默认 TTL 变更不追溯、Job / 工作台引用写入缺口及同步执行私有数据的持久化边界；协调及其他保留细节仍待逐项核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；澄清预设发布、实时关联字段、会话终态引用、采样区间、只读失败与执行结果未知的重试区别及限制 schema 的覆盖范围，并补充调用示例的部署前提；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
 | `docs/architecture/speechrail-reuse.md` | 已核对 | 全文按复用政策核对固定来源、路径、许可、领域规则和平台边界；补核上游会议字幕设计与 MCP 代理，确认矩阵是设计方向而非实现声明；未将上游设计或历史测试当作本项目验收证据 |
-| `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正现行机器契约的时态、Python 契约生成类型、文件 ASR 对象版本边界，区分目标交叠合并与当前逐 VAD 段汇总；核对迁移互斥、工作台启动只读预检及 LLM 配置与传输限制；区分 TanStack Query 目标与当前 Web 依赖和文件任务事件读取；其余内容待核对 |
+| `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正现行机器契约的时态、Python 契约生成类型、文件 ASR 对象版本边界，区分目标交叠合并与当前逐 VAD 段汇总；核对迁移互斥、工作台启动只读预检及 LLM 配置与传输限制，区分当前语音 Alembic 链与工作台新建基线；区分 TanStack Query 目标与当前 Web 依赖和文件任务事件读取；其余内容待核对 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
 | `docs/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |
 | `docs/audits/2026-10-22-speechnexus-design-review.md` | 历史保留 | 0.3.0 设计基线的审查与裁决记录；入口按审查记录引用，未重新验证当时证据 |

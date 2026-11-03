@@ -12,7 +12,7 @@
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
-| `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、启动重放前提及清理装配；跨模块竞态待核对 |
+| `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、计划期限、工作台依赖分类与活动生成阻断、schema 版本、启动重放前提及清理装配；跨模块竞态待核对，未执行删除或恢复演练 |
 | `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、Web 代理、镜像及依赖、主要进程入口、Job 派发失败关闭与媒体检查装配，修正 profile 与历史证据，补充 binding 停用及同步 TTS 结算 worker；其余单元、拓扑和资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 部分核对 | 对照构图脚本、ADR、目录和图像摘要；未重渲染或核验全部拓扑 |
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |

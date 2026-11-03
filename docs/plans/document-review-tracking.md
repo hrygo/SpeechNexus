@@ -11,7 +11,7 @@
 | `docs/agent-verification.md` | 已核对 | 对照 Make 目标、验证脚本、工具链声明、CI 指南和 Workbench PG 探针清理路径；核对服务前置、副作用与 verify 覆盖限制，未启动服务或执行集成测试 |
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
-| `docs/architecture/coordination-transactions.md` | 部分核对 | 对照事务契约、生产准入与预算规则、授权、网关清理及集成测试说明；更新同步 TTS / 转写接线并区分测试设计和实际结果；其余锁序、迁移及验证细节仍待核对 |
+| `docs/architecture/coordination-transactions.md` | 部分核对 | 对照事务契约、生产准入与预算规则、授权、网关清理及集成测试说明；更新同步链路接线，补充 TTS 前置锁并区分测试设计和实际结果；其余锁序、迁移及验证细节仍待核对 |
 | `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、计划期限、工作台依赖分类与活动生成阻断、schema 版本、启动重放前提及清理装配；跨模块竞态待核对，未执行删除或恢复演练 |
 | `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、内部 HTTP 与对象存储凭据、Web 代理路由与 TLS、镜像及依赖、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁、Controller SQLite、文件 ASR 对象版本及工作台后台循环和入口；澄清导出在途任务恢复缺口；31 个本地链接目标存在；其余单元、拓扑和资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 已核对 | 对照构图与校验脚本、ADR、模型清单和实例契约；补充实时常驻前提并重新渲染、检查两图；图示为目标拓扑，不证明实际部署资格 |

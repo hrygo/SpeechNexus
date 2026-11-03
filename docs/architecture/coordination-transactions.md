@@ -130,6 +130,8 @@ resource_pools
 
 同表的全部参与键按契约字典序排序；先锁完所有池，再锁全部 host，不能逐 stage
 锁完整链。只读定位可在事务前执行，但锁后必须重核对引用、状态、版本与 owner。
+这是协调资源的共同锁序，不枚举各业务入口额外的前置锁：同步 TTS 在资源锁之前还按
+binding、voice 顺序串行化禁用与退役，详见[同步语音合成](../components/synchronous-speech.md)。
 新增不存在的行先锁其必然存在的父权威行，例如 submit 锁 lease、输出追加锁 submit、
 新 generation 锁 host/head。创建输出流先锁 attempt，追加则锁对应 submit 和
 `(operation_id, attempt_id, output_stream_id)` 的流权威行；不能只按 submit ID 排斥，

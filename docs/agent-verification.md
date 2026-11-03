@@ -33,6 +33,11 @@ pnpm install --frozen-lockfile
 
 格式检查不代替构建，schema 语法不代替语义验证，生成产物不代替生产消费者接入。复用仍有效的验证结果；相关改动、失败或未解疑点才需要扩大或重复验证。
 
+`make verify` 不覆盖上表所有独立检查：它不运行 `pnpm test:a11y`，也不运行
+HTTP、协调或实时结构变更检查；OpenAI 兼容检查仅在本地存在 `origin/main` 时执行。
+这些检查适用时仍须按对应行单独运行，并核实基线；不能将 `make verify` 成功等同于
+这些检查已通过。
+
 ## 服务与宿主前置
 
 `scripts/dev-env/` 的环境管理针对 **Linux ARM64、APT、用户级 systemd**。先核验实际宿主、脚本前置条件、已有服务和端口；[开发环境文档](development-environment.md)的历史就绪记录不能证明当前机器可运行。

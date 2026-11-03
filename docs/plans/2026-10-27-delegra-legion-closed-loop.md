@@ -1,11 +1,13 @@
 ---
 title: Delegra 军团精简与真实闭环整改
-status: in_progress
+status: superseded
 version: "1.0.0"
 date: 2026-10-27
 ---
 
 # Delegra 军团精简与真实闭环整改
+
+> 历史整改记录：下文中的状态、岗位配置和授权均为当时快照，不作为当前派工或操作依据。现行协作约定见[交付 SOP](../operations/agent-delivery-sop.md)，交付状态见[跟踪矩阵](delivery-tracking.md)。
 
 本计划落实已授权的最佳方案与文档整改，记录控制权、配置核验和闭环退出条件，不另建产品 backlog。当前是**基础设施整改阶段**；底座修复、运行配置审定、平台应用、七岗准入、指挥权切换及首轮业务闭环分别验收，不能从文档完成推断后续已通过。
 

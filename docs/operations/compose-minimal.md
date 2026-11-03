@@ -579,7 +579,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 本 runbook 的本地验证只覆盖：Compose 解析、服务集合、私有配置引用、迁移入口、
 非 owner 角色连接、探针响应和一次性注册命令。它不覆盖：真实引擎 ASR、公开 TTS、
 异步 Job、G5 物理拓扑、模型质量、GPU 容量、真实内容网络或最终 Gate。把这些分别
-取证，不能用本文件的 `/health` 成功替代。
+取证，不能用本文件的 `/healthz` 成功替代。
 
 ## 12. 按需启用 binding 停用 worker
 

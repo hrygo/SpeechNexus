@@ -244,10 +244,10 @@
 | `docs/plans/2026-10-24-team-c-realtime-tts-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-runtime-root-handoff.md` | 历史保留 | 全文阅读，标明旧配置与命令时点及现行部署入口；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-runtime-root-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
-| `docs/plans/2026-10-24-team-c-teleprompter-persistence-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-teleprompter-persistence-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-voice-create-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-voice-create-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
+| `docs/plans/2026-10-24-team-c-teleprompter-persistence-handoff.md` | 历史保留 | 全文阅读，标明历史命令、交接与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-teleprompter-persistence-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-voice-create-handoff.md` | 历史保留 | 全文阅读，标明历史交接与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-24-team-c-voice-create-plan.md` | 历史保留 | 全文阅读，保留原基线计划；历史验证未重跑 |
 | `docs/plans/2026-10-24-team-c-workspaces-live-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-workspaces-live-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-workspaces-read-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

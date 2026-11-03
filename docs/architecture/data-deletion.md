@@ -60,6 +60,11 @@ succeeded，或进入 blocked/failed。blocked 记录依赖或停止未确认的
 取得新证据后可以继续 running。failed 是清理终态，重试用新意图并保留原记录。
 后台按持久 outbox 和幂等步骤推进，不在数据库事务里进行 HTTP、推理或对象删除。
 
+机器 schema 校验单个 `Deletion` 的字段组合：`queued` / `running` 要求
+`cleanup_state=pending`，`succeeded` 要求 `complete`、非空 result 且无 error，
+`blocked` / `failed` 要求 error 且无 result。它不验证跨次查询的状态迁移，也未将
+`blocked` 与 `quarantined` 绑定；生产者须另行保证上面的状态和停止证据语义。
+
 活动执行先请求 abort/drain，再查询原执行获得停止和资源释放证据。未确认时进入
 `blocked / quarantined`，错误为 `deletion_stop_unconfirmed`；保留原容量账目，
 不得因删除命令、客户端断线、deadline 或 tombstone 而归还预算。已发布声音的

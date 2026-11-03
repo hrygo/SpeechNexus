@@ -18,7 +18,7 @@
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 对照事务契约、生产准入与预算规则、授权、网关清理及集成测试说明；更新同步链路接线，补充 TTS 前置锁并区分测试设计和实际结果；其余锁序、迁移及验证细节仍待核对 |
-| `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、确认及原键重放、工作台项目快照、跨项目副本引用与未决写入阻断、schema 版本、启动重放和行/对象清理完成投影；澄清查询状态、前缀扫描轮数与数量上限和历史对象版本清理的限制；对照底座保留清理及主动删除缺口，明确工作台项目写入屏障不证明 Speech 源删除与复制的跨模块竞态已解决；未执行删除或恢复演练 |
+| `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、确认及原键重放、工作台项目快照、跨项目副本引用与未决写入阻断、schema 版本、启动重放和行/对象清理完成投影；澄清查询状态、状态字段的 schema 约束及其不覆盖的迁移语义、前缀扫描轮数与数量上限和历史对象版本清理的限制；对照底座保留清理及主动删除缺口，明确工作台项目写入屏障不证明 Speech 源删除与复制的跨模块竞态已解决；未执行删除或恢复演练 |
 | `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务与 binding 停用 profile、内部 HTTP 与对象存储凭据、Web 代理路由与 TLS、镜像及依赖、开发脚本平台限制、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁、Controller SQLite、文件 ASR 对象版本及工作台后台循环和入口；澄清导出在途任务恢复缺口及历史 G5 名称与现行发布资格的关系；对照 ADR 0011、入口声明与拓扑示意；31 个本地链接目标存在，其余资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 已核对 | 对照构图与校验脚本、ADR、模型清单和实例契约；补充实时常驻前提并重新渲染、检查两图；图示为目标拓扑，不证明实际部署资格 |
 | `docs/architecture/distributed-coordination-schema.md` | 已核对 | 全文对照草案 DDL、表及复合外键、预算约束、双库授权生成器和测试前置；澄清正文清除、TEXT 映射、运行权限及测试证据边界；仅收集旧 PG 回归，未运行数据库测试或验证生产部署 |

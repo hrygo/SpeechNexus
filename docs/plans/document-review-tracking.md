@@ -85,7 +85,7 @@
 | `docs/components/frozen-execution-inputs.md` | 已核对 | 对照命令桥失败分类、对象版本与传输期限、ASR 参数映射及集成测试入口；未运行集成测试或验证部署 |
 | `docs/components/gateway-execution-client.md` | 已核对 | 对照客户端配置、认证、结果查询、停止身份、重试、调用方装配及测试入口；未运行测试或验证目标部署 |
 | `docs/components/model-binding-drafts.md` | 部分核对 | 全文阅读并核对四类显式数据库配置及 0010/0011 迁移，修正发布与默认参数范围描述；生命周期事务及测试待核对 |
-| `docs/components/node-controller.md` | 部分核对 | 对照配置、路由、停止恢复及超时/退出码边界；模板、容器创建和观察细节待核对 |
+| `docs/components/node-controller.md` | 已核对 | 静态对照模板、容器创建、观察、路由与停止恢复；历史探针按原时点保留，未运行服务 |
 | `docs/components/node-stop-recovery.md` | 已核对 | 静态对照检查点、停止恢复、诊断与测试定义；历史探针按原时点保留，未运行服务 |
 | `docs/components/production-admission-storage.md` | 已核对 | 静态对照存储、授权、锁序、恢复及公开 Job 原始意图；未运行服务 |
 | `docs/components/production-admission.md` | 已核对 | 静态对照配额、锁序、原身份恢复及同步 TTS settlement 重放；未运行服务 |

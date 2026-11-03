@@ -74,9 +74,9 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
 - **prepare 幂等**：同一 `(instance_id, generation)` 已有容器且标签摘要一致时复用，不再创建
   第二个；标签摘要不同则报 `intent_conflict`。
 - **readiness**：模板声明 `process_running`、`tcp_port_accepting:port`，或
-  `http_status_ok:port/path`，或需要真实预热的 `http_warmup_ok:port`。HTTP 只访问 daemon
+  `http_status_ok:port/path`，或需要真实预热的 `http_warmup_ok:port`。HTTP 健康探测只访问 daemon
   返回的容器 IP 与模板固定绝对路径，只认
-  200，不使用环境代理、不跟随重定向、不读取响应正文；拒绝 URL、查询串、fragment、编码路径
+  200，不使用环境代理、不跟随重定向、不读取健康响应正文；拒绝 URL、查询串、fragment、编码路径
   和相对路径。503、其他状态、断连与超时继续 `loading`（保持 peak）。
 - **warmup 门**：`http_warmup_ok` 模板必须声明固定 `path`、`content_type`、只读 `body_path`
   与其 `sha256`、`attempts`（1–4）、单次 `timeout_seconds` 与响应字节预算。端口可达后控制器
@@ -86,12 +86,13 @@ adapter（`DockerNodeRuntime`）通过本地 daemon socket 操作容器，并把
   完整可信仍由拥有该协议的引擎适配器判定；HTTP 健康本身仍不是业务 warmup 或模型资格。
   尝试计数按容器与 generation 保存在 adapter 内存中，控制器重启后会重新预热已运行的实例，
   这是安全但更贵的行为，不冒充已有证据。
-- 一次观察先从 daemon 返回的 IP 中选定一个端口可达地址，全部 TCP 探测共用
-  `READINESS_TIMEOUT_SECONDS` 预算；随后最多向该地址发送一次预热 POST。失败、断连或结果
+- 一次预热观察先从 daemon 返回的 IP 中选定一个端口可达地址，地址选择的 TCP 探测共用
+  `READINESS_TIMEOUT_SECONDS` 预算；随后最多向该地址发送一次预热 POST。普通 TCP 或 HTTP
+  健康探测则逐地址使用各自的配置超时，不承诺整个地址列表共用该预算。失败、断连或结果
   未知后不在同次观察换 IP 重发，后续观察仍按原容器/generation 继续预热。
 - `warmup.timeout_seconds` 是连接、发送、响应头与完整正文共用的累计单调时钟期限，
   持续缓慢回包不能延长它；到期主动结束客户端等待，成功响应若越过期限也不累计成功。
-  单次 prepare/inspect 的网络探测受 TCP 预算和一次预热期限约束；daemon 调用另受其配置超时约束，
+  单次预热观察受地址选择预算和一次预热期限约束；daemon 调用另受其配置超时约束，
   不能把这两项相加视为整个动作的硬截止。调用方超时后查询原持久
   意图，不能把超时当作实例失败、已就绪或引擎已经停止。
 - **停止与证据**：先优雅停止、等待退出、删除容器，再 inspect 确认不存在，才写出

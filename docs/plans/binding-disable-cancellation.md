@@ -13,7 +13,7 @@
 ## 固定事实和边界
 
 - 原 disable 命令及其幂等键摘要、完整参数、所选 `binding_id`、`revision`、`revision_id` 和 lifecycle event 身份必须持久化；摘要不能代替命令正文。不要把客户端凭据或内容写入任务或日志。
-- 对已创建 submit 的目标，账本固定 `submit_intent_id`、operation、attempt、lease、stage、gateway、node、instance/generation、binding revision、fencing token、abort 等待上限；这些记录和请求回执都不是 stop 证据。无 submit 的 lease 需走未外发证据路径，不能伪造 submit 身份。
+- 对已创建 submit 的目标，账本固定 `submit_intent_id`、operation、attempt、lease、stage、gateway、node、instance/generation、binding revision、fencing token、abort 等待上限；这些记录和请求回执都不是 stop 证据。无 submit 的 lease 需走未外发证据路径，不能伪造 submit 身份；对已有 submit，只有原状态为 failed / not_required 且在锁内复核请求 ID、外发时间、staging key / receipt、生成样本及输出区间均不存在，才能按现有未外发失败路径结算，缺失记录本身不证明成功或物理资源已释放。
 - disable 的关闭选择、生命周期事件及取消意图应由同一数据库事务落下；事务外发 abort。事务提交结果未知后必须以原身份查询，不能换键重建任务。
 - 调用方可看到的状态必须区分受理、清理未确认及完成；在契约、持久任务、结果查询和消费者接线之前，不应声称取消或释放完成。现行 503 `binding_result_unknown` 不能冒充确定未执行的拒绝。
 

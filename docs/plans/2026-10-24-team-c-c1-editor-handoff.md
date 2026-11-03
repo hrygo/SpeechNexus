@@ -1,5 +1,7 @@
 # C1 项目与稿件版本工作台交接
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 核验日期：2026-10-24。base_sha=head_sha 为 `3b8052040111cdd8af3a50aaf5b0e8b3922e1f42`；没有 C commit/push。本单元是既有 C1 HTTP 的正式页面消费者；[完整 Goal](2026-10-24-team-c-goal.md)及 C00–C08、G0–G5 均未因此完成。步骤见[实施计划](2026-10-24-team-c-c1-editor-plan.md)，生产者沿用[C1 管理 HTTP 交接](2026-10-24-team-c-c1-management-handoff.md)。
 
 ## 实现

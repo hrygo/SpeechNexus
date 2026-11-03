@@ -166,7 +166,7 @@ instance/intent version，以及显式服务端 owner。现有 create/query 组�
 | quarantined、旧 owner epoch 或观测超限 | 原已保留 base 转入隔离、保留 peak/steady 依据 | 旧 epoch 的实际终态可结束原 intent，便于当前 fencing 清理；不得恢复 ready |
 | stop 成功但 lease/submit 清理尚未完成 | 保存原停止事实，intent 为 reconciling，base 继续占用 | 不写 stopped_at、不归还 base，不允许后继 generation |
 | stop 成功、全部 lease released、submit 正确终结且其他 runtime intent 终态 | 从正确 held/quarantine 分量扣除原 base，写首次 stopped_at | 不扣减其他实例或 slot 预算；host 不自动恢复 active |
-| 同一已记录事实重放 | 返回原完整事实，不重复变更预算或时间 | POST replay flag/等价可选 null 不构成新事实 |
+| 同一已记录事实重放 | 终态或旧版本请求可只读返回原事实；仍在协调的观察会重新核对前提，必要时完成状态与预算转换 | POST replay flag/等价可选 null 不构成新事实；完成后不重复返还 |
 
 ready 的 `VerifiedRuntimeReadiness` 是明确受信 provider 的私有输入，包含绑定、
 instance/generation、fencing、拓扑与资格摘要、evidence_digest、核验/失效时间。
@@ -197,9 +197,9 @@ lease/submit 清理完成后，使用当前 instance/intent version 再观察同
 released 的遗留 lease 也继续阻止返还。当前测试中的 lease 清理是显式合成 fixture，
 不是 quarantine_lease/release_lease、B 真实停止或全链路恢复的交付证据。
 
-PG/InnoDB 使用相同 SQL/领域规则和非 owner 角色验证；覆盖真实锁等待后的过期、
+PG/InnoDB 测试定义使用相同 SQL/领域规则和非 owner 角色；覆盖真实锁等待后的过期、
 并发观察版本竞争、同事实重放、完整六维转换、迟到 epoch、隔离不自动恢复、
 未知 submit、停止后延迟返还、事务末尾失败整体回滚、真实提交后确认丢失，以及失败
 升级/重复升级/原行与列 ACL 保留。资格 receipt 和控制器响应均为合成事实，不代表
-GPU、真实模型、物理多主机、容器上界或已运行的 scheduler。ADR0007 的旧路径退出
+GPU、真实模型、物理多主机、容器上界或已运行的 scheduler；测试定义不代表当前环境已通过。ADR0007 的旧路径退出
 仍需逐项映射和真实消费者证据，本单元继续保留旧门禁。

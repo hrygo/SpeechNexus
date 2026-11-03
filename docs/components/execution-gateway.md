@@ -257,7 +257,8 @@ fork 后不能使用或关闭父进程 lease。退出时等待仍在使用 lease
 `/abort` 与版本化 `/abort-intents` 共用持久取消接收：先校验完整原执行并以短事务按
 pool→submit→abort 锁序提交原始取消，才等待发送锁、消耗唯一 claim 和调用 adapter。
 接收回滚或提交结果未知时不 claim、不外发；超时后查询原身份。精确原意图重放保留
-首次数据库接收时间，改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
+首次数据库接收时间；尚未 claim 时重放仍可取得唯一外发资格，已有 claim 时不再外发。
+改变 reason 或 wait_timeout 的重放冲突。合法删除后的既有回执
 可在验证墓碑、终态及已释放租约后只读重放；缺失原文不能作为创建新取消的依据。
 
 提交路由先用冻结请求校验 command 与 `command_digest` 一致，再按 `create_submit` 落唯一 intent，

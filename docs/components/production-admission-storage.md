@@ -11,13 +11,15 @@
 
 | 表 | 身份 | 保存内容 |
 | --- | --- | --- |
-| `admission_operations` | `operation_id`，跨 workspace/attempt 唯一 | workspace、原业务有效命令正文/摘要、首个与当前 attempt、协调记录时间、version、正文删除 tombstone |
+| `admission_operations` | `operation_id`，跨 workspace/attempt 唯一 | workspace、私有业务正文/摘要、首个与当前 attempt、协调记录时间、version、正文删除 tombstone |
 | `admission_requests` | `(operation_id, attempt_id)` | 原 `admit_recipe` 完整请求正文/独立摘要及记录时间，引用原 operation 和已存在的 attempt |
 
-业务正文由受信业务用例完成源契约校验、默认值解析和不可变资源版本固定后提供。
+完整准入的业务正文由受信业务用例完成源契约校验、默认值解析和不可变资源版本固定后提供。
 同步语音与同步转写已有各自的准入适配器，具体装配和限制分别见
 [同步语音](synchronous-speech.md)与[同步转写](../operations/synchronous-transcription.md)；
 这些接入不代表公开异步 Job 的生产 planner 已完成。
+公开 Job 创建也写入此表，但其正文目前只是原始公开业务意图，并非完整有效执行命令；
+不能直接派发，也不能用可变默认值补齐后冒充已冻结的命令。
 其摘要沿用 `CreateJob.request_digest` 的含义；准入信封的摘要包含本次 authority、
 实例版本、阶段分配和期限，不能替代业务摘要。正文序列化与摘要计算应在事务外完成，
 按 RFC 8785 的规范字节计算；本迁移不会校验 JSON、摘要或命令是否完整。
@@ -33,7 +35,8 @@ Operation/receipt 投影。私有正文不得出现在日志、公开 DTO 或异
 
 完整准入须先按现有顺序锁完全部 pool、quota、host、runtime head、generation 和
 相关 runtime intent，再锁或创建 `admission_operations`，然后写 attempt、
-`admission_requests`、全部 leases、Job/outbox。新增位置见
+`admission_requests`、全部 leases、Job/outbox。同步 TTS 另有前置 binding/声音锁及
+settlement 写入，见[完整准入事务](production-admission.md)。新增位置见
 [协调锁序](../architecture/coordination-transactions.md#4-锁序隔离与数据库适配)。
 不能先单独提交 operation、再逐 stage 预留，也不能在持有 operation 锁后反向取得父锁。
 唯一键插入和外键同样可能等待，最后一次等待后仍须重取数据库时间并复核期限、
@@ -47,7 +50,8 @@ operation 的全局主键可作为不同 pool、workspace 或新 attempt 竞争�
 
 operation 不向 quota 或 attempt 建反向外键，允许按上述顺序先创建权威再写 attempt，
 避免环状插入依赖。请求记录同时引用 operation 与复合 attempt 主键；两者的 workspace、
-摘要及 `current_attempt_id` 一致性仍由完整准入事务核对，数据库不独立保护所有跨行规则。
+摘要等跨行规则由完整准入事务核对，数据库不独立保护；当前恢复只校验首个和当前 attempt
+标识格式，不验证 `current_attempt_id` 等于被查询的 attempt，不能将其当作已验证的指针一致性。
 运行角色没有 workspace、原摘要、首 attempt、创建时间的 UPDATE 权限。
 准入请求记录只允许 A SELECT/INSERT，不允许 UPDATE/DELETE。
 
@@ -77,11 +81,11 @@ C 继续通过公开协议消费，不共写 speech 表。运行角色不能 DDL
 调整控制面预算；部署还需检查继承和全局授权，不能只审阅生成的 GRANT。
 根目录草案 DDL/授权脚本保持原保护范围，产品只使用包内迁移与生产授权函数。
 
-`test_admission_command_storage.py` 在 PG/InnoDB 检验原正文与独立摘要、长正文不截断、
+`test_admission_command_storage.py` 定义 PG/InnoDB 检查，覆盖原正文与独立摘要、长正文不截断、
 外键与时间/tombstone 约束、非 owner 权限、跨 workspace/attempt 的真实唯一键等待、
 持锁版本竞争及私有记录与 Job/outbox 同事务回滚。
 PG 另验证新迁移中途失败全回滚、重复升级和历史/授权保留。
-合成 SQL 存储竞争不等于完整准入业务裁决或提交未知恢复已经接入。
+测试定义不证明当前环境已通过；合成 SQL 存储竞争不等于完整准入业务裁决或提交未知恢复已经接入。
 
 按仓库规则运行完整 `make coordination-test` 与 `make integration-test`，
 两个隔离数据库 DSN 缺一不可；`integration-test` 还要求隔离 MinIO endpoint 和测试密钥，

@@ -131,6 +131,8 @@ bucket. With neither key, business endpoints return a stable 503 and operational
 health remains available. A partial credential pair is a configuration error;
 validation excludes input values from error messages. Use dedicated object
 credentials; synthetic test root keys do not qualify production IAM.
+When the asset service is unconfigured, its ingress returns 503 before checking
+Host, Origin or upload framing; the workspace ingress has the same availability-first order.
 
 `SPEECHNEXUS_ASSET_DEFAULT_TTL_SECONDS` is optional and defaults to **604800
 seconds (7 days)**. Set a value in 60–31,536,000 seconds to override it; invalid
@@ -294,3 +296,4 @@ parameters, canonical cursor paging, disabled/missing/corrupt records, locked
 storage deadlines, read-only enforcement, service reconstruction, configured
 lifetimes and the original asset upload/read path. These tests use synthetic
 content and do not qualify a speech engine, GPU capacity or production network.
+Their definitions do not establish a passing run in the current environment.

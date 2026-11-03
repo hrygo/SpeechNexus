@@ -118,7 +118,7 @@
 | `docs/decisions/0007-legacy-coordination-retirement.md` | 部分核对 | 全文阅读并核对历史边界、旧 fixture 与验证入口，限定旧运行态结论时点并更新当前跟踪入口；规则迁移覆盖待核对 |
 | `docs/decisions/0008-runtime-intents-before-controller-observation.md` | 部分核对 | 全文阅读并对照生产意图与投递入口，明确旧实施计划为历史安排；其余事实及消费者待核对 |
 | `docs/decisions/0009-workbench-explicit-binding-http-version.md` | 部分核对 | 全文阅读并核对生成操作契约与路由实现，修正操作表中的过时状态；其余事实及消费者待逐项核对 |
-| `docs/decisions/0010-private-audio-receipt-compatibility.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
+| `docs/decisions/0010-private-audio-receipt-compatibility.md` | 部分核对 | 全文阅读并对照回执领域类型、音频上界、独立查询路径及组件说明；历史交付状态保留，事务实现和消费者待进一步核对 |
 | `docs/decisions/0011-distributed-deployment-and-platform-boundaries.md` | 部分核对 | 全文阅读并对照根工作约定与部署文档，区分历史关口与当前交付入口；平台运行未独立验证 |
 | `docs/decisions/0012-public-job-surface.md` | 部分核对 | 全文阅读并核对公开提交与完整准入原子边界；其他决策语义待核对 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 部分核对 | 全文阅读并抽核相关实现或历史证据；其他细节待核对 |

@@ -40,8 +40,9 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    `confirm_targets` 和 `Idempotency-Key`。确认集合必须恰好等于目标加全部
    cascade 依赖，不能确认 blockers 或标记为 `independent_copy / retain` 的依赖。它是明确级联确认，不提供绕过
    停止证据的 force 标志。目标契约对确认缺失、多余、重复或跨 owner 返回
-   `422 deletion_confirmation_mismatch`；当前 Workbench HTTP 对重复项先由 schema
-   校验拒绝并返回 `400 invalid_request`，合法形状但确认集合不匹配才进入应用层检查。
+   `422 deletion_confirmation_mismatch`；当前 Workbench HTTP 对重复项、空数组或
+   缺少必填字段先由 schema 校验拒绝并返回 `400 invalid_request`，合法形状但确认集合
+   不匹配才进入应用层检查。
 6. 首次接受时，同事务验证 plan 未过期、目标和所有依赖版本仍一致、依赖集合未
    新增/删除且 eligible；原子写入删除意图、资源 tombstone 和 outbox，关闭新
    引用及新执行入口。写引用/提交执行也必须锁同一资源版本状态；不能先预检再无锁

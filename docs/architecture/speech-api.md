@@ -398,7 +398,7 @@ required 辅助模型使用父 Operation 的 required steps：先发正文 compl
 
 ### 2.6 格式、背压、断线与取消
 
-实时 wire 基线为单声道 PCM16 LE、24 kHz；adapter 在受控边界重采样到模型输入规格。TTS 会话握手返回实际输出 descriptor，客户端按 descriptor 播放。格式和采样率在会话内不可变化。时间范围使用 wire sample clock 的半开区间 `[start,end)`，不能混入服务端墙钟或模型 16 kHz 下标。
+实时 wire 基线为单声道 PCM16 LE、24 kHz；adapter 在受控边界重采样到模型输入规格。TTS 会话握手返回实际输出 descriptor，客户端按 descriptor 播放。格式和采样率在会话内不可变化。时间范围使用 wire sample clock 的非空半开区间 `[start,end)`，不能混入服务端墙钟或模型 16 kHz 下标。事件 `SampleSpan` schema 分别约束起止值，却不能比较二者；`end > start` 由契约测试另行检查，生产者与消费者仍须验证该关系。
 
 初始限制：输入 chunk 建议 20–100 ms、上限 250 ms；单 JSON 消息上限 64 KiB；未消费实时输入 credit 上限 2 秒；客户端网络缓冲上限 5 秒；单个 ASR 段上限由预设与绑定共同约束且不超过 30 秒。Base64 和 JSON 开销计入网络预算。辅助模型状态必须有独立的有界内存声明，不能借会议长期连接累计整场 PCM。
 

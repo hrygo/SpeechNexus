@@ -113,7 +113,7 @@ commit 前预算耗尽即回滚。事务内不做推理、HTTP、容器控制、
 | `execution_state`、`cleanup_state`、`engine_request_id`、`dispatched_at_us`、`error_code` | 状态矩阵与 `save` 条件写入的列 |
 | `output_stream_id`、`sample_rate_hz`、`hard_output_ceiling_samples` | 只有发出 PCM 的阶段才有；上限为 `ceil(max_output_audio_ms × sample_rate_hz / 1000)`，反解要求整毫秒，否则拒绝改写冻结预算 |
 | `terminated_at_us` | `record_stop` 保存证据的观察时间；`updated_at_us` 采用等待行锁后的数据库时间 |
-| `staging_output_object_key`、`generated_pcm_samples`、正文清除列 | 发布、计量、删除仍由后续端口负责 |
+| `staging_output_object_key`、`generated_pcm_samples`、正文清除列 | 分别由 staging 结果登记、输出区间计量和正文清理端口维护；结果登记不等于公开发布，正文清理须由可信删除协调器显式接入 |
 
 规范正文只在创建时写入、不在读取投影中返回，避免把私有业务内容带进查询路径；它保留在
 部署网络内，不写日志或公开投影。摘要比较针对**完整有效请求**，因此只改 deadline、token 或

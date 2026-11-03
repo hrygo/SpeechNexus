@@ -82,7 +82,8 @@ binding、readiness 资格或准入预算。
 2. lifespan 取得既有控制资源后构造 HTTP 适配器和 worker；激活后不重新读取可变配置。
 3. 短 dispatch 只冻结命令，确认提交并退出 ingress 后才执行一次合成。请求必须带有
    冻结的 `max_output_audio_ms`、24 kHz `sample_rate_hz` 和派生 `output_stream_id`，
-   其 binding/policy/voice 版本与目标 generation 必须匹配。
+   其 binding/policy/voice 版本与目标 generation 必须匹配。请求时长上限不得超过绑定的
+   `max_audio_ms`；较小时会同时收紧本次时长和源 PCM 字节上限，不改变已批准的绑定配置。
 4. 合成结果先做结构校验与有界编码，再写私有 staging 并固定版本读回。worker 先登记完整
    生成区间，再用原 CAS 事务登记音频回执。重放查询原结果；重启隔离遗留活动执行，
    不把旧 intent 当重试队列。

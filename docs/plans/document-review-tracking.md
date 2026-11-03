@@ -137,7 +137,7 @@
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 核对候选选型、离线制品与忽略元数据校验、工具退出和输出、网关输出格式及停止证据边界；其余内容待核对 |
 | `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、对象版本、worker 取消及结果登记恢复；停止及集成测试证据待核对 |
 | `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 已核对后续 SDK 与租约结算证据；其余内容待核对 |
-| `docs/operations/file-tts-runtime.md` | 部分核对 | 核对双 lane 共享 worker 与配置约束、后续 SDK 和租约结算证据；其余内容待核对 |
+| `docs/operations/file-tts-runtime.md` | 部分核对 | 核对双 lane 共享 worker、配置及单请求音频上限、后续 SDK 和租约结算证据；其余内容待核对 |
 | `docs/operations/local-end-to-end.md` | 部分核对 | 核对历史边界与角色脚本并纠正数量；剩余历史输出和证据待逐项复核 |
 | `docs/operations/paperclip/environment-readiness.md` | 历史保留 | 已明确标注为旧环境与部署快照，当前流程指向交付 SOP；原始证据未逐项复核 |
 | `docs/operations/paperclip/roles/common.md` | 部分核对 | 全文对照工作流与交付 SOP；实际部署未核实 |

@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：有声书章节创建补线（并修正消费者清点方法）"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：有声书章节创建补线（并修正消费者清点方法）
+
+> 本文保留交接时的清点与验证事实；后续渲染单元接入见[对应交接](2026-10-25-team-c-render-unit-create-consumer-handoff.md)，当前范围见[交付跟踪矩阵](delivery-tracking.md)。
 
 ## 先纠正我自己的错误结论
 

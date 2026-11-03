@@ -261,9 +261,9 @@
 | `docs/plans/2026-10-25-team-c-admin-diagnostics-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-assistant-honest-consumer-handoff.md` | 历史保留 | 全文阅读，标明历史状态及后续浏览器证据；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-assistant-honest-state-browser-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
-| `docs/plans/2026-10-25-team-c-authoring-consumer-fix-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-capability-report-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-chapter-create-consumer-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-team-c-authoring-consumer-fix-handoff.md` | 历史保留 | 全文阅读，标明历史状态与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-capability-report-handoff.md` | 历史保留 | 全文阅读，标明历史状态与当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-chapter-create-consumer-handoff.md` | 历史保留 | 全文阅读，标明历史清点与后续交接；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-export-production-prewiring-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-issue-four-part-refresh-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-keyboard-narrow-verification-handoff.md` | 待核对 | — |

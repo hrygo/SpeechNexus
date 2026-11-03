@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：工作台状态上报真实的部署能力三态"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：工作台状态上报真实的部署能力三态
+
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 契约要求 `GET /v1/workbench/status` 的 `capabilities` 数组上报 `transcription`、`meeting_minutes`、`assistant`、`teleprompter`、`audiobook_export` 五个能力，取值 `available` / `disabled` / `unavailable`。实现**恒返回空数组**，所以任何消费端都无从得知部署到底能做什么，只能靠猜——这正是"未实现的能力不得用虚构任务、模型或容量填充界面"最容易出问题的地方。
 

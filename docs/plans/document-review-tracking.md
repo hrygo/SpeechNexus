@@ -22,7 +22,7 @@
 | `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录转写未知字段的契约与实现错误码差异；对照工作台路径、同步请求的 revision 字段和实时事件命名空间，其余扩展语义待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 全文阅读并核对 Asset 检查与 TTL、Job 派发及公开路由、binding 发布与资格核验、实时入口、输出区间计量及调度装配边界；协调及其他保留细节仍待逐项核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；澄清预设发布、实时关联字段、会话终态引用、采样区间及限制 schema 的覆盖范围；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
-| `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、路径与许可证，以及上游幂等、ASR 策略、配方、能力快照、组合入口、任务存储、资源治理和 MCP 代理的部分行为；澄清设计方向及公开回执边界，其他消费者待核对 |
+| `docs/architecture/speechrail-reuse.md` | 已核对 | 全文按复用政策核对固定来源、路径、许可、领域规则和平台边界；补核上游会议字幕设计与 MCP 代理，确认矩阵是设计方向而非实现声明；未将上游设计或历史测试当作本项目验收证据 |
 | `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正 Python 契约生成类型、文件 ASR 对象版本边界，区分目标交叠合并与当前逐 VAD 段汇总；核对迁移互斥与工作台启动只读预检，其余内容待核对 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
 | `docs/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |

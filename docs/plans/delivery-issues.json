@@ -1284,7 +1284,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/components/workbench-export-integrity.md"
       ],
-      "implementation": "工作台 App 挂载 BooksHost；工厂装配导出台账和媒体验证器，缺 producer 或未启用周期时不派发。",
+      "implementation": "工作台 App 挂载 BooksHost；工厂装配导出台账和媒体验证器，默认无 producer 且周期关闭，队列不派发。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
@@ -1298,6 +1298,16 @@
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/web/workbench/src/books/BooksHost.tsx",
           "label": "BooksHost.tsx",
           "note": "固定基线的正式入口或装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/b5b3ae685b487970ec0a63abe9411e94b3aa1042/backend/src/speechnexus_backend/workbench/runtime.py",
+          "label": "导出工厂",
+          "note": "默认 producer 及派发条件的静态装配"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/b5b3ae685b487970ec0a63abe9411e94b3aa1042/backend/src/speechnexus_backend/workbench/runtime_settings.py",
+          "label": "导出配置",
+          "note": "导出周期默认值"
         }
       ],
       "issues": []

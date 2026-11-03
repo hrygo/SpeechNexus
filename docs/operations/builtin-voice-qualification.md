@@ -2,6 +2,8 @@
 
 当前只规划 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` / `Vivian`。来源批准和执行资格是不同事实：来源批准固定来源修订、摘要、speaker 与期限；独立 qualification producer 核验实际原证据后记录完整 `BuiltinVoiceFacts`。预设要求 `builtin-customvoice-v1` / `1` 以及八项固定检查，生产者未取得完整证据时不得写入 approval。现有探针不自动等于此资格。
 
+公开 `backend_unavailable` 不携带内部拒绝原因。隔离验收须同时保全有界私有应用日志：HTTP 记录服务端生成的 execution UUID 和固定失败类别；普通准入记录原 operation、失败阶段及受控拒绝码，未知码仅记 `unknown_code`；异常存储记录异常类型和五位 SQLSTATE，不记录异常正文、SQL、参数、请求内容、客户端头或连接串。仅有 503 或准入记录为空不能证明 readiness 过期；须结合原持久有效期和具体失败证据定位。诊断不重发未知请求，也不改变停止与结算要求。
+
 数据库 owner 负责部署角色，应用运行身份不是 owner。`qualification_writer_grants` 只供独立可信生产者；普通业务角色不得继承该角色，也不得获得审批或发布写权限。`qualification_reader_grants` 为准入提供只读权限；`builtin_publisher_grants` 需与现有 publication writer grants 组合，并且不得授予来源或资格审批写权限。不能把调用方 JSON、CLI 参数或 `passed` 自述当作来源批准。现阶段这些是权限声明，尚须部署管理员实际配置并核验角色继承、PUBLIC 权限与真实拒绝行为。
 
 资格和来源撤销是追加事实，写入前必须在同一事务持有对应 voice 的 `speechnexus:catalog:<schema>:voice:<voice_id>` advisory lock，提交后新准入拒绝；已持有的原执行身份重放应先于资格检查。每个来源批准固定一个 voice_id，复合外键禁止其他 voice 关联；撤销者读取该不可变 voice_id 后持对应锁。该范围不提供跨声音的上游来源或密钥全局撤销。下述 producer 已有受控实现，真实运行资格仍须取证；本文件不授权人工 SQL 替代生产流程。

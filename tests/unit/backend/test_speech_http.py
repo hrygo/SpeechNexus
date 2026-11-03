@@ -363,8 +363,21 @@ async def test_speed_outside_binding_range_is_unsupported() -> None:
     assert synth.plans == []
 
 
-async def test_engine_failure_returns_an_error_and_no_audio() -> None:
-    chain, _ = service(synth=Synthesizer(error=SpeechEngineError()))
+@pytest.mark.parametrize(
+    "error_type,category",
+    [
+        (SpeechEngineError, "engine_unavailable"),
+        (SpeechUnavailableError, "speech_unavailable"),
+        (PublicationUnavailableError, "publication_unavailable"),
+    ],
+)
+async def test_backend_failure_returns_an_error_and_no_audio(
+    caplog: pytest.LogCaptureFixture,
+    error_type: type[Exception],
+    category: str,
+) -> None:
+    private = "synthetic-private-audio-or-credential"
+    chain, synth = service(synth=Synthesizer(error=error_type(private)))
     async with client(chain) as http:
         response = await http.post("/v1/audio/speech", json=REQUEST)
 
@@ -372,6 +385,11 @@ async def test_engine_failure_returns_an_error_and_no_audio() -> None:
     assert response.headers["content-type"] == "application/json"
     assert response.json()["error"]["code"] == "backend_unavailable"
     assert "x-audio-format" not in response.headers
+    records = [record for record in caplog.records if record.name.endswith("http.speech")]
+    assert len(records) == 1
+    assert synth.plans[0].request_id in records[0].getMessage()
+    assert category in records[0].getMessage()
+    assert private not in caplog.text and private not in response.text
 
 
 async def test_deadline_exhaustion_is_a_gateway_timeout() -> None:

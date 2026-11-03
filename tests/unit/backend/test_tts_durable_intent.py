@@ -282,6 +282,88 @@ def test_commit_then_lost_admission_reply_reloads_full_frozen_request() -> None:
     assert store.calls == 1
 
 
+@pytest.mark.parametrize(
+    "stage,code,diagnostic",
+    [
+        ("result", "policy_or_resource_disabled", "policy_or_resource_disabled"),
+        ("result", "capacity_exhausted", "capacity_exhausted"),
+        ("result", "synthetic-private-reason-secret", "unknown_code"),
+        ("original", "unused", "original_read"),
+        ("facts", "unused", "facts_read"),
+        ("recipe", "unused", "recipe_mismatch"),
+    ],
+)
+def test_admission_rejection_logs_original_identity_and_reason_without_content(
+    caplog: pytest.LogCaptureFixture,
+    stage: str,
+    code: str,
+    diagnostic: str,
+) -> None:
+    from types import SimpleNamespace
+
+    from speechnexus_backend.speech.domain.admission import rejected
+    from speechnexus_backend.speech.infrastructure.transcription_admission import (
+        LiveTranscriptionFacts,
+    )
+    from speechnexus_backend.speech.infrastructure.tts_admission import TtsRecipe
+    from tests.fake.admission import APPROVED
+    from tests.fake.runtime_intents import NOW
+
+    class Store:
+        def read(self, identity: Any) -> None:
+            if stage == "original":
+                raise SpeechUnavailableError("synthetic-private-origin-secret")
+
+        def admit_recipe(self, command: Any) -> AdmissionResult:
+            return rejected(command.request.identity, code)
+
+    facts = LiveTranscriptionFacts(
+        NOW,
+        1,
+        "policy-test",
+        1,
+        "realtime",
+        "scheduler-test",
+        7,
+        1,
+        2,
+        "host-test",
+        "gateway-test",
+    )
+
+    def read_facts(*_: Any) -> LiveTranscriptionFacts:
+        if stage == "facts":
+            raise SpeechUnavailableError("synthetic-private-origin-secret")
+        return facts
+
+    store = Store()
+    adapter = PostgresTtsAdmission(
+        cast(Any, SimpleNamespace(read=read_facts)),
+        AdmissionService(cast(Any, store)),
+        store,
+        TtsRecipe(
+            "other-model" if stage == "recipe" else "model-test",
+            "stage-main",
+            "instance-new",
+            1,
+            APPROVED,
+        ),
+    )
+    private = "Synthetic private speech content."
+    with pytest.raises(SpeechUnavailableError):
+        adapter.admit(replace(plan(), text=private))
+    records = [record for record in caplog.records if record.name.endswith("tts_admission")]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert _identities(plan().request_id)[0].operation_id in message
+    assert diagnostic in message
+    if stage == "result":
+        assert "rejected" in message
+    assert private not in caplog.text
+    assert "synthetic-private-reason-secret" not in caplog.text
+    assert "synthetic-private-origin-secret" not in caplog.text
+
+
 def test_new_admission_locks_before_retirement_and_qualification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

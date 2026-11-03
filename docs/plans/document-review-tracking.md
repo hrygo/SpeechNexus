@@ -131,7 +131,7 @@
 | `docs/operations/binding-activation-verification.md` | 部分核对 | 全文阅读并抽查 PG 并发和清理测试；未运行 PG 或核对全部矩阵 |
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
 | `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；并发、审计和恢复事务待核对 |
-| `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口、制品脚本摘要、主要授权及来源批准/撤销/发布退出分支；probe 其他异常分支待核对 |
+| `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口、制品脚本摘要、主要授权及命令退出分支；probe 内部验证细节待核对 |
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、示例命令、校验器退出码及生命周期回滚描述；说明峰值断言与运行期聚合账本的区别，其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 部分核对 | 对照 Compose 服务、迁移链、配置准备、基础角色授权与查询代码，修正权限及失败边界并更新章节引用；未执行部署，停用 worker 和其他恢复细节待核对 |
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 已核对网关输出格式与停止证据边界；其余内容待核对 |

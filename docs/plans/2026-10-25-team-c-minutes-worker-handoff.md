@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：内网 LLM 接线与纪要派发 worker"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：内网 LLM 接线与纪要派发 worker
+
+> 本文保留交接时的配置、状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 本轮把「默认关闭的内网 LLM、纪要任务」从"代码存在但部署无从启用"补成可配置、可运行、有真实模型证据的闭环。C06 是本轮主责单元，同时为 C05 会议纪要、C07 依赖 LLM 的切片提供同一绑定。
 

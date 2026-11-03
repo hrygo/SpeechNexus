@@ -267,9 +267,9 @@
 | `docs/plans/2026-10-25-team-c-export-production-prewiring-handoff.md` | 历史保留 | 全文阅读，标明历史状态与当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-issue-four-part-refresh-handoff.md` | 历史保留 | 全文阅读，区分历史 issue 回读与当前状态；未查询远端 |
 | `docs/plans/2026-10-25-team-c-keyboard-narrow-verification-handoff.md` | 历史保留 | 全文阅读，标明历史验证与当前入口；历史验证未重跑 |
-| `docs/plans/2026-10-25-team-c-minutes-worker-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-team-c-minutes-worker-handoff.md` | 历史保留 | 全文阅读，标明历史配置与验证范围；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-team-c-orphan-probes-gated-handoff.md` | 历史保留 | 全文阅读，标明各轮历史排查与现行检查入口；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-project-rename-cas-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-real-runtime-browser-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-real-runtime-model-browser-handoff.md` | 待核对 | — |

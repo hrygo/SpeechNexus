@@ -78,7 +78,7 @@
 | `docs/components/cpu-vad.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配章节与 drain 组合根；其余提交、屏障、恢复及清理事务待逐节核对 |
 | `docs/components/execution-staging-results.md` | 部分核对 | 全文阅读并对照音频回执契约及 0012 迁移回退；事务分支、权限和测试证据待核对 |
-| `docs/components/file-asr-audio.md` | 部分核对 | 对照共享媒体模块、源格式、默认限制、时钟投影和测试入口；未重新执行测试或核实全部消费者 |
+| `docs/components/file-asr-audio.md` | 已核对 | 对照共享媒体模块、源格式、限制、时钟投影、测试入口及已知消费者装配；未重跑测试或验证部署 |
 | `docs/components/file-asr-recognition.md` | 已核对 | 逐节静态对照参数、协议、装配、执行与测试清单；未重新实测 |
 | `docs/components/file-asr-results.md` | 已核对 | 逐节静态对照结果聚合、私有对象、命令与相关测试；未运行服务 |
 | `docs/components/file-tts.md` | 已核对 | 全文静态对照策略、HTTP、命令、编码器、worker 与历史探针记录；未重跑测试或历史探针 |

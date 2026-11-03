@@ -124,5 +124,6 @@ uv run pytest tests/unit/gateway/test_audio_decode.py \
 独立 vendor 依赖、真实 CPU 模型和授权语料探针见
 [运行说明](../../deploy/engines/file-asr-audio/README.md)和
 [本轮记录](../audits/2026-10-24-b03-bounded-audio-probe.md)。
-本接口可供 A02 音频 inspector、A04 文件执行及 B04/B06 媒体准备复用；
-各消费者的实际装配、生产对象引用与结果发布仍分别验收，不将本单元计为 B03/G1 完成。
+共享解码器已供私有音频 inspection 命令使用，gateway 文件执行也已有接线；公开 Asset
+运行时默认仍使用文本 inspector，见[音频检查边界](audio-asset-inspection.md)。其他媒体
+准备路径及各消费者的生产对象引用与结果发布仍须分别验收，不将本单元计为 B03/G1 完成。

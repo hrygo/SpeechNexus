@@ -631,6 +631,11 @@ PYROLE
 部署。worker 退出或反复重启需要运维处理。当前 worker 没有 readiness 或心跳端点；容器
 运行中和 gateway `/readyz` 通过均不证明处理成功。
 
+worker 分页扫描持久意图；对已认领过的目标先按原身份查询，再以同一身份发送幂等
+取消。租约结算结果未知时查询原租约，只有事实显示已释放才计入结算；无法确认的目标
+保留待处理并在后续轮次重访。日志中的 `attempted`、`queried`、`unavailable`、`settled`
+和 `pending` 是单轮计数，不是全局清理完成证明。
+
 worker 的命名空间绑定具体 gateway 容器。替换 gateway 后，待其健康再显式重建 worker，
 并核对实际网络命名空间及扫描是否恢复。Compose 的 `depends_on.restart` 只处理显式 Compose
 更新；daemon 重启和外部重建须另行监管。回退时保留持久意图账本：停止 worker 只会暂停

@@ -104,6 +104,8 @@ date: 2026-10-28
 | `scenarios[].evidence_digest` | 该 scenario 在 evidence.json 中对象的 RFC 8785 SHA-256 | 证据作者 | 必须与 evidence 对象重算值相等；不是文件摘要 |
 | `scenarios[].notes` | 通过/失败规则、采样限制、异常 | 测量/证据作者 | 必须写清阈值与边界；不能只写“OK” |
 
+表中对 `notes` 的内容要求由证据评审执行；schema 将该字段设为可选，脚本也不检查文字是否包含阈值或采样信息。
+
 `Metric` 的 `unit` 只能是 `ms`、`s`、`bytes`、`percent`、`ratio`、`count`、`cpms`。`value` 是数字；没有 `threshold` 字段，阈值必须写进 `notes`，并在评审时人工核对。若后续需要机器可读阈值，应单独演进 schema，不能在本任务改冻结契约。
 
 ## 4. 语料、采样与阈值
@@ -385,9 +387,11 @@ uv run --no-project \
 - `artifact-pin.model` 摘要、config bundle、topology、evidence 文件/逐场景摘要；
 - `evidence_digest` 与文件 SHA；
 - 对传入的 `--binding-definition` 与快照内定义分别执行同一组语义检查：`capacity_manifest_id` 存在且等于 manifest、release tier 可识别并一致、stage roles/tasks/max segment 对应（输出前缀分别为 `binding_definition.*` 与 `definition.*`）；
-- live/快照 DB 的 revision/publication/evidence/instance/host/pool/workspace 账本。
+- 当提供相应输入时，对 live DB 查询结果或快照中的 revision/publication/evidence/instance/host/pool/workspace 账本执行检查；快照模式不查询数据库。
 
 历史样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/operations/release-evidence-verification-output.txt`；重跑时会按当前时间检查有效期，不能预设结果相同。
+
+脚本正常输出检查结果时，出现 `FAIL` 返回退出码 `1`；`PASS_WITH_WARNINGS` 和仅有 `NA` 的结果仍返回 `0`。因此必须检查各条 `WARN` / `NA` 的含义，退出码为零不证明未执行或无法判定的检查已通过。
 
 当前随仓 `deploy/engines/file-asr-audio/binding-definition.json` 不是可用发布定义：校验器会直接报
 `binding_definition.capacity_manifest_id=FAIL`（missing）和

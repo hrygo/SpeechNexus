@@ -1,6 +1,6 @@
 ---
 title: "团队 C C02 固定转写版本文本导出交接"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 

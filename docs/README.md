@@ -22,7 +22,7 @@
 | [OpenAI 兼容与增强边界](architecture/openai-compatibility.md)                                       | SDK 调用、精确兼容子集、`nexus` 扩展规则与契约门禁                              |
 | [资源治理与持久化](architecture/runtime-governance.md)                                              | 池预算、准入 / 调度、取消与 fencing、计量、任务发布、保留与删除                 |
 | [规范执行命令与内部文本流](architecture/execution-command.md)                                       | 完整有效命令、摘要、受控资源引用与 TTS 文本提交                                 |
-| [原命令与核验文件输入](components/frozen-execution-inputs.md) | 原持久请求只读核验、一次提交命令桥、版本固定对象输入及真实执行剩余边界 |
+| [原命令与核验文件输入](components/frozen-execution-inputs.md) | 原持久请求只读核验、一次提交命令桥、每次读取时固定对象版本及真实执行剩余边界；原命令不携带 S3 version ID |
 | [文件 ASR 私有结果](components/file-asr-results.md) | 完整正文有界汇总、固定版本对象写入与读回核验；持久登记与公开发布边界 |
 | [执行回执登记与查询](components/execution-staging-results.md) | 原观察事务、固定版本私有回执、CAS/恢复、权限与只读查询；不发布或退预算 |
 | [原生 ASR 请求清理](../deploy/engines/vllm-asr-lifecycle/README.md) | 固定引擎插件、内部/子请求归属、在途提交保护与取消清理；不代表 GPU 停止证明 |

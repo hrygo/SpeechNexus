@@ -90,7 +90,7 @@
 | `docs/components/production-admission-storage.md` | 部分核对 | 全文阅读并核对迁移、准入表授权及测试入口；锁序、恢复和删除边界待逐项核对 |
 | `docs/components/production-admission.md` | 部分核对 | 全文阅读并核对配额维度、业务/信封摘要、同步语音与转写适配入口；锁序、重放及集成证据待核对 |
 | `docs/components/production-assets.md` | 部分核对 | 全文阅读并核对默认 inspector、TTL/维护配置与 CI 分片，修正 CI 描述；事务、权限与完整验证范围待核对 |
-| `docs/components/production-jobs.md` | 部分核对 | 核对 planner 启动、worker 参数、结果发布重放、创建恢复及认领查询；修正停止标志与外发竞态，派发其他分支待核对 |
+| `docs/components/production-jobs.md` | 部分核对 | 核对 planner 启动、worker 参数、结果发布重放、创建恢复、认领和部分派发；说明停止竞态与状态摘要检查限制 |
 | `docs/components/production-leases.md` | 部分核对 | 全文阅读并核对 adapter 时限及后续准入事务入口，修正过时退出说明；隔离/释放事务细节与证据待核对 |
 | `docs/components/production-owners.md` | 部分核对 | 全文阅读并核对连接池、重试界限及 unknown 提交的激活检查；锁序、时间与完整测试证据待核对 |
 | `docs/components/production-runtime-intents.md` | 部分核对 | 全文阅读并对照 0005/0006 存储、outbox、原生证据摘要与生成条件；create/observe 事务及测试证据待逐项核对 |

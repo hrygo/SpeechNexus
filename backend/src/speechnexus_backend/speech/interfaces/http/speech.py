@@ -13,6 +13,7 @@ import json
 import math
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from starlette.concurrency import run_in_threadpool
@@ -331,7 +332,36 @@ async def _create(
     except ValueError, TypeError, RecursionError, UnicodeDecodeError:
         return speech_error("invalid_request", request_id)
     try:
-        audio = await run_in_threadpool(service.synthesize, command, request_id=request_id)
+        execution_id = uuid4().hex
+
+        async def monitor_disconnect() -> None:
+            while not await request.is_disconnected():  # noqa: ASYNC110
+                await asyncio.sleep(0.1)
+
+        work = asyncio.create_task(
+            run_in_threadpool(service.synthesize, command, request_id=execution_id)
+        )
+        monitor = asyncio.create_task(monitor_disconnect())
+        try:
+            done, _ = await asyncio.wait((work, monitor), return_when=asyncio.FIRST_COMPLETED)
+            if monitor in done and work not in done:
+                try:
+                    await monitor
+                    await run_in_threadpool(service.cancel, execution_id, "stream_disconnected")
+                finally:
+                    work.cancel()
+                raise ClientDisconnect
+            audio = await work
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(
+                    run_in_threadpool(service.cancel, execution_id, "client_cancelled")
+                )
+            finally:
+                work.cancel()
+            raise
+        finally:
+            monitor.cancel()
     except SpeechModelNotFoundError:
         return speech_error("model_not_found", request_id)
     except SpeechVoiceNotFoundError:

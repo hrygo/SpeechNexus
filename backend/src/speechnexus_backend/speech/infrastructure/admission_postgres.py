@@ -153,8 +153,10 @@ class PostgresAdmissionTransactions:
             cursor, prepared, clock=cursor.clock, max_command_bytes=self._max_bytes
         )
 
-    def _lock_tts_voice(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
-        """Serialize new TTS admission with retirement, after original replay checks."""
+    def _lock_tts_voice(
+        self, cursor: _DeadlineCursor, prepared: PreparedAdmission, *, recheck: bool = False
+    ) -> None:
+        """Serialize new TTS admission with retirement and recheck before commit."""
         try:
             body = json.loads(prepared.command.business_command.document)
             if body.get("kind") != "tts_file":
@@ -207,30 +209,32 @@ class PostgresAdmissionTransactions:
                 raise ValueError
         except ValueError, TypeError, KeyError, AttributeError:
             raise AdmissionRejectedError("reconciliation_required") from None
-        existing = read_original(
-            cursor,
-            prepared.command.request.identity,
-            max_command_bytes=self._max_bytes,
-            prepared=prepared,
-        )
-        if existing is not None:
-            return
+        if not recheck:
+            existing = read_original(
+                cursor,
+                prepared.command.request.identity,
+                max_command_bytes=self._max_bytes,
+                prepared=prepared,
+            )
+            if existing is not None:
+                return
         if self._require_builtin_voice is None:
             raise AdmissionRejectedError("reconciliation_required")
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended("
-            "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
-            (voice_id,),
-        )
-        # A duplicate admission can commit while the voice lock is awaited.
-        existing = read_original(
-            cursor,
-            prepared.command.request.identity,
-            max_command_bytes=self._max_bytes,
-            prepared=prepared,
-        )
-        if existing is not None:
-            return
+        if not recheck:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended("
+                "'speechnexus:catalog:' || current_schema() || ':voice:' || %s, 0))",
+                (voice_id,),
+            )
+            # A duplicate admission can commit while the voice lock is awaited.
+            existing = read_original(
+                cursor,
+                prepared.command.request.identity,
+                max_command_bytes=self._max_bytes,
+                prepared=prepared,
+            )
+            if existing is not None:
+                return
         cursor.execute(
             "SELECT p.revision_id FROM speech_publications p WHERE p.kind='voice' "
             "AND p.object_id=%s AND p.revision=%s AND p.revision_id=%s "
@@ -257,6 +261,10 @@ class PostgresAdmissionTransactions:
             gateway_policy_digest=policy_digest,
             native_speaker_id=speaker_id,
         )
+
+    def _recheck_before_commit(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
+        """Revalidate new TTS authority after every potentially blocking transaction step."""
+        self._lock_tts_voice(cursor, prepared, recheck=True)
 
     def _record_settlement(self, cursor: _DeadlineCursor, prepared: PreparedAdmission) -> None:
         body = json.loads(prepared.command.business_command.document)
@@ -292,6 +300,10 @@ class PostgresAdmissionTransactions:
                             result = self._admit(cursor, prepared)
                             if result.outcome in ("committed", "replayed"):
                                 self._record_settlement(cursor, prepared)
+                            if result.outcome == "committed":
+                                # Original replays must never depend on today's qualification.
+                                # The voice lock remains held, and settlement may itself wait.
+                                self._recheck_before_commit(cursor, prepared)
                         else:
                             found = read_original(
                                 cursor,

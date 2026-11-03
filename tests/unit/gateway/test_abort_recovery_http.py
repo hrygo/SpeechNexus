@@ -8,12 +8,28 @@ from speechnexus_contracts.execution import parse
 
 from speechnexus_gateway.domain.recovery import AbortReceipt, AbortRecovery, ExecutionSnapshot
 from tests.fake.execution import InMemorySubmissionLedger
+from tests.support.contracts import validator
 from tests.unit.gateway.test_barrier_http import HEADERS, app_for
 from tests.unit.gateway.test_execution_recovery import pending
 from tests.unit.gateway.test_submit_execution import NOW
 
 MEDIA = "application/vnd.speechnexus.execution-recovery.v1+json"
 PATH = "/internal/v1/executions/intent-1"
+
+
+def test_enhanced_snapshot_keeps_original_coordination_representation() -> None:
+    ledger = RecoveryLedger(now=lambda: NOW)
+    pending(ledger)
+    snapshot = ledger.query_outcome("intent-1")
+    assert snapshot is not None
+    enhanced = snapshot.status()
+    parse("ExecutionRecoveryStatusResponse", enhanced)
+    original = snapshot.response()
+    validator("internal/coordination-transactions.schema.json", "ExecutionSnapshot").validate(
+        original
+    )
+    assert "abort_recovery" not in parse("ExecutionStatusResponse", original["execution"])
+    assert snapshot.status() == enhanced
 
 
 class RecoveryLedger(InMemorySubmissionLedger):

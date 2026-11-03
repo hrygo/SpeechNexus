@@ -268,7 +268,9 @@ class ExecutionSnapshot:
         }
 
     def response(self) -> dict[str, object]:
-        return {"kind": "execution", "execution": self.status()}
+        status = self.status()
+        status.pop("abort_recovery", None)
+        return {"kind": "execution", "execution": status}
 
 
 @dataclass(frozen=True, slots=True)

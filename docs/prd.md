@@ -315,7 +315,7 @@
 
 **验收：**
 
-- 1.7B 全段复核与 required 辅助在准入前可服务并计入全部阶段预算；双工必须整体准入或整体回滚。
+- 配方启用 1.7B 全段复核时，该阶段与 required 辅助在准入前可服务并计入全部阶段预算；未启用全段复核的配方仍须计入其 required 辅助。双工必须整体准入或整体回滚。
 - VoiceDesign 加载/热身/执行峰值事先预留；不足排队，不借用实时保留；只在停止与释放事实成立后归还。
 
 设计依据：[runtime-governance.md](architecture/runtime-governance.md)、[technical-blueprint.md](architecture/technical-blueprint.md)。
@@ -357,7 +357,7 @@
 - owner/epoch、输出水位、credit 和缓冲有界；真实停止、断线、gap 与恢复由正式消费者联验。
 - 按身份、seq、epoch、descriptor 关联控制与 PCM，拒绝旧帧、迟到和越界；credit、背压、缓冲和硬输出上限在真实流生效，不能以文件切片代替。
 - 权威流锁拒绝部分重叠，精确重放不重复计量；真实生产者区间一致，分别记录首生成 PCM、网络接收和播放结束，不直接作为业务计费。
-- 1.7B full_segment 和 required 辅助纳入完整配方；双工、停止与恢复联验。
+- 启用的 1.7B full_segment 和 required 辅助纳入完整配方；双工、停止与恢复联验。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 

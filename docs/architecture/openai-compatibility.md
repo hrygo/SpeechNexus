@@ -28,8 +28,9 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 时间戳粒度属于声明的契约范围；当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
 
 REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官方 SDK 的
-`TranscriptionVerbose` 响应模型一致；真实 token usage 只出现在非 verbose
-`Transcription.usage`。若服务端在 `verbose_json` 返回 token usage，官方 Python SDK
+`TranscriptionVerbose` 响应模型一致；契约仅允许非 verbose
+`Transcription.usage` 承载真实 token usage。当前转写路由只输出已知时长用量，
+不输出 token usage。若服务端在 `verbose_json` 返回 token usage，官方 Python SDK
 无法解析该响应，因此契约测试将其作为负例拒绝。
 
 非 verbose `Transcription.logprobs` 若由绑定提供真实证据，必须使用官方 SDK 的

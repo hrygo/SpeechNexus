@@ -1,10 +1,12 @@
 ---
 title: "团队 C C01 Admin 同标签页恢复交接"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 
 # C01 Admin 同标签页恢复交接
+
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 ## 范围与基线
 

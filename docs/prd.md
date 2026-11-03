@@ -1013,7 +1013,7 @@
 
 **验收：**
 
-- 按 workspace 分组和模型解析发布事实；configured、engine_ready、quality_qualified、admission_state 分别有可信来源，缺失为 unavailable。
+- 按 workspace 分组和模型解析发布事实；configured、engine_ready、quality_qualified、admission_state 分别有可信来源，缺失为 unavailable。当前能力接口仅校验 workspace 标识格式，不验证其存在或据此过滤目录；默认目录也未接入实时 readiness 证据，不能用响应证明该工作空间已获准入。
 - 目录、模型详情和能力快照遵守 ETag/304；生命周期改变目录 revision；绑定与实例 generation/声音版本分开建模。
 - 目录、单模型及能力端点遵守契约：目录或 policy revision 变化使 ETag 变化，If-None-Match 命中 304；同 revision 的规范摘要不含请求时间并字节稳定，公开音频字节、文本码点、分段、实时会话和排队等待上界。
 - 针对当前已发布 revision 的实际数据形状执行回归，并在真实部署以请求证明 `/v1/models` 返回 200；历史 503 不推定仍是当前故障，缺事实不能伪装 ready。

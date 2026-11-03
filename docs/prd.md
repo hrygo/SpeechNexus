@@ -836,7 +836,7 @@
 - 修复SQL全读后切片、最老LIMIT饥饿、无持久退避、来源错误分类及异步页面乱序；用PG与可控producer故障和并发验证。
 - 焦点失败须用延迟响应和重复/真实浏览器验证，已主动移焦不抢回，不删除断言；保持360px和键盘可用。
 - 固定声音修订的读取正确区分不存在和服务不可用，失败不得展示陈旧记录；验证键盘及 360px 窄屏。
-- 实际同版路由和正式消费者支持 POST `/v1/workbench/render-units/{unit_id}/generations`（generateRenderUnit），核对请求、202 和契约声明的错误、固定版本及原键语义。
+- 实际同版路由和正式消费者支持 POST `/v2/workbench/render-units/{unit_id}/generations`（`generateRenderUnitV2`），核对请求、202 和契约声明的错误、固定版本及原键语义。v1 的 `generateRenderUnit` 仍在公开契约中，但当前路由和页面未接入；须决定并交付其支持或退役，不能用 v2 接线冒充 v1 已覆盖。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 

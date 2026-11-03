@@ -70,6 +70,9 @@ lease 必须大于 call + 3×storage + 1 秒；单批 1–32。时间均须为�
 进程不读 dotenv，不从 queued command 选择端点，不使用代理、不跟随重定向或自动重试 POST。
 SIGINT/SIGTERM 在原请求之间停止，当前有界调用完成后关闭自己的连接；不向控制器发 STOP。
 输出只有批次计数和固定错误分类，不输出原正文、响应、内部地址或凭据。
+记录级查询失败可以保留 `unknown` 并按 backoff 再查；若批次调用的异常上抛到入口，进程会以
+固定的 unavailable 消息退出，循环不会自行重启。部署需监控并按原持久身份恢复，不能把进程
+重启当作允许补发或释放预算的证据。
 
 `runtime_delivery_grants(schema, role)` 为独立部署/迁移身份生成最低授权：读取必要原意图、
 head/实例列，更新私有投递状态和 outbox 的 delivered 时间；无 INSERT/DDL/DELETE、

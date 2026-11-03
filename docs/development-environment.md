@@ -60,7 +60,7 @@ source scripts/dev-env/activate.sh
 
 `make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 检查 OpenAI 公共契约的明显破坏性变更；使用前核验基线。`make integration-test` 与 `make coordination-test` 要求同时设置隔离的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，缺任一变量直接失败，并在 DSN 指向本机默认端点时先调用[协调 MySQL 脚本](../scripts/dev-env/mysql-service.sh)启动实例。`make verify` 在环境检查前确保隔离 MySQL 容器，并为缺失配置提供默认隔离 DSN；直接调用相关共享事务 pytest 时，两项均缺会跳过，只配置一项会失败。`make integration-test` 还要求隔离 MinIO 端点与测试凭据；资产测试使用版本化独立桶，缺少配置失败。默认本机实例可由 `scripts/dev-env/minio-test-service.sh` 启动，不能与占用同一端口的 systemd / Compose MinIO 同时启动。配置与证据范围见[资产发布存储单元](components/production-assets.md)。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
 
-无头 Chromium 使用合成音频设备，适合自动验证采集权限、MediaRecorder 与播放缓冲路径；真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
+浏览器冒烟使用合成音频设备和自动授予的麦克风权限，检查 MediaRecorder 非空输出、离线 Web Audio 渲染，以及本地 WebSocket 文本 / 二进制回环；它不验证产品播放缓冲或真实权限交互。真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
 
 ## 隔离边界
 

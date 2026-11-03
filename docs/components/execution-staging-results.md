@@ -100,7 +100,9 @@ JSON 返回 null；已有引用仍可经通用状态读取。任何 null 都不�
 指针与回执在同一事务中一致，旧记录默认 NULL，不从 key、摘要或可变默认补值。
 
 部署顺序为 owner 升级 → 重发网关列级 UPDATE 权限 → 部署新读写进程；
-运行角色不执行 DDL。只有 B 角色新增该列写权限，A 数据库角色仍不能直接读取私有回执。
+运行角色不执行 DDL。B 网关写角色获得该列写权限，A 数据库角色仍不能直接读取私有回执；
+网关独立恢复查询角色另有该列的只读权限，见
+[`gateway_query_grants`](../../backend/src/speechnexus_backend/speech/infrastructure/gateway_query_grants.py)。
 
 音频复用该列，无新增迁移或权限。所有相关读取者先升级，再启用音频生产者；
 已有音频历史时回退须保留音频解析器，不能通过丢弃回执恢复旧二进制。
@@ -112,6 +114,9 @@ JSON 返回 null；已有引用仍可经通用状态读取。任何 null 都不�
 ## 验证与后续接线
 
 测试覆盖字段与字节上界、规范编码、原摘要/工作区、CAS、取消/期限、冲突和状态回显。
+仓库入口包括[结果事务集成测试](../../tests/integration/test_gateway_execution_results.py)及
+JSON/音频回执的[单元测试](../../tests/unit/gateway/test_execution_results.py)和
+[音频单元测试](../../tests/unit/gateway/test_audio_execution_results.py)；测试文件存在不代表当前部署已验证。
 隔离 PG/InnoDB 运行相同登记逻辑，验证并发、回滚、当前 authority、独立仓库连接恢复和权限。
 隔离 MinIO 与真实编解码接通原命令、结果写入和登记；VAD/识别仍为替身。
 PG 升级/旧行保留及回退保护单独测试，不将 InnoDB 对照扩大为产品支持。

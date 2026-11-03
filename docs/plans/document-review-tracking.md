@@ -92,7 +92,7 @@
 | `docs/components/production-assets.md` | 部分核对 | 全文阅读并核对默认 inspector、TTL/维护配置与 CI 分片，修正 CI 描述；事务、权限与完整验证范围待核对 |
 | `docs/components/production-jobs.md` | 已核对 | 对照创建、认领、派发、发布、worker 配置和测试入口；说明停止竞态与状态摘要检查限制，未运行集成测试 |
 | `docs/components/production-leases.md` | 已核对 | 静态对照隔离与释放事务、停止事实、0028 视图授权及测试定义；未运行服务 |
-| `docs/components/production-owners.md` | 部分核对 | 全文阅读并核对连接池、重试界限及 unknown 提交的激活检查；锁序、时间与完整测试证据待核对 |
+| `docs/components/production-owners.md` | 已核对 | 静态对照锁序、数据库时间、激活条件、恢复与测试定义；未运行服务 |
 | `docs/components/production-runtime-intents.md` | 部分核对 | 全文阅读并对照 0005/0006 存储、outbox、原生证据摘要与生成条件；create/observe 事务及测试证据待逐项核对 |
 | `docs/components/profile-drafts.md` | 已核对 | 静态对照草稿事务、权限、HTTP 处理顺序、配置和测试定义；未运行服务 |
 | `docs/components/profile-lifecycle-contract.md` | 已核对 | 静态对照契约、生成入口、路由装配及私有观察边界，区分计划行为与测试定义；未运行服务 |

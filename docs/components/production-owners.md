@@ -62,7 +62,7 @@ finally:
 排队与最多三次事务尝试（含首次）共享预算，commit 前预算耗尽会回滚。它不是已验证的任意网络
 黑洞/数据库提交硬截止时间。
 
-激活不调用物理 fencing，不替 B 生成或证明屏障；它消费 B 所有表中的事实。
+激活不调用物理 fencing，不替 B 生成或证明屏障；它读取目标池相关的持久屏障和提交事实。
 未知执行即便已隔离，也继续占预算。owner 任期/激活不删除历史、不释放 lease、
 不归还节点/实例/quota；真实屏障和在途收敛仍需 B 的生产实现与联合证据。
 
@@ -86,11 +86,11 @@ make coordination-test
 make integration-test
 ```
 
-PG 使用实际 adapter/包内迁移/最小运行角色，InnoDB 只用测试 driver 执行相同生产
-SQL/领域裁决。同组行为涵盖 version/token/expiry、全部 gateway 屏障、在途提交、
+测试设计中，PG 使用实际 adapter/包内迁移/最小运行角色，InnoDB 只用测试 driver 执行相同生产
+SQL/领域裁决。测试覆盖 version/token/expiry、受影响 gateway 屏障、在途提交、
 预算不释放、两个调度者实际行锁竞争及等待到期后续约/激活拒绝。
 PG 故障测试在 commit 前终止真实会话，或在实际 commit 后模拟丢失回执，验证只查询
-当前事实且不再获取 token；后者不等于真实网络丢包或 HA 资格。
+当前事实且不再获取 token；后者不等于真实网络丢包或 HA 资格。测试定义不代表当前环境已通过。
 
 runtime/admission/claim 和网关封锁已有后续实现；文件执行按显式配置装配，完整 scheduler 循环与多主机资格仍须分别验收。
 ADR 0007 的旧不变量尚未全部进入生产路径，继续保留旧门禁。

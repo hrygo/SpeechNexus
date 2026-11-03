@@ -36,6 +36,9 @@ TTS planner 的子字段也完整填写。标准 TTS instructions 的 4096 上�
 特征暴露为公开 receipt。跨 workspace 引用、摘要或长度不匹配均拒绝执行。
 ASR 和 VAD 的 `AudioSource` schema 也允许 `stream_id` / `stream_epoch` 流身份；当前文件 ASR
 消费者要求带 `storage` 的对象输入，流式消费仍须另行装配和验收。
+对象输入的 `AudioInput` 必须提供 `sample_rate_hz` 和 `channels`，包括容器音频；schema 的
+1–384000 Hz、1–32 声道结构范围宽于当前本地解码器的 8–192 kHz、1–8 声道范围，
+结构合法不代表该格式已受支持。实际解码及声明一致性见[文件媒体输入](../components/file-asr-audio.md)。
 
 命令中的对象引用固定 bucket、key、长度和摘要，但不携带 S3 version ID。当前文件 ASR
 输入适配器在每次读取时先 HEAD 获取非空版本，再对该版本执行 GET 并核验长度和摘要；

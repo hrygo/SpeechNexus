@@ -420,6 +420,8 @@ uv run --no-project \
 
 `--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。脚本未显式设定可重复读隔离级别；默认 `READ COMMITTED` 下并发变更时，各查询不一定反映同一时点，也不能保证未来准入，须在受控窗口核对。部署若配置了其他隔离级别，应按实际配置判断。live 模式只有传入 `--workspace-id` 才查询对应配额；未指定或未查到行均输出 `capacity.workspace_quota=NA`，不能视为配额通过。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
 
+校验器按运行时 UTC 时间检查资格期限；上述固定样例在 `2027-01-25T20:44:19Z` 到期后会因过期返回 `FAIL`。这不改变它的历史证据或文件摘要，也不应通过修改样例期限来恢复正例。
+
 退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误，live 模式缺少 `psycopg` 也计入此类；`2` 表示参数错误或启动时缺少 `jsonschema`、`referencing`、`rfc8785` 依赖。数据库连接等未捕获异常也可能使进程异常退出，不能只看退出码判断检查是否完整。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
 
 ### 9.2 它检查什么

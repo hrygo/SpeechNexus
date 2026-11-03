@@ -184,6 +184,10 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 
 R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
 
+live 查询按 binding revision 选取所有 `engine_instances` 行，没有过滤历史 generation；R8
+对每一行都要求 ready/steady。因此已正常停止的历史代次也会使检查失败，不能仅凭该结果
+认定当前代次不可用。应按实例 head、代次和停止证据核对，不能删除历史记录来消除失败。
+
 ### 谁能超、超了报什么
 
 没有任何角色被授权“超卖”。只能通过新的 manifest/report 和新 revision 扩大声明，并先扩大 `host_nodes.allocatable_*`；不能改旧证据。

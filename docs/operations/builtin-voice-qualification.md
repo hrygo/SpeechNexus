@@ -6,6 +6,8 @@
 
 资格和来源撤销是追加事实，写入前必须在同一事务持有对应 voice 的 `speechnexus:catalog:<schema>:voice:<voice_id>` advisory lock，提交后新准入拒绝；已持有的原执行身份重放应先于资格检查。每个来源批准固定一个 voice_id，复合外键禁止其他 voice 关联；撤销者读取该不可变 voice_id 后持对应锁。该范围不提供跨声音的上游来源或密钥全局撤销。下述 producer 已有受控实现，真实运行资格仍须取证；本文件不授权人工 SQL 替代生产流程。
 
+有权来源审批操作员先实际审查并决定来源是否可用，再以独立受限身份调用 `speechnexus-approve-builtin-source` 记录该决定；命令本身不制造来源批准，也不授予模型、探针或发布资格。通过仓库外 `SPEECHNEXUS_SOURCE_APPROVAL_WRITER_DATABASE_URL` 配置使用 `builtin_source_approval_writer_grants` 的身份，该身份不能是数据库或表 owner，也不能拥有资格审批或发布写权限。明确提供 `--database`、`--schema`、`--installation-id`、`--source-approval-id`、`--voice-id`、`--source-revision`、`--source-digest`、`--native-speaker-id Vivian` 和 `--expires-at`；时间必须带时区，最多微秒精度。来源修订是非敏感标识，不填 URL 或凭据。审批结果未知时，对同一目标重放原 ID 与全部原字段；已撤销或到期的原回执仍可恢复，但不会恢复资格。随后才运行受控 probe，取得执行资格后使用发布入口。
+
 已获撤销授权的操作员使用 `speechnexus-revoke-builtin-voice`；连接通过仓库外的 `SPEECHNEXUS_QUALIFICATION_WRITER_DATABASE_URL` 配置为受限可信 writer。`--database`、`--schema`、`--installation-id` 必须是事先核对的目标，命令会在事务内复核。`--kind source` 指定来源批准 ID，`--kind qualification` 指定资格批准 ID；同时明确 `--approval-id` 和 `--reason`。回执未知时核对原目标并重放相同参数；同一批准的撤销不能用另一 reason 覆写。撤销不宣称现有引擎已停止，也不释放预算。
 
 `speechnexus-publish-builtin-voice` 必须读取事先存在的独立批准；验证固定检查、来源记录、binding 公开身份与数据库证据，并对提供的原文件调用 release 验证器。binding release 验证仅证明制品内容一致，不证明物理执行或授予音色资格。发布同一事务记录公开文档、私有 speaker 映射、publication、head 和完整 intent；原身份重放先于当前资格判断。已有 generic voice publication 不能补写资格冒充本入口。

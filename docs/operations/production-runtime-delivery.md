@@ -47,6 +47,8 @@ fresh 请求的 before-wire 标记必须提交成功才获得一次 POST 许可�
 安装 backend wheel 后运行 `speechnexus-runtime-delivery-worker`；`--once` 只执行一个有界
 批次。一个进程绑定一个控制器节点，可按节点部署多个副本；并发权威在共享 PG 租约，
 不依赖进程内全局锁。该入口不随 API 隐式启动，不需要 S3，不执行 migration/grant。
+仓库的 [Compose 基线](../../deploy/compose.yaml)没有装配该 worker；需要投递时须由目标部署
+显式提供独立进程、配置和授权，不能仅凭启动 Compose 推断它已运行。
 
 除标明可选的 CA 文件外，以下变量必须显式设置；凭据由部署的秘密注入渠道提供，不写入仓库或命令日志：
 

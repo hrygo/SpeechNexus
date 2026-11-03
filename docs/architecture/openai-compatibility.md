@@ -167,6 +167,9 @@ PR CI 将 `CONTRACT_BASE_REF` 设为目标分支的远端跟踪引用，直接�
 
 `make contracts-sdk-test`（即 `pnpm test:contracts-sdk`）锁定 OpenAI JavaScript SDK 的实际 REST 形状；与 Python
 SDK 门禁一起，CI 同时检查两个官方客户端的请求序列化、响应解析和错误映射。两者不替代服务端 HTTP 集成测试及真实部署验收。
+兼容脚本是有限范围的结构比较，不证明任意 JSON Schema 变更的语义包含关系；
+未覆盖的协议时序、授权语义和实际消费者行为仍须分别验证。检查边界见
+[结构检查说明](../validation/http-contract-change-checks.md#what-remains-outside-this-unit)。
 
 ## 5. 新增兼容或增强能力的检查清单
 

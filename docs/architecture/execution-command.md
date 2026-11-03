@@ -55,6 +55,8 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 
 公开资源版本与 command.resources 一致；外层 voice_revision_id 若非空必须与
 固定音色版本一致。非 built-in 音色须带已发布材料；built-in 由 binding 固定实现。
+schema 对 `custom` 要求非空材料引用，但结构校验不能证明材料已发布或获得使用许可；
+生产者和准入边界须核验相应版本与资格，当前文件 TTS 消费者仅支持配置的 builtin。
 `SubmitExecutionRequest` 的 schema 允许省略 `voice_revision_id`，但当前网关转换代码直接
 索引该字段，省略会触发 `KeyError`；调用当前实现时无音色也需显式传 `null`。这是契约与
 实现的差异，不能把 schema 接受省略视为网关已支持。

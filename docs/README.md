@@ -82,7 +82,7 @@
 [`0002_coordination` 存储/权限基线](operations/production-coordination-storage.md)；
 [资产发布存储单元](components/production-assets.md)使用 `0003_assets` 等迁移接入真实文本、版本化 MinIO 与保留期账本；`0004_asset_storage` 固定存储命名空间，旧资产的接管与完整恢复仍需单独验证。
 [租约隔离与释放事务](components/production-leases.md)消费网关持久未知/停止/未外发事实；隔离保留占用，释放只扣当前 lease 增量，最后 stage 才结算 attempt 配额。
-[完整准入的私有命令存储](components/production-admission-storage.md)通过0007新增operation/原请求权威与私有正文约束，独立准入已消费该存储。[公开 Job 派发器](components/production-jobs.md#公开-job-派发器del-96-第一步)已有领域、真实 PG 领取/终态存储、结果发布组件和独立 worker 入口；生产 planner 尚未装配，当前 worker 在领取前退出，真实网关与完整异步链仍须联验。
+[完整准入的私有命令存储](components/production-admission-storage.md)通过0007新增operation/原请求权威与私有正文约束，独立准入已消费该存储。[公开 Job 派发器](components/production-jobs.md#公开-job-派发器del-96-第一步)已有领域、真实 PG 领取/终态存储、网关客户端适配器、结果发布组件和独立 worker 入口；生产 planner 尚未装配，当前 worker 在领取前退出，与真实网关的完整异步链仍须联验。
 [完整配方准入独立事务](components/production-admission.md)提供全部阶段原子预留与原身份恢复，其他业务配额账本与真实provider仍待装配。
 [固定节点HTTPS客户端](components/runtime-controller-client.md)复用runtime源契约，提供有界原意图提交/查询；[持久投递worker](operations/production-runtime-delivery.md)已接原请求与未知查询。
 [节点停止检查点恢复](components/node-stop-recovery.md)及[可信停止到网关](components/trusted-node-stop.md)已有原生接口和分段证据；固定 TLS 来源与默认网关周期驱动已由 #123/#127 交付，真实引擎故障资格与完整调度仍待接入。

@@ -501,9 +501,9 @@
         "docs/architecture/technical-blueprint.md"
       ],
       "implementation": "资产服务有持久删除账本处理；网关有可信协调器清理边界，明确未接入 HTTP。；取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
-      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "integration": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
       "verification": "合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。 合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "真实删除协调器、音频及跨模块依赖仍需贯通。；Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 合成删除许可和组件测试不证明真实端到端删除。；组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/docs/architecture/production-assets.md",
@@ -537,9 +537,9 @@
         "docs/architecture/technical-blueprint.md"
       ],
       "implementation": "取消先持久接收及原身份只读恢复已交付；静音 gate、seal 与正向结算尚未启用。",
-      "integration": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。",
+      "integration": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "Job dispatcher 接网关；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "Job dispatcher 有网关适配器，但生产 planner 未装配，worker 不领取任务；真实 submit/observe/abort 与停止证据仍需生产联验。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/backend/src/speechnexus_backend/speech/application/job_dispatcher.py",

@@ -29,7 +29,7 @@ date: 2026-10-26
 | Workbench API | 项目、稿件、会议、纪要、保存副本；已有 `speechnexus_backend.workbench.runtime:create_app_from_env` 工厂 | 与 Speech API 相同的应用平台目标 | 独立配置和表所有权；只经公开语音协议消费底座，可选 LLM 是批准的内网端点 |
 | Realtime Gateway | 实时连接、会话 owner / epoch 和有界流 | 不因实时接入而要求 GPU 或 Linux 专属 API | 按固定会话 owner 路由；独立进程部署与正式业务装配待补齐 |
 | Scheduler、Job Worker | 完整准入、分池调度、任务 claim、outbox 与恢复 | 与推理运行时解耦，分别验证应用平台 | 以 PG 持久事实协调；独立启动入口及完整业务装配待补齐 |
-| 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 管理；独立 worker 入口待补齐 |
+| 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 按配置和依赖条件管理；导出循环只认领排队任务，运行中 claim 和结果未知需单独恢复；独立 worker 入口待补齐 |
 | 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；结果发布组件已有，派发入口仍因生产 planner 未装配而 fail-closed，不代表完整 Job Worker 已交付 |
 | Binding 停用协调 worker | `python -m speechnexus_backend.binding_disable_worker` 处理持久停用意图 | 应用平台和网关连接按实际部署验证 | 需要独立扫描与结算身份；默认 Compose 不启动，`binding-disable` profile 按需启用。停用回执不代表清理完成或预算已释放，见[运维说明](../operations/compose-minimal.md#12-按需启用-binding-停用-worker) |
 | 同步 TTS 结算 worker | 跟随持久结算记录，协调停止证据与租约释放；同步 TTS 配置与资格检查通过后，工厂在 API 生命周期内启动循环，也提供 `python -m speechnexus_backend.tts_settlement_worker` 独立入口 | 应用平台和网关连接按实际部署验证 | 结算循环使用独立数据库身份；具体配置、资格和恢复条件见[同步语音合成](../components/synchronous-speech.md) |
@@ -156,7 +156,8 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
    不复用 bootstrap owner；迁移与授权使用独立部署步骤。
 2. **接通业务与后台角色**：补齐独立 Workbench 上游、正式 Job/调度入口、实时 owner 路由，
    明确各后台循环是嵌入哪个已声明进程还是独立 worker。关闭可选工作台不影响语音底座，
-   worker 重启按持久队列恢复，不能因同机运行跳过 claim、fencing 或提交屏障。
+   worker 重启恢复须逐类验证持久队列、已有 claim 与结果未知的处理，不能仅凭循环重启认定
+   在途工作已恢复，也不能因同机运行跳过 claim、fencing 或提交屏障。
 3. **封装平台特定执行**：保持引擎环境独立锁定，媒体检查按上一节完成边界设计和资格验证。
    CPU 预处理若拆到另一节点，仍须纳入完整配方的原子准入、资源预算及恢复证据。
 4. **建立分层平台检查**：业务与控制模块在 macOS、Linux 分别检查依赖安装、导入、配置、

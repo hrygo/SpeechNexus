@@ -3,7 +3,7 @@
 This page preserves the 2026-10-26 candidate, experiment and qualification
 record. References below to a PR candidate, pending handoff or CI result describe
 that point in time, not the current merge or deployment state. The current
-`asset_runtime.py` still installs `TextAssetInspector`; the process inspector
+[`asset_runtime.py`](../../backend/src/speechnexus_backend/asset_runtime.py) still installs `TextAssetInspector`; the process inspector
 exists in the repository but is not thereby enabled in the public Asset runtime.
 Current integration and acceptance status must be checked against the candidate
 and [delivery tracking](../plans/delivery-tracking.md).

@@ -70,8 +70,8 @@ unknown/query_original；读取失败不证明原创建被拒绝，也不授予�
 
 `ClaimTransactionBoundary` 离线验证 `claim_job`、`query_outcome` 和完整
 `TransactionResult`；只处理 job 查询目标，不发布公开 Job HTTP 路由。
-查询使用只读事务，不锁行、不续期、不改预算或 outbox。未认领的行返回 unknown，
-不存在的 Job 返回 not_found；已有 owner 时返回当前快照，包括过期或后来 worker
+查询使用只读事务，不锁行、不续期、不改预算或 outbox。未认领的行返回
+`unknown / query_current_authority`，不存在的 Job 返回 `not_found` 错误；已有 owner 时返回当前快照，包括过期或后来 worker
 的投影。快照不证明旧认领未提交，也不单独授予执行或发布权限。
 未来 worker 必须在实际改变 Job/发布制品的事务中核对当前 owner、version 和期限；
 该认领单元当时尚未接入这些写入端口；后续派发与发布进展见下文，不能仅凭认领端口宣称完整 worker fencing 已完成。

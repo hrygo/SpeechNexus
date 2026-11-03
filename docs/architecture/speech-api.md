@@ -159,7 +159,7 @@ TTS Job 可选 `model_binding={id,revision}` 固定精确版本：新意图要�
 
 `result` 始终存在，非 `succeeded` 状态必须为 null。成功时其判别字段 `kind` 必须与 Job 一致：ASR 返回 transcript Artifact，TTS 返回 audio Artifact，音色 design / clone 返回 draft revision 与 preview Artifact，voice preview 返回 preview Artifact，voice validation 返回完整校验结果与 validation-report Artifact；所有成功结果都携带 receipt。`artifacts` 至少包含结果引用的主产物，结果内 Artifact ID 必须引用 `artifacts` 中的同 kind 项。输入过期或任务超过执行前队列期限，转为 `expired` 且 `cleanup_state=not_required`；成功结果达到保留期限时仍保留成功终态，只将 artifact 标为过期。
 
-已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 使用与 REST Job 相同的跨数组规则，服务端在写入事件前完成校验。
+已提交 Artifact 与 Job 结果共享同一 receipt；`JobArtifact.artifact_id` 在单个成功结果中唯一，结果引用的主 Artifact 必须存在、kind 匹配且 `receipt_id` 等于结果 receipt。Artifact / JobArtifact / SavedAsset / ExportArtifact 的内容字节数必须大于零，不能用空文件冒充已提交制品。`job.succeeded` 也须满足这些跨数组规则；生产者须在写入事件前校验，当前证据及 schema 覆盖限制见 §1.6。
 
 ASR 结果使用统一 `TranscriptDocument`：`id`、`revision`、`language`、`text`、`sample_rate_hz`、`coordinate_space`、`segments`、`auxiliary_status`。segment 包含 `segment_id`、`sample_span`、`text`、`text_revision`，以及可选 `words`、`speaker_assignments`。统一坐标为 `canonical_audio`、24 kHz，原文件解码 / 重采样映射的 revision 进入 receipt；不能把原文件 48 kHz 下标直接填入 sample_span。`auxiliary_status` 分别声明 alignment / diarization 的 `not_requested | pending | complete | failed | unavailable`。不把 segment 平均时长伪造成 word timestamps；未知说话人为 null / unknown。
 

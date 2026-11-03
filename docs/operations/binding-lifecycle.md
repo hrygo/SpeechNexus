@@ -118,7 +118,13 @@ binding、revision 或 canonical body 均返回 `idempotency_conflict`。
 `speech_publication_lifecycle_events`，至少包含
 action、binding/revision、result status、请求 ID、actor 类型/标签、发生时间、
 policy revision、intent digest、幂等键摘要与包含 reason 的
-`change_summary_json`。核对命令：
+`change_summary_json`。
+
+当前路由将审计主体记录为 `anonymous`、credential label 记录为 `null`；客户端提供的
+`Authorization` 头不会被视为已认证身份。部署入口的访问限制须单独核实，不能据此审计字段
+推断操作者身份。
+
+核对命令：
 
 ```sql
 SELECT action, binding_id, revision, result_status, occurred_at_us,

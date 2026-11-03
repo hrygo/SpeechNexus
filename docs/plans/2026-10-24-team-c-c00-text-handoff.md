@@ -1,6 +1,6 @@
 ---
 title: "团队 C C00 文本字符边界交接"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus C00 项目与转写版本单元交接"
-status: in-progress
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---

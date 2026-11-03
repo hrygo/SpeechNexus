@@ -1558,11 +1558,21 @@
         "docs/architecture/speech-api.md",
         "docs/components/cpu-vad.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "工作台 ASR 流组件维护发送样本数与 credit，拒绝无效音频及不匹配的 stream epoch。",
+      "integration": "客户端组件与事件契约存在；公开实时服务、引擎及端到端终态仍须接线和联验。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "服务端时钟、去重、输出上限和唯一终态须在真实链路验证；客户端测试定义不代表执行结果或部署资格。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/web/workbench/src/realtime/asr-stream.ts",
+          "label": "ASR 流组件",
+          "note": "客户端样本计数、credit 与 epoch 检查"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/web/workbench/src/realtime/asr-stream.test.ts",
+          "label": "ASR 流测试定义",
+          "note": "测试定义不代表本次运行或真实服务验收"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

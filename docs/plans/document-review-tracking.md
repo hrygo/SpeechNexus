@@ -13,7 +13,7 @@
 | `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、启动重放前提及清理装配；跨模块竞态待核对 |
-| `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、Web 代理、镜像及依赖，修正 profile 与历史证据，补充同步 TTS 结算 worker 与 Compose 缺口；其余单元、拓扑和资格未逐项核实 |
+| `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、Web 代理、镜像及依赖，修正 profile 与历史证据，补充 binding 停用及同步 TTS 结算 worker；其余单元、拓扑和资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 部分核对 | 对照构图脚本、ADR、目录和图像摘要；未重渲染或核验全部拓扑 |
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要、重放、文本流及文件 ASR/TTS 消费入口；区分 codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |

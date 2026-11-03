@@ -1,5 +1,7 @@
 # 团队C：实时TTS消费者与播放交接
 
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
+
 日期：2026-10-24。base/head：`9eea85987232eaebbcbd6768c46fe0a084a4d177`。未提交、推送或发布。当前补丁与逐文件哈希以本机 `.runtime/team-c/team-c-current.manifest.json` 为准。
 
 正式工作台新增「实时配音」入口，按[实施计划](2026-10-24-team-c-realtime-tts-plan.md)消费既有生成REST与RealtimeEvent。部署profile/model/voice引用无虚构初值，voice可由服务端解析但必须在接受回执固定；同源连接、显式开始一轮、追加/冻结/finish/cancel与drain/abort、原键恢复和独立GET清理事实。ASR消费者与其严格journal继续保留。

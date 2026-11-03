@@ -84,7 +84,7 @@
 | `docs/components/file-tts.md` | 已核对 | 全文静态对照策略、HTTP、命令、编码器、worker 与历史探针记录；未重跑测试或历史探针 |
 | `docs/components/frozen-execution-inputs.md` | 已核对 | 对照命令桥失败分类、对象版本与传输期限、ASR 参数映射及集成测试入口；未运行集成测试或验证部署 |
 | `docs/components/gateway-execution-client.md` | 已核对 | 对照客户端配置、认证、结果查询、停止身份、重试、调用方装配及测试入口；未运行测试或验证目标部署 |
-| `docs/components/model-binding-drafts.md` | 部分核对 | 对照草稿和目录读取授权、生命周期事务、0011 降级迁移及草稿、默认参数和 HTTP 测试定义；修正锁、期限、事件原因及禁用意图权限，未运行集成测试；其他契约与生成器细节待核对 |
+| `docs/components/model-binding-drafts.md` | 部分核对 | 对照草稿和目录读取授权、生命周期事务、0011 降级迁移、相关测试定义及 HTTP 源和结构检查；修正锁、期限、事件原因、禁用意图权限及检查范围，未运行集成测试；其他消费者细节待核对 |
 | `docs/components/node-controller.md` | 已核对 | 静态对照模板、容器创建、观察、路由与停止恢复；历史探针按原时点保留，未运行服务 |
 | `docs/components/node-stop-recovery.md` | 已核对 | 静态对照检查点、停止恢复、诊断与测试定义；历史探针按原时点保留，未运行服务 |
 | `docs/components/production-admission-storage.md` | 已核对 | 静态对照存储、授权、锁序、恢复及公开 Job 原始意图；未运行服务 |

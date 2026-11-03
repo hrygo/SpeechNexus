@@ -70,9 +70,10 @@ types (booleans differ from numbers). Nonstandard reference expansion separates 
 operations, responses, request bodies, parameters and headers) from JSON Schema
 positions; `const`, `enum`, defaults and examples remain literal JSON data. Literal
 or dynamic references that prevent a closed-tree proof cannot use the shortcut.
-This proof is limited to nonstandard responses; requests,
-other unions, lost guarantees and the original OpenAI comparison policy retain
-their existing checks. It is not general JSON Schema inclusion or runtime proof.
+This proof applies to response comparisons with full-field checking, including
+the explicitly selected speech HTTP surface. Requests, other unions, lost
+guarantees and the original OpenAI standard-only comparison retain their existing
+checks. It is not general JSON Schema inclusion or runtime proof.
 
 ## Process-local registry
 

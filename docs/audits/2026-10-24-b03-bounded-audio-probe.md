@@ -9,7 +9,7 @@ date: 2026-10-24
 
 本轮交付 [B03 #30](https://github.com/hrygo/SpeechNexus/issues/30) 的有界媒体与 ASR/VAD
 原生输入单元；开工基线 `3b8052040111cdd8af3a50aaf5b0e8b3922e1f42`，
-最终 rebase 至 `8c4ea9a`（含 #77/#79）。接口和限制见[文件媒体说明](../architecture/file-asr-audio.md)。
+最终 rebase 至 `8c4ea9a`（含 #77/#79）。接口和限制见[文件媒体说明](../components/file-asr-audio.md)。
 没有修改共享机器契约、业务存储或预算权威，没有接入真实 ASR/TTS 外发或公开路由。
 
 ## 环境与标准

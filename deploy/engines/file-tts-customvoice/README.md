@@ -16,5 +16,5 @@ uv run python scripts/dev-env/verify-file-asr-artifacts.py \
 以及注册方提供的 `--binding-id`、`--logical-model`、`--capacity-manifest-id`。
 不传 `--vad-file`；工具不发 HTTP、不写数据库或分配身份。
 
-详见[制品、参数与部署交接](../../../docs/architecture/file-tts-binding-handoff.md)。
+详见[制品、参数与部署交接](../../../docs/operations/file-tts-binding-handoff.md)。
 `runtime-pin.json` 是本次镜像只读核验的固定记录，离线模型校验不重新证明运行容器或依赖。

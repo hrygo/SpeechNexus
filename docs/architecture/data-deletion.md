@@ -9,7 +9,7 @@ date: 2026-10-25
 
 本规范定义完整删除契约。Workbench 已实现项目与稿件删除路由、持久账本及启动重放，
 覆盖范围和保守阻断见下文；Speech 删除路由与跨模块停止协调仍待实现。
-执行网关已实现需显式可信许可的[命令正文清理事务](execution-gateway.md#10-redact_execution_command)，
+执行网关已实现需显式可信许可的[命令正文清理事务](../components/execution-gateway.md#10-redact_execution_command)，
 未提供默认许可签发或 HTTP 清理入口，不能据此声明完整删除闭环可用。机器定义为
 [deletion.schema.json](../../contracts/shared/deletion.schema.json)，入口分别是
 Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench

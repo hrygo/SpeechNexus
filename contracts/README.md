@@ -4,7 +4,7 @@ Contracts in this directory are the source of truth for public and internal
 producer/consumer protocols. Consumers must not hand-maintain independent copies
 of defaults, units, enum domains, or stable error codes.
 
-The [coordination request structure check](../docs/architecture/coordination-request-change-checks.md)
+The [coordination request structure check](../docs/validation/coordination-request-change-checks.md)
 compares the 18 frozen raw transaction request entrypoints with
 `CONTRACT_BASE_REF=origin/main make contracts-coordination-requests`. Its report
 separates schema and binding version evidence. Results, mixed root envelopes
@@ -19,7 +19,7 @@ root/semantic limits and does not alter the default request surface.
   recovery candidate, generated as `zero_dispatch` without a network client. It reuses
   the full original submit identity and existing control errors. No sending, seal,
   success or release producer is provided; production transaction/permission evidence
-  remains pending. See [candidate boundaries](../docs/architecture/zero-dispatch-contract-core.md).
+  remains pending. See [candidate boundaries](../docs/components/zero-dispatch-contract-core.md).
 
 - `internal/audio-inspection.schema.json`: private successful output from the
   isolated media worker, explicitly generated as `audio_inspection`. Consumers
@@ -129,7 +129,7 @@ root/semantic limits and does not alter the default request surface.
   used by capacity, qualification, instance, lease, intent, and receipt
   identities. It is separate from runtime instances. The selected admin draft
   creation/fixed revision HTTP validators and full runtime DTO entrypoint are
-  described in [the draft contract handoff](../docs/architecture/model-binding-drafts.md);
+  described in [the draft contract handoff](../docs/components/model-binding-drafts.md);
   their existence does not implement the registry or publish/activate a model.
 - `model-instance.schema.json`: internal runtime instance identity, generation,
   configuration digest, readiness, observed facts, stop evidence, and
@@ -163,7 +163,7 @@ root/semantic limits and does not alter the default request surface.
   service key and public routes must reject it. Version `0.4.0.dev0` separates
   retryable control-store unavailability from unknown commits and required
   reconciliation, with schema-enforced recovery hints. The authenticated
-  [barrier and read-only query HTTP operations](../docs/architecture/execution-gateway.md)
+  [barrier and read-only query HTTP operations](../docs/components/execution-gateway.md)
   are implemented. An unknown execution without an observed dispatch can be aborted
   only with whole-instance termination evidence; submit replays in that branch must
   include `stop_evidence_kind`. The new 404 `control_execution_not_found` carries
@@ -179,7 +179,7 @@ root/semantic limits and does not alter the default request surface.
   [application transaction design](../docs/architecture/coordination-transactions.md).
   The shared PG/InnoDB prototype is test-only. The first independent production
   `create_job`/outbox unit and read-only recovery are documented in
-  [production jobs](../docs/architecture/production-jobs.md); remaining ports and
+  [production jobs](../docs/components/production-jobs.md); remaining ports and
   their application integration are still pending.
 - `internal/execution-stream.schema.json`: realtime gateway to execution
   gateway control envelopes, input/output credits, backpressure, watermarks,
@@ -212,7 +212,7 @@ root/semantic limits and does not alter the default request surface.
   ambiguous proof is 503. A fixed TLS gateway consumer validates the complete
   binding, same-pool fencing and execution time before recording each execution's
   stop. This query never advances recovery or returns scheduler capacity.
-  See [trusted stop consumption](../docs/architecture/trusted-node-stop.md).
+  See [trusted stop consumption](../docs/components/trusted-node-stop.md).
 
   `POST reconcileNodeInstances` accepts diagnostic assertions only. Its supplied
   state, stop evidence, timestamp and compatibility fencing token never update
@@ -401,7 +401,7 @@ success validation, bounded ingress responses and original-path/body/key recover
 after 503. Existing draft `profile-http` still selects create/fixed-get only.
 These artifacts do not register a publisher, grant authority to caller-supplied
 validation evidence or establish production qualification. See
-[the contract preflight](../docs/architecture/profile-lifecycle-contract.md).
+[the contract preflight](../docs/components/profile-lifecycle-contract.md).
 
 ## Validation
 
@@ -496,14 +496,14 @@ the gateway's periodic stop recovery. Its `gateway_recovery` Python/TypeScript p
 uses the existing offline generator and shared positive/negative fixtures. Every field
 is explicit; node credentials remain separate Secret settings. This adds no public HTTP
 operation, database authority or engine qualification. See
-[activation and lifecycle](../docs/architecture/execution-gateway.md#默认进程的自动恢复配置与生命周期).
+[activation and lifecycle](../docs/components/execution-gateway.md#默认进程的自动恢复配置与生命周期).
 
 `CONTRACT_BASE_REF=<frozen commit/ref> make contracts-http-changes` checks known
 request/response structure changes across admin, workbench, runtime-control and
 execution-control OpenAPI sources, including their repository references and
 `nexus` fields. It reports both source versions and findings; a version bump does
 not waive a finding. The existing `contracts-compat` OpenAI standard scope remains
-unchanged. See [coverage and limits](../docs/architecture/http-contract-change-checks.md).
+unchanged. See [coverage and limits](../docs/validation/http-contract-change-checks.md).
 A zero result is not a proof of complete protocol compatibility or a replacement
 for the producer's version/change list, examples, consumer review and migration.
 
@@ -521,13 +521,13 @@ route/engine qualification.
 validates explicit sparse canonical parameter fields without inserting values.
 `shared/profile-parameter-values.schema.json` is their common field source with
 complete profiles, which keep their original requiredness and domains. The
-[format and lifecycle requirements](../docs/architecture/binding-parameter-defaults.md)
+[format and lifecycle requirements](../docs/components/binding-parameter-defaults.md)
 separate parsing from registry storage, published configuration and qualification.
 That standalone format adds no HTTP operation and leaves ModelBinding response
 fields unchanged; the separately selected producer mode is described below.
 
 The separate `binding-defaults-producer.openapi.yaml` `0.1.0.dev0`
-[producer profile](../docs/architecture/binding-defaults-producer.md) declares
+[producer profile](../docs/components/binding-defaults-producer.md) declares
 optional `parameter_defaults` on new draft creation and a fixed snapshot GET.
 It reuses the legacy admin request's canonical field schemas. The explicit
 four-table producer writer now serves these operations, retains the fixed parent

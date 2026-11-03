@@ -17,14 +17,14 @@ invalid for a real execution.
 `transcription-recipe.json` must use the exact approved runtime plan and
 binding/manifest identities. `recipe_digest` is the RFC 8785 canonical JSON
 SHA-256 with `recipe_digest` removed, as described in
-[synchronous transcription](../../docs/architecture/synchronous-transcription.md).
+[synchronous transcription](../../docs/operations/synchronous-transcription.md).
 
 The TTS gateway requires `file_tts_v2`. Its `builtin_voice_binding` must pin the
 public voice ID/revision, internal revision ID and native speaker from the same
 authoritative immutable revision; the speaker must equal `tts_policy.voice`.
 The mapping restricts execution and does not grant publication or qualification.
 Stop the old worker before activating the replacement snapshot; v1 is rejected.
-See [TTS deployment](../../docs/architecture/file-tts-runtime.md).
+See [TTS deployment](../../docs/operations/file-tts-runtime.md).
 
 | Source example | Required runtime name |
 | --- | --- |

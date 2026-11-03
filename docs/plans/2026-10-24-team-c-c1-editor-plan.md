@@ -8,7 +8,7 @@
 
 **Tech Stack:** 既有React/TypeScript/Vitest、A createValidatedClient/parse、项目Token；生产bundle的Chromium合成HTTP探针。
 
-**Spec:** `contracts/workbench-openapi.yaml`，`docs/speechnexus-product-architecture.md` §2.2，`docs/architecture/ui-ux-design-framework-and-tokens.md` §3；C00 #35/C02 #37/C08 #43及完整Goal。
+**Spec:** `contracts/workbench-openapi.yaml`，`docs/speechnexus-product-architecture.md` §2.2，`docs/architecture/ui-ux-design-framework-and-tokens.md` §3（历史路径；[当前位置](../design/ui-ux-design-framework-and-tokens.md#3-speechnexus-品牌特点与架构边界融合)）；C00 #35/C02 #37/C08 #43及完整Goal。
 
 ## Global Constraints
 

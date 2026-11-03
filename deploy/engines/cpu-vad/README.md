@@ -7,7 +7,7 @@ The gateway loads neither these libraries nor model files during ordinary startu
 The adapter is `speechnexus_gateway.infrastructure.silero_onnx.SileroOnnxCpuModel`.
 It requires an explicitly configured local model and expected SHA-256.
 The consumer API and remaining integration boundaries are documented in
-[CPU VAD](../../../docs/architecture/cpu-vad.md).
+[CPU VAD](../../../docs/components/cpu-vad.md).
 
 Recompile the complete dependency lock after an intentional version change:
 

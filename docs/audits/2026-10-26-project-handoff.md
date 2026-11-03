@@ -43,7 +43,7 @@ date: 2026-10-26
 | 协调选择 | 不采用 etcd；Redis 可作可丢失缓存/唤醒，不能成为唯一事实或第二预算权威。旧原型退出按 [ADR 0007](../decisions/0007-legacy-coordination-retirement.md)处理 |
 | 生命周期 | 完整意图先持久化再外发；unknown 沿原身份恢复并继续占用。取消接受、断线、TTL 不代表停止或释放；双证据后由 A 原事务幂等结算。[事务方案](../architecture/coordination-transactions.md) |
 | 模块与权限 | 工作台只用公开语音协议；网关管理执行屏障、引擎凭据与证据，控制器只管理批准模板。业务 API/worker 不持 Docker socket，不共写工作台/底座表。[所有权](../architecture/contract-ownership.md) |
-| 契约与依赖 | Python/TS 边界类型同源生成或校验；领域向内，vendor/数据库/公开 DTO 在边界转换。[契约入口](../../contracts/README.md)、[目录边界](../architecture/repository-layout.md) |
+| 契约与依赖 | Python/TS 边界类型同源生成或校验；领域向内，vendor/数据库/公开 DTO 在边界转换。[契约入口](../../contracts/README.md)、[目录边界](../components/repository-layout.md) |
 | 产品身份 | 首期无登录、用户目录、RBAC、多租户或个人私有空间；两个 Web 入口不是隔离边界。[ADR 0001](../decisions/0001-product-boundaries-and-authentication-scope.md) |
 | 内容网络 | 业务内容不出部署网络；LLM 默认关闭，只用服务端批准的本机/内网服务，不回退公有云。[ADR 0003](../decisions/0003-workbench-llm-network-boundary.md) |
 | 制品与删除 | 私有 staging 后发布固定对象引用；独立保存副本不追删，删除账本重放完成后才能开放恢复内容。[数据删除](../architecture/data-deletion.md) |
@@ -197,7 +197,7 @@ gh issue view 6 --json state,labels,body,url
 ## 8. 本次交付的验收边界
 
 本 PR 修改文档，检查本地链接、命令语法、事实来源、40 项 issue 回读及 diff；
-精确 head 的检查以 PR CI 为准。[CI 规则](../architecture/ci-validation.md)
+精确 head 的检查以 PR CI 为准。[CI 规则](../validation/ci-validation.md)
 允许纯 Markdown 路由仅执行适用检查，业务/数据库/部署不适用不表示重跑通过。
 
 不重新执行历史业务、数据库、模型、质量或物理拓扑实验；历史结果继续绑定原报告。

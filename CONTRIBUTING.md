@@ -82,7 +82,7 @@ PR 正文只有在该 PR 将完整解决 issue 时才写 `Closes #N` / `Fixes #N
 
 先读[开发指南](docs/development-environment.md)及 [AGENTS.md](AGENTS.md)，按[验证指南](docs/agent-verification.md)执行与改动匹配的检查。PR 描述说明解决的问题、关联 issue、实际验证及覆盖限制；有剩余工作或风险时明确写出。小 PR 无需为了模板增加无关内容。
 
-测试使用合成或最小脱敏数据。纯文档、无脚本 skill 和 issue 模板的本地验证只需检查链接、格式、规则衔接与配置结构；无需启动数据库、模型或完整业务验证。CI 范围遵循[现有门禁](docs/architecture/ci-validation.md)。未运行的检查如实注明。
+测试使用合成或最小脱敏数据。纯文档、无脚本 skill 和 issue 模板的本地验证只需检查链接、格式、规则衔接与配置结构；无需启动数据库、模型或完整业务验证。CI 范围遵循[现有门禁](docs/validation/ci-validation.md)。未运行的检查如实注明。
 
 ## 规则维护与官方依据
 

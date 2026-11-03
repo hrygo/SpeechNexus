@@ -2,6 +2,8 @@
 
 核验日期：2026-10-24（Asia/Shanghai）。本单元推进 C05，不代表完整 C05/C04 或实时语音资格；C00–C08 goal 保持 active。
 
+下述缺口反映本单元时点；后续部署内提词状态接入及其验证见[生产消费者交接](2026-10-25-team-c-teleprompter-state-consumer-handoff.md)。该状态不含正文，自动语音跟随与真实设备资格仍须分别核验。
+
 ## 基线与范围
 
 base/head：`dc14cf8fb0a7250842a8a7697c6884d6d21b2004`。启动累计165文件补丁 SHA-256 `b86adc6386edc21c1d124d0b945b100cc57d49e1f24b544f55f5afe526041d41`，逐文件核对后保留。公开 speech/workbench OpenAPI `0.1.0.dev0`、bindings `0.1.0` 不变；没有修改公开契约、生成产物、锁、后端、迁移、共享设计或 README。

@@ -2,6 +2,8 @@
 
 核验日期：2026-10-24（Asia/Shanghai）。本单元是会议保存与固定转写源的必要基础，不代表完整 C05/C06、会议页面或 G0–G5 已验收。完整 C00–C08 goal 保持 active。
 
+下文公开接口、会议页面和纪要的缺口是本单元时点的记录；后续会议与纪要页面见[会议工作台交接](2026-10-24-team-c-meeting-ui-handoff.md)，纪要派发及其验证见[worker 交接](2026-10-25-team-c-minutes-worker-handoff.md)。这些接入不代表完整会议或真实语音资格已验收。
+
 ## 基线与范围
 
 base/head：`dc14cf8fb0a7250842a8a7697c6884d6d21b2004`。启动时累计 159 文件补丁 SHA-256 为 `f1d6e942f2c23b41ad092920b244d86cf39662ecaa6449bdc10cb6933fb0ffb4`，逐文件核对后保留。当前 speech/workbench OpenAPI `0.1.0.dev0` / bindings `0.1.0`，未改公开契约、生成流水线、锁文件、组合根或 Web 源码；上游 README 并行改动仍未自动合并。

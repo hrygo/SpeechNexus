@@ -33,7 +33,7 @@ date: 2026-10-28
 | 数据库快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 只证明查询路径与跨表规则，不是 live DB、不是发布回执 |
 | 校验脚本 | `scripts/dev-env/verify-release-evidence.py` | 只读；校验 schema、跨文档、摘要、DB/快照容量账本 |
 
-**当前基线**：仓库 `main` 的完整 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`。样例中的模型、镜像和测量数值来自 #243 的 GPU 岗记录与仓库 artifact pin；本任务没有下载模型、没有连接 GPU、没有重跑测量。
+**样例基线**：编写时仓库 `main` 的 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`，不是当前主线承诺。样例中的模型、镜像和测量数值来自 #243 的 GPU 岗记录与仓库 artifact pin；本任务没有下载模型、没有连接 GPU、没有重跑测量。
 
 ## 2. 顶层字段表
 

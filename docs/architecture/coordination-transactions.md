@@ -13,10 +13,8 @@ date: 2026-10-24
 MySQL/InnoDB 是协调路径迁移验证目标。
 
 本次已交付精简 DDL、事务机器契约、权限生成工具，以及两个真实数据库共用的
-测试原型。[首个生产 Job/outbox 事务](production-jobs.md)另行实现创建、完整身份重放、
-只读未知结果恢复和版本化迁移；它不导入测试原型。其余生产领域规则、协调适配器、
-Scheduler、Worker、网关外发和控制器接入仍待编码。物理多主机、真实引擎、故障切换与
-备份恢复资格仍须独立验证。
+测试原型。[首个生产 Job/outbox 事务](../components/production-jobs.md)另行实现创建、完整身份重放、
+只读未知结果恢复和版本化迁移；它不导入测试原型。后续已有[准入事务](../components/production-admission.md)、[runtime 投递 worker](../operations/production-runtime-delivery.md)和[网关提交](../components/execution-gateway.md)等分段实现；各自的装配和验收范围不同，不能视作完整 Scheduler 已交付。物理多主机、故障切换与备份恢复资格仍须独立验证。
 
 ## 1. 实现位置与依赖
 
@@ -68,7 +66,7 @@ schema 根入口同时接受命令与结果；`result.operation` 约束对应结
 该正文清理已由 gateway 原生窄事务实现，要求显式可信删除许可，并在 pool → lease → submit
 行锁下确认执行清理和 A 的 lease release，原子清正文/留 tombstone，不写预算。
 默认没有许可签发器或 HTTP 删除入口，真实删除协调器仍待 A 接入；
-同 Job/摘要的幂等确认与 FactSnapshot 语义见[执行网关](execution-gateway.md#10-redact_execution_command)。
+同 Job/摘要的幂等确认与 FactSnapshot 语义见[执行网关](../components/execution-gateway.md#10-redact_execution_command)。
 
 契约示例与反例位于
 [`transaction-examples.json`](../../tests/fixtures/coordination/transaction-examples.json)，
@@ -100,8 +98,8 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 | `query_outcome` | 上述调用者 → 所属 repository | 读取有类型的原身份与摘要，不引发执行；目标分支用 `x-nexus-result-kind` 声明对应快照：pool→OwnerSnapshot、attempt→AdmissionSnapshot、job→ClaimSnapshot、submit→ExecutionSnapshot、lease→LeaseSnapshot、interval→FactSnapshot、runtime_intent→RuntimeSnapshot | pool、attempt、job、submit、lease、interval、node/intent 分别有确定查询键 |
 
 后续实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口。
-其中 [quarantine_lease、release_lease 与原租约查询](production-leases.md)已有独立生产实现，
-只按网关权威事实搬移/结算当前 lease；完整配方准入与实际调度接入仍待后续单元。
+其中 [quarantine_lease、release_lease 与原租约查询](../components/production-leases.md)已有独立生产实现，
+只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)也已实现并接入同步 TTS，完整调度及其他业务链仍须分别验收。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
 再期待异常时逐项补偿。attempt/submit/runtime 等持久幂等身份的摘要不匹配必须报冲突；
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。
@@ -137,16 +135,16 @@ resource_pools
 `(operation_id, attempt_id, output_stream_id)` 的流权威行；不能只按 submit ID 排斥，
 否则不同 stage 可在同一逻辑流重复计量。外键父行的隐式锁也必须纳入此顺序。
 
-`0007_admission_commands` 增加的 [operation/原请求存储](production-admission-storage.md)
+`0007_admission_commands` 增加的 [operation/原请求存储](../components/production-admission-storage.md)
 位于资源父锁之后、attempt 之前；请求记录在 attempt 之后创建并引用两者。
-[独立完整准入事务](production-admission.md)已在同一cursor消费该存储；实际业务进程另行接线。
+[独立完整准入事务](../components/production-admission.md)已在同一cursor消费该存储；实际业务进程另行接线。
 独立准入在 operation 锁下核对原 workspace/业务摘要与当前 attempt，未知执行不得换身份绕过。
 
 生产 gateway 已实现该输出追加与原区间查询，两个不同 pool/stage 共享输出流的真实行锁等待
 已在 PG/InnoDB 验证。用量取 generated 区间长度之和，max-end 水位不是消耗总量；
 任意已记输出区间都阻止无外发清理结论，诊断 meter 不退生成用量。
 结果沿用 FactSnapshot，不编造区间版本；详细身份/重放/恢复规则见
-[执行网关](execution-gateway.md#11-append_interval-与原区间查询)。
+[执行网关](../components/execution-gateway.md#11-append_interval-与原区间查询)。
 
 等待锁以后，再从数据库取时间判断当前租期。新行的全局唯一键/FK 也可能在 INSERT 时
 等待；竞争事务回滚后 INSERT 会成功，不能仅靠唯一冲突异常识别。创建路径必须在
@@ -157,7 +155,9 @@ Job 认领基线锁定候选行并执行带 claim_version/expiry 的条件更新
 `SKIP LOCKED` 仅是后续可测量的优化。没有 Redis 或通知时扫描持久 outbox/待办行。
 
 只允许对**数据库已确认回滚**的 deadlock/serialization 冲突，回滚整个事务后有界
-重试，最多 3 次，带短抖动且总耗时不越请求 deadline。业务容量不足、版本冲突、
+重试，最多 3 次，带短抖动且总耗时不越请求 deadline。当前 Job、租约、owner、runtime、
+准入和网关提交的 PG adapter 最多执行 3 次事务尝试（含首次），因此最多重试 2 次。
+业务容量不足、版本冲突、
 摘要冲突不是驱动透明重试。连接断开、提交确认丢失或驱动不能证明回滚时，一律
 按未知结果查询。错误分类由 adapter 根据实际 SQLSTATE/错误号实现并测试。
 
@@ -228,7 +228,7 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 `record_execution_observation` 窄事务实现，PG/InnoDB 共用规则。该端口仅允许 submitting
 确认未外发的失败，不能解除 unknown；成功和有清理的终态仍必须经确切停止事实关闭，
 不能伪造 stop 代替 pre-dispatch 失败。版本、时间与原外发关联的规则见
-[执行网关](execution-gateway.md#9-record_execution_observation)。
+[执行网关](../components/execution-gateway.md#9-record_execution_observation)。
 
 A 的 release 消费者还在原 submit 锁后通过 `0028_execution_release_guards` 的只读
 presence 投影复核该失败分支：接受/派发、staging、样本及任意输出区间都必须为空。
@@ -260,7 +260,7 @@ Gateway 不查询工作台或语音业务表，只在自己的清理事务中重
 
 ## 7. 实例生命周期与详细实施要求
 
-create/query/observe 已具备[独立生产事务端口](production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；批准计划/资格提供者、scheduler/controller 客户端和真实生命周期资格仍待接入，不代表生产进程或 GPU/多主机验收完成。
+create/query/observe 已具备[独立生产事务端口](../components/production-runtime-intents.md)与真实 PG/InnoDB 的合成事实验证；固定 HTTPS controller 客户端和[独立投递 worker](../operations/production-runtime-delivery.md)也已实现。[受控同步 TTS 窗口](../audits/2026-11-03-controlled-tts-prepare.md)记录了真实 prepare、资格和停止证据；这不代表完整 scheduler、其他引擎或多主机生命周期资格已完成。
 
 - `create_runtime_intent(prepare)`：锁 owner/quota（若需要）/host/head；核对获准模板、
   拓扑、绑定、manifest、config、加载策略；新 generation 必须大于持久 high water。
@@ -288,7 +288,7 @@ create/query/observe 已具备[独立生产事务端口](production-runtime-inte
 | 状态转换、release/stop/cleanup matrix 触发器 | execution 规则 + admission/runtime 规则；先证据、后释放 | TTL 无效、unknown 隔离、终态反转、submit/release 两种锁序；gateway/Scheduler |
 | pool/lease/gateway token 单调触发器 | owner、barrier、submit 用例锁权威行，条件 version 更新 | 同池争抢、过期不可续、旧 token、takeover/submit；owner/gateway |
 | 活跃 generation partial unique | head.current_generation 与 high_water；普通 PK/FK | 历史 generation 不改写；runtime 生命周期接入后补完整并发验收 |
-| 未解决 action partial unique | 锁 head 的 prepare/stop 当前指针，历史意图保留 | runtime 生产实现与跨库生命周期验收待完成 |
+| 未解决 action partial unique | 锁 head 的 prepare/stop 当前指针，历史意图保留 | runtime 生产事务已实现；跨库生命周期及目标部署资格仍须验收 |
 | admission 与 submit 复合身份 | DB 保留核心复合 FK；应用补齐全部身份及摘要核对 | 配方缺阶段、generation 错误、摘要冲突；Scheduler/gateway |
 | 预算域、floor、溢出、内存架构 | 纯预算函数 + admission 事务；基础 CHECK 保留 | 六维、quota、乘法溢出、同实例多阶段；容量资格由真实 manifest 验收 |
 | GiST 区间排他、watermark 触发器 | 锁 submit/output stream，检查 `[start,end)` 全部重叠并追加 | 重放、相邻/重叠/硬上限、真实锁等待；gateway/计量消费者 |
@@ -339,8 +339,8 @@ uv run python scripts/dev-env/coordination-grants.py \
 ```
 
 根目录活动 SQL 只用于新建隔离测试 namespace，不作为旧草案的原地升级。
-生产使用独立包内版本化迁移：已有[Job/outbox 单元](production-jobs.md)及
-[`0002_coordination` 存储基线](production-coordination-storage.md)，不导入原型工具。
+生产使用独立包内版本化迁移：已有[Job/outbox 单元](../components/production-jobs.md)及
+[`0002_coordination` 存储基线](../operations/production-coordination-storage.md)，不导入原型工具。
 涉及既有协调结构/运行态的部署升级，须先关闭新准入、封锁旧入口、完成/隔离在途执行；
 在唯一权威库内备份并核对全部身份、generation/token high water、租约、提交、区间、
 删除账本和证据，构造当前指针、配方集合、投影与摘要后，再启用新入口。

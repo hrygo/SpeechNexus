@@ -94,7 +94,7 @@ CustomVoice TTS；公开上传→持久 Job/原子准入→唯一真实执行→
 标准 SDK/C 下载。ASR 可以不选 Profile，仍必须固定权威 binding、模型/引擎/镜像/许可、
 显式默认、支持参数和输入输出上界；草稿、示例与引擎隐式默认都不能补充缺失事实。
 
-首条 ASR 的[固定制品与参数交接](../architecture/file-asr-binding-handoff.md)已提供
+首条 ASR 的[固定制品与参数交接](../operations/file-asr-binding-handoff.md)已提供
 1.7B/CPU VAD/引擎及独立锁文件的离线核验入口。本机 11 个运行制品共
 4,705,382,857 bytes 核验通过；工具输出复用既有 artifact/engine 契约，不签发
 binding、manifest 或资格。本候选补齐完整草稿注册请求和显式默认，身份及 manifest
@@ -118,7 +118,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 ## 已集成的持久执行单元与本轮缺口
 
 [#163](https://github.com/hrygo/SpeechNexus/pull/163) 已随 main `f239e2d` 集成 #161 的预热修复及
-[受控 ASR 原生鉴权与代次检查](../architecture/controlled-asr-generation.md)。
+[受控 ASR 原生鉴权与代次检查](../components/controlled-asr-generation.md)。
 控制器为固定目标派生原生 key，检查实际镜像/argv/环境和身份；网关在读取对象前拒绝
 不匹配或未绑定代次的真实 endpoint。固定镜像的无 GPU/无网络中间件检查覆盖缺 key、
 旧 key、新 key 和未鉴权 health；不加载模型，不替代默认真实装配或停止/预算联验。
@@ -128,7 +128,7 @@ binding、manifest 或资格。本候选补齐完整草稿注册请求和显式�
 修前四项双库反例复现失败，修后五组 PG/InnoDB/MinIO 消费者回归 102 项通过、无跳过；
 私有 PG 确认停止。实际生产校验未放宽，精确候选 CI 与评审仍以 PR 当前状态为准。
 
-`codex/b-142-default-asr-runtime` 已实现[配置驱动的默认文件 ASR 工厂](../architecture/file-asr-runtime.md)，
+`codex/b-142-default-asr-runtime` 已实现[配置驱动的默认文件 ASR 工厂](../operations/file-asr-runtime.md)，
 原 `898fbc9` 已 rebase main `7dc276a`；真实实验执行于 `997bd46`，该次 rebase 未改变网关/控制器源码。
 本轮另修首次协程执行前取消泄漏本地容量票据的问题，新代码的确定性验证与该真实实验分别记录。
 `0c54c8a` 的 CI445 和取消修复已通过复审；主干前进后再次 rebase 到 `78505a8`，
@@ -189,7 +189,7 @@ A 原事务先保留 base 等待 lease 清理，再分别幂等归还 slot/attem
 也不构成网关停止事实或预算归还依据。
 
 [#203](https://github.com/hrygo/SpeechNexus/pull/203) 已合入 `4edc838`：
-[文件 TTS 默认私有装配](../architecture/file-tts-runtime.md)接通真实音频身份、受控
+[文件 TTS 默认私有装配](../operations/file-tts-runtime.md)接通真实音频身份、受控
 node/gateway/pool/instance/generation/binding、ASR/TTS 共享持久 worker，并在登记音频回执前
 写入完整生成区间。原命令消费者不再拒绝真实提交的 24 kHz 时钟和派生输出流；越过冻结上界
 或缺少区间时隔离并保留占用。本机 3857 项单元、Ruff/mypy/7 条边界、32 份契约及 PR 14 项
@@ -215,7 +215,7 @@ CI 通过。公开路由/发布/下载、可信停止与物理集群仍未交付
 | B00 #27 | in-progress | #162 ASR 与 #219 CustomVoice 固定制品、许可来源、显式默认和注册输入已集成；权威注册/发布与容量资格仍待 |
 | B01 #28 | in-progress | #168 默认工厂已集成；原版本整代次停止、网关恢复及 A 结算有隔离证据；单请求取消与生产公开链待完成 |
 | B02 #29 | in-progress | ASR 真实预热/停止、入口屏障及 A 租约/base 已隔离联验；#218 TTS 代次鉴权/整代次双证据已集成，合前/精确合后 CI 成功；正式就绪、持续 ready、故障与 peak→steady/drain 资格待完成 |
-| B03 #30 | in-progress | 真实 CustomVoice 三格式、重启重放及取消/整代次停止和 A 租约结算已有隔离证据；[#219 交接](../architecture/file-tts-binding-handoff.md)已集成并复用原注册入口；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
+| B03 #30 | in-progress | 真实 CustomVoice 三格式、重启重放及取消/整代次停止和 A 租约结算已有隔离证据；[#219 交接](../operations/file-tts-binding-handoff.md)已集成并复用原注册入口；公开链、单请求释放、Base、长文本和完整参数矩阵待完成 |
 | B04 #31 | in-progress | 区间账本已有；真实双工、PCM/credit、完整配方与计量未完成 |
 | B05 #32 | planned | VoiceDesign/Base、克隆、换文复用、材料恢复与显式发布未实施 |
 | B06 #33 | in-progress | CPU VAD/文件消费者已有；实时、对齐、匿名分人及质量资格待完成 |

@@ -6,6 +6,8 @@ date: 2026-10-25
 
 # ADR 0010 私有音频回执与旧 JSON 消费者兼容
 
+本文保留 2026-10-25 的迁移决定与当时的交付边界；下文待交付项不是当前进度快照。现有组件及运行证据分别见[执行暂存与结果](../components/execution-staging-results.md)和[交付跟踪](../plans/delivery-tracking.md)。
+
 ## 背景
 
 原 `ExecutionStagingResult` 是 closed JSON 回执，媒体固定 `application/json`，

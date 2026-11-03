@@ -10,7 +10,7 @@ date: 2026-10-23
 [execution-command.schema.json](../../contracts/internal/execution-command.schema.json)
 是执行网关与生产者之间唯一的私有命令定义。Submit 必填 command 与
 command_digest；旧 input_asset_ref 被完整命令替代。此变更不兼容旧内部生产者，
-须一起升级后启用；公共 OpenAI 字段与公开内容边界不变。业务服务仍未实现。
+须一起升级后启用；公共 OpenAI 字段与公开内容边界不变。业务服务已有分段消费，具体同步合成装配见[同步语音合成](../components/synchronous-speech.md)，不代表所有命令种类均已接通。
 
 各个 command.kind 冻结 ASR、TTS、声音设计/克隆/验证、对齐、说话人分离、VAD 和
 codec 阶段的输入及有效参数。生产者先解析模型/预设/音色/词典的固定版本，把

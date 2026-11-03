@@ -8,9 +8,12 @@ date: 2026-10-24
 # B03 真实文件 ASR 与首次长窗口开销
 
 本轮在 `3b9789c5a20fab33ccf9db0f324b788beddcf836`（#80）上交付
-[原生文件识别](../architecture/file-asr-recognition.md)，将已实现的解码/VAD 实际接到
+[原生文件识别](../components/file-asr-recognition.md)，将已实现的解码/VAD 实际接到
 Qwen3-ASR 0.6B / 1.7B。没有注册公开 ASR、持久 submit dispatch、结果发布或预算返还服务。
 真实调用和本机控制器停止有证据；完整文件业务、质量、取消/abort 与集群资格仍未完成。
+后续真实容器预热门验证见[预热就绪门探针](2026-10-24-b02-warmup-gate-probe.md)，
+默认网关真实模型实验见[文件 ASR 实验](2026-10-25-b03-default-real-asr-probe.md)；
+下文接线缺口和耗时仍限定于本次受测基线，不代表这些后续实验已覆盖完整业务链。
 
 ## 固定环境与边界
 
@@ -97,7 +100,7 @@ adapter 同时校验实际 finish reason/usage，而不是只依据参数名或 
 应在相同镜像、binding/generation、精度和最大支持窗口上完成实际媒体→模型的预热，
 并记录首轮/复测及失败；只预热短句不能证明长窗口已就绪。
 预热与资格完成前保持加载峰值预算，不能凭健康检查切 steady 或宣称实时 ready。
-该条件交接 B02/B07 与 A 的 readiness/准入 provider，当前未自动装配到控制循环。
+该条件交接 B02/B07 与 A 的 readiness/准入 provider；本轮尚未自动装配到控制循环。
 
 ## 合入前验证
 

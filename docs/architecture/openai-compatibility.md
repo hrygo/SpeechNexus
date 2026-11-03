@@ -36,6 +36,11 @@ TTS 的 `response_format` 基线为 `mp3`、`wav`、`pcm`。REST `pcm` 固定为
 
 ## 2. 官方 SDK 调用
 
+当前同步 ASR 和 TTS 入口拒绝 `Idempotency-Key`，不能保证结果未知后重发会复用原执行。
+下面的客户端示例关闭 SDK 自动重试；部署还须检查代理或其他中间层的重试设置。收到超时或
+其他结果未知的错误时，应先协调原执行，不要仅凭 `retryable: true` 重发请求。具体限制见
+[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)。
+
 ### 2.1 Python SDK
 
 ```python
@@ -44,6 +49,7 @@ from openai import OpenAI
 client = OpenAI(
     base_url="http://127.0.0.1:8000/v1",
     api_key="deployment-shared-key",  # 未启用共享密钥时可用任意非空占位值
+    max_retries=0,
 )
 
 models = client.models.list()
@@ -78,6 +84,7 @@ import OpenAI from "openai";
 const client = new OpenAI({
   baseURL: "http://127.0.0.1:8000/v1",
   apiKey: "deployment-shared-key",
+  maxRetries: 0,
 });
 
 const speech = await client.audio.speech.create({
@@ -120,12 +127,12 @@ with client.realtime.connect(model="asr-quality") as connection:
 
 扩展方式沿用 SpeechRail 的边界经验：标准协议保持原形状，增强能力使用独立命名空间和显式版本，不通过改变标准字段含义实现“增强”。
 
-1. **路径命名空间**：增强 REST 只能位于 `/v1/nexus/`；工作台业务只能位于 `/v1/workbench/`。标准 `/v1/audio/*`、`/v1/models` 不承担音色创作、Job 或工作台语义。
+1. **路径命名空间**：增强 REST 位于 `/v1/nexus/`；工作台业务使用 `/v1/workbench/` 或契约声明的 `/v2/workbench/`。标准 `/v1/audio/*`、`/v1/models` 不承担音色创作、Job 或工作台语义。
 2. **字段命名空间**：标准 JSON 请求中的增强字段只能放在可选 `nexus` 对象；multipart 转写的 `nexus` 是 JSON 字符串，并由 `TranscriptionNexusOptions` 冻结内部 schema。标准客户端省略该字段时行为完整。
 3. **事件命名空间**：标准 ASR 事件保持 OpenAI 名称；TTS、假设修订、辅助元数据、credit、gap 和操作终态使用 `nexus.*`。同一配置只有一套状态，`session.update` 与 `nexus.session.update` 映射到同一规范命令。
 4. **严格校验**：未知字段、未知事件、布尔冒充整数、非法单位和不支持的标准参数返回稳定错误，不做静默降级或别名翻译。
 5. **版本固定**：请求可携带 profile、voice、pronunciation 与 model binding revision；执行前重新核对能力、策略和容量。默认值只在首次接受意图时解析并固化。
-6. **职责分离**：`nexus` 只承载语音底座增强；项目、会议、助手和有声书编排留在 `/v1/workbench/`，不反向写入底座表。
+6. **职责分离**：`nexus` 只承载语音底座增强；项目、会议、助手和有声书编排留在工作台命名空间，不反向写入底座表。
 7. **可验证等价**：便捷入口与 `POST /v1/nexus/jobs` 必须映射到同一规范意图和幂等摘要。新增扩展必须同时提供正例、负例、事件序列和所有消费者的等价测试。
 
 ### 3.1 SpeechRail 参考

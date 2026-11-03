@@ -34,7 +34,7 @@ node --experimental-strip-types scripts/dev-env/workbench-realtime-tts-probe.mjs
 
 ## 依赖边界和余项
 
-本轮是依赖集成。上游[配方准入](../architecture/production-admission.md)仍需原命令解析、批准/资格 provider、实际调度、完整业务配额及公开 Operation/receipt；[TLS 客户端](../architecture/runtime-controller-client.md)仍需部署 TLS、持久派发和节点内观察生产者。GET/精确重放只读快照，不推进预热，HTTP ready 不产生资格。#86 的真实预热为 B 的来源证据，本轮没有代验模型、GPU、A双库或实际 TLS 控制循环。
+本轮是依赖集成。上游[配方准入](../components/production-admission.md)仍需原命令解析、批准/资格 provider、实际调度、完整业务配额及公开 Operation/receipt；[TLS 客户端](../components/runtime-controller-client.md)仍需部署 TLS、持久派发和节点内观察生产者。GET/精确重放只读快照，不推进预热，HTTP ready 不产生资格。#86 的真实预热为 B 的来源证据，本轮没有代验模型、GPU、A双库或实际 TLS 控制循环。
 
 生产组合根、owner迁移/grants、Meeting删除图及cleanup仍由A串行同版接入。八项既有Minor继续保留：cursor错误文案、foreign-owner确认文案、双Meeting共享Transcript并发回归、成功HTTP坏输出注入、Meeting冲突后的useLatest重核、Meeting真实dispose后的GET、ASR发送失败sent计数、TTS生成done后缓冲未完的局部停止按钮。详见各原交接，本轮不追加功能修复或重复终审。
 

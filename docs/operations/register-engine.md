@@ -15,7 +15,8 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
 
 `speechnexus-runtime-delivery-worker` 只把 `runtime_instance_intents` 投递给
 **节点控制器**（`controller_address` / `controller_port` / `controller_token`），
-再记录控制器返回的 observation。没有节点控制器时它无法自己把实例置为 `ready`：
+再将控制器返回的原响应记为投递 ACK；它不调用 `observe_runtime` 推进实例状态。
+没有节点控制器时它也无法自己把实例置为 `ready`：
 `create_runtime_intent` 只创建 `preparing` 实例和 outbox，准入还要求
 `intent_state=succeeded`、`observed_instance_state=ready` 以及 readiness 收据。
 因此本任务选择运维命令，而不是增加一个必须同时改动五个服务的控制器路径。
@@ -40,13 +41,16 @@ GPU 主机、不发布 binding，也不代表模型/硬件资格。
      uv run python -m speechnexus_backend.engine_registration --help
    ```
 
-   两种入口走同一个 `main()`；下面命令里的 `speechnexus-register-engine` 可整体替换为
-   `PYTHONPATH=... uv run python -m speechnexus_backend.engine_registration`。
+   两种入口走同一个 `main()`；在仓库根目录执行时，可将下面命令里的
+   `speechnexus-register-engine` 替换为
+   `PYTHONPATH=backend/src:execution-gateway/src:packages/contracts/src uv run python -m speechnexus_backend.engine_registration`，
+   并保留后续参数。
 
 ## 推荐命令（配方模式）
 
+通过部署批准的秘密配置向进程提供 `SPEECHNEXUS_DATABASE_URL`；不要把含凭据的 DSN 写入命令参数或终端历史。以下路径和实例参数仅为示例，执行前须按目标部署确认：
+
 ```bash
-export SPEECHNEXUS_DATABASE_URL='postgresql://user:pass@127.0.0.1:5432/speechnexus_admission_test'
 export SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE=/absolute/private/asr-recipe.json
 
 speechnexus-register-engine \
@@ -64,7 +68,7 @@ speechnexus-register-engine \
 
 | 参数 | 含义 |
 | --- | --- |
-| `--database-url` | 准入库 DSN；缺省读 `SPEECHNEXUS_DATABASE_URL` |
+| `--database-url` | 准入库 DSN；缺省读 `SPEECHNEXUS_DATABASE_URL`。含凭据时使用批准的秘密配置，不放入命令参数 |
 | `--schema` | 协调表 schema；缺省读 `SPEECHNEXUS_DATABASE_SCHEMA` 或 `speech` |
 | `--recipe-file` | owner-only 私有配方；缺省读 `SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE` |
 | `--engine-url` | 引擎 origin 或 `/health` URL；缺省读 `SPEECHNEXUS_ENGINE_HEALTH_URL` |
@@ -80,7 +84,7 @@ speechnexus-register-engine \
 
 命令成功时输出 JSON，包含 `outcome`、实例身份、fencing token、readiness 摘要，以及
 `engine_instances` / `runtime_instance_heads` / `runtime_instance_intents` /
-`resource_pools` / `workspace_quotas` 的实际行。
+`resource_pools` / `workspace_quotas` 的实际行。输出还包含健康检查 URL；保存或分享前须按部署的敏感信息规则处理。
 
 ## 手动模式
 
@@ -90,7 +94,7 @@ speechnexus-register-engine \
 
 ```bash
 speechnexus-register-engine \
-  --database-url "$SPEECHNEXUS_DATABASE_URL" --schema speech \
+  --schema speech \
   --engine-url http://127.0.0.1:18100 --generation 1 \
   --model asr-quality --node node-1 --pool asr-batch --gateway gateway-1 \
   --instance instance-1 --template-id template-1 \

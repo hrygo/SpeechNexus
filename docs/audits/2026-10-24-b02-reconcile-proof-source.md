@@ -21,7 +21,7 @@ date: 2026-10-24
 快照里的双确认、容器 ID、退出码、时间戳均不能形成停止证明。`fencing_token` 只为 wire
 兼容保留，不生成节点级任期高位；各资源池任期不跨池比较。`accepted_at` 取节点处理时间，
 返回的 quarantine 名单不代表已持久隔离。完整事件语义、消费者与升级限制见
-[证据来源设计](../architecture/node-stop-recovery.md#外部快照与权威证据来源)。
+[证据来源设计](../components/node-stop-recovery.md#外部快照与权威证据来源)。
 
 ## 反证与回归
 

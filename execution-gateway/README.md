@@ -12,25 +12,25 @@ must share the same host-mounted lock directory; it must not carry business cont
 Compose does not yet provision this control configuration.
 
 The submit application/ledger and atomic stop facts are implemented. The
-[CPU VAD native API](../docs/architecture/cpu-vad.md) now provides bounded
+[CPU VAD native API](../docs/components/cpu-vad.md) now provides bounded
 segmentation and an isolated-state ONNX CPU adapter, checked with synthetic audio.
-The [file audio preparation API](../docs/architecture/file-asr-audio.md) adds bounded
+The [file audio preparation API](../docs/components/file-asr-audio.md) adds bounded
 codec/resampling and source-clock mapping into VAD; local checks include two
 authorized recording excerpts without ASR dispatch or quality acceptance.
-The [native file recognition API](../docs/architecture/file-asr-recognition.md) now
+The [native file recognition API](../docs/components/file-asr-recognition.md) now
 consumes VAD candidates through a fixed vLLM endpoint and verifies terminal identity,
 finish reason and token usage. Both ASR models were exercised on authorized local inputs.
 The authenticated submit, abort and instance-drain HTTP routes are served: without an engine
 adapter the two engine routes refuse, and the drain reports the recorded in-flight work of one
 instance generation without claiming a stop.
-The [default file-ASR composition](../docs/architecture/file-asr-runtime.md) can now connect
+The [default file-ASR composition](../docs/operations/file-asr-runtime.md) can now connect
 the existing durable worker through an explicit private deployment file and separate object
 credentials. It validates configuration before acquiring control resources, loads the pinned
 CPU VAD during the owned lifespan, and reuses the original intent/result ledger. Missing
 configuration keeps engine submission unavailable. PG/MinIO/native TCP integration uses scripted
 VAD and recognition output; real default-model operation, trusted stop/release, public publication,
 TTS, public VAD integration and physical cluster qualification remain pending.
-The [checkpoint-backed node source](../docs/architecture/trusted-node-stop.md)
+The [checkpoint-backed node source](../docs/components/trusted-node-stop.md)
 can now supply the existing recovery sweep with whole-instance stop facts over
 fixed, verified TLS. Missing or conflicting proof keeps execution unknown; gateway
 stop recording does not return scheduler budgets. Set
@@ -54,4 +54,4 @@ lifespan cancellation; cancellation propagates after cleanup. A pass budget stop
 rows, not an already active call.
 An alive configured driver participates in readiness; it does not prove node/model readiness.
 `abort_in_flight=true` is rejected until a qualified abort adapter exists.
-See [the implementation and operating boundaries](../docs/architecture/execution-gateway.md).
+See [the implementation and operating boundaries](../docs/components/execution-gateway.md).

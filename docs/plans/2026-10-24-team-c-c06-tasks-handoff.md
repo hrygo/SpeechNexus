@@ -2,6 +2,8 @@
 
 核验日期：2026-10-24（Asia/Shanghai）。`base_sha=head_sha=a98b2bbfa2576eeee9f5bdf37300605428499d84`。本单元推进工作台内部持久任务，完整 C00–C08 目标保持 active，未创建 commit/push。用户随后授权发送生成依赖清单并要求更新 issue；已发送给团队 A chat，并更新/回读 C00–C08 九张 issue 的标签、子任务勾选、证据和待办。
 
+下文缺口和测试失败限于本单元基线；后续公开会议页面与派发接线见[会议工作台交接](2026-10-24-team-c-meeting-ui-handoff.md)和[worker 交接](2026-10-25-team-c-minutes-worker-handoff.md)，各自的验证范围仍应单独判断。
+
 ## 已实现范围
 
 - `MinutesTask` 固定 sealed 源 revision ID/摘要、服务端 profile 与 binding 摘要。binding 由 endpoint、资格引用和 profile 形成，不含凭据；模板/模型/端点变更属于新意图，重试不得切换服务。正文与 attempt token 从应用对象 repr 隐藏。

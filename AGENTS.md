@@ -54,7 +54,7 @@
 | Web 实现或审查 | [web/AGENTS.md](web/AGENTS.md) |
 | 集成测试实现或执行 | [tests/integration/AGENTS.md](tests/integration/AGENTS.md) |
 | 实施、构建、验证或检查失败排查 | [验证指南](docs/agent-verification.md)；按改动选择检查，纯文档只做文档验证 |
-| CI 调度、验证范围与门禁 | [CI 规则](docs/architecture/ci-validation.md)、[工作流](.github/workflows/ci.yml) |
+| CI 调度、验证范围与门禁 | [CI 规则](docs/validation/ci-validation.md)、[工作流](.github/workflows/ci.yml) |
 
 ## 进度、验证与交付
 

@@ -52,7 +52,7 @@ date: 2026-10-23
 
 清理对象包括 `tests/integration/test_cluster_coordination_schema.py`、
 `tests/fixtures/coordination/legacy_postgresql.sql`、
-`docs/architecture/legacy-postgresql-coordination.md`，以及只服务这些文件的
+`docs/archive/legacy-postgresql-coordination.md`，以及只服务这些文件的
 契约断言、fixture/helper、CI 步骤内容、命令与导航链接。共享测试文件中的当前
 协议检查必须保留，不得整文件误删。
 
@@ -61,7 +61,7 @@ ADR、简明规则映射及历史审查的原时点事实继续可追溯；无�
 本决定针对仓库原型文件，不授权删除运行数据库中的执行、计量、租约、fencing
 或删除账本等证据。
 
-## 当前执行状态
+## 决策时执行状态
 
 本次记录退出决定与条件，尚未完成逐项迁移验收，未停用 CI 或删除旧文件。
 具体复核与清理跟随[集群协调重构计划](../plans/2026-10-23-cluster-coordination-refactor.md)。

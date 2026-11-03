@@ -11,6 +11,8 @@ date: 2026-10-24
 
 团队 C / C04 #39、C08 #43；[持续 Goal](2026-10-24-team-c-goal.md)保持 active。基线 `f210821d655bd7deb326825d750d83584c3ce159`，分支 `codex/team-c-c00-versions`。本轮新增本地采集模块、测试和独立探针，未 commit/push、发送外部消息、修改共享配置或访问物理麦克风。原有 51 个交付文件在本轮代码验证后逐文件核对摘要均未改变，随后只补充相关文档链接。
 
+以下接入缺口和验证证据均为本单元交接时的状态；后续实时字幕页面消费采集模块的实现与合成环境验证见[实时 ASR 交接](2026-10-24-team-c-realtime-asr-handoff.md)，不能据此推断真实设备或服务资格已通过。
+
 依据[实施单元](2026-10-24-team-c-c04-capture-plan.md)及 C04/C08 的资源生命周期要求。本地 Float32 PCM、token 和累计 ACK 仅为 MessagePort 内部传输，不是公开 Realtime DTO、epoch、credit 或 gap 协议。生成包仍未提供 realtime 运行时 validator，本单元未建立字段/默认值副本，未接 WS、真实服务或应用 UI。
 
 本轮也核对了[删除恢复规范](../architecture/data-deletion.md#备份恢复)：独立账本保管、恢复水位及开放读取前重放要求仍未落地，外部消费契约需要 A07/C08 对齐。未用本地采集交付替代该要求。

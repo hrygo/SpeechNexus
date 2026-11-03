@@ -6,6 +6,8 @@ date: 2026-10-27
 
 # ADR 0012 公开 Job 面与执行装配的所有权
 
+本文的背景和实施顺序记录 2026-10-27 的决策时点，不代表当前路由或装配状态。现有公开 Job 实现与限制见[生产 Job 组件](../components/production-jobs.md)及[交付跟踪](../plans/delivery-tracking.md)；路由存在不等于真实执行链已经验收。
+
 ## 背景
 
 `contracts/speech-openapi.yaml` 已冻结 `/v1/nexus/jobs`、`/v1/nexus/jobs/{job_id}`、

@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Pydantic Settings / FastAPI / psycopg、C PostgresVersionUnitOfWork/PostgresDeletionUnitOfWork/PostgresMeetings。
 
-**Spec:** [三队计划](2026-10-23-three-team-delivery-plan.md) C00/C05/C08；[产品设计](../speechnexus-product-architecture.md) 工作台独立边界；[仓库布局](../architecture/repository-layout.md)。完整部署、对象区和 worker 仍待，不能据本入口关闭父包。
+**Spec:** [三队计划](2026-10-23-three-team-delivery-plan.md) C00/C05/C08；[产品设计](../speechnexus-product-architecture.md) 工作台独立边界；[仓库布局](../components/repository-layout.md)。完整部署、对象区和 worker 仍待，不能据本入口关闭父包。
 
 ## Global Constraints
 

@@ -129,7 +129,7 @@ execution-control 四份HTTP源的已知结构变更检查。其余JSON/WS、授
    单据，契约与 fixture 保持当前形状；若要改为对 job / interval 返回更弱的 `FactSnapshot`，须走
    显式契约变更并同时改测试。
 2. 内部、工作台与管理面按**原 A00 / 三队计划§7**补可自动比较部分；此前推迟表述不构成已授权
-   的计划变更。当前新增[四份HTTP源结构检查](../architecture/http-contract-change-checks.md)，保留
+   的计划变更。当前新增[四份HTTP源结构检查](../validation/http-contract-change-checks.md)，保留
    版本/变更说明、样例和消费者交接要求。纯JSON、WS顺序/授权及业务语义仍未据此完成，不扩大兼容承诺。
 3. 契约类型生成**已开始接入**（实例 drain 的请求/响应为生成产物），生成器版本随锁文件固定；
    其余面按后续单元逐个接入，不一次性铺开。

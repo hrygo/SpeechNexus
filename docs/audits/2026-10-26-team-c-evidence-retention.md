@@ -2,6 +2,8 @@
 
 核验日期：2026-10-26，Asia/Shanghai。关联：[阶段 Goal 与验收标准](../plans/2026-10-25-team-c-next-phase-goal-and-acceptance.md)、[T02 映射](2026-10-25-team-c-acceptance-map.json)、[集成验证报告](2026-10-25-team-c-next-phase-integration.md)。
 
+本文保留事故及当时的团队 C 规则；下文的本机路径是历史示例，不是当前任务统一的证据位置。现行工作区和证据保留要求见[交付 SOP](../operations/agent-delivery-sop.md#工作区生命周期与收尾)。
+
 ## 结论
 
 2026-10-26 收口 PR #189 时清理团队 C 工作树，删除了位于工作树内、被 git 忽略的 `.runtime/team-c/next-phase/2026-10-25T155546+0800`，其中 82 份证据原件不可恢复。原映射中的证据与源码快照仍按 70ab43d 保留，但**证据原件已不可复核**；本文件记录事实、影响和后续规则，不改写 PR #189 正文或集成报告在当时的结论。

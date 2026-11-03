@@ -17,7 +17,8 @@ admin GET（`GET /v1/nexus/admin/model-bindings/{binding_id}/revisions/{revision
 | 存储状态 | 响应 |
 | --- | --- |
 | 无 publication 的 draft | `status: draft`，全部发布字段为 `null` |
-| publication + 匹配证据 | `status: published`，`published_at`、两个证据 ID 原样返回 |
+| publication + 匹配证据且未退役 | `status: published`，`published_at`、两个证据 ID 原样返回 |
+| publication + 匹配证据及退役记录 | 按退役模式投影 `retired` 或 `disabled`，同时保留原发布证据 |
 | publication 无证据 | `503 binding_unavailable`（不返回 draft，不伪造 published） |
 | publication / 证据 / `revision_id` / 容量不一致 | `503 binding_unavailable`（按存储损坏处理） |
 
@@ -28,18 +29,24 @@ POST 创建草稿的 `201` 响应仍保持 draft 形状。
 - 发布写入角色：`publication_grants` + `binding_draft_grants` + `publication_evidence_grants`
   （证据表 `SELECT, INSERT`）。
 - admin GET 独立只读角色：`binding_admin_reader_grants`，仅对三张 binding 历史表、
-  `speech_publications` 与证据表持有 `SELECT`；不得有 INSERT/UPDATE/DELETE。
+  `speech_publications`、证据表和 `speech_publication_retirements` 持有 `SELECT`；不得有 INSERT/UPDATE/DELETE。
 - **公共目录 reader 不获得证据表权限**；`model_catalog_reader_grants` 不变。
 - API 进程设置 `SPEECHNEXUS_BINDING_ADMIN_READER_DATABASE_URL` 才会启用投影；
   未配置时固定 binding GET 返回 `503 binding_unavailable`（fail closed），不会回退到 writer，
   也不会把已发布 revision 谎报为 draft。启动只验证权限，不执行迁移或 grant。
+- 回填命令必须通过部署的秘密配置提供 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL`；
+  `SPEECHNEXUS_DATABASE_SCHEMA` 默认 `speech`，可用命令的 `--schema` 覆盖。命令的
+  `--timeout-seconds` 默认 60 秒，允许大于 0 且不超过 300 秒。不要把连接凭据写入
+  命令参数或 shell 历史；preflight 和 export 也要求配置该连接。
 
 ## 生产 preflight（硬闸门）
 
-迁移或上线前，对**生产库**执行只读 preflight：
+`0021_publication_evidence` 已由获准的迁移身份应用、相应权限已配置后，在启用依赖
+该证据的读取路径前，对目标生产库执行只读 preflight。命令会查询新证据表，因此不能在
+该迁移之前运行；迁移与回填的执行仍需按部署授权和维护窗口安排。连接配置由部署的
+秘密注入渠道提供，不在命令行或 shell 历史中写入口令：
 
 ```bash
-export SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL="postgresql://<writer-role>:<secret>@<host>:5432/<db>"
 uv run speechnexus-backfill-binding-evidence --preflight
 ```
 
@@ -53,13 +60,13 @@ unresolved object_id=... revision=... revision_id=...
 规则：
 
 - `publications > 0` 且 `unresolved > 0` 且没有可用映射 → 退出码 `10`，**硬停**；
-- 有映射但校验失败、或 apply 后仍有未解决行 → 同样硬停；
-- 只有 `unresolved = 0`，阶段 1 才能作为生产候选；
+- 使用 `--preflight --mapping evidence.json` 时，退出码 `0` 只表示映射计划的 `unresolved_after = 0`，并不表示已写入；校验失败或计划仍有未解决行须停止；
+- 经获准回填后重新执行不带映射的 preflight；只有实际 `unresolved = 0`，阶段 1 才能作为生产候选；
 - 测试库 0 行不能推断生产库。`503` 只保留给存储损坏或未预见的遗留，不是正常发布路径。
 
 ## 映射文件
 
-显式 JSON 数组，每条至少包含：
+显式非空 JSON 数组；每条只允许下列字段，其中 `kind` 和两个 digest 可省略：
 
 ```json
 [
@@ -79,6 +86,7 @@ unresolved object_id=... revision=... revision_id=...
 - `kind` 可省略，缺省且只能是 `binding`；
 - `revision` 可用十进制字符串或整数；
 - 两个证据 ID **没有默认值**，digest 可省略；
+- 数组不能为空，未知字段会被拒绝；
 - 同一 `(object_id, revision)` 重复映射且内容不同 → 拒绝；
 - `capacity_manifest_id` 必须等于该 revision 的 `execution_recipe.capacity_manifest_id`。
 
@@ -103,11 +111,14 @@ uv run speechnexus-backfill-binding-evidence --export
 
 | 结果 | 退出码 |
 | --- | --- |
-| preflight 清零 / dry-run 可清零 / apply 成功 / export | 0 |
-| 参数或配置非法 | 2 |
+| preflight 无未解决项或映射计划可清零 / dry-run 可清零 / apply 成功 / export | 0 |
+| 参数解析或环境配置非法 | 2 |
 | preflight 仍有未解决 publication | 10 |
-| 映射非法、冲突、容量不一致或 apply 后仍未清零 | 11 |
+| 映射非法、冲突、容量不一致、期限超出范围或 apply 后仍未清零 | 11 |
 | 存储不可用或 apply 结果未知 | 12 |
+
+这些是命令显式分类的结果；连接池初始化等未捕获异常不保证返回上述分类码。无论退出码如何，
+`apply` 未得到明确成功时都应先按原目标执行 preflight，不能假定事务已回滚。
 
 ## 迁移回滚
 

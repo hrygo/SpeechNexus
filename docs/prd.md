@@ -346,7 +346,7 @@
 - 真实 ASR/TTS 流、VAD、网关和真实设备消费者按可对应集成版本验证 owner/epoch、样本/文本水位、credit、背压、恢复与可信停止，所需参与方确认后提交用户放行。
 - ASR 正文 final 从 segment_closed 到 completed/failed 的 P95≤2000ms 为 PRD 候选目标，包含最终复核等待、required 辅助延迟另报；须按 binding、语料与负载冻结后测量，不宣称已达标。
 
-设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](architecture/cpu-vad.md)。
+设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 
 <a id="r-tts"></a>
 ### R-TTS · 实时语音合成与双工会话
@@ -361,7 +361,7 @@
 - 权威流锁拒绝部分重叠，精确重放不重复计量；真实生产者区间一致，分别记录首生成 PCM、网络接收和播放结束，不直接作为业务计费。
 - 1.7B full_segment 和 required 辅助纳入完整配方；双工、停止与恢复联验。
 
-设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](architecture/cpu-vad.md)。
+设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 
 <a id="r-qual"></a>
 ### R-QUAL · 实时双路与声音加载混合资格
@@ -373,7 +373,7 @@
 - 同时运行 1 路实时 ASR 与 1 路实时 TTS，并独立测 VoiceDesign 冷加载、热身、执行、回收的影响。
 - ASR 首有效预览 P95≤1000ms；TTS 冻结文本接受至首可播放 PCM P95≤800ms；网络及播放耗时另报。
 
-设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](architecture/cpu-vad.md)。
+设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 
 <a id="r-pcm"></a>
 ### R-PCM · 实时 PCM 时钟与终态
@@ -385,7 +385,7 @@
 - 按原样本时钟去重、拒绝旧 epoch；有界队列和输出硬上限不允许静默丢帧。
 - 预览可修订且不冒充终稿；关闭、失败或取消产生唯一逻辑终态，不把客户端播放事实冒充引擎停止。
 
-设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](architecture/cpu-vad.md)。
+设计依据：[speech-api.md](architecture/speech-api.md)、[cpu-vad.md](components/cpu-vad.md)。
 
 <a id="epic-340"></a>
 ## Epic 340 · 声音与发音资源
@@ -767,7 +767,7 @@
 - 未连接或会话创建被拒时不请求麦克风；仅在服务准入后由用户明确启动采集。
 - 字幕显示延迟按可对齐采样时钟的有效字词口径测量；P95≤1500ms 是 PRD 候选目标，须先按目标部署与负载冻结，不得表述为已经达标。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-meeting"></a>
 ### W-MEETING · 会议保存、封存与导出
@@ -782,7 +782,7 @@
 - 实际同版路由和正式消费者支持 POST `/v1/workbench/projects/{project_id}/meetings`（createMeeting）及 POST `/v1/workbench/meetings/{meeting_id}/seal`（sealMeeting），分别核对请求、声明的成功/错误响应、持久身份和封存版本。
 - 普通会议不依赖 LLM；会议资料封存/校对及内容生命周期在同版组合中可追溯。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-prompt"></a>
 ### W-PROMPT · 持久提词与真实语音跟随
@@ -795,7 +795,7 @@
 - 404不假定位置0，CAS冲突不自动重试；普通提词不依赖LLM，手动合成证据不代替真实跟随。
 - 普通提词不依赖 LLM；手动接管和固定稿件版本包含在最终接收范围。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-minutes"></a>
 ### W-MINUTES · 受控内网纪要
@@ -809,7 +809,7 @@
 - 独立保存导出、实际质量、浏览器/代理/观测出站检查及同设备父预算和混合负载验证。
 - 实际同版路由和正式消费者支持 POST `/v1/workbench/meetings/{meeting_id}/minutes`（createMeetingMinutes），核对请求、202 和契约声明的错误、结果版本与原身份恢复。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-assist"></a>
 ### W-ASSIST · 受控助手轮次与插话
@@ -824,7 +824,7 @@
 - 默认关闭零落库、无公有云回退；真实HTTP/隔离PG/生产浏览器、失败注入、质量和内容出站、父预算/混合负载证据独立于fake。
 - 能力为 disabled 或 unavailable 时不提供创建入口；failed 必有错误，非 failed 不得伪造错误，succeeded 必有关联真实 Job 和非空文本。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-book-unit"></a>
 ### W-BOOK-UNIT · 有声书固定版本与局部生成
@@ -840,7 +840,7 @@
 - 固定声音修订的读取正确区分不存在和服务不可用，失败不得展示陈旧记录；验证键盘及 360px 窄屏。
 - 实际同版路由和正式消费者支持 POST `/v1/workbench/render-units/{unit_id}/generations`（generateRenderUnit），核对请求、202 和契约声明的错误、固定版本及原键语义。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-book-export"></a>
 ### W-BOOK-EXPORT · 有声书独立副本及导出
@@ -858,7 +858,7 @@
 - 质量检查、试听及匿名确认绑定固定版本，独立副本与完整导出保留完整生命周期；不以局部可用替代整个场景验收。
 - 质量检查、试听和匿名确认分别保存独立记录，并关联固定内容版本与导出清单，不能用单一综合成功状态替代。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="w-llm"></a>
 ### W-LLM · 默认关闭的内网 LLM 边界
@@ -870,7 +870,7 @@
 - 默认关闭、失败不回退公有云；LLM 端点不可由客户端任意指定，内容、浏览器代理与观测不出网。
 - 固定输入、模型和模板 revision；LLM 失败不改写已成功转写或重跑底座任务；共享物理算力计入预算。
 
-设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](architecture/workbench-export-integrity.md)。
+设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[workbench-export-integrity.md](components/workbench-export-integrity.md)。
 
 <a id="epic-344"></a>
 ## Epic 344 · 通用契约、SDK 与 MCP
@@ -981,7 +981,7 @@
 - 文件、实时、各声音模式分别给可行/experimental/阻塞结论；每项可用声明有 request ID、status/abort、强输出上界、加载峰值与真实停止/释放证据。
 - GPU 实验按批准制品和合成或授权语料排队，清理可核对并保持现有 35B 服务；资格按固定硬件、版本和环境而非硬件名称推定。
 
-设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](architecture/file-tts-binding-handoff.md)。
+设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。
 
 <a id="m-qualify"></a>
 ### M-QUALIFY · 逐绑定质量与容量资格
@@ -992,7 +992,7 @@
 
 - 每项质量/容量结论绑定模型/镜像/权重、版本、拓扑、语料、负载、时钟和阈值，仅声明实际测量范围；镜像/许可/manifest 与告警可追溯，遥测不含业务内容。
 
-设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](architecture/file-tts-binding-handoff.md)。
+设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。
 
 <a id="m-disable"></a>
 ### M-DISABLE · 模型绑定目录生命周期
@@ -1006,7 +1006,7 @@
 - retire 保留精确历史且禁止新引用；目录 revision 随生命周期变化、ETag 改变；激活在当前 head 锁与同事务比较，回滚不修改已固定任务。
 - 绑定退役/禁用的资源状态、revision 增长与通知 outbox 在同一事务提交；运行态拦截、取消和释放由执行域依固定 revision 事件处理。
 
-设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](architecture/file-tts-binding-handoff.md)。
+设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。
 
 <a id="m-catalog"></a>
 ### M-CATALOG · 发布目录与模型能力如实投影
@@ -1020,7 +1020,7 @@
 - 目录、单模型及能力端点遵守契约：目录或 policy revision 变化使 ETag 变化，If-None-Match 命中 304；同 revision 的规范摘要不含请求时间并字节稳定，公开音频字节、文本码点、分段、实时会话和排队等待上界。
 - 针对当前已发布 revision 的实际数据形状执行回归，并在真实部署以请求证明 `/v1/models` 返回 200；历史 503 不推定仍是当前故障，缺事实不能伪装 ready。
 
-设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](architecture/file-tts-binding-handoff.md)。
+设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。
 
 <a id="m-registration"></a>
 ### M-REGISTRATION · 资格化发布与运行版本切换
@@ -1032,4 +1032,4 @@
 - 生产发布绑定引用固定 manifest/qualification 与质量报告；实验性、不完整报告不得当生产资格。
 - 模型升级为新 binding revision；新请求切换，旧会话 drain 与旧 Job 按固定版本完成或明确取消，回滚不改历史制品。
 
-设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](architecture/file-tts-binding-handoff.md)。
+设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。

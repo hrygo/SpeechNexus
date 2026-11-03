@@ -22,7 +22,7 @@
 
 准入会核对当前 controller READY 观察中的镜像、模板及控制器制品摘要、native auth、实例 generation 和 fencing；缺失或过期即回滚。`--issue` 使用独立资格 writer 和可信操作员提供的模板、controller 清单、模型 pin 与 release 原文件，核对来源批准和实读模型字节后签发一次性授权。`--execute` 根据已保存的原身份通过网关提交或恢复，并读取版本固定的输出和停止证据；加 `--approval-id` 由程序核验并写入资格批准。原始输入或执行结果不完整时不得写批准；`qualification=pending` 不代表音色已获资格。结果未知时重放同一 approval、authorization、原意图、recipe 和四份原文件，系统先查询原回执，输入变化则冲突。真实模型/引擎运行还需单独批准。
 
-当前受控入口要求使用已核验的源码 checkout：离线模型检查复用 `scripts/dev-env/verify-file-asr-artifacts.py`，本次验证文件 SHA-256 为 `44c92419824c1382fcf8847135c7f39ee18de8b2b9beeb7fd4d054b023185587`。脚本缺失时检查失败关闭；当前 wheel 不包含此脚本，不能作为已完成的 wheel 部署交付。隔离 PostgreSQL 上的新链测试使用合成模型文件、合成网关及终止证据，并运行真实 release 验证器；尚未实连网关或引擎，不能作为真实物理资格。
+当前受控入口要求使用已核验的源码 checkout：离线模型检查复用 `scripts/dev-env/verify-file-asr-artifacts.py`，当次验证文件 SHA-256 为 `44c92419824c1382fcf8847135c7f39ee18de8b2b9beeb7fd4d054b023185587`，使用时须核对实际版本。脚本缺失时检查失败关闭；当前 wheel 不包含此脚本，不能作为已完成的 wheel 部署交付。隔离 PostgreSQL 的组件测试使用合成模型文件、合成网关及终止证据，不证明真实物理资格；后续真实引擎的受控探测及范围见[2026-11-03 窗口记录](../audits/2026-11-03-controlled-tts-prepare.md)。
 
 controller 制品摘要是受信不可变部署前提下的磁盘 Python 源或安装制品清单摘要，不证明已加载字节码、依赖或整个镜像。网关证据仅反映认证后读取时的 live policy 和映射，不代表 GPU 健康或声音资格。
 

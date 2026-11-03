@@ -47,7 +47,7 @@ flowchart LR
     WB --> Objects
 ```
 
-图表示有效设计的职责和数据流，不表示所有箭头已经生产装配。应用为 Python/FastAPI，前端为 React/TypeScript/Vite；版本以 `.python-version`、`.nvmrc`、workspace 和锁文件为准。实现定位见[目录与依赖边界](../architecture/repository-layout.md)，设计依据见[产品主设计](../speechnexus-product-architecture.md)、[技术方案](../architecture/technical-blueprint.md)和[ADR 索引](../decisions/README.md)。
+图表示有效设计的职责和数据流，不表示所有箭头已经生产装配。应用为 Python/FastAPI，前端为 React/TypeScript/Vite；版本以 `.python-version`、`.nvmrc`、workspace 和锁文件为准。实现定位见[目录与依赖边界](../components/repository-layout.md)，设计依据见[产品主设计](../speechnexus-product-architecture.md)、[技术方案](../architecture/technical-blueprint.md)和[ADR 索引](../decisions/README.md)。
 
 - PostgreSQL 是唯一正式产品数据库；InnoDB 只验证关键协调行为。无 etcd，Redis 只能丢失而不影响事实恢复。Job、outbox、完整配方租约与预算由同一关系事务维护。
 - 集群是实现和验收要求，`Node=1` 使用同一持久协议。业务内容不走共享本地目录或进程内全局锁；实例、节点、owner、generation/fencing 显式关联。

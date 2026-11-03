@@ -7,7 +7,7 @@ date: 2026-10-23
 # ADR 0005：完整执行与删除契约
 
 整体架构审查确认内部命令、同步恢复、receipt、数据删除、容量与证据保护存在缺口。
-当前只有运营接口和 Web 外壳，没有已发布语音业务运行态。本轮按用户授权修复
+2026-10-23 审查时只有运营接口和 Web 外壳，没有已发布语音业务运行态。当时按用户授权修复
 架构、契约、工具、测试和协调 DDL 草案；另仅补齐现有运营 DTO 的声明约束。
 
 决定如下：
@@ -57,7 +57,7 @@ schema 固定 `retryable` 与恢复提示的组合，提交未知不能伪装可
 屏障恢复沿用原 gateway/pool/owner/token，可重新确认原屏障，不重新外发引擎请求。
 新增字段和控制码要求旧严格错误消费者同步升级生成绑定；不假定旧校验器能接受。
 公开语音协议与既有执行/停止事实保持原义。配置、故障矩阵与已验证边界见
-[执行网关](../architecture/execution-gateway.md#7-认证-http-控制与运行装配)。
+[执行网关](../components/execution-gateway.md#7-认证-http-控制与运行装配)。
 
 ## 2026-10-23 实施补充：未知外发的恢复
 
@@ -71,4 +71,4 @@ Submit 重放在此分支必须携带 `stop_evidence_kind`；只读查询返回�
 新增 `control_execution_not_found` 固定为 404、retryable=false、recovery=none。
 404 不能证明引擎未执行。旧严格消费者会拒绝新状态组合或新错误码，须同步升级绑定与样例。
 不改变公开语音协议，不回填历史外发时间；B 仍不归还 A 的预算。细节见
-[执行网关恢复](../architecture/execution-gateway.md#8-未知执行与只读恢复)。
+[执行网关恢复](../components/execution-gateway.md#8-未知执行与只读恢复)。

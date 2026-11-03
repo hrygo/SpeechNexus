@@ -2,6 +2,8 @@
 
 核验日期：2026-10-24（Asia/Shanghai）。本地 `base_sha=head_sha=a98b2bbfa2576eeee9f5bdf37300605428499d84`；未创建 commit、push 或外部消息。完整 C00–C08 goal 仍 active。
 
+本单元的内存候选、未接入项和网关测试失败均为当时基线记录；后续持久任务见[任务交接](2026-10-24-team-c-c06-tasks-handoff.md)，会议页面和派发接线分别见[会议工作台](2026-10-24-team-c-meeting-ui-handoff.md)与[worker 交接](2026-10-25-team-c-minutes-worker-handoff.md)。不以这些后续工作追认本单元的原始测试结果。
+
 ## 实现与边界
 
 - 服务中立 `TextLlm`、不可变 profile/request/completion/usage 和默认 `DisabledTextLlm`。模型、模板 revision、系统模板、输入/输出字符与 token 预算由服务端固定；未启用时连源正文也不读取。

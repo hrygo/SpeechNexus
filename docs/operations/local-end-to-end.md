@@ -7,9 +7,7 @@ date: 2026-10-28
 
 # 本地最小可运行装配：从迁移到一次真实转写
 
-这是一份**单机、隔离依赖**的装配 runbook。目标是让第二个人能在本机把
-PostgreSQL / MinIO / Speech API / 发布与 admin 投影装配起来，并明确说出
-“哪一步已经证明、哪一步在主干上做不到、缺什么、谁解除”。
+这是一份**单机、隔离依赖**的历史装配记录，保留指定基线上的命令、结果和未决事项，便于复现与追溯；文中“当前”“主干”和待解除缺口均以各节记录时点为准，不作为当前部署状态或当期排期。
 
 本文不是生产部署资格，也不替代真实引擎、GPU、节点控制器或正式消费者验收。
 
@@ -67,7 +65,7 @@ API 轮询，不是提交握手**：同一 API 连接先收到 submit 200，再�
 > `succeeded` 并留下 `execution_stop_evidence` 行；没有可信终态事实时把执行隔离为
 > `unknown_quarantined`、`error_code=execution_cleanup_pending` 并保留容量。上面的 504 仍是
 > `c435908` 上的历史事实，本轮没有在这些端口上重跑公开转写。责任边界与触发时机见
-> [执行网关](../architecture/execution-gateway.md#成功终态的驱动者时机与证据)；
+> [执行网关](../components/execution-gateway.md#成功终态的驱动者时机与证据)；
 > 这条证据的双标志只表示该次执行停止及其增量资源归还（来源是引擎终态事件），不是整实例
 > 释放；11.2.2 人工路径里的 `resources_released` 是调用者断言，两者不可互代。
 > 确定性证据见 `tests/integration/test_gateway_default_file_asr.py` 与
@@ -1165,7 +1163,7 @@ exit=1
 ### 9.1 网关私有 JSON
 
 文件必须是当前运行 UID 所有、无 group/other 权限的普通文件，绝对路径，≤65,536 bytes。
-字段语义与校验来源见 `docs/architecture/file-asr-runtime.md`。
+字段语义与校验来源见 `docs/operations/file-asr-runtime.md`。
 
 ```bash
 export SN_LOCAL_ROOT="${SN_LOCAL_ROOT:-$PWD/.paperclip-runtime/del109}"

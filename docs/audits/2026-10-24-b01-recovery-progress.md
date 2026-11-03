@@ -6,6 +6,9 @@ date: 2026-10-24
 
 # B01 恢复扫描公平轮转与互斥计数
 
+本文的默认周期驱动缺口属于本轮时点；后续默认配置、生命周期和真实进程验证见
+[默认网关自动恢复验证](2026-10-24-b01-default-recovery-driver.md)，各项证据范围分别保留。
+
 开工基线 main `402d537b51f2e1ebec25257b57df9e51267e0b13`。
 本轮处理 [PR #110 管理审查5638557709](https://github.com/hrygo/SpeechNexus/pull/110#pullrequestreview-5638557709)
 仍开放的前缀饥饿、报告重复计数两项；共享停止证据 ID 已由 #114 修复，不重复实现。
@@ -78,4 +81,4 @@ PR、最终head/基线、CI与合后证据在 #28/#22/#6 的本轮单元回填�
 完整调度/预算、GPU质量容量和物理多主机资格仍待。
 本轮不证明这些能力；B01、其他B包、Gate与原生Goal继续开放。
 
-[原生扫描、身份和停止事务说明](../architecture/execution-gateway.md#8-未知执行与只读恢复)
+[原生扫描、身份和停止事务说明](../components/execution-gateway.md#8-未知执行与只读恢复)

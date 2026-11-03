@@ -94,4 +94,4 @@ DEL-326 的 P3 意见保留：DEL-325 并发表的“200”是 adapter 成功标
 - 下一接收人为非作者 reviewer；审查覆盖本候选补丁及本拟议记录，通过后再由授权方决定
   ADR 状态、AC4/AC6 和集成安排。操作细节见
   [生命周期指南](../operations/binding-lifecycle.md) 与
-  [实现说明](../architecture/model-binding-drafts.md#selected-head-and-lifecycle-0023)。
+  [实现说明](../components/model-binding-drafts.md#selected-head-and-lifecycle-0023)。

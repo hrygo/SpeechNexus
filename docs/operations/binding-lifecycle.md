@@ -13,10 +13,11 @@ date: 2026-10-28
 
 ## 配置与权限
 
-API 进程需显式配置独立非 owner 角色：
+API 进程需显式配置独立非 owner 角色。通过部署批准的秘密配置向进程提供
+`SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL`；不要把含凭据的 DSN 写入命令参数或终端历史。
+schema 可按部署配置，例如：
 
 ```bash
-export SPEECHNEXUS_BINDING_LIFECYCLE_DATABASE_URL='postgresql://<lifecycle-role>:<secret>@<host>:5432/<db>'
 export SPEECHNEXUS_DATABASE_SCHEMA=speech
 ```
 
@@ -137,6 +138,4 @@ HTTP ASGI 请求覆盖：退役后 `/v1/models` 为空且 ETag 变化、新 Job 
 在途 Job 的固定配置不变、回滚到 revision 1 后目录恢复、重复/未知/CAS 冲突、
 最小权限启动及审计事件写入。它不证明真实部署网络、真实引擎、容量或生产资格。
 
-当前 voice 仅有 `retireVoiceRevision` 契约声明和 publication retirement 墓碑，
-没有生产 revision 写路径、handler 或 activation 声明；因此本次没有伪造 voice
-生命周期实现。补齐 voice 的持久发布/读取所有者后，可复用同一 head 和审计语义。
+voice 有独立的[内建声音资格与发布路径](builtin-voice-qualification.md)，可在满足资格条件后持久发布固定 revision；不能将它等同于 binding 的管理生命周期。`retireVoiceRevision` 仍是语音契约声明，voice 的退役 / 激活能力与其他声音来源必须分别核对实现和验收，不能从 binding 路由或内建声音发布推断已完成。

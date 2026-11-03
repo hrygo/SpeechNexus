@@ -6,6 +6,8 @@ date: 2026-10-25
 
 # ADR 0009 工作台显式模型绑定与配置发现的 HTTP 版本迁移
 
+本文保留 2026-10-25 的决策与当时的实现边界。之后 `generateRenderUnitV2` 已加入工作台路由实现；路由存在不证明生产装配、真实语音执行或完整验收已通过。当前实现和证据见[交付跟踪](../plans/delivery-tracking.md)。
+
 ## 背景
 
 工作台 v1 的 `WorkbenchStatus`、`RenderUnit` 均为

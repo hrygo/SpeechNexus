@@ -16,7 +16,7 @@ description: "变更或审查 SpeechNexus 协调事务端口、锁序、租约/�
 按变更补读：
 
 - 保护责任、数据库可移植性、权限或 DDL：[ADR 0006](../../../docs/decisions/0006-cluster-coordination-and-storage-portability.md)、[协调 Schema](../../../docs/architecture/distributed-coordination-schema.md)。
-- 执行命令、删除或停止证据：对应[执行命令](../../../docs/architecture/execution-command.md)、[删除规则](../../../docs/architecture/data-deletion.md)、[执行网关](../../../docs/architecture/execution-gateway.md)。
+- 执行命令、删除或停止证据：对应[执行命令](../../../docs/architecture/execution-command.md)、[删除规则](../../../docs/architecture/data-deletion.md)、[执行网关](../../../docs/components/execution-gateway.md)。
 - 迁移旧原型规则或改变门禁：[ADR 0007](../../../docs/decisions/0007-legacy-coordination-retirement.md)。
 - 机器契约或生成类型改变：同时使用 [speechnexus-contract-change](../speechnexus-contract-change/SKILL.md) 完成消费者交接。
 

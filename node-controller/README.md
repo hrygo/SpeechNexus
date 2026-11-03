@@ -44,14 +44,14 @@ stop only when its full request and evidence match a local released checkpoint.
 Legacy success receipts without a checkpoint are not certified. Missing proof
 returns 404; contradictory or ambiguous proof returns 503, preserving unknown
 occupancy. This query neither touches the daemon nor advances recovery. The
-[gateway consumer](../docs/architecture/trusted-node-stop.md) verifies the complete
+[gateway consumer](../docs/components/trusted-node-stop.md) verifies the complete
 immutable binding and execution scope over configured TLS.
 
 Production requires the same durable SQLite store for stop checkpoints. Schema 1
 upgrades atomically to 2 without rewriting existing receipts; older controllers
 reject schema 2. Restore a matching stopped-controller snapshot for code rollback,
 never reset the version or discard evidence. The private format and failure
-boundaries are specified in [Stop recovery](../docs/architecture/node-stop-recovery.md).
+boundaries are specified in [Stop recovery](../docs/components/node-stop-recovery.md).
 
 Template files must declare `container_memory_limit_bytes`; old files fail
 startup rather than retaining an unlimited container. Docker Memory and
@@ -67,6 +67,6 @@ Upgrade the controller before installing a TTS warmup template; older controller
 reject that path. Health-only readiness cannot enable this authentication mode.
 
 Synthetic container/HTTP probes verify only the paths recorded in the
-[controller design](../docs/architecture/node-controller.md). Real engine,
+[controller design](../docs/components/node-controller.md). Real engine,
 scheduler-budget, warmup, recovery and physical-cluster qualification require
 their own evidence.

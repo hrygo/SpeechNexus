@@ -560,7 +560,7 @@
       "prd": "docs/prd.md#r-asr",
       "designs": [
         "docs/architecture/speech-api.md",
-        "docs/architecture/cpu-vad.md"
+        "docs/components/cpu-vad.md"
       ],
       "implementation": "Realtime 契约和工作台会话组件存在，真实服务端路径及完整业务验收未证。",
       "integration": "公开协商和事件须与网关、工作台实际消费者一致。",
@@ -586,7 +586,7 @@
       "prd": "docs/prd.md#r-tts",
       "designs": [
         "docs/architecture/speech-api.md",
-        "docs/architecture/cpu-vad.md"
+        "docs/components/cpu-vad.md"
       ],
       "implementation": "客户端及契约组件存在，真实双工准入与流恢复未完成接收。；输出区间组件已有权威锁和重放语义；真实流生产者联验未证。",
       "integration": "协调准入、网关及工作台按相同会话、epoch 和文本顺序联验。；内部 WS/PCM、实时服务、VAD 和正式消费者须固定同版。",
@@ -622,7 +622,7 @@
       "prd": "docs/prd.md#r-qual",
       "designs": [
         "docs/architecture/speech-api.md",
-        "docs/architecture/cpu-vad.md"
+        "docs/components/cpu-vad.md"
       ],
       "implementation": "已有独立组件及部分隔离模型探针。",
       "integration": "实时双路与 VoiceDesign 同版混合负载尚无完整生产资格。",
@@ -1126,7 +1126,7 @@
       "prd": "docs/prd.md#w-caption",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 RealtimeHost；宿主静态使用 RealtimeClient 和会话控制器。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1152,7 +1152,7 @@
       "prd": "docs/prd.md#w-meeting",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 MeetingHost；宿主持有恢复会话并提供纪要动作，工厂装配 PostgreSQL 会议服务。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1178,7 +1178,7 @@
       "prd": "docs/prd.md#w-prompt",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 TeleprompterPanel；面板接同源工作台客户端和持久提词状态，工厂能力仅声明手动阅读。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1204,7 +1204,7 @@
       "prd": "docs/prd.md#w-minutes",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "会议宿主提供创建纪要动作；工厂装配 PostgreSQL 纪要任务与部署配置 LLM，已配置 profile 时启动派发。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1230,7 +1230,7 @@
       "prd": "docs/prd.md#w-assist",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 AssistantHost；宿主消费 WorkbenchClient，工厂装配 PostgreSQL turn 和部署配置 LLM。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1256,7 +1256,7 @@
       "prd": "docs/prd.md#w-book-unit",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 BooksHost；宿主提供建书和章节，工厂装配 PostgreSQL 书籍/单元及按客户端配置的 Speech Job。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1282,7 +1282,7 @@
       "prd": "docs/prd.md#w-book-export",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "工作台 App 挂载 BooksHost；工厂装配导出台账和媒体验证器，缺 producer 或未启用周期时不派发。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
@@ -1386,7 +1386,7 @@
       "prd": "docs/prd.md#m-binding",
       "designs": [
         "docs/operations/capacity-manifest.md",
-        "docs/architecture/file-tts-binding-handoff.md"
+        "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "已有文件 ASR、CustomVoice 与 VAD 的固定输入和部分隔离探针。",
       "integration": "容量文档记录模型和引擎 pin 输入；仓库样例仍为 experimental/incomplete，注册输入不等于权威发布。",
@@ -1412,7 +1412,7 @@
       "prd": "docs/prd.md#m-qualify",
       "designs": [
         "docs/operations/capacity-manifest.md",
-        "docs/architecture/file-tts-binding-handoff.md"
+        "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "仓库已有容量/资格 schema、操作说明和 experimental/incomplete 样例，样例不构成生产资格。",
       "integration": "实验样例尚未证明生产资格；真实测量和部署观测待补。",
@@ -1438,7 +1438,7 @@
       "prd": "docs/prd.md#m-disable",
       "designs": [
         "docs/operations/capacity-manifest.md",
-        "docs/architecture/file-tts-binding-handoff.md"
+        "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "已有 disable 协调与持久目标；派发取消后、引擎调用前崩溃的恢复和真实停止仍待验收。",
       "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
@@ -1506,7 +1506,7 @@
       "prd": "docs/prd.md#r-pcm",
       "designs": [
         "docs/architecture/speech-api.md",
-        "docs/architecture/cpu-vad.md"
+        "docs/components/cpu-vad.md"
       ],
       "implementation": "需求基线；当前实现待核验。",
       "integration": "实际组合根与消费者待核验。",
@@ -1632,7 +1632,7 @@
       "prd": "docs/prd.md#w-llm",
       "designs": [
         "docs/architecture/technical-blueprint.md",
-        "docs/architecture/workbench-export-integrity.md"
+        "docs/components/workbench-export-integrity.md"
       ],
       "implementation": "需求基线；当前实现待核验。",
       "integration": "实际组合根与消费者待核验。",
@@ -1695,7 +1695,7 @@
       "prd": "docs/prd.md#m-catalog",
       "designs": [
         "docs/operations/capacity-manifest.md",
-        "docs/architecture/file-tts-binding-handoff.md"
+        "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "目录及条件请求路由已有实现，Job 读取 workspace 和 binding 时仍须核对分组语义；readiness 缺事实采用保守结果。",
       "integration": "目录读身份需要显式配置并校验只读权限；实际引擎与质量测量来源仍需接入。",
@@ -1716,7 +1716,7 @@
       "prd": "docs/prd.md#m-registration",
       "designs": [
         "docs/operations/capacity-manifest.md",
-        "docs/architecture/file-tts-binding-handoff.md"
+        "docs/operations/file-tts-binding-handoff.md"
       ],
       "implementation": "需求基线；当前实现待核验。",
       "integration": "实际组合根与消费者待核验。",

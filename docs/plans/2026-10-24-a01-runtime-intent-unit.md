@@ -12,7 +12,7 @@ date: 2026-10-24
 本文件记录实施路线。阶段 1 的存储/契约和阶段 2 的独立 create/query 端口已有实现；
 阶段 3 的独立观察事务（含私有 readiness 证据）也已有实现；
 真实批准计划/资格提供者、进程装配及阶段 4 的持久派发仍待交付。
-实际保护范围见 [生产事务说明](../architecture/production-runtime-intents.md)。
+实际保护范围见 [生产事务说明](../components/production-runtime-intents.md)。
 
 ## 实施顺序与验收
 

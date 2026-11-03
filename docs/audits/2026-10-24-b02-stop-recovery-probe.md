@@ -101,5 +101,7 @@ uv run python scripts/dev-env/node-controller-probe.py --ready-timeout-seconds 1
 ready 实例持续监控、可信整实例事实接网关、网关恢复驱动、完整执行/lease/预算联调仍待。
 外部 reconcile 的调用方 stop_evidence 与节点 fencing 作用域仍是独立缺口。
 本记录只证明本节点停止检查点与进程恢复，B02/Gate/团队 B Goal 保持进行中。
+后续[来源验证](2026-10-24-b02-reconcile-proof-source.md)记录了外部快照的收窄语义；
+[可信节点停止事实验证](2026-10-24-b02-trusted-node-stop-probe.md)记录了其后节点证据到网关的消费范围。
 
-[停止恢复设计与私有契约](../architecture/node-stop-recovery.md)
+[停止恢复设计与私有契约](../components/node-stop-recovery.md)

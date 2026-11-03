@@ -7,7 +7,7 @@ date: 2026-10-24
 
 # C01 Admin 任务中心实施计划
 
-依据[团队 C 目标](2026-10-24-team-c-goal.md)、[启动卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[设计框架](../architecture/ui-ux-design-framework-and-tokens.md)，实现 C01 的首个任务列表/详情/取消消费单元。C01 全范围和团队目标继续保持未完成。
+依据[团队 C 目标](2026-10-24-team-c-goal.md)、[启动卡](2026-10-23-agent-team-startup-briefs.md#4-c-队macbook-工作台与体验)和[设计框架](../design/ui-ux-design-framework-and-tokens.md)，实现 C01 的首个任务列表/详情/取消消费单元。C01 全范围和团队目标继续保持未完成。
 
 ## 边界与设计
 

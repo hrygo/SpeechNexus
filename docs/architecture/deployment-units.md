@@ -30,7 +30,7 @@ date: 2026-10-26
 | Realtime Gateway | 实时连接、会话 owner / epoch 和有界流 | 不因实时接入而要求 GPU 或 Linux 专属 API | 按固定会话 owner 路由；独立进程部署与正式业务装配待补齐 |
 | Scheduler、Job Worker | 完整准入、分池调度、任务 claim、outbox 与恢复 | 与推理运行时解耦，分别验证应用平台 | 以 PG 持久事实协调；独立启动入口及完整业务装配待补齐 |
 | 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 管理；独立 worker 入口待补齐 |
-| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；派发入口当前因 planner/结果发布未装配而 fail-closed，仍不代表完整 Job Worker 已交付 |
+| 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；结果发布组件已有，派发入口仍因生产 planner 未装配而 fail-closed，不代表完整 Job Worker 已交付 |
 | Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点候选共享私有锁目录 |
 | Node Controller | 批准模板的容器生命周期；已有 `speechnexus-node-controller` | 当前 Docker daemon 适配器服务于 Linux 容器节点；控制协议不绑定调用方平台 | 与实际受管 daemon 所在节点绑定；独占受限容器管理权限，不要求业务调用方同机 |
 | 推理引擎、引擎扩展及模型 | 当前选定的 CUDA / vLLM、vLLM-Omni 和固定模型组合 | 当前路线以 Linux 为目标，按硬件、镜像与模型组合资格化 | 独立镜像、依赖锁和 Python 环境；API、工作台不安装或直接调用 GPU runtime |
@@ -115,7 +115,7 @@ Windows 等平台保持未验证，支持范围扩展以单元的安装、启动
 
 ## 4. Linux 媒体检查边界
 
-现有 [音频检查沙箱](audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
+现有 [音频检查沙箱](../components/audio-asset-inspection.md)使用 pidfd、seccomp、bubblewrap、
 prlimit 和 `/proc`，属于 Linux 平台实现。当前
 [AssetRuntime](../../backend/src/speechnexus_backend/asset_runtime.py)装配 `TextAssetInspector`，
 公开音频检查尚未启用；不能把沙箱代码位于 backend 包内等同于 API 启动必须使用 Linux。
@@ -192,4 +192,4 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 既定用户放行要求维护；子任务关闭、测试数量或文档状态不自动关闭 Gate。
 
 [部署入口](../../deploy/README.md) · [整体技术方案](technical-blueprint.md) ·
-[工程目录与依赖](repository-layout.md) · [验证指南](../agent-verification.md)
+[工程目录与依赖](../components/repository-layout.md) · [验证指南](../agent-verification.md)

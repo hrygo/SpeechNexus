@@ -1,6 +1,6 @@
 # C02 素材 HTTP 原身份恢复计划
 
-已批准 C02/C08 范围，沿用 native inline / TDD，一次独立终审。Spec：[三团队 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、`contracts/speech-openapi.yaml` 和 [production-assets](../architecture/production-assets.md)。C 仅消费 A 生成客户端/上传 helper，不编辑公共契约、生成、依赖或后端。
+已批准 C02/C08 范围，沿用 native inline / TDD，一次独立终审。Spec：[三团队 C02](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)、`contracts/speech-openapi.yaml` 和 [production-assets](../components/production-assets.md)。C 仅消费 A 生成客户端/上传 helper，不编辑公共契约、生成、依赖或后端。
 
 目标：上传 409/503 原身份未决时保留原键，若 Location 指向原 Asset 则跨刷新只读查询该 Asset；不虚构 Operation、不自动重传或创建替代素材/Job。
 

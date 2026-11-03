@@ -8,7 +8,7 @@
 
 **技术：** Python 标准库、pytest、现有 GitHub Actions 工作流。
 
-**依据：** [CI 规则](../architecture/ci-validation.md)、当前用户要求；历史样本为 2026-10-26 最近 12 次成功全量运行。
+**依据：** [CI 规则](../validation/ci-validation.md)、当前用户要求；历史样本为 2026-10-26 最近 12 次成功全量运行。
 
 ## 约束与审查重点
 

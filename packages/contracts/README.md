@@ -16,14 +16,14 @@ or establish process stop, compute release or deployment qualification.
 The file boundary also exposes the existing public `Transcription` schema for
 consumers of staged file-ASR JSON. This generates validation/types from the
 speech source without changing its wire format. See
-[transcript import and text export](../../docs/architecture/transcript-import-and-text-export.md).
+[transcript import and text export](../../docs/components/transcript-import-and-text-export.md).
 
 Profile draft consumers can parse `ProfileRevisionCreateRequest` through the
 `admin` namespace and the complete `ScenarioProfileRevision` through Python
 `speechnexus_contracts.scenario_profiles` / TypeScript
 `@speechnexus/contracts/scenario-profiles`. These come from the existing admin and
 scenario-profile sources, including root conditionals. See the
-[process-local port and qualification boundary](../../docs/architecture/profile-drafts.md).
+[process-local port and qualification boundary](../../docs/components/profile-drafts.md).
 
 The separate `profile-http` TypeScript / `profile_http` Python surface selects
 only profile creation and fixed revision reads from the current admin source `0.1.0.dev3`.
@@ -36,7 +36,7 @@ Model binding consumers can now parse `ModelBindingCreateRequest` in `admin`,
 `@speechnexus/contracts/model-bindings`, and the selected create/fixed GET envelopes
 through `binding_http` / `@speechnexus/contracts/binding-http`. Admin source is
 `0.1.0.dev3`; these entries do not implement routes or publish a model. See the
-[ModelBinding draft contract handoff](../../docs/architecture/model-binding-drafts.md)
+[ModelBinding draft contract handoff](../../docs/components/model-binding-drafts.md)
 for original-key recovery, unknown results and the remaining producer work.
 
 Release evidence consumers use Python `speechnexus_contracts.release_evidence`
@@ -104,7 +104,7 @@ its exact decimal revision string. With a pin, `model` is the selected binding's
 `logical_model`; old unpinned requests keep their existing binding-ID lookup.
 Deploy a supporting server before enabling pinned consumers; older strict
 servers reject the new field, and clients must never retry without it.
-See [the Job pin handoff](../../docs/architecture/public-job-model-binding.md)
+See [the Job pin handoff](../../docs/components/public-job-model-binding.md)
 for rejection, original-key recovery and the remaining admission/execution gaps.
 
 Python consumers install the `speechnexus-contracts` wheel or add it as a uv
@@ -222,7 +222,7 @@ in Python or `@speechnexus/contracts/zero-dispatch` in TypeScript. Both consume 
 same [synthetic corpus](../../tests/fixtures/contracts/zero-dispatch.json). Shape
 validation does not verify digests, trusted qualification, cross-row identity,
 replay, snapshot isolation or DB permissions. No producer, network client, seal,
-sending or resource release is enabled; see the [candidate contract](../../docs/architecture/zero-dispatch-contract-core.md).
+sending or resource release is enabled; see the [candidate contract](../../docs/components/zero-dispatch-contract-core.md).
 
 Opt-in JSON profiles extend the default file workflow. Each includes Python
 TypedDicts, a typed parser, an offline schema bundle and generated TypeScript
@@ -380,7 +380,7 @@ before the new producer is deployed. The source leaves Content-Range optional on
 206 for existing consumers and adds the `bytes */size` shape on 416. Validation
 does not check actual range selection or digest. The production C routes and Web
 consumer add those behavioral checks; their limits and evidence scope are documented
-in [committed content downloads](../../docs/architecture/workbench-content-downloads.md).
+in [committed content downloads](../../docs/components/workbench-content-downloads.md).
 New binary constraints fail generation until implemented.
 
 For `streamExportEvents`, use `parseAs: "stream"` as well. The middleware checks
@@ -630,7 +630,7 @@ projection and checks exact requested voice/revision identity separately.
 Workbench source `0.1.0.dev2` adds `getVoiceRevisionV2` / `VoiceRevisionV2` for
 the public 2000-character disable reason; v1 remains at its frozen 128-character
 bound. Deploy the v2 C route before the updated formal Web consumer. See
-[mapping, upgrade and evidence limits](../../docs/architecture/workbench-voice-catalogue.md).
+[mapping, upgrade and evidence limits](../../docs/components/workbench-voice-catalogue.md).
 
 ## Workspace read HTTP contract
 
@@ -662,7 +662,7 @@ backend now connects the two GETs to a bounded read-only PG port and the existin
 asset runtime pool, and projects these selected methods in runtime OpenAPI.
 Workspace writes remain separate A04 tasks. Schema checks and synthetic client
 tests alone do not qualify the running service; actual non-owner PG/MinIO HTTP
-coverage is documented in `docs/architecture/production-assets.md`.
+coverage is documented in `docs/components/production-assets.md`.
 
 Workbench status/configuration discovery and bound rendering use the generated
 `WorkbenchStatusV2`, `RenderUnitV2`, `RenderUnitCreateRequestV2`,
@@ -680,7 +680,7 @@ and `PronunciationRevision`. The latter follows the canonical external
 copy or independent default is added. Shared `file-workflow.json` examples cover
 explicit draft/published values, omitted defaults and negative identity/type
 cases. Parser support does not mean the public pronunciation routes or TTS
-consumption are implemented; the [private draft component](../../docs/architecture/pronunciation-drafts.md)
+consumption are implemented; the [private draft component](../../docs/components/pronunciation-drafts.md)
 selects explicit `publish: false` only.
 
 The opt-in `pronunciation-read-http` export selects only the fixed-revision GET.
@@ -692,4 +692,4 @@ The 200 representation follows the actual external source. Consumers still
 compare its ID/revision against their requested identity. Shared examples and
 synthetic native TCP tests cover protocol consumption; no public pronunciation
 route or qualification is established. See the [read contract and upgrade
-boundary](../../docs/architecture/pronunciation-read-contract.md).
+boundary](../../docs/components/pronunciation-read-contract.md).

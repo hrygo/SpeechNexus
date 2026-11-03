@@ -53,7 +53,7 @@ Artifact/Operation/receipt、不可变模型/声音/预设/发音资源继续按
 
 ## 当前分批交付
 
-首个 PR 先交付步骤 1–3 的生产端口、实际对象适配器与保留期账本，以及真实 PG/MinIO CI 门禁。步骤 4 的 HTTP/组合根及步骤 5 的常驻维护进程随下一单元接入；本 PR 不声称三个公开路由已实现，也不关闭 A02/G1。实现与边界见 [production-assets.md](../architecture/production-assets.md)。
+首个 PR 先交付步骤 1–3 的生产端口、实际对象适配器与保留期账本，以及真实 PG/MinIO CI 门禁。步骤 4 的 HTTP/组合根及步骤 5 的常驻维护进程随下一单元接入；本 PR 不声称三个公开路由已实现，也不关闭 A02/G1。实现与边界见 [production-assets.md](../components/production-assets.md)。
 
 ## HTTP 接入单元（进行中）
 

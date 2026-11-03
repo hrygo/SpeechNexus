@@ -9,7 +9,7 @@ date: 2026-10-26
 
 本文把[产品主设计](../speechnexus-product-architecture.md)、[语音协议](speech-api.md)、[资源治理](runtime-governance.md)和已接受 ADR 衔接为可实施的工程方案，负责组件协作、技术选型、内部协议、事务和交付顺序。公共语义仍由语音协议及后续机器契约负责；本文不重复定义字段默认值、范围、状态枚举或错误码。
 
-**2026-10-26 核验：当前已有部分生产事务/HTTP、独立工作台、默认关闭的内网 LLM 接线，以及真实文件 ASR/CustomVoice 的隔离执行证据；公开音频 ready→Job/准入→执行→发布→SDK/页面两链仍未同版验收。** 本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现和风险统一见[项目经理基线](../plans/2026-10-26-project-manager-baseline.md)。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
+本文规定目标架构与退出条件，不能把下文流程图当作已装配能力；当前实现、缺口和验收证据见[交付跟踪矩阵](../plans/delivery-tracking.md)，[2026-10-26 项目经理基线](../plans/2026-10-26-project-manager-baseline.md)仅反映当时快照。首批模型与加载策略沿用 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，业务内容不出网的约束见 [ADR 0003](../decisions/0003-workbench-llm-network-boundary.md)，集群就绪架构与单机 MVP 同构部署见 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md)。
 
 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)确定集群能力
 完整保留、跨表规则迁入受控应用事务、不采用 etcd，以及 PostgreSQL 正式交付 /
@@ -37,7 +37,7 @@ MySQL 关键协调验证的边界。具体替代步骤见[集群协调重构计�
 
 ## 2. 进程、网络与所有权
 
-产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的同构验证拓扑（`Node=1, Replica=1`）。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；当前节点执行栈和私有媒体沙箱各自保留平台要求，媒体沙箱的部署适配形态仍待设计。
+产品按分布式部署单元设计，当前单节点 Compose 是 [ADR 0004](../decisions/0004-cluster-ready-architecture-and-single-node-mvp.md) 的开发预览拓扑（`Node=1, Replica=1`），默认未装配全部部署单元，不能单凭 Compose 声称同构链路已验收。平台与节点边界遵循 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)，职责、实际启动入口和装配缺口见[部署单元规划](deployment-units.md)。业务、控制和工作台不因推理栈使用 Linux 而继承 GPU 或 Linux 内核依赖；节点执行栈和[私有媒体沙箱](../components/audio-asset-inspection.md)各自保留平台要求，公开音频检查装配仍须验收。
 
 逻辑角色按职责分离，每个进程显式声明节点、角色与唯一实例身份；配置字段和入口按部署单元核对，`process_role` 声明不自动选择服务工厂。backend 与 execution-gateway 独立部署，跨单元内容经网络协议与对象存储传递。本地锁与控制器回执只承担节点范围职责，不替代 PostgreSQL 全局权威。单机验证可按 ADR 0004 折叠 scheduler / job-worker 逻辑角色，但保留独立身份、连接池、租约、claim 与协议边界；`node-controller` 不与业务 API 合并。跨平台、跨主机故障恢复与节点级高可用分别验收；扩容先增加已资格化节点与实例，再验证父物理预算与 owner 路由。
 
@@ -234,7 +234,7 @@ P1-B 的“首轮延迟达标”必须先冻结同一套测量口径，再附实
 
 质量阈值应按首批普通话 / 中英混说与代表性噪声、数字、专名、说话人和音色语料冻结。先建立对照基线再锁阈值，不因暂缺真实测量就编造 CER / WER / DER 或音色相似度指标。默认确定性测试使用 fake、合成或获准公开材料，不使用私人音频。
 
-P0 机器契约与协调 DDL 已交付；业务路由、控制器和真实模型测试已有分段成果，完整迁移体系、公开业务链及目标拓扑资格仍待完成。当前范围以项目经理基线和各 issue 为准，实施时按仓库门禁分别提交实现证据与部署资格。
+P0 机器契约与协调 DDL 已交付；业务路由、控制器和真实模型测试已有分段成果，完整公开业务链及目标拓扑资格仍待分别验收。当前范围以[交付跟踪矩阵](../plans/delivery-tracking.md)和各 issue 为准，实施时按仓库门禁分别提交实现证据与部署资格。
 
 ## 13. 上游依据与版本锁定
 

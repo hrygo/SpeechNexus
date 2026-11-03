@@ -104,7 +104,7 @@ uv run python scripts/dev-env/asr-controller-probe.py \
 
 前置：明确 GPU 操作授权、固定本地镜像与模型、`espeak-ng`、本机 Docker、明确声明且
 `Internal=true` 的自定义 bridge 网络。模板 schema/范围、升级方式见
-[控制器说明](../architecture/node-controller.md#2-受控容器-adapter-与批准模板)。
+[控制器说明](../components/node-controller.md#2-受控容器-adapter-与批准模板)。
 每次执行前核对其他模型与内存，不并发运行多个 GPU 探针。
 
 工具只产生合成输入，报告只输出摘要、状态和测量，不输出转写正文、凭据或宿主模型路径。

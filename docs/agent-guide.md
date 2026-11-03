@@ -27,8 +27,8 @@
 | 外部反馈、实施任务、Issue/PR 模板与关闭规则 | [贡献与 Issue 指南](../CONTRIBUTING.md) |
 | 下一可验收切片、按需建卡及唯一父 Epic | [按需规划技能](../.agents/skills/speechnexus-next-delivery/SKILL.md)、[PRD](prd.md)、[需求矩阵](plans/delivery-tracking.md) |
 | 文档与工程交接 | [文档索引](README.md)、[整体技术方案](architecture/technical-blueprint.md) |
-| 模块边界与依赖方向 | [工程目录说明](architecture/repository-layout.md) |
-| 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](architecture/http-contract-change-checks.md) |
+| 模块边界与依赖方向 | [工程目录说明](components/repository-layout.md) |
+| 公共与内部协议、错误语义、生成类型 | [契约索引](../contracts/README.md)、[生成契约包](../packages/contracts/README.md)、[所有权矩阵](architecture/contract-ownership.md)、[HTTP 结构变化检查](validation/http-contract-change-checks.md) |
 | 产品范围、身份与共享部署 | [ADR 0001](decisions/0001-product-boundaries-and-authentication-scope.md)、[产品设计](speechnexus-product-architecture.md) |
 | 模型选择、绑定与加载 | [ADR 0002](decisions/0002-speech-models-engines-and-loading.md)、[资源治理](architecture/runtime-governance.md) |
 | 工作台 LLM 与内容网络边界 | [ADR 0003](decisions/0003-workbench-llm-network-boundary.md) |
@@ -36,9 +36,9 @@
 | 执行命令、公开回执与删除 | [ADR 0005](decisions/0005-complete-execution-and-data-lifecycle-contracts.md)、[执行命令](architecture/execution-command.md)、[删除生命周期](architecture/data-deletion.md) |
 | 协调事务、锁序、表所有权与恢复 | [应用事务](architecture/coordination-transactions.md)、[协调 Schema](architecture/distributed-coordination-schema.md)、[事务契约](../contracts/internal/coordination-transactions.schema.json) |
 | 遗留协调原型退出 | [ADR 0007](decisions/0007-legacy-coordination-retirement.md) |
-| Web 视觉、Token 与无障碍 | [Web 目录规则](../web/AGENTS.md)、[设计框架](architecture/ui-ux-design-framework-and-tokens.md) |
+| Web 视觉、Token 与无障碍 | [Web 目录规则](../web/AGENTS.md)、[设计框架](design/ui-ux-design-framework-and-tokens.md) |
 | 环境、服务与部署 | [部署单元与平台规划](architecture/deployment-units.md)、[开发环境](development-environment.md)、[部署说明](../deploy/README.md)、[集成测试说明](../tests/integration/README.md) |
-| CI 调度、验证范围与门禁 | [CI 规则](architecture/ci-validation.md)、[工作流](../.github/workflows/ci.yml) |
+| CI 调度、验证范围与门禁 | [CI 规则](validation/ci-validation.md)、[工作流](../.github/workflows/ci.yml) |
 | SpeechRail 规则复用 | [固定来源与边界](architecture/speechrail-reuse.md) |
 
 当前代码与可复现运行结果说明已实现行为；机器契约定义协议预期；`active` 设计与 `accepted` ADR 表示当前设计基线，旧决定按后续 ADR 的替代范围理解。冲突须指出具体差异，不通过放宽校验掩盖。计划、占位目录、历史 fixture 和测试原型不能单独证明生产能力已交付。

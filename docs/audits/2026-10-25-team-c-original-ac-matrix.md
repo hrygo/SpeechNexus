@@ -65,7 +65,7 @@ uv run python scripts/dev-env/check-acceptance-map.py \
 | C01/AC2/S02 | [ProfileSession.prepare/confirm](../../web/admin/src/profiles/profile-session.ts)分开准备和发送；DOM 断言核对不外发、确认才提交并聚焦确认按钮 | 实际浏览器操作、真实服务记录及其余管理写入待验证 |
 | C01/AC2/S06 | [ProfileJournal](../../web/admin/src/profiles/profile-journal.ts)保留完整原意图；[会话测试](../../web/admin/src/profiles/profile-session.test.ts)断言未知/读取/原键重放及稳定冲突，[存储测试](../../web/admin/src/profiles/profile-journal.test.ts)断言原键和大修订持久于假存储 | 实际刷新/sessionStorage 与生产原结果恢复未验证；固定 GET 不能结算写入 |
 | C01/AC2/S07 | 正式草稿页面与 Admin 外壳说明无身份隔离；[外壳测试](../../web/admin/src/App.test.tsx)和 DOM 测试保护相应文案 | 不证明入口网关限制或其他页面/部署边界已经全部核验 |
-| C01/AC2/S03–S05 | [生命周期设计](../architecture/profile-lifecycle-contract.md)明确未来契约与私有准备边界，当前产品只注册草稿创建/固定读取；页面明确生命周期未接入 | A02 仍需交付可信资格生产者、发布/激活事务及持久原结果、当前指针和正式路由；退役需冻结行为并交付生产路径。C 取得具名制品后接入并联验；阻塞这些子条件，不阻塞草稿独立联调 |
+| C01/AC2/S03–S05 | [生命周期设计](../components/profile-lifecycle-contract.md)明确未来契约与私有准备边界，当前产品只注册草稿创建/固定读取；页面明确生命周期未接入 | A02 仍需交付可信资格生产者、发布/激活事务及持久原结果、当前指针和正式路由；退役需冻结行为并交付生产路径。C 取得具名制品后接入并联验；阻塞这些子条件，不阻塞草稿独立联调 |
 
 上述 10 个子条件更新了源码/消费者/测试或依赖边界，所有验收状态仍为 `not_run`。源码及证据哈希存于同一忽略证据目录；没有用局部草稿测试结算任何完整原 AC。
 

@@ -80,5 +80,5 @@ DDL 草案；用户另行授权两份现有运营 DTO 的声明约束对齐。�
 比较均通过；公开 SpeechRequest 与 ModelList 的对应变异均被拦截。
 36 个修改文档本地链接及 `git diff --check` 通过。验证后测试 schema 和临时角色均为 0。
 相关规范已同步到[契约说明](../../contracts/README.md)及
-[历史协调权限边界](../architecture/legacy-postgresql-coordination.md#4-历史角色与容量验证队列)。
+[历史协调权限边界](../archive/legacy-postgresql-coordination.md#4-历史角色与容量验证队列)。
 未运行真实模型、引擎、负载或恢复演练，未部署 DDL。

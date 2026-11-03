@@ -35,7 +35,7 @@ audience: "Web 前端工程师、UI/UX 设计师、平台运维、架构师、�
 | **DTCG Token 资产** | `web/shared/src/tokens/tokens.json` |  **通过**。严格遵循 W3C DTCG 规范，图元层、语义层、领域层结构完备。 |
 | **TypeScript 类型契约** | `web/shared/src/tokens/index.ts` |  **通过**。`NexusTone` 与 `CapabilityState` 强类型约束，杜绝状态漂移。 |
 | **品牌矢量资产** | `web/shared/src/assets/brand-mark.svg` |  **通过**。声学轨道环 + 脉冲波形 + 拓扑卫星节点，纯矢量无位图依赖。 |
-| **规范文档与总览** | `docs/architecture/ui-ux-design-framework-and-tokens.md` |  **通过**。技术规范、色彩值、材质与 CI 规则详尽清晰，已纳入架构目录索引。 |
+| **规范文档与总览** | `docs/architecture/ui-ux-design-framework-and-tokens.md`（历史路径；[当前位置](../design/ui-ux-design-framework-and-tokens.md)） |  **通过**。技术规范、色彩值、材质与 CI 规则详尽清晰，已纳入架构目录索引。 |
 
 ### 2.2 视觉排版与色彩对比度 (Typography & Contrast)
 

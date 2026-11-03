@@ -27,7 +27,7 @@ date: 2026-10-28
 拓扑和配置摘要；实验等级的 incomplete 报告也不能作为通过结果。
 返回值仅证明所读内容一致，不认证证据作者、不复跑测量、不检查实际模型文件、实例代次
 或 speaker，也不签发声音资格。消费者仍须限定所需 release tier 并复核实际部署。
-当前发布 CLI 和正式同步 TTS 工厂尚未接入该组件，后者继续关闭；本组件不追溯改变历史资格。
+内建声音资格授权、签发及发布入口已调用该只读核验组件；具体调用边界见[内建声音资格](builtin-voice-qualification.md)。同步 TTS 工厂按配置及声音资格条件装配，见[同步语音合成](../components/synchronous-speech.md)；本组件不追溯改变历史资格，也不单独证明工厂可运行。
 
 ## 1. 输入、输出与权威位置
 
@@ -42,7 +42,7 @@ date: 2026-10-28
 | 校验脚本 | `scripts/dev-env/verify-release-evidence.py` | 只读校验 schema、摘要、跨文档、DB 账本 |
 | DB 快照 fixture | `tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` | 只证明查询路径；不是真实发布 |
 
-**当前基线**：仓库 `main` 的完整 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`。样例中的测量全部来自 #243 comment `6453106316` 的 GPU 岗记录；原始主记录 `DEL-103-evidence.md` 未提供，因此本任务把数值标为**他人实测、本文转述**，而不是独立复现。
+**样例基线**：编写时仓库 `main` 的 base SHA 为 `9d1b9bbdc1041bfb7c33505a4788490c1db5ea45`，不是当前主线承诺。样例中的测量全部来自 #243 comment `6453106316` 的 GPU 岗记录；原始主记录 `DEL-103-evidence.md` 未提供，因此本任务把数值标为**他人实测、本文转述**，而不是独立复现。
 
 ## 2. 顶层字段表
 

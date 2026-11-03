@@ -7,7 +7,7 @@ date: 2026-10-23
 
 # SpeechNexus 语音接口设计
 
-本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。P0 已将本文语义固化为 `contracts/` 下的 OpenAPI、JSON Schema 与正负样例；业务路由仍待实现。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
+本文负责实时与非实时 ASR/TTS、音色创作和资源访问的协议语义，属于[项目主设计](../speechnexus-product-architecture.md)的配套规范。P0 已将语义固化为 `contracts/` 下的 OpenAPI、JSON Schema 与正负样例；部分业务路由与执行链已有实现，各项覆盖范围见[交付跟踪](../plans/delivery-tracking.md)。兼容声明只覆盖明确列出的字段、格式和事件，不推断完整 OpenAI API / SDK 兼容。
 
 阅读入口：[REST / Job / 音色](#1-统一接口与传输契约) · [实时状态与事件](#2-实时协议与状态机) · [调用示例](#3-调用示例)
 
@@ -21,7 +21,7 @@ date: 2026-10-23
 | --- | --- | --- |
 | OpenAI 兼容层 | Audio 转写与合成的声明子集；标准请求不要求 nexus 或工作台字段 | 标准 SDK 更换 base_url、逻辑 model / voice；共享服务密钥按部署选择 |
 | SpeechNexus 增强层 | 音色创作、版本 / 预设、durable Job、能力 / 资源、管理；实时 nexus 扩展 | 公开增强 DTO / SDK；不依赖工作台 |
-| 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 /v1/workbench；不宣称 OpenAI 兼容 |
+| 工作台应用层 | 项目、会议 / 助手 / 提词 / 有声书编排 | 可选 `/v1/workbench` 和契约声明的 `/v2/workbench`；不宣称 OpenAI 兼容 |
 
 Realtime 提供两条连接路径：预创建 SpeechNexus 会话后使用 `session_id`，或标准 SDK 直接以 `model` 打开仅转写的兼容会话。两者都只兼容本文声明的 ASR 事件和配置子集；不承诺依赖 `response.*`、conversation history 或 tool call 的 OpenAI Realtime 客户端无修改可用。音色设计 / 克隆不冒充标准 speech 参数。完整 SDK 调用与增强边界见 [OpenAI 兼容与增强边界](openai-compatibility.md)。
 
@@ -69,7 +69,7 @@ SpeechCommand
 
 增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
 
-工作台项目、会议、有声书及独立导出任务 / 成品资源置于 `/v1/workbench/`；外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
+工作台项目、会议、有声书及独立导出任务 / 成品资源置于工作台命名空间；当前契约包含 `/v1/workbench/` 与 `/v2/workbench/`，具体路径以 `contracts/workbench-openapi.yaml` 为准。外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
 
 资产只有在完整接收并验证后才是 `ready`，且 `bytes>0`。音频用途（`asr_input` / `voice_reference`）的 ready 资产必须同时提供大于零的 `duration_ms`、实际 `sample_rate_hz` 与 `channels`；`text_input` 不得携带这三项音频元数据。验证失败保留 `rejected` 事实，后续 Job / 音色命令不能把 staging、rejected、expired 或 deleted 资产当作可执行输入。
 
@@ -81,17 +81,13 @@ SpeechCommand
 
 TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instructions` 与 `stream_format=audio`，具体可选参数及取值域以绑定和音色快照为准。首期标准 voice 接受已发布的字符串 ID；不宣称支持 OpenAI 托管音色或任意 voice 对象。`response_format` 默认 `mp3`，基线为 `mp3 / wav / pcm`；MP3 由有界编码步骤提供并计入 CPU、缓冲与执行预算。REST `pcm` 固定为无头、24 kHz、单声道 signed 16-bit little-endian，adapter 负责必要重采样。默认 `speed=1`；非默认 speed 和 instructions 只有绑定实际支持时才接受。`stream_format` 只接受 `audio`，其余取值在 schema 层拒绝（400）；契约内但绑定未发布的格式返回 422 `unsupported_parameter`，不静默降级。禁止静默忽略参数或将默认 MP3 替换为 WAV。[OpenAI TTS 格式与默认值](https://developers.openai.com/api/docs/guides/text-to-speech)
 
-同步 TTS 的已实现边界（2026-10-27，#239）：路由只从已发布 binding 与 voice revision 解析，缺席即 `model_not_found` / `voice_not_found`，不回退默认模型或草稿；`response_format`、`speed`、`instructions`、`language`、`seed` 逐项以 binding `parameter_domains.tts` 收窄，超出即 422。解析出的音频时长与源 PCM 上界会写入合成策略，合成结果超过请求上界时整条请求失败，不做截断。冻结的 `SpeechRequest` 尚无 `max_output_audio_ms` 字段，当前上界来自部署策略；契约补齐后必须与该值取较小者。该入口尚无持久 operation 身份，因此带 `Idempotency-Key` 的请求返回 422 而不是假装重放；成功响应不伪造 `X-Operation-ID`。生产合成端口待 A 的原子准入与网关同步投递接通，当前未配置时返回 503 `backend_unavailable`。响应状态以契约声明为准并逐项比对：`model_not_found` / `voice_not_found` 使用已声明的 404，该方法只接受 POST，方法不符使用已声明的 405 `speech_method_not_allowed`；`instructions` 超过部署 `max_instructions_chars` 时返回 422 `unsupported_parameter`，不截断改写。`X-Request-ID` 是不受约束的 1–128 字符关联值，不满足部署身份规则时改由服务端生成并回显，不影响请求结果。
+同步 TTS 路由从已发布 binding 与 voice revision 解析，缺席即 `model_not_found` / `voice_not_found`，不回退默认模型或草稿；`response_format`、`speed`、`instructions`、`language`、`seed` 按 binding 支持域收窄。音频时长与源 PCM 上界写入合成策略，超出时整条请求失败，不做截断。冻结的 `SpeechRequest` 尚无 `max_output_audio_ms` 字段，当前上界来自部署策略；契约补齐后必须与该值取较小者。响应状态以机器契约为准：`model_not_found` / `voice_not_found` 使用 404，方法不符使用 405 `speech_method_not_allowed`；`instructions` 超过部署上限时返回 422 `unsupported_parameter`。`X-Request-ID` 是 1–128 字符关联值，不满足部署身份规则时由服务端生成并回显。
 
-DEL-432 查询候选（2026-11-02）：生产工厂显式调用 `build_speech`，该函数无条件返回
-`None`，没有配置启用开关；历史 recipe 或 gateway 配置不能启用同步 TTS，合规请求仍返回
-503 `backend_unavailable`。完整私有提交意图及未知提交恢复、同版权威 voice 来源与资格、
-voice 删除/撤销的共同锁与准入复验尚未闭合，因此不装配可执行 TTS 链。
-`PostgresSpeechFacts` 只提供待审查的查询投影：默认读取完整 head、无 head 不回退，精确历史
-读取保持可读；`voice_for_request` 排除退役 voice，但不认证资格。跨 binding/voice 查询必须
-使用同一个 `snapshot()` 的只读 REPEATABLE READ view；该快照不保护解析后的准入竞争。
-现有 binding disable 屏障保留原身份重放和锁后复验规则，不能代替 voice 的共同锁协议；
-同步 `SpeechRequest` 不增加 Job binding pin。合成测试不证明 PG、引擎、公开 E2E 或 Gate。
+截至 2026-11-03，生产工厂可在私有配方、独立结算、网关与对象存储配置完整且存在合格声音时装配同步链；缺失配置或资格时保持不可用。完整原命令、原身份恢复、声音资格与锁后复验见[同步语音合成](../components/synchronous-speech.md)。[第六次受控窗口](../audits/2026-11-03-controlled-tts-prepare.md#第六次独立授权窗口完整公开-sdk-关联通过)取得标准 SDK、真实引擎、固定对象及停止结算的关联证据；它不代表全部模型、负载或多机资格。
+
+跨 binding/voice 查询使用同一个只读 REPEATABLE READ 快照；快照本身不保护解析后的准入竞争，必须在准入时按声音及 binding 的共同锁和屏障复验。同步 `SpeechRequest` 不增加 Job binding pin。
+
+当前同步 HTTP 入口仍拒绝 `Idempotency-Key`，返回 422 `unsupported_parameter`；内部持久身份和恢复入口不能当作客户端幂等键重放能力。成功响应不伪造 `X-Operation-ID`。这是当前实现与契约声明之间需要继续解决的差异。
 
 内部 `SpeechPlan` 固定本次解析的 `model_id`、`workspace_id`、
 `binding_revision_id`、`workspace_policy_revision` 和 `voice_revision_id`，
@@ -100,7 +96,7 @@ voice 删除/撤销的共同锁与准入复验尚未闭合，因此不装配可�
 
 增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
-普通同步 ASR/TTS 不建立永久业务记录，也不自动保存源文件或音频。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，客户端使用相同幂等键协调结果，不能盲目新建相同意图。
+普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端先检查输入大小、最大音频时长 / 文本长度和同步执行预算；超出预算返回 `422 async_required`，由客户端明确改为 Job，不在超时后偷偷转成后台作业。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
 
 OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)及[语音接口](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create)；SpeechNexus 只承诺本文列出的子集和 P0 冻结的 SDK 兼容测试，不声称支持 OpenAI 的全部模型、格式或事件。
 
@@ -155,7 +151,7 @@ TTS 制品携带实际 `format`、`sample_rate_hz`、`channels`、`duration_ms`�
 
 绑定发布、部署资格与具体实例的运行事实分开。按需模型可以支持提交排队任务而当前尚未加载；不能用单一就绪标志混淆“支持”“可排队”“可立即执行”。实例卸载不删除绑定或音色 revision，重建后重新核对配置与资格；字段和状态由 P0 schema 冻结，组件分工见[整体技术方案](technical-blueprint.md#4-绑定资格与实例分离)。
 
-模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；退役只影响后续选择，在途 Job 保持准入时固化的有效配置。voice 目前只有退役契约与底座墓碑，生产发布/激活路径仍待补齐，不能把 binding 的验证结果外推为 voice 资格。
+模型 binding 的退役、激活与历史 revision 回滚已通过显式 head 指针和 append-only 审计事件落地；退役只影响后续选择，在途 Job 保持准入时固化的有效配置。内建声音已有独立资格与发布路径，受控证据见[声音资格说明](../operations/builtin-voice-qualification.md)；不能把 binding 的验证结果外推为 voice 资格，声音创建等其他路径须各自验收。
 
 模型绑定发布同时负责把一个 draft revision 激活为当前 revision。请求中的 `expected_revision` 是目标 revision，`expected_current_revision` 是发布前的当前指针；两者分离，避免并发发布时“谁最后提交谁生效”的丢失更新。指针已变化返回 `409 configuration_changed`，目标不是 draft 返回 `409 binding_not_draft`；首期没有身份或审批层级，CAS 只保证操作者看到的是自己确认的版本。
 
@@ -191,7 +187,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 | 413 | `payload_too_large` | 分段或改用有配额的文件上传 |
 | 422 | `unsupported_parameter`、`incompatible_profile`、`async_required` | 改请求；不得静默删参数 |
 | 429 | `quota_exceeded`、`queue_limit_exceeded` | 遵循 Retry-After，受总重试期限约束 |
-| 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 先协调原意图；只有声明 retryable 才重试 |
+| 503 / 504 | `backend_unavailable`、`capacity_unavailable` / `operation_timeout` | 先协调原意图；`retryable` 为 true 本身不保证重发安全，还须确认该入口提供适用的安全重放机制 |
 
 列表统一 `data`、`has_more`、`next_cursor`，按 `(created_at,id)` 排序；page limit 为 1–100，默认 50。游标绑定过滤条件、部署与工作空间，不能跨请求作用域续读；这属于查询一致性，不是权限边界。SSE `id` 是持久化 job_event_seq，支持 `Last-Event-ID`；事件保留期结束后返回 `410 event_history_expired`，客户端读取 Job 当前状态，不伪造历史。
 
@@ -199,9 +195,9 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 工作台终态还要求产物自洽：MinutesJob `succeeded` 至少提供非空 `minutes_text` 或 `artifact_id`，非成功状态只可保留明确的部分文本，不得发布成品 `artifact_id`；AssistantTurn `succeeded` 必须有非空 `output_text`；RenderUnit `generating` 必须带 `speech_job_id`，`ready` 还必须同时带 `source_artifact_id` 与 `source_receipt_id`；Meeting 的 `sealed` / `minutes_pending` / `minutes_ready` 必须带 seal revision 与结束时间，后两者还必须带 `minutes_id`。Meeting 的 `failed` 表示封存前的采集失败，必须带结束时间和结构化 `error`，且不得携带 seal revision 或 minutes 引用；纪要任务失败保留在 `minutes_pending` 并通过所引 MinutesJob 的结构化错误呈现，不把整个会议改判为采集失败。从语音 Artifact 导入转写、保存副本或 render unit 时必须同时固定 Artifact ID 与 receipt，saved asset 的 receipt 不可为空；非 succeeded 的 ExportJob 不得携带成品 Artifact，显式导出子集不得为空。这些约束不替代跨资源校验，服务端仍须确认 source receipt 等于 Artifact 的 receipt、source Artifact 属于目标项目工作空间、MinutesJob 成功、单元副本已保存且版本一致后才能宣称整书可导出。
 
-创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`。作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 `error.nexus.operation_id`；查询路径固定为 `GET /v1/nexus/operations/{operation_id}`。
+目标契约要求创建 Job、创建会话、同步推理、音色创作和发布资源支持 `Idempotency-Key`；实际能力须逐入口核验。当前同步 ASR 和 TTS HTTP 入口均拒绝该请求头，详见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)。目标作用域为 `(deployment_id, workspace_id, operation_family, key)`，服务端原子记录规范意图摘要、脱敏的显式配置引用、固定执行版本与执行身份；未明确保存的正文只留摘要，不把同步输入全文放入幂等表。摘要基于规范命令、精确输入内容 / 摘要及显式版本，不混入传输路径或后来变化的默认值；便捷入口与 Job 入口先映射为同一命令。确定部署 / 工作空间并执行当前入口检查后，先查找或原子 claim 幂等记录；只有新意图才解析可变默认预设 / 模型 / 音色并固化，重复请求复用原固定版本。当前删除 / 强制禁用仍按资源规则限制内容返回，不因此重新执行。相同 key / 同意图返回原执行，相同 key / 不同意图返回 `409 idempotency_conflict`。进行中 Job 返回 `202` 与原 Job；进行中同步请求返回 `409 operation_in_progress` 与 `error.nexus.operation_id`；查询路径固定为 `GET /v1/nexus/operations/{operation_id}`。
 
-同步推理的终态协调接口为 `GET /v1/nexus/operations/{operation_id}`。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及 `error.nexus.operation_id`、`error.nexus.receipt` 中的原成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
+目标契约中的同步推理终态协调接口为 `GET /v1/nexus/operations/{operation_id}`；不得将其视为当前同步入口已提供客户端幂等恢复的证据。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及 `error.nexus.operation_id`、`error.nexus.receipt` 中的原成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
 
 作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 创建新 Job 与新 key，旧 Job 保持原终态。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
 

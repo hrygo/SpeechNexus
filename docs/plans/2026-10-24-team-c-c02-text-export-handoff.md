@@ -6,7 +6,7 @@ date: 2026-10-24
 
 # 团队 C C02 固定转写版本文本导出交接
 
-[本单元计划](2026-10-24-team-c-c02-text-export-plan.md)接在已保存/校对稿件之后，提供固定 revision 的 UTF-8 文本导出用例。C02 的公开页面、生成校验器、字幕和完整生产闭环仍未完成，[C00–C08 goal](2026-10-24-team-c-goal.md)保持 active。
+[本单元计划](2026-10-24-team-c-c02-text-export-plan.md)接在已保存/校对稿件之后，提供固定 revision 的 UTF-8 文本导出用例。交接时 C02 的公开页面、生成校验器、字幕和完整生产闭环仍未完成，[C00–C08 goal](2026-10-24-team-c-goal.md)保持 active。后续固定版本 TXT 下载由客户端从已验证的 revision 快照生成，见[转写导入与文本导出](../components/transcript-import-and-text-export.md)；这不代表字幕或完整生产闭环已完成。
 
 ## 基线、边界与行为
 

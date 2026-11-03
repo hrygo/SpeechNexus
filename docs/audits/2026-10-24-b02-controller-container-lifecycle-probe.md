@@ -10,6 +10,9 @@ date: 2026-10-24
 本记录给出受限节点控制器容器 adapter 的首个**真实生命周期证据**：在受权范围内使用合成
 无业务容器验证 prepare → ready → stop 与停止双证据。它不证明真实引擎容器（vLLM ASR/TTS）
 的加载、就绪、停止或资格，也不证明控制器 HTTP 外壳、持久意图存储与部署单元已交付。
+下文未验证项保留本次探针时点；后续[HTTP 外壳探针](2026-10-24-b02-controller-http-shell-probe.md)
+与[有界控制器和真实 ASR 探针](2026-10-24-b02-real-asr-controller-probe.md)分别记录新增范围，
+不能将其结果倒推为本次合成容器探针的覆盖范围。
 
 ## 1. 范围、环境与制品
 
@@ -85,8 +88,8 @@ inspect 确认不存在时才写出 `process_or_container_exited` 与 `resources
 与已 `disable --now` 的 `qwen3-asr.service` 状态未改变。
 
 **未验证**：真实引擎容器（Qwen3-ASR / TTS）的 ready 与停止、GPU `DeviceRequests` 路径、
-容器内存上界与统一内存语义（adapter 目前不设 `Memory` 上界，预留只作报告值）、多实例并发与
+容器内存上界与统一内存语义（本次受测 adapter 不设 `Memory` 上界，预留只作报告值）、多实例并发与
 跨 generation 竞争、控制器重启后的重新发现与 reconcile、Docker 之外的容器运行时、HTTP 外壳、
 持久意图存储与部署单元。以上都不能由本记录推断为已完成。
 
-[审查记录索引](README.md) · [受限节点控制器](../architecture/node-controller.md) · [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)
+[审查记录索引](README.md) · [受限节点控制器](../components/node-controller.md) · [B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)

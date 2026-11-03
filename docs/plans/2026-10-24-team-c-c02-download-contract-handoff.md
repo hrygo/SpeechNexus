@@ -6,6 +6,8 @@ date: 2026-10-24
 
 # 团队 C C02 固定版本文本下载契约候选交接
 
+本文保留 2026-10-24 的候选及当时证据；候选中的独立 content 路由并未因此成为当前正式契约。当前稿件 TXT 下载由客户端使用已验证的固定修订快照生成，见[转写导入与文本导出](../components/transcript-import-and-text-export.md)；两者的传输方式和验证范围不同。
+
 [计划](2026-10-24-team-c-c02-download-contract-plan.md)将[固定版本导出用例](2026-10-24-team-c-c02-text-export-handoff.md)所需公开行为整理为[机器可读候选](2026-10-24-team-c-c02-download-contract-candidate.yaml)及可执行验收样例。C 是 workbench 契约 owner，A 是必须参与的评审方；本候选 `status=proposed`、`review_required=[A]`，没有 A 冻结或生产接线声明，[完整 goal](2026-10-24-team-c-goal.md)仍 active。
 
 ## 基线与候选行为

@@ -6,6 +6,8 @@ date: 2026-10-24
 
 # ADR 0008 控制器观察前的持久 runtime 意图
 
+本文保留 2026-10-24 的协议决策和当时的交付状态。后续已有 runtime 创建与观察的 PostgreSQL 实现；持久派发及其验证边界见[生产运行意图](../components/production-runtime-intents.md)和[运行交付](../operations/production-runtime-delivery.md)。
+
 ## 背景
 
 ADR 0006 要求在短关系数据库事务内记录意图和预算，再调用外部控制器。

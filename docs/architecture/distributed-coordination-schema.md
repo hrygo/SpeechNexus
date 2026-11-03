@@ -16,8 +16,8 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 原地升级。它位于产品 Python 包之外，不随应用 wheel 发布。迁移角色执行 DDL；
 运行角色只获最小 DML 权限。
 
-[首个生产 Job/outbox 单元](production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
-事件身份并以最低角色运行；[后续生产存储基线](production-coordination-storage.md)以
+[首个生产 Job/outbox 单元](../components/production-jobs.md)使用包内独立 Alembic 迁移，冻结初始
+事件身份并以最低角色运行；[后续生产存储基线](../operations/production-coordination-storage.md)以
 `0002_coordination` 冻结其余 13 表、基础约束与角色授权。产品不直接加载本文件的草案 SQL；
 具名生产事务和真实运行资格按各单元另行验收。
 
@@ -78,7 +78,7 @@ MySQL 仅将文档 TEXT 列映射为 LONGTEXT，避免合法长命令截断；�
 
 修复后的旧 SQL 完整保存在
 [`legacy_postgresql.sql`](../../tests/fixtures/coordination/legacy_postgresql.sql)，其
-[旧设计](legacy-postgresql-coordination.md)和
+[旧设计](../archive/legacy-postgresql-coordination.md)和
 [53 项 PostgreSQL 回归](../../tests/integration/test_cluster_coordination_schema.py)继续独立运行，
 保留直接 SQL 拦截、触发器来源校验、权限与历史证据；不把旧负例改为跳过或 fake。
 历史规则到新执行位置的逐项映射见应用方案第 8 节。

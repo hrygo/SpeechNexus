@@ -6,11 +6,11 @@ date: 2026-10-22
 
 # SpeechNexus 开发与测试环境
 
-本机是 Linux ARM64 开发与测试主机，用于先完成 P0 机器契约、fake 与事务验证，再按[实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)推进 P1。这里的开发服务不是生产部署，也不构成容量、质量或恢复资格。
+本文记录项目 Linux ARM64 参考开发与测试环境及其操作方式，不代表当前会话所在主机或服务的实时状态。执行前核验宿主、工具链、端口和项目隔离边界；当前交付范围见[跟踪矩阵](plans/delivery-tracking.md)，[原实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)保留历史阶段。开发服务不是生产部署，也不构成容量、质量或恢复资格。
 
 ## 运行组件
 
-| 组件 | 当前基线 / 地址 | 用途 |
+| 组件 | 参考版本 / 地址 | 用途 |
 | --- | --- | --- |
 | Python | 3.14.9，由 `uv` 管理 | FastAPI、领域 / 契约测试与 fake |
 | Node.js | 26.12.1，`pnpm` 12.14.0 | React / TypeScript 工作台 |
@@ -26,7 +26,7 @@ Node 版本以 `.nvmrc` 的 `26.12.1` 为准；切换本机 shell 后，`make de
 
 PostgreSQL 与 MinIO 使用用户级 systemd 服务，状态和对象数据保存在被 Git 忽略的 `.runtime/`。服务只绑定回环地址；PostgreSQL 仅允许本机连接。`DATABASE_URL_DEV`、`DATABASE_URL_TEST`、`S3_ENDPOINT` 等非秘密地址位于 `.runtime/config/dev.env`，MinIO 凭据位于权限为 `0600` 的 `.runtime/config/minio.env`。
 
-协调测试用的 MySQL 是钉住摘要 `mysql@sha256:2952e3be…` 的项目受管容器，由 `scripts/dev-env/mysql-service.sh` 幂等安装与启动，数据保存在 `.runtime/data/mysql`（初始化后归容器内 `mysql` 账户），根口令写在权限为 `0600` 的 `.runtime/config/mysql.env`。本机用户级 systemd 管理器没有 docker socket 权限，因此该容器不使用用户 systemd 单元，而由 docker 的 `unless-stopped` 重启策略在守护进程启动时自动拉起；`make dev-up`、`make dev-bootstrap` 与 `make verify` 会在需要时调用同一脚本。
+协调测试用的 MySQL 是钉住摘要 `mysql@sha256:2952e3be…` 的项目受管容器，由 `scripts/dev-env/mysql-service.sh` 幂等安装与启动，数据保存在 `.runtime/data/mysql`（初始化后归容器内 `mysql` 账户），根口令写在权限为 `0600` 的 `.runtime/config/mysql.env`。参考环境不使用用户 systemd 单元管理该容器，而由 docker 的 `unless-stopped` 重启策略在守护进程启动时自动拉起；`make dev-up`、`make dev-bootstrap` 与 `make verify` 会在需要时调用同一脚本。实际 socket 权限和既有容器状态需在目标主机核实。
 
 PostgreSQL 与 MinIO 分别限制为最多 4 GiB 内存、2 个 CPU 核和 512 个任务，MySQL 容器限制为 2 GiB 内存和 2 个 CPU 核，避免开发负载无界挤占同一主机上的共享服务。该限制是开发环境的保护措施，不是生产容量声明。
 
@@ -50,20 +50,20 @@ Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端�
 source scripts/dev-env/activate.sh
 ```
 
-`make verify` 运行服务健康检查、Shell / JavaScript 语法检查、Ruff、mypy、契约检查、PCM / WAV / MP3 解码检查、Chromium 虚拟麦克风与 Web Audio 冒烟检查、WebSocket 文本和二进制往返，并在已有 Python 测试时执行 pytest。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
+`make verify` 包含参考 Linux 宿主的服务检查、Python 静态与测试、契约与媒体检查、Web 检查、构建和部署配置检查；实际入口及运行态副作用以 `scripts/dev-env/verify.sh` 和[验证指南](agent-verification.md)为准。可分别使用 `make contracts-check`、`make media-smoke` 和 `make browser-smoke` 调试对应部分。
 
-`make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 拒绝 OpenAI 公共契约的明显破坏性变更；`make integration-test` 与 `make coordination-test` 要求同时设置隔离的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，在 PostgreSQL 与 MySQL/InnoDB 上应用协调 DDL 并验证正负事务，缺任一变量直接失败，并在 DSN 指向本机默认端点时先调用[协调 MySQL 脚本](../scripts/dev-env/mysql-service.sh)启动实例。`make verify` 使用同一对默认隔离 DSN，并在环境检查前自动确保本机隔离 MySQL 容器运行；两个变量同时缺失时相关用例跳过，只配置一个会失败。`make integration-test` 还要求显式的隔离 MinIO 端点与测试凭据；资产测试使用版本化独立桶，缺少配置失败。默认本机实例可由 `scripts/dev-env/minio-test-service.sh` 启动，不能与占用同一端口的 systemd / Compose MinIO 同时启动。配置与证据范围见[资产发布存储单元](architecture/production-assets.md)。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
+`make contracts-check` 校验公共语音 / 工作台 / 管理 OpenAPI、Realtime 事件、预设 / 音色 / 绑定 / 实例 / 容量 / 资格 schema、内部执行与部署控制协议，并验证每个本地 `$ref` 指针存在。`CONTRACT_BASE_REF=origin/main make contracts-compat` 检查 OpenAI 公共契约的明显破坏性变更；使用前核验基线。`make integration-test` 与 `make coordination-test` 要求同时设置隔离的 `SPEECHNEXUS_TEST_DATABASE_URL` 和 `SPEECHNEXUS_TEST_MYSQL_URL`，缺任一变量直接失败，并在 DSN 指向本机默认端点时先调用[协调 MySQL 脚本](../scripts/dev-env/mysql-service.sh)启动实例。`make verify` 在环境检查前确保隔离 MySQL 容器，并为缺失配置提供默认隔离 DSN；直接调用相关共享事务 pytest 时，两项均缺会跳过，只配置一项会失败。`make integration-test` 还要求隔离 MinIO 端点与测试凭据；资产测试使用版本化独立桶，缺少配置失败。默认本机实例可由 `scripts/dev-env/minio-test-service.sh` 启动，不能与占用同一端口的 systemd / Compose MinIO 同时启动。配置与证据范围见[资产发布存储单元](components/production-assets.md)。结构检查与契约测试不替代业务路由、事件序列或真实模型 API 测试。新增契约和类型生成的门禁见[整体技术方案](architecture/technical-blueprint.md#3-契约与类型生成)。
 
-无头 Chromium 使用合成音频设备，适合自动验证采集权限、MediaRecorder 与播放缓冲路径；本机未发现采集声卡，真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
+无头 Chromium 使用合成音频设备，适合自动验证采集权限、MediaRecorder 与播放缓冲路径；真实麦克风、系统音频采集和跨设备行为仍需在有实体设备的获准环境中验收。
 
 ## 隔离边界
 
-本机另有共享 PostgreSQL、Redis、MinIO、vLLM 与其他用户的服务。SpeechNexus 的测试不得写入共享实例或复用其容量；上述独立端口和 `.runtime/` 是默认开发边界。现有 vLLM 服务只可用于明确标记的 adapter 探针，不能作为生产绑定或容量证明。
+宿主可能存在共享 PostgreSQL、Redis、MinIO、vLLM 或其他用户的服务。SpeechNexus 的测试不得写入共享实例或复用其容量；上述独立端口和 `.runtime/` 是参考开发边界，使用前仍需核实。已有 vLLM 服务只可用于明确授权的 adapter 探针，不能作为生产绑定或容量证明。
 
-真实模型测试需先记录模型、引擎、驱动、精度与 manifest；缺少这些证据的组合保持 experimental。当前开发闭环先依赖 fake，不加载语音模型，也不使用私人音频。
+真实模型测试需先记录模型、引擎、驱动、精度与 manifest；缺少这些证据的组合保持 experimental。默认确定性测试使用 fake 和合成数据，不加载语音模型或使用私人音频；真实实验须有单独授权和证据。
 
 ## 重启与恢复
 
-用户级 systemd 服务已启用，并为本账号开启 linger；注销后服务继续运行。主机启动后由用户 systemd 拉起 PostgreSQL 与对象存储，协调 MySQL 容器由 docker 重启策略在守护进程启动时一并拉起。服务未运行时执行 `make dev-up`。数据库和对象数据不会因服务停止而删除。
+参考部署使用用户级 systemd 管理 PostgreSQL 与对象存储，并可由 docker 重启策略拉起协调 MySQL 容器。systemd、linger、容器与服务是否启用须在目标主机实测；确认环境适用后可用 `make dev-up` 启动项目服务。数据库和对象数据不会因正常停止服务而删除。
 
 恢复到新机器或新用户时运行 `make dev-bootstrap`，不要复制 `.runtime/config/minio.env` 的凭据到 Git。破坏性重置需由维护者单独确认数据范围。

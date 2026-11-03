@@ -1589,11 +1589,16 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "声音契约要求克隆输入引用参考音频并显式确认使用；preview_only 状态不得携带已发布声音版本。",
+      "integration": "契约不证明材料、绑定及发布的生产接线；来源确认也不等于身份或独立授权。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "设计、克隆、复用、退役和发布的真实执行及跨版本依赖仍须验收。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/contracts/voice-resource.schema.json",
+          "label": "声音资源契约",
+          "note": "克隆确认和 preview_only 结构约束，不证明发布实现或授权"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

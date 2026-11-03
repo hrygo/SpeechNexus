@@ -182,10 +182,6 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 
 脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`。该警告中的“证明查询路径”措辞过宽：fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
 
-live 模式使用只读事务，但未显式提升隔离级别；在 PostgreSQL 默认 `READ COMMITTED` 下，
-各表的多条查询可能看到不同提交时点，不能把一次输出当作一致快照或未来准入保证。核验时
-应协调相关写入并结合当前权威记录复查；部署若配置了其他隔离级别，应按实际配置判断。
-
 R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
 
 ### 谁能超、超了报什么
@@ -414,7 +410,7 @@ uv run --no-project \
   --require-published --require-digests --show-digests
 ```
 
-`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。脚本未显式设定可重复读隔离级别；并发变更时，各查询不一定反映同一时点，须在受控窗口核对。live 模式只有传入 `--workspace-id` 才查询对应配额；未指定或未查到行均输出 `capacity.workspace_quota=NA`，不能视为配额通过。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
+`--database-url` 与 `--database-snapshot` 二选一；live 模式只读事务（`SET TRANSACTION READ ONLY`），不会写 publication 或证据。脚本未显式设定可重复读隔离级别；默认 `READ COMMITTED` 下并发变更时，各查询不一定反映同一时点，也不能保证未来准入，须在受控窗口核对。部署若配置了其他隔离级别，应按实际配置判断。live 模式只有传入 `--workspace-id` 才查询对应配额；未指定或未查到行均输出 `capacity.workspace_quota=NA`，不能视为配额通过。`--source-body` 可选；不提供时 `digest.source_body=NA`，只核对记录值。
 
 退出码：`0` 表示无 `FAIL`（可能有 `WARN/NA`）；`1` 表示至少一个 `FAIL` 或输入错误，live 模式缺少 `psycopg` 也计入此类；`2` 表示参数错误或启动时缺少 `jsonschema`、`referencing`、`rfc8785` 依赖。数据库连接等未捕获异常也可能使进程异常退出，不能只看退出码判断检查是否完整。`PASS_WITH_WARNINGS` 不是生产放行；fixture、`NA`、未验证项必须逐条解释。
 

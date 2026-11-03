@@ -977,7 +977,7 @@
 **验收：**
 
 - 文件、实时、各声音模式分别给可行/experimental/阻塞结论；每项可用声明有 request ID、status/abort、强输出上界、加载峰值与真实停止/释放证据。
-- GPU 实验按批准制品和合成或授权语料排队，清理可核对并保持现有 35B 服务；资格按固定硬件、版本和环境而非硬件名称推定。
+- GPU 实验按批准制品和合成或授权语料排队，清理可核对并保护当期明确保留的共享服务；资格按固定硬件、版本和环境而非硬件名称推定。
 
 设计依据：[capacity-manifest.md](operations/capacity-manifest.md)、[file-tts-binding-handoff.md](operations/file-tts-binding-handoff.md)。
 

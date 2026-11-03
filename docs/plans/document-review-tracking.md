@@ -83,7 +83,7 @@
 | `docs/components/file-asr-results.md` | 已核对 | 逐节静态对照结果聚合、私有对象、命令与相关测试；未运行服务 |
 | `docs/components/file-tts.md` | 已核对 | 全文静态对照策略、HTTP、命令、编码器、worker 与历史探针记录；未重跑测试或历史探针 |
 | `docs/components/frozen-execution-inputs.md` | 部分核对 | 全文阅读并核对原命令桥失败分类、对象固定版本、摘要与传输期限；ASR 参数及集成证据待核对 |
-| `docs/components/gateway-execution-client.md` | 部分核对 | 全文阅读并对照客户端配置、认证、结果查询、停止身份与重试实现；调用方装配和测试证据待核对 |
+| `docs/components/gateway-execution-client.md` | 部分核对 | 对照客户端配置、认证、结果查询、停止身份、重试、部分调用方及测试入口；未运行测试，全部装配路径待核对 |
 | `docs/components/model-binding-drafts.md` | 部分核对 | 全文阅读并核对四类显式数据库配置及 0010/0011 迁移，修正发布与默认参数范围描述；生命周期事务及测试待核对 |
 | `docs/components/node-controller.md` | 部分核对 | 全文阅读并核对节点配置默认值，限定历史 warmup 探针的预算结论；容器、协议及恢复细节待核对 |
 | `docs/components/node-stop-recovery.md` | 部分核对 | 全文阅读并核对 SQLite schema 版本、检查点表与 reconcile/stop 入口；崩溃恢复各分支及历史探针待核对 |

@@ -51,7 +51,9 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 | 响应不合 schema | `GatewayResponseError` | 协议错误；不把响应当作成功事实 |
 
 `timeout_seconds`、`max_retries`、`backoff_seconds` 是构造参数，来自 settings；
-提交与停止 POST 每次调用仅尝试一次；只有幂等读取使用重试预算。调用方按原身份执行显式恢复不等于客户端自动重试。
+提交与停止 POST 每次调用仅尝试一次；只有幂等读取使用重试预算。读取仅对连接、超时和
+允许重试的 5xx 使用该预算；4xx、响应格式错误及明确 `retryable=false` 的 5xx 不自动重试。
+调用方按原身份执行显式恢复不等于客户端自动重试。
 
 ## 与同步转写装配的关系
 
@@ -65,7 +67,7 @@ command digest，不构造执行命令，不派发调度，也不释放预算。
 
 ## 验证
 
-`tests/unit/backend/test_gateway_execution_client.py` 使用 `httpx.MockTransport`
+[`tests/unit/backend/test_gateway_execution_client.py`](../../tests/unit/backend/test_gateway_execution_client.py) 使用 `httpx.MockTransport`
 覆盖连接失败、4xx、5xx、超时、响应不合 schema 五类分支，断言发出的 JSON 与构造的
 请求完全一致，并覆盖只读重试、固定版本/长度/摘要的结果对象读取。
 这些是传输层证据，不是准入、真实引擎、对象存储部署或公开接口可用性证明。

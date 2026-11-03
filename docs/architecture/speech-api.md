@@ -231,7 +231,7 @@ Profile、voice 和 model binding revision 不可变；升级只影响后续新�
 
 目标契约中的同步推理终态协调接口为 `GET /v1/nexus/operations/{operation_id}`；不得将其视为当前同步入口已提供客户端幂等恢复的证据。默认仅持久化意图、状态与脱敏 receipt，不保存完整 JSON 转写或音频响应；相同 key 对应操作已完成但内容不可重放时，返回 `409 response_not_replayable` 及 `error.nexus.operation_id`、`error.nexus.receipt` 中的原成功 receipt，绝不再次执行。`succeeded` 必须返回非空 `ExecutionReceipt`，且 Job / Operation / 实时终态引用只允许 `cleanup_state=not_required` 或 `complete`；`pending` / `quarantined` 不得冒充成功。REST 查询和 `nexus.operation.done` 使用同一要求；失败或取消可以保留已观察 receipt，但不得用 receipt 冒充成功。需要可靠获取或重放完整结果的调用方使用 Job。流式响应中断同样不自动重播先前音频。
 
-作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 创建新 Job 与新 key，旧 Job 保持原终态。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
+作业内重试窗口默认最多 24 小时，意图与步骤去重记录在所有 attempt 终结后至少保存 7 天；任务仍未终结或取消状态未知时不得删除该记录。调用方主动 retry 是创建替代 Job 的新意图，使用区别于原 Job 创建请求的新 key，旧 Job 保持原终态；若该 retry 请求结果未知，保留 retry 本身的原 key 和请求协调，不能为同一次 retry 换 key 重发。无用户体系时，同一工作空间共享幂等作用域；客户端为每个新意图生成高熵唯一 key，不以昵称或浏览器标识建立虚假的个人命名空间。P0 的故障用例必须覆盖“远端已执行、客户端超时”和“产物写入后进程退出”。
 
 ### 1.7 音色创作与增强协议
 

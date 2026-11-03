@@ -152,7 +152,7 @@
 | `docs/operations/paperclip.md` | 部分核对 | 核对现行工作流入口及历史环境边界；岗位、配置与平台映射尚未逐项核实 |
 | `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 迁移、head、基础 DDL、授权生成器及释放守卫视图投影；全部字段待核对 |
 | `docs/operations/production-runtime-delivery.md` | 已核对 | 对照配置、租约、unknown 路径、迁移、授权、ACK、Compose 及测试入口；未执行集成测试或验证目标部署 |
-| `docs/operations/publish-binding-revision.md` | 部分核对 | 核对 CLI 观察、退出分类及 publication 与草稿检查顺序、发布意图重放和已有事实分支的 CAS 边界；其他事务分支及数据库实测待核对 |
+| `docs/operations/publish-binding-revision.md` | 部分核对 | 核对 CLI 观察、退出分类及 publication 与草稿检查顺序、发布意图重放和已有事实分支的 CAS 边界；补充连接池未捕获异常的退出码限制，其他事务分支及数据库实测待核对 |
 | `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期、notes 及 limitations 校验边界，明确通用发布命令不读取报告，并区分快照 fixture、离线脚本退出码和产品组件的覆盖范围；其余内容待核对 |
 | `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |
 | `docs/operations/register-engine.md` | 部分核对 | 核对健康探测及重定向证据、host/owner/quota 校验、同代重放与 readiness 刷新、参数范围、配方覆盖规则及验证查询；补充提交结果未知、查询证据边界和操作员确认的投递阻断，其余内容待核对 |

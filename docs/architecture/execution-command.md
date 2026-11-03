@@ -47,6 +47,9 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 
 公开资源版本与 command.resources 一致；外层 voice_revision_id 若非空必须与
 固定音色版本一致。非 built-in 音色须带已发布材料；built-in 由 binding 固定实现。
+`SubmitExecutionRequest` 的 schema 允许省略 `voice_revision_id`，但当前网关转换代码直接
+索引该字段，省略会触发 `KeyError`；调用当前实现时无音色也需显式传 `null`。这是契约与
+实现的差异，不能把 schema 接受省略视为网关已支持。
 词表/发音资源内容由指定 immutable revision 解析，不能把有内容却未固定版本的
 参数作为可重放意图。当前 schema 分别声明条目和来源字段，但不强制非空条目携带来源；
 生产者 / 消费者须另行校验来源和内容的一致性。当前文件 ASR/TTS 消费者均拒绝这些资源。

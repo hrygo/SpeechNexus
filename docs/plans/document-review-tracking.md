@@ -16,7 +16,7 @@
 | `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、Web 代理、镜像及依赖、主要进程入口、Job 派发失败关闭、媒体检查、TTS 结算、网关本地锁及工作台后台循环装配；澄清导出在途任务恢复缺口；其余单元、拓扑和资格未逐项核实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 部分核对 | 对照构图与校验脚本、ADR、目录和图像摘要，修正自动检查的覆盖范围；未重渲染或核验全部拓扑 |
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
-| `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要、重放、文件 ASR 输入版本读取、文本流、文件 ASR/TTS 消费条件、词表来源及 diarization 数量约束；区分文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
+| `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要、重放、文件 ASR 输入版本读取、文本流、文件 ASR/TTS 消费条件、音色字段省略差异、词表来源及 diarization 数量约束；区分文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
 | `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录转写未知字段的契约与实现错误码差异，其他扩展语义待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |

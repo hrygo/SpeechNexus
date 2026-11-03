@@ -100,8 +100,10 @@ access-control boundary; deployment must verify any separately configured
 protection. No latest/current
 selection, query-by-key, mutation, Operation or new keyless recovery is added.
 Read failure never authorizes reallocating a parent, replacing defaults or
-releasing budgets. Publication/activation and the final merged parameter policy
-remain separate registry/application acceptance.
+releasing budgets. Binding publication uses the separate [operator command](../operations/publish-binding-revision.md),
+and activation uses the [lifecycle interface](../operations/binding-lifecycle.md).
+Neither path completes the merged parameter policy, which still requires separate
+implementation and acceptance.
 
 ## Consumable artifacts and evidence scope
 
@@ -140,5 +142,6 @@ Python HTTP requests with contract response validation and the generated TypeScr
 client. InnoDB storage behavior reuses the separate atomic-port evidence; it
 does not represent a supported product DB. Neither synthetic fixture values nor
 these API tests establish an engine's defaults, publication, quality or physical
-cluster qualification. Published registry/parameter resolution remain separate.
+cluster qualification. Published default-snapshot retrieval and merged parameter
+resolution remain separate work.
 Existing structural comparison modes retain their declared finite scope.

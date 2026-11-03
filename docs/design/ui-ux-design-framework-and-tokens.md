@@ -197,6 +197,8 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 全局语义层负责屏蔽底层具体色彩值，建立与组件交互意图强绑定的语义映射。
 
+以下代码仅说明语义层的设计意图，不是当前可复制配置：实际值通过 `--page`、`--ink` 等别名和 OKLCH 混色定义。系统深色偏好仅在根元素未指定 `data-theme="light"` 时生效，`data-theme="dark"` 也可显式启用深色；完整选择器和值以 `web/shared/src/ui/styles.css` 为准。
+
 ```css
 :root {
   /* 亮色模式语义映射 (Light Theme Defaults) */
@@ -275,6 +277,8 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 ---
 
 ### 5.3 第三层：领域与双面特异 Token (Domain & Tone Tokens)
+
+以下入口主题片段同样是设计示意，实际组件使用的变量映射、颜色和选择器以共享样式及注册表为准，不应直接复制这些示例覆盖现有主题。
 
 #### 5.3.1 AdminUI 入口特异 Token (`[data-tone="admin"]`)
 ```css

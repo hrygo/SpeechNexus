@@ -190,9 +190,9 @@ live 查询按 binding revision 选取所有 `engine_instances` 行，没有过�
 
 ### 谁能超、超了报什么
 
-没有任何角色被授权“超卖”。只能通过新的 manifest/report 和新 revision 扩大声明，并先扩大 `host_nodes.allocatable_*`；不能改旧证据。
+没有任何角色被授权“超卖”。扩大声明须使用新的 manifest/report 和新 revision，并核对实际可用容量及账本余量；现有 `host_nodes.allocatable_*` 不足时，只有确认物理容量与授权后才能调整。不能改旧证据或仅调大账本数字冒充容量。
 
-| 超限点 | 代码行为 | 对外错误 |
+| 超限点 | 代码行为 | 内部错误或校验结果 |
 | --- | --- | --- |
 | 准入按 per-slot 向量预留，`allocatable - held - quarantined` 不足 | `reserve_resources` 抛 `CapacityExceededError`，准入层转换 | `AdmissionRejectedError("capacity_exhausted")` |
 | 实例 slot：`held + quarantined + extra > max_slots`，或非实时请求挤压 `realtime_reserved_slots` | 准入层显式检查 | `AdmissionRejectedError("capacity_exhausted")` |
@@ -203,6 +203,8 @@ live 查询按 binding revision 选取所有 `engine_instances` 行，没有过�
 | 定义 `capacity_manifest_id` 缺失/不等于发布参数 | 发布事务写前检查 | CLI 退出码 `6`，`evidence mismatch: ...` |
 | manifest/report/schema/摘要/DB 账本不一致 | 校验脚本 | `RESULT FAIL`，退出码 `1`（只读，不写库） |
 | 池级总量 | 当前无字段、无逻辑 | 不可核验；`capacity.pool_quota=NA`，需要后续卡 |
+
+表中的准入和运行错误是内部层结果，不是统一的公开 HTTP 错误码；各公开入口可将内部原因映射为 `backend_unavailable`，应结合入口实现和受控诊断判断。
 
 注意：代码执行的是**声明向量**，不是物理遥测。声明值可以低于实际峰值而暂时“通过”；这类偏差要靠测量、监控和失效流程发现，不能把“准入通过”当成“物理容量已证明”。
 

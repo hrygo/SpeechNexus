@@ -47,7 +47,7 @@
 **验收：**
 
 - 音频 ready 有真实检查事实，不按 MIME/扩展名或文本检查推断；同键恢复、7 天默认 TTL 和对象版本固定。
-- 对象长度/摘要校验与数据库引用原子发布，失败可清理，不接受客户端指定路径、对象 key/URL；真实 HTTP 与隔离 PG/版本化 MinIO 测试重启及过期。
+- 对象长度/摘要核验后原子提交数据库引用，失败可清理；不将对象存储与数据库视为同一事务，不接受客户端指定路径、对象 key/URL。以真实 HTTP 与隔离 PG/版本化 MinIO 测试重启及过期。
 - 音频资产默认保留 7 天并固定对象版本，非必需临时材料和取消清理按策略处理；已提交内容不由普通 URL 或客户端对象 key 绕过受控下载。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。

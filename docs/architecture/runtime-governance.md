@@ -156,7 +156,7 @@ queued / retry_wait → cancelled / expired
 
 系统提供 at-least-once 执行与幂等发布，不声称外部推理天然 exactly-once。仅在未向客户端交付实时输出且操作可安全重试、旧 attempt 已协调结束时自动重试；已产生部分实时音频的请求不后台自动重播。辅助步骤失败不覆盖成功正文，按 required / best_effort 策略决定整个 Job 是否成功。
 
-失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。
+失败分类包括输入 / 功能策略 / 参数永久错误、可重试后端错误、容量等待、执行超时、取消状态未知。目标策略为自动重试默认最多 3 次、指数退避并加入 jitter，总自动重试窗口不超过 24 小时；永久错误不重试。quarantined engine 上的未知执行先协调，不直接换副本再跑。当前生产 Job planner 尚未装配，上述策略不是已验证的运行默认值；派发器的 `SPEECHNEXUS_JOB_DISPATCH_MAX_ATTEMPTS` 是单独配置的派发限制，不能据此推断业务重试策略已生效。
 
 用量账本区分 reservation、consumption 与未用预留释放。输入计量按稳定 operation 下的 canonical sample 区间 / 原始 Unicode codepoint 区间去重，键不包含 attempt；同一输入的 event 重发、commit 重发和作业内重试只计一次。TTS 字符为 JSON 解码后有效 Unicode scalar values，计用户正文的首次冻结区间，不将 instructions 或发音展开重复计入。输出以只追加的 `output_sample_intervals` 为权威账本，按 `(operation_id, attempt_id, output_stream_id, sample_interval, meter_kind)` 去重；受控应用事务锁定逻辑流后拒绝同一 meter 的重叠区间，运行角色不得改写或删除区间历史，因而失败 / 重试实际重新生成仍计消耗，标量水位不会覆盖先前证据。`samples + sample_rate` 是权威计量，音频毫秒只按 floor 派生用于展示。重试 API 创建的新 Job 是新意图，重新计输入。结果统计与基础设施消耗分别展示；无实际证据时保持待协调及预留，不伪造 0 成本或重复扣减。
 
@@ -193,6 +193,8 @@ delivered/played 不减少消耗，但其存在也阻止后续声称从未外发
 ### 2.4 上传与网络边界
 
 文件以有界流上传至私有 staging，检查 magic bytes、MIME、大小、解码后时长和采样参数后转为 ready；解码器运行在无网络、有限 CPU / 内存 / 时间的受限进程。只接受 allowlist 格式，拒绝归档炸弹、未知序列化权重与用户提供的本地路径。首版不提供任意远程 URL 导入、动态下载模型或外部回调 URL。
+
+这是音频输入的目标检查链；当前默认 Asset 工厂使用文本检查器，公开音频检查尚未接入，见[音频资产检查](../components/audio-asset-inspection.md)。不能仅凭上传入口或沙箱组件存在认定音频已经按上述条件检查并 ready。
 
 模型与 tokenizer / codec 文件在部署准备阶段离线准备，核对来源、revision、文件集与摘要后发布绑定。voice 特征采用经过校验的安全格式与已批准生成流程，不允许上传任意 pickle / 代码。声音素材的来源与使用确认作为资源元数据记录；访问与删除遵守当前部署功能策略和依赖裁决，不宣称已有按人授权。
 

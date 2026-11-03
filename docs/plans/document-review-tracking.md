@@ -18,7 +18,7 @@
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要与规范数值、重放、文件 ASR 输入版本读取、文本流、文件 ASR/TTS 消费条件、音色字段省略差异、词表来源、diarization 数量及输出预算约束；区分文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
 | `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录转写未知字段的契约与实现错误码差异，其他扩展语义待核对 |
-| `docs/architecture/runtime-governance.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
+| `docs/architecture/runtime-governance.md` | 部分核对 | 全文阅读并核对默认 Asset 检查与 Job 派发配置，明确音频检查和业务重试是目标而非当前运行事实；协调、计量及保留细节仍待逐项核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
 | `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、路径与许可证，以及上游幂等、ASR 策略、配方、能力快照、组合入口、任务存储、资源治理和 MCP 代理的部分行为；澄清设计方向及公开回执边界，其他消费者待核对 |
 | `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正 Python 契约生成类型，区分文件 ASR 目标交叠合并与当前逐 VAD 段汇总；其余内容待核对 |

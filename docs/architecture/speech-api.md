@@ -79,7 +79,7 @@ SpeechCommand
 
 ### 1.3 同步 REST 子集
 
-文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用；不满足时返回 422，不伪造词级时间戳。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
+文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用，不伪造词级时间戳。当前入口对非法或重复粒度以及与其他格式的组合返回 400 `invalid_request`；通过入口校验但当前执行链不支持的粒度返回 422 `unsupported_parameter`。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
 上述时间戳参数是契约范围；当前生产文件 ASR 规划器在准入前拒绝所有非空 `timestamp_granularities[]`。具体装配和结果证据要求见[同步转写](../operations/synchronous-transcription.md)。
 

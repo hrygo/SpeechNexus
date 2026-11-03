@@ -76,7 +76,7 @@
 | `docs/components/binding-parameter-defaults.md` | 已核对 | 逐节静态对照快照 schema、共享字段、生产与固定读取、生成消费者和测试定义；最终参数合并仍为独立验收项，未运行服务 |
 | `docs/components/controlled-asr-generation.md` | 部分核对 | 全文阅读，核对凭据派生、模板约束、私有描述及成功终态停止证据；更新真实实例和整代次结算的历史证据，其他停止与运行资格待核对 |
 | `docs/components/cpu-vad.md` | 已核对 | 对照策略、缓冲、CPU 适配器、固定模型声明、文件消费者、Compose 静态配置及测试入口；未运行模型或验证实际部署资格 |
-| `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配、提交及屏障、成功终态、恢复、取消、正文清理、观察、输出区间和具名结果；核验测试路径并补齐 MinIO 前置，事务及测试覆盖细节仍待核对 |
+| `docs/components/execution-gateway.md` | 已核对 | 对照装配、提交与屏障、成功终态、恢复、取消、正文清理、观察及输出区间事务和测试定义；未运行集成测试或验证真实引擎 |
 | `docs/components/execution-staging-results.md` | 已核对 | 对照回执契约、迁移、列授权、登记 CAS/重放、覆盖检查、HTTP 查询及测试入口；未运行集成测试 |
 | `docs/components/file-asr-audio.md` | 已核对 | 对照共享媒体模块、源格式、限制、时钟投影、测试入口及已知消费者装配；未重跑测试或验证部署 |
 | `docs/components/file-asr-recognition.md` | 已核对 | 逐节静态对照参数、协议、装配、执行与测试清单；未重新实测 |

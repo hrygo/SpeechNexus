@@ -220,7 +220,8 @@ gateway 的私有 staging namespace 由既有协议派生，不能接受客户�
 重复提交比较**完整有效请求**，不只比较 command digest；原结果可查询也不授予再外发权限。
 
 精确停止证据只接受既有四类已验证事实；连接关闭、超时、TTL、心跳失效均不算。
-这里的 `execution_stopped` 只证明该次执行停止及其增量资源归还，不要求共享引擎进程退出。
+这里的 `execution_stopped` 只证明该次执行停止，不要求共享引擎进程退出；停止事实本身
+不直接归还 Scheduler 的增量预算，须由 A 的释放事务核验匹配证据后结算。
 实例基线预算仍须依据独立的 RuntimeStopEvidence 中进程/容器退出与资源释放两项事实归还。
 成功要求 terminal response；失败须稳定错误码；unknown 只能凭停止证据关闭为 aborted。
 从未外发的失败可按既有执行契约进入 `not_required`，但必须同时证明无 request ID、
@@ -320,17 +321,20 @@ create/query/observe 已具备[独立生产事务端口](../components/productio
 
 ## 9. 权限、迁移与回退
 
-[`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 只生成 SQL，
-不连接数据库。由迁移角色针对**新建、非 owner、无全局/继承提权**的 speech/gateway
-角色审核安装；PG schema 不授 CREATE，MySQL 不授 CREATE/DROP。运行角色没有
+以下 [`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 只生成草案和测试用 SQL，
+不连接数据库，不能作为生产授权入口。生产由迁移角色针对**非 owner、无全局/继承提权**的
+speech/gateway 角色，审阅并安装[包内生产授权函数](../operations/production-coordination-storage.md#安装与角色)
+及各已启用端口所需的授权；PG schema 不授 CREATE。运行角色没有
 DELETE/TRUNCATE；evidence/interval 只有对应所有者的 SELECT/INSERT。
 正文清理列作为受控单向擦除的显式 UPDATE 例外，身份、请求摘要和停止事实不改写；
 读取未清理的正文进行执行恢复前，必须重新核验其规范摘要；已清理正文不可恢复。跨所有权
 仅对 version 授 UPDATE，以支持行锁，不授对方状态更新。不要给运行角色全表 UPDATE。
 配额上限、policy revision、topology digest、隔离阈值和 allocatable 容量配置属于控制面，
 运行角色不获这些列的 UPDATE，因此无法自行放量、改身份或降低隔离阈值；规范请求正文
-只对所属角色可读，非所有者角色只获身份/状态列级 SELECT。MySQL 输出仍绑定
-`'role'@'%'`，安装前须按部署收紧到获准主机或网段。
+只对所属角色可读，非所有者角色只获身份/状态列级 SELECT。仅用于隔离测试的 MySQL 草案输出
+绑定 `'role'@'%'`，运行测试前须按隔离环境收紧到获准主机或网段。
+
+生成草案 SQL 的示例（不连接或修改数据库）：
 
 ```bash
 uv run python scripts/dev-env/coordination-grants.py \

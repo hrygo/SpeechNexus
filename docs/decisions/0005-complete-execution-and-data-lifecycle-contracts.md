@@ -63,7 +63,9 @@ schema 固定 `retryable` 与恢复提示的组合，提交未知不能伪装可
 
 内部 execution-control 升级至 `0.4.0.dev0`。崩溃后的 intent 可能没有外发时间或
 engine request ID，但整实例终止仍可提供可信停止与资源释放事实。为避免永远无法关闭，
-仅允许 unknown → aborted 凭 controller/operator 整实例终止双证据闭合，并保留空外发事实。
+没有外发时间的 unknown 仅允许凭 controller/operator 整实例终止双证据进入 aborted，
+并保留空外发事实。已有外发时间的 unknown 也须按原身份和可信双证据处理；不能将此处
+针对未观测外发的证据种类限制扩大为对所有已派发执行的描述。
 engine ack、executing、succeeded 和有清理的 failed 仍要求真实外发时间；
 证据须可信覆盖原 generation，且不能代替入口屏障或代际凭据保证。
 

@@ -130,18 +130,18 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 服务化之前先冻结相应机器契约并完成生产者、消费者和装配验证；本页不预先指定新路由。
 不能通过忽略类型错误、改用普通 PID 或降低现有隔离/停止证据要求来取得跨平台通过。
 
-## 5. 当前装配与证据（2026-10-26）
+## 5. 当前装配与证据
 
 | 已核对事实 | 能证明的范围与缺口 |
 | --- | --- |
-| [当前 Compose](../../deploy/compose.yaml)包含 PG、MinIO、Speech API、Gateway、两个 Web 容器 | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配 |
+| [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配 |
 | [Web 代理](../../deploy/web/nginx.conf)将 `/v2/workbench/` 发往 `api:8000` | 默认预览没有接入独立 Workbench runtime；分布式部署需配置各服务上游及实时 owner 路由 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
 | [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)及专用后台命令已存在 | 具备分开启动的部分入口；不能据此认定全部后台职责已独立交付 |
 | [Python 镜像](../../deploy/images/python.Dockerfile)当前同步所有 workspace 包 | 共享镜像不要求服务同机，但尚未按部署单元收敛运行依赖与检查范围 |
 | [Backend 依赖](../../backend/pyproject.toml)直接包含 `av`，Workbench runtime 内托管部分后台循环 | 媒体原生依赖与 Web 生命周期仍有装配耦合；不证明必须使用 Linux，也不证明已经可以独立扩缩 |
 | [现有 CI](../../.github/workflows/ci.yml)使用 Ubuntu runner | Linux 检查不替代 macOS 原生安装/启动/行为验证；共享镜像和模块导入均不能补足平台资格 |
-| 四个 ASGI 模块在 macOS 上导入成功，未加载 Linux 音频沙箱 | 只证明模块导入；未证明各平台服务启动、数据库操作、媒体能力或完整业务链通过 |
+| 2026-10-26 的检查中四个 ASGI 模块在 macOS 上导入成功，未加载 Linux 音频沙箱 | 只证明当时的模块导入；未证明当前版本在各平台的服务启动、数据库操作、媒体能力或完整业务链通过 |
 | [开发脚本](../../scripts/dev-env/bootstrap.sh)固定 Linux ARM64 / APT / systemd | 当前开发环境约束；不能推广为所有产品部署单元的操作系统要求 |
 
 历史审查与交接文档保留其原时点事实；当前支持声明应同时给出单元、平台、启用能力和证据。
@@ -173,7 +173,8 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 ## 7. 实施任务与门禁
 
 2026-10-26 按“松耦合、尽量跨平台”完成[方案审查](../audits/2026-10-26-deployment-units-review.md)。
-以下补充任务已创建；创建与文档修订不代表实现、CI 或运行资格通过。它们不改变原 25 个主工作包的范围和完成分母。
+以下任务和门禁保留当时的跟踪关系，不能作为当前任务状态或完成分母；当前需求、实施和验证关联见
+[交付跟踪矩阵](../plans/delivery-tracking.md)。任务创建与文档修订不代表实现、CI 或运行资格通过。
 
 | 交付 | 跟踪项 | 范围与既有职责 |
 | --- | --- | --- |

@@ -53,8 +53,9 @@ A02 的 `0009_profile_drafts` 另加三个 speech 配置私有表：
 | append_interval                                       | B              | output_stream_heads、output_sample_intervals、submit 计量投影            |
 | query_outcome                                         | 对应事实 owner | 只读原身份，不发起执行                                                   |
 
-机器矩阵逐个列出 producer/consumer 和表。表名不授予任意列修改权；实际最低权限以
-[`coordination-grants.py`](../../scripts/dev-env/coordination-grants.py) 和版本化迁移为准。
+机器矩阵逐个列出 producer/consumer 和表。表名不授予任意列修改权；生产最低权限以
+包内 [`coordination_grants.py`](../../backend/src/speechnexus_backend/speech/infrastructure/coordination_grants.py)
+及对应端口授权函数和版本化迁移为准。仓库的 `scripts/dev-env/coordination-grants.py` 仅服务草案和测试，不能作为生产授权入口。
 配置列由控制面维护，运行角色不能提高配额或预算；跨 owner 的锁定版本列不代表
 业务所有权转移。该表是协调表范围，不是全产品表清单。
 `0007_admission_commands` 新增的 operation/准入请求表仅 A 可读写，B 不获跨 owner 锁授权；

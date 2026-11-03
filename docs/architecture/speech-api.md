@@ -41,6 +41,10 @@ SpeechCommand
 
 ### 1.2 入口清单
 
+下表列出机器契约的目标入口与语义，不表示每个路由均已接入生产服务。当前同步语音
+的装配范围见[同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)；
+异步与实时链须分别核对实际部署和验收证据。
+
 | 接口 | 用途与返回 |
 | --- | --- |
 | `GET /v1/models` | 部署已发布的逻辑模型列表；不暴露私有模型路径 |
@@ -67,7 +71,7 @@ SpeechCommand
 
 `GET /v1/models`、`GET /v1/models/{model}` 与 `GET /v1/nexus/capabilities` 三个端点都支持条件请求：`200` 携带基于部署、工作空间、catalog 与功能策略 revision 及响应事实计算的 `ETag`，`If-None-Match` 按 RFC 9110 弱比较命中时返回无 body 的 `304`；`404` / `503` 等错误路径不受影响。
 
-增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放使用 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，只接受独立核验证据，不能仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
+增强资源包括 `/v1/nexus/workspaces`、`/voice-drafts`、`/pronunciation-sets`、`/voice-designs`、`/voice-clones` 和 `/audit-events`。管理资源使用 `/v1/nexus/admin/profiles`、`/v1/nexus/admin/model-bindings`、`/resource-pools`、`/policies`、`/diagnostics` 等明确子资源；隔离租约的运维释放由契约声明 `/v1/nexus/admin/admission-leases/{lease_id}/quarantine-releases`，但当前生产未实现该入口，详见[对账恢复](../operations/reconciliation-recovery.md)。不得仅靠重启或删除记录清空隔离预算。首期不提供 users / memberships / roles API；管理路径本身不形成权限隔离。预设和音色通过 `publications` 子资源生成不可变 revision；预设编辑建立新的 draft revision，已发布 revision 不原地修改。
 
 工作台项目、会议、有声书及独立导出任务 / 成品资源置于工作台命名空间；当前契约包含 `/v1/workbench/` 与 `/v2/workbench/`，具体路径以 `contracts/workbench-openapi.yaml` 为准。外部系统直接使用 `/v1/` 与 `/v1/nexus/`，不需要工作台项目或 LLM。P0 为各命名空间分别补齐 OpenAPI，禁止万能管理 RPC。
 
@@ -276,6 +280,9 @@ VoiceRevision 包含来源类型、后端绑定、素材摘要与依赖、样本
 
 ## 2. 实时协议与状态机
 
+本节描述实时契约和目标状态机；事件 schema 与解析器不证明生产 WebSocket、真实引擎
+或会话恢复链已装配，当前交付范围以[交付跟踪](../plans/delivery-tracking.md)为准。
+
 ### 2.1 创建、入口检查与连接
 
 创建会话时提交可选 workspace_id / client_reference、profile、modalities（asr、tts 或两者）、逻辑模型和输出需求。REST 校验部署入口、参数、资源状态、版本与能力，固定配置并建立 created 会话，30 秒内未连接即过期；此时不占推理槽。
@@ -373,7 +380,7 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
 
 ### 3.1 同步 TTS 与文件转写
 
-标准兼容请求无需 nexus、workspace 或工作台项目；下例中的 voice 由部署发布的默认 revision 解析，实际绑定 / 版本写入 receipt。
+标准兼容请求无需 nexus、workspace 或工作台项目；下例中的 voice 由部署发布的默认 revision 解析。执行事实按私有原身份保留；当前同步响应不提供供客户端查询的 receipt。
 
 ```json
 {
@@ -404,7 +411,7 @@ WS 断开即停止接收新操作，取消实时计算并回收 owner，记录�
 }
 ```
 
-REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能为 `complete`。成功返回二进制 PCM，Content-Type 与协商 descriptor 在响应头回显，X-Request-ID / X-Operation-ID 供协调；中途失败不能再改 HTTP status，客户端据传输结束与 operation receipt 判断是否完整。需要持续分块交付时使用实时接口，需要可恢复完整音频时使用 Job。
+REST 的完整 input 在请求接受时一次性冻结，`audio_delivery` 只能为 `complete`。此示例请求 PCM；成功返回二进制音频，并以 Content-Type、`X-Audio-Format`、`X-Sample-Rate-Hz` 和 `X-Channels` 描述实际格式。当前同步 HTTP 入口不承诺返回 `X-Operation-ID` 或供客户端查询的 operation receipt；结果未知时不能仅凭传输结束判断执行完整或安全重发，须按[同步语音合成](../components/synchronous-speech.md)协调原身份。持续分块与可恢复完整音频分别属于实时接口和 Job 的目标范围，需按实际装配与验收判断。
 
 同步 ASR 使用 multipart 的 `file`、`model=asr-quality`、`language=zh`、`response_format=json`；`nexus` 部分按 [同步 REST 子集](speech-api.md#13-同步-rest-子集) 传入相同工作空间与预设信息。file 是上传内容，不是服务器文件路径。成功 JSON 至少包含 text；完整原生结果与辅助状态通过 Job 的 TranscriptDocument 获取，不随意改变兼容子集响应形状。
 

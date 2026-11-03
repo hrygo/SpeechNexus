@@ -42,7 +42,7 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 | `execution_stop_evidence` | Gateway，只追加 | 已核验的停止与资源释放事实；独立于 Scheduler 的预算释放事务 |
 | `output_stream_heads` | Gateway | 按 operation/attempt/output stream 锁定；同一输出流的不同 stage/submit 共享重叠保护 |
 | `output_sample_intervals` | Gateway，只追加 | PCM 样本区间账本；重叠由锁定流权威行后的应用检查拒绝 |
-| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；已有生产原子创建/恢复，完整公开 Job 业务与 claim 仍待实现 |
+| `coordination_jobs` | 所属 Speech 任务模块 | 持久 Job 身份、认领 owner/version/deadline；生产原子创建、恢复及独立 claim 事务已有，完整公开 Job 业务派发仍须验收，见[生产 Job](../components/production-jobs.md) |
 | `coordination_outbox` | 同上 | 与 Job 同事务写入；通知丢失时仍可轮询 |
 
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。
@@ -63,8 +63,8 @@ PCM buffer 和 scratch disk。每维行内 CHECK 使用
 不获 UPDATE。配额上限、policy revision、拓扑摘要、隔离阈值和 allocatable 容量只由
 控制面写入，运行角色不获这些列的 UPDATE，也不能读取其他所有者的规范请求正文
 （只获身份/状态列级 SELECT）。可变运行投影的终态和单调性由应用事务维护，数据库不再独立拒绝所有
-绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 输出双库
-对应授权语句；现有继承/全局权限须另核对，运行角色不能是 owner 或超级用户。
+绕过应用的跨表违例。[权限工具](../../scripts/dev-env/coordination-grants.py) 为此草案输出双库
+对应授权语句，不是生产授权入口；生产授权见[协调存储基线](../operations/production-coordination-storage.md#安装与角色)。现有继承/全局权限须另核对，运行角色不能是 owner 或超级用户。
 规范请求正文允许在受控删除事务中单向清除；必须同时写删除 tombstone，不能清除
 协调身份、原摘要、fencing 或停止证据，也不能在执行/资源清理前先删除正文。
 

@@ -54,7 +54,8 @@ opened 必须回显相同模式、执行身份与 fencing。TTS command.text 和
 append/commit/finish 使用独立 text_seq 和 Unicode scalar offset。一次只发送一个
 未确认事件。按相同 text_seq 重发完全相同内容返回原 ack；不同内容冲突，跳号拒绝。
 字符额度是可接受的绝对末端位置，不是叠加赠送；UTF-8 字节与 UTF-16 code unit
-都不能作为字符数。只向 adapter 提交不可变 commit 前缀。finish 精确冻结全部
+都不能作为字符数，字符额度也不豁免单条消息的字节数上限。旧事件重放返回的原 ack
+不能覆盖较新的已接受位置或额度。只向 adapter 提交不可变 commit 前缀。finish 精确冻结全部
 已接受文本并提交最后后缀；完成 ack 之后的新文本被拒绝，原事件精确重放仍成立。
 
 断线不能续拼未知前缀或重新生成已确认内容。先查询原 submit，按原执行恢复清理，

@@ -147,7 +147,7 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 
 ## 4. 契约门禁
 
-`make contracts-check` 校验 OpenAPI / JSON Schema 语法与本地引用。`tests/contract/test_p0_public_contracts.py` 进一步验证：
+`make contracts-check` 校验 OpenAPI / JSON Schema 语法与本地引用。`tests/contract/test_p0_public_contracts.py` 和 `tests/contract/test_openai_js_sdk.mjs` 分别验证 Python 与 JavaScript 客户端的契约形状，包括：
 
 - 标准路径、请求字段和响应形状存在；
 - 官方 OpenAI Python SDK 实际生成的路径、multipart 字段和 JSON body 能通过契约 schema；
@@ -158,12 +158,12 @@ SpeechRail 在固定来源 commit 上采用“标准事件子集 + 独立命名�
 - 429 错误 envelope 能由 SDK 映射为 `RateLimitError`；
 - 未知字段、未声明事件、非法资质组合和克隆确认缺失被拒绝。
 
-REST 测试使用 `httpx2.MockTransport`，Realtime 测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；两者共同证明契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端实现后，还须以同一组样例运行 HTTP / WebSocket 集成测试，并记录实际 binding、拓扑和验证范围。
+Python REST 契约测试使用 `httpx2.MockTransport`，Realtime 契约测试使用官方 SDK 的真实连接序列化路径并捕获发送帧；这些检查证明受测契约与 SDK 的请求 / 响应形状一致，不证明服务端路由、WebSocket 握手或真实模型已通过。服务端已有部分 HTTP 集成测试；各部署仍须按实际接入的 HTTP / WebSocket 路径验证，并记录 binding、拓扑和验证范围。
 
-PR CI 使用 `CONTRACT_BASE_REF=<target-branch> make contracts-compat` 对比目标分支：删除标准路径 / 操作 / 字段 / 响应状态 / 事件类型或枚举值、增加必填字段、收紧参数域、改变默认值或字段格式都会失败。门禁会解析本地及 `contracts/shared/` 引用后比较语义，因此把等价的内联域抽到共享 schema 不会被误报为破坏性变更，而引用的共享域真的删除枚举值时仍会失败。对 `speech-openapi.yaml`，门禁只沿 `/v1/models`、`/v1/audio/*` 与 `/v1/realtime` 递归追踪实际可达的组件；对 `realtime-events.schema.json`，只比较声明的标准事件定义、公开 union 中的标准事件及其递归引用，再覆盖 `contracts/shared/` 公共域。标准请求、模型和实时会话中的可选 `nexus` 属性属于增强边界，兼容门禁不沿该属性递归比较；其正例、负例与传输收敛由契约测试单独负责。其余标准字段仍递归检查，因此不能用“扩展”名义删除或改写标准字段。内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
+PR CI 将 `CONTRACT_BASE_REF` 设为目标分支的远端跟踪引用，再运行 `make contracts-compat`；本地应先确认目标引用已经存在，例如对目标为 `main` 的变更运行 `CONTRACT_BASE_REF=origin/main make contracts-compat`。该检查比较目标分支：删除标准路径 / 操作 / 字段 / 响应状态 / 事件类型或枚举值、增加必填字段、收紧参数域、改变默认值或字段格式都会失败。门禁会解析本地及 `contracts/shared/` 引用后比较语义，因此把等价的内联域抽到共享 schema 不会被误报为破坏性变更，而引用的共享域真的删除枚举值时仍会失败。对 `speech-openapi.yaml`，门禁只沿 `/v1/models`、`/v1/audio/*` 与 `/v1/realtime` 递归追踪实际可达的组件；对 `realtime-events.schema.json`，只比较声明的标准事件定义、公开 union 中的标准事件及其递归引用，再覆盖 `contracts/shared/` 公共域。标准请求、模型和实时会话中的可选 `nexus` 属性属于增强边界，兼容门禁不沿该属性递归比较；其正例、负例与传输收敛由契约测试单独负责。其余标准字段仍递归检查，因此不能用“扩展”名义删除或改写标准字段。内部和管理契约仍按 ADR 审阅，不以内部字段变化冒充 OpenAI 兼容性变更。
 
 `make contracts-sdk-test`（即 `pnpm test:contracts-sdk`）锁定 OpenAI JavaScript SDK 的实际 REST 形状；与 Python
-SDK 门禁一起，CI 同时检查两个官方客户端的请求序列化、响应解析和错误映射。两者仍不替代未来服务端 HTTP 集成测试。
+SDK 门禁一起，CI 同时检查两个官方客户端的请求序列化、响应解析和错误映射。两者不替代服务端 HTTP 集成测试及真实部署验收。
 
 ## 5. 新增兼容或增强能力的检查清单
 

@@ -6,6 +6,14 @@ date: 2026-10-22
 
 # 0004：集群就绪架构与单机 MVP 同构部署
 
+本 ADR 保留 2026-10-22 的集群同构决定及当时的结构示意；其中
+`scheduler_pool_leases`、`owner_scheduler_id` 及独立 `gateway_control` schema 是旧示意，
+不是当前生产协调表结构。
+后续协调存储决定见 [ADR 0006](0006-cluster-coordination-and-storage-portability.md)，
+当前表与所有权以[协调 Schema](../architecture/distributed-coordination-schema.md)和
+[生产协调存储](../operations/production-coordination-storage.md)为准；池 owner 和 fencing
+事实由 `resource_pools` 记录。不得把本页旧名称当作迁移或运行指令。
+
 ## 背景
 
 SpeechNexus 的首轮交付（MVP）采用单节点 Docker Compose 部署，不承诺节点级高可用或实时会话无缝热迁移；但产品演进需要把无状态 API、实时网关、后台 Worker 以及多类语音推理引擎扩展到多台算力节点以逐步增加容量。

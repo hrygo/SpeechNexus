@@ -42,6 +42,11 @@ date: 2026-10-27
 6. **门禁不变。** 本决定只确定所有权与装配顺序，不降低任何 issue 的 AC；公开 Job 面可用
    不等于两条链验收通过，真实引擎、停止/释放证据与目标拓扑仍分别取证。
 
+第 4 条描述的是目标事务边界，不是当前公开 Job 实现的完成声明。当前公开提交事务写入
+Job、事件、提交文档、原 operation 及 Job/outbox 身份；生产派发 planner 尚未装配，不能
+据此推断完整配方租约、预算和网关 submit intent 已随该提交原子建立。当前实现及剩余差异
+见[公开 Job 派发器](../components/production-jobs.md#公开-job-派发器del-96-第一步)。
+
 ## 后果
 
 - 新增迁移与适配器只写 `speech_jobs` / `speech_job_events`，协调表 DDL 不变。

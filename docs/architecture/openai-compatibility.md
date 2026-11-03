@@ -55,6 +55,8 @@ TTS 的 `response_format` 基线为 `mp3`、`wav`、`pcm`。REST `pcm` 固定为
 其他结果未知的错误时，应先协调原执行，不要仅凭 `retryable: true` 重发请求。具体限制见
 [同步转写](../operations/synchronous-transcription.md)和[同步语音合成](../components/synchronous-speech.md)。
 
+示例地址、`asr-quality`、`tts-interactive` 和 `narrator` 均为示例值，不保证已在部署中配置或发布。运行前须使用实际入口、已发布的 binding ID 和兼容音色，并确认对应服务已装配及具备资格；模型目录的存在本身不证明引擎可用。
+
 ### 2.1 Python SDK
 
 ```python

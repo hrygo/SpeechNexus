@@ -21,7 +21,7 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 已核对 | 对照构图与校验脚本、ADR、模型清单和实例契约；补充实时常驻前提并重新渲染、检查两图；图示为目标拓扑，不证明实际部署资格 |
 | `docs/architecture/distributed-coordination-schema.md` | 已核对 | 全文对照草案 DDL、表及复合外键、预算约束、双库授权生成器和测试前置；澄清正文清除、TEXT 映射、运行权限及测试证据边界；仅收集旧 PG 回归，未运行数据库测试或验证生产部署 |
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要与规范数值、重放、文件 ASR 输入版本读取及 workspace 检查、文本流事件顺序与完成语义、文件 ASR/TTS 消费条件、音色字段省略差异、词表来源、diarization 数量及输出预算约束；对照契约与网关计算，现有整数毫秒及 16/24/48 kHz 采样率下输出样本上限的向上与向下取整结果一致；区分文件与流输入、其他命令对象校验的目标、文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
-| `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共及内部控制错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录未知字段的契约与实现错误码差异，对照工作台路径、实时事件命名空间及兼容检查脚本的选择范围；其余扩展语义待核对 |
+| `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共及内部控制错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；说明 SDK 示例的地址、模型和音色需按部署替换，记录未知字段的契约与实现错误码差异，对照工作台路径、实时事件命名空间及兼容检查脚本的选择范围；其余扩展语义待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 全文阅读并核对 Asset 检查与 TTL、Job 派发及公开路由、binding 发布与资格核验、实时入口、输出区间计量及调度装配边界；补充现行容量清单和公开能力契约的回收、排队字段及 Job 请求 schema 的策略比较限制，协调及其他保留细节仍待逐项核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；澄清预设发布、实时关联字段、会话终态引用、采样区间及限制 schema 的覆盖范围；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
 | `docs/architecture/speechrail-reuse.md` | 已核对 | 全文按复用政策核对固定来源、路径、许可、领域规则和平台边界；补核上游会议字幕设计与 MCP 代理，确认矩阵是设计方向而非实现声明；未将上游设计或历史测试当作本项目验收证据 |

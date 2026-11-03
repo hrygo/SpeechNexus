@@ -314,14 +314,14 @@
 | 文档（相对仓库根目录） | 状态 | 核对依据与结果 |
 | --- | --- | --- |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 确认尺寸、引用及图面标注为目标架构；拓扑细节待逐项核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 查看图面，对照部署图说明核对目标架构标记、主机角色、数据库及对象存储、同事务准入和示例容量边界；实际部署与其他拓扑细节待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 部分核对 | 确认 4K 尺寸及部署文档引用；图面内容待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 确认尺寸、引用及示例容量边界；模型与拓扑细节待逐项核对 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 查看图面，对照 ADR 0002 与实例 schema 核对模型、运行时、实例与池归属；数量和容量为示例，实际部署及其他拓扑细节待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/application.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/compute.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |

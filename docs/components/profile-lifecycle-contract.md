@@ -44,7 +44,7 @@ validation object or digest cannot establish server authority or production qual
 Cross-field target identity, trusted evidence lookup and current eligibility remain
 server-side work; structural parsing cannot prove them.
 
-An unreadable original result or uncertain commit returns 503
+The contract requires an unreadable original result or uncertain commit to return 503
 `profile_result_unknown`, `service_unavailable_error`, `retryable: false`, no
 Operation recovery, no retry delay and no field-specific blame. The response
 reuses the existing profile unknown-result error schema. It does not prove that
@@ -69,17 +69,16 @@ deployment input, not new profile defaults.
 
 ## Verification and remaining implementation
 
-Shared fixtures contain 82 HTTP cases and nine DTO cases. Python and TypeScript
-validate the same positives/negatives without mutating inputs; Python independently
-checks the raw source. Four initial source regressions first failed: two absent
-ingress/unknown response maps and two success responses that accepted a draft.
-All four pass after the source correction.
+Shared fixtures provide HTTP and DTO cases. The Python and TypeScript tests are
+designed to validate the same positives/negatives without mutating inputs; Python
+also checks the raw source independently. A test definition does not establish a
+passing run for the current revision or environment.
 
-Synthetic loopback consumers exercise each POST, with and without a key. The keyed
+Synthetic loopback consumer tests exercise each POST, with and without a key. The keyed
 sequence is unknown POST → unavailable fixed GET → explicit original POST replay;
 the server records byte-identical path/body/key on replay. The keyless sequence
 sends one POST only. This responder returns contract fixtures and has no database,
-publisher or trusted reports; it proves transport/consumer behavior only.
+publisher or trusted reports; its scope is transport/consumer behavior only.
 
 Actual trusted report resolution, publication/activation CAS and persistent original
 outcomes need their own narrow ports, storage, migration/role review and real
@@ -133,6 +132,7 @@ belong to the later writer.
 The observation and its authority digest are neither a signed approval nor a
 permission to commit. P2 still needs original-result lookup before provider/CAS,
 transactional authority rechecking, persistent result recovery and pointer updates.
-This unit has no database, migration, grants, new public wire fields, route
-registration or lifecycle writes. Synthetic test providers exercise the consumer
+The P1 observation boundary itself has no database, migration, grants, new public
+wire fields, route registration or lifecycle writes; the separate P2a journal
+has its own storage and migration. Synthetic test providers exercise the consumer
 boundary only; P1's real authority producer and the rest of A-CONFIG-01 remain open.

@@ -95,7 +95,7 @@
 | `docs/components/production-owners.md` | 部分核对 | 全文阅读并核对连接池、重试界限及 unknown 提交的激活检查；锁序、时间与完整测试证据待核对 |
 | `docs/components/production-runtime-intents.md` | 部分核对 | 全文阅读并对照 0005/0006 存储、outbox、原生证据摘要与生成条件；create/observe 事务及测试证据待逐项核对 |
 | `docs/components/profile-drafts.md` | 已核对 | 静态对照草稿事务、权限、HTTP 处理顺序、配置和测试定义；未运行服务 |
-| `docs/components/profile-lifecycle-contract.md` | 部分核对 | 全文阅读并核对生命周期准备、不可用 verifier 和私有意图存储；契约响应及实际路由装配待逐项核对 |
+| `docs/components/profile-lifecycle-contract.md` | 已核对 | 静态对照契约、生成入口、路由装配及私有观察边界，区分计划行为与测试定义；未运行服务 |
 | `docs/components/profile-lifecycle-intents.md` | 部分核对 | 全文阅读并对照意图记录/恢复 SQL、0013 迁移及授权；生产装配、竞争测试及后续状态待核对 |
 | `docs/components/pronunciation-drafts.md` | 已核对 | 逐节静态对照草稿事务、权限、迁移和集成测试定义；区分固定读取与恢复校验，未运行服务 |
 | `docs/components/pronunciation-read-contract.md` | 已核对 | 静态对照读取器权限、HTTP 处理顺序、生成消费者和测试定义；未运行服务 |

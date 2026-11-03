@@ -55,7 +55,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8000/v1",
-    api_key="deployment-shared-key",  # 未启用共享密钥时可用任意非空占位值
+    api_key="sdk-placeholder",  # SDK 必填；不代表服务端已验证身份
     max_retries=0,
 )
 
@@ -77,7 +77,7 @@ speech = client.audio.speech.create(
 speech.write_to_file("output.wav")
 ```
 
-`api_key` 是 OpenAI SDK 的必填构造参数，不表示首期存在用户账号。部署启用共享服务密钥时，所有持有者共享同一入口权限；未启用时服务端不把该值解释为用户身份。
+`api_key` 是 OpenAI SDK 的必填构造参数，不表示首期存在用户账号。契约允许部署启用共享服务密钥，但当前公开语音处理器没有实现该密钥的验证；不能把发送 `Authorization` 或契约中的 401 声明当作访问保护已生效。若部署另有入口保护，须按实际配置单独核验；共享密钥也不提供用户身份或数据隔离。
 
 ### 2.2 JavaScript SDK
 
@@ -90,7 +90,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "http://127.0.0.1:8000/v1",
-  apiKey: "deployment-shared-key",
+  apiKey: "sdk-placeholder",
   maxRetries: 0,
 });
 

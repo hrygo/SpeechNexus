@@ -47,10 +47,10 @@
 | 跨契约、生产服务与正式消费者的业务切片实施、集成交接或验收 | [speechnexus-deliver-slice](.agents/skills/speechnexus-deliver-slice/SKILL.md)；普通局部修改不触发 |
 | 设计、审查或改变提交未知、幂等重放、取消释放、发布/删除竞态的恢复语义，以及相关故障验证 | [speechnexus-recovery-design](.agents/skills/speechnexus-recovery-design/SKILL.md)；具体协调事务变更再按对应行处理 |
 | 新增路由，变更或审查机器契约、协议状态/错误、生成消费者 | [speechnexus-contract-change](.agents/skills/speechnexus-contract-change/SKILL.md)、[契约目录规则](contracts/AGENTS.md) |
-| 变更或审查协调事务、锁序、租约/预算、fencing、持久恢复、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
+| 变更或审查协调事务端口及其持久恢复、锁序、租约/预算、fencing、相关 DDL/权限 | [speechnexus-coordination-change](.agents/skills/speechnexus-coordination-change/SKILL.md) |
 | 规划下一切片并按需创建实施 issue | [按需规划下一交付](.agents/skills/speechnexus-next-delivery/SKILL.md) |
-| 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[speechnexus-issue-maintenance](.agents/skills/speechnexus-issue-maintenance/SKILL.md) |
-| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [sync-issues-after-merge](.agents/skills/sync-issues-after-merge/SKILL.md)；核实合并事实，按证据维护正文、任务/AC、状态及适用的既有标签 |
+| 起草、创建或整理 issue | [贡献与 Issue 指南](CONTRIBUTING.md)、[仓库模板](.github/ISSUE_TEMPLATE/)；普通维护直接执行，不额外加载技能 |
+| 已授权 PR 合并主干后的收尾，或补做 issue 同步 | [合并后收尾](CONTRIBUTING.md#合并后收尾)、[工作区收尾](docs/operations/agent-delivery-sop.md#工作区生命周期与收尾)；核实集成与 AC，只维护受影响项 |
 | Web 实现或审查 | [web/AGENTS.md](web/AGENTS.md) |
 | 集成测试实现或执行 | [tests/integration/AGENTS.md](tests/integration/AGENTS.md) |
 | 实施、构建、验证或检查失败排查 | [验证指南](docs/agent-verification.md)；按改动选择检查，纯文档只做文档验证 |

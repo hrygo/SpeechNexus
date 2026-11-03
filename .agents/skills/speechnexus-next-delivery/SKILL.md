@@ -16,10 +16,10 @@ description: 按当前产品需求和实现现状选择 SpeechNexus 下一可验
 
 ## 草拟或创建
 
-- 复用 [issue 维护技能](../speechnexus-issue-maintenance/SKILL.md)与其正文规范；实施小卡写清当前事实、目标、具体任务、可观察 AC、必要证据与依赖。外部反馈保留报告原貌，不强制改成实施任务。
+- 正文以[贡献指南](../../../CONTRIBUTING.md)和[实施模板](../../../.github/ISSUE_TEMPLATE/03-implementation.md)为准，写清背景与目标、范围、可观察验收条件及必要依赖；不为建卡重复设计完整方案。外部反馈保留报告原貌。
 - 分析、建议和只读调用只输出候选，不创建或修改远端。已获创建或编辑授权时，直接执行授权内的少量卡片，不重复询问；创建新项目 issue 必须原生直属且仅直属一个对应 Epic，正文提及不能代替父子关系。
-- 创建前核对目标仓库、Epic 及原生关系能力、去重结果和本次授权。优先使用能在创建时指定父项的接口；GitHub REST [创建 issue](https://docs.github.com/en/rest/issues/issues#create-an-issue)在请求体支持 `parent_issue_id`，需对父仓库与目标仓库具有相应 triage 权限。核对服务与实际 API 版本支持该字段；官方示例使用 `X-GitHub-Api-Version: 2026-03-10`，不能依赖旧默认版本静默忽略父项。标识使用接口要求的 issue ID，不猜测；创建后通过 Get parent issue 核验。
-- 若仅能先创建再关联，保留新卡身份，随后使用原生 [sub-issues 接口](https://docs.github.com/en/rest/issues/sub-issues)关联并读取父项核实。核对服务支持的 API 版本及当前字段：Add sub-issue 使用 `sub_issue_id`，按需使用 `replace_parent`，不使用旧 `issue_id`；不擅自替换已有父项。创建或关联结果未知先查询原卡及关系，不重复创建；关联失败或父项无法确认时，该卡不得作为就绪任务交付。继续恢复原卡关联，或明确报告卡片、失败、负责人及收尾条件，不能遗留未说明的游离任务。
+- 创建前核对仓库、唯一 Epic、去重结果和本次授权。优先使用支持原生父项的连接器；能力不足时使用已认证的 GitHub CLI。当前 CLI 支持 `gh issue create --repo hrygo/SpeechNexus --parent <Epic编号> --title <标题> --body-file <正文文件>`，使用前核对实际 `--help`；[官方原生关系说明](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)列有创建和关联命令。无需读取令牌或新建鉴权。
+- 创建后读取原生父项核验，不以正文链接或命令退出码单独证明成功。若只能分步创建和关联，沿用原卡身份完成关系；出现非零退出、超时或结果未知时先检索原卡与关系，再决定缺失动作，不重复建卡。关联失败时不得作为就绪任务交付；继续修复，或明确卡片、失败、负责人和解除条件，不留下未说明的游离项。
 - 按实际情况对工具、权限或 API 故障有限重试；无法确认事实时停止相关写入并报告，不通过正文链接伪造关系，不擅自关闭或删除卡片。
 
 ## 同步与交付

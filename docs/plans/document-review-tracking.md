@@ -21,7 +21,7 @@
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要与规范数值、重放、文件 ASR 输入版本读取、文本流事件顺序与完成语义、文件 ASR/TTS 消费条件、音色字段省略差异、词表来源、diarization 数量及输出预算约束；对照契约与网关计算，现有整数毫秒及 16/24/48 kHz 采样率下输出样本上限的向上与向下取整结果一致；区分文件与流输入、文本流目标与当前完整文本消费、codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
 | `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配与用量、REST 字段与幂等拒绝、响应格式、公共错误字段、SDK 测试样例、版本字段、实时更新结构及 SpeechRail 固定来源；记录转写未知字段的契约与实现错误码差异；对照工作台路径、同步请求的 revision 字段和实时事件命名空间，其余扩展语义待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 全文阅读并核对 Asset 检查与 TTL、Job 派发及公开路由、binding 发布与资格核验、实时入口、输出区间计量及调度装配边界；协调及其他保留细节仍待逐项核对 |
-| `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
+| `docs/architecture/speech-api.md` | 部分核对 | 核对实时入口的契约目标与当前装配边界、会话过期配置、部分实时事件字段、同步 TTS 音频交付、列表分页、TTS Job 绑定及成功事件校验边界；澄清预设发布、实时关联字段、会话终态引用、采样区间及限制 schema 的覆盖范围；12 个 HTTP 示例和 4 个实时 TTS 事件示例通过 schema 校验，其余语义待核对 |
 | `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、路径与许可证，以及上游幂等、ASR 策略、配方、能力快照、组合入口、任务存储、资源治理和 MCP 代理的部分行为；澄清设计方向及公开回执边界，其他消费者待核对 |
 | `docs/architecture/technical-blueprint.md` | 部分核对 | 局部对照代码、契约或历史证据；修正 Python 契约生成类型，区分文件 ASR 目标交叠合并与当前逐 VAD 段汇总；其余内容待核对 |
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
@@ -125,7 +125,7 @@
 | `docs/decisions/0012-public-job-surface.md` | 已核对 | 对照公开 Job 状态机、幂等、准入、派发及工作台消费者；修正状态转换并补充固定绑定未传递的限制，未运行服务 |
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |
-| `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI 路由与独立 Token 门禁、基础及语义 Token、主题选择和品牌色、共享外壳、诊断三态映射、文案及静态扫描范围；记录状态标签与目标的差距，其他细节待核对 |
+| `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI 路由与独立 Token 门禁、基础及语义 Token、主题选择和品牌色、共享外壳、诊断三态映射、文案及静态扫描范围；记录状态标签与目标的差距，修正 CI 路由图并核对共享无障碍样式的覆盖范围；其他细节待核对 |
 | `docs/development-environment.md` | 已核对 | 对照锁定版本、初始化与服务脚本、检查和冒烟入口；修正安装、权限及端口边界，未实测参考宿主运行状态 |
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
 | `docs/operations/agent-delivery-sop.md` | 已核对 | 全文对照根规约、军团协作和验证指南入口，核对 7 个本地链接；平台能力、部署与运行状态须按任务实测 |

@@ -110,7 +110,7 @@
 | `docs/components/workbench-voice-catalogue.md` | 已核对 | 逐节静态对照公开契约、适配器、运行配置及 Web 消费者；未运行服务 |
 | `docs/components/zero-dispatch-contract-core.md` | 部分核对 | 全文阅读并对照候选 schema、六个生成入口与索引；尚未逐项核对契约约束和历史接收证据 |
 | `docs/decisions/0001-product-boundaries-and-authentication-scope.md` | 部分核对 | 全文阅读并对照 PRD 产品与认证边界；其他实现细节待核对 |
-| `docs/decisions/0002-speech-models-engines-and-loading.md` | 待核对 | — |
+| `docs/decisions/0002-speech-models-engines-and-loading.md` | 部分核对 | 全文阅读，核对决策索引与资格边界；模型选择和运行资格需逐项对照当前证据 |
 | `docs/decisions/0003-workbench-llm-network-boundary.md` | 部分核对 | 全文阅读并抽核 PRD、配置和 HTTP 投影；未实测部署出站限制 |
 | `docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md` | 部分核对 | 全文阅读并核对历史表名及当前协调 schema；其他细节待核对 |
 | `docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |

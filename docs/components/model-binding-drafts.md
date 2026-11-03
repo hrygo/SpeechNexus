@@ -299,7 +299,9 @@ configuration persisted at admission and never re-read the head.
 Every successful first execution appends an event with the binding/revision,
 result status, request ID, actor type/label, policy revision, intent digest,
 optional idempotency digest and `change_summary_json`. Retirement and disable
-events include the operator reason; activation records a null reason. Replaying
+events include the operator reason; activation records a null reason. The current
+HTTP router records `anonymous` and a null credential label; a client-supplied
+`Authorization` header does not establish an authenticated actor. Replaying
 a committed key and complete intent returns the original event;
 a changed intent under that committed key is `409 idempotency_conflict`. An unknown
 activation retains the original complete path/body/key; changing the key or CAS

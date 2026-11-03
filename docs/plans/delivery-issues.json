@@ -1496,11 +1496,31 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "同步转写和合成入口允许省略 nexus 并使用默认 workspace；文件 ASR 输入核对对象与执行身份的 workspace。",
+      "integration": "上述为静态代码范围；其他资源引用、版本匹配及真实部署仍需逐项联验。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "其他资源引用、版本匹配及真实部署仍需逐项联验；workspace 不构成身份或访问隔离。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/transcriptions.py",
+          "label": "同步转写入口",
+          "note": "未提供 nexus 时解析默认 workspace"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/speech.py",
+          "label": "同步合成入口",
+          "note": "允许省略 nexus；领域命令提供默认 workspace"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/domain/speech_synthesis.py",
+          "label": "合成命令默认值",
+          "note": "未提供 workspace 时的领域命令默认值"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/execution-gateway/src/speechnexus_gateway/application/execution_inputs.py",
+          "label": "文件输入范围检查",
+          "note": "校验对象引用与原执行 workspace 一致"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

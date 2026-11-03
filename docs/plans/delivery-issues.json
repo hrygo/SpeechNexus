@@ -209,11 +209,21 @@
         "docs/architecture/speech-api.md",
         "docs/architecture/runtime-governance.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "已有制品元数据和单 Range 下载路由；正式读取运行时按数据库读取身份与对象存储配置启用。",
+      "integration": "公开 Job 派发的生产 planner 尚未装配，真实制品发布与下载消费者须同版联验。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "原子发布、固定对象版本、保留期限及实际下载须按完整链路验收；路由存在不证明生产资格。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/speech/interfaces/http/artifacts.py",
+          "label": "制品读取路由",
+          "note": "元数据及单 Range 读取，不证明对象存储联验"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/app.py",
+          "label": "API 装配条件",
+          "note": "按读取身份和对象存储配置启用正式运行时"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

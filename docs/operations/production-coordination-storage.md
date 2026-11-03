@@ -65,7 +65,8 @@ statements = coordination_runtime_grants(
 - 跨所有权只为行锁授 `UPDATE(version)`；A 不能读取 B 的规范请求正文，B 不能读取
   A 的 runtime 请求/停止文档。必要身份/状态使用列级 SELECT，不能用 SELECT * 绕过。
 - A 还可读取 `execution_release_guards` 视图中的执行 ID 与无外发元数据投影；该视图不暴露
-  私有请求、对象键或结果正文，也不产生停止或释放证据。
+  私有请求、对象键或结果正文。`no_dispatch_metadata_absent=1` 仅表示所列外发和结果元数据
+  在该查询中均缺失，不能单独证明执行未发生，也不产生停止或释放证据。
 
 这些授权必须在实际非 owner 连接验证；GRANT 列表不证明已有继承权限安全。
 PG 默认数据库级 PUBLIC TEMP 权限不由 schema GRANT 函数撤销，应在部署权限核对中

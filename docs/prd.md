@@ -128,7 +128,7 @@
 
 - 预检固定版本/摘要和确认范围，Job/ledger/tombstone/outbox 幂等恢复，音频沿用 TTL、原键、对象版本；只清理由本模块持有的对象和命令正文，不追删独立副本。
 - 相同 Job/摘要重放保留原时间版本；冲突明确返回，提交未知仅查原身份并以原许可确认，不重复外发；协调、计量和停止事实保留。
-- 强制删除或适用的资源状态变更、revision 推进与通知 outbox 在同一权威事务提交；普通删除先检查有效持久依赖和执行租约，禁止未经确认地破坏。
+- 经预检并明确确认的级联删除或适用的资源状态变更、revision 推进与通知 outbox 在同一权威事务提交；普通删除先检查有效持久依赖和执行租约，禁止未经确认地破坏，不提供绕过停止证据的强制标志。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[runtime-governance.md](architecture/runtime-governance.md)。
 
@@ -437,7 +437,7 @@
 - 同键同意图返回原结果、不新建或重复执行；不同意图冲突，历史精确读取保留。
 - 覆盖不同 binding 共用 voice、两种提交顺序、回滚与恢复；未装配入口或未测拓扑不宣称通过。
 - 设计与克隆两种模式分别获得试听、新文本复用、明确确认和不可变发布；真实 Base TTS 固定版本，材料与 binding 支持重启重建，不兼容时明确不可用。
-- 声音退役、禁用或强制删除的权威状态及 revision 和通知 outbox 在同一事务提交；默认退役禁止新引用，持有效依赖凭据的在途任务按契约完成。
+- 声音退役、禁用或经明确确认的级联删除的权威状态及 revision 和通知 outbox 在同一事务提交；默认退役禁止新引用，持有效依赖凭据的在途任务按契约完成，删除不得绕过停止证据。
 
 设计依据：[speech-api.md](architecture/speech-api.md)、[data-deletion.md](architecture/data-deletion.md)。
 

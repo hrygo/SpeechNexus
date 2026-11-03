@@ -67,6 +67,8 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 ### 1.3 调度算法与公平性
 
+本节是调度目标；目前独立 Scheduler 入口与完整业务装配尚未补齐，不能把以下排序、借用和公平性规则当作已验证的运行行为。部署入口与缺口见[部署单元](deployment-units.md#1-部署单元)。
+
 1. 首先按入口、profile 与部署策略选择 `realtime`、`interactive` 或 `batch` 类别，再选兼容的模型绑定与资源池。
 2. realtime 有明确保留容量，interactive 有有限等待预算，batch 使用其自有配额与剩余可用资源。保留比例由部署资格报告设置，不在业务预设中硬编码。
 3. 同一类别内先按工作空间做加权 deficit round robin，再按任务意图和估算成本公平分派；realtime 在自己的保留范围内按最近 deadline 优先，batch 在成本公平下使用 FIFO + aging。
@@ -102,6 +104,8 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 ### 1.6 按需加载与实例回收
 
 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)规定：已启用实时 ASR、承担实时合成的 CustomVoice / Base 预加载并常驻，VoiceDesign 随音色创作任务按需加载、空闲回收，VAD 在 CPU 常驻且隔离会话状态。实时配方的复核及 required 辅助必须在准入前具备已验证的可服务条件；其余绑定的加载策略由部署资格决定，不能据此默认全部模型常驻或全部按需。
+
+以下自动准备、预算和回收是目标协调流程；已有控制器入口与组件不代表调度、真实模型生命周期及多节点恢复已完成生产装配或资格验证。
 
 平台自动协调实例准备与回收，受限部署侧控制器通过 Compose / 运维基础设施执行批准实例的启停并报告事实。API 与 worker 不持有任意容器管理能力，不在业务进程加载大模型；模型推理入口、凭据、submit fencing、abort 和完成证据仍由 execution gateway 独占。
 

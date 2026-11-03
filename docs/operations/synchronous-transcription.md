@@ -139,11 +139,13 @@ ready 事实以及成功的 prepare intent。当前受支持的运维入口是
 | 基础配置有效，但同步转写所需配置缺失 | `503 backend_unavailable`，日志含具体环境变量名 |
 | 基础配置无效或网关/对象存储凭据未成对 | 启动配置校验失败，无可用路由响应 |
 | 连接失败、超时、5xx、网关响应无法解释、结果对象不可读 | 结果未知语义：`503 backend_unavailable`，不当作已失败，也不重发新执行 |
+| 网关返回 408 / 429 | 结果未知语义：`503 backend_unavailable`；按原执行身份协调 |
 | 网关明确 4xx 拒绝（非 408/429） | `503 backend_unavailable`，不返回部分正文 |
 | 网关终态 `failed` / `aborted` | `503 backend_unavailable` |
 | 网关状态 `unknown_quarantined`、回执身份不匹配或缺固定对象版本 | 结果未知语义：`503 backend_unavailable`，保留原身份并协调 |
 | 轮询中检查到计划等待期限到达 | `504 operation_timeout`；不表示整个 HTTP 请求的各阶段均受同一硬期限约束 |
 | 结果缺少 `text` 或字段不合规 | `503 transcription_output_invalid`，不猜 |
+| 结果声明的 `duration_ms` 超过本次计划的音频时长上限 | `503 transcription_output_limit_exceeded`；该错误标为不可重试 |
 | 需要分段或词证据，但结果包含字段不完整的对应条目 | `503 transcription_output_invalid`；不能将畸形条目当作有效时间戳 |
 | 请求 `verbose_json`、`srt` 或 `vtt` 但结果没有分段证据 | `422 unsupported_parameter`（`response_format`）；即使正文为空也不伪造分段 |
 | 请求 `verbose_json` 但回执无语言/时长 | `422 unsupported_parameter`（`response_format`） |

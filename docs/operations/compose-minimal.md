@@ -63,6 +63,12 @@ api
 `binding-disable-worker` 属于 `binding-disable` profile，`admin` / `workbench` 属于
 `web` profile，因此都不属于上面的基础集合。
 
+默认网络固定使用 `172.28.0.0/24`，MinIO 地址为 `172.28.0.10`；启动前须核对该网段
+不会与宿主机路由或其他容器网络冲突。若需使用其他网段，部署配置中的 Compose 子网、
+MinIO 静态地址和两份 gateway 私有配置的对象存储 endpoint 必须一起调整。文件语音对象
+适配器要求私有 IP 地址，不能直接改成 `minio` DNS 名称；API 使用的 Compose 服务名
+`minio` 是另一条配置路径。详见[私有部署输入说明](../../deploy/private/README.md)。
+
 ## 2. 准备环境文件
 
 以下命令生成随机本地口令并写入一个 **0600** 的环境文件；它不会把口令打印到终端。

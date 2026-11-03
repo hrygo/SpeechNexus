@@ -40,8 +40,9 @@ TTS planner 的子字段也完整填写。标准 TTS instructions 的 4096 上�
 
 网关先按 schema 验证，再按 RFC 8785 canonical JSON 的 UTF-8 字节计算 SHA-256，
 比较 command_digest。禁止 Unicode normalization、隐式填默认值、NaN、Infinity
-和不成对代理字符；数值必须可由该规范无损表达。传输键顺序不影响摘要，文本或
-参数任何变化都改变意图。同一 submit identity 的完整规范请求（含期限、预算、
+和不成对代理字符；数值必须可由该规范无损表达。传输键顺序不影响摘要；规范化后的
+命令内容变化会改变摘要，而仅数值表示不同（如 `1` 与 `1.0`）可产生相同规范字节。
+同一 submit identity 的完整规范请求（含期限、预算、
 fencing 和命令）变化返回 submit_intent_conflict；摘要不匹配返回
 invalid_execution_request。业务输入内容只经私有命令传输，不写日志或公开 receipt。
 

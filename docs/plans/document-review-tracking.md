@@ -342,5 +342,5 @@
 | `docs/operations/release-evidence-verification-output.txt` | 历史保留 | 2026-10-28 固定版本的合成数据验证输出；不代表当前发布资格，原始运行未重做 |
 | `docs/plans/2026-10-23-implementation-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml` | 部分核对 | 全文阅读，确认标注为候选并有专门的契约示例；尚未核验所有引用与当前契约差异 |
-| `docs/plans/2026-10-24-team-c-gateway-clock-candidate.patch` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
+| `docs/plans/2026-10-24-team-c-gateway-clock-candidate.patch` | 历史保留 | 核对两行候选内容及原计划、交接引用；仅为固定历史候选，未应用或重跑验证 |
 | `docs/plans/delivery-issues.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

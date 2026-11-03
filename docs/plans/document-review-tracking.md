@@ -77,7 +77,7 @@
 | `docs/components/controlled-asr-generation.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/components/cpu-vad.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配章节与 drain 组合根；其余提交、屏障、恢复及清理事务待逐节核对 |
-| `docs/components/execution-staging-results.md` | 部分核对 | 对照音频回执契约、迁移、列授权、登记 CAS/重放和覆盖检查；修正观察引用可选规则，未运行集成测试 |
+| `docs/components/execution-staging-results.md` | 已核对 | 对照回执契约、迁移、列授权、登记 CAS/重放、覆盖检查、HTTP 查询及测试入口；未运行集成测试 |
 | `docs/components/file-asr-audio.md` | 已核对 | 对照共享媒体模块、源格式、限制、时钟投影、测试入口及已知消费者装配；未重跑测试或验证部署 |
 | `docs/components/file-asr-recognition.md` | 已核对 | 逐节静态对照参数、协议、装配、执行与测试清单；未重新实测 |
 | `docs/components/file-asr-results.md` | 已核对 | 逐节静态对照结果聚合、私有对象、命令与相关测试；未运行服务 |

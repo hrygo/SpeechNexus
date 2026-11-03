@@ -68,7 +68,8 @@ Python/TS 从原生成器生成，不维护独立 wire 类型。
 
 `GET /internal/v1/executions/{submit_intent_id}/staging-result` 复用组件认证、请求 ID、
 节点/网关范围和 ingress 所有权检查。它只读原数据库事实，不调用引擎、写对象或退预算；
-调用方不能指定存储端点、bucket 或 URL。
+调用方不能指定存储端点、bucket 或 URL。`X-Request-ID` 请求头可省略；提供时须满足
+1–128 字符的长度约束，不是执行身份或重新派发许可。
 
 响应固定 `submit_intent_id`、原 `request_digest` 和 nullable `staging_result`。
 回执内摘要必须与原请求一致，由已验证领域记录投影；A 仍须核对自身固定的请求、

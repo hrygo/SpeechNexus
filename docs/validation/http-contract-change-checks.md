@@ -35,9 +35,12 @@ uv run python scripts/dev-env/check-http-contract-changes.py \
 The CLI resolves a branch/ref to one immutable commit before reading any source
 or reference. Each invocation owns fresh document snapshots. Its text/JSON output
 names the baseline, four source versions, findings and unverified scope. A missing
-baseline/source, invalid document, missing pointer, remote/out-of-contract reference
-or recursive reference cannot silently pass this check. It performs no network
-reference loading, runtime API call, permission change or migration.
+baseline/source, document that fails the required versioned OpenAPI shape, or a
+missing, remote/out-of-contract or recursive reference encountered by comparison
+cannot silently pass this check. This shape check is not complete OpenAPI document
+validation: for example, a missing `info.title` can go unreported. Run the separate
+source validation with `make contracts-check` as well. The comparison performs no network reference loading,
+runtime API call, permission change or migration.
 
 A source version change is visible in the inventory and never automatically
 waives a finding. Version/upgrade descriptions and consumer acceptance remain

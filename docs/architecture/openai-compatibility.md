@@ -30,7 +30,7 @@ WebSocket 路由及真实实时执行链，SDK 序列化检查不能证明这些
 `engine_ready=false`、`quality_qualified=false` 和 `admission_state=unavailable`；这表示未由
 该目录建立事实，不能单凭这些值判定实际引擎故障或资格失效。
 
-时间戳粒度属于声明的契约范围；当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
+时间戳粒度属于声明的契约范围：只要请求中出现 `timestamp_granularities[]`，包括空数组，schema 就要求显式设置 `response_format=verbose_json`；数组内仅允许不重复的 `segment` 和 `word`。当前生产文件 ASR 规划器在准入前拒绝非空 `timestamp_granularities[]`，不能据此宣称显式 segment/word 请求已可用。具体证据要求见[同步转写](../operations/synchronous-transcription.md)。
 
 未声明的请求字段存在契约与实现差异：公开契约要求不支持的标准参数返回 `422 unsupported_parameter`，当前转写 multipart 与合成 JSON 入口的封闭字段校验则返回 `400 invalid_request`；合成入口对未声明的 `stream_format` 值也返回该 400。两者都拒绝请求；调用方目前不能假定这些情况一定得到契约中的错误码。
 

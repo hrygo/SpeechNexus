@@ -130,7 +130,7 @@
 | `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束与去重计数、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |
 | `docs/operations/binding-activation-verification.md` | 已核对 | 对照 PG 并发矩阵、跨操作 ASGI 测试与故障清理 fixture；澄清测试设计不等于实际运行通过，未运行 PG |
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
-| `docs/operations/binding-lifecycle.md` | 部分核对 | 全文阅读并核对授权、停用响应、主要操作与部分冲突分支；补充 HTTP 匿名审计身份，并发与恢复事务待核对 |
+| `docs/operations/binding-lifecycle.md` | 已核对 | 对照授权、生命周期事务、幂等重放、并发矩阵与恢复测试；澄清连接中断可能无响应，未运行 PG 或部署 |
 | `docs/operations/builtin-voice-qualification.md` | 已核对 | 对照资格入口、授权、退出分支、制品脚本摘要、probe 音频与终态验证及受控窗口；未运行探针或核验部署权限 |
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码、账本检查及发布前后步骤；澄清发布事务与独立校验的范围、fixture、live 查询隔离和工作区配额限制，其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |

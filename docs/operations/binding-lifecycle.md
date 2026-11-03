@@ -139,8 +139,8 @@ UPDATE/DELETE。
 
 ## 结果未知
 
-超时、连接中断或提交结果未知返回
-`503 binding_result_unknown`，`retryable: false`。客户端不得换 key 或伪造新意图；
+服务端报告提交结果未知时返回 `503 binding_result_unknown`，`retryable: false`；
+客户端超时或连接中断也可能收不到响应，同样不能判断提交结果。客户端不得换 key 或伪造新意图；
 保留原路径、完整 body 和原 `Idempotency-Key` 显式重放同一 POST，以收敛到原结果。
 完整 body 包括原 `expected_current_revision`；不可套用提示值重基 CAS。后一次拒绝
 或当前 head GET 都不能证明先前未知提交的结果。未保留原 key 时不承诺安全自动恢复。

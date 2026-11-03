@@ -2,7 +2,7 @@
 
 适用于整个仓库；目标目录的 `AGENTS.md` 补充局部规则。遵循系统、开发者与当前用户指令，已有授权持续有效。本文件规定稳定边界和任务入口；职责、排期与进度以当前授权任务及相关 issue 为准。
 
-当前交付入口为[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和[完整跟踪矩阵](docs/plans/delivery-tracking.md)。GitHub 维护任务正文与状态，本地[稳定映射](docs/plans/delivery-baseline.json)保存原要求承接；用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新。旧 A/B/C、Epic/Gate 和 #259 已由新体系承接，作为历史来源读取，不再据旧卡建立另一条执行队列；迁移关闭不代表原 AC 或用户关口已通过。
+当前交付入口为[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和[跟踪矩阵](docs/plans/delivery-tracking.md)。新 issue 自足说明当前事实、剩余任务、具名输入及 AC；[交付清单](docs/plans/delivery-issues.json)仅登记层级与制品依赖。用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 从 GitHub 只读刷新状态和证据，未知如实标注；历史按需查 Git/GitHub，不作为开工或刷新的前置。
 
 ## 执行与授权
 

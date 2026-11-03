@@ -1,18 +1,16 @@
 # SpeechNexus 实施计划
 
-当前接管与后续管理先读[完整交付跟踪矩阵](delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
-[稳定映射](delivery-baseline.json)记录产品目标、独立交付、必要制品依赖及全部原要求的去向；
-[2026-11-03 原文迁移基线](2026-11-03-issue-migration.json)保留旧 open issue 原文、散列和讨论来源。
-用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新当前视图；远端失败保留旧输出，离线视图不作为实时状态。
-原目标保留完整范围与历史记录，旧卡只因重组替代而关闭，不表示业务验收通过；
-[原项目交接](../audits/2026-10-26-project-handoff.md)保留三队交接时点快照，
-团队 B 详细记录见[收尾交接](../audits/2026-10-26-team-b-handoff.md)。
+当前接管先读[交付矩阵](delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
+[交付清单](delivery-issues.json)只登记当前目标、交付项及具名制品依赖；当前事实、具体任务、AC 和证据直接维护在对应 issue。
+用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新视图；远端失败保留旧输出，离线不作实时状态。
+
+以下带日期材料保留各自时点，仅在查证相关决定或证据时读取，不承担当前排期或派工。
 
 - [2026-10-26 团队 A 最终交接](2026-10-26-team-a-final-handoff.md)：A00–A07、媒体/回执及原件/资源交接；原候选与验证保留时点，后续集成修复见项目经理基线。
 - [2026-10-26 团队 A 进展复盘与原下一阶段计划](2026-10-26-team-a-review-and-next-phase.md)：历史基线、KR 与故障矩阵，已由收尾交接取代当前派工。
 - [2026-10-26 团队 C 最终交接](2026-10-26-team-c-final-handoff.md)：C00–C08 已集成范围、未决风险、A/B 接收方式、证据归档和全量 issue 核对；后续由新负责人重新安排。
 
-- [2026-10-26 Paperclip 工作流与环境准备](2026-10-26-paperclip-bootstrap-plan.md)：当前环境准备入口；七个 agent 暂停，三机与 Harness 自检、修改回传及启用阻塞分别记录。
+- [2026-10-26 Paperclip 工作流与环境准备](2026-10-26-paperclip-bootstrap-plan.md)：历史环境准备方案；保留当时的三机与 Harness 自检、回传和启用阻塞记录，当前执行按具体任务核验。
 
 - [2026-10-24 团队 C Meeting/Minutes HTTP](2026-10-24-team-c-meeting-http-handoff.md)：五项持久业务操作、原子封存/纪要关联、原键恢复及会议删除依赖；默认工厂13项，显式装配18项，生产/会议页面及完整资格继续。
 
@@ -23,7 +21,7 @@
 - [2026-10-24 团队 C C1列表、状态与删除HTTP](2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](2026-10-24-team-c-c1-management-plan.md)。
 
 - [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
-- [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。显式选择[旧编排清单](2026-10-23-implementation-issues.json)才读取旧结构，不覆盖当前矩阵。
+- [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。[旧编排清单](2026-10-23-implementation-issues.json)保留原时点结构，当前刷新工具不读取此格式。
 - [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
 - [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：历史启动与交接模板，保留原时点输入，不作为当前派工依据。
 - [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。

@@ -16,7 +16,7 @@ Codex 会话、subagent 与 Delegra 的路由、最小上下文、同版验证�
 2. 核对[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及本次相关 issue，确认当前优先级、负责人、依赖、剩余范围和 AC。
 3. 核对相关 PR、远端目标分支、契约、源码与实际证据，固定本次集成版本和验证范围。
 
-当前完整索引见[交付矩阵](plans/delivery-tracking.md)；[稳定映射](plans/delivery-baseline.json)保存原要求编号、主责交付、联合接收和制品依赖，原文迁移基线只作历史来源。运行 `python3 scripts/dev-env/refresh-implementation-tracker.py` 从 GitHub 只读生成当前排期、负责人、实现/集成/验证及生命周期；读取失败不刷新成功，离线或未知时间不得当实时。新增交付或范围变化须同步稳定映射，重组替代关闭不计业务完成。
+当前完整索引见[交付矩阵](plans/delivery-tracking.md)；[交付清单](plans/delivery-issues.json)仅登记当前层级和制品依赖。issue 应自足说明当前事实、具体缺口、任务与 AC，必要证据链接到源码、PR 或有效报告；不复制父包历史或要求接手者重读旧卡。运行 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新当前状态；远端失败保留旧输出，离线或未知时间不视为实时。新增交付或依赖变化同步清单，普通进展只改 GitHub。
 
 基线是有日期的接管快照，会话历史提供检索线索。持续工作只补读相关变化；全面盘点时再覆盖全部跟踪项，不为每个局部任务重复扫描全项目。
 

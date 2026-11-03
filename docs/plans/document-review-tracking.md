@@ -10,7 +10,7 @@
 | `docs/agent-guide.md` | 已核对 | 全文对照根规则、五个项目技能与交付 SOP；49 个链接的本地目标均存在，外部参考保留标注的历史核验时间 |
 | `docs/agent-verification.md` | 已核对 | 对照 Make 目标、验证脚本、工具链声明、CI 指南和 Workbench PG 探针清理路径；核对服务前置、副作用与 verify 覆盖限制，未启动服务或执行集成测试 |
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
-| `docs/architecture/contract-ownership.md` | 部分核对 | 核对机器矩阵 18 端口、18 表和 7 类查询，更新部分正式消费者、运行控制装配与用量消费状态；各端口写入范围待逐项核对 |
+| `docs/architecture/contract-ownership.md` | 已核对 | 逐项对照机器矩阵的 18 端口写入范围和 7 类查询、私有表及授权来源；更新消费者、运行控制装配与用量消费状态，未重跑集成测试 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/data-deletion.md` | 部分核对 | 全文阅读并核对删除契约、启动重放前提及清理装配；跨模块竞态待核对 |
 | `docs/architecture/deployment-units.md` | 部分核对 | 核对 Compose 服务、Web 代理、镜像及依赖，修正 profile 与历史证据；其余单元、拓扑和资格未逐项核实 |

@@ -140,6 +140,8 @@ host 的 allocatable 向量不会被静默放大。
   `coordination_outbox` / `runtime_intent_deliveries`：走既有
   `create_in_transaction` + `observe_in_transaction`，所以 generation 单调、
   实例不得重复 ready、fencing、容量和 readiness 来源仍由领域事务校验。
+  操作员确认不需要向节点控制器投递；命令将该事件仍处于 `unsent` 的投递记录标为
+  `blocked`，并记录 `operator_attested`，防止投递 worker 再发送该意图。
 - readiness 的 `evidence_digest` 来自本次真实 `/health` 探测（URL、状态码、
   body SHA-256、观察时间）和操作者提供的实例身份；这是运维确认，不是节点控制器
   的观测或模型资格证明。写入观察中的 `observed_peak_memory` 来自批准计划的 peak，

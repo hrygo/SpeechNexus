@@ -96,7 +96,7 @@
 | `docs/components/production-runtime-intents.md` | 部分核对 | 全文阅读并对照 0005/0006 存储、outbox、原生证据摘要与生成条件；create/observe 事务及测试证据待逐项核对 |
 | `docs/components/profile-drafts.md` | 已核对 | 静态对照草稿事务、权限、HTTP 处理顺序、配置和测试定义；未运行服务 |
 | `docs/components/profile-lifecycle-contract.md` | 已核对 | 静态对照契约、生成入口、路由装配及私有观察边界，区分计划行为与测试定义；未运行服务 |
-| `docs/components/profile-lifecycle-intents.md` | 部分核对 | 全文阅读并对照意图记录/恢复 SQL、0013 迁移及授权；生产装配、竞争测试及后续状态待核对 |
+| `docs/components/profile-lifecycle-intents.md` | 已核对 | 静态对照记录与恢复、并发时限、迁移授权、装配和测试定义；未运行服务 |
 | `docs/components/pronunciation-drafts.md` | 已核对 | 逐节静态对照草稿事务、权限、迁移和集成测试定义；区分固定读取与恢复校验，未运行服务 |
 | `docs/components/pronunciation-read-contract.md` | 已核对 | 静态对照读取器权限、HTTP 处理顺序、生成消费者和测试定义；未运行服务 |
 | `docs/components/public-job-model-binding.md` | 已核对 | 逐节静态核对固定 binding 选择、事务期限、恢复、工作台消费者与测试；未运行服务 |

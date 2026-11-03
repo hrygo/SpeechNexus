@@ -36,10 +36,12 @@ attempting INSERT. An unreadable original aborts the attempt; it cannot be treat
 as absence. Only confirmed absence permits inserting this private intent.
 The original lookup precedes an INSERT permission check on replay.
 
-The unique key arbitrates concurrent new records. A losing INSERT waits for the
-actual first transaction: its commit returns the original/reports a conflict,
-and its rollback permits the waiting writer to record its own intent. This is
-not a publication lock or ownership claim. No mutable current/default state or
+The unique key arbitrates concurrent new records. Within the bounded transaction
+deadline, a losing INSERT waits for the first transaction: its commit allows
+the original to be replayed or a conflict reported, and its rollback allows the
+waiting writer to record its own intent. A timeout or database failure instead
+returns `unknown`; the caller must recover the original identity. This is not a
+publication lock or ownership claim. No mutable current/default state or
 provider is consulted, and no Job/outbox, draft or budget is changed.
 
 ## Storage, ownership and migration
@@ -89,6 +91,7 @@ not trusted quality or publication evidence. Named cases cover:
 - Actual PG migration repeat/empty rollback and nonempty refusal, with two-connection
   writer-first and downgrade-first lock waits. Existing draft/Job history is retained.
 
+These test definitions do not establish a passing run in the current environment.
 The suite's absence of a provider is intentional: no call in this unit may resolve
 or confer authority. PG remains the sole product database; InnoDB is a behavioral
 oracle, with binary collation and TEXT capacity mappings, not a product adapter.
@@ -97,8 +100,9 @@ oracle, with binary collation and TEXT capacity mappings, not a product adapter.
 
 P1's Profile-specific capability/tier/quality authority still requires registered,
 traceable source rules. B's #142/#162 candidates are not registered facts. The
-existing unavailable verifier remains the production behavior; this journal does
-not change it or qualify no-Profile execution.
+existing private verifier implementation reports unavailable; no production
+publication verifier or lifecycle writer is registered. This journal does not
+qualify no-Profile execution.
 
 P2 still needs immutable terminal **publication command results**, published
 revision facts and a distinct current-pointer CAS. Their transition must check

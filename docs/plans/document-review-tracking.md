@@ -138,7 +138,7 @@
 | `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消及结果登记恢复；停止及集成测试证据待核对 |
 | `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 核对绑定定义的候选参数和默认值、指令长度契约上限、离线工具的忽略元数据与输出边界、后续 SDK 与租约结算证据；其余内容待核对 |
 | `docs/operations/file-tts-runtime.md` | 部分核对 | 核对双 lane 共享 worker、配置、关闭失败边界、单请求音频上限及后续 SDK 和租约结算证据；其余内容待核对 |
-| `docs/operations/local-end-to-end.md` | 部分核对 | 核对历史边界与角色脚本并纠正数量；剩余历史输出和证据待逐项复核 |
+| `docs/operations/local-end-to-end.md` | 历史保留 | 2026-10-28 指定基线的隔离装配与失败记录；已提示旧发布命令不适用于当前版本，现行入口按历史证据引用，原始输出未逐项复核 |
 | `docs/operations/paperclip/environment-readiness.md` | 历史保留 | 已明确标注为旧环境与部署快照，当前流程指向交付 SOP；原始证据未逐项复核 |
 | `docs/operations/paperclip/roles/common.md` | 部分核对 | 全文对照工作流与交付 SOP；实际部署未核实 |
 | `docs/operations/paperclip/roles/evidence.md` | 部分核对 | 全文对照岗位与证据边界；部署配置及实际原件未核实 |

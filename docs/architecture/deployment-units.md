@@ -32,7 +32,7 @@ date: 2026-10-26
 | 工作台后台处理 | 纪要、导出、保存副本与删除恢复 | 按实际媒体依赖单独验证，不要求本机运行语音引擎 | 当前部分循环由 Workbench runtime 管理；独立 worker 入口待补齐 |
 | 已有专用后台入口 | `speechnexus-runtime-delivery-worker` 投递运行时意图；`speechnexus-asset-maintain` 维护 Asset；`speechnexus-job-dispatch-worker` 已注册公开 Job 派发入口 | 应用平台按入口分别验证 | 前两者不代表通用 Job Worker；结果发布组件已有，派发入口仍因生产 planner 未装配而 fail-closed，不代表完整 Job Worker 已交付 |
 | Binding 停用协调 worker | `python -m speechnexus_backend.binding_disable_worker` 处理持久停用意图 | 应用平台和网关连接按实际部署验证 | 需要独立扫描与结算身份；默认 Compose 不启动，`binding-disable` profile 按需启用。停用回执不代表清理完成或预算已释放，见[运维说明](../operations/compose-minimal.md#12-按需启用-binding-停用-worker) |
-| 同步 TTS 结算 worker | `python -m speechnexus_backend.tts_settlement_worker` 跟随持久结算记录，协调停止证据与租约释放 | 应用平台和网关连接按实际部署验证 | 启用同步 TTS 需要独立运行并配置此 worker；具体身份、资格和恢复条件见[同步语音合成](../components/synchronous-speech.md) |
+| 同步 TTS 结算 worker | 跟随持久结算记录，协调停止证据与租约释放；同步 TTS 工厂在 API 生命周期内启动循环，也提供 `python -m speechnexus_backend.tts_settlement_worker` 独立入口 | 应用平台和网关连接按实际部署验证 | 结算循环使用独立数据库身份；具体配置、资格和恢复条件见[同步语音合成](../components/synchronous-speech.md) |
 | Execution Gateway | 持久提交屏障、执行、取消、观察与停止证据；已有 `speechnexus-gateway` | 协议和编排不要求 CUDA；当前节点适配器随 Linux 算力栈资格验证，其他平台未资格化 | 绑定受管 `node_id` / `gateway_id` 与引擎代次；现有 `fcntl` 入口锁要求同节点候选共享私有锁目录 |
 | Node Controller | 批准模板的容器生命周期；已有 `speechnexus-node-controller` | 当前 Docker daemon 适配器服务于 Linux 容器节点；控制协议不绑定调用方平台 | 与实际受管 daemon 所在节点绑定；独占受限容器管理权限，不要求业务调用方同机 |
 | 推理引擎、引擎扩展及模型 | 当前选定的 CUDA / vLLM、vLLM-Omni 和固定模型组合 | 当前路线以 Linux 为目标，按硬件、镜像与模型组合资格化 | 独立镜像、依赖锁和 Python 环境；API、工作台不安装或直接调用 GPU runtime |
@@ -136,7 +136,7 @@ Linux CPU 媒体组件可与算力组件同机，但要独立核算资源，不�
 
 | 已核对事实 | 能证明的范围与缺口 |
 | --- | --- |
-| [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未配置同步 TTS API 配方及独立结算 worker，不能据此宣称公开 TTS 可用 |
+| [当前 Compose](../../deploy/compose.yaml)默认包含 PG、MinIO、对象存储初始化、Speech API 和 Gateway；两个 Web 容器及部分运维入口须显式启用 profile | 单节点 bootstrap；不含独立 Workbench API、Controller、完整后台角色或真实模型装配，也未提供同步 TTS API 配方及结算数据库配置，不能据此宣称公开 TTS 可用 |
 | [Web 代理](../../deploy/web/nginx.conf)将 `/v2/workbench/` 发往 `api:8000` | 默认预览没有接入独立 Workbench runtime；分布式部署需配置各服务上游及实时 owner 路由 |
 | [Backend 主入口](../../backend/src/speechnexus_backend/main.py)固定启动 Speech ASGI 工厂 | `process_role` 是身份声明；设置为另一个角色不会自动选择其服务入口 |
 | [Workbench 工厂](../../backend/src/speechnexus_backend/workbench/runtime.py)及专用后台命令已存在 | 具备分开启动的部分入口；不能据此认定全部后台职责已独立交付 |

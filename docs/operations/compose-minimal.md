@@ -15,7 +15,7 @@ date: 2026-10-28
 
 | 能力 | 当前结论 | 依赖 / 原因 |
 | --- | --- | --- |
-| 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及独立 settlement worker；其他部署的受控实测见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md) |
+| 公开 TTS `POST /v1/audio/speech` | **本 Compose 未装配** | 同步 TTS 工厂已实现，但本配置只预置 gateway 私有 file-TTS 配置引用，未提供 API 配方及结算数据库配置；其他部署的受控实测见[窗口记录](../audits/2026-11-03-controlled-tts-prepare.md) |
 | 异步 Job 提交、派发与结果 | **不可用** | G5 未解决（[#18](https://github.com/hrygo/SpeechNexus/issues/18)）；本卡有意不启动 `job-dispatch-worker` |
 | 公开同步 ASR 成功响应 | **本部署未验证** | 文件 worker 已有成功终态写入；历史部署曾返回 `504 operation_timeout`，见[本机端到端记录](local-end-to-end.md#112-公开-v1audiotranscriptions已执行504未成功)。不能将那次结果或组件实现推定为当前部署的公开链路验收 |
 | 节点控制器、runtime delivery、asset maintenance | **未装配** | 本卡按 G3 降级范围有意排除；不要用本 Compose 宣称 G5 完成 |
@@ -555,7 +555,7 @@ instance 来“绕过”冲突；先核对旧 head、owner 和 readiness 证据�
 | `engine-register` 报 `invalid_recipe` | recipe 结构、摘要、stage/instance 或 binding plan 不一致 |
 | `engine-register` 报 `pool_owner_conflict` / `previous_generation_active` | 已有活动 owner 或旧 generation 仍 ready；先核对/停止旧实例，不能修改 token 假装接管 |
 | 容器已启动但 API 转写返回 `504 operation_timeout` | 按原身份检查准入、网关、worker 和终态事实；历史超时原因不能直接套用到新运行，也不要用增加超时或重提新执行掩盖 |
-| 公开 `/v1/audio/speech` 不可用 | 本 Compose 没有装配 API 侧同步 TTS 所需配方及独立 settlement worker；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
+| 公开 `/v1/audio/speech` 不可用 | 本 Compose 没有提供 API 侧同步 TTS 所需配方及结算数据库配置；另见[同步 TTS 装配要求](../components/synchronous-speech.md) |
 
 ## 10. 停止与清理边界
 

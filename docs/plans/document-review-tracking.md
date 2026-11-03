@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `docs/README.md` | 部分核对 | 全文阅读，核对本地链接、CI 数据库版本、上线前检查、Job 派发、同步转写及运行投递状态；其他条目的职责与证据待核对 |
 | `docs/agent-guide.md` | 已核对 | 全文对照根规则、五个项目技能与交付 SOP；49 个链接的本地目标均存在，外部参考保留标注的历史核验时间 |
-| `docs/agent-verification.md` | 部分核对 | 对照 Make 目标、验证脚本、工具链声明和 Workbench PG 探针清理路径，补充容器副作用、verify 覆盖限制及日志生成条件；其他检查细节待核对 |
+| `docs/agent-verification.md` | 已核对 | 对照 Make 目标、验证脚本、工具链声明、CI 指南和 Workbench PG 探针清理路径；核对服务前置、副作用与 verify 覆盖限制，未启动服务或执行集成测试 |
 | `docs/architecture/README.md` | 已核对 | 逐项核对 23 个本地链接及职责描述；不代表所链接正文已审 |
 | `docs/architecture/contract-ownership.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/coordination-transactions.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |

@@ -124,7 +124,7 @@
 | `docs/decisions/0013-binding-lifecycle-admin-http.md` | 已核对 | 对照管理契约、激活 CAS、原键重放、冲突提示及现行操作指南；保留拟议状态，历史审查和远端验收未重验 |
 | `docs/decisions/README.md` | 已核对 | 对照 0001–0013 的标题、日期与 frontmatter 状态；明确拟议 ADR 不等于已接受，不代表各决策正文已审完 |
 | `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI、Token 来源、文案、状态和随机调用扫描范围与品牌组件，修正相关描述；其他细节待核对 |
-| `docs/development-environment.md` | 部分核对 | 对照初始化、服务、浏览器冒烟和契约检查脚本，修正安装、权限、端口及检查边界；参考环境版本和历史运行状态未实测 |
+| `docs/development-environment.md` | 已核对 | 对照锁定版本、初始化与服务脚本、检查和冒烟入口；修正安装、权限及端口边界，未实测参考宿主运行状态 |
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
 | `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |
 | `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束与去重计数、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |

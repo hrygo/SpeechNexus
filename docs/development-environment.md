@@ -44,6 +44,8 @@ make verify
 
 `make dev-bootstrap` 会准备 Python / Node 工具链和 Chromium，校验脚本指定的发行包摘要，初始化本地数据目录，建立 `speechnexus_dev` / `speechnexus_test` 数据库和 `speechnexus-dev` / `speechnexus-test` bucket，安装并启动隔离的协调 MySQL 容器，然后运行健康检查。它执行 `uv sync` 而未指定 `--locked`；pnpm 有锁文件时使用 `--frozen-lockfile`，缺少锁文件时使用普通安装。重复执行会复用已有数据与浏览器缓存，但会停止并重新启动上述用户级服务。
 
+该脚本还会用符号链接替换 `~/.local/bin` 下的 `uv`、`uvx`、`node`、`npm`、`npx` 和 `ffmpeg` 同名入口，并在未启用时为当前用户启用 systemd linger。执行前须核对这些用户级入口及服务的归属与用途；这不只是仓库内的依赖安装。
+
 Python 开发依赖由根目录 `pyproject.toml` 和 `uv.lock` 锁定，后端与执行网关是 workspace 成员。首次初始化后使用 `uv sync --locked --all-packages --all-groups`；执行工具时使用 `uv run pytest`、`uv run ruff check` 等命令。
 
 当前 shell 需要数据库与对象存储地址时运行：

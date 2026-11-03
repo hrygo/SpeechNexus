@@ -58,12 +58,16 @@ flowchart LR
     Worker --> PG
     Scheduler --> PG
     Gateway --> PG
-    Controller --> PG
+    Controller --> Local["节点本地回执 / 停止检查点"]
     Workbench --> WP["工作台 schema"]
     API --> Objects["S3 兼容对象存储"]
     Worker --> Objects
     Gateway --> Objects
 ```
+
+控制器通过内部协议向调度侧报告节点事实，不直接写入 PostgreSQL 协调权威；当前本地回执与
+停止检查点保存在 SQLite，不能凭节点本地记录缺失推断执行已停止或预算可释放。具体实现和
+恢复边界见[节点控制器](../components/node-controller.md)及[部署单元规划](deployment-units.md)。
 
 | 所有者 | 写入权威 / 执行动作 | 边界 |
 | --- | --- | --- |

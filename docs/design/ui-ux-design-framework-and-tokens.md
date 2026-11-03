@@ -419,14 +419,17 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 ```mermaid
 flowchart TD
-    A["开发者提交代码 / PR"] --> B["GitHub Actions CI: web job"]
-    B --> S["Step: pnpm test:contracts-sdk"]
-    S --> C["Step: pnpm format:check"]
-    C --> F["Step: pnpm lint（包含 Token 校验与 ESLint）"]
-    F --> G["Step: pnpm typecheck (TSC)"]
-    G --> H["Step: pnpm test (Vitest)"]
-    H --> I["Step: pnpm build (Vite 打包)"]
-    I --> J["Step: pnpm test:a11y（实际渲染范围）"]
+    A["CI 触发"] --> B["changes：路由回归与 Token 检查"]
+    B --> R{"路由结果"}
+    R -->|"full / web / no-db"| S["web：pnpm test:contracts-sdk"]
+    R -->|"docs 等其他路由"| D["不运行完整 web job"]
+    S --> C["pnpm format:check"]
+    C --> F["pnpm lint（包含 Token 校验与 ESLint）"]
+    F --> G["pnpm typecheck"]
+    G --> H["pnpm test"]
+    H --> I["pnpm build"]
+    I --> P["准备 Chromium"]
+    P --> J["pnpm test:a11y（实际渲染范围）"]
 ```
 
 本地执行命令：

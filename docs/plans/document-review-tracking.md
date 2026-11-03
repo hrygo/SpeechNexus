@@ -100,7 +100,7 @@
 | `docs/components/pronunciation-drafts.md` | 部分核对 | 全文阅读并核对大小上限、身份配对及 0014 迁移锁与回退；事务、权限及集成证据待核对 |
 | `docs/components/pronunciation-read-contract.md` | 部分核对 | 全文阅读并核对读取器装配、并发/超时配置及契约错误码；权限、HTTP 边界和消费者测试待核对 |
 | `docs/components/public-job-model-binding.md` | 已核对 | 逐节静态核对固定 binding 选择、事务期限、恢复、工作台消费者与测试；未运行服务 |
-| `docs/components/repository-layout.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
+| `docs/components/repository-layout.md` | 部分核对 | 已对照工作区、迁移目录、接口目录、Compose 与验证入口修正布局；其余内容待核对 |
 | `docs/components/runtime-controller-client.md` | 已核对 | 逐节静态对照客户端、节点观察循环、持久投递和测试清单；未运行服务 |
 | `docs/components/synchronous-speech.md` | 已核对 | 逐节静态对照 TTS 装配、准入锁序、恢复、结算预检、配置和错误处理；未运行服务 |
 | `docs/components/transcript-import-and-text-export.md` | 已核对 | 逐节静态对照来源校验、导入事务、编辑器、下载和公开契约；未运行服务 |

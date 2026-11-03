@@ -25,7 +25,7 @@ date: 2026-10-26
 │   ├── capacity-manifest.schema.json
 │   ├── qualification-report.schema.json
 │   └── internal/               执行控制、运行时控制、执行流与应用事务契约
-├── migrations/                  部署角色执行的版本化 DDL 草案
+├── migrations/                  历史协调 DDL 草案，不用于产品迁移
 │   └── 0001_cluster_coordination_draft.sql
 ├── backend/                     FastAPI 语音底座
 │   └── src/speechnexus_backend/
@@ -34,8 +34,8 @@ date: 2026-10-26
 │       ├── speech/
 │       │   ├── domain/          领域策略、身份与状态机
 │       │   ├── application/     资产、配置、协调、准入等用例与端口
-│       │   ├── interfaces/      REST / WS / MCP 投影
-│       │   └── infrastructure/  PG / 对象存储 / outbox adapter
+│       │   ├── interfaces/      HTTP 投影与事务接口
+│       │   └── infrastructure/  PG / 对象存储 / outbox adapter，含 Alembic 迁移
 │       └── workbench/           可选工作台及独立 ASGI runtime
 ├── execution-gateway/           独立引擎执行网关
 │   └── src/speechnexus_gateway/
@@ -93,7 +93,7 @@ composition root ──> any layer
 
 ## 3. Web 工作区
 
-根 `pnpm-workspace.yaml` 管理 `web/admin`、`web/workbench` 和 `web/shared`。共享 React 版本、Vite、TypeScript、测试库集中在 catalog，成员只引用 `catalog:`。
+根 `pnpm-workspace.yaml` 管理 `web/*` 和 `packages/contracts`，当前包括 Admin、Workbench、共享组件与契约包。共享 React 版本、Vite、TypeScript、测试库集中在 catalog，相关依赖通过 `catalog:` 引用。
 
 - `web/admin` 与 `web/workbench` 各自构建、预览与部署，输出独立 `dist/`。
 - `web/shared` 只包含跨入口稳定复用、无业务所有权的组件与视觉 Token。
@@ -134,7 +134,7 @@ ESLint 使用 flat config 与 TypeScript 类型感知规则；TypeScript 开启�
 
 服务拆分与平台要求以[部署单元规划](../architecture/deployment-units.md)和 [ADR 0011](../decisions/0011-distributed-deployment-and-platform-boundaries.md)为准。workspace、Python 包和当前共享镜像不是物理部署边界；Speech / Workbench API、后台角色、节点执行与数据服务可分机部署。当前开发脚本的 Linux ARM64 / systemd 要求只适用于该开发环境，各单元的原生平台与容器运行能力须分别验证。
 
-`deploy/compose.yaml` 提供单节点开发拓扑。所有宿主端口只绑定回环地址，凭据由 `deploy/compose.env` 提供且被 Git 忽略。容器使用非 root Python 用户、只读根文件系统和 `no-new-privileges`；Web 镜像使用非特权 Nginx。
+`deploy/compose.yaml` 提供单节点开发拓扑。宿主端口绑定回环地址，凭据由 `deploy/compose.env` 提供且被 Git 忽略。应用服务配置只读根文件系统和 `no-new-privileges`；各服务的用户和运行限制以 Compose 配置及镜像为准，Web 镜像使用非特权 Nginx。
 
 该拓扑不是生产交付。生产前仍需确定入口委托、Host / Origin 策略、TLS、对象存储凭据、数据库迁移、备份恢复、模型绑定、容量 manifest、监控与发布资格。
 

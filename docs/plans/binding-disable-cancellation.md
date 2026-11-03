@@ -1,6 +1,6 @@
 # Binding disable：取消协调接续方案
 
-目标是满足 #273 AC3：阻止目标 revision 的新使用，协调已准入的原执行停止；无法确认清理时保留隔离占用。公开回执报告清理待确认，下面的合成引擎证据不能证明真实引擎已经停止。
+目标是阻止目标 revision 的新使用，协调已准入的原执行停止；无法确认清理时保留隔离占用。当前需求及验收见 [X-BINDING-STOP](../prd.md#x-binding-stop) 和 [M-DISABLE](../prd.md#m-disable)。原 [#273](https://github.com/hrygo/SpeechNexus/issues/273) 已取消排期，其 AC3 仅供追溯，关闭不表示功能完成。公开回执报告清理待确认，下面的合成引擎证据不能证明真实引擎已经停止。
 
 ## 已实现的前置和运行条件
 

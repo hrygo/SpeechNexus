@@ -24,6 +24,7 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
    资源不存在返回 `404 resource_not_found`。部署/工作空间仍遵循当前入口规则。
 2. 所有者在短事务中读取目标版本与完整依赖快照，建立不可变 plan。依赖按
    `(owner,kind,id,revision,relation)` 排序，不得重复同一关系。
+   这些排序与关系唯一性要求不由 schema 单独保证；生产者须另行验证。
    `plan_digest` 为移除自身 `plan_digest` 字段后对完整 plan 做 RFC 8785 UTF-8
    canonical JSON 的 SHA-256；包括 id、revision、过期时间、eligible 和全部依赖。
    plan 默认有效期 300 秒，服务端返回明确 `expires_at`，客户端不能延长。

@@ -404,6 +404,8 @@ VoiceDesign 随允许等待的音色创作任务按需加载并在空闲时回�
 
 可选 workbench-export-worker 负责有界解码、格式统一、音量处理与拼接；使用单独配置的 CPU / 内存 / 并发 / 临时磁盘上限，其预留计入部署整体预算，不借用语音 realtime 保留。工作台导出不调用推理引擎，关闭工作台或导出 worker 不影响底座。导出按单元检查取消，恢复只认已提交检查点；结果先 staging、校验后原子发布，不因对象已存在就宣称成功。
 
+上述导出流程和资源要求是目标，并非全部已实现。当前 Workbench runtime 的导出循环默认关闭，须显式注入 producer、配置对象区并启用周期驱动；它只认领排队任务，运行中 claim 和结果未知须另行恢复。完整固定清单、检查点续作、正式 saved-audio producer 和预算治理仍待交付，现有检查范围见[导出发布前完整性检查](components/workbench-export-integrity.md)。
+
 只有所有 required 单元存在已保存副本、版本一致、质量与格式校验通过，才发布整章 / 整书 WorkbenchExportArtifact。成品同时固定 `export_id`、与所属 Job 完全相等的 `manifest_revision`、内容摘要和大于零的字节数，使 Job 记录到期后仍能追溯实际导出清单；发布事务校验这些字段后才提交。`progress_completed` 不得超过 `progress_total`；Job 进入 `succeeded` 时两者必须相等，且存在通过上述校验的 Artifact；queued / running / cancelling / failed / cancelled / expired 的 `artifact` 必须为 null。导出成功与 artifact.published 事件必须引用属于同一 `export_id` 的成品，不能把其他任务或旧清单的 Artifact 混入本事件流。部分成功显示明确进度，禁止将不完整 WAV、缺章清单或空文件标为成品。质量检查、试听和确认记录独立保存；首期确认者只能是匿名操作记录，不承诺角色审核或双人分权。
 
 ### 9.4 本机 / 内网 LLM

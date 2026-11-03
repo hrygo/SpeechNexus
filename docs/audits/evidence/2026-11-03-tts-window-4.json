@@ -1,0 +1,1437 @@
+{
+  "schema": "speechnexus-controlled-tts-window-evidence-v1",
+  "window_number": 4,
+  "production_commit": "67f894331a8116dedbb402c2509b968e18f551d2",
+  "sdk_commit": "ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291",
+  "source_expiry_utc": "2026-11-03T23:33:12Z",
+  "image_digest": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+  "model_revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+  "speaker": "Vivian",
+  "boundaries": {
+    "max_instances": 1,
+    "memory_bytes": 12884901888,
+    "concurrency": 1,
+    "max_sequential_generations": 2,
+    "max_sdk_calls": 1,
+    "max_window_seconds": 1200,
+    "no_downloaded_models": true,
+    "no_merged_prs": true
+  },
+  "result": {
+    "sdk_succeeded": false,
+    "sdk_status": 503,
+    "admission_reason": "policy_or_resource_disabled",
+    "sdk_operation_created": false,
+    "qualification_max_input_codepoints": 32,
+    "sdk_input_codepoints": 48,
+    "remaining_goal": "Real SDK WAV success and final independent acceptance unproven"
+  },
+  "original_documents": {
+    "watchdog-started": {
+      "sha256": "983401e09c12c140b7f80db9c71258139bf0ba4789b5ba7e9f4b60cb7f0e9c5e",
+      "byte_count": 59,
+      "mtime_ns": "1793681547869096289",
+      "document": {
+        "epoch": 1793681547.8368218,
+        "monotonic": 3723005.954443508
+      }
+    },
+    "prepare-1-request.json": {
+      "sha256": "f730af28c380a0ee2805a35a45cd0cc83bc422031d669c3c3005bf176d58d486",
+      "byte_count": 756,
+      "mtime_ns": "1793681547644011183",
+      "document": {
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_id": "snx-tts-pwqzc093",
+        "instance_generation": 1,
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "fencing_token": 1,
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          },
+          "steady": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          }
+        },
+        "intent_id": "prepare-snx-tts-g1",
+        "action": "prepare",
+        "deadline_at": "2026-11-03T05:02:27.639041Z"
+      }
+    },
+    "prepare-1-response.json": {
+      "sha256": "809e57704ce6cb06672a4133ca887ebde9f31898f053d39733357ec7dd4fb105",
+      "byte_count": 1002,
+      "mtime_ns": "1793681661908929295",
+      "document": {
+        "intent_id": "prepare-snx-tts-g1",
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "instance_id": "snx-tts-pwqzc093",
+        "instance_generation": 1,
+        "action": "prepare",
+        "fencing_token": 1,
+        "intent_state": "succeeded",
+        "observed_instance_state": "ready",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          },
+          "steady": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          }
+        },
+        "stop_evidence": null,
+        "observed_peak_memory": {
+          "unified_memory_bytes": 6791073792,
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0
+        },
+        "error_code": null,
+        "created_at": "2026-11-03T04:52:28.352677Z",
+        "updated_at": "2026-11-03T04:54:21.666193Z"
+      }
+    },
+    "stop-1-request.json": {
+      "sha256": "154933db7d0f4432a03c8a885025b0658878c1438fd03b96d995f2f5917b3468",
+      "byte_count": 750,
+      "mtime_ns": "1793681547644094446",
+      "document": {
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_id": "snx-tts-pwqzc093",
+        "instance_generation": 1,
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "fencing_token": 1,
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          },
+          "steady": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          }
+        },
+        "intent_id": "stop-snx-tts-g1",
+        "action": "stop",
+        "deadline_at": "2026-11-03T05:11:37.639041Z"
+      }
+    },
+    "stop-1-response.json": {
+      "sha256": "820a426519932156c1a446b6d04b20926335ec73bf927fcab1c8863d039b9057",
+      "byte_count": 1137,
+      "mtime_ns": "1793681678092988851",
+      "document": {
+        "intent_id": "stop-snx-tts-g1",
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "instance_id": "snx-tts-pwqzc093",
+        "instance_generation": 1,
+        "action": "stop",
+        "fencing_token": 1,
+        "intent_state": "succeeded",
+        "observed_instance_state": "stopped",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          },
+          "steady": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          }
+        },
+        "stop_evidence": {
+          "process_or_container_exited": true,
+          "resources_released_confirmed": true,
+          "exit_code": 0,
+          "runtime_container_id": "0a96ac1a530b7e1d38eb967bd1c0b0bbe2d429af46818fbd1c5686f4badf46d4",
+          "verified_at": "2026-11-03T04:54:38.088520Z"
+        },
+        "observed_peak_memory": null,
+        "error_code": null,
+        "created_at": "2026-11-03T04:54:27.578950Z",
+        "updated_at": "2026-11-03T04:54:38.090339Z"
+      }
+    },
+    "prepare-2-request.json": {
+      "sha256": "61da0dad733b9b884fd5e712974f0858c6ba2307b20766664d129ec2ba314415",
+      "byte_count": 761,
+      "mtime_ns": "1793681834435668569",
+      "document": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "deadline_at": "2026-11-03T05:04:07.836822+00:00",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-pwqzc093",
+        "intent_id": "prepare-snx-tts-g2",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-pwqzc093"
+      }
+    },
+    "prepare-2-response.json": {
+      "sha256": "af95891db37c98aafa1886ef9eba161a84381ac6a0b6f2d19867fc231c22b535",
+      "byte_count": 1395,
+      "mtime_ns": "1793681956298547246",
+      "document": {
+        "action": "prepare",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "created_at": "2026-11-03T04:57:15.102213Z",
+        "error_code": null,
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-pwqzc093",
+        "intent_id": "prepare-snx-tts-g2",
+        "intent_state": "succeeded",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "native_runtime_evidence": {
+          "controller_artifact_digest": "sha256:6235a3e219ef8d26ca80a2ef7581ca55876772c977dc93a42b97c4decad24a78",
+          "image_digest": "sha256:5a12eac1a2dd3540a6ec29e42ef0dd5286c75ee07f68e497cb5f0df6e1311a52",
+          "native_auth_kind": "vllm_api_key_v1",
+          "observed_at": "2026-11-03T04:59:11.814893Z",
+          "template_digest": "sha256:6fc2fd825d253be1b798730a038fb80ec1833fb1d80862b0a11488e7950b5b51"
+        },
+        "observed_instance_state": "ready",
+        "observed_peak_memory": {
+          "device_memory_bytes": 0,
+          "host_memory_bytes": 0,
+          "unified_memory_bytes": 6988025856
+        },
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "stop_evidence": null,
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "updated_at": "2026-11-03T04:59:11.814931Z"
+      }
+    },
+    "stop-2-request.json": {
+      "sha256": "498a082c9c03a9553d70027d37c0b19e5d42d31a84efb16245757291e2b97dc6",
+      "byte_count": 755,
+      "mtime_ns": "1793681834435804683",
+      "document": {
+        "action": "stop",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "deadline_at": "2026-11-03T05:11:37.836822+00:00",
+        "fencing_token": 1,
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_generation": 2,
+        "instance_id": "snx-tts-pwqzc093",
+        "intent_id": "stop-snx-tts-g2",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          },
+          "steady": {
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0,
+            "unified_memory_bytes": 12884901888
+          }
+        },
+        "target_node_id": "node-snx-tts-pwqzc093"
+      }
+    },
+    "stop-2-response.json": {
+      "sha256": "61bfd66151535221634960d1b9fb6b9c6048fab4905ab3ee63e8cae4b08cc8e9",
+      "byte_count": 1137,
+      "mtime_ns": "1793682085643536870",
+      "document": {
+        "intent_id": "stop-snx-tts-g2",
+        "target_node_id": "node-snx-tts-pwqzc093",
+        "pool_id": "tts-batch",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "approved_template_id": "template-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "instance_id": "snx-tts-pwqzc093",
+        "instance_generation": 2,
+        "action": "stop",
+        "fencing_token": 1,
+        "intent_state": "succeeded",
+        "observed_instance_state": "stopped",
+        "reserved_memory": {
+          "architecture": "unified_memory",
+          "peak": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          },
+          "steady": {
+            "unified_memory_bytes": 12884901888,
+            "device_memory_bytes": 0,
+            "host_memory_bytes": 0
+          }
+        },
+        "stop_evidence": {
+          "process_or_container_exited": true,
+          "resources_released_confirmed": true,
+          "exit_code": 0,
+          "runtime_container_id": "179f7075eec5e3960b9c424eff511d75725f3a1ea2328b677edcbb16d7d97130",
+          "verified_at": "2026-11-03T05:01:25.638974Z"
+        },
+        "observed_peak_memory": null,
+        "error_code": null,
+        "created_at": "2026-11-03T05:01:15.001335Z",
+        "updated_at": "2026-11-03T05:01:25.640288Z"
+      }
+    },
+    "native-measure.json": {
+      "sha256": "c94fc52fdc690a17facc73b167b65d6c5e0089948c3a8f6de59904deded4df75",
+      "byte_count": 881,
+      "mtime_ns": "1793681667049126336",
+      "document": {
+        "keyless_status": 401,
+        "waves": [
+          {
+            "byte_count": 76844,
+            "channels": 1,
+            "duration_ms": 1600.0,
+            "elapsed_ms": 800,
+            "frames": 38400,
+            "http_status": 200,
+            "name": "warmup-1",
+            "pcm_bytes": 76800,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:95146ab8b20fc4f29f53c0fb66b462a799327699dba76d75c9d97475e328fbae"
+          },
+          {
+            "byte_count": 76844,
+            "channels": 1,
+            "duration_ms": 1600.0,
+            "elapsed_ms": 797,
+            "frames": 38400,
+            "http_status": 200,
+            "name": "warmup-2",
+            "pcm_bytes": 76800,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:8f94fd07299feef934fa697737853dd9876b1924fb8b6af51cb11b8cdb3fd3ce"
+          },
+          {
+            "byte_count": 169004,
+            "channels": 1,
+            "duration_ms": 3520.0,
+            "elapsed_ms": 1897,
+            "frames": 84480,
+            "http_status": 200,
+            "name": "english-short",
+            "pcm_bytes": 168960,
+            "sample_rate_hz": 24000,
+            "sample_width_bytes": 2,
+            "sha256": "sha256:8a4d224159c7af1c34ba0ff071c4af9c558dc2e28d4736ab334a4cb4479f3349"
+          }
+        ],
+        "wrong_generation_status": 401
+      }
+    },
+    "native-cancel.json": {
+      "sha256": "d7fc795bae3764850d01e2c879745ad4751f825287cb1a4e66cd94be56fb4301",
+      "byte_count": 505,
+      "mtime_ns": "1793681667272146544",
+      "document": {
+        "budget_release_inferred": false,
+        "cancel_epoch_ns": 1793681667271853138,
+        "cancel_monotonic_ns": 3723125389474988,
+        "elapsed_ms": 55,
+        "end_epoch_ns": 1793681667271991825,
+        "end_monotonic_ns": 3723125389613467,
+        "engine_stop_inferred": false,
+        "http_connection_cancel_requested": true,
+        "request_start_epoch_ns": 1793681667217317062,
+        "request_start_monotonic_ns": 3723125334938944,
+        "running_count": 1.0,
+        "running_elapsed_ms": 55,
+        "running_epoch_ns": 1793681667271850706,
+        "running_monotonic_ns": 3723125389472540,
+        "running_observed": true
+      }
+    },
+    "native-after-stop.json": {
+      "sha256": "ab5319af0babc5b833da8c337845ced75826738151f5fc28f016afcd9326ffe6",
+      "byte_count": 537,
+      "mtime_ns": "1793681678260477492",
+      "document": {
+        "budget_release_inferred": false,
+        "intent_state": "succeeded",
+        "memory_max": {
+          "sha256": "sha256:a630e4856aa63a81f6d753cdda664d7488fcf285b0091c48d498b0f430f9ecd1",
+          "value": 12884901888
+        },
+        "memory_peak": {
+          "sha256": "sha256:8638a14d46cd0b10e95de75b67b044b54ec7facd6fac0382c35dcfd1c6b49c7b",
+          "value": 6847787008
+        },
+        "original_stop_response_sha256": "sha256:820a426519932156c1a446b6d04b20926335ec73bf927fcab1c8863d039b9057",
+        "process_or_container_exited": true,
+        "resources_released_confirmed": true,
+        "running_enumeration_succeeded": true,
+        "target_not_running": true
+      }
+    },
+    "private/preflight-final.json": {
+      "sha256": "2545cabedb423c0464a7a7cc0fa6b099b8a13e5a96063497829e68de6d554fa1",
+      "byte_count": 2500,
+      "mtime_ns": "1793681534308635391",
+      "document": {
+        "verified_at_epoch": 1793681534.3060956,
+        "source_commit": "67f894331a8116dedbb402c2509b968e18f551d2",
+        "source_blobs_verified": 2002,
+        "sdk_commit": "ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291",
+        "sdk_sha_verified": true,
+        "openai_version": "3.39.0",
+        "httpx2_version": "2.16.0",
+        "available_ram_gib": 32.187530517578125,
+        "controller": {
+          "/healthz": 200,
+          "/readyz": 200
+        },
+        "shared_container_baseline": 18,
+        "gpu_started": false,
+        "helper_hashes": {
+          "publish_binding_operator.py": "6135bd3987b74fa4d19f46867659b96153533693b74877e907907441e9a3d3f9",
+          "native_to_prepare.py": "5b7048bd3d5976a42546fce55a526b58b48ec8b4d218cc919909c8410cce692e",
+          "binding_bundle.py": "f875fc4b66ec74c261734046c9b574b4fbcab520aea30a4d17e8b54a98b6a2f2",
+          "bootstrap.py": "a0e397cc8878986ef9a2ea1c477f043a44f130c1df735dda1ee3d2a69fc3a147",
+          "trusted_readiness.py": "2b3e10896bef79e8de5c3a99845153294a6bc5af1292516767f12296d0517fec",
+          "runtime_delivery.py": "9fb9b3c68fcfb57c2ccffb48dbe7d0b4b091a56a2d189ee19e11c2cf6d3a034d",
+          "assemble_profile.py": "1c2f6e6065398ed614c36a2c4eda671dc30df3401e7be7a23fe31563f644cad9",
+          "operator_dispatch.py": "0373906020299c1f07a2aad2ca2ae0cc7eb3d6b88d6d9a4ac2826ed73fdcbae9",
+          "runtime_plan.py": "ecc041ac02ebedbc1aaee98190ddde4f2d81e950f83db57399005996fcc3dbad",
+          "native_profile.py": "a795b3319ca402a238115e220e56569481dfda8d3725c2ae8d75bf7e2187c25c",
+          "controller_runtime.py": "f2e351c1e55a6dc5961d55d791f4571a16cc554a5051745df303309accf42a6e",
+          "public_phase.py": "cdebc67b8cd017367a611504f358c5eef8065b99e0a210cc3630b185f91c0bfb",
+          "prepare_profile_inputs.py": "b8d1fc8de861757e8095af354fbad445e1dce29f0c227c28a552dee1989e8cc9",
+          "sdk_association.py": "1e0302ba48b8e791501b8bc59b62171eb34c58af1698658ef9ef24e2ff1ccbbc",
+          "probe_inputs.py": "4f2884c4db2f74da77c1f6574c3cd12fb2c06b7ac293add485e4c17d2221ae2d",
+          "report_inputs.py": "785bb3a01397d91a31ab9cfb9735dddf9528764820af9882bce693164208875f",
+          "cleanup_window.py": "787946b577a9b2ffdb9f806ce629b8ba48cceda6af12f81e06e887b823b2e9c6",
+          "setup_isolated.py": "cd9647de29568082fd3c94c643b2af01d7e4759a527f569b2afd6d65336da694",
+          "window_driver.py": "0d42a3c755cc924d844d08d6848aefd3ff5e170a78cb358b250fad40dc11a661",
+          "gateway_runtime.py": "13bbc0d005e65fdc7b9c9c24a810dc9befc440924af97a672fd51ec44823878f",
+          "final_api.py": "1cb859f84eb21441a3bc58f3cc229f21ffd62a4394dcf3573bbee4bb6bcf2394",
+          "final_checks.py": "4ffdb63c54206404d58e36c75773337cde839a25251c52299750dee1eafb1d24",
+          "phase2_inputs.py": "e6a8bbb51192bd02fc52f357c01c4cbde10329c8f24086901eab7c0cabf95aa3"
+        }
+      }
+    },
+    "private/source-verification.json": {
+      "sha256": "c62985020fb21e43d0579a19896a91e9b13b8c598f1bd04771b8ee7aa54a0316",
+      "byte_count": 311,
+      "mtime_ns": "1793680218881241385",
+      "document": {
+        "commit": "67f894331a8116dedbb402c2509b968e18f551d2",
+        "all_blobs_match": true,
+        "files_verified": 2002,
+        "extra_operator_tool": {
+          "path": "scripts/dev-env/verify-file-tts-sdk.py",
+          "commit": "ca280e8dba49a9b42c1eb08dc1c837b1a2bcd291",
+          "sha256": "2d48e66613d43cde64e631f0f1d64874624a37324dae979b76b88fc1ad14c911"
+        }
+      }
+    },
+    "private/profile-identities.json": {
+      "sha256": "1ea94373bcf29683ef46b01a878b616d32fd57362dcaedb81745ff625a406499",
+      "byte_count": 579,
+      "mtime_ns": "1793681086606580841",
+      "document": {
+        "binding_id": "binding-snx-tts-pwqzc093",
+        "binding_revision_id": "mbrev-f95b578166554087a2f342cca43cd49a",
+        "config_digest": "sha256:8a23527f0217d20f4c5da23fd48c49b71d4ca2453dce96383d45aa760b76b849",
+        "gateway_id": "gateway-snx-tts-pwqzc093",
+        "instance_id": "snx-tts-pwqzc093",
+        "manifest_id": "manifest-snx-tts-pwqzc093",
+        "node_id": "node-snx-tts-pwqzc093",
+        "policy_revision_id": "policy-snx-tts-pwqzc093",
+        "stage_id": "stage-snx-tts-customvoice",
+        "topology_digest": "sha256:c46561d2a94de39352bbdd45c6a21042e14bdf98e83056998f9ff33470a50e57",
+        "voice_revision_id": "voice-revision-snx-vivian-20261103"
+      }
+    },
+    "private/installation.json": {
+      "sha256": "7d8e638fccfbce38b80b11acb83508efba60e7c701d2d90c56408e6573feea91",
+      "byte_count": 99,
+      "mtime_ns": "1793681025131631012",
+      "document": {
+        "database": "sn_live",
+        "installation_id": "88711a87-b389-4860-b6bd-eaeef26ac37d",
+        "schema": "sn_live"
+      }
+    },
+    "private/profile-projection.json": {
+      "sha256": "d866549db61f00f74cf0037da0e90342ed8f16360e21994a507741800a68febb",
+      "byte_count": 609,
+      "mtime_ns": "1793681780012668043",
+      "document": {
+        "original_derived_sha256": "ca7524fc2afb77197f864b1d66b96e770c054f898e899e316861fa4009b31419",
+        "projected_sha256": "92650b8d33a7acc0806146aa857c65e3db122457675a89caf8dc353d3b11ec55",
+        "lossless_decimal_paths": [
+          "root.scenarios.request-cancel-release.evidence.cancel.cancel_epoch_ns",
+          "root.scenarios.request-cancel-release.evidence.cancel.end_epoch_ns",
+          "root.scenarios.request-cancel-release.evidence.cancel.request_start_epoch_ns",
+          "root.scenarios.request-cancel-release.evidence.cancel.running_epoch_ns"
+        ],
+        "original_native_cancel_sha256": "d7fc795bae3764850d01e2c879745ad4751f825287cb1a4e66cd94be56fb4301"
+      }
+    },
+    "private/public-phase-readiness.json": {
+      "sha256": "951945e602e0f2e3cce8164b9633281767cd63cb975dec037c881e0867d426ff",
+      "byte_count": 126,
+      "mtime_ns": "1793681956429698527",
+      "document": {
+        "expires_at_us": 1793682016286411,
+        "instance_generation": 2,
+        "instance_id": "snx-tts-pwqzc093",
+        "verified_at_us": 1793681956286411
+      }
+    },
+    "private/sdk-association-before.json": {
+      "sha256": "1065ba53cc74c8e1c872fa4cbe596fc0642eba3f39cd1bf00d3c43d42b0a6b6d",
+      "byte_count": 553,
+      "mtime_ns": "1793681966731354070",
+      "document": {
+        "identity": {
+          "database": "sn_live",
+          "installation_id": "88711a87-b389-4860-b6bd-eaeef26ac37d",
+          "schema": "sn_live"
+        },
+        "snapshot": {
+          "attempts": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ],
+          "leases": [
+            {
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ],
+          "operations": [
+            {
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ],
+          "submits": [
+            {
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        }
+      }
+    },
+    "private/window-post-sdk-database.json": {
+      "sha256": "bca6c5af45c6525ec79793cbb55a6a813353ba537bd96e21c6ac65517e9fce64",
+      "byte_count": 767,
+      "mtime_ns": "1793682045771853218",
+      "document": {
+        "counts": [
+          {
+            "leases": 1,
+            "operations": 1,
+            "submits": 1
+          }
+        ],
+        "instances": [
+          {
+            "base_budget_kind": "steady",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-pwqzc093",
+            "instance_state": "ready",
+            "quarantined_slots": 0
+          }
+        ],
+        "intents": [
+          {
+            "intent_id": "prepare-snx-tts-g2",
+            "intent_state": "succeeded"
+          }
+        ],
+        "leases": [
+          {
+            "budget_released_at_us": 1793681966213304,
+            "cleanup_state": "complete",
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "lease_state": "released",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "version": 2
+          }
+        ],
+        "settlements": [
+          {
+            "abort_reason": null,
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "settled_at_us": 1793681966224114
+          }
+        ]
+      }
+    },
+    "private/window-release-core.json": {
+      "sha256": "038e67b69a40ae01cef651623bbea04fce23764e48867674aed8ecaa36434b25",
+      "byte_count": 988,
+      "mtime_ns": "1793682141165073125",
+      "document": {
+        "deliveries": [
+          {
+            "acknowledged_at_us": 1793681836342139,
+            "created_at_us": 1793681834431043,
+            "delivery_phase": "acknowledged",
+            "event_id": "runtime-event-ba2ff66e072998b9d1a45d6f69c81e30c06b25ae4e0a560da0ec2193bdeff5bc",
+            "submission_started_at_us": 1793681834830850
+          },
+          {
+            "acknowledged_at_us": 1793682087268759,
+            "created_at_us": 1793682074285955,
+            "delivery_phase": "acknowledged",
+            "event_id": "runtime-event-43180b8678ea1efd4b0f1101f15725601eefe60e0108d91f4cefcbdff1552fcf",
+            "submission_started_at_us": 1793682074673947
+          }
+        ],
+        "instances": [
+          {
+            "base_budget_kind": "released",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-pwqzc093",
+            "instance_state": "stopped",
+            "quarantined_slots": 0
+          }
+        ],
+        "pool": [
+          {
+            "fencing_token": 1,
+            "owner_expires_at_us": 1793683034421119,
+            "owner_state": "active",
+            "pool_id": "tts-batch",
+            "pool_state": "active",
+            "service_class": "batch"
+          }
+        ],
+        "quota": [
+          {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "policy_revision": "policy-snx-tts-pwqzc093",
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          }
+        ]
+      }
+    },
+    "private/window-facts-released.json": {
+      "sha256": "3f42529ec23ccd1937d91ad4820592be2a2499d0037fef80591b4bdad0a11d33",
+      "byte_count": 2385,
+      "mtime_ns": "1793682207816182533",
+      "document": {
+        "counts": {
+          "leases": 1,
+          "operations": 1,
+          "outbox": 3,
+          "submits": 1
+        },
+        "host": {
+          "held_cpu_decode_millicores": 0,
+          "held_device_memory_bytes": 0,
+          "held_host_memory_bytes": 0,
+          "held_host_pcm_buffer_bytes": 0,
+          "held_scratch_disk_bytes": 0,
+          "held_unified_physical_memory_bytes": 0,
+          "host_node_id": "node-snx-tts-pwqzc093",
+          "node_state": "active",
+          "quarantined_cpu_decode_millicores": 0,
+          "quarantined_device_memory_bytes": 0,
+          "quarantined_host_memory_bytes": 0,
+          "quarantined_host_pcm_buffer_bytes": 0,
+          "quarantined_scratch_disk_bytes": 0,
+          "quarantined_unified_physical_memory_bytes": 0,
+          "version": 6
+        },
+        "identity": {
+          "database": "sn_live",
+          "installation_id": "88711a87-b389-4860-b6bd-eaeef26ac37d",
+          "schema": "sn_live"
+        },
+        "instance": {
+          "base_budget_kind": "released",
+          "held_slots": 0,
+          "instance_generation": 2,
+          "instance_id": "snx-tts-pwqzc093",
+          "instance_state": "stopped",
+          "peak_cpu_decode_millicores": 3000,
+          "peak_device_memory_bytes": 0,
+          "peak_host_memory_bytes": 0,
+          "peak_host_pcm_buffer_bytes": 1048576,
+          "peak_scratch_disk_bytes": 0,
+          "peak_unified_physical_memory_bytes": 12884901888,
+          "per_slot_cpu_decode_millicores": 1000,
+          "per_slot_device_memory_bytes": 0,
+          "per_slot_host_memory_bytes": 0,
+          "per_slot_host_pcm_buffer_bytes": 480000,
+          "per_slot_scratch_disk_bytes": 0,
+          "per_slot_unified_physical_memory_bytes": 0,
+          "quarantined_slots": 0,
+          "steady_cpu_decode_millicores": 2000,
+          "steady_device_memory_bytes": 0,
+          "steady_host_memory_bytes": 0,
+          "steady_host_pcm_buffer_bytes": 1048576,
+          "steady_scratch_disk_bytes": 0,
+          "steady_unified_physical_memory_bytes": 12884901888,
+          "stopped_at_us": 1793682087661771,
+          "version": 6
+        },
+        "leases": [
+          {
+            "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "budget_released_at_us": 1793681966213304,
+            "cleanup_state": "complete",
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "lease_state": "released",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "reserved_slots": 1,
+            "stage_id": "stage-snx-tts-customvoice",
+            "version": 2
+          }
+        ],
+        "quota": {
+          "held_attempts": 0,
+          "max_attempts": 1,
+          "quarantined_attempts": 0,
+          "version": 3,
+          "workspace_id": "workspace-default"
+        },
+        "settlements": [
+          {
+            "abort_reason": null,
+            "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+            "settled_at_us": 1793681966224114,
+            "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+          }
+        ]
+      }
+    },
+    "private/window-original-lease-replay.json": {
+      "sha256": "4a686fb9b44abf0eaecdbc650c0f5677688f8a15ce7909c5edf8e93314f8ba86",
+      "byte_count": 4826,
+      "mtime_ns": "1793682207878525733",
+      "document": {
+        "after": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 3,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 0,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 0,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 0,
+            "host_node_id": "node-snx-tts-pwqzc093",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 6
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "88711a87-b389-4860-b6bd-eaeef26ac37d",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "released",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-pwqzc093",
+            "instance_state": "stopped",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": 1793682087661771,
+            "version": 6
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793681966213304,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793681966224114,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "before": {
+          "counts": {
+            "leases": 1,
+            "operations": 1,
+            "outbox": 3,
+            "submits": 1
+          },
+          "host": {
+            "held_cpu_decode_millicores": 0,
+            "held_device_memory_bytes": 0,
+            "held_host_memory_bytes": 0,
+            "held_host_pcm_buffer_bytes": 0,
+            "held_scratch_disk_bytes": 0,
+            "held_unified_physical_memory_bytes": 0,
+            "host_node_id": "node-snx-tts-pwqzc093",
+            "node_state": "active",
+            "quarantined_cpu_decode_millicores": 0,
+            "quarantined_device_memory_bytes": 0,
+            "quarantined_host_memory_bytes": 0,
+            "quarantined_host_pcm_buffer_bytes": 0,
+            "quarantined_scratch_disk_bytes": 0,
+            "quarantined_unified_physical_memory_bytes": 0,
+            "version": 6
+          },
+          "identity": {
+            "database": "sn_live",
+            "installation_id": "88711a87-b389-4860-b6bd-eaeef26ac37d",
+            "schema": "sn_live"
+          },
+          "instance": {
+            "base_budget_kind": "released",
+            "held_slots": 0,
+            "instance_generation": 2,
+            "instance_id": "snx-tts-pwqzc093",
+            "instance_state": "stopped",
+            "peak_cpu_decode_millicores": 3000,
+            "peak_device_memory_bytes": 0,
+            "peak_host_memory_bytes": 0,
+            "peak_host_pcm_buffer_bytes": 1048576,
+            "peak_scratch_disk_bytes": 0,
+            "peak_unified_physical_memory_bytes": 12884901888,
+            "per_slot_cpu_decode_millicores": 1000,
+            "per_slot_device_memory_bytes": 0,
+            "per_slot_host_memory_bytes": 0,
+            "per_slot_host_pcm_buffer_bytes": 480000,
+            "per_slot_scratch_disk_bytes": 0,
+            "per_slot_unified_physical_memory_bytes": 0,
+            "quarantined_slots": 0,
+            "steady_cpu_decode_millicores": 2000,
+            "steady_device_memory_bytes": 0,
+            "steady_host_memory_bytes": 0,
+            "steady_host_pcm_buffer_bytes": 1048576,
+            "steady_scratch_disk_bytes": 0,
+            "steady_unified_physical_memory_bytes": 12884901888,
+            "stopped_at_us": 1793682087661771,
+            "version": 6
+          },
+          "leases": [
+            {
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "budget_released_at_us": 1793681966213304,
+              "cleanup_state": "complete",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_state": "released",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "reserved_slots": 1,
+              "stage_id": "stage-snx-tts-customvoice",
+              "version": 2
+            }
+          ],
+          "quota": {
+            "held_attempts": 0,
+            "max_attempts": 1,
+            "quarantined_attempts": 0,
+            "version": 3,
+            "workspace_id": "workspace-default"
+          },
+          "settlements": [
+            {
+              "abort_reason": null,
+              "attempt_id": "attempt-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "lease_id": "lease-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "operation_id": "operation-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078",
+              "settled_at_us": 1793681966224114,
+              "submit_intent_id": "submit-00a319c8ec42b5eca34b1eba1dd289cc11464914ea485078"
+            }
+          ]
+        },
+        "lease_count": 1,
+        "outcome": "replayed"
+      }
+    },
+    "private/window-qualification-diagnostic.json": {
+      "sha256": "cb5d5c3b563686ba4f35f0e1b48dd5e5c46de261c476518002c4ed6bf3bd2642",
+      "byte_count": 462,
+      "mtime_ns": "1793682207825140026",
+      "document": {
+        "approvals": [
+          {
+            "approval_id": "approval-snx-vivian-20261103",
+            "capability_replay": "policy_or_resource_disabled",
+            "checked_at_us": 1793681964941736,
+            "expires_at_us": 1793748792000000,
+            "public_capabilities": {
+              "audio_formats": [
+                "wav"
+              ],
+              "languages": [
+                "en"
+              ],
+              "max_input_codepoints": 32,
+              "modes": [
+                "complete"
+              ],
+              "sample_rates_hz": [
+                24000
+              ]
+            },
+            "qualified_capabilities": {
+              "audio_formats": [
+                "wav"
+              ],
+              "languages": [
+                "en"
+              ],
+              "max_input_codepoints": 32,
+              "modes": [
+                "complete"
+              ],
+              "sample_rates_hz": [
+                24000
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "private/window-capability-replay.json": {
+      "sha256": "8e5ca1b17794b81663c53f77e43716a7bd49a8b18fbd134cdf292ad262f3c093",
+      "byte_count": 442,
+      "mtime_ns": "1793682291414921074",
+      "document": {
+        "instance_already_stopped": true,
+        "not_a_second_sdk_or_engine_request": true,
+        "public_max_input_codepoints": 32,
+        "pure_capability_replays": [
+          {
+            "input_codepoints": 48,
+            "input_sha256": "15e1db10d03424f68553fafee90abaf158f8f090913486addae5504d4ff7825a",
+            "result": "policy_or_resource_disabled"
+          },
+          {
+            "input_codepoints": 27,
+            "input_sha256": "222333000086bcb5c7a9a8e7894980e595ad27441f2442ad831c974a56480332",
+            "result": "passed"
+          }
+        ],
+        "qualified_max_input_codepoints": 32
+      }
+    },
+    "private/window-safe-diagnostics.json": {
+      "sha256": "da1f8b2a31ee2ffcf318f0d6d847ada5070fb5da390c5d18fa52f195e00a4edb",
+      "byte_count": 141,
+      "mtime_ns": "1793681967419598758",
+      "document": {
+        "matches": [
+          {
+            "pattern": 1,
+            "values": [
+              "operation-8717626114191921674e34f434a6f1e05913a44ce4250a85",
+              "rejected",
+              "policy_or_resource_disabled"
+            ]
+          }
+        ]
+      }
+    },
+    "private/window-status.json": {
+      "sha256": "56de1bd8e1515c34fa15fc5f3d663d7e059e764050d57d55ca23e83379976618",
+      "byte_count": 530,
+      "mtime_ns": "1793681967997071907",
+      "document": {
+        "steps": [
+          {
+            "step": "requests",
+            "started_at_epoch": 1793681547.600723,
+            "exit_code": 0,
+            "finished_at_epoch": 1793681547.6652303
+          },
+          {
+            "step": "native-to-prepare",
+            "started_at_epoch": 1793681547.6663232,
+            "exit_code": 1,
+            "finished_at_epoch": 1793681678.5589757
+          },
+          {
+            "step": "public",
+            "started_at_epoch": 1793681952.1125839,
+            "exit_code": 1,
+            "finished_at_epoch": 1793681967.418427
+          },
+          {
+            "step": "replay",
+            "started_at_epoch": 1793681967.4310684,
+            "exit_code": 2,
+            "finished_at_epoch": 1793681967.9968336
+          }
+        ],
+        "updated_at_epoch": 1793681967.9969943
+      }
+    },
+    "private/cleanup-runtime.json": {
+      "sha256": "852f68540770f3008b03f81aa4b92849d88defa686db99b3b3b43b178e280d2b",
+      "byte_count": 843,
+      "mtime_ns": "1793682294132111100",
+      "document": {
+        "cpu": [
+          {
+            "name": "snx-tts-pwqzc093-minio",
+            "outcome": "removed"
+          },
+          {
+            "name": "snx-tts-pwqzc093-pg",
+            "outcome": "removed"
+          }
+        ],
+        "elapsed_window_seconds": 746.2949981689453,
+        "finished_at_epoch": 1793682294.13182,
+        "gpu": [
+          {
+            "generation": 1,
+            "outcome": "absent"
+          },
+          {
+            "generation": 2,
+            "outcome": "absent"
+          }
+        ],
+        "network": "removed",
+        "outcome": "completed",
+        "physical_cleanup_only": true,
+        "processes": [
+          {
+            "kind": "controller",
+            "outcome": "exited",
+            "pid": 1506341
+          },
+          {
+            "kind": "prepare1",
+            "outcome": "exited",
+            "pid": 1524688
+          },
+          {
+            "kind": "gateway-serve2",
+            "outcome": "exited",
+            "pid": 1586307
+          },
+          {
+            "kind": "api-serve",
+            "outcome": "exited",
+            "pid": 1587066
+          },
+          {
+            "kind": "controller-child",
+            "outcome": "exited",
+            "pid": 1524739
+          },
+          {
+            "kind": "controller-child",
+            "outcome": "exited",
+            "pid": 1524740
+          }
+        ],
+        "shared_baseline_consistent": true,
+        "started_at_epoch": 1793682292.3544831
+      }
+    },
+    "sdk-evidence/result.json": {
+      "sha256": "e033e880589e0994eab2e6a1c4dede8a67e97512588cfe81b8013b49d7410227",
+      "byte_count": 139,
+      "mtime_ns": "1793681967174658190",
+      "document": {
+        "code": "backend_unavailable",
+        "kind": "api_status",
+        "outcome": "failed",
+        "request_id": "sdk-tts-e8eedad3ad9f42c4ae1b8b193096e257",
+        "status": 503
+      }
+    },
+    "sdk-evidence/started.json": {
+      "sha256": "9e3f587fa53f8de0dcafa15e8b30cbad640895f45529b10cf242fd4a1583e138",
+      "byte_count": 439,
+      "mtime_ns": "1793681967031859300",
+      "document": {
+        "binding_id": "binding-snx-tts-pwqzc093",
+        "client_reference": "sdk-tts-886902c493c74c98ac201c12a36b3846",
+        "identity_note": "correlation only; do not resend or assume execution identity",
+        "request_id": "sdk-tts-e8eedad3ad9f42c4ae1b8b193096e257",
+        "request_sha256": "sha256:a3933f912bcae56603dcf173a1bab0cc0a94808ede34d037dfcbd0027cc796ec",
+        "sdk_version": "3.39.0",
+        "voice_id": "voice-snx-vivian",
+        "voice_revision": "1",
+        "workspace_id": "workspace-default"
+      }
+    }
+  },
+  "log_digests_only": {
+    "engine-g2.log": {
+      "byte_count": 262144,
+      "sha256": "ffda32664ba9d7fd87be81d11d4ed100b23304bf5436878abd6365530992ee1a"
+    },
+    "engine-g1.log": {
+      "byte_count": 262144,
+      "sha256": "d4150b3777fc790189467171002aa2bb407722c5f6548ccd7acdce1c788e130a"
+    },
+    "manual-stop-post.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "window-requests.log": {
+      "byte_count": 46,
+      "sha256": "48ead58be55584165d3f00b721506b60630494f279f47c56668243fe945d26d9"
+    },
+    "window-native-to-prepare.log": {
+      "byte_count": 356,
+      "sha256": "7a367c14902dc5be6c7b1d247fb2ce2e12ff57500570c5a5d9815ef752d47c87"
+    },
+    "public-phase-api-serve.log": {
+      "byte_count": 391,
+      "sha256": "e5a61ae583164b130cbbafcdfd20a761b38e89655e08b3b8aeae8ad53b1cbcaf"
+    },
+    "native-stage-gateway-prepare1.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "resume-runtime-create.log": {
+      "byte_count": 86,
+      "sha256": "504524a4afb1213c72d4a19966c1dedd2bcd9742d7765a02dd1d442685f88bff"
+    },
+    "native-stage-assemble.log": {
+      "byte_count": 136,
+      "sha256": "4044a444d4503ff6f1d1aae244c23328fb98c4cd3ed0a5149284b4d725d40e8d"
+    },
+    "resume-binding-publish.log": {
+      "byte_count": 53,
+      "sha256": "a1cd8d77f1d7bdd6259046ba332c2ed19645d9e44fc0ab673a9d464a8b88f8cd"
+    },
+    "manual-stop-observe.log": {
+      "byte_count": 25,
+      "sha256": "a6202aa597ff4cba4790618bd116edcdacb37ada84f7966aff396b862404340f"
+    },
+    "public-phase-gateway-prepare2.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "public-phase-sdk.log": {
+      "byte_count": 13,
+      "sha256": "3444ae1358d09e3562179b826067adfb4dabcc6dea6a93dcede0f72be586be74"
+    },
+    "model-verification.log": {
+      "byte_count": 3350,
+      "sha256": "000cecc5176cc76452e3dcd505aaf69bd17f4ff0c614a855fc8e1e0c49810a53"
+    },
+    "window-replay.log": {
+      "byte_count": 88,
+      "sha256": "8901b07558bd6f5455f9c6817521f4fb75acc9fa80be343309813c0e703c73ab"
+    },
+    "public-phase-probe-input.log": {
+      "byte_count": 218,
+      "sha256": "ffca7c37f623d02bd38c2ef6dd28684b06c9c1b4ed1d443cda98ecbdc49a7a9d"
+    },
+    "controller-serve.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "resume-bundle.log": {
+      "byte_count": 317,
+      "sha256": "39d3afb5e8a54e5609272857e2e2104ae0cf6ef9c3d18f8f644459ccb8b6f3c9"
+    },
+    "resume-runtime-deliver.log": {
+      "byte_count": 25,
+      "sha256": "a6202aa597ff4cba4790618bd116edcdacb37ada84f7966aff396b862404340f"
+    },
+    "manual-stop-ack.log": {
+      "byte_count": 25,
+      "sha256": "a6202aa597ff4cba4790618bd116edcdacb37ada84f7966aff396b862404340f"
+    },
+    "public-phase-qualify.log": {
+      "byte_count": 206,
+      "sha256": "b5aa192f9e4aa50c94b9062062c5f2b03ab1e7597bd1c97b72b3fd09c785444d"
+    },
+    "sdk-install.log": {
+      "byte_count": 275,
+      "sha256": "dbba8bf0bd3a7bcf141b75e5c20d55935e15006a8107cd2c8098f593bdf12c5d"
+    },
+    "native-stage-cancel.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "provision.log": {
+      "byte_count": 90,
+      "sha256": "a5aec7db367113bf5bc3b9d653811f4f9172ce459db79e3bba39aa356c60c176"
+    },
+    "sdk-wheels-install.log": {
+      "byte_count": 1053,
+      "sha256": "2d9be8ad42014029fd75d7a14913c9182d1b73f20ea81f1842f224b79967becc"
+    },
+    "public-phase-publish-voice.log": {
+      "byte_count": 71,
+      "sha256": "e1f942a88dda295e803ddb0becf0929e3e80e9e4029a251dfdcc037acecfbc59"
+    },
+    "native-stage-measure.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "resume-phase2-recipe.log": {
+      "byte_count": 70,
+      "sha256": "5bace341facc10712d1bdf65a0dc3f7ca199934759d45bced430e731c0d0642d"
+    },
+    "provision-url-fixed.log": {
+      "byte_count": 124,
+      "sha256": "4416c207f6391f20c009e3bbc506d6d72e5e8494a9bc25afbc995797fd6b4388"
+    },
+    "native-stage-stop1.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "uv-offline-sync.log": {
+      "byte_count": 406,
+      "sha256": "d1cff3a47cdf971dfde881770ee6828d75e697d72ca841fc211dda7fd16e3564"
+    },
+    "public-phase-gateway-evidence2.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manual-stop-create.log": {
+      "byte_count": 25,
+      "sha256": "a6202aa597ff4cba4790618bd116edcdacb37ada84f7966aff396b862404340f"
+    },
+    "uv-runtime-sync.log": {
+      "byte_count": 2863,
+      "sha256": "fdae444776b1821deca959ce51a5c4bbbf1650333354fbd8832231a7be2cd41c"
+    },
+    "native-stage-after-stop.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "provision-fixed.log": {
+      "byte_count": 90,
+      "sha256": "a5aec7db367113bf5bc3b9d653811f4f9172ce459db79e3bba39aa356c60c176"
+    },
+    "manual-stop-start.log": {
+      "byte_count": 23,
+      "sha256": "f56d08cc73724c80bc1e8c11c613027320ba1eb811bf53b0a03800a565d1e919"
+    },
+    "native-stage-bundle.log": {
+      "byte_count": 58,
+      "sha256": "1f36a82bc56f3f545cf0c00ad0e6401e8c6265a9bfa41f9d098c4272e8b6e4a0"
+    },
+    "public-phase-phase2-probe.log": {
+      "byte_count": 70,
+      "sha256": "5bace341facc10712d1bdf65a0dc3f7ca199934759d45bced430e731c0d0642d"
+    },
+    "public-phase-readiness.log": {
+      "byte_count": 49,
+      "sha256": "4d6049889b34de3b7edbe35dff4702a9d7cbabbc0d6eb494129eecefebae82e4"
+    },
+    "source-draft.log": {
+      "byte_count": 139,
+      "sha256": "104549de0ffc3942964d42b88ef052aeaeb90a960cd728b89925c5758649c1e5"
+    },
+    "window-prepare1.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "public-phase-gateway-serve2.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "window-public.log": {
+      "byte_count": 74,
+      "sha256": "67797ff1f22a1ca6a94880f7b6926458fc373769b4ea8510d45b33e2fcad543c"
+    },
+    "uv-sync.log": {
+      "byte_count": 1662,
+      "sha256": "13fafe375368a0ec6c1e881ae275a798af37d8d9104caf7462ffba2747520a4e"
+    },
+    "resume-runtime-create-fixed.log": {
+      "byte_count": 71,
+      "sha256": "88b6e4bd2bcbb270d3e438206c1bd07502a13c5c66ae1067e4146f2f5af49a64"
+    },
+    "prepare_profile_inputs.py.setup.log": {
+      "byte_count": 195,
+      "sha256": "6c4f96ebdfacce5af8a97222577e0ff0e8537ced0aea0e3c05b72efe5a96e276"
+    },
+    "resume-binding-observe.log": {
+      "byte_count": 26,
+      "sha256": "8a4480477d73f6936e68d1a763df09ea09abcbd02f1d7e3268985405bf857a9f"
+    },
+    "controller_runtime.py.setup.log": {
+      "byte_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "public-phase-association-before.log": {
+      "byte_count": 37,
+      "sha256": "5acb80a5c95e9bc6994f5887cbbd1535626e01d5d9f779a05de884120ff97270"
+    }
+  },
+  "operator_helper_hashes": {
+    "publish_binding_operator.py": "6135bd3987b74fa4d19f46867659b96153533693b74877e907907441e9a3d3f9",
+    "native_to_prepare.py": "5b7048bd3d5976a42546fce55a526b58b48ec8b4d218cc919909c8410cce692e",
+    "binding_bundle.py": "f875fc4b66ec74c261734046c9b574b4fbcab520aea30a4d17e8b54a98b6a2f2",
+    "bootstrap.py": "a0e397cc8878986ef9a2ea1c477f043a44f130c1df735dda1ee3d2a69fc3a147",
+    "trusted_readiness.py": "2b3e10896bef79e8de5c3a99845153294a6bc5af1292516767f12296d0517fec",
+    "runtime_delivery.py": "9fb9b3c68fcfb57c2ccffb48dbe7d0b4b091a56a2d189ee19e11c2cf6d3a034d",
+    "assemble_profile.py": "1c2f6e6065398ed614c36a2c4eda671dc30df3401e7be7a23fe31563f644cad9",
+    "operator_dispatch.py": "0373906020299c1f07a2aad2ca2ae0cc7eb3d6b88d6d9a4ac2826ed73fdcbae9",
+    "runtime_plan.py": "3114b5f33ed9b74a96105cd59205b7ee4cd902b22f54272f709838130a068c12",
+    "native_profile.py": "a795b3319ca402a238115e220e56569481dfda8d3725c2ae8d75bf7e2187c25c",
+    "controller_runtime.py": "f2e351c1e55a6dc5961d55d791f4571a16cc554a5051745df303309accf42a6e",
+    "public_phase.py": "cdebc67b8cd017367a611504f358c5eef8065b99e0a210cc3630b185f91c0bfb",
+    "prepare_profile_inputs.py": "b8d1fc8de861757e8095af354fbad445e1dce29f0c227c28a552dee1989e8cc9",
+    "sdk_association.py": "1e0302ba48b8e791501b8bc59b62171eb34c58af1698658ef9ef24e2ff1ccbbc",
+    "probe_inputs.py": "4f2884c4db2f74da77c1f6574c3cd12fb2c06b7ac293add485e4c17d2221ae2d",
+    "report_inputs.py": "785bb3a01397d91a31ab9cfb9735dddf9528764820af9882bce693164208875f",
+    "cleanup_window.py": "787946b577a9b2ffdb9f806ce629b8ba48cceda6af12f81e06e887b823b2e9c6",
+    "setup_isolated.py": "cd9647de29568082fd3c94c643b2af01d7e4759a527f569b2afd6d65336da694",
+    "window_driver.py": "8bee6246dea7a7556e26faee940488fad8c9ce972a2ce408384f04a7beae5757",
+    "gateway_runtime.py": "13bbc0d005e65fdc7b9c9c24a810dc9befc440924af97a672fd51ec44823878f",
+    "final_api.py": "1cb859f84eb21441a3bc58f3cc229f21ffd62a4394dcf3573bbee4bb6bcf2394",
+    "final_checks.py": "2f5dc8f7d987ea71454cebd26a294123aef7c0ad8979586486ee4f572e44a7a5",
+    "phase2_inputs.py": "e6a8bbb51192bd02fc52f357c01c4cbde10329c8f24086901eab7c0cabf95aa3"
+  },
+  "operator_limitations": [
+    "Native profiles and probe/publication do not prove SDK success.",
+    "Initial helper recovery needed lossless epoch-nanosecond projection and runtime-context key correction; original native measurements unchanged.",
+    "Read-only audit used task DB owner with READ ONLY REPEATABLE READ, fixed installation and statement timeout; no production grants expanded.",
+    "Replay observer initially lacked installation SELECT under settlement identity; observer moved to read-only audit identity, actual lease replay retained original settlement role.",
+    "No second SDK request and no negative SDK requests in this window."
+  ],
+  "final_cleanup": {
+    "remote_root_removed": true,
+    "owned_processes": 0,
+    "owned_containers": 0,
+    "owned_networks": 0,
+    "shared_baseline_containers": 18,
+    "shared_baseline_consistent": true,
+    "finished_at_epoch": 1793682440.8971255,
+    "elapsed_window_seconds": 893.0603036880493,
+    "maximum_seconds": 1200
+  }
+}

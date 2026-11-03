@@ -27,7 +27,7 @@ import httpx2
 import openai
 
 MAX_BYTES = 1048576
-TEXT = "Hello, this is a short voice qualification test."
+TEXT = "A short English voice test."
 IDENTIFIER = re.compile(r"[a-z0-9][a-z0-9._:-]{1,126}[a-z0-9]\Z")
 ERROR_CODES = frozenset(
     {

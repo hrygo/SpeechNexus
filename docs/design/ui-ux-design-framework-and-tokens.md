@@ -400,7 +400,7 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
 
 ## 8. CI 自动化门禁与编码规范拦截能力 (CI Automated Guardrails)
 
-为了防止未受控样式、硬编码色彩及违反产品边界的代码进入主干，SpeechNexus 使用 `scripts/dev-env/validate-design-tokens.mjs` 进行静态检查。本地 `pnpm lint` 包含该检查；GitHub Actions 的 Web job 在变更路由选择 `full`、`web` 或 `no-db` 时执行，其他模式不能据此视为已运行该 job。
+为了防止未受控样式、硬编码色彩及违反产品边界的代码进入主干，SpeechNexus 使用 `scripts/dev-env/validate-design-tokens.mjs` 进行静态检查。本地 `pnpm lint` 包含该检查。GitHub Actions 的 `changes` 作业在路由前独立运行 Token 回归与静态检查，文档路由也适用；Web job 仅在路由选择 `full`、`web` 或 `no-db` 时通过 `pnpm lint` 再次执行检查，文档路由不代表整个 Web job 已运行。
 
 ### 8.1 自动化拦截的六大规则矩阵
 

@@ -191,9 +191,9 @@
 | `docs/plans/2026-10-24-team-c-c01-events-handoff.md` | 历史保留 | 全文阅读，修正交接状态并保留原时点验证；未重跑历史验证 |
 | `docs/plans/2026-10-24-team-c-c01-events-plan.md` | 历史保留 | 全文阅读，与固定基线交接配对的原实施计划；未重跑验证 |
 | `docs/plans/2026-10-24-team-c-c01-recovery-handoff.md` | 历史保留 | 全文阅读，修正交接状态并保留原时点验证；未重跑历史验证 |
-| `docs/plans/2026-10-24-team-c-c01-recovery-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-c01-task-center-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
-| `docs/plans/2026-10-24-team-c-c01-task-center-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
+| `docs/plans/2026-10-24-team-c-c01-recovery-plan.md` | 历史保留 | 全文阅读，配对固定基线交接的原实施计划；未重跑验证 |
+| `docs/plans/2026-10-24-team-c-c01-task-center-handoff.md` | 历史保留 | 全文阅读，修正交接状态并保留原时点验证；未重跑历史验证 |
+| `docs/plans/2026-10-24-team-c-c01-task-center-plan.md` | 历史保留 | 全文阅读，修正计划状态并保留原实施记录；未重跑历史验证 |
 | `docs/plans/2026-10-24-team-c-c02-asset-reconcile-handoff.md` | 部分核对 | 全文阅读并标明历史时点；历史测试及后续实现未逐项复验 |
 | `docs/plans/2026-10-24-team-c-c02-asset-reconcile-plan.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-team-c-c02-download-contract-handoff.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

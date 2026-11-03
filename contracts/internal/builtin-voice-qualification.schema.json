@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speechnexus.internal/contracts/internal/builtin-voice-qualification.schema.json",
+  "title": "BuiltinVoiceQualificationAuthorization",
+  "description": "Private, single-use authorization for one bounded diagnostic execution. This is not voice publication or runtime qualification; the independent result producer must verify physical evidence before granting qualification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "purpose",
+    "authorization_id",
+    "source_approval_id",
+    "voice_id",
+    "voice_revision",
+    "voice_revision_id",
+    "native_speaker_id",
+    "binding_id",
+    "binding_revision_id",
+    "manifest_id",
+    "policy_revision_id",
+    "gateway_policy_digest",
+    "host_node_id",
+    "gateway_id",
+    "instance_id",
+    "instance_generation",
+    "operation_id",
+    "attempt_id",
+    "command_digest",
+    "expires_at_us",
+    "manifest_digest",
+    "report_id",
+    "report_digest",
+    "model_artifact_digest",
+    "image_digest",
+    "template_id",
+    "template_config_digest",
+    "template_digest",
+    "controller_artifact_digest",
+    "controller_revision",
+    "native_authority",
+    "gateway_request_digest",
+    "admission_request_digest",
+    "business_request_digest",
+    "database",
+    "schema",
+    "installation_id"
+  ],
+  "properties": {
+    "purpose": {
+      "const": "builtin_voice_qualification"
+    },
+    "authorization_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "source_approval_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "voice_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "voice_revision": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Revision"
+    },
+    "voice_revision_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "native_speaker_id": {
+      "const": "Vivian"
+    },
+    "binding_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "binding_revision_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "manifest_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "policy_revision_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "gateway_policy_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "host_node_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "gateway_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "instance_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "instance_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "operation_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "attempt_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "command_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "expires_at_us": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "UTC Unix microseconds; new admission must occur before this time."
+    },
+    "manifest_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "report_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "report_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "model_artifact_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "image_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "template_id": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "template_config_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "template_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "controller_artifact_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "controller_revision": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Identifier"
+    },
+    "native_authority": {
+      "const": true
+    },
+    "gateway_request_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "admission_request_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "business_request_digest": {
+      "$ref": "../shared/identifiers.schema.json#/$defs/Sha256Digest"
+    },
+    "database": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "installation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  }
+}

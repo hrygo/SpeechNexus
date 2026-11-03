@@ -8,6 +8,7 @@ export type Contracts = Pick<
   components["schemas"],
   | "RuntimeInstanceIntentRequest"
   | "RuntimeInstanceIntentResponse"
+  | "RuntimeQualificationObservationResponse"
   | "NodeReconcileRequest"
   | "RuntimeControlErrorResponse"
 >;

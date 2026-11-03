@@ -1,5 +1,7 @@
 # Runtime 意图存储与未观察快照
 
+原始 READY observation 可选携带 `native_runtime_evidence`。控制器仅在认证非 `none`，且同一容器观察通过镜像、命令、身份标签和原生认证配置检查时产生；未携带时不能据此授予原生运行资格。证据中的 `template_digest` 是 `speechnexus-template-v1` 规范化领域模板的摘要；`controller_artifact_digest` 是 `speechnexus-controller-python-v1` 清单的摘要，清单按包内相对路径排序，只包含 `.py` 路径及其文件 SHA-256，排除缓存和配置，拒绝符号链接。摘要表示观察时磁盘上的 Python 包源码，并非完整运行镜像、已加载字节码、第三方依赖或模型权重的证明；使用它需要受信、不可变的控制器部署。实例、代次、配置和时间由同一持久观察绑定，旧观察无此字段仍按原运行协议处理。
+
 属于 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)。本单元提供
 `0005_runtime_intents`、最小列授权、协调快照契约，以及独立的 PG
 `create_runtime_intent` / `observe_runtime` / `query_outcome(runtime_intent)` 事务端口。

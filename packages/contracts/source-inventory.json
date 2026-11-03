@@ -19,8 +19,12 @@
     "sha256": "e44787aa83a7f24b3c9818b2fde4f83d29c41db41f5b92b343e6a283da5a3a71",
     "version": "1.0.0"
   },
+  "internal/builtin-voice-qualification.schema.json": {
+    "sha256": "2452a7e39e9309c3bdbf7d21d79488879e3cfc7cbe00a6e580b8d8ddae05b675",
+    "version": null
+  },
   "internal/coordination-transactions.schema.json": {
-    "sha256": "eff818c1c33c4e43704eb0cb7f30aeb3c969d461919df585ab1f061ad83e9753",
+    "sha256": "4bbc3b73ff5a6a387ea2d5c3baeddf66ec3fd68bd40d751359aa8ddef871b94e",
     "version": null
   },
   "internal/execution-command.schema.json": {
@@ -28,7 +32,7 @@
     "version": null
   },
   "internal/execution-control.openapi.yaml": {
-    "sha256": "e76bb1aa8c0819c5abe9f55e5cc36d09bf3118c45a3b721becce4354a1cdf316",
+    "sha256": "ec309d637f1e8afe8d047f2eb99c1480fb1afc3b5f8e2591bd2f780883ce14c0",
     "version": "0.4.0.dev0"
   },
   "internal/execution-stream.schema.json": {
@@ -40,7 +44,7 @@
     "version": "1.0.0"
   },
   "internal/runtime-control.openapi.yaml": {
-    "sha256": "dfe00b58de7fbe8a219f5ea8e5145e03c1541cc9f9e42b22ebbae8efb642be97",
+    "sha256": "e09841a43fc26611f2e945e8089ef35b43715b829680c466d80c182cf5144f9f",
     "version": "0.1.0.dev1"
   },
   "internal/zero-dispatch.schema.json": {

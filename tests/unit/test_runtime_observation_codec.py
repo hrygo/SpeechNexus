@@ -71,6 +71,32 @@ def test_raw_response_is_complete_and_decimal_time_precision_survives() -> None:
     assert decode_observation(prepared.document) == prepared
 
 
+def test_native_evidence_survives_original_observation_round_trip() -> None:
+    wire = _wire()
+    wire["native_runtime_evidence"] = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": "2026-10-23T12:00:00.500000Z",
+    }
+    prepared = prepare_observation(wire)
+    assert prepared.observation.native_runtime_evidence is not None
+    assert decode_observation(prepared.document) == prepared
+    assert (
+        json.loads(prepared.document)["native_runtime_evidence"] == wire["native_runtime_evidence"]
+    )
+    invalid_state = copy.deepcopy(wire)
+    invalid_state["intent_state"] = "pending"
+    invalid_state["observed_instance_state"] = "warming_up"
+    with pytest.raises(ValueError):
+        prepare_observation(invalid_state)
+    invalid = copy.deepcopy(wire)
+    invalid["native_runtime_evidence"]["observed_at"] = "2026-10-23T12:00:02Z"
+    with pytest.raises(ValueError):
+        prepare_observation(invalid)
+
+
 def test_post_replay_flag_and_optional_nulls_do_not_change_runtime_facts() -> None:
     first = prepare_observation(_wire())
     second = prepare_observation(
@@ -255,3 +281,19 @@ def test_forged_fact_document_pair_is_rejected_before_acquiring_a_connection() -
     with pytest.raises(ValueError, match="do not match"):
         PostgresRuntimeTransactions(cast(SpeechPool, pool)).observe_runtime(forged)
     assert pool.calls == 0
+
+
+def test_boundary_keeps_native_in_original_but_projects_legacy_result() -> None:
+    port = ObservationPort()
+    request = _request()
+    request["observation"]["native_runtime_evidence"] = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": "2026-10-23T12:00:00.500000Z",
+    }
+    result = _boundary(port).observe_runtime(request, readiness=READINESS)
+    assert "native_runtime_evidence" not in result["value"]["runtime"]
+    stored = json.loads(port.observations[0].original_document)
+    assert stored["native_runtime_evidence"] == request["observation"]["native_runtime_evidence"]

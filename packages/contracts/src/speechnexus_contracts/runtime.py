@@ -19,6 +19,12 @@ def parse(
 
 
 @overload
+def parse(
+    name: Literal["RuntimeQualificationObservationResponse"], value: Any
+) -> models.RuntimeQualificationObservationResponse: ...
+
+
+@overload
 def parse(name: Literal["NodeReconcileRequest"], value: Any) -> models.NodeReconcileRequest: ...
 
 

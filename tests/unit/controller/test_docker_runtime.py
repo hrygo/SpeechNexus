@@ -75,6 +75,7 @@ def test_prepare_creates_one_container_for_the_generation() -> None:
     runtime = _runtime(engine)
     observation = runtime.prepare(build_request(), build_template())
     assert observation.observed_instance_state is ObservedInstanceState.READY
+    assert observation.native_runtime_evidence is None
     assert len(engine.created) == 1
 
 

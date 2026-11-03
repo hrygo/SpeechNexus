@@ -28,6 +28,7 @@ from speechnexus_node_controller.interfaces.http.schemas import (
     RuntimeControlErrorResponse,
     RuntimeInstanceIntentRequestPayload,
     RuntimeInstanceIntentResponse,
+    RuntimeQualificationObservationResponse,
 )
 from speechnexus_node_controller.interfaces.http.security import ComponentCredential
 
@@ -66,6 +67,7 @@ def create_runtime_control_router(
         operation_id="submitRuntimeInstanceIntent",
         summary="Submit an approved instance prepare or stop intent to a target host node",
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         dependencies=[Depends(credential)],
         responses={
             200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
@@ -95,6 +97,7 @@ def create_runtime_control_router(
         operation_id="getRuntimeInstanceIntent",
         summary=("Query observed container/process lifecycle state and verified stop evidence"),
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         response_model_exclude={"idempotent_replay"},
         dependencies=[Depends(credential)],
         responses={
@@ -116,11 +119,39 @@ def create_runtime_control_router(
         return RuntimeInstanceIntentResponse.model_validate(intent_response_payload(intent))
 
     @router.get(
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation",
+        operation_id="getRuntimeQualificationObservation",
+        summary="Read the same recorded runtime observation with private native evidence",
+        response_model=RuntimeQualificationObservationResponse,
+        response_model_exclude_unset=True,
+        response_model_exclude={"idempotent_replay"},
+        dependencies=[Depends(credential)],
+        responses={
+            200: {"headers": _REQUEST_ID_RESPONSE_HEADER},
+            401: _error_response("The component credential is missing or invalid."),
+            404: _error_response("No recorded runtime intent exists."),
+            409: _error_response("The target node does not match this controller."),
+            422: _error_response("The identity is invalid."),
+        },
+    )
+    async def get_runtime_qualification_observation(
+        node_id: str, intent_id: str
+    ) -> RuntimeQualificationObservationResponse:
+        require_own_node(node_id)
+        intent = await run_in_threadpool(service.get_intent, intent_id)
+        if intent is None:
+            raise RuntimeIntentNotFoundError("No recorded runtime intent exists")
+        return RuntimeQualificationObservationResponse.model_validate(
+            intent_response_payload(intent, include_native=True)
+        )
+
+    @router.get(
         "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/"
         "{instance_generation}/verified-stop",
         operation_id="getVerifiedInstanceStop",
         summary="Query a checkpoint-backed stop fact for one instance generation",
         response_model=RuntimeInstanceIntentResponse,
+        response_model_exclude_unset=True,
         response_model_exclude={"idempotent_replay"},
         dependencies=[Depends(credential)],
         responses={

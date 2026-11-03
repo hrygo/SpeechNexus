@@ -5,11 +5,15 @@ import bundle from "./speechnexus_contracts/runtime-http.schema.json" with { typ
 import type { paths } from "./runtime.generated";
 export { ContractValidationError } from "./errors.mjs";
 export type HttpOperation =
-  "submitRuntimeInstanceIntent" | "getRuntimeInstanceIntent" | "getVerifiedInstanceStop";
+  | "submitRuntimeInstanceIntent"
+  | "getRuntimeInstanceIntent"
+  | "getRuntimeQualificationObservation"
+  | "getVerifiedInstanceStop";
 type HttpPaths = Pick<
   paths,
   | "/internal/v1/nodes/{node_id}/instance-intents"
   | "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}"
+  | "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation"
   | "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/{instance_generation}/verified-stop"
 >;
 const validator = createHttpValidator(bundle);

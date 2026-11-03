@@ -78,5 +78,11 @@ def parse(
 ) -> models.ExecutionAudioStagingResultResponse: ...
 
 
+@overload
+def parse(
+    name: Literal["TtsConfigurationEvidence"], value: Any
+) -> models.TtsConfigurationEvidence: ...
+
+
 def parse(name: str, value: Any) -> Any:
     return validate_profile("execution", name, value)

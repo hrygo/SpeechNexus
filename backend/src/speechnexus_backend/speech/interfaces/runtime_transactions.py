@@ -116,7 +116,13 @@ class RuntimeTransactionBoundary:
             else:
                 wire["value"] = {
                     "kind": "runtime",
-                    "runtime": self._observation(fact.observation_document, fact.request),
+                    "runtime": {
+                        k: v
+                        for k, v in self._observation(
+                            fact.observation_document, fact.request
+                        ).items()
+                        if k != "native_runtime_evidence"
+                    },
                 }
         if result.error_code is not None:
             wire["error_code"] = result.error_code

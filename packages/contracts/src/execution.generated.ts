@@ -3,6 +3,29 @@
  * Do not make direct changes to the file.
  */
 export interface paths {
+  "/internal/v1/tts-configuration-evidence": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read the loaded TTS configuration snapshot from the running gateway
+     * @description The observed_at time is when the live configuration was read. This snapshot
+     *     does not assert qualification, engine or GPU health. A gateway without an
+     *     open configured file TTS worker returns 503. Older gateways may return 404;
+     *     consumers must treat either response as unavailable evidence.
+     */
+    get: operations["getTtsConfigurationEvidence"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/executions/submit": {
     parameters: {
       query?: never;
@@ -153,6 +176,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    TtsConfigurationEvidence: {
+      gateway_policy_digest: components["schemas"]["Sha256Digest"];
+      policy_revision_id: string;
+      voice_id: components["schemas"]["Identifier"];
+      voice_revision: components["schemas"]["Revision"];
+      voice_revision_id: components["schemas"]["Identifier"];
+      native_speaker_id: string;
+      binding_revision_id: components["schemas"]["Identifier"];
+      node_id: components["schemas"]["Identifier"];
+      gateway_id: components["schemas"]["Identifier"];
+      instance_id: components["schemas"]["Identifier"];
+      instance_generation: number;
+      /** Format: date-time */
+      observed_at: string;
+    };
     /** @description Opaque stable resource identifier. Prefixes are descriptive, not authorization claims. */
     Identifier: string;
     Sha256Digest: string;
@@ -834,6 +872,31 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getTtsConfigurationEvidence: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Loaded configuration, bound to this gateway and instance. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TtsConfigurationEvidence"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      503: components["responses"]["ControlUnavailable"];
+    };
+  };
   submitExecution: {
     parameters: {
       query?: never;

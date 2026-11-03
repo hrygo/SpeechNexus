@@ -143,7 +143,7 @@ async def test_native_tls_warming_ready_and_stop_preserve_the_single_budget_auth
             assert stopped_fact.observation.stop_evidence is not None
             assert observe(runtime, stopped_fact).outcome == "committed"
             assert held(runtime) == HOST.held.values
-        assert node.methods == ["POST", "GET", "GET", "GET", "GET", "POST"]
+        assert node.methods == ["POST", "GET", "GET", "GET", "GET", "GET", "POST"]
         assert len(node.runtime.prepared) == len(node.runtime.stopped) == 1
 
 
@@ -445,12 +445,23 @@ async def test_real_unanswered_post_keeps_peak_then_queries_the_same_persistent_
             async with HttpRuntimeController(
                 node.endpoint, timeout_seconds=2, ssl_context=node.tls.client_context()
             ) as recovered:
+                paths: list[str] = []
+
+                async def record_path(request: httpx.Request) -> None:
+                    paths.append(request.url.path)
+
+                recovered._client.event_hooks["request"].append(record_path)
                 result = await recovered.query(REQUEST)
+                base = (
+                    f"/internal/v1/nodes/{REQUEST.binding.target_node_id}/instance-intents/"
+                    f"{REQUEST.intent_id}"
+                )
+                assert paths == [base, base + "/qualification-observation"]
                 assert result.observation.intent_state == "succeeded"
                 assert observe(runtime, result, qualified=True).outcome == "committed"
             assert held(runtime) == HOST.held.add(PLAN.steady).values
             assert len(daemon.prepared) == 1
-            assert node.methods == ["POST", "GET"]
+            assert node.methods == ["POST", "GET", "GET"]
         finally:
             daemon.release.set()
 

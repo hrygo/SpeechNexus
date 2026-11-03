@@ -16,7 +16,8 @@
     "ExecutionStagingResultResponse",
     "ExecutionAudioMetadata",
     "ExecutionAudioStagingResult",
-    "ExecutionAudioStagingResultResponse"
+    "ExecutionAudioStagingResultResponse",
+    "TtsConfigurationEvidence"
   ],
   "$defs": {
     "SubmitExecutionRequest": {
@@ -2556,6 +2557,67 @@
           ]
         }
       }
+    },
+    "TtsConfigurationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateway_policy_digest",
+        "policy_revision_id",
+        "voice_id",
+        "voice_revision",
+        "voice_revision_id",
+        "native_speaker_id",
+        "binding_revision_id",
+        "node_id",
+        "gateway_id",
+        "instance_id",
+        "instance_generation",
+        "observed_at"
+      ],
+      "properties": {
+        "gateway_policy_digest": {
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "policy_revision_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+        },
+        "voice_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "voice_revision": {
+          "$ref": "#/$defs/External_shared_identifiers_schema_json_Revision"
+        },
+        "voice_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "native_speaker_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+        },
+        "binding_revision_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gateway_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "instance_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
     }
   },
   "anyOf": [
@@ -2600,6 +2662,9 @@
     },
     {
       "$ref": "#/$defs/ExecutionAudioStagingResultResponse"
+    },
+    {
+      "$ref": "#/$defs/TtsConfigurationEvidence"
     }
   ]
 }

@@ -32,6 +32,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the same recorded runtime observation with private native evidence */
+    get: operations["getRuntimeQualificationObservation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}": {
     parameters: {
       query?: never;
@@ -196,6 +213,15 @@ export interface components {
       /** Format: date-time */
       deadline_at: string;
     };
+    NativeRuntimeEvidence: {
+      image_digest: components["schemas"]["Sha256Digest"];
+      template_digest: components["schemas"]["Sha256Digest"];
+      controller_artifact_digest: components["schemas"]["Sha256Digest"];
+      /** @constant */
+      native_auth_kind: "vllm_api_key_v1";
+      /** Format: date-time */
+      observed_at: string;
+    };
     RuntimeInstanceIntentResponse: {
       intent_id: components["schemas"]["Identifier"];
       target_node_id: components["schemas"]["Identifier"];
@@ -228,6 +254,42 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+    RuntimeCoordinationObservation: {
+      intent_id: components["schemas"]["Identifier"];
+      target_node_id: components["schemas"]["Identifier"];
+      pool_id: components["schemas"]["PoolId"];
+      gateway_id: components["schemas"]["Identifier"];
+      approved_template_id: components["schemas"]["Identifier"];
+      binding_revision_id: components["schemas"]["Identifier"];
+      manifest_id: components["schemas"]["Identifier"];
+      config_digest: components["schemas"]["Sha256Digest"];
+      instance_id: components["schemas"]["Identifier"];
+      instance_generation: number;
+      action: components["schemas"]["RuntimeActionKind"];
+      fencing_token: number;
+      intent_state: components["schemas"]["RuntimeIntentState"];
+      observed_instance_state: components["schemas"]["ObservedInstanceState"];
+      reserved_memory: components["schemas"]["RuntimeMemoryReservation"];
+      /**
+       * @description Present only on POST. True when the response is the stored result
+       *     of an identical earlier intent with the same `intent_id`.
+       */
+      idempotent_replay?: boolean;
+      /** @description Valid only for succeeded prepare observations in READY state. */
+      native_runtime_evidence?: components["schemas"]["NativeRuntimeEvidence"];
+      stop_evidence?: components["schemas"]["RuntimeStopEvidence"] | null;
+      observed_peak_memory?: components["schemas"]["RuntimeMemoryVector"] | null;
+      error_code?: string | null;
+      /**
+       * Format: date-time
+       * @description Time the intent identity was first recorded; immutable across replay.
+       */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+    RuntimeQualificationObservationResponse: components["schemas"]["RuntimeCoordinationObservation"] &
+      unknown;
     ObservedNodeInstanceFact: {
       instance_id: components["schemas"]["Identifier"];
       instance_generation: number;
@@ -368,6 +430,68 @@ export interface operations {
       503: {
         headers: {
           "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+    };
+  };
+  getRuntimeQualificationObservation: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-Request-ID"?: components["parameters"]["XRequestIdHeader"];
+      };
+      path: {
+        node_id: components["parameters"]["NodeIdPath"];
+        intent_id: components["parameters"]["IntentIdPath"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Recorded observation, optionally containing native evidence. */
+      200: {
+        headers: {
+          "X-Request-ID"?: components["headers"]["XRequestId"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeQualificationObservationResponse"];
+        };
+      };
+      /** @description Component credential invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description No recorded intent or unsupported endpoint. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description Target node does not match this controller. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeControlErrorResponse"];
+        };
+      };
+      /** @description Invalid identity. */
+      422: {
+        headers: {
           [name: string]: unknown;
         };
         content: {

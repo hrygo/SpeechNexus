@@ -157,6 +157,13 @@ def test_loading_then_qualified_ready_records_original_response_and_full_provena
         "observed_instance_state": "ready",
         "updated_at": _timestamp(runtime.now() - 1000),
     }
+    wire["native_runtime_evidence"] = {
+        "image_digest": "sha256:" + "1" * 64,
+        "template_digest": "sha256:" + "2" * 64,
+        "controller_artifact_digest": "sha256:" + "3" * 64,
+        "native_auth_kind": "vllm_api_key_v1",
+        "observed_at": wire["updated_at"],
+    }
     receipt = _receipt(runtime)
     ready = runtime.port.observe_runtime(
         _command(wire, instance_version=2, intent_version=2, receipt=receipt)
@@ -180,6 +187,12 @@ def test_loading_then_qualified_ready_records_original_response_and_full_provena
         and stored["qualification_digest"] == PLAN.qualification_digest
     )
     assert json.loads(ready.fact.observation_document or "null") == wire
+    assert (
+        prepare_observation(
+            json.loads(ready.fact.observation_document or "null")
+        ).observation.native_runtime_evidence
+        is not None
+    )
     snapshot = runtime.snapshot()
     db.query("UPDATE resource_pools SET owner_expires_at_us = 1")
     replay = runtime.port.observe_runtime(

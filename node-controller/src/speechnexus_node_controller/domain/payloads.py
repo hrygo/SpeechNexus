@@ -18,6 +18,7 @@ from speechnexus_node_controller.domain.intents import (
     InvalidRuntimeRequestError,
     MemoryArchitecture,
     MemoryHold,
+    NativeRuntimeEvidence,
     ObservedInstanceState,
     RuntimeActionKind,
     RuntimeInstanceIntent,
@@ -44,6 +45,7 @@ INTENT_RECORD_STATE_FIELDS: Final = frozenset(
         "version",
         "created_at",
         "updated_at",
+        "native_runtime_evidence",
     }
 )
 _VECTOR_FIELDS: Final = (
@@ -74,7 +76,10 @@ def request_payload(request: RuntimeInstanceIntentRequest) -> dict[str, Any]:
 
 
 def intent_response_payload(
-    intent: RuntimeInstanceIntent, *, idempotent_replay: bool | None = None
+    intent: RuntimeInstanceIntent,
+    *,
+    idempotent_replay: bool | None = None,
+    include_native: bool = False,
 ) -> dict[str, Any]:
     """Project one recorded intent onto the contract response fields.
 
@@ -98,6 +103,8 @@ def intent_response_payload(
     }
     if idempotent_replay is not None:
         payload["idempotent_replay"] = idempotent_replay
+    if include_native and intent.native_runtime_evidence is not None:
+        payload["native_runtime_evidence"] = native_evidence_payload(intent.native_runtime_evidence)
     return payload
 
 
@@ -115,7 +122,20 @@ def intent_record_payload(intent: RuntimeInstanceIntent) -> dict[str, Any]:
             "version": intent.version,
             "created_at": intent.created_at.isoformat(),
             "updated_at": intent.updated_at.isoformat(),
+            "native_runtime_evidence": native_evidence_payload(intent.native_runtime_evidence),
         },
+    }
+
+
+def native_evidence_payload(evidence: NativeRuntimeEvidence | None) -> dict[str, Any] | None:
+    if evidence is None:
+        return None
+    return {
+        "image_digest": evidence.image_digest,
+        "template_digest": evidence.template_digest,
+        "controller_artifact_digest": evidence.controller_artifact_digest,
+        "native_auth_kind": evidence.native_auth_kind,
+        "observed_at": evidence.observed_at.isoformat(),
     }
 
 
@@ -187,6 +207,31 @@ def parse_intent_record(record: Mapping[str, Any]) -> RuntimeInstanceIntent:
         stop_evidence=parse_stop_evidence(state.get("stop_evidence")),
         error_code=_optional_error_code(state.get("error_code")),
         version=_integer(state, "version"),
+        native_runtime_evidence=parse_native_evidence(state.get("native_runtime_evidence")),
+    )
+
+
+def parse_native_evidence(value: object) -> NativeRuntimeEvidence | None:
+    if value is None:
+        return None
+    payload = _as_mapping(value, "native_runtime_evidence")
+    _require_known_fields(
+        payload,
+        {
+            "image_digest",
+            "template_digest",
+            "controller_artifact_digest",
+            "native_auth_kind",
+            "observed_at",
+        },
+        "native_runtime_evidence",
+    )
+    return NativeRuntimeEvidence(
+        _string(payload, "image_digest"),
+        _string(payload, "template_digest"),
+        _string(payload, "controller_artifact_digest"),
+        _string(payload, "native_auth_kind"),
+        _timestamp(payload, "observed_at"),
     )
 
 

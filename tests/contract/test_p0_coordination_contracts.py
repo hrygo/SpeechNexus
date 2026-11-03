@@ -399,6 +399,7 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
     exec_doc = _load_yaml(_EXECUTION_CONTROL_OPENAPI_PATH)
     validate(exec_doc)
     assert set(exec_doc["paths"]) == {
+        "/internal/v1/tts-configuration-evidence",
         "/internal/v1/executions/submit",
         "/internal/v1/executions/{submit_intent_id}",
         "/internal/v1/executions/{submit_intent_id}/staging-result",
@@ -414,6 +415,7 @@ def test_internal_execution_and_runtime_control_openapi_specs_are_valid() -> Non
     assert set(runtime_doc["paths"]) == {
         "/internal/v1/nodes/{node_id}/instance-intents",
         "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}",
+        "/internal/v1/nodes/{node_id}/instance-intents/{intent_id}/qualification-observation",
         "/internal/v1/nodes/{node_id}/instances/{instance_id}/generations/"
         "{instance_generation}/verified-stop",
         "/internal/v1/nodes/{node_id}/reconcile",

@@ -35,6 +35,7 @@ _V4 = tuple(
 _V6 = ipaddress.ip_network("fc00::/7")
 _SUBMIT = "submitRuntimeInstanceIntent"
 _QUERY = "getRuntimeInstanceIntent"
+_QUALIFICATION = "getRuntimeQualificationObservation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +229,57 @@ class HttpRuntimeController:
                         result = await self._response(
                             response, original, operation, request_id, submit=submit
                         )
+                    if (
+                        result.observation.action == "prepare"
+                        and result.observation.intent_state == "succeeded"
+                        and result.observation.observed_instance_state == "ready"
+                    ):
+                        evidence_path = (
+                            f"/internal/v1/nodes/{quote(self._endpoint.node_id, safe='')}"
+                            f"/instance-intents/{quote(original.intent_id, safe='')}"
+                            "/qualification-observation"
+                        )
+                        validate_request(
+                            _QUALIFICATION,
+                            {
+                                "path": {
+                                    "node_id": self._endpoint.node_id,
+                                    "intent_id": original.intent_id,
+                                },
+                                "headers": headers,
+                            },
+                        )
+                        async with self._client.stream(
+                            "GET",
+                            self._endpoint.base_url + evidence_path,
+                            headers=headers,
+                            timeout=budget,
+                        ) as evidence_response:
+                            if evidence_response.status_code != 404:
+                                enriched = await self._response(
+                                    evidence_response,
+                                    original,
+                                    _QUALIFICATION,
+                                    request_id,
+                                    submit=False,
+                                )
+                                old_wire = json.loads(result.original_document)
+                                new_wire = json.loads(enriched.original_document)
+                                replay = old_wire.pop("idempotent_replay", None)
+                                new_wire.pop("native_runtime_evidence", None)
+                                if prepare_observation(old_wire).semantic_document != (
+                                    prepare_observation(new_wire).semantic_document
+                                ):
+                                    raise ValueError("Qualification observation changed")
+                                if replay is not None:
+                                    enriched_wire = json.loads(enriched.original_document)
+                                    enriched_wire["idempotent_replay"] = replay
+                                    prepared_enriched = prepare_observation(enriched_wire)
+                                    result = ControllerObservation(
+                                        prepared_enriched.observation, prepared_enriched.document
+                                    )
+                                else:
+                                    result = enriched
                     if asyncio.get_running_loop().time() >= deadline:
                         raise TimeoutError
                     return result

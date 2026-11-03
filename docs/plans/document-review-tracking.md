@@ -17,7 +17,7 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/README.md` | 部分核对 | 对照构图脚本、ADR、目录和图像摘要；未重渲染或核验全部拓扑 |
 | `docs/architecture/distributed-coordination-schema.md` | 部分核对 | 已全文阅读并核对关键边界，其他细节仍待逐项核对 |
 | `docs/architecture/execution-command.md` | 部分核对 | 核对提交摘要、重放、文本流及文件 ASR/TTS 消费入口；区分 codec 对象正文设计要求与命令 schema 覆盖，其他命令类型与 adapter 边界待核对 |
-| `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 锁定版本与公开实时路由装配，明确实时示例是契约目标；REST 字段、响应与兼容门禁待逐项核对 |
+| `docs/architecture/openai-compatibility.md` | 部分核对 | 核对 SDK 版本、实时装配、REST 顶层字段及幂等拒绝，并修正 CI 兼容检查入口；响应细节与门禁范围待核对 |
 | `docs/architecture/runtime-governance.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/speech-api.md` | 部分核对 | 局部对照代码、契约或历史证据；其余内容待核对 |
 | `docs/architecture/speechrail-reuse.md` | 部分核对 | 核对项目复用政策、固定 commit、10 个路径与许可证；上游行为及消费者待核对 |

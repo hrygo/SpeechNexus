@@ -31,7 +31,7 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 资格报告的计算口径是封闭的：`test_suite.scenario_ids` 与 `scenarios[].scenario_id` 必须一一对应且无重复（生产者校验）；`required_scenarios_passed` 仅在至少一个 required scenario 存在且全部 passed 时为 true；`overall_status` 在任何 required scenario failed 时为 `fail`，在 required 全部 passed 时为 `pass`，否则为 `incomplete`。optional scenario 是非门禁证据，非 passed 时必须写入 `limitations`，不能据此宣称生产质量。发布流程还必须解析报告引用的 binding 与 capacity manifest：`binding` 的 `id / revision`、`binding_revision_id`、`capacity_manifest_id` 和 `release_tier` 必须一致；`software.engine_components` 必须与 manifest 的每个 `stage_id` 一一对应且 engine kind 相同；报告拓扑的 memory architecture 必须与 manifest `topology_ref` 相同；`qualified_at` 必须早于 `expires_at`。这是证据与发布的目标要求；通用 binding 发布首次登记意图时核对所声明的 manifest ID，重放不重复校验，也不自动执行全部跨文档核验。内建声音资格入口已调用只读证据核验组件；其核验范围及独立校验器的边界见[资格报告](../operations/qualification-report.md)，不能把草稿、发布记录或单纯 schema 通过当作完整生产资格。
 
-资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
+容量清单声明 `stage_graph` 与 `resource_envelope` 的聚合关系：资源向量逐阶段求和，单次执行的 active slot 数取阶段最大值，最大并发取阶段最小值。schema 描述这些关系但不能验证跨字段算术；生产者和准入边界须核验，不能仅凭结构校验认定预算正确。资源向量至少包含 engine active slots、设备内存、CPU 解码额度、主机 PCM buffer、输入 / 输出带宽和对象存储额度。常驻模型内存在引擎级只计一次，不为每个请求重复收费；请求只申请增量预算。多阶段 TTS 的 Talker、Code2Wav 及 connector 预算作为完整执行图申报。
 
 完整执行图也覆盖实时 ASR 的定稿依赖。启用 `full_segment` 的配方必须把 1.7B 复核的就绪、保留预算和等待期限纳入实时资格，required 对齐 / 分人亦同；不能仅按 0.6B 预览占用宣称可准入。文件任务即使复用该实例，也只能使用不破坏实时承诺的预算。绑定 revision / 资格、具体实例及 generation、准入租约各自独立记录，空闲卸载不退役绑定。
 

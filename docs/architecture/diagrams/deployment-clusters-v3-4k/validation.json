@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "verifiedAt": "2026-10-26T16:27:02.879Z",
+  "verifiedAt": "2026-11-03T19:19:45.032Z",
   "method": "Chromium native 4K rendering; SVG glyph bounds, per-container padding, icon and route clearance",
   "catalog": {
     "models": 8,
@@ -47,8 +47,8 @@
         "width": 3840,
         "height": 2160
       },
-      "svgSha256": "4918f8f65841ae98b392f7a75e4d0044d57a0700a43ba8bbcba725c9e915b38e",
-      "pngSha256": "0d16ed3ffbe258d3ffe50592ae2ab729ca8d9b2688085aca1cbf0b93c31ce90c"
+      "svgSha256": "5475e4533da639e839f04a4c79db9f02266c20c0ff10f2ee445220b13bd3668c",
+      "pngSha256": "1ab40fd110c2d23ffa8e0a1ad9a3d14952d605065f40f4bf17d98a5425836de4"
     }
   ]
 }

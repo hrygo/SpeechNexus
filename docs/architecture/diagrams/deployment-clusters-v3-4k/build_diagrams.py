@@ -441,7 +441,7 @@ def overview():
 
 
 MODELS = [
-    ("A", "实时 ASR", "Qwen/Qwen3-ASR-0.6B", "vLLM", "GPU", "预加载 / 实时常驻"),
+    ("A", "实时 ASR", "Qwen/Qwen3-ASR-0.6B", "vLLM", "GPU", "启用实时后预加载常驻"),
     ("B", "文件 / 复核", "Qwen/Qwen3-ASR-1.7B", "vLLM", "GPU", "文件按策略；实时复核依赖须就绪"),
     (
         "C",
@@ -457,7 +457,7 @@ MODELS = [
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         "vLLM-Omni",
         "GPU",
-        "实时常驻；受控创作预算复用",
+        "启用实时后常驻；受控创作预算复用",
     ),
     (
         "E",

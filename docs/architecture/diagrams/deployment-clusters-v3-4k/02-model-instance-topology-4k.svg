@@ -23,7 +23,7 @@
 <text data-check-box="label-7" data-max-width="12" data-owner="pill-7" x="110.0" y="338.59" fill="#177A75" font-size="13.5" font-weight="600" text-anchor="middle">A</text>
 <text data-check-box="label-8" data-max-width="118" data-owner="catalog" x="144" y="334" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">实时 ASR</text>
 <text data-check-box="label-9" data-max-width="432" data-owner="catalog" x="278" y="329" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-ASR-0.6B</text>
-<text data-check-box="label-10" data-max-width="432" data-owner="catalog" x="278" y="354" fill="#177A75" font-size="12.2" font-weight="400" text-anchor="start">预加载 / 实时常驻</text>
+<text data-check-box="label-10" data-max-width="432" data-owner="catalog" x="278" y="354" fill="#177A75" font-size="12.2" font-weight="400" text-anchor="start">启用实时后预加载常驻</text>
 <text data-check-box="label-11" data-max-width="208" data-owner="catalog" x="742" y="329" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM</text>
 <text data-check-box="label-12" data-max-width="208" data-owner="catalog" x="742" y="354" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
 <rect id="pill-13" data-layout-container="true" data-inset="7" x="96" y="392" width="28" height="30" rx="12" fill="#EBF1F9" stroke="none" stroke-width="1"/>
@@ -45,7 +45,7 @@
 <text data-check-box="label-25" data-max-width="12" data-owner="pill-25" x="110.0" y="557.59" fill="#8263A4" font-size="13.5" font-weight="600" text-anchor="middle">D</text>
 <text data-check-box="label-26" data-max-width="118" data-owner="catalog" x="144" y="553" fill="#172D43" font-size="14.5" font-weight="600" text-anchor="start">克隆 / 复用</text>
 <text data-check-box="label-27" data-max-width="432" data-owner="catalog" x="278" y="548" fill="#172D43" font-size="13.9" font-weight="500" text-anchor="start">Qwen/Qwen3-TTS-12Hz-1.7B-Base</text>
-<text data-check-box="label-28" data-max-width="432" data-owner="catalog" x="278" y="573" fill="#8263A4" font-size="12.2" font-weight="400" text-anchor="start">实时常驻；受控创作预算复用</text>
+<text data-check-box="label-28" data-max-width="432" data-owner="catalog" x="278" y="573" fill="#8263A4" font-size="12.2" font-weight="400" text-anchor="start">启用实时后常驻；受控创作预算复用</text>
 <text data-check-box="label-29" data-max-width="208" data-owner="catalog" x="742" y="548" fill="#526FA6" font-size="14" font-weight="600" text-anchor="start">vLLM-Omni</text>
 <text data-check-box="label-30" data-max-width="208" data-owner="catalog" x="742" y="573" fill="#667C8C" font-size="12.3" font-weight="400" text-anchor="start">GPU</text>
 <rect x="80" y="592" width="880" height="69" rx="10" fill="#F4F8F9" stroke="none" stroke-width="1"/>

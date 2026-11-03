@@ -71,7 +71,7 @@ CA 上限为 262,144 bytes。
 | 字段 | 含义 |
 | --- | --- |
 | `endpoint` | 固定私有 IP origin；沿用对象适配器的协议、地址与验证 TLS 规则，不使用 DNS、代理或重定向 |
-| `input_bucket` / `result_bucket` | 已批准的输入桶和开启版本化的私有结果桶；可以相同 |
+| `input_bucket` / `result_bucket` | 已批准的私有输入桶和结果桶；可以相同。输入引用须带可读取的固定对象版本，结果桶须开启版本化；同步转写生产者写入输入时也要求输入桶版本化 |
 | `spool_directory` | 已存在的绝对目录，当前 UID 所有且无 group/other 权限；仅作有界临时缓冲 |
 | `tls_ca_file` | 显式为 `null`，或私有 CA 绝对路径；`null` 使用系统信任，不关闭证书验证 |
 | `result_timeout_seconds` | 结果 PUT 与固定版本读回的累计秒数上限，复用结果适配器原生校验 |

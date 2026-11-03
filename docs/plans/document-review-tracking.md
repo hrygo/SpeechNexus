@@ -135,7 +135,7 @@
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码及发布前后步骤；澄清 fixture、live 查询隔离与缺少工作区配额的范围，其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 部分核对 | 对照 Compose 服务、迁移链、配置准备、基础角色授权与查询代码，修正权限及失败边界并更新章节引用；未执行部署，停用 worker 和其他恢复细节待核对 |
 | `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 核对候选选型、离线制品与忽略元数据校验、工具退出和输出、网关输出格式及停止证据边界；其余内容待核对 |
-| `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、共享媒体类型与 worker 取消/登记路径；恢复、停止及集成测试证据待核对 |
+| `docs/operations/file-asr-runtime.md` | 部分核对 | 对照配置、对象版本要求、共享媒体类型与 worker 取消/登记路径；恢复、停止及集成测试证据待核对 |
 | `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 已核对后续 SDK 与租约结算证据；其余内容待核对 |
 | `docs/operations/file-tts-runtime.md` | 部分核对 | 已核对后续 SDK 与租约结算证据；其余内容待核对 |
 | `docs/operations/local-end-to-end.md` | 部分核对 | 核对历史边界与角色脚本并纠正数量；剩余历史输出和证据待逐项复核 |

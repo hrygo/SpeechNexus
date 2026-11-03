@@ -95,6 +95,8 @@ speechnexus-register-engine \
 没有配方文件时，必须显式给出冻结的 binding 与 plan 字段。`--model` 仅用于操作记录；
 真正进入数据库的是 `--template-id`、`--binding-revision-id`、`--manifest-id`、
 `--config-digest`、`--topology-digest`、`--qualification-digest` 和容量向量。
+如果当前进程已设置 `SPEECHNEXUS_TRANSCRIPTION_RECIPE_FILE`，命令默认仍会选择配方模式；
+使用手动模式前须在该命令的环境中取消该变量，并确认未传入 `--recipe-file`。
 
 ```bash
 speechnexus-register-engine \
@@ -142,6 +144,10 @@ readiness 已过期，则用本次 `/health` 重签 readiness 并更新 `ready_a
 实例。同一 generation 但配置不同返回 `instance_config_conflict`。低于 high water 的
 generation 返回 `stale_instance_generation`。当前 generation 仍 ready 时注册更高
 generation 返回 `previous_generation_active`。
+
+命令未明确成功时，应查询原实例、generation、intent 和池 owner，再决定是否按原参数重试。
+数据库提交回执丢失时结果可能未知；即使命令输出“no registration was committed”，也不能仅凭
+该错误文案断定事务未提交，更不能换 generation 或身份盲目重试。
 
 ## 验证 SQL
 

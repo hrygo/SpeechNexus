@@ -99,7 +99,7 @@ schema 验证形状；跨记录身份、时间关系、阶段集合、预算与�
 
 实现按职责拆为 owner、admission、job、execution、runtime、meter 小端口；上表列的是事务契约，不表示每个端口均已完成生产装配或端到端验收。
 其中 [quarantine_lease、release_lease 与原租约查询](../components/production-leases.md)已有独立生产实现，
-只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)也已实现并接入同步 TTS，完整调度及其他业务链仍须分别验收。
+只按网关权威事实搬移/结算当前 lease；[完整配方准入事务](../components/production-admission.md)已接入同步 TTS 与同步转写，完整调度及其他业务链仍须分别验收。
 同一个 admission 端口负责完整配方；不能拆成多个独立事务 repository 调用，
 再期待异常时逐项补偿。attempt/submit/runtime 等持久幂等身份的摘要不匹配必须报冲突；
 pool/claim 的读取返回当前权威，后续任期已覆盖当前投影时不能据此证明旧事务未提交。
@@ -137,7 +137,7 @@ resource_pools
 
 `0007_admission_commands` 增加的 [operation/原请求存储](../components/production-admission-storage.md)
 位于资源父锁之后、attempt 之前；请求记录在 attempt 之后创建并引用两者。
-[独立完整准入事务](../components/production-admission.md)已在同一cursor消费该存储；实际业务进程另行接线。
+[完整准入事务](../components/production-admission.md)已在同一 cursor 消费该存储，并由同步 TTS 与同步转写各自装配；异步 Job planner 等其他业务链仍须接线。
 独立准入在 operation 锁下核对原 workspace/业务摘要与当前 attempt，未知执行不得换身份绕过。
 
 生产 gateway 已实现该输出追加与原区间查询，两个不同 pool/stage 共享输出流的真实行锁等待

@@ -158,7 +158,7 @@
 | `docs/operations/register-engine.md` | 部分核对 | 核对健康探测、注册事务、参数范围、配方覆盖规则及验证查询；补充提交结果未知时的恢复边界，其余内容待核对 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
 | `docs/operations/release-readiness.md` | 部分核对 | 全文阅读并抽核固定候选 planner、文件及提交关系；其余历史证据待复核 |
-| `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、上游参数检查、提交与轮询路径；配方权限和全部错误分支待核对 |
+| `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、配方权限及约束、上游参数检查、提交与轮询路径；全部错误分支待核对 |
 | `docs/plans/2026-10-22-speechnexus-implementation-plan.md` | 待核对 | — |
 | `docs/plans/2026-10-23-agent-team-startup-briefs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
 | `docs/plans/2026-10-23-architecture-contract-repairs.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |

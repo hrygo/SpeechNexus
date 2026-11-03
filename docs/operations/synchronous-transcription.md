@@ -41,7 +41,8 @@ date: 2026-10-28
 
 入口为 `speechnexus_backend.transcription_runtime:create_app_from_env`（`main.py` 默认
 `uvicorn` factory）。`create_app` 仍只接受注入的 `transcriptions=`，不自行创建运行时。
-配方文件结构错误、摘要不符或权限不符使启动失败；缺失配置不会静默降级为假引擎。
+所需配置齐全并开始装配时，配方文件结构错误、摘要不符或权限不符使启动失败；如果
+其他必需配置缺失，装配会先返回未配置，此时不会读取或验证配方。缺失配置不会静默降级为假引擎。
 
 Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
 [最小 Compose 部署面](compose-minimal.md)。Compose 提供引用和示例，
@@ -59,6 +60,7 @@ Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
 - `recipe_digest` 为 `sha256:` 加 RFC 8785 规范 JSON（去掉 `recipe_digest` 自身）的
   SHA-256；不符即拒绝；
 - 顶层 binding/manifest/service_class 必须与 `runtime_plan` 一致；
+- `stage.reserved_slots` 不得小于 `stage.minimum_slots`；
 - `binding_publication_id` 是公开 publication 的 revision ID，必须与实际执行的
   `binding_revision_id` 一致；不允许按一个 revision 校验后执行另一个 revision；
 - `quota_dimensions` 当前只接受 `["concurrent_attempts"]`。
@@ -94,7 +96,7 @@ Compose 的最小装配、私有文件引用、迁移/角色与注册命令见
 }
 ```
 
-`asr` 参数直接受冻结执行命令约束：`preview_interval_ms` 100–5000、
+`asr` 参数直接受冻结执行命令约束：`silence_duration_ms` 0–30000、`preview_interval_ms` 100–5000、
 `final_deadline_ms` 100–10000、`auxiliary_deadline_ms` 100–10000、`temperature` 0–1。
 `final_deadline_ms` 是“段关闭到正文 final”的窗口。公开请求的 `nexus.deadline_ms`
 与部署上限取较小值后形成执行计划期限：准入用它计算执行 deadline，网关轮询也用它

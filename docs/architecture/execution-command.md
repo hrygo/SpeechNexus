@@ -45,6 +45,8 @@ Codec 对象格式 `nexus.codec_tokens.v1` 是 UTF-8 JSON：schema_version 为 1
 codebook_count 为正整数，frames 为非空二维非负整数数组，每帧长度等于
 codebook_count；codebook_count 与命令一致，词表上界和帧时钟由固定 manifest
 声明。对象必须按同一严格格式校验后送 adapter，不能用于承载未定义命令。
+当前命令 schema 只固定格式标识、对象引用和 `codebook_count`，不校验对象正文；
+上述正文格式是设计要求，真实 codec 消费者和正文校验仍需交付与验收。
 
 ## 内部文本流
 

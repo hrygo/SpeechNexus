@@ -28,7 +28,7 @@
 | `docs/audits/2026-10-23-architecture-contract-compliance.md` | 历史保留 | 审查快照已注明时点和当前入口；原审查证据未逐项复核 |
 | `docs/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 历史保留 | 固定基线的重构后审查，已注明当前入口；原审查证据未逐项复核 |
 | `docs/audits/2026-10-23-architecture-contract-repair-closure.md` | 历史保留 | 固定基线的修复验收记录，已注明当前入口；原验收证据未逐项复核 |
-| `docs/audits/2026-10-23-ui-ux-design-framework-audit.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-23-ui-ux-design-framework-audit.md` | 历史保留 | 全文阅读，补充绝对化无障碍和门禁评级的证据限制及后续复跑入口；未重跑历史验证 |
 | `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 历史保留 | 全文阅读，固定时点的环境前检与首次 ASR 探针；补充 TTS 在线服务判断的后续纠正，未重跑实验 |
 | `docs/audits/2026-10-24-b01-default-recovery-driver.md` | 历史保留 | 全文阅读，固定集成基线的默认恢复驱动与进程验证；组件入口引用其当时实测，未重跑测试 |
 | `docs/audits/2026-10-24-b01-recovery-progress.md` | 历史保留 | 全文阅读，固定基线的恢复扫描公平性和计数回归；已链接后续驱动验证，未重跑测试 |
@@ -47,7 +47,7 @@
 | `docs/audits/2026-10-24-b03-tts-engine-feasibility.md` | 历史保留 | 全文阅读，固定镜像的引擎可行性与早期误判纠正；记录时点的后续计划不代表当前状态，未重跑实验 |
 | `docs/audits/2026-10-24-b06-cpu-vad-probe.md` | 历史保留 | 全文阅读，固定模型和基线的 CPU 合成探针；组件入口作为历史证据引用，未重跑探针 |
 | `docs/audits/2026-10-24-ci-efficiency.md` | 历史保留 | 全文阅读，各轮固定基线的 CI 调研和测量；文首指向现行 CI 规则，未复核历史远端运行 |
-| `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 部分核对 | 核对标题、基线与历史时点边界；正文和原始证据待逐项复核 |
+| `docs/audits/2026-10-25-b03-default-real-asr-probe.md` | 历史保留 | 全文阅读，固定候选的默认网关 ASR 隔离实验；入口注明私有结果和未覆盖的公开链，未重跑实验 |
 | `docs/audits/2026-10-25-b03-real-cancel-settlement.md` | 历史保留 | 全文阅读，固定候选的真实取消与整代次结算实验；保留 partial 和单请求证据缺口，未重跑实验 |
 | `docs/audits/2026-10-25-b03-real-stop-settlement.md` | 历史保留 | 全文阅读，固定候选的真实整代次停止与预算结算实验；当前入口标明 fixture 限制，未重跑实验 |
 | `docs/audits/2026-10-25-coordination-port-evidence.md` | 历史保留 | 全文阅读，固定提交的协调端口和双库证据快照；当前所有权文档按快照引用，未复核历史 CI |

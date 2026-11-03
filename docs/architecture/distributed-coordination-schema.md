@@ -48,7 +48,8 @@ SQL 是**新建 namespace 的设计草案和测试输入**，不是已部署业�
 新增表使配方、停止事实、当前指针和 Job/outbox 的职责显式，目标不是最少表数。
 核心 FK 继续约束 instance/host/pool/gateway、attempt/lease、lease/submit、submit/evidence
 与 Job/outbox 关系；binding/policy/qualification 的完整身份仍需与既有不可变资源存储
-在同一应用事务中核对。TEXT 仅保存已校验的规范文档，不依赖数据库 JSON 查询。
+在同一应用事务中核对。`TEXT` 用于规范请求、停止证据、阶段集合及引擎请求身份；
+文档字段不依赖数据库 JSON 查询，语义校验由应用负责。
 
 ## 预算与历史保护
 
@@ -75,7 +76,7 @@ tombstone，不能清除协调身份、原摘要、fencing 或停止证据，也
 
 [共享行为测试](../../tests/integration/test_coordination_transactions.py) 在 PostgreSQL 和
 隔离 MySQL/InnoDB 上应用同一逻辑 DDL、运行同一期望，验证受控事务行为。
-MySQL 仅将文档 TEXT 列映射为 LONGTEXT，避免合法长命令截断；没有业务规则分叉。
+MySQL 测试适配器将草案中的 `TEXT` 列映射为 `LONGTEXT`，避免合法长命令截断；没有业务规则分叉。
 它是测试/工具原型，不代表生产 Scheduler 或数据库完整替代适配器已交付。
 真实多主机、引擎、主备切换和备份恢复保持强制验收要求。
 

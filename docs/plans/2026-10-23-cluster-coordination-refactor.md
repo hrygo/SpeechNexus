@@ -6,6 +6,10 @@ date: 2026-10-23
 
 # 集群协调重构计划
 
+> 本页保留 2026-10-23 的重构计划及其阶段性交付事实，不是当前实现进度。
+> 后续生产接入见[生产协调存储](../operations/production-coordination-storage.md)，
+> 当前需求与证据见[需求矩阵](delivery-tracking.md)；仍须分别核验目标部署资格。
+
 状态：精简 DDL、事务机器契约、详细应用方案、权限工具与真实双库测试原型已交付；
 生产业务接入、完整生命周期和集群故障资格尚未完成。
 依据为 [ADR 0006](../decisions/0006-cluster-coordination-and-storage-portability.md)。

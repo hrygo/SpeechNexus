@@ -6,6 +6,9 @@ date: 2026-10-24
 
 # CI 效率调研与实施证据
 
+本文记录 2026-10-24 的基线及文中注明时点的后续测量，不代表当前运行耗时、缓存命中或门禁配置；
+现行检查与执行范围见[CI 规则](../validation/ci-validation.md)。
+
 ## 基线与瓶颈
 
 基线为 [PR #46 CI](https://github.com/hrygo/SpeechNexus/actions/runs/39988924348)，

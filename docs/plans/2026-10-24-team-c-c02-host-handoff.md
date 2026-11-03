@@ -6,6 +6,8 @@ date: 2026-10-24
 
 # C02 正式文件转写入口
 
+> 本文保留 2026-10-24 的交接与验证快照；下文“当前”、目标状态和后续接力均以当时基线为准。现行需求和证据入口见[需求矩阵](delivery-tracking.md)。
+
 ## 范围与基线
 
 依据 [C02/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验)，按[本单元计划](2026-10-24-team-c-c02-host-plan.md)将既有真实客户端/会话/journal 接入正式 Workbench。当前 base/head 为 `dc14cf8fb0a7250842a8a7697c6884d6d21b2004`；fetch 后 origin/main 无新增变更，起始 140 文件均与旧 manifest 摘要一致。未 commit/push/外部消息；完整 C00–C08 goal 保持 active。

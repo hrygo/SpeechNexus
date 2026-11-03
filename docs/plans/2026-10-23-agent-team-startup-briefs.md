@@ -7,6 +7,9 @@ date: 2026-10-23
 
 # SpeechNexus agent 三团队首轮派工
 
+> 历史启动材料：以下派工对象、旧总控和任务文本保留 2026-10-23 的安排，
+> 不再作为当前派工依据。当前交付入口见 [PRD](../prd.md) 和[需求矩阵](delivery-tracking.md)。
+
 配合[整体实施计划](2026-10-23-three-team-delivery-plan.md)使用。用户统一指挥三个 Codex 团队，A 在云环境、B 在 MegaCube、C 在 MacBook。以下是首轮可直接下发的任务文本；本文件没有启动这些任务，也没有建立其他机器连接。
 
 远端派工入口为 [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)。首轮三张主卡分别对应 [A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)、[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；本文件提到的 A01/B01/B02/C01/C02/C04 仅提前分派其具名子单元，不等于整个父工作包已可真实联调或已实施。G0 在 [#13](https://github.com/hrygo/SpeechNexus/issues/13)集中取证，状态与依赖见[跟踪矩阵](2026-10-23-implementation-tracking.md)。

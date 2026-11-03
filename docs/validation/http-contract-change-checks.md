@@ -26,9 +26,10 @@ the final row; its source and scope are reported separately.
 ## Run and consume the change inventory
 
 ```bash
-CONTRACT_BASE_REF=<frozen commit or ref> make contracts-http-changes
+# Export CONTRACT_BASE_REF with the verified baseline commit or ref first.
+make contracts-http-changes
 uv run python scripts/dev-env/check-http-contract-changes.py \
-  --base <frozen commit or ref> --format json
+  --base "$CONTRACT_BASE_REF" --format json
 ```
 
 The CLI resolves a branch/ref to one immutable commit before reading any source
@@ -89,9 +90,9 @@ prerequisites and complete/disjoint report verification remain unchanged.
 ## Explicit complete speech HTTP selection
 
 ```bash
-CONTRACT_BASE_REF=<frozen commit or ref> make contracts-speech-changes
+make contracts-speech-changes
 uv run python scripts/dev-env/check-http-contract-changes.py \
-  --base <frozen commit or ref> --surface speech --format json
+  --base "$CONTRACT_BASE_REF" --surface speech --format json
 ```
 
 This mode selects every HTTP path in `speech-openapi.yaml`, including the Nexus

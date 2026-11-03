@@ -7,6 +7,9 @@ date: 2026-10-23
 
 # SpeechNexus 三团队整体实施计划
 
+> 历史规划：本页保留制定时的基线、分工和排期，不再作为当前调度或状态依据。
+> 当前范围与证据见 [PRD](../prd.md) 和[需求矩阵](delivery-tracking.md)。
+
 本计划覆盖 SpeechNexus 从当前工程骨架到完整产品交付，SpeechRail 仅作为固定来源的复用参考。代码事实基准为 `390f121`，日期按 Asia/Shanghai 记录。三个实施团队均为用户指挥的 agent 团队，按长期组件责任组织，以贯穿 API、执行、数据和页面的业务闭环验收。启动编码时使用指挥者指定、已包含本计划的集成基线，不能把事实审计 SHA 当作永久开发基线。
 
 本计划细化[原 P0–P5 计划](2026-10-22-speechnexus-implementation-plan.md)的任务归属、依赖和排期，后续三团队执行以本文为调度入口；产品范围与协议仍服从有效架构、机器契约和 ADR。原计划与[集群协调重构记录](2026-10-23-cluster-coordination-refactor.md)保留历史证据，不据此把原型或计划标为产品完成。实施通过 [GitHub 总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)与[跟踪矩阵](2026-10-23-implementation-tracking.md)编排；A00/B00/C00 初始可开工，其余待实施，当前全部尚未实施。

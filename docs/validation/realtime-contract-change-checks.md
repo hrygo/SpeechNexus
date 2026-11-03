@@ -5,9 +5,10 @@ already checks 14 standard event definitions in request/response directions and
 intentionally excludes Nexus extensions. It is unchanged by this unit.
 
 ```sh
-CONTRACT_BASE_REF=<verified frozen commit or ref> make contracts-realtime-changes
+# Export CONTRACT_BASE_REF with the verified baseline commit or ref first.
+make contracts-realtime-changes
 uv run python scripts/dev-env/check-realtime-contract-changes.py \
-  --base <verified frozen commit or ref> --format json
+  --base "$CONTRACT_BASE_REF" --format json
 ```
 
 The source is `contracts/realtime-events.schema.json`; the runtime selection comes

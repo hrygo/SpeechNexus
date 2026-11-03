@@ -1,8 +1,11 @@
 <!-- speechnexus-implementation:PROGRAM:v1 -->
 # SpeechNexus 三团队整体实施跟踪
 
+> 本页是历史快照，不再由当前刷新工具维护。当前需求、证据与按需实施任务见
+> [需求矩阵](delivery-tracking.md)；以下旧总控、状态和计数保留原采集时点。
+
 总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)。快照：2026-10-26T19:29:22+08:00（Asia/Shanghai，实时读取 GitHub）。
-GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源；本矩阵是可刷新的快照。
+当时以 GitHub issue 状态、唯一 status 标签与显式验收证据为事实来源；本页不反映后续变化。
 
 **工作包完成：0/25；验收 Gate 通过：0/6。** Epic/检查项不混入工作包完成率；duplicate/not_planned 等非完成关闭不计成果，前置未通过的误关 Gate 不计通过。
 

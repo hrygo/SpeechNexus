@@ -6,6 +6,8 @@ date: 2026-10-24
 
 # C02 素材 HTTP 原身份恢复交接
 
+> 本文保留 2026-10-24 的实现、证据和待办快照；文中的“当前”及后续接力均指当时，不作为当前派工依据。现行需求和证据入口见[需求矩阵](delivery-tracking.md)。
+
 ## 范围与基线
 
 落实 [C02/C08](2026-10-23-three-team-delivery-plan.md#43-c-团队应用与体验) 的原上传恢复，实施见[计划](2026-10-24-team-c-c02-asset-reconcile-plan.md)。交接时完整 [C00–C08 goal](2026-10-24-team-c-goal.md)继续 active，Workbench 正式入口/真实后端/模型闭环未完成。后续正式宿主的接入及合成环境验证分别见[文件转写](2026-10-24-team-c-c02-host-handoff.md)和[文本配音](2026-10-24-team-c-c02-tts-host-handoff.md)交接，不代替真实服务资格验证。

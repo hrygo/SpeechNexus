@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus C02 原始转写导入"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---

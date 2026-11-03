@@ -635,7 +635,9 @@ inventory 与观察时间是每次响应的新鲜观测，`barrier.enforced_at` 
 ## 14. 验证
 
 ```sh
-# 需要同时设置隔离 PG 与 MySQL DSN；缺一不可，跳过不算通过。
+# 需要隔离 PG、MySQL 和本机 MinIO；先按 tests/integration/README.md 配置
+# SPEECHNEXUS_TEST_MINIO_ENDPOINT、SPEECHNEXUS_TEST_MINIO_ACCESS_KEY 和
+# SPEECHNEXUS_TEST_MINIO_SECRET_KEY。缺少前置条件不算通过。
 SPEECHNEXUS_TEST_DATABASE_URL=… SPEECHNEXUS_TEST_MYSQL_URL=… \
   uv run pytest -m integration tests/integration/test_gateway_submit_ledger.py \
     tests/integration/test_gateway_submit_http.py \

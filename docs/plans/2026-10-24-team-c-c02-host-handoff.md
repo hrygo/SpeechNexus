@@ -1,6 +1,6 @@
 ---
 title: "团队 C C02 正式文件转写入口交接"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 

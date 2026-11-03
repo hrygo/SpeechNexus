@@ -1,11 +1,13 @@
 ---
 title: "SpeechNexus C02 文件任务恢复与 A00 消费交接"
-status: in-progress
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---
 
 # SpeechNexus C02 文件任务恢复与 A00 消费交接
+
+> 历史交接：以下状态和验证保留原时点；当前范围与证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 ## 基线与范围
 

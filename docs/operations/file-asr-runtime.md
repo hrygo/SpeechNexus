@@ -9,7 +9,8 @@ date: 2026-10-25
 
 网关正式入口 `speechnexus-gateway` / `speechnexus_gateway.app:create_app` 可按私有部署配置装配
 已有文件 worker、原命令消费者、固定代次 vLLM、CPU VAD、PyAV 与 MinIO 输入/结果适配器。
-未提供配置时保持原行为：提交/中止没有引擎 adapter，不接受真实执行。
+未提供 ASR 配置时，文件 ASR 不可执行；若同时配置了文件 TTS，网关仍可装配 TTS
+执行路径。两者都未配置且未注入执行工厂时，文件语音执行 worker 不会启用。
 这项接线不创建 binding、默认参数、资格、Job、预算或另一份结果账本。
 
 确定性验证使用真实 PostgreSQL、MinIO、PyAV 和回环 HTTP，VAD 与识别输出为替身。
@@ -36,7 +37,8 @@ date: 2026-10-25
 文件执行配置不能与测试注入的工厂或控制/提交/中止服务混用。
 可同时配置原有恢复驱动，两者复用原 ledger、进程入口和关闭顺序。
 
-组合根为[配置与装配模块](../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)。
+ASR 配置位于[配置与装配模块](../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)，
+与 TTS 共用 worker 的组合根见[文件语音装配](../../execution-gateway/src/speechnexus_gateway/file_speech_runtime.py)。
 它同时引用 interfaces 和 infrastructure，二者仍不互相导入。
 生产部署另外安装[CPU VAD 固定依赖](../../deploy/engines/cpu-vad/requirements.txt)及
 [媒体运行依赖](../components/file-asr-audio.md)；网关普通导入不加载模型或 vendor runtime。

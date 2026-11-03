@@ -48,7 +48,8 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 公开资源版本与 command.resources 一致；外层 voice_revision_id 若非空必须与
 固定音色版本一致。非 built-in 音色须带已发布材料；built-in 由 binding 固定实现。
 词表/发音资源内容由指定 immutable revision 解析，不能把有内容却未固定版本的
-参数作为可重放意图。Diarization 非空 min_speakers 不得超过 max_speakers。
+参数作为可重放意图。Diarization 的 `min_speakers` 和 `max_speakers` 均非空时，前者不得大于后者；
+当前命令 schema 仅分别约束其范围，不校验两者的大小关系，生产者 / 消费者须另做语义校验。
 TTS/codec 等会输出 PCM 的 stage 与 manifest.emits_audio_pcm、sample_rate_hz 和
 max_output_audio_ms 必须一致。契约级 fake 传递测试只证明协议，不证明真实引擎支持。
 

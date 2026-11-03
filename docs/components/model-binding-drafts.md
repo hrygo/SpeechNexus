@@ -21,8 +21,12 @@ globally unique `revision_id`. Separate successful commands append distinct
 revisions. `supersedes_revision` is an optional positive revision string recording
 a relationship, not a head CAS field; there is no `expected_latest_revision` input.
 Source validation alone does not prove that a referenced revision exists or that
-a recipe, artifact or capacity reference is consistent. Such composition rules
-must be checked by the eventual producer and yield 422 when violated.
+a recipe, artifact or capacity reference is consistent. The current draft
+preparer validates the source shape and its local conditions; the explicit-defaults
+producer additionally checks declared values against the binding domains. A
+locally invalid definition is returned as 422, but draft creation does not query
+external references to establish their existence or eligibility. Those checks
+remain necessary before the relevant publication or use.
 
 201 is constrained to a draft and cannot carry publication evidence. A production
 target is still only a draft, without qualification or readiness. Original-key

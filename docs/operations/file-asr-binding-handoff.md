@@ -8,9 +8,9 @@ date: 2026-10-25
 # 文件 ASR 固定制品与参数交接
 
 本交接供 B00 #27、B03 #30/#142 与 A #21/#22/#23 接通首条文件 ASR。
-按 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md)，文件识别固定
-Qwen3-ASR-1.7B，CPU Silero VAD 门控后逐段识别。0.6B 的实时候选与
-CustomVoice TTS 各自交接，不以本单元替代。
+按 [ADR 0002](../decisions/0002-speech-models-engines-and-loading.md) 的首选验证路径，
+本候选使用 Qwen3-ASR-1.7B，CPU Silero VAD 门控后逐段识别；该选型不表示所有文件
+识别部署都已获资格。0.6B 的实时候选与 CustomVoice TTS 各自交接，不以本单元替代。
 
 ## 固定输入与离线复核
 

@@ -29,8 +29,9 @@ date: 2026-10-27
 1. **公开读模型独立于协调事实。** 新增 `speech_jobs` 与 `speech_job_events` 保存公开请求的
    固定摘要、生命周期状态、结果引用与事件序号；`coordination_jobs` 继续只保存协调身份。
    两者以 `job_id` 关联，不互写对方字段，不做跨表复制。
-2. **状态只前进，终态不回头。** 公开状态为 `pending → running → succeeded | failed |
-   cancelled | expired`。`succeeded` 必须同时具备已发布 artifact 引用与执行回执标识；
+2. **状态只前进，终态不回头。** `pending` 可转为 `running`、`failed`、`cancelled` 或
+   `expired`；`running` 可转为 `succeeded`、`failed` 或 `cancelled`。
+   `succeeded` 必须同时具备已发布 artifact 引用与执行回执标识；
    失败、取消、过期不得携带 artifact。读取路由只读持久事实，绝不在读路径触发执行。
 3. **提交幂等绑定原身份。** `Idempotency-Key` 与请求摘要共同决定业务键；同键异体返回
    `409`，同键同体返回原 Job 身份。结果未知时按原身份查询，不新建执行、不伪造成功。

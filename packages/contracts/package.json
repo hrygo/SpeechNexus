@@ -20,6 +20,7 @@
     "./profile-http": "./src/profile-http.ts",
     "./profile-lifecycle-http": "./src/profile_lifecycle-http.ts",
     "./model-bindings": "./src/model_bindings.ts",
+    "./release-evidence": "./src/release_evidence.ts",
     "./binding-http": "./src/binding-http.ts",
     "./gateway-recovery": "./src/gateway_recovery.ts",
     "./audio-inspection": "./src/audio_inspection.ts",

@@ -144,6 +144,10 @@ root/semantic limits and does not alter the default request surface.
   for every non-passing optional scenario, expiry after qualification,
   matching binding / manifest / release identities, and one engine component
   per manifest stage with the declared engine kind.
+  The `release_evidence` generated namespace exposes this report and
+  `CapacityManifest` for offline product consumers; parsing does not issue
+  qualification or prove measurements. The backend's bounded ingestion verifies
+  recorded raw digests and cross-document consistency separately.
 - `capacity-manifest.schema.json`: hardware-neutral capacity, execution stage
   graph, loading peak, resource vector, cancellation/fencing capability, and
   qualification manifest bound to an immutable `ModelBindingRevision`. Every

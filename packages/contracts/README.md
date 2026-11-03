@@ -39,6 +39,12 @@ through `binding_http` / `@speechnexus/contracts/binding-http`. Admin source is
 [ModelBinding draft contract handoff](../../docs/architecture/model-binding-drafts.md)
 for original-key recovery, unknown results and the remaining producer work.
 
+Release evidence consumers use Python `speechnexus_contracts.release_evidence`
+or TypeScript `@speechnexus/contracts/release-evidence` to parse
+`QualificationReport` and `CapacityManifest` from their existing canonical
+schemas. Parsing validates shape; it does not verify file digests, report
+semantics, evidence provenance, voice qualification or runtime readiness.
+
 ## Generate and verify
 
 Model catalogue consumers use the root parser on decoded `/v1/models` 200 JSON:

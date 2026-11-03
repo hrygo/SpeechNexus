@@ -10800,6 +10800,704 @@
         "source_samples": 4800,
         "duration_ms": 100
       }
+    },
+    {
+      "id": "release-evidence-QualificationReport-canonical",
+      "profile": "release_evidence",
+      "schema": "QualificationReport",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "report_id": "qrep-gb10-realtime-asr-20261022",
+        "binding": {
+          "id": "asr-realtime",
+          "revision": "4"
+        },
+        "binding_revision_id": "mbrev-asr-realtime-4",
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "release_tier": "experimental",
+        "topology": {
+          "host_node_id": "node-gb10-1",
+          "cpu_arch": "arm64",
+          "hardware_class": "nvidia-gb10-single-node",
+          "memory_architecture": "unified_memory",
+          "total_physical_memory_bytes": 137438953472,
+          "device_memory_bytes": 137438953472,
+          "shared_memory": {
+            "parent_budget_id": "parent-gb10-1",
+            "shared_with_roles": [
+              "speech",
+              "workbench_llm",
+              "auxiliary"
+            ]
+          }
+        },
+        "software": {
+          "application_version": "0.1.0.dev0",
+          "contract_version": "1.0.0",
+          "engine_components": {
+            "stage-silero-vad": {
+              "engine_kind": "onnx_runtime",
+              "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "runtime_version": "onnxruntime-1.23"
+            },
+            "stage-qwen3-asr-0.6b-preview": {
+              "engine_kind": "vllm",
+              "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "runtime_version": "vllm-2026.10"
+            },
+            "stage-qwen3-asr-1.7b-review": {
+              "engine_kind": "vllm",
+              "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "runtime_version": "vllm-2026.10"
+            }
+          }
+        },
+        "test_suite": {
+          "revision": "1",
+          "corpus_revision": "corpus-zh-en-smoke-1",
+          "scenario_ids": [
+            "asr-realtime-1-session",
+            "asr-realtime-plus-tts",
+            "asr-cancel-and-abort"
+          ]
+        },
+        "scenarios": [
+          {
+            "scenario_id": "asr-realtime-1-session",
+            "required": true,
+            "status": "passed",
+            "metrics": [
+              {
+                "name": "first_preview_latency",
+                "value": 820,
+                "unit": "ms",
+                "percentile": 95
+              },
+              {
+                "name": "final_latency",
+                "value": 1450,
+                "unit": "ms",
+                "percentile": 95
+              }
+            ],
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "notes": "Synthetic approved corpus only."
+          },
+          {
+            "scenario_id": "asr-realtime-plus-tts",
+            "required": true,
+            "status": "skipped",
+            "metrics": [],
+            "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "notes": "TTS coexistence not yet measured on this topology."
+          },
+          {
+            "scenario_id": "asr-cancel-and-abort",
+            "required": true,
+            "status": "skipped",
+            "metrics": [],
+            "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "notes": "Cancellation and quarantine recovery were not exercised in this run."
+          }
+        ],
+        "required_scenarios_passed": false,
+        "overall_status": "incomplete",
+        "limitations": [
+          "TTS coexistence was not measured; this report cannot qualify a mixed realtime deployment.",
+          "No production quality threshold has been frozen for the target corpus."
+        ],
+        "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "qualified_at": "2026-10-22T09:00:00Z",
+        "expires_at": "2027-04-22T09:00:00Z"
+      }
+    },
+    {
+      "id": "release-evidence-QualificationReport-unknown-field",
+      "profile": "release_evidence",
+      "schema": "QualificationReport",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "report_id": "qrep-gb10-realtime-asr-20261022",
+        "binding": {
+          "id": "asr-realtime",
+          "revision": "4"
+        },
+        "binding_revision_id": "mbrev-asr-realtime-4",
+        "capacity_manifest_id": "capm-asr-realtime-full-segment-v1",
+        "release_tier": "experimental",
+        "topology": {
+          "host_node_id": "node-gb10-1",
+          "cpu_arch": "arm64",
+          "hardware_class": "nvidia-gb10-single-node",
+          "memory_architecture": "unified_memory",
+          "total_physical_memory_bytes": 137438953472,
+          "device_memory_bytes": 137438953472,
+          "shared_memory": {
+            "parent_budget_id": "parent-gb10-1",
+            "shared_with_roles": [
+              "speech",
+              "workbench_llm",
+              "auxiliary"
+            ]
+          }
+        },
+        "software": {
+          "application_version": "0.1.0.dev0",
+          "contract_version": "1.0.0",
+          "engine_components": {
+            "stage-silero-vad": {
+              "engine_kind": "onnx_runtime",
+              "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "runtime_version": "onnxruntime-1.23"
+            },
+            "stage-qwen3-asr-0.6b-preview": {
+              "engine_kind": "vllm",
+              "image_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "runtime_version": "vllm-2026.10"
+            },
+            "stage-qwen3-asr-1.7b-review": {
+              "engine_kind": "vllm",
+              "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "runtime_version": "vllm-2026.10"
+            }
+          }
+        },
+        "test_suite": {
+          "revision": "1",
+          "corpus_revision": "corpus-zh-en-smoke-1",
+          "scenario_ids": [
+            "asr-realtime-1-session",
+            "asr-realtime-plus-tts",
+            "asr-cancel-and-abort"
+          ]
+        },
+        "scenarios": [
+          {
+            "scenario_id": "asr-realtime-1-session",
+            "required": true,
+            "status": "passed",
+            "metrics": [
+              {
+                "name": "first_preview_latency",
+                "value": 820,
+                "unit": "ms",
+                "percentile": 95
+              },
+              {
+                "name": "final_latency",
+                "value": 1450,
+                "unit": "ms",
+                "percentile": 95
+              }
+            ],
+            "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "notes": "Synthetic approved corpus only."
+          },
+          {
+            "scenario_id": "asr-realtime-plus-tts",
+            "required": true,
+            "status": "skipped",
+            "metrics": [],
+            "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "notes": "TTS coexistence not yet measured on this topology."
+          },
+          {
+            "scenario_id": "asr-cancel-and-abort",
+            "required": true,
+            "status": "skipped",
+            "metrics": [],
+            "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "notes": "Cancellation and quarantine recovery were not exercised in this run."
+          }
+        ],
+        "required_scenarios_passed": false,
+        "overall_status": "incomplete",
+        "limitations": [
+          "TTS coexistence was not measured; this report cannot qualify a mixed realtime deployment.",
+          "No production quality threshold has been frozen for the target corpus."
+        ],
+        "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "qualified_at": "2026-10-22T09:00:00Z",
+        "expires_at": "2027-04-22T09:00:00Z",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "release-evidence-CapacityManifest-canonical",
+      "profile": "release_evidence",
+      "schema": "CapacityManifest",
+      "valid": true,
+      "value": {
+        "schema_version": "1.0.0",
+        "manifest_id": "capm-asr-realtime-full-segment-v1",
+        "binding_revision_id": "mbrev-asr-realtime-4",
+        "pool_id": "asr-realtime",
+        "service_class": "realtime",
+        "management_mode": "managed",
+        "release_tier": "experimental",
+        "loading_policy": "resident",
+        "topology_ref": {
+          "host_node_profile_id": "node-profile-arm64-unified-128g",
+          "memory_architecture": "unified_memory",
+          "requires_shared_parent_budget": true,
+          "topology_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "supported_tasks": [
+          "vad",
+          "asr_realtime",
+          "asr_full_segment_review"
+        ],
+        "supported_input_formats": [
+          "pcm_s16le_16k_mono"
+        ],
+        "supported_output_formats": [
+          "utf8_text",
+          "json_segments"
+        ],
+        "stage_graph": [
+          {
+            "stage_id": "stage-silero-vad",
+            "stage_role": "vad",
+            "engine_kind": "onnx_runtime",
+            "model_revision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 67108864,
+              "unified_physical_memory_bytes": 67108864,
+              "cpu_decode_millicores": 250,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 134217728,
+              "unified_physical_memory_bytes": 134217728,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 4194304,
+              "unified_physical_memory_bytes": 4194304,
+              "cpu_decode_millicores": 100,
+              "host_pcm_buffer_bytes": 2097152,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 64000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 4
+          },
+          {
+            "stage_id": "stage-qwen3-asr-0.6b-preview",
+            "stage_role": "asr_preview",
+            "engine_kind": "vllm",
+            "model_revision_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 3221225472,
+              "host_memory_bytes": 536870912,
+              "unified_physical_memory_bytes": 3758096384,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 4294967296,
+              "host_memory_bytes": 1073741824,
+              "unified_physical_memory_bytes": 5368709120,
+              "cpu_decode_millicores": 1000,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 268435456,
+              "host_memory_bytes": 33554432,
+              "unified_physical_memory_bytes": 301989888,
+              "cpu_decode_millicores": 150,
+              "host_pcm_buffer_bytes": 4194304,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 128000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 4
+          },
+          {
+            "stage_id": "stage-qwen3-asr-1.7b-review",
+            "stage_role": "asr_review",
+            "engine_kind": "vllm",
+            "model_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 6442450944,
+              "host_memory_bytes": 1073741824,
+              "unified_physical_memory_bytes": 7516192768,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 8589934592,
+              "host_memory_bytes": 1610612736,
+              "unified_physical_memory_bytes": 10200547328,
+              "cpu_decode_millicores": 1000,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 536870912,
+              "host_memory_bytes": 67108864,
+              "unified_physical_memory_bytes": 603979776,
+              "cpu_decode_millicores": 200,
+              "host_pcm_buffer_bytes": 4194304,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 128000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 2
+          }
+        ],
+        "resource_envelope": {
+          "resident_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 9663676416,
+            "host_memory_bytes": 1677721600,
+            "unified_physical_memory_bytes": 11341398016,
+            "cpu_decode_millicores": 1250,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "loading_peak_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 12884901888,
+            "host_memory_bytes": 2818572288,
+            "unified_physical_memory_bytes": 15703474176,
+            "cpu_decode_millicores": 2500,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "per_slot_incremental_budget": {
+            "engine_active_slots": 1,
+            "device_memory_bytes": 805306368,
+            "host_memory_bytes": 104857600,
+            "unified_physical_memory_bytes": 910163968,
+            "cpu_decode_millicores": 450,
+            "host_pcm_buffer_bytes": 10485760,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 1536000,
+            "egress_bandwidth_bps": 320000,
+            "object_storage_bytes": 0
+          },
+          "max_active_slots": 2,
+          "realtime_reserved_slots": 2
+        },
+        "rate_and_segment_limits": {
+          "max_prefill_tokens_per_sec": 4096,
+          "max_output_tokens_per_sec": 512,
+          "max_segment_audio_ms": 30000,
+          "max_render_unit_codepoints": 2000,
+          "max_output_audio_ms": 30000,
+          "hard_output_quota": true
+        },
+        "cancellation_and_fencing": {
+          "cancellation_mode": "engine_abort_confirmed",
+          "supports_request_abort": true,
+          "supports_fencing_barrier": true,
+          "worst_case_non_preemptible_ms": 450,
+          "max_drain_wait_ms": 5000,
+          "idle_reclaim_cooldown_ms": null
+        },
+        "qualification": {
+          "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+          "qualified_at": "2026-10-22T09:00:00Z",
+          "expires_at": "2027-04-22T09:00:00Z",
+          "config_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "verified_coexistence_profiles": [
+            "1_asr_realtime_plus_1_tts_realtime",
+            "voice_design_cold_load_under_realtime_load"
+          ]
+        }
+      }
+    },
+    {
+      "id": "release-evidence-CapacityManifest-unknown-field",
+      "profile": "release_evidence",
+      "schema": "CapacityManifest",
+      "valid": false,
+      "value": {
+        "schema_version": "1.0.0",
+        "manifest_id": "capm-asr-realtime-full-segment-v1",
+        "binding_revision_id": "mbrev-asr-realtime-4",
+        "pool_id": "asr-realtime",
+        "service_class": "realtime",
+        "management_mode": "managed",
+        "release_tier": "experimental",
+        "loading_policy": "resident",
+        "topology_ref": {
+          "host_node_profile_id": "node-profile-arm64-unified-128g",
+          "memory_architecture": "unified_memory",
+          "requires_shared_parent_budget": true,
+          "topology_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "supported_tasks": [
+          "vad",
+          "asr_realtime",
+          "asr_full_segment_review"
+        ],
+        "supported_input_formats": [
+          "pcm_s16le_16k_mono"
+        ],
+        "supported_output_formats": [
+          "utf8_text",
+          "json_segments"
+        ],
+        "stage_graph": [
+          {
+            "stage_id": "stage-silero-vad",
+            "stage_role": "vad",
+            "engine_kind": "onnx_runtime",
+            "model_revision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 67108864,
+              "unified_physical_memory_bytes": 67108864,
+              "cpu_decode_millicores": 250,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 134217728,
+              "unified_physical_memory_bytes": 134217728,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 0,
+              "host_memory_bytes": 4194304,
+              "unified_physical_memory_bytes": 4194304,
+              "cpu_decode_millicores": 100,
+              "host_pcm_buffer_bytes": 2097152,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 64000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 4
+          },
+          {
+            "stage_id": "stage-qwen3-asr-0.6b-preview",
+            "stage_role": "asr_preview",
+            "engine_kind": "vllm",
+            "model_revision_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 3221225472,
+              "host_memory_bytes": 536870912,
+              "unified_physical_memory_bytes": 3758096384,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 4294967296,
+              "host_memory_bytes": 1073741824,
+              "unified_physical_memory_bytes": 5368709120,
+              "cpu_decode_millicores": 1000,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 268435456,
+              "host_memory_bytes": 33554432,
+              "unified_physical_memory_bytes": 301989888,
+              "cpu_decode_millicores": 150,
+              "host_pcm_buffer_bytes": 4194304,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 128000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 4
+          },
+          {
+            "stage_id": "stage-qwen3-asr-1.7b-review",
+            "stage_role": "asr_review",
+            "engine_kind": "vllm",
+            "model_revision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "required_for_admission": true,
+            "emits_audio_pcm": false,
+            "resident_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 6442450944,
+              "host_memory_bytes": 1073741824,
+              "unified_physical_memory_bytes": 7516192768,
+              "cpu_decode_millicores": 500,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "loading_peak_budget": {
+              "engine_active_slots": 0,
+              "device_memory_bytes": 8589934592,
+              "host_memory_bytes": 1610612736,
+              "unified_physical_memory_bytes": 10200547328,
+              "cpu_decode_millicores": 1000,
+              "host_pcm_buffer_bytes": 0,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 0,
+              "egress_bandwidth_bps": 0,
+              "object_storage_bytes": 0
+            },
+            "per_slot_incremental_budget": {
+              "engine_active_slots": 1,
+              "device_memory_bytes": 536870912,
+              "host_memory_bytes": 67108864,
+              "unified_physical_memory_bytes": 603979776,
+              "cpu_decode_millicores": 200,
+              "host_pcm_buffer_bytes": 4194304,
+              "scratch_disk_bytes": 0,
+              "ingress_bandwidth_bps": 512000,
+              "egress_bandwidth_bps": 128000,
+              "object_storage_bytes": 0
+            },
+            "max_active_slots": 2
+          }
+        ],
+        "resource_envelope": {
+          "resident_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 9663676416,
+            "host_memory_bytes": 1677721600,
+            "unified_physical_memory_bytes": 11341398016,
+            "cpu_decode_millicores": 1250,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "loading_peak_budget": {
+            "engine_active_slots": 0,
+            "device_memory_bytes": 12884901888,
+            "host_memory_bytes": 2818572288,
+            "unified_physical_memory_bytes": 15703474176,
+            "cpu_decode_millicores": 2500,
+            "host_pcm_buffer_bytes": 0,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 0,
+            "egress_bandwidth_bps": 0,
+            "object_storage_bytes": 0
+          },
+          "per_slot_incremental_budget": {
+            "engine_active_slots": 1,
+            "device_memory_bytes": 805306368,
+            "host_memory_bytes": 104857600,
+            "unified_physical_memory_bytes": 910163968,
+            "cpu_decode_millicores": 450,
+            "host_pcm_buffer_bytes": 10485760,
+            "scratch_disk_bytes": 0,
+            "ingress_bandwidth_bps": 1536000,
+            "egress_bandwidth_bps": 320000,
+            "object_storage_bytes": 0
+          },
+          "max_active_slots": 2,
+          "realtime_reserved_slots": 2
+        },
+        "rate_and_segment_limits": {
+          "max_prefill_tokens_per_sec": 4096,
+          "max_output_tokens_per_sec": 512,
+          "max_segment_audio_ms": 30000,
+          "max_render_unit_codepoints": 2000,
+          "max_output_audio_ms": 30000,
+          "hard_output_quota": true
+        },
+        "cancellation_and_fencing": {
+          "cancellation_mode": "engine_abort_confirmed",
+          "supports_request_abort": true,
+          "supports_fencing_barrier": true,
+          "worst_case_non_preemptible_ms": 450,
+          "max_drain_wait_ms": 5000,
+          "idle_reclaim_cooldown_ms": null
+        },
+        "qualification": {
+          "qualification_report_id": "qrep-gb10-realtime-asr-20261022",
+          "qualified_at": "2026-10-22T09:00:00Z",
+          "expires_at": "2027-04-22T09:00:00Z",
+          "config_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "verified_coexistence_profiles": [
+            "1_asr_realtime_plus_1_tts_realtime",
+            "voice_design_cold_load_under_realtime_load"
+          ]
+        },
+        "unexpected": true
+      }
     }
   ]
 }

@@ -258,9 +258,9 @@
 | `docs/plans/2026-10-25-design-token-gate.md` | 历史保留 | 全文阅读，保留原门禁计划及验证；现行说明见 validation/ci-validation.md |
 | `docs/plans/2026-10-25-raster-gradient-contrast.md` | 历史保留 | 全文阅读，保留原计划及验证；现行说明见 validation/ci-validation.md |
 | `docs/plans/2026-10-25-team-a-realignment.md` | 历史保留 | 全文阅读，修正历史复盘状态并指向当前矩阵；历史验证未重跑 |
-| `docs/plans/2026-10-25-team-c-admin-diagnostics-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-assistant-honest-consumer-handoff.md` | 待核对 | — |
-| `docs/plans/2026-10-25-team-c-assistant-honest-state-browser-handoff.md` | 待核对 | — |
+| `docs/plans/2026-10-25-team-c-admin-diagnostics-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-assistant-honest-consumer-handoff.md` | 历史保留 | 全文阅读，标明历史状态及后续浏览器证据；历史验证未重跑 |
+| `docs/plans/2026-10-25-team-c-assistant-honest-state-browser-handoff.md` | 历史保留 | 全文阅读，修正历史状态并指向当前入口；历史验证未重跑 |
 | `docs/plans/2026-10-25-team-c-authoring-consumer-fix-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-capability-report-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-25-team-c-chapter-create-consumer-handoff.md` | 待核对 | — |

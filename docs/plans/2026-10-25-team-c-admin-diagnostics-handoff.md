@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：Admin 部署诊断页（能力三态只读）"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：Admin 部署诊断页（能力三态只读）
+
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 AdminUI 此前只有静态能力卡（`ready`/`contract`/`planned` 三张写明"计划"），**没有任何一处读取部署自身的状态**：能力三态、内网模型绑定、共享部署声明在管理入口都不可见，运维只能靠猜或看日志。本单元把可读事实接到 AdminUI，同时保持"没有可读来源就不显示"的边界。
 

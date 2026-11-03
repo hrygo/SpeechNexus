@@ -195,7 +195,7 @@ executing 观察可以对账并保存版本，但不触发再次外发。
 
 ### 6.1 本机外发排序
 
-- 每个 pool 一把普通进程内锁，覆盖 `add` 提交 → adapter 外发 → `save` 提交。等待锁后再次查询
+- 每个 pool 一把普通进程内锁，覆盖 `add` 提交 → adapter 外发 → `record_execution_observation` 提交。等待锁后再次查询
   原 intent，避免并发同身份再次外发；旧身份仍可重放查询并对账。
 - 封锁先提高本地最低 token，再等已有外发段退出。等待默认 3 秒，可配置且最多 30 秒；
   超时报告 `reconciliation_required/retry_transaction`，不返回 `barrier_sealed=true`。
@@ -269,8 +269,9 @@ pool→submit→abort 锁序提交原始取消，才等待发送锁、消耗唯�
 传输超时、断连、找不到或无从核对一律记 `unknown_quarantined`/`cancellation_unconfirmed` 并继续占用。
 已终态的 intent 直接返回记录快照，不再询问引擎；属于其他 gateway/node 的执行为 404
 `control_execution_not_found`，尝试与记录不符为 422，token 不符为 409。
-未注入引擎 adapter 时，两条路由都返回 503 `control_store_unavailable`（`retry_transaction`）
-且不写任何行，避免把“本网关没有 adapter”读成已提交或已停止。
+未配置或注入引擎 adapter 时，两条路由都返回 503 `control_store_unavailable`（`retry_transaction`）
+且不写任何行，避免把“本网关没有 adapter”读成已提交或已停止。启用文件执行配置时，组合根为
+提交和中止路由装配文件执行 runtime；这不表示该 runtime 必然能确认引擎停止。
 
 drain 只报告能被核对的事实。先按记录的 instance 身份核对 host/pool/gateway 与代次：代次或宿主
 不符为 409 `instance_generation_mismatch`，低于本网关已封锁最低 token 或本地 floor 的 token 为

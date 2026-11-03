@@ -519,7 +519,7 @@
 - 固定字幕导出格式及时间轴契约；浏览器通过正式导出消费者读取，旧数据格式及失败边界保留。
 - 固定文本、voice/profile/model revision，真实TTS试听及下载，重试不重复发布。
 - 验证Range、MP3/WAV/PCM和过期边界；取消未知、断线、迟到与原键恢复；浏览器不持引擎、数据库或组件凭据。
-- CustomVoice每intent最多400 codepoints；指令Nexus2000、标准/内部4096、引擎默认500的有效映射待确认并验证，不静默截断。
+- CustomVoice 每 intent 最多 400 codepoints；指令 Nexus 入口上限 2000、标准请求及内部命令上限 4096、固定版本默认 pipeline 上限 500，其有效映射待确认并验证，不静默截断。
 
 设计依据：[technical-blueprint.md](architecture/technical-blueprint.md)、[data-deletion.md](architecture/data-deletion.md)。
 

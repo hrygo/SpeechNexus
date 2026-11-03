@@ -55,7 +55,7 @@ date: 2026-10-28
 | `capacity_manifest_id` | 是 | 配对 manifest 的 ID | 证据作者 | 必须等于 manifest `manifest_id`；不得写占位值 |
 | `release_tier` | 是 | `experimental` / `best_effort` / `production` | 产品负责人；SM+PO 放行 | 必须等于 manifest；`production` 要求 required 全通过且有有效期 |
 | `topology` | 是 | 主机、CPU、硬件类别、内存架构、总物理内存、共享父预算 | 平台/实验负责人 | 必须与 manifest `topology_ref`、`host_nodes` 对齐；拓扑摘要见 §7 |
-| `software` | 是 | 应用版本、契约版本、每个 stage 的引擎组件 | 报告作者从 pin/镜像读取 | 组件 key 集合 = manifest stage id；engine kind 相等；image digest 与 evidence 一致 |
+| `software` | 是 | 应用版本、契约版本、每个 stage 的引擎组件 | 报告作者从 pin/镜像读取 | 组件 key 集合 = manifest stage id，engine kind 相等；镜像摘要须逐 stage 核验，脚本只比较特定单镜像场景，见 §3.2 |
 | `test_suite` | 是 | 测试套件 revision、语料 revision、scenario id 列表 | 测试/证据负责人 | `scenario_ids` 必须与 `scenarios[].scenario_id` 一一对应且无重复 |
 | `scenarios` | 是 | 每个 scenario 的结果、指标、证据摘要、备注 | 测量执行人/转述人 | 状态只能是 passed/failed/skipped；每个 id 恰好一条 |
 | `required_scenarios_passed` | 是 | 计算值：至少一个 required 且全部 required passed | 报告作者计算 | 必须与 scenarios 一致；脚本会重算 |

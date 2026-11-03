@@ -25,9 +25,9 @@
 | `docs/archive/legacy-postgresql-coordination.md` | 历史保留 | 全文阅读，明确标为旧原型并指向现行架构；无需按当前实现改写，原始证据未逐项复核 |
 | `docs/audits/2026-10-22-development-environment-readiness.md` | 历史保留 | 2026-10-22 环境就绪快照；目录入口已说明不代表当前主机状态，未重新验证当时证据 |
 | `docs/audits/2026-10-22-speechnexus-design-review.md` | 历史保留 | 0.3.0 设计基线的审查与裁决记录；入口按审查记录引用，未重新验证当时证据 |
-| `docs/audits/2026-10-23-architecture-contract-compliance.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
-| `docs/audits/2026-10-23-architecture-contract-repair-closure.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
+| `docs/audits/2026-10-23-architecture-contract-compliance.md` | 历史保留 | 审查快照已注明时点和当前入口；原审查证据未逐项复核 |
+| `docs/audits/2026-10-23-architecture-contract-post-refactor-review.md` | 历史保留 | 固定基线的重构后审查，已注明当前入口；原审查证据未逐项复核 |
+| `docs/audits/2026-10-23-architecture-contract-repair-closure.md` | 历史保留 | 固定基线的修复验收记录，已注明当前入口；原验收证据未逐项复核 |
 | `docs/audits/2026-10-23-ui-ux-design-framework-audit.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
 | `docs/audits/2026-10-24-b01-default-recovery-driver.md` | 部分核对 | 核对文件清单及开头时点、基线和证据边界；正文及历史证据待逐项复核 |
@@ -166,7 +166,7 @@
 | `docs/plans/2026-10-23-implementation-tracking.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
 | `docs/plans/2026-10-23-team-a-goal.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
 | `docs/plans/2026-10-23-team-b-goal.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
-| `docs/plans/2026-10-23-three-team-delivery-plan.md` | 部分核对 | 核对历史时点、现行入口及本地链接目标；历史计划和验收结果待复核 |
+| `docs/plans/2026-10-23-three-team-delivery-plan.md` | 历史保留 | 固定基线的三团队分工、任务和关口规划；文首与计划索引已注明历史性质和当前入口，历史验收证据未逐项复核 |
 | `docs/plans/2026-10-24-a01-runtime-intent-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-a02-asset-publication-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |
 | `docs/plans/2026-10-24-a02-binding-drafts-unit.md` | 待核对 | 已提取标题及开头供初筛，输出未完整审阅；全文和证据待核对 |

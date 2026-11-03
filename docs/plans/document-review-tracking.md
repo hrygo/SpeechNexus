@@ -58,16 +58,16 @@
 | `docs/audits/2026-10-26-deployment-units-review.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
 | `docs/audits/2026-10-26-project-handoff.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
 | `docs/audits/2026-10-26-team-b-handoff.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-team-c-a11y-rerun.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-team-c-capture-cleanup.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-team-c-a11y-rerun.md` | 历史保留 | 全文阅读，固定构建的落地页自动可访问性复跑；明确排除读屏及面板状态，未重跑测试 |
+| `docs/audits/2026-10-26-team-c-capture-cleanup.md` | 历史保留 | 全文阅读，固定基线的本地采集清理与合成浏览器验证；未重跑测试 |
 | `docs/audits/2026-10-26-team-c-closeout-issue-audit.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
 | `docs/audits/2026-10-26-team-c-evidence-retention.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-team-c-input-device.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-team-c-input-device.md` | 历史保留 | 全文阅读，固定基线的输入选择及虚拟设备验证；未重跑测试或核验物理设备 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-team-c-realtime-focus.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-team-c-realtime-focus.md` | 历史保留 | 全文阅读，固定基线的焦点修复、反例及后续合入记录；未重跑测试或复核远端 CI |
 | `docs/audits/2026-10-26-team-c-realtime-integrity.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
 | `docs/audits/2026-10-26-team-c-remaining-gaps.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
-| `docs/audits/2026-10-26-team-c-render-loop-status.md` | 部分核对 | 核对文件开头的历史日期、基线和结果边界；正文及原始证据待逐项复核 |
+| `docs/audits/2026-10-26-team-c-render-loop-status.md` | 历史保留 | 全文阅读，固定收尾基线的有声书实现与证据矩阵；由历史交接引用，未重验当时证据 |
 | `docs/audits/2026-11-03-controlled-tts-prepare.md` | 部分核对 | 全文阅读并对照第六窗口证据文件及摘要，修正最新结论；各窗口原始事实尚未逐项核验 |
 | `docs/audits/README.md` | 部分核对 | 全文阅读并修正历史交接入口、补充 TTS 审计入口；各历史摘要与原文待逐项核对 |
 | `docs/components/README.md` | 已核对 | 核对索引中各目标文件、标题与候选状态；不代表目标正文已审 |

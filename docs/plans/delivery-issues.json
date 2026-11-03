@@ -899,7 +899,7 @@
         "docs/architecture/technical-blueprint.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "工作台 App 挂载 DeletionHost；工厂有清理身份时装配删除服务、先重放账本并启动 sweeper。",
+      "implementation": "工作台 App 挂载 DeletionHost；工厂有清理身份时在 HTTP 服务前重放账本并启动 sweeper，但部分后台任务在重放前已创建，尚无统一启动屏障。",
       "integration": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。",
       "verification": "本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",
       "gap": "上述页面与服务按源码静态装配；依赖配置、真实服务链路和运行结果本轮未验证。 本项完整 AC 待验收；当前 CI 不代表真实服务、设备或目标部署资格。",

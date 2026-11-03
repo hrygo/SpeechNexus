@@ -87,6 +87,10 @@ ledger_id 必须幂等；账本缺失、对象版本不确定或执行状态未�
 
 ## Workbench 当前实现与恢复边界
 
+当前 Workbench 删除预检只接受 `project` 和 `transcript` 作为直接目标；其他合法的
+Workbench 资源类型返回 `422 deletion_resource_unsupported`。项目级级联依赖可包含
+其他资源，但不代表这些资源已提供独立删除入口。
+
 当前 Workbench HTTP 在查询删除幂等回执之前以 `400 invalid_request` 拒绝重复的
 `confirm_targets`；应用层也会拒绝重复项。合法形状的请求才按原键查询回执，并在检查
 plan 是否存在、过期及快照变化之前重放已接受意图。

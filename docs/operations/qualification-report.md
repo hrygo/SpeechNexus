@@ -7,7 +7,7 @@ date: 2026-10-28
 
 # 资格报告（发布证据）
 
-`qualification_report` 证明“某一个不可变 binding revision、某一组引擎镜像/运行时、某一组模型制品、某一套拓扑和契约版本，通过了声明的测试场景”。它不是模型排行榜，也不是“跑过一次就算生产可用”。发布命令必须同时收到 manifest id 与 report id；报告与 manifest 的 binding revision、release tier、时间、stage/engine 组件必须一致。
+`qualification_report` 记录某一个不可变 binding revision、引擎镜像/运行时、模型制品、拓扑和契约版本的测试场景及其结果；报告也可以是 `fail` 或 `incomplete`，不能仅凭报告存在就认定场景通过。它不是模型排行榜，也不是“跑过一次就算生产可用”。发布命令必须同时收到 manifest id 与 report id；报告与 manifest 的 binding revision、release tier、时间、stage/engine 组件必须一致。
 
 本文回答：
 
@@ -59,10 +59,10 @@ date: 2026-10-28
 | `test_suite` | 是 | 测试套件 revision、语料 revision、scenario id 列表 | 测试/证据负责人 | `scenario_ids` 必须与 `scenarios[].scenario_id` 一一对应且无重复 |
 | `scenarios` | 是 | 每个 scenario 的结果、指标、证据摘要、备注 | 测量执行人/转述人 | 状态只能是 passed/failed/skipped；每个 id 恰好一条 |
 | `required_scenarios_passed` | 是 | 计算值：至少一个 required 且全部 required passed | 报告作者计算 | 必须与 scenarios 一致；脚本会重算 |
-| `overall_status` | 是 | `pass` / `fail` / `incomplete`，只看 required | 报告作者计算 | fail 若有 required failed；pass 若 required 全 passed；否则 incomplete |
-| `limitations` | 是 | 已知限制；非通过的可选/必需项必须记录 | 报告作者 | experimental 必须非空；每个 skipped/failed optional 至少一条限制；不能写“无”掩盖 |
+| `overall_status` | 是 | `pass` / `fail` / `incomplete`，只看 required | 报告作者计算 | fail 若有 required failed；pass 若至少有一个 required 且全部 passed；否则 incomplete |
+| `limitations` | 是 | 已知限制；非通过的可选/必需项必须记录 | 报告作者 | 校验脚本要求非生产报告非空；每个 skipped/failed optional 的限制须人工核对；不能写“无”掩盖 |
 | `evidence_digest` | 是 | `evidence.json` 原始文件字节的 SHA-256 | 证据作者 | 必须等于文件 SHA；不是 JSON 规范化摘要 |
-| `qualified_at` | 是 | 资格完成时间（ISO 8601，带时区） | 测量/证据负责人 | 必须早于 `expires_at`；必须与 manifest 相同 |
+| `qualified_at` | 是 | 资格完成时间（ISO 8601，带时区） | 测量/证据负责人 | 有 `expires_at` 时必须早于它；必须与 manifest 相同 |
 | `expires_at` | 否（production 必须有） | 证据失效时间 | 证据负责人按政策 | 与 manifest 相同；过期即失效；`null` 只能用于非生产 |
 
 ## 3. 嵌套字段
@@ -98,7 +98,7 @@ date: 2026-10-28
 | `test_suite.corpus_revision` | 语料 revision/标识 | 测试负责人 | 必须是可追溯的语料版本；不能只写“FLEURS” |
 | `test_suite.scenario_ids` | 场景 id 列表 | 测试负责人 | 与 `scenarios` 一一对应、无重复 |
 | `scenarios[].scenario_id` | 场景 id | 测试负责人 | `Identifier`；与 suite 完全一致 |
-| `scenarios[].required` | 是否门禁 | 产品/测试负责人 | required 至少一个；不能把失败场景改成 optional 来“通过” |
+| `scenarios[].required` | 是否门禁 | 产品/测试负责人 | 要获得 pass 至少需要一个 required；没有 required 时状态为 incomplete。不能把失败场景改成 optional 来“通过” |
 | `scenarios[].status` | `passed` / `failed` / `skipped` | 测量执行人 | skipped 不是 pass；必须有 notes/limitation |
 | `scenarios[].metrics` | 指标数组 | 测量执行人 | 每个 metric：name/value/unit（可选 percentile 0–100） |
 | `scenarios[].evidence_digest` | 该 scenario 在 evidence.json 中对象的 RFC 8785 SHA-256 | 证据作者 | 必须与 evidence 对象重算值相等；不是文件摘要 |
@@ -174,7 +174,7 @@ else:
 规则：
 
 - `skipped` 对 required 而言是**未完成**，不是通过；
-- optional failed/skipped 不改变 `overall_status`，但必须出现在 `limitations`；脚本会给 `WARN`；
+- optional failed/skipped 不改变 `overall_status`，但必须出现在 `limitations`；脚本会给 `WARN`，不会逐条验证限制文字是否对应每个场景，须人工核对；
 - `production` 要求 `overall_status=pass`、`required_scenarios_passed=true`、`expires_at` 非空；manifest 也必须是 `production`，且定义 `release_tier` 一致；
 - `experimental`/`best_effort` 可以 incomplete，但不能用 incomplete 报告支撑生产发布；
 - 报告与 manifest 的 `release_tier` 不一致即 `FAIL`。
@@ -213,7 +213,7 @@ else:
 
 ### 6.3 有效期
 
-- `qualified_at` 必须早于 `expires_at`；样例为 90 天（2026-10-27 → 2027-01-25）；
+- 提供 `expires_at` 时，`qualified_at` 必须早于它；样例为 90 天（2026-10-27 → 2027-01-25）；
 - `production` 不得使用 `expires_at: null`；到期即失效，不能继续支撑发布；
 - 失效事件：模型/权重/模型卡变化、引擎镜像/runtime 变化、拓扑/主机/内存架构变化、pool/service class/management mode 变化、stage graph/向量/限额/取消能力变化、语料/阈值变化、实测发现容量或质量退化、报告到期；
 - 失效后必须新 report id（通常也新 manifest/revision），保留旧报告和原始输出；不能原地改已发布 JSON。
@@ -351,7 +351,7 @@ else:
 }
 ```
 
-模板中的 `0`、空 metrics 和 `skipped` 是形状占位；真实报告必须按实际结果填写，不能把模板当通过证据。
+该模板是待填写的示意，并非有效的 schema 示例：`total_physical_memory_bytes` 的 `0` 不满足最小值 1，`<...>` 身份、摘要和时间也须替换为有效值。空 metrics 和 `skipped` 仅表示尚未完成的场景。`expires_at` 要替换为有效时间字符串，或在允许无有效期的非生产报告中替换为 JSON 字面量 `null`，不能填字符串 `"null"`。真实报告必须按实际结果填写，不能把模板当通过证据。
 
 ## 10. 校验命令与输出
 
@@ -386,7 +386,7 @@ uv run --no-project \
 - 对传入的 `--binding-definition` 与快照内定义分别执行同一组语义检查：`capacity_manifest_id` 存在且等于 manifest、release tier 可识别并一致、stage roles/tasks/max segment 对应（输出前缀分别为 `binding_definition.*` 与 `definition.*`）；
 - live/快照 DB 的 revision/publication/evidence/instance/host/pool/workspace 账本。
 
-样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/operations/release-evidence-verification-output.txt`。
+历史样例正例输出 `RESULT PASS_WITH_WARNINGS`（optional 非通过、fixture source），负例把定义/证据改成 `local-test-capacity-1` 后输出 `RESULT FAIL`、退出码 `1`，并给出 `definition.capacity_manifest_id`、`definition.placeholder`、`database.evidence_identity`、`database.evidence_placeholder` 等失败项。原始输出见 `docs/operations/release-evidence-verification-output.txt`；重跑时会按当前时间检查有效期，不能预设结果相同。
 
 当前随仓 `deploy/engines/file-asr-audio/binding-definition.json` 不是可用发布定义：校验器会直接报
 `binding_definition.capacity_manifest_id=FAIL`（missing）和

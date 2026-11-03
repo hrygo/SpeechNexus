@@ -6,8 +6,10 @@ date: 2026-11-03
 
 # 受控 TTS 验收与资源收尾
 
-最新结论：第四次窗口仍未取得标准 SDK WAV。已确认验收工具的 48 字符文本超出
-实际批准并发布的 32 字符资格；CPU 修复将文本缩短至 27 字符，尚未据此重做真实验收。
+最新结论：第五次窗口已取得标准 SDK 的真实 HTTP 200 和可解码 WAV，停止、正式结算及
+清理均完成。但关联验收失败，且脚本存在 JSON 排序回读后误判的确定缺陷；临时账本随后
+被清理，未保全原有效命令
+摘要与 staging PCM 一致性验证；完整 Goal 仍未接收。第四窗口确认的文本超资格问题已修复。
 各次窗口事实按下文分别保留。
 
 首次窗口未取得可用声音资格，也未完成公开同步 TTS 验收。固定候选为
@@ -196,3 +198,52 @@ READ ONLY REPEATABLE READ 事务；没有扩大生产权限，实际租约重放
 不放宽生产校验。新增回归将真实标准 SDK 请求交给生产能力校验器，覆盖上述 32 字符边界。
 这是 CPU 回归，不能计作真实 SDK 合成成功；下一次运行须固定修复后的工具版本，
 同步 TTS Goal 仍未完成。
+
+## 第五次独立授权窗口：真实 SDK 成功，完整关联证据仍缺失
+
+生产继续固定 `67f894331a8116dedbb402c2509b968e18f551d2`，SDK 工具更新为
+`fc0ed160a5c01fec980be6061a0ea77e814e8dd7`，使用 27 字符合成英文。
+原模型 revision、Vivian、镜像、来源截止及资源限制不变；SDK 未重发。
+
+| 检查 | 本轮实测 |
+| --- | --- |
+| 窗口（北京时间） | 2026-11-03 13:44:49.587718 至 13:59:14.184018，864.596 秒 |
+| 运行前 RAM | 32.315 GiB；控制器 healthz / readyz 均 200，每次 prepare 另核验至少 24 GiB |
+| 固定制品 | 2002 个 Git blob 一致；SDK 脚本 SHA-256 为 `393ad43988d986610fa417354ad1fd8b6df0140909e7c841ee0f7cce794e849c`；7 个锁定 SDK wheel 核验通过 |
+| 原生 g1 | 鉴权、双预热、英文完整 WAV、连接中断及可信停止通过；WAV 1600 / 1600 / 3520ms |
+| g2 正式公开链 | 正式 prepare/outbox、真实 READY / 网关、资格 probe 及声音发布后，唯一标准 OpenAI SDK 请求返回 200 |
+| SDK WAV | 88364 bytes，PCM16 / 24000 Hz / mono，44160 frames、1840ms；完整解码且 PCM 非零，在十秒上限内 |
+| WAV 摘要 | `sha256:72d659998540870cbf8cb77a594579d6d9fb647dda609b76faf6de2f1f028bf2` |
+| 解码 PCM 摘要 | `sha256:c8b5cecb803255f1b943f09e4efefa52c75a1bb172b5679d7ca73e56a98d042a`；未与已删除的 staging 对象重新比对 |
+| 准入与租约 | probe 和 SDK 各一组 operation / attempt / lease / submit；两条 lease 均 released / cleanup complete、settled |
+| 重放与预算 | 两条原 lease 重放前后完全一致；instance stopped / base released，host 十二维、slots、quota held/quarantined 全零 |
+| 正常停止 | stop-create → submission_started → 原 stop POST → 原意图 ACK → 正式 observe，全部通过 |
+| 清理 | 专用服务于 595.954 秒完成清理；含远端目录、凭据及依赖于 864.596 秒全清，18 个共享容器基线一致，无新增 worktree |
+
+[第五次窗口单份结构化证据](evidence/2026-11-03-tts-window-5.json) 保留 30 份脱敏 JSON
+原字节摘要、解析内容、日志摘要、helper 摘要、音频元数据/摘要、运行级身份推导与最终清理回执。
+不导出音频、凭据或完整引擎日志；其 `missing` 同时包含未生成的历史派生文件和确实缺失的
+`sdk-association-after.json`，须逐项按用途判定，不能把采集成功当作验收通过。
+
+### 本轮驱动与关联缺口
+
+首次驱动在 g1 prepare 成功后，由于本次部署遗漏私有 gateway / API context 生成而停止；
+当时无 native 测量、endpoint 制品或 SDK 请求。补齐上下文后，核实原驱动已终止、两道守护仍
+活动，沿原 g1 继续；不重新 prepare g1，不扩大代次、SDK 次数或窗口期限。接续子进程组
+超时会整体终止并确认退出，异常继续保留原身份协调，不以删除代替释放。
+
+SDK 的真实 WAV 成功与后续验收失败须分别记录。关联工具把数据库行转换成
+`tuple(row.values())`；before 经 `sort_keys=True` 保存后，attempt 行列顺序与 SQL 返回顺序
+不同，导致集合差分误判。已在 CPU 上复现这个会在读取网关原回执和 staging 对象前触发的
+确定缺陷；现场只保留了泛化失败，未保留细分堆栈，不能补记实际失败步骤已独立观测。
+驱动仍继续停止、结算并删除了临时 PostgreSQL / MinIO，使原 business/request/command
+摘要和 staging PCM 同值校验无法补证。这里存在验收及清理流程缺陷，不能改写成完整接收。
+
+本轮证据可以按显式 `lease_id` 集合差分及 settlement 外键，在同一 installation 中重建
+唯一新增 SDK 的 operation / attempt / lease / submit 及释放关联；结果见 `derived_sdk_execution`。
+这是现存权威快照的具名推导，不是恢复出已丢失的有效命令或网关回执，不能用“计数为 2”
+代替关联证明。SDK 成功、可信停止与预算释放已证实；原有效命令及结果的完整关联尚未证实。
+
+后续先将关联工具纳入版本管理，按显式列名比较身份并覆盖 JSON 排序回读；关联未验完时
+先保留临时账本和对象供窗口内只读核实，仍须按原期限停止并清理。不得自动重发 SDK、
+自动追加 GPU 窗口，或通过放宽关联要求结束 Goal。

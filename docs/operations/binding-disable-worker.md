@@ -6,7 +6,7 @@ worker 针对显式配置的一组 gateway/node 扫描持久停用记录，取�
 
 配置 `SPEECHNEXUS_PROCESS_ROLE=binding-disable-worker`、扫描角色的 `SPEECHNEXUS_DISABLE_DATABASE_URL`、结算角色的 `SPEECHNEXUS_DISABLE_SETTLEMENT_DATABASE_URL`、`SPEECHNEXUS_DATABASE_SCHEMA`、`SPEECHNEXUS_DISABLE_GATEWAY_ID`、`SPEECHNEXUS_DISABLE_NODE_ID`、`SPEECHNEXUS_EXECUTION_GATEWAY_BASE_URL` 和 `SPEECHNEXUS_EXECUTION_GATEWAY_COMPONENT_CREDENTIAL`。gateway 地址须是无凭据、非根路径、查询和片段的 origin；非 loopback 地址必须使用 HTTPS。还须显式配置有界的 `SPEECHNEXUS_DISABLE_GATEWAY_TIMEOUT_SECONDS`、`SPEECHNEXUS_DISABLE_STORAGE_TIMEOUT_SECONDS`、`SPEECHNEXUS_DISABLE_POLL_SECONDS`、`SPEECHNEXUS_DISABLE_BATCH_SIZE` 和 `SPEECHNEXUS_DISABLE_WAIT_TIMEOUT_MS`。凭据通过部署批准的秘密管理机制提供。启动命令为 `python -m speechnexus_backend.binding_disable_worker`。
 
-这些必填配置的范围分别为：gateway 超时 `(0, 60]` 秒、存储超时 `(0, 30]` 秒、轮询间隔 `[0.1, 300]` 秒、批量大小 `[1, 128]`，以及等待超时 `[100, 60000]` 毫秒；浮点值必须有限。组件凭据至少 16 个字符。
+这些必填配置的范围分别为：gateway 超时 `(0, 60]` 秒、存储超时 `(0, 30]` 秒、轮询间隔 `[0.1, 300]` 秒、批量大小 `[1, 128]`，以及等待超时 `[100, 60000]` 毫秒；浮点值必须有限。两条数据库连接都必须显式指定主机（`host` 或 `hostaddr`）、数据库名和用户，不能依赖客户端默认值。组件凭据长度为 16–4096 个字符，且只能包含 ASCII 33–126 的可见字符。
 
 每轮重新访问持久记录，并按原 lease ID 分页处理匹配 gateway/node 的租约。租约服务与 gateway 提交串行化：持有租约锁时没有提交记录才允许按未提交路径释放；已提交或隔离的执行需要该服务要求的证据。释放事务提交结果未知时按同一 lease ID 查询。多个 worker 可以重复访问同一身份，但结果由租约行锁和幂等释放决定。一轮成功或空页不证明所有引擎已停止或取消已完成。
 

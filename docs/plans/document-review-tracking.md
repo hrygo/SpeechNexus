@@ -317,12 +317,12 @@
 
 | 文档（相对仓库根目录） | 状态 | 核对依据与结果 |
 | --- | --- | --- |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.check.json` | 已核对 | 对照综合报告和脚本核对检查项目、状态及 SVG / PNG 摘要；是历史渲染记录，未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.png` | 部分核对 | 确认 4K 尺寸、文档引用及与预览缩放后的像素接近；预览图面的部分语义已核对，其余拓扑待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.preview.png` | 部分核对 | 查看图面，对照部署图说明核对目标架构标记、主机角色、数据库及对象存储、同事务准入和示例容量边界；实际部署与其他拓扑细节待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/01-cluster-overview-4k.svg` | 部分核对 | 确认 SVG 格式及部署文档引用；图面内容待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 部分核对 | 历史报告的 SVG 和 PNG 摘要匹配当前文件；未重跑布局检查 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.check.json` | 已核对 | 对照综合报告和脚本核对检查项目、状态及 SVG / PNG 摘要；是历史渲染记录，未重跑布局检查 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.content.json` | 已核对 | 核对 JSON 语法、构图脚本的生成入口和渲染脚本的文字清单用途；清单只检查选定文字，不证明拓扑语义 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.png` | 部分核对 | 确认 4K 尺寸、文档引用及与预览缩放后的像素接近；预览图面的部分语义已核对，其余拓扑待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/02-model-instance-topology-4k.preview.png` | 部分核对 | 查看图面，对照 ADR 0002 与实例 schema 核对模型、运行时、实例与池归属；数量和容量为示例，实际部署及其他拓扑细节待核对 |
@@ -333,8 +333,8 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 部分核对 | 核对 SVG、内容清单及模型清单输出入口；未重新生成或逐项审查绘图逻辑 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 已核对 | 核对 JSON 及三个素材键与构图用途；提示词是历史制作资料，不代表当前部署事实 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 已核对 | 8 项的全部字段与构图脚本生成源一致，模型、引擎及加载方向与 ADR 0002 对照一致；这是目标选型，实际制品和部署资格未验证 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 部分核对 | 核对浏览器渲染、布局及素材检查入口；未重跑或逐项审查所有断言 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | 2026-10-26 报告中的三份素材摘要匹配当前文件；未重跑渲染或验证全部结论 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 已核对 | 全文核对渲染、标记元素布局、素材与模型目录断言及报告输出；语法检查通过，未重跑浏览器渲染 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 已核对 | 2026-11-03 报告的三份素材及两组 SVG / PNG 摘要匹配当前文件，与单图报告一致；对照脚本核对检查范围，未重跑渲染 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 历史保留 | 对照原 AC 说明核对 41 项、278 子条件及 not_run 状态；未复核原始证据 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 历史保留 | 全文阅读并对照最终交接的版本、计数与资格边界；原始日志和制品未复验 |
 | `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |

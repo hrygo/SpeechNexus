@@ -101,4 +101,4 @@ node render_and_validate.cjs --channel chrome
 
 脚本检查原生像素尺寸、预期文字清单与模型目录，并对带检查标记的文字、所属容器、图标和插画检查边界及间距；带标记的连线通过路径采样检查与文字、插画的避让。它还检查资源加载失败和所选文字中的过程性内容；这些检查不覆盖未标记元素，也不能证明拓扑语义正确。
 机械检查后打开两张 PNG 人工核对分区、模型归属、连线路径与阅读密度。
-结果见[总览检查](01-cluster-overview-4k.check.json)、[模型检查](02-model-instance-topology-4k.check.json)与[综合验证](validation.json)。
+仓库中的[总览检查](01-cluster-overview-4k.check.json)、[模型检查](02-model-instance-topology-4k.check.json)与[综合验证](validation.json)是 2026-11-03 的渲染记录；报告中的摘要可用于核对图文件是否变化，不能替代当前环境重绘和人工审阅。模型目录的自动检查只覆盖条目数、别名唯一性及指定引擎分布，不验证模型 ID 或部署资格。

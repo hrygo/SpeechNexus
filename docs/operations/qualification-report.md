@@ -232,7 +232,7 @@ else:
 | `model.license` | 许可证（样例 Apache-2.0） | 报告不记录 license；发布检查清单/法务接受另行留痕 |
 | `model.model_card.digest` | 模型卡文件摘要 | 与 pin/模型卡原始字节核对 |
 | `model.files[].artifact.digest` | 权重/配置/词表文件摘要 | 本任务未下载模型，不能声称重算；发布前必须按制品存储核对 |
-| `vad` 对象 | VAD 仓库/revision/ONNX artifact（样例 MIT） | 只有当 VAD 进入 stage graph 时才成为对应 stage 的模型证据；当前样例 stage graph 只有 ASR |
+| `vad` 对象 | VAD 仓库/revision/ONNX artifact（样例 MIT） | 实际使用时须核对 VAD 制品与许可证据；当前文件 ASR 将 VAD 作为消费者内部工作，样例 stage graph 只有 ASR |
 | `engine.runtime_pin` | 指向 runtime-pin.json | 报告 `runtime_version` 必须与 runtime pin/requirements 一致 |
 | `engine.source_commit` / `distribution_inventory_digest` | 引擎运行时来源与 Python 分发清单 | 报告无对应字段；reviewer 必须查 pin 与镜像构建记录 |
 | `repository_files[]` | 辅助文件（runtime pin、requirements、许可证）摘要 | 报告无对应字段；发布前按 pin 核对 |
@@ -404,7 +404,7 @@ fixture 或放宽校验消除；应由绑定作者发布新的不可变 revision
 1. **无机器可读阈值**：`Metric` 只有 name/value/unit/percentile，没有 threshold；阈值在 notes 里。建议后续 schema 演进增加 `threshold`/`comparison`，本任务不改冻结契约。
 2. **报告不记录 license**：license 在 artifact pin；发布检查清单/法务接受需单独留痕。不要往报告塞自由字段。
 3. **报告不记录模型文件逐个 digest**：只在 artifact pin；reviewer 必须把 pin 与制品存储核对。本任务未下载模型，不能声称已核验权重字节。
-4. **stage graph 与 VAD/对齐/分离**：当前样例只有 ASR stage；如果实际路径包含 VAD/对齐/说话人分离，必须新增 stage、manifest 和对应场景；报告不能只靠 `parameter_defaults` 推断。
+4. **内部工作与辅助阶段的覆盖**：当前样例只有 ASR stage；内部 VAD 的制品、资源和资格证据仍须覆盖。独立执行的对齐或分离阶段须在配方与 manifest 中声明并增加对应场景；报告不能只靠 `parameter_defaults` 推断。
 5. **gateway/cancel/concurrency 是 required 但未执行**：这是当前 `incomplete` 的主因。后续卡应先在隔离环境补这三类证据，再谈生产。
 6. **资源峰值/带宽未测**：12 GiB 是 cgroup 上限；CPU/PCM/scratch/带宽是声明；建议补资源高水位测量，尤其是 `host_pcm_buffer_bytes` 和 ingress/egress。
 7. **原始主记录未提供**：`DEL-103-evidence.md` 未随任务提供；本报告只能标“转述”。建议证据接收人补原始记录或明确其保留位置，否则不能升级为独立复核。

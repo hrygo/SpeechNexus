@@ -935,10 +935,10 @@
 
 **验收：**
 
-- Profile 草稿和已发布 revision、资格与默认指针分明；按预设 head 的版本前提事务内 CAS 发布/激活，回滚不修改既有 Job。
+- Profile 草稿和已发布 revision、资格与默认指针分明；按预设 head 的版本前提事务内 CAS 发布/激活，回滚不修改既有 Job。当前仅有草稿分配与固定 revision 读取，发布、激活及公共列表仍待交付，详见[Profile 草稿](components/profile-drafts.md)。
 - 绑定默认值→已发布 profile→允许 overrides；工作空间/部署治理是最终硬约束，越界拒绝，不伪造有效值。
 - require_exact_parameters 下任何自动收紧返回 422；非 exact 返回实际值与原因。
-- 参数字典覆盖 ASR preview_interval_ms 100–5000、max_segment_ms 1000–30000 且不小于 preview、final/auxiliary deadline 100–10000（auxiliary 默认 5000）、rollback_tokens 0–32、VAD 静音 200–3000；TTS planner max_wait_ms 100–3000。绑定不支持时拒绝所需覆盖。
+- 参数字典覆盖 ASR preview_interval_ms 100–5000、max_segment_ms 1000–30000 且不小于 preview、final/auxiliary deadline 100–10000（auxiliary 默认 5000）、rollback_tokens 0–32、VAD 静音 200–3000；TTS planner max_wait_ms 100–3000。绑定不支持时拒绝所需覆盖；各字段分别在范围内不代表 max_segment 与 preview 的跨字段约束已满足。
 - 给定 workspace 分组与逻辑模型/任务，只读解析已发布配置，返回固定 profile/binding revision、采样率、语言、限额及端点能力；未发布或不存在明确 unavailable/not_found，不加载模型、猜测或回退草稿。
 - Job `effective_configuration` 与执行命令的 profile/binding revision 一致，发布或默认值变化后原任务不漂移；隔离 PostgreSQL 验证，不增加跨库双写或进程内全局锁。
 - 预设发布先校验资格；expected_current_revision 在预设当前 head 锁及同一事务内比较，不用 MAX 聚合代替 CAS；并发激活仅一个成功，退役预设不进入默认解析。

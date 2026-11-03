@@ -400,7 +400,7 @@ required 辅助模型使用父 Operation 的 required steps：先发正文 compl
 
 实时 wire 基线为单声道 PCM16 LE、24 kHz；adapter 在受控边界重采样到模型输入规格。TTS 会话握手返回实际输出 descriptor，客户端按 descriptor 播放。格式和采样率在会话内不可变化。时间范围使用 wire sample clock 的非空半开区间 `[start,end)`，不能混入服务端墙钟或模型 16 kHz 下标。事件 `SampleSpan` schema 分别约束起止值，却不能比较二者；`end > start` 由契约测试另行检查，生产者与消费者仍须验证该关系。
 
-初始限制：输入 chunk 建议 20–100 ms、上限 250 ms；单 JSON 消息上限 64 KiB；未消费实时输入 credit 上限 2 秒；客户端网络缓冲上限 5 秒；单个 ASR 段上限由预设与绑定共同约束且不超过 30 秒。Base64 和 JSON 开销计入网络预算。辅助模型状态必须有独立的有界内存声明，不能借会议长期连接累计整场 PCM。
+初始限制：输入 chunk 建议 20–100 ms、上限 250 ms；单 JSON 消息上限 64 KiB；未消费实时输入 credit 上限 2 秒；客户端网络缓冲上限 5 秒；单个 ASR 段上限由预设与绑定共同约束且不超过 30 秒。Base64 和 JSON 开销计入网络预算。共享 `RealtimeLimits` schema 限定 chunk、消息和段长范围，但未给输入 / 输出 credit 或会话时长设置上述上界；生产者和消费者须另行核验生效配置。辅助模型状态必须有独立的有界内存声明，不能借会议长期连接累计整场 PCM。
 
 超过 credit 继续发送时，先报告背压，持续违规关闭连接；不静默丢 PCM。允许合并过时的预览计算请求，但必须保留尚未处理的已接受 PCM。慢速接收 TTS 的客户端触发有界音频积压，超过协商上限取消 operation；不可无限生成并堆积。
 

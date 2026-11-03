@@ -6,6 +6,8 @@ date: 2026-10-30
 
 # 静音零外发结算：A 侧补强与未启用边界
 
+> 本文记录固定基线及候选方案的交接证据；文中“当前”“已实施”和部署状态均以各段受检版本为限，不能据此判断现行代码或部署。后续采用前须对照当前契约、实现及[交付跟踪矩阵](delivery-tracking.md)重新核验。
+
 DEL-361 基线为 `a1ad444db343d76699e83b7f93d8a93355db7b3c`。输入是 DEL-357
 `interface-candidate` revision `97b863c3-9c5d-405f-8eee-519fc06c338f` 与 DEL-358
 `review` revision `025f6eed-6c73-4916-a81c-d93bb37978ea`。

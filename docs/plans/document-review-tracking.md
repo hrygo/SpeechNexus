@@ -134,7 +134,7 @@
 | `docs/operations/builtin-voice-qualification.md` | 部分核对 | 核对受控窗口、资格入口、制品脚本摘要、主要授权及命令退出分支；probe 内部验证细节待核对 |
 | `docs/operations/capacity-manifest.md` | 部分核对 | 核对聚合检查、占位值、校验器退出码、账本检查及发布前后步骤；澄清发布事务与独立校验的范围、fixture、live 查询隔离和工作区配额限制，其余内容待核对 |
 | `docs/operations/compose-minimal.md` | 已核对 | 对照 Compose、迁移、角色授权、探针、注册及停用恢复路径；修正权限、失败边界和探针路径，未执行部署 |
-| `docs/operations/file-asr-binding-handoff.md` | 部分核对 | 核对候选选型、绑定定义的支持域和默认值、离线制品与忽略元数据校验、工具退出和输出、网关输出格式及停止证据边界；其余内容待核对 |
+| `docs/operations/file-asr-binding-handoff.md` | 已核对 | 对照固定制品、绑定定义、离线工具、命令消费及交接测试，补充后续旧入口屏障联验证据及故障注入限制；未重跑实验或测试 |
 | `docs/operations/file-asr-runtime.md` | 已核对 | 对照配置、双 lane 共享限制、对象版本、worker 取消、结果恢复及停止联验；修正集成测试的停止证据描述，未运行测试或部署 |
 | `docs/operations/file-tts-binding-handoff.md` | 部分核对 | 核对绑定定义的候选参数和默认值、指令长度契约上限、离线工具的忽略元数据与输出边界、后续 SDK 与租约结算证据；其余内容待核对 |
 | `docs/operations/file-tts-runtime.md` | 已核对 | 对照配置、双 lane 共享 worker、关闭边界、音频上限、测试及真实停止和结算证据；明确组件集成测试范围，未运行测试或部署 |

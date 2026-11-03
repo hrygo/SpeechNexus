@@ -363,8 +363,8 @@ TTS、可替换预览、辅助结果与资源控制使用下表的 SpeechNexus �
 | C→S `nexus.tts.finish_text` | 提交剩余文本并关闭本 utterance 的输入；不关闭 WS |
 | C→S `nexus.tts.cancel` | `event_id`、`utterance_id`；请求取消对应计算与发送 |
 | S→C `nexus.tts.audio.delta` | `operation_id`、`utterance_id`、`chunk_seq`、`audio`（Base64 PCM）、`start_sample`、`sample_count` |
-| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`、receipt、error / reason；唯一逻辑终态。`cancelled` 只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined` |
-| S→C `nexus.session.gap` | 输入缺口或新 epoch 的 sample_span / 原因；不得以静音假装没有丢音 |
+| S→C `nexus.operation.done` | `operation_id`、`kind`、`status=succeeded/cancelled/failed`、独立 `cleanup_state`；成功须有非 null receipt，失败须有非 null error 或 reason。成功和取消的清理状态只允许 `not_required` / `complete`；停止未知时使用 `failed` + `quarantined`。唯一逻辑终态 |
+| S→C `nexus.session.gap` | 输入缺口或新 epoch 的原因；`sample_span` 可省略或为 null，不得以静音假装没有丢音 |
 | C→S `nexus.session.close` | `event_id`、`mode=drain/abort`；停止接收新 operation |
 | S→C `nexus.session.closed` | 会话终态、清理状态及 `operations` 引用；引用的状态可为成功、失败或取消，schema 不保证列表完整 |
 

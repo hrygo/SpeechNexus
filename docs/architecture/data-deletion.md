@@ -30,9 +30,11 @@ Speech `/v1/nexus/deletion-plans`、`/v1/nexus/deletions` 和 Workbench
 3. 普通删除的持久引用或活动执行均为 `blocks`，`eligible=false`。级联只能包含
    同一 owner 的 `cascade` 依赖；所有活动执行必须进入停止协调。不能自动删除
    其他模块资源。跨模块引用仍阻断，调用方先在对方模块独立处理，再重新预检。
-4. 已保存副本为 `independent_copy / retain`，包括其独立对象、receipt 和版本。
-   Speech Artifact 删除不会追删 Workbench saved asset；删除项目也不删除其曾
-   引用的 Speech Artifact。项目拥有的稿件/会议/有声书可显式列入级联。
+4. 相对于 Speech 来源，已提交的 Workbench 保存副本是独立资源：Speech Artifact
+   删除不会追删该副本，删除项目也不删除其曾引用的 Speech Artifact。删除副本
+   所属项目时，该项目拥有的 saved asset 是 `owned_child / cascade`，须显式确认，
+   不因其独立于 Speech 来源而自动保留；其他项目的副本不因此追删。项目拥有的
+   稿件、会议和有声书也按各自依赖规则处理。
 5. `POST deletions` 携带 `plan_id`、`expected_plan_revision`、`plan_digest`、
    `confirm_targets` 和 `Idempotency-Key`。确认集合必须恰好等于目标加全部
    cascade 依赖，不能确认 blockers 或独立副本。它是明确级联确认，不提供绕过
@@ -97,7 +99,8 @@ reserved 的显式原键重放可以接替尚未 PUT 的旧所有者，旧 token
 导出对象使用项目私有的 `{project_id}/exports/{export_id}/{artifact_id}`；项目
 接受删除后关闭新写入，且不存在未决写入时，才可清理该项目私有前缀。旧格式
 `{book_id}/{export_id}/` 只按预检固定的导出身份逐个清理，不扩大到整个书籍前缀。
-独立项目副本和未确认导出身份保持不变。对象 I/O 不占数据库事务。
+其他项目的独立副本和未确认导出身份保持不变；被确认级联的本项目 saved asset
+及其私有对象按固定快照清理。对象 I/O 不占数据库事务。
 
 行清理与对象清理各有持久完成标记。公开 succeeded/result 只在两者都完成时
 投影，原始行账本不单独构成公开完成证据；稿件没有项目对象清理阶段时显式记录

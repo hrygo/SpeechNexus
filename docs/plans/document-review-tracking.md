@@ -97,7 +97,7 @@
 | `docs/components/profile-drafts.md` | 部分核对 | 全文阅读并核对 writer 装配、配置默认值、0009 表与文档大小边界；事务竞争、权限和 HTTP 契约细节待核对 |
 | `docs/components/profile-lifecycle-contract.md` | 部分核对 | 全文阅读并核对生命周期准备、不可用 verifier 和私有意图存储；契约响应及实际路由装配待逐项核对 |
 | `docs/components/profile-lifecycle-intents.md` | 部分核对 | 全文阅读并对照意图记录/恢复 SQL、0013 迁移及授权；生产装配、竞争测试及后续状态待核对 |
-| `docs/components/pronunciation-drafts.md` | 部分核对 | 全文阅读并核对大小上限、身份配对及 0014 迁移锁与回退；事务、权限及集成证据待核对 |
+| `docs/components/pronunciation-drafts.md` | 已核对 | 逐节静态对照草稿事务、权限、迁移和集成测试定义；区分固定读取与恢复校验，未运行服务 |
 | `docs/components/pronunciation-read-contract.md` | 部分核对 | 全文阅读并核对读取器装配、并发/超时配置及契约错误码；权限、HTTP 边界和消费者测试待核对 |
 | `docs/components/public-job-model-binding.md` | 已核对 | 逐节静态核对固定 binding 选择、事务期限、恢复、工作台消费者与测试；未运行服务 |
 | `docs/components/repository-layout.md` | 部分核对 | 已对照工作区、迁移目录、接口目录、Compose 与验证入口修正布局；其余内容待核对 |

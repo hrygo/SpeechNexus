@@ -59,8 +59,9 @@ JavaScript-number narrowing; exhaustion remains unavailable without allocation.
 
 Each immutable revision also binds its command key. A unique key and composite
 foreign key prevent a mutable command result from being redirected to another
-identical auto-create intent's revision. Definition/intent digests and canonical
-bytes are rechecked on reads and recovery. Unreadable/corrupt history, acquisition
+identical auto-create intent's revision. Fixed reads recheck the definition digest
+and canonical bytes; recovery also checks the original intent digest and canonical
+bytes against the supplied command. Unreadable/corrupt history, acquisition
 pressure, native query cancellation or uncertain COMMIT return private
 `unknown/query_original`; none proves absence or permits a replacement identity.
 Recovery is read-only, including when no committed command is yet visible.
@@ -82,12 +83,10 @@ are applied only to synthetic isolated roles by these tests, not to production.
 Downgrade requires READ COMMITTED, obtains table locks in writer order before any
 emptiness check and holds them through DDL. Any family, command or revision
 history refuses downgrade. Two-connection tests cover writer-first commit and
-migration-first exclusion. A disposable mutation experiment removes only that
-lock in a test connection: the regression fails and observes a committed
-synthetic record disappear under DROP. The unmodified migration preserves it.
-Failed upgrade rolls back new DDL and retains previous history.
+migration-first exclusion. The test suite also checks that a failed upgrade
+rolls back new DDL and retains previous history.
 
-`tests/integration/test_pronunciation_drafts.py` exercises the real PG adapter and
+`tests/integration/test_pronunciation_drafts.py` contains tests for the PG adapter and
 same SQL through a test-only InnoDB oracle, original-key concurrency, CAS,
 rollback, real committed/reply-lost recovery, native query cancellation, minimum
 permissions, maximum entry count, revision bounds and migration interleavings.
@@ -96,5 +95,5 @@ select its locked dependencies. The oracle's only automatic retry is native
 InnoDB 1213 confirmed rollback for writes, never uncertain COMMIT or reads.
 Synthetic media text, shared SQL and connection termination do not prove real
 phonetic rendering, physical multi-host failure, public HTTP or product/Gate
-qualification. Historical failures and corrected TypeScript test import are
-retained in the local receipt; passing scopes are reported separately.
+qualification. Test definitions alone do not establish a current passing run;
+execution results must be reported for the environment and revision tested.

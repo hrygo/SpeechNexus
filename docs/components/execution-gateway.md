@@ -533,7 +533,8 @@ A 的真实删除协调器仍待交付。测试使用明确命名的合成 autho
 
 ## 11. `append_interval` 与原区间查询
 
-输出区间账本由 B 唯一写入，A 读取生成事实作业务额度和结算，不再创建一份 PCM 账本。
+输出区间账本由 B 唯一写入；A 的业务额度和结算应消费这些生成事实，不再创建一份 PCM 账本。
+当前 A 的完整用量消费链仍需联调，不能把账本已实现当作用量结算已接入。
 `OutputIntervalBoundary` 消费既有协调契约，事务前只读定位并核对本 gateway/node；
 事务内重核对完整冻结执行身份，按 pool → submit → output_stream_heads 普通行锁，
 在整条 `(operation, attempt, output_stream, meter_kind)` 上检查全部重叠，再追加不可变区间。

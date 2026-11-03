@@ -76,7 +76,7 @@
 | `docs/components/binding-parameter-defaults.md` | 部分核对 | 对照快照 schema、共享字段和 Python/TypeScript 解析器核对稀疏、null、嵌套字段与不填充默认值；核对草稿、快照和声明值域校验，当前检索未见最终合并消费入口，仍待完整核对 |
 | `docs/components/controlled-asr-generation.md` | 部分核对 | 全文阅读，核对凭据派生、模板约束、私有描述及成功终态停止证据；更新真实实例和整代次结算的历史证据，其他停止与运行资格待核对 |
 | `docs/components/cpu-vad.md` | 部分核对 | 对照策略、缓冲、CPU 适配器、文件消费者及 Compose 静态配置；澄清待接入的是实时 VAD 链，实际模型资格待核对 |
-| `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配、drain、提交及屏障、停止证据、恢复配置和扫描、正文清理事务；观察与计量等章节待核对 |
+| `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配、drain、提交及屏障、停止证据、恢复、正文清理、观察与输出区间写入；澄清 A 用量消费仍待联调，具名结果及测试证据待核对 |
 | `docs/components/execution-staging-results.md` | 已核对 | 对照回执契约、迁移、列授权、登记 CAS/重放、覆盖检查、HTTP 查询及测试入口；未运行集成测试 |
 | `docs/components/file-asr-audio.md` | 已核对 | 对照共享媒体模块、源格式、限制、时钟投影、测试入口及已知消费者装配；未重跑测试或验证部署 |
 | `docs/components/file-asr-recognition.md` | 已核对 | 逐节静态对照参数、协议、装配、执行与测试清单；未重新实测 |

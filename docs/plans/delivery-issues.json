@@ -1646,11 +1646,21 @@
         "docs/architecture/deployment-units.md",
         "docs/architecture/data-deletion.md"
       ],
-      "implementation": "需求基线；当前实现待核验。",
-      "integration": "实际组合根与消费者待核验。",
+      "implementation": "Web 代理监听 HTTP 8080；Speech API 对部分资源入口配置 Host / Origin 中间件。",
+      "integration": "代理 TLS、全部业务路径和实时入口的保护须由部署配置并逐项验证；共享服务密钥不由当前公开语音处理器验证。",
       "verification": "未取得当前真实部署验收证据。",
-      "gap": "当前生产接线及其适用验证尚未逐项核实；按本需求列出实际缺口，不由设计状态推定完成。",
+      "gap": "真实入口、管理路由和内容不出网须在目标部署验证；局部中间件及静态配置不构成全链保护证据。",
       "evidence": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/deploy/web/nginx.conf",
+          "label": "Web 代理配置",
+          "note": "HTTP 监听与同源上游配置，不证明 TLS 或内容不出网"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc/backend/src/speechnexus_backend/app.py",
+          "label": "Speech API 入口装配",
+          "note": "资源专用中间件范围，不证明所有路径受保护"
+        },
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/docs/speechnexus-product-architecture.md",
           "label": "产品与架构设计",

@@ -163,7 +163,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 
 ## 5. 与数据库容量向量的一致性规则
 
-以下规则是发布/准入前的硬核对。脚本实现了 R1–R12；其中 R1–R6 在 fixture 或 live DB 上都能跑，R7–R12 需要对应行存在。
+以下规则是发布/准入前的核对目标。脚本在 fixture 或 live DB 上检查 R1–R12；缺少实例行会失败。默认允许发布前尚无 publication，此时相关检查为 `NA`，应使用 `--require-published` 要求 publication；证据摘要缺失默认仅告警，应使用 `--require-digests` 将其作为失败。不能把默认模式的 `NA/WARN` 当作这些事实已核验。
 
 | 编号 | 规则 | 失败表现 |
 | --- | --- | --- |
@@ -180,7 +180,7 @@ manifest 本身只有“每个实例/每个 slot 的包络”，没有“池总�
 | R11 | 对每个物理维度：`held + quarantined <= allocatable`；`held >= instance.peak`（host 已为峰值预留）；`peak <= allocatable`；剩余 slot 的 `per_slot * remaining_slots <= allocatable - held - quarantined` | `FAIL` |
 | R12 | `workspace_quotas.held_attempts + quarantined_attempts <= max_attempts`；`resource_pools.pool_state=active`、`service_class` 相等 | `FAIL` |
 
-脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`，因为 fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
+脚本对 `resource_pools` 数值配额输出 `NA`（见 §4.2），不是通过；对 `database.source=fixture` 输出 `WARN`。该警告中的“证明查询路径”措辞过宽：fixture 只用于验证快照上的规则，不证明 live 查询、真实发布或真实容量。
 
 R11 中 `held >= instance.peak` 是该校验器的额外静态断言，不能当作所有运行状态的账本不变量：prepare 成功后实例基础预算可从 peak 收缩到 steady；同时 host `held` 是主机聚合值，覆盖 peak 也不能单独证明某个实例仍持有峰值。应结合 `base_budget_kind`、各实例及租约核对账本；该断言失败也不能单凭数值认定生产账本损坏。
 
@@ -494,7 +494,7 @@ FROM speech.workspace_quotas WHERE workspace_id = '<workspace-id>';
 3. **许可不是 schema 字段**：建议在发布检查清单或独立证据表中记录许可证接受；不要在 manifest 中新增自由字段。
 4. **阈值不可机器读**：报告只记录 `status` 与 `notes`，没有 `threshold` 字段；建议后续 schema 演进时增加机器可读阈值，本任务不改变冻结契约。
 5. **stage graph 未表达 VAD/对齐/分离**：如果实际执行路径包含这些阶段，必须新增 stage 并重新资格；不能仅靠 `parameter_defaults`。
-6. **产品发布校验只检查 capacity manifest id**：`publications_postgres.py` 当前不核对 release tier、topology、摘要、host/instance 账本；脚本是补强，不是产品门禁。建议后续卡把关键检查接入发布路径。
+6. **通用 binding 发布事务不验证证据原文件**：事务核对定义中的 capacity manifest ID 并记录证据 ID 与可选摘要，但不读取原文件核对 release tier、topology、摘要或 host/instance 账本。脚本是补充核对，不是产品门禁；内建声音资格入口另有只读 release 校验，见[资格报告](qualification-report.md)。
 7. **带宽/对象存储没有 host 账本列**：manifest 有声明，但主机层无法按列扣减；需要平台监控/后续 schema 演进。
 8. **fixture 不是发布回执**：`tests/fixtures/release-evidence/gb10-20261027-db-snapshot.json` 只用于验证快照上的规则；真实发布必须用 live DB 的 publication/evidence 行重新跑 `--database-url`。
 

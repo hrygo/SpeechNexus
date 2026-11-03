@@ -1,0 +1,1127 @@
+{
+  "schema_version": 1,
+  "repository": "hrygo/SpeechNexus",
+  "captured_at": "2026-11-03T19:29:53+08:00",
+  "base_sha": "3ac2bfc5da2442305ba05be53c8a8cde17668a6f",
+  "old_open_numbers": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    142,
+    149,
+    225,
+    226,
+    227,
+    228,
+    229,
+    235,
+    259,
+    273,
+    316
+  ],
+  "sources": [
+    {
+      "number": 6,
+      "title": "[总控] SpeechNexus 三团队整体实施与验收跟踪",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/6",
+      "body": "<!-- speechnexus-implementation:PROGRAM:v1 -->\n## 目标\n\n交付 SpeechNexus 的独立语音底座、管理面与工作台，并按 G0–G5 完成真实业务链路、目标拓扑和发布验收。覆盖 25 个工作包；阶段放行与工作包完整范围完成分别判断。\n\n## 进展总结\n\n2026-11-03 15:09:28（北京时间）集成核验：[PR #333](https://github.com/hrygo/SpeechNexus/pull/333) 已合入 main `2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb`，合并树与受检 head `7b1167c` 完全一致。分支CI41592275181及[合后CI41594450271](https://github.com/hrygo/SpeechNexus/actions/runs/41594450271)均成功。同步TTS最小Goal已接收；生产/物理集群资格及其他未完成AC保持原要求。\n\n**排期决定（2026-11-02）**：工作台语音助手、会议助手（含会议纪要）、有声书制作、实时字幕和提词器等功能后移，在其他功能完成后再推进；既有实现、未完成任务与原验收要求保留，不视为已交付。语音底座的实时 ASR/TTS、共享采集播放、Job/音色、管理面及工作台通用基础能力仍按其自身优先级推进。\n\n先完成其他功能及其必要的安全、部署、恢复和验收工作；延期功能不进入当期执行队列。G5 中与延期功能无关的工作可先实施和取证；原完整 Gate 的条件和用户最终放行不因排期调整而自动满足。\n\n**公开ASR既有接收基线（2026-11-02）**：[#317](https://github.com/hrygo/SpeechNexus/pull/317) 已合入 main `1f3c4b3`，合并树与验收候选 `a2a7395` 一致。[#243](https://github.com/hrygo/SpeechNexus/issues/243) AC5 已接收并关闭：正式公开同步 ASR JSON 文本经真实网关/受控引擎返回 200，非作者复核、完整 CI 和原生停止/租约释放通过；临时运行资源、分支及跟踪引用已清理。该结论不覆盖真实时间戳、静音、中文公开链、生产资格或物理集群。[#259](https://github.com/hrygo/SpeechNexus/issues/259) 已按实际范围同步。\n\n**上一阶段已接收并合入：同步TTS最小闭环**。生产`67f8943`/工具`cb681f0`的第六窗口取得唯一标准SDK200、2秒PCM16/24kHz/mono WAV；完整原请求/有效命令/网关原回执/固定版本PCM关联、正常stop先存后发、两lease结算/重放和预算全零，经非作者接收。临时资源含目录358.950秒全清，18共享基线不变。唯一证据见[第六窗口](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/evidence/2026-11-03-tts-window-6.json)，历次失败和接收限制见[审计报告](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/2026-11-03-controlled-tts-prepare.md)。\n\n**当前阶段：[网关取消先持久接收与原身份只读恢复 #334](https://github.com/hrygo/SpeechNexus/issues/334) 已合并完成**。[PR #335](https://github.com/hrygo/SpeechNexus/pull/335) 固定候选 `d5ca1b6ad26d771520e146bebc601dfcb74798cf`，完整 [CI877](https://github.com/hrygo/SpeechNexus/actions/runs/41603913078) 及非作者 Sol 源码复核已通过；本机临时服务、文件、worktree/本地分支及绑定已收尾。#334 已完成并关闭，合入 main `3ac2bfc`；它是 #259 缺口12（ASR静音/零请求终态）的首个前置切片，缺口12保持未完成。具体任务、AC、证据及清理结果维护在 #334。\n\n- **交付**：既有 /abort、/abort-intents 和相关 binding-disable/TTS 调用先提交完整原取消，再等待发送锁/claim/外发；现有原执行 GET 增加最小typed取消恢复投影，默认组合根接入受限writer与独立SELECT reader。\n- **接收**：真实PG证明锁阻塞下接收已提交、重放/冲突/回滚/提交未知正确，查询为一致只读快照且账目不变；适用双库/消费者/完整CI及非作者审查通过，交一个小PR。\n- **停止**：该小切片完成即收尾。不启用gate/permit/seal、静音成功或预算释放，不扩建Job取消API，不运行GPU；#259缺口12保持未完成。\n\n**组织与后续顺序**：本会话PO负责交付，WIP=1，同一文件一名写者；仅按独立价值使用subagent。Delegra沿已有任务/能力边界定向使用，不恢复整体调度或复制backlog。#334之后才安排可信gate初始化/受管外发、完整处理关闭/固定对象证据及空结果结算，最后验证正式SDK空结果和释放；这些属于后续切片，不在当前Goal中全部展开。军团此前project paused及定向wake拒绝的历史结论不作本轮启动授权。\n\n**当前交付与候选（2026-11-02 23:56 CST 核验）**：main `567bd40` 包含 #318/#319。#320 `94fdc0a` 的 CI830、#321 `197f606` 的 CI831 通过。#322 当前 `9ed7abc` 为独立来源/资格审批、发布/撤销与精确代次资格查询候选，完整 CI837 通过；#323 当前 `21d06ca` 为完整持久 TTS 命令、原身份恢复和退役准入屏障候选，完整 CI836 通过。原 CI835 已失败：旧迁移降级测试被 0029 新历史保护提前拦截，publisher 测试角色缺密码导致 CI 的 SCRAM 认证失败；保留失败记录。修复将历史迁移验证固定到真实历史版本、保留锁等待和 Job/outbox 保全断言，并给受限测试角色显式合成密码；相同修复已进入两个 PR。19 项目标检查在独立 PostgreSQL 18 的 TCP SCRAM 认证环境通过，该集群已停止并移除。此前受限 publisher、真实 verifier 与合成 TTS 原字节的发布/恢复检查仍只证明数据库/内容一致性，不等于真实模型资格或最终公开链验收。\n\n**本阶段候选与验收状态（2026-11-03 01:20 CST）**\n\n- **固定候选**：[#324](https://github.com/hrygo/SpeechNexus/pull/324) `8169ccc` 运行证据；[#326](https://github.com/hrygo/SpeechNexus/pull/326) `03c4a94` 持久根；[#327](https://github.com/hrygo/SpeechNexus/pull/327) `9df4cdc` 原身份恢复/结算；[#328](https://github.com/hrygo/SpeechNexus/pull/328) `5560923` 正式工厂；[#329](https://github.com/hrygo/SpeechNexus/pull/329) `78ac76e` 完整资格producer。对应 CI847/848/849/850/851 均已通过；均未合入main。\n- **来源录入补口**：[#330](https://github.com/hrygo/SpeechNexus/pull/330) `90f53c4ead3236ccba61bc353259dc7f05e3a179` 提供独立受限来源审批CLI，固定目标和原字段，保留原回执重放；不直接产生资格或发布。真实PG验证列级/NOINHERIT/预定义高权限及可达schema CREATE拒绝、实际INSERT关系锁等待后过期回滚；CLI连接配置与pool日志/清理失败不泄密。主会话独立15项unit+PG及mypy/Ruff/格式通过，非作者Sol独立14unit和原泄密复现通过，最终范围无未解决P0/P1/P2。CI852已通过。真实来源已按下述批准写入；第二次隔离窗口取得原生预资格和正式声音资格探测/发布，公开 SDK 尚未通过。\n- **完整链既有接收范围**：过期原成功结果恢复P1已修复；独立恢复先GET，过期404不重发，running不延长原deadline。普通TTS/probe在最后预算/settlement锁等待后重核source/qualification/authorization期限，过期回滚完整预算、Job/outbox/lease/receipt/root，原回执重放保留。PO组合PG21项、runtime PG9项通过；实际非作者Sol接收完整受托高风险代码，48项无服务单测通过。上述合成gateway/材料与代码接收不代签真实运行。\n- **待操作员来源决定（2026-11-03 01:21 CST核验）**：仅本轮隔离验收的 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` / `Vivian`，固定 revision `0c0e3051f131929182e2c023b9537f8b1c68adfe`。从[官方固定模型卡](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/blob/0c0e3051f131929182e2c023b9537f8b1c68adfe/README.md)读取57846字节，SHA256 `64f65e809b51cc0c35f393fbbfcc2d735c0cb3fdbbc6f3fdc4a5e6ce55e9d088` 与仓库pin一致，卡中列出Vivian，声明apache-2.0；这不是完整再分发许可结论。artifact-pin原字节SHA256 `e6c898aab968ddadae2ce330437032265b5d8192c23ec4f10c4d1b225296e779` 固定11件运行制品、4520159586字节（清单值，非本轮远端权重实读）。用户已明确批准固定来源与本轮隔离验收；其对原来源问题的后续明确回复不包括GPU窗口。此前泛化“批准”曾被解释为也覆盖此前提出的GPU窗口，并执行了单实例12GiB generation1；该误解和结果已在[#331](https://github.com/hrygo/SpeechNexus/pull/331)如实归档，不作为后续GPU授权。来源有效期保守固定至2026-11-03T23:33:12Z。source-snx-vivian-20261103曾由正式CLI与独立sn_source角色写入本轮专用sn_live库（installation ccbd9b59-0db2-4134-b015-05bb3e99e7af）；实测qualification无来源表级/列级INSERT。该临时库已在失败收尾时删除，无声音执行资格或publication。\n- **真实TTS最小接收（2026-11-03）**：生产`67f8943`/工具`cb681f0`的第六窗口取得唯一标准SDK200、2秒PCM16/24kHz/mono WAV；完整原请求/有效命令/网关原回执/固定版本PCM关联、正常stop先存后发、两lease结算/重放和预算全零，经非作者接收。临时资源含目录358.950秒全清，18共享基线不变。唯一证据见[第六窗口](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/evidence/2026-11-03-tts-window-6.json)，历次失败和接收限制见[审计报告](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/2026-11-03-controlled-tts-prepare.md)。 PR #333现已合入main，分支与合后CI均通过；不结算其他完整工作包或Gate。\n\n- **工作区收尾（2026-11-03，#333合后）**：远端临时服务/容器/网络/目录及凭据、本地临时文件均已清理；远端PR分支已删除，本地临时分支及过期跟踪引用已删除。当前只有干净的main主工作区，应用无残留worktree绑定。历次窗口失败与清理证据仍保留在审计报告，不保留临时备份。\n\n**后续顺序**：当前 #334 已验证并合并，本轮 Goal 到此结束，不自动启动后续切片；下一阶段先补可信空结果封闭与结算，完成ASR静音/零请求终态与可信结算（#259缺口12）后，再推进异步planner→持久制品/下载→正式工作台消费者。既定延期功能、G0–G5原AC及用户最终放行条件保持。\n\n**历史候选验证记录（main `7753c559` 时点，不作为本次新候选通过证据）**：隔离 PostgreSQL：GPU 执行岗对 DEL-406 固定候选在 PG 16.15 上完成三文件 19 项通过（0 失败/跳过；[DEL-449 报告](http://127.0.0.1:3100/DEL/issues/DEL-449#document-report)，revision `4af746c9-a392-4228-886d-e7aa1596253f`）；提交应答丢失为注入故障，HTTP 使用 ASGITransport。该候选尚非 main。[DEL-452 非作者 Sol 定向审查](http://127.0.0.1:3100/DEL/issues/DEL-452#document-report)（revision `6434aa66-c962-483c-9a89-7a5d43145b2d`）核对组合 104 项前后像，原 PG 候选 34 项中 31 项内容一致、3 项不同；保留 voice retire 与新 Job 引用竞争的既有 P2（DEL-443），定向范围无新增 P0/P1/P2。原 PG 19 项不能记为组合实跑通过，组合迁移和生命周期场景仍需固定版本复验；QA 完整契约测试曾中断，原四项 TypeScript 失败均为缺少 `openapi-fetch` 的模块加载错误；[DEL-457](http://127.0.0.1:3100/DEL/issues/DEL-457#document-safe-reverification)（revision `b9fad5eb-6e88-4b94-8c9f-42c05a2912b7`）在固定组合候选上补齐锁定依赖并完成 83 项 TypeScript、87 项 Python 与 4 项内存替代离线检查，均通过。[DEL-462](http://127.0.0.1:3100/DEL/issues/DEL-462#document-report)（revision `e8d433b9-5311-4e0b-aab3-ba6a15521a91`）在固定组合候选和合成 loopback fixture 上补跑原四项 TypeScript HTTP 测试，4 passed、0 failed/skip；首次启动因测试插件未加载未执行，修正后通过，证据附件已独立取回核对 SHA-256。该测试在 macOS 执行，监听限制为应用层证据。[DEL-464](http://127.0.0.1:3100/DEL/issues/DEL-464#document-report)（revision `52388a4f-d0b7-4a2f-bd78-ee3116bc4350`）同一候选补验 2882 项通过，另有 DEL-463 的 14 项通过，425 项本轮未运行；附件已独立取回核对摘要。[DEL-465](http://127.0.0.1:3100/DEL/issues/DEL-465) 执行者报告对上述 425 项分三轮新增 210+13+4 项通过、198 项未运行；指定历史报告版本已通过正式列表取回，剩余测试的子进程、文件和网络边界仍待逐项证明，证据包与限制见任务原件，不能计为整套一次通过。[DEL-466](http://127.0.0.1:3100/DEL/issues/DEL-466#document-postgresql-verification-plan) 已提交固定组合候选 PG 复验方案，尚未执行。子进程和网络的应用层守卫有限，完整契约尚未通过；以上检查不替代真实引擎、正式消费者、物理拓扑和 Gate 验收。[DEL-458](http://127.0.0.1:3100/DEL/issues/DEL-458) 的 Linux 同环境基线/组合 mypy 对比于 2026-11-02 16:07 CST 因提供方 `refresh_token_invalidated` 中断，未产出正式报告；GPU 执行岗的 OpenAI 连接请求待本人处理，恢复后须核查原运行与临时资源并补证，不能将其计为通过。实时语音、删除恢复、部署和目标拓扑按各自依赖并行推进；完整 Gate 和用户最终放行条件不变。\n\n### 2026-10-28 合并后同步（main `a708dba`）\n\n- `1a9a115`（PR #276）：本地端到端 runbook 与本地网关 fixture 合入；文档区分已执行/未执行，不代表公开链路验收。\n- `2f96fb3`（PR #275）：`speechnexus-register-engine` 运维入口与真 PG 测试合入，补上引擎实例注册路径；不构成容量或资格证明。\n- `66f57a7`（PR #277）：capacity manifest / qualification report 格式、GB10 实验样例与一致性校验脚本合入；候选 binding 仍未注册/发布。\n- `a708dba`（PR #278）：runbook 合入，区分 r8 准入拒绝与 r9 轮询截止，补 458 次轮询、504 原始响应与人工驱动者；required check success，其余按文档路径 skipped。文档证据不等于公开转写成功。\n- 以上均不结算 25 个工作包或 G0–G5；真实公开 ASR/TTS 仍按 #243/#259 的未完成项判断。\n\n### 2026-10-28 同步（main `c435908`）\n\n- 公开读面：`/v1/models`、`/v1/models/{model}`、`/v1/nexus/capabilities` 已注册；list/capabilities 有 ETag/304，`/{model}` 仍缺（#272）。\n- 公开写面：`POST /v1/jobs`、`GET /v1/jobs/{job_id}`、binding 发布 CLI、发布证据落库/admin 如实投影已落地（#241、#270、#271）。\n- 同步 ASR：生产 `Transcriber` runtime 已接（#266/`12873cf`），但真实引擎经网关的端到端仍未验证（#243 AC5）。\n- 同步 TTS：路由/域/测试已落地（#246/`2b16b75`），默认生产装配与真实网关端到端仍未验。\n- `#30` 的请求音频上限缺陷已由 #234（`be3aafc`）修复；发布生命周期仍由 #273 跟踪，生产 planner 仍 fail-closed（`job_dispatch_runtime.py:244-255`）。\n- 25 个工作包与 G0–G5 未被这些切片结算；下方 2026-10-26 段落保留为历史快照，其中“#30 请求音频上限仍待”已被 #234 推翻，“0/2”仍成立（真实网关两链均未验），具体以各工作包正文和本节为准。\n\n截至2026-10-26，原编排40项均open：34项部分实施、6项planned（#18/#24/#25/#32/#34/#149）；完整工作包0/25、Gate0/6。三队交接已合入，项目经理接管；原范围/AC保留，旧排期不自动续作。\n\n部署边界补充任务 #225（制品/依赖）、#226（独立上游）、#227（Linux 媒体适配设计）、#228（原生平台 CI）及 Gate D1 #229 已创建，均 planned/open；不改原 25 主包分母。D1 接入 G5 #18，尚无跨平台或物理多机放行结论。规划、ADR 与两张终态拓扑图已由 [PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 于 2026-10-27 合入 `b1d6193`；产品 AC 未放行。\n\n- A：#221已合41e29b6，共享媒体/私有回执及RIFF修复进入main；默认仍TextAssetInspector，B实际兼容接收未完，权威配置/Job/准入/发布仍缺。\n- B：#220已合8b1466d；#162/#219注册输入与真实隔离执行/整代停止已交，单请求释放/TTS base和#30请求音频上限缺陷仍待。\n- C：#222已合fe4a825，交九包记录与经理基线；#42持久化/CAS/分类/公平/读取审查未结，助手依赖#149；82原件丢失、278条件not_run。\n\n公开真实ASR/TTS两链仍0/2，完整故障/业务/拓扑资格未通过；旧取消/清理未知、ENOSPC及CI准备超时保留，绿色组件检查不补勾AC。\n\n### 2026-10-28 同步（主干 `6909576`，DEL-152；截至 2026-10-28 14:06 CST）\n\n- 合并：`#290`（引用检查器 `6909576`）、`#291`（运行手册 `57a7e41`）、`#292`（面板 P0×3 修复 `7f6965e`）。\n- 当时待验：`#293`（工作台三态）随后合入 `327ad656`，又由 [#297](https://github.com/hrygo/SpeechNexus/pull/297) 回退（`f53a8a0d`）；`#294`（就绪快照；引用检查 65 处全绿，独立非作者判定未给出）。\n- 当前 8 个 agent 真实状态（截至时点，来源 `fleet-status.sh` 只读查询）：\n  - 在跑：交叉评审（DEL-145，2 min）、契约集成（DEL-138，45 min，另有 4 张 blocked/backlog）、独立验收（DEL-151，3 min）、证据文档（DEL-152，2 min）、GPU 执行（DEL-149，3 min）。\n  - 空闲但被平台挡住（bad wake）：交付主管（idle，`issue_assigned`×2）、开发工作台（idle，`issue_assigned` + `transient_failure_retry`×3）。\n  - 空闲可派活：机动（idle，0 卡）。\n- 平台侧：最近 24 h `agent_wakeup_requests` failed 65 条，含 `issue_assigned` 21、`transient_failure_retry` 16；4 条为 `API Error: 422 Upstream request failed`（提供方上游）。\n- 本节为时点快照，不是永续看板；长期状态以 `fleet-status.sh` + 门禁为准。\n\n## 任务清单\n\n- [x] 集成同源SDK/契约与门禁（#141/#169/#175/#176/#181/#193）、18端口证据/身份守卫（#171/#173）、配置原意图/草稿（#139/#172/#185/#187）、私有检查进程（#155）和固定draft GET（#201）；各精确版本/CI及失败见#19/#20/#21/#23，不等于整包或公开发布完成。\n\n- [x] 集成共享媒体/私有回执[PR #221](https://github.com/hrygo/SpeechNexus/pull/221)至41e29b6；最终f326f5d补RIFF完整遍历/重复块反例，114项定向和两项变异通过，[CI40312196799](https://github.com/hrygo/SpeechNexus/actions/runs/40312196799)全14成功。原b7e65f4的Python4395/TS1987与CI40300644125保留历史；默认公开装配未启用/B接收待，详见A交接。\n\n- [x] 历史A清理已可恢复归档：44树/53分支、53恢复引用/1905忽略根项，当时保留5树/4分支、3隔离服务及未知work/技能草稿；远端删除0。清单在当时环境 /workspace/.speech-nexus-team-a-archive/20261026-063248/manifest.json。#193另保留1分支恢复引用（累计54），54忽略根项未动，清单 /workspace/.speech-nexus-team-a-evidence/pronunciation-read-contract-45f28ee/cleanup.json。上述当时环境/容量不代表当前运行态；本次#221稳定归档见交接文档。\n\n- [x] 三队交接#220/#221/#222及[项目经理基线](https://github.com/hrygo/SpeechNexus/blob/fe4a825ed025b7ebca3aa3d577bcb54bc9ea8de7/docs/plans/2026-10-26-project-manager-baseline.md)已集成，main fe4a825的[CI40315721283](https://github.com/hrygo/SpeechNexus/actions/runs/40315721283)首轮分片2准备超时，原失败已保留；同一fe4a825补跑后14项成功（11项复用、分片及2汇总门禁补跑）。清理18个已合本地分支并归档2个C历史；固定保护/其他任务工作树和原改动保留，C新归档19件已核验、A/B私有原件待接收；不结算产品AC。\n\n- [ ] A完成权威配置/真实音频ready、完整Job/outbox/原子准入/调度、业务quota/结算、Artifact/Operation/receipt及公开文件API；配置创建/发布/默认指针、完整管理/MCP和A00语义/时序/同版消费者联验仍待。\n\n- [ ] B完成生产submit/observe/abort/恢复（#30 请求音频上限向 policy 传播已由 [#234](https://github.com/hrygo/SpeechNexus/pull/234) 修复）、单请求可信停止/释放、控制器故障及后续实时/声音/辅助；A按原身份发布，SDK/C公开消费。#168合ff224d9的历史27baf28/5164b6a组合与CI40230140652、review5645090772证据保留在#142，不将隔离或fixture升级为公开链资格。\n\n- [ ] C先完成非延期功能所需的同版SDK/正式页面、浏览器/设备与删除恢复验收；有声书、助手等延期功能及其专属 #42 审查待其他功能完成后推进，重建所需遗失证据。\n\n- [ ] 核实#201精确合后取消/清理未知；旧#155中间取消与#185本地ENOSPC/覆盖失败保留，不能用新CI改写历史结果。\n\n- [ ] 项目经理按上述排期决定确定各切片owner、具名输入/窗口，并治理浏览器准备耗尽CI预算的问题；实时/声音/辅助、删除恢复及目标集群/许可继续推进，会议/助手/有声书等延期功能保留原范围与AC，待其他功能完成后推进。\n\n| Epic | Gate | 主归属工作包 |\n| --- | --- | --- |\n| S0 接口/环境/探针 #7 | G0 #13 | A00 #19、B00 #27、C00 #35 |\n| S1 文件语音/页面 #8 | G1 #14 | A02 #21、A03 #22、A04 #23、B01 #28、B03 #30、C02 #37 |\n| S2 实时/音色/实例 #9 | G2 #15 | A05 #24、A06 #25、B02 #29、B04 #31、B05 #32、C03 #38、C04 #39 |\n| S3 完整底座/试点 #10 | G3 #16 | A01 #20、B06 #33、C01 #36 |\n| S4 会议/助手/有声书 #11 | G4 #17 | C05 #40、C06 #41、C07 #42 |\n| S5 目标拓扑/恢复/发布 #12 | G5 #18 | A07 #26、B07 #34、C08 #43 |\n\n文件 ASR 可省略 profile，仍须权威 binding 和显式默认；预算权威、原身份恢复、未知占用与未实现参数外发前拒绝边界保持。\n\n## 验收标准（AC）\n\n- [ ] AC1：25 个工作包完整范围按各自 AC 有实际结果；契约/fake、组件、本地未提交制品与共同集成版本的资格明确区分。\n- [ ] AC2：G0→G5 各项具名证据齐备，三队同版确认并由用户放行；PR 合并/任务数/测试数不替代业务或拓扑验收。\n- [ ] AC3：18 协调端口/完整快照与相关隔离 PG/InnoDB 行为联合验证；PostgreSQL 为正式数据库，InnoDB 对照不扩大产品支持。\n- [ ] AC4：unknown 继续占用，仅凭可信停止/释放双证据由 A 原事务退预算一次；取消接受、断线、TTL、请求消失不作证明。\n- [ ] AC5：删除按版本化预检/确认/账本执行，独立副本不误删；恢复先重放删除账本再开放内容，目标拓扑/长时/备份恢复与许可/运维交接完成。\n\n通用完成要求：每项 AC 关联实际结果与证据链接，标明集成版本或完整补丁、契约/生成器、模型/镜像/拓扑/语料/浏览器、命令/标准及未验证项；协调共享行为不以跳过当通过。任务完成不自动勾选 AC。\n\n持续边界：工作台仅走公开语音协议；LLM 默认关闭，仅服务端批准本机/内网端点，无公有云回退；内容不出部署网络，日志/遥测不含正文。B 统一安排 GPU 实验并保留现有 35B 服务；单 GPU/逻辑集群不证明备用 GPU/物理多主机资格，缺资源列明 owner/解除条件。每 issue 保持唯一 status，blocked 明确条件。\n\n## 依赖与参考\n\n各包按具名接口/样例/迁移/binding 制品交接，不默认要求关联整包先关闭。Epic 汇总范围，工作包维护实施任务/AC，Gate 维护联合证据与放行。\n\n[整体计划](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-three-team-delivery-plan.md) · [启动指令](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-agent-team-startup-briefs.md) · [跟踪矩阵](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-implementation-tracking.md) · [编排清单](https://github.com/hrygo/SpeechNexus/blob/main/docs/plans/2026-10-23-implementation-issues.json)\n\n",
+      "body_sha256": "7a0f5bc71e11453604bfeb0ac61a2216eb7e88723273031b2144c677f8ba0fc6",
+      "updated_at": "2026-11-03T10:45:07Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6370143983",
+          "body_sha256": "5a49eeaf266da2670110c98ec5cc659c7e5e1771677f593e431ccc91cbfd1ef6"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6370993024",
+          "body_sha256": "228987b947a97176ea295b197133623c307205c5f6974e2dc9dffcb9b19846e6"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6371643581",
+          "body_sha256": "b7d783ba2de4ff84202065bfd9121e36c3af2073784b70e9bf619dcaa233df56"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6373715925",
+          "body_sha256": "ea263ae928ae49e0c23b27bb8bc3e9301b8810458ecfaa39a7853cabd207f661"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6375127700",
+          "body_sha256": "d0e3ba8d34111db76d381712cd9e458100711bc7560b18fed570d05899d81c3c"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6375568265",
+          "body_sha256": "002acd7466ab259f150fb89e3fefa2f6c6a545ee7f17099ae1560a00afe99128"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6376111296",
+          "body_sha256": "e299b38a83fec8fb86ae255b04ac5ad93fb1dd3b2483d245f2332c5c53f9167f"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6376746091",
+          "body_sha256": "9b229dcf4906488308c77155aecb9d1013026f8de2732aca32efdb6e1d7ea22b"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6377370706",
+          "body_sha256": "3b2081ed5de98ebb6b0283cf86e0d478a89b11a55807b33fe4bb2a62cb7efd17"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6377736448",
+          "body_sha256": "3765e287d58cb965c36ba86567788a23b87707ed3c887154e0bad45fa05f8336"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6397725100",
+          "body_sha256": "6788a0b48d0d818f3620173aea369984687b73d5ac1b13721f610c12a5f716fa"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6402074925",
+          "body_sha256": "cb44d4be0b64a4843052bae4b9c8435657c40424900466b1807704b88951cd2a"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6402282493",
+          "body_sha256": "968b4728cd26b470f3cb55166b993f3bd2d7f77d2262586b4210d97b79d696d4"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6402884372",
+          "body_sha256": "67a055af4b19f795a030fa863db18a60ee1f2100e06a5a2e53afc5026d58a358"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6412962541",
+          "body_sha256": "3439a2bbc48214b254a144f8dd9c0e4595d8f2d5518f59e14d3587861396cf36"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/6#issuecomment-6435983205",
+          "body_sha256": "84d15d9c2227e80f3bce1b6224b03ebcdb1e7c8e96cf4e057b7ee045d95dd0cd"
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "title": "[Epic S0] 接口、环境与关键风险探针",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/7",
+      "body": "<!-- speechnexus-implementation:S0:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G0 #13](https://github.com/hrygo/SpeechNexus/issues/13)。\n\n## 目标\n\n三队消费的生成类型/正负例；18 端口所有权及缺口表；首个生产事务；引擎/硬件/许可/停止探针结论；冻结首批语料与浏览器矩阵\n\n## 进展总结\n\n同源 Python/TypeScript 类型、18 端口取证矩阵、部分协调事务和 C 客户端骨架已交付；#201 增加固定词典 draft GET，#162/#219 提供 ASR/CustomVoice 固定制品与注册输入，C #192/#195/#208 补操作识别。上述均属分段交付，不构成权威发布或完整资格。\n\n尚缺三队同版消费者正反例、完整模型/镜像/依赖许可与停止结论、首批语料/浏览器矩阵及 G0 联合放行；C 原件缺失与重建见 #35。原范围保留，后续安排由新负责人重新确定。\n\n## 任务清单\n\n- [ ] #19 — A00 契约类型生成、语义样例与接口交接\n- [ ] #27 — B00 MegaCube 环境、模型可行性与停止证据探针\n- [ ] #35 — C00 工作台版本骨架、契约客户端与开发 fake\n- [ ] #13 — G0 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：首闭环契约/生成类型/正负样例由三队一致消费，18 端口所有权/缺口表与首个生产事务及角色交接可核对。\n- [ ] AC2：关键模型/硬件/镜像/许可和 status/abort/停止可行性有逐能力结论，首批语料与浏览器矩阵已冻结。\n- [ ] AC3：G0 #13 的联合证据齐备并由用户放行；本 Epic 主归属工作包完整范围完成后才关闭 Epic。\n\n阶段放行与 Epic 全范围完成分别判断；具名接口/样例到位即可提前实施独立任务，不要求长工作包先全部关闭。通用证据要求见 #6。\n",
+      "body_sha256": "e7f688159ae5973b893046f4955fac208e307b1670f4eca2cebc8ea1ea6fad60",
+      "updated_at": "2026-10-26T10:02:05Z",
+      "comments": []
+    },
+    {
+      "number": 8,
+      "title": "[Epic S1] 标准文件语音与基础页面闭环",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/8",
+      "body": "<!-- speechnexus-implementation:S1:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G1 #14](https://github.com/hrygo/SpeechNexus/issues/14)。\n\n## 目标\n\n无 Web 的标准 SDK 文件 ASR/TTS；上传→Job→原子准入→唯一外发→staging/发布→下载；基本页面；进程重启/取消/同键重放；基础删除\n\n## 进展总结\n\n文件持久执行与回执组件 #152/#154/#158 已集成；#168/#203/#209 提供真实 ASR/CustomVoice 默认工厂隔离证据，#178/#218 提供限定版本的整代停止/租约结算，#162/#219 固定模型/注册输入。A 共享媒体/私有检查消费者已随 #221 合入 41e29b6，C 原稿导入/独立校对/固定文本及公开下载已有分段消费。\n\n仍缺公开音频 ready、权威配置/声音、完整 Job/准入和 A 原子发布，尚未形成 SDK/C 可消费的真实两链。恢复、取消、停止/释放、基础删除及 G0 前置需同版取证；不能继续统称“只有替身”，也不能把隔离执行当公开闭环。后续排期交新负责人。\n\n## 任务清单\n\n- [ ] #21 — A02 资产、不可变版本与对象原子发布\n- [ ] #22 — A03 调度准入、持久任务、配额与未知恢复\n- [ ] #23 — A04 标准文件语音、任务与管理 REST/SSE\n- [ ] #28 — B01 执行网关、持久意图与真实提交屏障\n- [ ] #30 — B03 真实文件 ASR/TTS 与有界媒体流水线\n- [ ] #37 — C02 转写校对导出与文本配音闭环\n- [ ] #14 — G1 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：官方标准 SDK 无 Web 可完成文件 ASR/TTS；上传→持久 Job/原子准入→唯一外发→staging/发布→下载及基础页面在同版真实服务闭环。\n- [ ] AC2：进程重启、取消、同键重放和未知恢复不重复执行/发布，基础删除与 tombstone 可验证。\n- [ ] AC3：G1 #14 已按前置 G0 和分段证据获用户放行；主归属工作包完整范围完成，无未处理的 unknown/权限/版本/删除缺口。\n\n阶段放行与 Epic 全范围完成分别判断；具名接口/样例到位即可提前实施独立任务，不要求长工作包先全部关闭。通用证据要求见 #6。\n",
+      "body_sha256": "9cbddf1f8590ae9b2e36d0879bf587379996462623d50afb453cb455a357ef66",
+      "updated_at": "2026-10-26T11:18:57Z",
+      "comments": []
+    },
+    {
+      "number": 9,
+      "title": "[Epic S2] 实时语音、音色与实例生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/9",
+      "body": "<!-- speechnexus-implementation:S2:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G2 #15](https://github.com/hrygo/SpeechNexus/issues/15)。\n\n## 目标\n\n实时 ASR/TTS 的样本/文本水位与背压；可信 abort/stop；设计和克隆各自的候选→复用→发布；加载/回收/unknown 证据\n\n## 进展总结\n\n**排期决定（2026-11-02）**：#39 中工作台实时字幕后移，在其他功能完成后再推进；实时 ASR/TTS、共享媒体能力和音色等非延期工作继续按自身优先级实施及取证。原完整阶段范围与 AC 保留，详见 #6。\n\n受限节点控制器、generation/停止恢复和输出区间账本已有分段交付；#218 验证真实 CustomVoice 整代停止和原执行租约幂等结算，未证明单请求释放或 TTS 实例 base 归还。C #182/#183/#184/#186 补合成实时与本地设备生命周期。\n\n公开双工、真实背压/水位、VoiceDesign 与克隆各自复用/发布、持续 ready 和物理设备资格仍缺；CustomVoice 文件合成不替代设计/克隆或实时资格。原 AC 和 G2 前置保留，后续由新负责人安排。\n\n## 任务清单\n\n- [ ] #24 — A05 公开实时协议、双工准入与流恢复\n- [ ] #25 — A06 音色候选、复用校验与版本发布\n- [ ] #29 — B02 受限节点控制器与实例生命周期\n- [ ] #31 — B04 流式 ASR/TTS、PCM 背压与输出区间账本\n- [ ] #32 — B05 VoiceDesign/Base、克隆与声音材料恢复\n- [ ] #38 — C03 音色创作、校验发布与复用工作室\n- [ ] #39 — C04 浏览器采集播放、实时字幕与媒体生命周期\n- [ ] #15 — G2 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：真实实时 ASR/TTS 的样本/文本水位、credit/背压和双工配方一致，硬上界、恢复与可信 abort/stop 有联合证据。\n- [ ] AC2：设计与克隆分别完成候选→换文复用→显式发布，发布声音可被真实后续 TTS 使用并在重启后按固定材料恢复。\n- [ ] AC3：加载 peak/steady、drain、停止/资源释放与 unknown 占用在完整链路一致；G2 #15 获用户放行且主归属工作包完整范围完成。\n\n阶段放行与 Epic 全范围完成分别判断；具名接口/样例到位即可提前实施独立任务，不要求长工作包先全部关闭。通用证据要求见 #6。\n",
+      "body_sha256": "0e129685567f9fd5c8aff120c15ec261432df06997984e6d08c4217ebe206d64",
+      "updated_at": "2026-11-02T02:18:37Z",
+      "comments": []
+    },
+    {
+      "number": 10,
+      "title": "[Epic S3] 完整语音底座与基础产品试点",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/10",
+      "body": "<!-- speechnexus-implementation:S3:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G3 #16](https://github.com/hrygo/SpeechNexus/issues/16)。\n\n## 目标\n\n四类语音与至少一条真实可复用音色；全部 18 生产端口/完整快照；双库协调行为；最低 1 路实时 ASR+1 路实时 TTS 与 VoiceDesign 共存；基础管理/工作台；对应拓扑的试点资格\n\n## 进展总结\n\nA #171 已汇合 18 端口/7 查询、实际调用方/完整快照和 PG/InnoDB 证据地图，#173 补启动身份守卫；CPU VAD、AdminUI/任务中心与配置读取也有分段交付。矩阵明确仍缺生产装配、统一结果及部分共享行为对照，不能据端口计数结算全部 AC。\n\n四类真实语音、可复用声音、对齐/匿名分人、混合负载、管理/MCP 完整语义和目标拓扑试点仍待联合验收；所需版本制品按包接收，不以长工作包全部关闭为开工条件。后续排期由新负责人重新安排。\n\n## 任务清单\n\n- [ ] #20 — A01 生产协调事务、迁移权限与 18 端口验收\n- [ ] #33 — B06 VAD、对齐与匿名分人能力\n- [ ] #36 — C01 AdminUI 与持久任务中心\n- [ ] #16 — G3 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：四类语音与至少一条真实可复用音色在声明拓扑可用，VAD/对齐/匿名分人按绑定支持矩阵有真实证据。\n- [ ] AC2：18 生产端口/完整快照及隔离 PG/InnoDB 协调行为联合验收完成，无相关共享行为跳过。\n- [ ] AC3：同时 1 路实时 ASR+1 路实时 TTS，并验证 VoiceDesign 的加载/执行/回收影响；基础管理/工作台真实可操作。\n- [ ] AC4：MCP/REST 语义、预设/词典版本及配置发布/回滚按 G3 #16 清单验收；G3 获用户放行，主归属工作包完整范围完成。\n\n阶段放行与 Epic 全范围完成分别判断；具名接口/样例到位即可提前实施独立任务，不要求长工作包先全部关闭。通用证据要求见 #6。\n",
+      "body_sha256": "ff1a91dfb911bddd1cbc944224a0d3a3e72fd3f2740624c078cd74e5d975b3dc",
+      "updated_at": "2026-10-26T10:02:13Z",
+      "comments": []
+    },
+    {
+      "number": 11,
+      "title": "[Epic S4] 会议、提词、助手与有声书",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/11",
+      "body": "<!-- speechnexus-implementation:S4:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G4 #17](https://github.com/hrygo/SpeechNexus/issues/17)。\n\n## 目标\n\n会议封存/校对、提词手动接管、助手插话取消、版本化有声书局部重做/完整导出；各自删除/恢复；LLM 启用时通过内网内容边界\n\n## 进展总结\n\n**排期决定（2026-11-02）**：本阶段会议助手、会议纪要、提词器、语音助手和有声书制作后移，待其他功能完成后再推进；现有成果、未完成任务及原 AC 保留。共享语音底座和通用工作台能力不因此延期。详见 #6。\n\n会议/版本封存、内网 LLM 纪要、提词和有声书编排已集成；有声书 #197/#198/#200 补生成/结算，#202/#206/#211 补副本，#208/#213/#214/#216/#217 补历史与参数回归。不能再把这些能力统称未实现。\n\n真实语音输入/输出、助手 Job/已发布声音（#149）、完整导出/清单/续作/质量仍缺；#42 的意图、CAS、错误分类、公平与读取隔离审查未结。历史 LLM 实测保留原版本，当前组合资格及 C 证据重建另验。后续由新负责人安排，G4 不据页面或组件完成放行。\n\n## 任务清单\n\n- [ ] #40 — C05 会议封存、校对与提词跟随\n- [ ] #41 — C06 内网 LLM、会议纪要与语音助手\n- [ ] #42 — C07 有声书局部重做、保存副本与独立导出\n- [ ] #17 — G4 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：会议要点/封存/校对/固定导出与真实提词跟随、低置信暂缓、手动接管可验证，来源/gap/revision 关联正确。\n- [ ] AC2：启用 LLM 时内网内容边界成立，纪要固定来源，助手插话/取消与迟到音频隔离在真实链路成立。\n- [ ] AC3：有声书按固定版本局部重做，独立副本、质量/试听/匿名确认及有界完整导出、删除/恢复可验证。\n- [ ] AC4：G4 #17 按前置 G3 获用户放行；主归属工作包完整范围完成，普通会议/提词不依赖 LLM。\n\n阶段放行与 Epic 全范围完成分别判断；共享前置按自身优先级推进，延期功能按 #6 决定在其他功能完成后接续。通用证据要求见 #6。\n",
+      "body_sha256": "a907885300f4b49ae8f661c203010625c48cb196aee90d8257d73cb96dcc6257",
+      "updated_at": "2026-11-02T02:17:33Z",
+      "comments": []
+    },
+    {
+      "number": 12,
+      "title": "[Epic S5] 目标拓扑、恢复与完整交付资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/12",
+      "body": "<!-- speechnexus-implementation:S5:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；本阶段关口：[G5 #18](https://github.com/hrygo/SpeechNexus/issues/18)。\n\n## 目标\n\n物理多主机、网络分区/节点丢失、旧入口隔离、目标数据层切换/备份恢复、迁移/回退、长时/质量/容量、浏览器及内容出站、许可/交接资料完整\n\n## 进展总结\n\n**排期决定（2026-11-02）**：与延期工作台功能无关的目标拓扑、恢复、许可、运维与交付工作先行实施和取证；延期功能及其专属验收在其他功能完成后接续。G5 完整放行仍须满足原 AC、G4 前置和用户放行，不以本排期变更代替验收。详见 #6。\n\n删除账本、启动重放、独立副本和部分对象恢复已有 A/C 分段实现；B 有限定版本整代停止证据。C #212 仅提供 52 项入口页 a11y 摘要，不能代替面板、VoiceOver 或目标设备资格；证据原件缺失与恢复要求见 #35。\n\n跨模块删除/独立副本、备份恢复、受控迁移/回退、RPO/RTO、长时/混合负载、许可运维和物理多机仍待。缺第二 GPU 主机不降低对应资格要求。各收尾 PR 尚未形成发布验收，后续资源和窗口由新负责人确定。\n\n## 任务清单\n\n- [ ] #26 — A07 删除账本、备份恢复与平台发布交付\n- [ ] #34 — B07 模型部署、混合负载与目标拓扑资格\n- [ ] #43 — C08 浏览器、业务删除恢复与应用交付资格\n- [ ] #18 — G5 独立验收关口\n\n子工作包维护实施任务；跨团队取证按本阶段 Gate 汇总，不在 Epic 重复逐项实施清单。\n\n## 验收标准（AC）\n\n- [ ] AC1：目标物理拓扑的网络分区/节点丢失、旧入口隔离与唯一数据权威有实测，单机逻辑集群不替代多 GPU 接管资格。\n- [ ] AC2：迁移/回退、数据层切换及备份恢复按冻结 RPO/RTO 实测，先重放删除账本再开放内容，unknown/高水位不回退。\n- [ ] AC3：真实质量/容量/混合负载/长时、浏览器/内容出站、许可与 SDK/MCP/运维交接满足目标支持范围。\n- [ ] AC4：G5 #18 按前置 G4 获用户放行，主归属工作包完整范围完成；未验证拓扑或缺资源条件明确列出。\n\n阶段放行与 Epic 全范围完成分别判断；具名接口/样例到位即可提前实施独立任务，不要求长工作包先全部关闭。通用证据要求见 #6。\n",
+      "body_sha256": "7318117b0c16c66932d63e8510ae463b670b66f0290005c9966154d62365a4b2",
+      "updated_at": "2026-11-02T02:18:04Z",
+      "comments": []
+    },
+    {
+      "number": 13,
+      "title": "[Gate G0] 接口、环境与关键风险探针验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/13",
+      "body": "<!-- speechnexus-implementation:G0:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S0 #7](https://github.com/hrygo/SpeechNexus/issues/7)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n三队消费的生成类型/正负例；18 端口所有权及缺口表；首个生产事务；引擎/硬件/许可/停止探针结论；冻结首批语料与浏览器矩阵\n\n## 进展总结\n\n契约生成、18 端口责任/证据矩阵、首批生产事务和 C 客户端已有分段成果；#201 固定 draft GET、#162/#219 模型制品/注册输入及 C 操作映射已集成。注册输入不等于权威 binding/发布；模型加载或健康检查不等于运行资格。\n\n本 Gate 尚缺三队同版消费者正反例、完整模型/镜像/依赖许可与可信停止结论、语料/浏览器矩阵和 B07 资格模板；C 原件重建见 #35。三队确认与用户放行未完成，保持 open。独立 G1 实现可推进，正式放行不跳过 G0；后续取证由新负责人安排。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)：生成/校验、责任矩阵、首闭环样例和消费者确认。\n- [ ] AC2：[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)：签名/样例、首个生产事务与迁移角色。\n- [ ] AC3：[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)：环境/许可/关键模型与 stop 可行性结论。\n- [ ] AC4：[B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)：fake 故障与协议子包。\n- [ ] AC5：[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)：controller fake/generation 接口。\n- [ ] AC6：[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)：资格模板/门槛/环境窗口。\n- [ ] AC7：[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)：客户端/项目版本骨架/开发 fake 与接口确认。\n- [ ] AC8：[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)：合成媒体/fake WS 探针。\n- [ ] AC9：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：目标浏览器/安全上下文矩阵。\n- [ ] AC10：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n## 依赖与参考\n\n基础交接工作包：[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)、[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；其他 A01 等仅按上面具名检查项取证，不要求整个包先关闭。\n\n按具名分段取证，不要求所有关联长包先关闭；独立工作可先实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：schema 通过、页面截图、模型能启动。\n",
+      "body_sha256": "8983eaac43976c752787558c27bf919ec044b7689a6165d47db9c828e6e630dd",
+      "updated_at": "2026-10-26T10:02:22Z",
+      "comments": []
+    },
+    {
+      "number": 14,
+      "title": "[Gate G1] 标准文件语音与基础页面闭环验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/14",
+      "body": "<!-- speechnexus-implementation:G1:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n无 Web 的标准 SDK 文件 ASR/TTS；上传→Job→原子准入→唯一外发→staging/发布→下载；基本页面；进程重启/取消/同键重放；基础删除\n\n## 进展总结\n\n#152/#154/#158 的持久执行/回执组件已集成，#168/#203/#209 有真实 ASR/CustomVoice 默认工厂隔离证据，#178/#218 有限定整代停止/原租约结算，#162/#219 提供固定注册输入。A #155 是私有进程边界，检查/回执消费者已随 #221 合入 41e29b6；这些都不等于公开音频 ready。\n\n真实公开 ASR/TTS 两链仍缺权威配置/声音、完整 Job/准入、A 发布和 SDK/C 同版消费。正常/静音、确认丢失、重放/重启、取消/迟到、竞争与删除须逐项留证；unknown 不退预算，停止/释放层次分列。G0、全部 AC、三队确认和用户放行未满足，后续排期交新负责人。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)：文件闭环所用生产端口。\n- [ ] AC2：[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)：资产/版本/receipt/staging/发布与下载。\n- [ ] AC3：[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)：持久 Job/outbox、完整文件准入和未知恢复。\n- [ ] AC4：[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)：标准文件 SDK/API/SSE 与页面消费。\n- [ ] AC5：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)：首个资源基础删除及 tombstone。\n- [ ] AC6：[B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)：唯一 intent、真实屏障、unknown/stop 与文件执行。\n- [ ] AC7：[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)：prepare/ready 与文件实例准备。\n- [ ] AC8：[B03 #30](https://github.com/hrygo/SpeechNexus/issues/30)：真实文件 ASR/TTS 和有界媒体/格式/取消。\n- [ ] AC9：[B06 #33](https://github.com/hrygo/SpeechNexus/issues/33)：实时开发前 VAD 子项。\n- [ ] AC10：[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)：文件真实资格。\n- [ ] AC11：[C01 #36](https://github.com/hrygo/SpeechNexus/issues/36)：任务/基础管理真实消费者。\n- [ ] AC12：[C02 #37](https://github.com/hrygo/SpeechNexus/issues/37)：真实转写校对导出与配音试听下载。\n- [ ] AC13：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：基础页面恢复与下载。\n- [ ] AC14：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n## 依赖与参考\n\n前置 Gate：[G0 #13](https://github.com/hrygo/SpeechNexus/issues/13)。\n\n按具名分段取证，不要求所有关联长包先关闭；独立工作可先实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：全部 fake 通过、HTTP 200、只在内存保存的任务、直接调用引擎绕过网关。\n",
+      "body_sha256": "bb4cfb59ecb864894b2bdb214809b4fe460ea8c803ffa84f4549d14f37ac39be",
+      "updated_at": "2026-10-26T11:19:00Z",
+      "comments": []
+    },
+    {
+      "number": 15,
+      "title": "[Gate G2] 实时语音、音色与实例生命周期验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/15",
+      "body": "<!-- speechnexus-implementation:G2:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n实时 ASR/TTS 的样本/文本水位与背压；可信 abort/stop；设计和克隆各自的候选→复用→发布；加载/回收/unknown 证据\n\n## 进展总结\n\n**排期决定（2026-11-02）**：工作台实时字幕及其专属验收后移，在其他功能完成后再推进；实时语音、共享设备和非延期能力可先实施和分段取证。原完整 Gate 的全部 AC 与用户放行要求保持不变，详见 #6。\n\n生命周期、输出区间账本和 C 合成媒体已有分段结果；#218 补真实 CustomVoice 整代停止/执行租约幂等结算，未覆盖单请求释放、TTS base、持续 ready 或目标拓扑。C 实时/设备/焦点修复限定于原受检版本及合成边界。\n\n公开 PCM 双工、credit/水位/背压、可信停止/释放，以及 VoiceDesign/克隆分别完成候选→换文复用→显式发布仍待联合证据；物理设备与重连另验。G1 前置、全部 AC 和用户放行仍未满足，后续由新负责人安排。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)：runtime 生命周期/流计量协同。\n- [ ] AC2：[A05 #24](https://github.com/hrygo/SpeechNexus/issues/24)：实时/双工/owner/epoch/水位/背压/恢复。\n- [ ] AC3：[A06 #25](https://github.com/hrygo/SpeechNexus/issues/25)：候选、换文复用、发布与退役/禁用竞争。\n- [ ] AC4：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)：音色/网关命令正文受控清理。\n- [ ] AC5：[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)：完整 peak/steady/drain/停止/释放。\n- [ ] AC6：[B04 #31](https://github.com/hrygo/SpeechNexus/issues/31)：真实流式、credit、输出区间与硬上界。\n- [ ] AC7：[B05 #32](https://github.com/hrygo/SpeechNexus/issues/32)：设计/克隆、换文复用、重启材料恢复。\n- [ ] AC8：[B06 #33](https://github.com/hrygo/SpeechNexus/issues/33)：required 辅助完整配方。\n- [ ] AC9：[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)：实时/音色真实资格。\n- [ ] AC10：[C03 #38](https://github.com/hrygo/SpeechNexus/issues/38)：音色工作室真实创作/校验/发布/复用。\n- [ ] AC11：[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)：真实设备/远端实时与生命周期。\n- [ ] AC12：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：真实设备/实时/音色交互。\n- [ ] AC13：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n## 依赖与参考\n\n前置 Gate：[G1 #14](https://github.com/hrygo/SpeechNexus/issues/14)。\n\n按具名分段取证，不要求所有关联长包先关闭；独立工作可先实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：试听成功、断开连接、TTL 到期、只写较大 fencing token。\n",
+      "body_sha256": "68320770ba68648c03762577a41906566679e118b9025b0b2f1d3b0d42605568",
+      "updated_at": "2026-11-02T02:18:41Z",
+      "comments": []
+    },
+    {
+      "number": 16,
+      "title": "[Gate G3] 完整语音底座与基础产品试点验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/16",
+      "body": "<!-- speechnexus-implementation:G3:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S3 #10](https://github.com/hrygo/SpeechNexus/issues/10)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n四类语音与至少一条真实可复用音色；全部 18 生产端口/完整快照；双库协调行为；最低 1 路实时 ASR+1 路实时 TTS 与 VoiceDesign 共存；基础管理/工作台；对应拓扑的试点资格\n\n## 进展总结\n\n18 端口/7 查询与快照地图（#171）、身份守卫、CPU VAD 和基础管理页已有分段交付；地图仍列生产消费者、统一结果和共享行为对照缺口，不表示完整协调验收。\n\n四类语音、可复用声音、对齐/分人、实时 ASR/TTS 与 VoiceDesign 共存、混合负载和目标拓扑试点尚未齐备。各结果须绑定相应版本与拓扑，满足 G2、下列 AC、三队确认及用户放行后才结算本 Gate；后续由新负责人安排。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)：全部 18 端口、完整快照与双库无跳过。\n- [ ] AC2：[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)：双工/跨池/全部 quota 与结算证据。\n- [ ] AC3：[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)：基础管理面全部有效能力。\n- [ ] AC4：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)：删除与恢复/未知预算联验。\n- [ ] AC5：[B06 #33](https://github.com/hrygo/SpeechNexus/issues/33)：分人/对齐支持矩阵与有界连续性。\n- [ ] AC6：[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)：1+1/VoiceDesign 混合负载。\n- [ ] AC7：[C01 #36](https://github.com/hrygo/SpeechNexus/issues/36)：完整基础 Admin 能力/策略/实例/诊断。\n- [ ] AC8：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：基础产品体验。\n- [ ] AC9：[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23) 无状态 MCP 工具发现/调用与 REST 同命令/错误/幂等/取消；[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19) 保证协议样例一致。\n- [ ] AC10：[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 预设合并/allowlist/ranges/exact/发布资格/CAS/回滚与词典版本；[C01 #36](https://github.com/hrygo/SpeechNexus/issues/36) 对应管理界面可操作。\n- [ ] AC11：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n## 依赖与参考\n\n前置 Gate：[G2 #15](https://github.com/hrygo/SpeechNexus/issues/15)。\n\n按具名分段取证，不要求所有关联长包先关闭；独立工作可先实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：以文件切片替代完整 P1、只验证 happy path、只验证单个数据库、开发 Compose 健康。\n\n最低混合负载为同时 1 路实时 ASR + 1 路实时 TTS，并独立测 VoiceDesign 冷加载/热身/执行/回收影响。首轮要求 ASR 首有效预览 P95≤1000ms，TTS 冻结文本接受至首可播放 PCM P95≤800ms；固定负载/语料/时钟，网络和播放另报。\n",
+      "body_sha256": "a2f94466040139ee4dd2aca1c39fae8ea293ec6a68c5f43af256ce70b5235f61",
+      "updated_at": "2026-10-26T10:02:30Z",
+      "comments": []
+    },
+    {
+      "number": 17,
+      "title": "[Gate G4] 会议、提词、助手与有声书验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/17",
+      "body": "<!-- speechnexus-implementation:G4:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S4 #11](https://github.com/hrygo/SpeechNexus/issues/11)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n会议封存/校对、提词手动接管、助手插话取消、版本化有声书局部重做/完整导出；各自删除/恢复；LLM 启用时通过内网内容边界\n\n## 进展总结\n\n**排期决定（2026-11-02）**：本 Gate 对应的会议助手、提词器、语音助手及有声书工作在其他功能完成后再推进；原验收范围、证据要求和用户放行保持不变。非延期功能相关的 G5 准备和取证可先进行，不等同于 G5 完整放行。详见 #6。\n\n会议、纪要、提词和有声书已有实现；生成/结算、副本、历史与参数边界又经 #197–#217 分段交付。#42 的持久意图/CAS、来源分类、扫描公平、历史读取和页面隔离审查未结，不能只归为缺真实服务。\n\n仍缺真实语音输入/输出、助手 Job/已发布声音（#149）、完整导出/续作/质量和当前组合 LLM 内容边界资格；历史证据失效按 #35 重建。G3、下列 AC、三队确认及用户放行未满足；后续资源和窗口交新负责人。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[C05 #40](https://github.com/hrygo/SpeechNexus/issues/40)：会议/封存/校对/提词手动接管。\n- [ ] AC2：[C06 #41](https://github.com/hrygo/SpeechNexus/issues/41)：内网 LLM/纪要/助手插话与内容边界。\n- [ ] AC3：[C07 #42](https://github.com/hrygo/SpeechNexus/issues/42)：局部重做/保存副本/独立完整导出。\n- [ ] AC4：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：高级流程/内容生命周期。\n- [ ] AC5：[C05 #40](https://github.com/hrygo/SpeechNexus/issues/40) 会议要点标记与版本化保存、封存/导出。\n- [ ] AC6：[C07 #42](https://github.com/hrygo/SpeechNexus/issues/42) 独立质量检查、试听与匿名确认记录，关联版本并用于导出验收。\n- [ ] AC7：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n## 依赖与参考\n\n前置 Gate：[G3 #16](https://github.com/hrygo/SpeechNexus/issues/16)。\n\n按具名分段取证，延期功能依 #6 的排期决定接续；共享前置可按自身优先级实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：UI 页面齐全、LLM 只配置内网 URL、仅测整章重新生成。\n",
+      "body_sha256": "4b666132695b4f10294eb809c47c73db5fe95e438c1f6ebbc32897ba5ad9471e",
+      "updated_at": "2026-11-02T02:17:37Z",
+      "comments": []
+    },
+    {
+      "number": 18,
+      "title": "[Gate G5] 目标拓扑、恢复与完整交付资格验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/18",
+      "body": "<!-- speechnexus-implementation:G5:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S5 #12](https://github.com/hrygo/SpeechNexus/issues/12)；主责：三队联合证据，用户决定放行。\n\n## 目标\n\n物理多主机、网络分区/节点丢失、旧入口隔离、目标数据层切换/备份恢复、迁移/回退、长时/质量/容量、浏览器及内容出站、许可/交接资料完整\n\n## 进展总结\n\n**排期决定（2026-11-02）**：与延期工作台功能无关的 G5 准备、实施及分段取证可先进行；延期功能的专属证据在其他功能完成后接续。G4 前置、原完整 AC 和用户最终放行要求保持不变，本项尚未放行。详见 #6。\n\n部署规划、ADR 和终态拓扑图已由 [PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 于 2026-10-27 合入 main（`b1d6193`）。补充关口 D1 #229 及实施 #225–#228 尚未验收；物理多主机、备用 GPU 与 HA 要求继续保留。\n\n尚未进入联合发布验收；A07/B07/C08 仅有删除/恢复、停止和浏览器的分段结果。C #212 的入口页 a11y 摘要及 #214 历史 ARIA 不代表完整设备/面板/VoiceOver 资格，证据原件缺失见 #35。\n\n物理多主机/备用 GPU、分区/节点丢失、备份恢复、受控迁移/回退、长时质量/容量、网络内容边界、许可和运维交接仍待。前置 G4、全部 AC、三队确认与用户放行均未完成，保持 planned/open；后续环境与窗口由新负责人确认。\n\n## 任务清单\n\n- [ ] 按下列 AC 汇集各工作包对应版本的制品与实际验证证据。\n- [ ] 核对契约、模型/镜像/拓扑、语料/浏览器、通过标准与前置关口，补齐缺口/owner/解除条件。\n- [ ] 接收 D1 #229 的逐单元原生平台与部署边界证据，并与目标物理拓扑交叉核验。\n- [ ] 三队确认同版联合结论，提交用户决定是否放行。\n\n## 验收标准（AC）\n\n每项须有相应范围的实际验证结果与具名证据，不能仅引用计划或关联 issue。\n\n- [ ] AC1：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)：迁移/备份恢复/唯一权威/发布包。\n- [ ] AC2：[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)：目标拓扑/故障/长时/完整发布资格。\n- [ ] AC3：[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43)：完整浏览器/删除恢复/文档交接。\n- [ ] AC4：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26) SDK/MCP 可安装配置和可运行发现/调用/错误恢复示例。\n- [ ] AC5：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26) 本仓 LICENSE 由指挥者明确决定，模型/依赖/素材许可证据齐备；不能自动替用户选许可。\n- [ ] AC6：[A07 #26](https://github.com/hrygo/SpeechNexus/issues/26) 在明确目标拓扑下冻结 RPO/RTO 并提供真实备份恢复演练结果；候选 15 分钟/60 分钟不自动当作已达标承诺。\n- [ ] AC7：上述证据可对应同一集成版本/交接组合，实际结果、未验证与阻塞明确分列；前置满足、三队确认且用户明确放行。\n\n- [ ] AC8：D1 #229 已具备同版服务清单、裁剪依赖、独立 API 上游和 macOS/Linux 原生证据并获放行；业务/控制面与 Linux 算力面在不同物理主机上完成公开文件 ASR/TTS 及已启用实时链，并覆盖跨主机响应丢失、分区和重启。隔离 VM 只作前置联调，不替代本 Gate 的物理多主机/备用 GPU 要求。\n\n## 依赖与参考\n\n前置 Gate：[G4 #17](https://github.com/hrygo/SpeechNexus/issues/17)。\n\n按具名分段取证，不要求所有关联长包先关闭；独立工作可先实施，放行不得跳过前置关口。通用要求见 #6。\n\n不足以关闭：单机逻辑集群替代物理资格、CI 绿灯、历史原型测试数或源码覆盖率。\n\n单 MegaCube 逻辑集群或跨主机控制角色不等于多 GPU 备用接管；资源不足须明确阻塞对应拓扑。\n",
+      "body_sha256": "1f9048aa0fa1f4afa32068056df58dad0d442dd3c096727a9b8bd566ea8593a7",
+      "updated_at": "2026-11-02T02:18:08Z",
+      "comments": []
+    },
+    {
+      "number": 19,
+      "title": "[A00] 契约类型生成、语义样例与接口交接",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/19",
+      "body": "<!-- speechnexus-implementation:A00:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S0 #7](https://github.com/hrygo/SpeechNexus/issues/7)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n让 A/B/C 通过同源 Python/TS 类型、运行时校验和语义样例一致消费协议，并明确 18 端口责任及生成漂移/兼容边界。\n\n## 进展总结\n\n同源 JSON/二进制/SSE SDK（#141/#169）、JSON 字面量门禁（#175）、CI 前置（#176）、限定 RTE（#181）及固定词典契约/只读 HTTP（#193/#201）已集成。#201 于 2026-10-26 13:37:26 合入 064c6b6，仅读 draft；[最终代码复审](https://github.com/hrygo/SpeechNexus/pull/201#pullrequestreview-5646742654)是 COMMENTED，不是独立人工批准。其合前 CI 全绿，精确合后取消/清理未知保留。\n\n私有音频成功回执1.0.0、同源类型及消费者已随#221于2026-10-26合入41e29b6；最终f326f5d修复RIFF尾部完整性，CI40312196799全14成功，B专业兼容接收仍待。C 下载已升级 dev1，须按 #177 消费；真实导出 SSE、公开音频错误/投影和完整跨字段/事件/REST/WS/MCP 语义仍待。\n\n本包仍有实现和业务联验缺口，保持 in-progress/open；原 Goal/排期转交新负责人，不用组件或 CI 补勾 AC。旧容量/覆盖失败及原始版本证据保留。\n\n## 任务清单\n\n- [x] #141：generateRenderUnit JSON/runtime及Python/TS消费者已集成，head35d1e33→maina7f4d46；#144/#145同步、复审/六报告和精确合后CI40183620450全14成功。\n\n- [x] #169：两条binary下载及六成员导出SSE同源生成、正反例与真实TCP增量/取消/断线，集成main7dc276a，精确合后CI40208749970全14成功；C #177 dev1升级边界见下文。\n\n- [x] #175：const/enum/default/oneOf布尔/数值反例与CLI回归308项，head9f400e5→main250cf1c，review5644518636及合后CI40219444699全14成功。\n\n- [x] #176：APT传输确认、SHA256/SHA512、原生大小/写前重检，headd97fb99→mainf3d0b5d，七lane实际激活及精确合后CI40227195444全14成功。\n\n- [x] #181：限定RTE结构/方向/PCM/事件投影及54项回归、六门禁已交；最终8339898/e959c43组合CI40232440569全14、6706通过/85.48%、223子测试、集成1692+22既有PG-only跳过（tree22b8a42），review5645268569后合main046ae7f，合后CI40233202635全14。旧e218/f3的CI40228495013与ea186ff/ff的CI40231451787、6706/85.48%、1690+22/source da62fc8仅属原组合；上游B/C与八文件补丁保留。\n\n- [x] #193：固定GET契约、外部revision、56组正反例/59 Python/1962 TS及实际TCP已交；TS2741 RED→GREEN修复可选头（review5645888850），B188源/绑定保留重生成。head45f28ee/main8d2e33d合前CI40246335790全14（7034/85.00%、262子测试），review5646063973后合763ae7c；合后CI40247195008全14（1790收集/1768通过/22跳过），同树05459e0e。恢复引用后条件删本地分支，远端已不存在、54忽略根项保留，cleanup.json保留。\n\n- [x] #185：从真实canonical绑定PronunciationCreateRequest/Revision，保留原默认/137定义；Python/TS、实际双库→Node及wheel通过。head3f164a1合前CI40237450601全14，review5645550075后合7851cfb，同树f8e8a870，合后CI40238216840全14；仅私有草稿。\n\n- [x] #201：固定draft GET、独立最小SELECT/双身份及有界生命周期、14真实PG/216相关/双语言TCP已交。c0155c6合前CI40258176229全14（7194/277子测试/84.44%、集成1783+22，source6e93597=805a2c1+c0155c6）；初轮CI40257483383两处精确路由清单失败，补齐后16定向通过。最终代码review5646742654为COMMENTED，已合064c6b6，不代表独立人工批准。\n\n- [x] #221私有回执/同源消费者已合41e29b6；最终f326f5d严格遍历RIFF头/长度/padding并拒绝重复音频块，精确[CI40312196799](https://github.com/hrygo/SpeechNexus/actions/runs/40312196799)全14成功。b7e65f4/CI40300644125保留为原版本证据，不代签B接收或公开ready。\n\n- [ ] 补公开音频错误/媒体投影与A-CONFIG-01契约/消费者；与C完成下载/SSE同版业务/资源联验，SSE正式消费者仍缺。\n\n- [ ] 补剩余JSON/envelope、跨字段、事件时序和REST/WS/MCP同源语义与兼容证据。\n\n- [ ] 核实#201精确合后CI40275218078取消及清理未知；保留旧ENOSPC全库1127通过/313跳过/9失败/320错误、非集成78.61%覆盖退出1与CI84.93%的不同来源。旧环境清理后421MiB为当时快照，重跑/接线由新负责人安排。\n\n## 验收标准（AC）\n\n- [ ] AC1：同组正负例在 Python/TS 真实消费者中对严格类型、额外字段、联合、跨字段和错误状态给出一致结果。\n- [ ] AC2：计划范围的 HTTP/事件/结果快照及四个遗漏操作均有可消费类型与运行时校验；运行中声明的操作与实际注册/绑定范围一致。\n- [ ] AC3：REST/WS/MCP 对同一命令的参数域、默认值、错误、幂等和取消语义一致，MCP 无独立默认值。\n- [ ] AC4：锁定生成器重建无漂移；已交付范围有对应兼容证据，domain 不依赖生成 DTO，OpenAI 兼容承诺不扩大。\n\n非JSON交接：#169冻结dev0时下载为200/206 octet-stream、206 Content-Range非必需且未声明416；导出事件为SSE+六成员ExportEvent。C #177已将canonical升级dev1并增加416/Range等错误语义，须先升级严格消费者，不能沿用旧源约束。SDK有界流/取消/断线/410已有#169证据；C业务、完整时序及媒体联验仍待，升级边界见评论6401665040。\n\n## 依赖与参考\n\n现有契约；B/C 同步评审\n\n阶段验收：#13。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "d71fe8c211df2133689fb40a1bc4042f8053f0ecb288bb66886564def1d27ea8",
+      "updated_at": "2026-10-26T11:19:04Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6369794618",
+          "body_sha256": "25f5a08e3d4827fcb652ba50aa98b55c984fb251c59340bb2c3dba51cbe3a20a"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6370049674",
+          "body_sha256": "1d844adb8b4c35849dea2869b13a9c944b8e1b788d53ee9c8a6281cd28d79d90"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6371231245",
+          "body_sha256": "d0e81f8ba4aee68fc648a7b105759375cdfc3aa543427c3603f6026124a83766"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6371282181",
+          "body_sha256": "e4145ea0f15ff4c9040b75cea97cc3167cce00d9c4f34f06e3c1b1dde4474624"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375086313",
+          "body_sha256": "c54d27c9a99104a24c82add73fc24588f02f3ce70331b1cd49246a9832dcbaff"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375126811",
+          "body_sha256": "de00a7c5b2269583eaff984290bc76a96ecdaf846741a295d85c7ad6c88bbe60"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375272537",
+          "body_sha256": "0c44d033e08483b15e7e0f824d14c45f850b0925b3e00764a5497471287790c2"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375381209",
+          "body_sha256": "9cc255387920caeabf0ad8bef7389d362859eb3f0a16da388fab89ab52c9bb91"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375419576",
+          "body_sha256": "fb22e38e95bd27eb11ab602ce84f88252766fddd79b1762ce886a4dfef437132"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375568028",
+          "body_sha256": "c523d25840b2f6d1b84ad47e3380663b0e7d9ffa06fac0d0e7ef40e04652a8f8"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6375934330",
+          "body_sha256": "3e8523f2bc2cd36a35b6caecd3c8826beba6365f54e79124fcc56f9039af30b4"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376017476",
+          "body_sha256": "5ecb00f4434c5b51b600e606b2910c328f0398a0262c2337b6ab3e940f1c9a19"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376074896",
+          "body_sha256": "2b0cf64da99e91ac5d800f2ae416076927661dfd30980b45bc1aafbff156f676"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376669133",
+          "body_sha256": "9fe4ee0d1942064175cd1aca1562bb8ecdda726ca3b61387c6ebe79545e419b9"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376690955",
+          "body_sha256": "2c783c93edcfd854da32a8691ed043ddd94ab4a739ac2f29310e966be88791a1"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376745288",
+          "body_sha256": "f1d58a087c6262b9fbfb6b225de34549e221bfa34bfe9b6c1915e2c8edab1a9a"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6376945126",
+          "body_sha256": "4632559b5b3dc4348d46e64d006bd542c441b95953139cb752fd8657cc23b259"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6377014351",
+          "body_sha256": "92b0a8bd96370e9fd8a6216ec9dbaa49bc7c6ec93ff4a14f8c9faa42a6407f04"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6377370264",
+          "body_sha256": "3af254a0dc00970fc31c824fa2c2bdf5628e3858a4b48f47e87376a130dbb494"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6377537730",
+          "body_sha256": "75166b76e706abc2241d51c3e1d7d58990c658c8a38d3a6a9cce3857a776c651"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6377742353",
+          "body_sha256": "52a0988c7f5894f225fce5b66a04b8c2ebb5a090ff6887fdf44de06853d77931"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/19#issuecomment-6378066961",
+          "body_sha256": "06025ae598cdaec43a7fa0f8de7dbc265e58894d19ae2e79df239bdc8d47569d"
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "title": "[A01] 生产协调事务、迁移权限与 18 端口验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/20",
+      "body": "<!-- speechnexus-implementation:A01:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S3 #10](https://github.com/hrygo/SpeechNexus/issues/10)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n以生产级领域规则、窄事务、PG adapter 与最小权限支撑可靠协调，并汇合 18 端口的完整快照和跨模块验收。\n\n## 进展总结\n\n#171 已合入 d876585，交付 18 端口/7 查询、调用方/快照和双库证据地图；其合后 CI40211254729 全14成功。#173 已合入 78505a8，修复启动登录/有效身份漏查，70 集成/36 单元及合前全14检查成功；精确合后40216031197的12成功/Web C07焦点失败仍按原版本保留。\n\n生产调度/权威策略、部分 B 原生查询 envelope/wrapper 对照及业务结算/真实资格仍待，不能以矩阵或合成停止结算全包。相关身份修复是已交付单元，不再排成“下一卡”。后续联合取证和窗口由新负责人安排，AC 保持开放。\n\n## 任务清单\n\n- [x] A-RUNTIME-IDENTITY-01：隔离PG的RED→GREEN与只读会话/有效身份检查已提交#173；新增5模式、70集成/36单元通过，无外发/预算变化和日志泄露。\n- [x] 完成#173精确head1113308的full CI40215148938全14项成功，1661集成通过/22既有跳过；当前组合父提交已核对。\n- [x] 完成#173精确head管理复审并合入main78505a8，review5644324666；本地树已核对。\n- [ ] 补齐#173合后组合证据：CI40216031197的12项通过，Web因RenderUnitPanel.test.tsx焦点失败，由C #42修复；五项新增身份场景通过，不关闭A01/Gate。\n\n- [ ] 接真实策略/批准计划与业务消费者，保持音频 Asset/完整业务 Job 的同库事务边界。\n- [x] A-COORD-EVIDENCE-01：汇合A的10个写端口、B的7个网关端口及7类事实查询，交付当前生产路径/完整快照/消费者和双库证据矩阵，缺口分列（PR #171已合入d876585，仅本取证卡完成）。\n- [ ] 完成隔离 PG/InnoDB 的权限、竞争、回滚与未知恢复联合取证。\n\n## 验收标准（AC）\n\n- [ ] AC1：18 端口的行为、完整 value 快照和事实所有权有联合证据，协调 JobFact 不被投影为未经实现的公开业务 Job。\n- [ ] AC2：事务遵守全局锁序、数据库时间及版本前提；运行角色非 owner 且不能越权。\n- [ ] AC3：已确认回滚与提交未知被区分；读原结果受压/失败时保持 unknown/query_original，仅按原持久身份恢复。\n- [ ] AC4：隔离 PG/InnoDB 对相关共享协调行为得到一致结果且无跳过；真实业务消费者证据与原型/fake 分列。\n\n## 依赖与参考\n\n[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19) 的相关接口冻结即可分批开工；网关自有事务由 [B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)/[B04 #31](https://github.com/hrygo/SpeechNexus/issues/31) 实现\n\n阶段验收：#13、#14、#15、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "33dd0cdc509747d8817142db92c7f28adb5a18540d3f0f40fd352b3df6842e1d",
+      "updated_at": "2026-10-26T10:02:49Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6370234895",
+          "body_sha256": "96ca3725a26ff2619a90b9776dab401e5fdaa2c01aa76f25087af38aa400f912"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6370421565",
+          "body_sha256": "8ad4ddd72e694f7daa8187726000440cf6fd7468efa59b328c8f0ab9463e521e"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6370992699",
+          "body_sha256": "689858c02038455c473df39dff82dea8e45dbf9fc7f38c9e217ab2e235be6c86"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6371576505",
+          "body_sha256": "2a16108ddb507555e0173cd7d001940a45e61b9d885549b4cfde2cfa7b9efe49"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6371643205",
+          "body_sha256": "d2a11ffb0e6eae16a9124dd813603a51f71cbc493dba556592ff06f13d644760"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6372208487",
+          "body_sha256": "6a89e2a94e3d1cdd64b9b0c153112adb92deea8199f0145b854483e9cfd6084b"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6372264096",
+          "body_sha256": "d526cb6abaad961fb34b8492d233d80bdf0a61b1abf569f9d279d0c580b58692"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6374618413",
+          "body_sha256": "6049044654b330d573dfc75f74bec30c7119fea836daac2c8f4891de7bdfde78"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6375253098",
+          "body_sha256": "deb39c4bec2f5b11075f820022c1dc9d3388f2d0b27f6b3c5f1ff3bc641ce077"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6375338568",
+          "body_sha256": "b4d6c940678f732f82707fc731c152bd7f9b89190ba738883bfed778b603ec43"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6375380489",
+          "body_sha256": "83766e6a24a50c69d7418f2ef6ccaf9d3ffba2964e5b8c3f044386f9aadb63b3"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6375830537",
+          "body_sha256": "aa01f059350d5af4fbd31cc13228e5d64072be58d8997340b90c129b278efd43"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6375867569",
+          "body_sha256": "ba0734448a34238032d70177a86694b012b60656bb27bf5bc0351beacb5db8f7"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6376074609",
+          "body_sha256": "d103231f5fd999f777b7c74b7b8dd5929cc504d0980ef5958c7c7aa5b863c585"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6376745068",
+          "body_sha256": "1b866c92f157393bf5c47707908e5531f4196015d12d4b91289b7742475c1ab9"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/20#issuecomment-6377370008",
+          "body_sha256": "2cd74e47f5620b204c36a598df36fdfd7a19b81d13de3233ee81820bd0df4cb4"
+        }
+      ]
+    },
+    {
+      "number": 21,
+      "title": "[A02] 资产、不可变版本与对象原子发布",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/21",
+      "body": "<!-- speechnexus-implementation:A02:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n交付可固定引用的资产、Artifact、配置/发音资源不可变版本及可信发布链，形成业务 Job 可使用的有效配置与 Operation/receipt。\n\n## 进展总结\n\n文本 Asset、私有配置原意图（#139/#172）、词典草稿（#185）、资源身份守卫（#187）、受限检查进程（#155）和固定 draft GET（#201）已有集成。共享媒体、WAV完整性检查、私有回执/同源类型及窄消费者已随#221合入41e29b6；最终f326f5d修复RIFF尾部/重复块，CI40312196799全14成功，B实际兼容接收仍待。\n\n默认 AssetRuntime 仍为 TextAssetInspector，公开音频 ready/错误映射、权威配置/发布 CAS、Artifact/Operation/receipt 及完整 HTTP/PG/MinIO 联验未交。B #162/#219 已交固定制品与注册输入，不能再称“没有交接”，也不表示权威注册、声音或容量资格。\n\n#155 中间取消/停止清理未知、#201 合后取消/清理未知及旧 ENOSPC/覆盖失败保留；本轮新 CI 不改写历史。后续 owner、部署与窗口由新负责人安排，本包 AC 不勾选。\n\n## 任务清单\n\n- [x] #139/P1a私有完整原意图、身份/摘要及默认不可用只读边界已实现、验证、复审集成并核实合后；仅观察组件，不授予发布。\n\n- [x] #172/P2a私有完整原命令账本0013已合dbbffe2，review5644224635；21 PG+18 InnoDB journal无跳过、669协调/104单元及精确合后CI40214112472全14成功。完整集成首轮浏览器失败/284跳过保留，受影响模块17项恢复；不是发布/CAS完成。\n\n- [x] #185/head3f164a1→main7851cfb交付词典私有草稿、赢得原键后分配ID、固定读取/CAS，顺序/重复/Unicode/19位revision/10000条边界保留；0014、最小列权限/历史FK、真实PG/InnoDB/Node共50项通过。去锁变异抹除已提交合成行触发RED，原锁GREEN；review5645550075、合前CI40237450601/合后40238216840全14成功。仅隔离DDL，非生产grant或公开发布。\n\n- [x] #187/heade41e1ad→main5afb488修复只看CURRENT_USER的特权登录漏检，含NOINHERIT owner；4身份反例/正控、20实际PG/MinIO HTTP和180相关单元通过。review5645650751；合前CI40239082595/合后40239908942全14（6743/84.92%、223子测试、1748集成+22既有跳过），merge493716a同树。无契约/迁移/生产ACL变更。\n\n- [x] #155/a89db67→mainf9dfa7c交付无网络/只读/禁派生及CPU/内存/输出/墙钟限制、kill/reap和unknown保留。合前CI40251899492及后续132597e组合40252960041全14成功，7149/277子测试/84.47%，该次新增UID/规则清理为空；中间精确合后40252542514取消、9新增UID进程/VM销毁未确认及4139通过/1失败旧实验保留，一次性许可不复用。\n\n- [x] #201固定draft GET已合064c6b6；创建/List/发布与默认指针仍缺，合后取消/清理未知见#19/#23。\n\n- [x] #221共享媒体/同对象兼容导出、私有WAV/显式PCM检查、回执同源类型及窄消费者已合41e29b6；f326f5d补RIFF完整遍历/重复块反例，114项定向及两项变异通过，CI40312196799全14成功。原b7e65f4的Python4395/TS1987、五包/wheel及CI40300644125是历史版本证据；默认仍TextAssetInspector，B实际接收未完成。\n\n- [ ] 完成#221的B实际兼容接收；固定部署镜像/原生依赖、容量/旧进程恢复、取消传递和公共错误/媒体投影，再接真实HTTP/隔离PG/MinIO的ready/原键/重启/TTL。\n\n- [ ] 完成A-CONFIG-01可信provider、持久发布/激活CAS、受控HTTP/固定查询及最终参数；按B #162/#219注册输入建立真实权威binding/manifest/声音和资格，不要求B整包先关闭。\n\n- [ ] 补Artifact/Operation/receipt、发音/模型/声音不可变资源及受控引用，完成下载/保留/过期、删除预检/确认/账本和C独立副本联验。\n\n- [ ] 核实旧取消/清理未知并保留历史失败：本地全库1127通过/313跳过/7未选、9失败/320错误均有ENOSPC/DiskFull；非集成6452通过但78.61%覆盖退出1，CI84.93%分列。清理pyc38.7MB后44MiB、后续421MiB均为旧环境快照，不代表本次容量或已重跑；44树/53分支可恢复归档及未知资源保留见#6。\n\n## 验收标准（AC）\n\n- [ ] AC1：音频 ready 由实际媒体检查事实支持；不能据 MIME/文件名或文本 inspector 判定，沿用原键、7 天默认 TTL 与固定对象版本。\n- [ ] AC2：对象长度/摘要校验和数据库引用原子发布一致；失败可清理，不接受任意客户端路径、对象 key 或 URL。\n- [ ] AC3：草稿、已发布 revision、默认指针及资格明确区分；发布先校验资格并使用 CAS，回滚只切指针、不改既有 Job。\n- [ ] AC4：有效参数按绑定默认值→已发布预设→允许 overrides 合并，执行 allowlist/ranges/required_capabilities 校验；越界拒绝，exact 模式自动收紧返回 422。\n- [ ] AC5：Operation/receipt、制品与 attempt/fencing 对齐，固定 revision 的下载、Range、保留及过期语义可验证。\n- [ ] AC6：删除按预检/明确确认/账本推进，跨任务引用受控，C 独立保存副本不被追删。\n\nB 阶段 #142 将先冻结首条 ASR/CustomVoice 的真实 binding、参数、版本与输出上界。A 按具名制品接纳权威默认/质量事实，不要求整个 B03 先关闭；文件 ASR 可省略 profile，仍不能从草稿、示例或未声明引擎行为补默认。\n\n## 依赖与参考\n\n[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)、[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20) 的基础迁移；媒体联调 [B03 #30](https://github.com/hrygo/SpeechNexus/issues/30)\n\n阶段验收：#14、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "8ad071eea54e3b5528a80fdff7578cb16783386f4aa2125658954f31e9220332",
+      "updated_at": "2026-10-27T14:01:47Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6372332011",
+          "body_sha256": "57e0928cb99aed38c1bc575d6ecc08c8e38f207da0503ce48c0e3917620e3721"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6373562942",
+          "body_sha256": "c288ee29f5d61a7ba89e85fa447bd295fecb6b3ca2735ef7999acccc56dda9e4"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6373709872",
+          "body_sha256": "f79b5cfd1efc1bb5af6cddaf3ea301ba5f11d2a7d49ef3608af09baf8468b242"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6375126469",
+          "body_sha256": "24f98d5322ee5ecf10eaac34686e96a903f68d96163a22e242633e599c7d5e52"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6410679510",
+          "body_sha256": "0aa033d3f1d2d1aefb9b684146226bbb7aca687b65b6379dc776e4cb5083409d"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/21#issuecomment-6443926714",
+          "body_sha256": "886c12ddd2978142861a7a61c90832e4d827694c358b9bd5080d2742fe00aab5"
+        }
+      ]
+    },
+    {
+      "number": 22,
+      "title": "[A03] 调度准入、持久任务、配额与未知恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/22",
+      "body": "<!-- speechnexus-implementation:A03:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n让持久 Job 在完整配方/配额/父预算内可靠准入、认领、执行和结算，并能安全接管与恢复未知结果。\n\n## 进展总结\n\nowner/claim、完整配方准入、节点 TLS、outbox 和 unknown 恢复已有组件；#171 汇合 18 端口/7 查询与双库证据，#173 补数据库登录/有效身份守卫。#218 的真实 TTS 整代停止经 A 原 lease 事务首次 committed、重复 replayed，但资格/准入/stop 意图来源为 fixture，实例 base 未结算。\n\n正式调度/Worker、公平排队、完整业务 quota/区间计量、权威策略/readiness 及生产执行/停止事实接入仍缺。unknown 保持占用，匹配停止与释放双证据后由 A 原事务只退一次；组件结果不替代业务闭环。后续由新负责人重排，本包保持部分实施。\n\n## 任务清单\n\n- [ ] 接真实策略/readiness/批准计划及业务 Worker 控制循环。\n- [ ] 完成公平排队、跨池父预算、实时保留、业务 quota/结算及输入去重。\n- [ ] 接 outbox 去重、轮询/reconcile 和 B 的真实执行/停止/输出事实。\n- [ ] 联验多 Scheduler/Worker 的正常、取消、接管、崩溃与未知恢复。\n\n## 验收标准（AC）\n\n- [ ] AC1：完整 required 配方的 attempt quota、父 host/instance 预算、全部阶段 leases、Job/outbox 在同一事务准入或整体回滚。\n- [ ] AC2：重复 claim/outbox 不重复业务执行；claim_version 与 owner 隔离有效，旧 owner 在屏障/在途协调前不能安全激活。\n- [ ] AC3：跨池竞争最后预算、多 Worker/两 Scheduler、实时保留与有界公平排队均遵守同一父预算；覆盖全部业务 quota/结算而非仅 attempt 数。\n- [ ] AC4：Redis 关闭或通知丢失后可通过持久记录、轮询和 reconcile 推进。\n- [ ] AC5：丢回执、旧 owner 或 unknown 不产生替代身份、不提前退预算；停止和释放证据齐备后仅释放一次，并消费 B 区间事实而不复制 PCM 账本。\n\n## 依赖与参考\n\n[A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)；对 [B01 #28](https://github.com/hrygo/SpeechNexus/issues/28) fake 先行，生产联调 [B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)\n\n阶段验收：#14、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "28865c34fd8e72dc6b2f08e85c74040240ae4d7efd02aba3310cf323ae617094",
+      "updated_at": "2026-10-26T10:02:54Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/22#issuecomment-6375380869",
+          "body_sha256": "280069cdeb083fc1f59962e547ee7fbb25648b01d99d54a6555ec7d47ce90196"
+        }
+      ]
+    },
+    {
+      "number": 23,
+      "title": "[A04] 标准文件语音、任务与管理 REST/SSE",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/23",
+      "body": "<!-- speechnexus-implementation:A04:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n通过标准文件 ASR/TTS、任务/管理 REST/SSE 和 MCP 接入交付真实文件闭环，同步请求与 Job 使用同一规范命令。\n\n## 进展总结\n\nWorkspace、配置草稿/显式默认 HTTP 和固定词典 draft GET 已交；#193 是契约前置，#201 已于 2026-10-26 13:37:26 合入 064c6b6，补最小 SELECT/双身份及有界读取。原 c0155c6 合前 CI 全14成功；精确合后40275218078取消、清理核实未结，不能称合后全绿。\n\n公开音频 ready、完整 Job/准入、Operation/事件、权威配置/声音发布、标准 SDK ASR/TTS 与完整管理/MCP 仍待。已合入的 #221 私有媒体/回执和 B #162/#219 注册输入只解除相应前置，不能当成公开链已接通。固定 binding 表达、未知提交和指令上限映射待 A/B/C 冻结；后续排期由新负责人确定。\n\n## 任务清单\n\n- [x] A-PRON-READ-HTTP-01（原#19/#23）已合入main064c6b6：正式固定GET、最小SELECT/双身份、有界读取及真实PG/双语言TCP已验；合前c0155c6全14成功。精确合后CI40275218078取消，清理核实未结；创建/List/发布/默认指针和完整AC仍待。\n\n- [x] 消费前置#193：固定发音revision GET契约、Python/TS校验与可选头编译修复已集成763ae7c（精确合后CI40247195008全14成功）；后续固定GET实现已由#201集成，但不代表AC4全部完成。\n\n- [ ] 接 A02 的 ready 音频与固定权威配置，形成 ASR 完整业务命令及持久 Job，再推进 TTS。\n- [ ] 补公开 models/能力、任务查询/取消/重试、Operation/receipt 与 SSE。\n- [ ] 补管理写路径、公开 profiles/pronunciation-sets 及无状态 MCP 代理。\n- [ ] 用官方 SDK 和 B03/C01/C02 同版真实服务完成文件闭环。\n\n## 验收标准（AC）\n\n- [ ] AC1：官方 SDK 无 nexus 包装即可调用声明的文件 ASR/TTS 子集；默认 MP3、显式 WAV/PCM 及错误行为符合契约。\n- [ ] AC2：同步请求与持久 Job 使用同一规范命令，固定默认值/资源 revision；六字段协调包装不能冒充公开 Job。\n- [ ] AC3：任务查询、取消、重试、进度、Operation/receipt 与 SSE 断线/事件过期后的权威恢复一致。\n- [ ] AC4：管理写入遵守版本前提/CAS 与资格；公开 profiles 和 pronunciation-sets 支持契约声明的列表/固定 revision 及不可变创建范围。\n- [ ] AC5：MCP 工具可发现/调用，与 REST 同命令、同错误/幂等/取消，不持有模型/WS 会话或绕过准入。\n- [ ] AC6：真实模型结果经 Artifact 发布后可被 SDK 下载及 C 导入/校对/导出，API/页面不直接访问引擎。\n\n## 依赖与参考\n\n[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)/[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)；[B03 #30](https://github.com/hrygo/SpeechNexus/issues/30) 真实结果、[C01 #36](https://github.com/hrygo/SpeechNexus/issues/36)/[C02 #37](https://github.com/hrygo/SpeechNexus/issues/37) 消费\n\n阶段验收：#14、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "64e6cde9ca6bb34ece44931262250768333ec904713b3f4d1e2240540ee26bd2",
+      "updated_at": "2026-10-26T11:19:11Z",
+      "comments": []
+    },
+    {
+      "number": 24,
+      "title": "[A05] 公开实时协议、双工准入与流恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/24",
+      "body": "<!-- speechnexus-implementation:A05:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n交付可与 B/C 联用的公开实时会话、双工准入和恢复协议，保证 owner/epoch、水位、背压与逻辑终态一致。\n\n## 进展总结\n\n公开实时会话、双工准入与恢复服务尚未实施，保持 planned/open；已有契约和解析组件只作接线基础。后续需要具名会话/epoch、credit/水位/gap、冻结文本与 B04/C04/B02 接口制品，再按原任务和 AC 实施真实双工、背压与停止恢复。\n\n原顺序不再作为自动开工指令，owner、具体输入和窗口由新负责人重新确认；不因文件 CustomVoice 或合成流探针宣称实时资格。\n\n## 任务清单\n\n- [ ] 实现公开会话协商与 Realtime 事件/扩展服务。\n- [ ] 接 owner/epoch、输入输出水位、正文 revision、credit/硬上界及去重。\n- [ ] 接 TTS append/commit/finish、文本冻结和双工原子准入。\n- [ ] 与 B04/C04 完成停止、断线、gap 及恢复联验。\n\n## 验收标准（AC）\n\n- [ ] AC1：preview 与 final 正文分离，空成功和唯一逻辑终态符合契约，正文 revision 可确定。\n- [ ] AC2：旧 owner/epoch 与重复输入不能推进新流；样本/文本水位、credit 和缓冲有明确硬上界。\n- [ ] AC3：TTS 按冻结文本及 append/commit/finish 顺序执行，双工完整配方同事务准入。\n- [ ] AC4：断线/停止/恢复明确暴露 gap；未保存 PCM 时不宣称无缝恢复，B04/C04 真实消费者可一致处理。\n\n## 依赖与参考\n\n[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)；可对内部流 fake 开工；联调 [B04 #31](https://github.com/hrygo/SpeechNexus/issues/31)/[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)\n\n阶段验收：#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "0e0e539c66c817c6bfc569f894c72e617597584f8235b5f3c06af7f3f52f7b3a",
+      "updated_at": "2026-10-26T10:03:00Z",
+      "comments": []
+    },
+    {
+      "number": 25,
+      "title": "[A06] 音色候选、复用校验与版本发布",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/25",
+      "body": "<!-- speechnexus-implementation:A06:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n让设计/克隆声音经候选、试听和换文复用校验后显式发布不可变版本，支持安全复用、退役、禁用及并发裁决。\n\n## 进展总结\n\n设计/克隆的真实候选、换文复用校验和显式声音发布尚未实施，保持 planned/open。CustomVoice 文件执行不覆盖 VoiceDesign/Base、克隆或已发布 VoiceRevision 资格；Profile 发布与声音发布分别按契约处理。\n\n后续需固定材料/资格、候选→复用→发布及退役/禁用/删除竞争，再与 B05/C03/B02 联验完整配方。原任务/AC 保留，owner 和窗口由新负责人安排。\n\n2026-11-02 对 main `7753c559` 的独立静态审查发现：公开 TTS Job 读取声音资格与创建 Job 之间，缺少与声音退役共享的事务协调和锁后复核；退役竞争下可能产生新的已退役声音引用；独立修复见 [#316](https://github.com/hrygo/SpeechNexus/issues/316)。声音发布/退役的生产写入口尚未确认装配，真实 PostgreSQL 并发和产品路径尚未验证。实施时须分别核对主线与候选的锁序，验证新引用、同键重放及有有效依赖凭据的在途任务语义，并用真实数据库双连接覆盖竞争。参考：[Job 写入](https://github.com/hrygo/SpeechNexus/blob/7753c559c1b68c5a9805c27bc39b5a089171af03/backend/src/speechnexus_backend/speech/infrastructure/public_jobs_postgres.py#L185)、[发布协调](https://github.com/hrygo/SpeechNexus/blob/7753c559c1b68c5a9805c27bc39b5a089171af03/backend/src/speechnexus_backend/speech/infrastructure/publications_sql.py#L193)。\n\n## 任务清单\n\n- [ ] 接设计/克隆命令、固定材料与候选/不可变 VoiceRevision。\n- [ ] 实现再生成、试听、换文复用校验与显式发布。\n- [ ] 接退役/禁用/删除及在途使用的并发裁决。\n- [ ] 与 B05/C03 联验完整配方、Job/outbox 和真实声音路径。\n\n## 验收标准（AC）\n\n- [ ] AC1：设计与克隆分别验证；同键摘要固定、材料/资源版本不可变，重放返回原意图。\n- [ ] AC2：preview_only 不能发布；只有新文本复用资格通过并明确确认后才发布 VoiceRevision。\n- [ ] AC3：后续真实 TTS 固定已发布引用，不用候选或可变默认值替代。\n- [ ] AC4：退役/禁用/删除、发布及在途使用在版本竞争下有明确结果；全配方预算与 Job/outbox 约束保持。\n\n## 依赖与参考\n\n[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)/[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)；对 voice fake 先行；联调 [B05 #32](https://github.com/hrygo/SpeechNexus/issues/32)/[C03 #38](https://github.com/hrygo/SpeechNexus/issues/38)\n\n阶段验收：#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "9ee43c4678dfebc0c43e1e04ede39decb5a86685935b186cca8a517cd87ea0c5",
+      "updated_at": "2026-11-02T12:23:31Z",
+      "comments": []
+    },
+    {
+      "number": 26,
+      "title": "[A07] 删除账本、备份恢复与平台发布交付",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/26",
+      "body": "<!-- speechnexus-implementation:A07:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S5 #12](https://github.com/hrygo/SpeechNexus/issues/12)；主责：**Team A**；环境：**云开发环境 / 隔离 PG/InnoDB/MinIO**。\n\n## 目标\n\n交付按所有权可恢复的内容删除/保留与正文清理，并完成生产迁移、备份恢复、目标拓扑与平台发布交接。\n\n## 进展总结\n\n文本删除账本、tombstone、outbox/maintenance 和 unknown 预算保护已有实现；C #153 的删除恢复为已集成分段成果，不再称候选。音频/通用资源与跨模块所有权、独立副本和 B 命令正文清理尚待贯通。\n\n受控迁移/最小角色、恢复先重放账本、备份/回退/RPO/RTO、目标拓扑、SDK/MCP 安装和许可运维交接仍缺。模型/对象/历史失败与未知资源不在本轮清理中删除；后续交新负责人安排，不据收尾 PR 结算发布资格。\n\n## 任务清单\n\n- [ ] 将首资源生命周期扩至音频和通用资源的预检、确认与删除账本。\n- [ ] 接 B 命令正文清理、跨模块依赖及独立副本边界。\n- [ ] 完成迁移/最小权限、备份恢复、唯一权威/回退与目标拓扑联验。\n- [ ] 交付 SDK/MCP 安装示例、许可决策、支持范围及运维发布材料。\n\n## 验收标准（AC）\n\n- [ ] AC1：删除固定预检版本/摘要且范围明确确认，deletion Job/ledger、tombstone/outbox 可幂等恢复；音频沿用 TTL/原键/对象版本。\n- [ ] AC2：只按所有权清理对象/命令正文，保留协调/计量/停止事实，不追删独立保存副本。\n- [ ] AC3：未知/隔离执行未清理时不报告删除完成或退预算；恢复先重放删除账本，再开放内容，高水位/token 不倒退。\n- [ ] AC4：生产迁移/回退、最小权限与唯一数据权威在明确目标拓扑实测，按事先冻结的 RPO/RTO 完成备份恢复演练。\n- [ ] AC5：SDK/MCP 安装、发现/调用及错误恢复示例可运行；本仓 LICENSE 经用户决定，模型/依赖/素材许可证据齐备。\n\n## 依赖与参考\n\n[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21) 首个资源落地即开始；持续对接 [B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)/[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)，最终覆盖全部闭环\n\n阶段验收：#14、#15、#16、#18。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "f1af3074269b0b3ee97f11acb97683fea825d1b3062df6229fe85ccae0021129",
+      "updated_at": "2026-10-26T10:03:06Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/26#issuecomment-6375127098",
+          "body_sha256": "93c87149ab9887c98dff9a7cfc2572a81e1e17c20e07a781eb684ba2e53f0e73"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/26#issuecomment-6376075148",
+          "body_sha256": "ad066171b3cdd8542f549a83fe95f6bc4701ab94490a6b60a4df4b943f66dab9"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/26#issuecomment-6376745564",
+          "body_sha256": "0ba4b39dc4302ab03ff7d8d69c78e30d74900066d58916cf8a36a0809e4b3123"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/26#issuecomment-6377370481",
+          "body_sha256": "c8661484f6f6783cbc2c215f977376d06047cddaa0ab3f3992dcb71ac534a128"
+        }
+      ]
+    },
+    {
+      "number": 27,
+      "title": "[B00] MegaCube 环境、模型可行性与停止证据探针",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/27",
+      "body": "<!-- speechnexus-implementation:B00:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S0 #7](https://github.com/hrygo/SpeechNexus/issues/7)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n明确 MegaCube 上各模型/引擎的真实可行性、许可、资源上界和停止能力，为文件/实时/音色提供可核验的 binding 与 manifest。\n\n## 进展总结\n\nASR 0.6B/1.7B、CustomVoice、CPU VAD 有原版本分段探针；#162/6472daa 已交文件 ASR/VAD 固定制品及完整草稿注册输入，#219/54daef6 已交 CustomVoice 官方 revision、11 个运行制品、镜像/源码摘要、许可来源和显式默认。#219 的187项制品/命令、75项PG/双库及精确合前/后14检查成功，不等于权威注册/发布或容量资格。\n\n#178/#218 有隔离整代停止/租约结算，资格/准入/owner 等 fixture 和未结 TTS base 保留；Base/VoiceDesign/克隆、实时、完整依赖许可和 P95 仍待。收尾#220已合入8b1466d，旧排期停止自动执行，后续制品与 GPU 窗口交新负责人，现有35B保护不变。\n\n## 任务清单\n\n- [x] 集成 CustomVoice 固定制品/许可/参数与完整草稿注册交接（#219，`54daef6`；原受检候选 `f3e67b7`），验证现有生产者、原键重放/冲突和重新装配；不代替权威注册或资格。\n- [x] 完成环境清点及文件 ASR 0.6B/1.7B、CustomVoice、CPU VAD 的分段探针（范围见 docs/audits/2026-10-24-b00-megacube-environment-and-capability-gap.md；不含完整资格）。\n- [x] 交付文件 ASR 1.7B/CPU VAD 固定制品、离线校验和参数/上界交接候选并合入 main（#162，`6472daa`）；注册与发布由下游完成。\n- [x] 在 #168 代码上重新核对 10 个 ASR 制品和 CPU VAD，完成默认网关真实隔离实验及缓存参数修正；完整失败、版本和边界见 docs/audits/2026-10-25-b03-default-real-asr-probe.md。\n- [x] 在 #162 交付既有接口可消费的完整 ASR 草稿注册请求与显式默认，实际 PG producer、原身份重放、冲突及应用重新装配后固定读通过；原核验模式兼容。\n- [ ] 完成全部候选模型 revision、镜像/引擎摘要、独立依赖、许可与 manifest；1.7B 制品输入已有，其他能力与完整资格保留。\n- [ ] 固定首条 ASR/CustomVoice 的权威 binding、显式默认及输入/输出上界；权威身份/manifest 引用由注册方提供，CustomVoice 单独交接。\n- [ ] 补实时、Base/VoiceDesign 及逐能力 status/abort/停止/加载探针。\n\n## 验收标准（AC）\n\n- [ ] AC1：目标硬件/驱动/容器与模型、引擎、镜像、许可和 binding 均有具名可追溯记录，不按硬件名称推断资格。\n- [ ] AC2：文件、实时与各声音模式分别给出可行/experimental/阻塞结论，单句文件证据不扩为实时或声音复用资格。\n- [ ] AC3：每项宣称能力有 request ID、status/abort、强输出上界、加载峰值及真实停止/资源事实；不满足者不标可用。\n- [ ] AC4：GPU 实验按批准制品/合成或授权语料排队，清理结果可核对且现有 35B 服务保持。\n\n## 依赖与参考\n\nA #21/#22/#23 使用 docs/architecture/file-asr-binding-handoff.md 核验并注册固定配置；B #30/#142 接实际执行与可信事实。#168 已合入 `ff224d9`；#178 的真实报告仍固定原受检版本，不转挂后续主干。旧 `997bd46` 的默认实验不是当前组合或生产资格。\n\n阶段验收：#13。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "c89209a084622dd553360980a69e8ee906c6e0db689d351a92dd71a72886fb35",
+      "updated_at": "2026-10-26T11:28:01Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/27#issuecomment-6371301637",
+          "body_sha256": "20a0c897141595d5e0a841a6a46e0d0ae044076b99b1c6875c88e05f47a6e651"
+        }
+      ]
+    },
+    {
+      "number": 28,
+      "title": "[B01] 执行网关、持久意图与真实提交屏障",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/28",
+      "body": "<!-- speechnexus-implementation:B01:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n让执行网关基于持久完整命令唯一外发，可靠处理屏障、查询/取消、unknown 与停止事实，并供 A 安全裁决预算。\n\n## 进展总结\n\n#152/#154/#158/#163/#168 已交持久回执、异步输入、提交后执行与代次核验；原键重放不启动，重启/丢回执沿原身份查询。#196/bbf7a4f 提供固定镜像的只读 worker 观察，始终 release_evidence=false，不能据观察退预算。\n\n#178 保留 5f72b20 的整代停止→默认恢复→A 原 lease/base 结算及21129b4取消 partial；#218/d49aac7补真实 CustomVoice整代停止/执行租约结算，未结 TTS base。生产准入/公开发布、单请求可信停止、其余故障恢复和物理集群仍缺，fixture/旧版本不升级为当前资格。收尾#220已合入8b1466d，后续由新负责人安排。\n\n## 任务清单\n\n- [x] 完成原 intent 提交后启动/私有结果登记的本地接线草稿及首轮 55 项定向回归、1 项 PG/MinIO ASGI 用例；仅合成识别/VAD，真实模型资格未验收。\n- [x] 修复启动重复取消、工厂/open 线程 join 与关闭顺序；8 个新生命周期反例及原相关回归共 63 项通过，迟到线程未退出不报清理成功（组件回归范围）。\n- [x] 完成 PG/InnoDB 启动资格/屏障/租约/代次/期限、实际锁等待后重检及范围/状态/上限枚举的 36 项隔离回归，无跳过；资格读取本身不授予执行权。\n- [x] 补 worker 路径真实 PostgreSQL 接收/结果 commit 确认丢失两例，与原用例共 3 项定向通过；不替代完整回归。\n- [x] 验证合法 ingress 下两个独立消费者竞争、两方胜出顺序与原身份重放；PG/InnoDB 及真实 MinIO 版本核对通过，只执行/PUT 一次，预算不变。\n- [x] 修复线程创建失败后的二次清理失败，并完成当前候选完整本机回归；PR #158 已完成精确版本 CI 和主线集成；真实引擎与目标拓扑资格另验。\n- [x] 集成 #163 代次凭据与 I/O 前目标核验，修正 file-start 的实际受检身份，完成 102 项双库/MinIO 回归及精确 PR/合后 CI；真实工厂与停止资格另验。\n- [x] 交付并集成 #168 默认文件工厂及首次 step 前取消槽位修复：确定性 RED/GREEN、重复取消及数据库 writer 等待成立；原 `5f72b20` 的 61 单元、104 双库/MinIO 和 CI449 保留，最终 PR/合后 CI 见上。仅清理本地票据，unknown 和预算语义未变。\n- [x] 在 `5f72b20` 验证真实整代次停止、原 HTTP 屏障、默认网关恢复及 A 原租约/base 分步幂等结算；报告 #178 保留失败、fixture 范围和清理，不等同生产公开链验收。\n- [x] 交付原生 worker 完成观察组件（#196）：请求/响应单一契约、源码 pin、干净后 device 同步；仅提供观察事实，不签发停止/释放结论。\n- [ ] 完成其余恢复身份/取消观察复审及生产接入验证；新主干组合另验，保留三队改动，不修改保护或自行合并。\n- [x] 完成原 `record_execution_observation` 上的回执登记/固定版本查询、共享接收、主线集成与合后 CI（#152）。\n- [ ] 将真实引擎接原 submit/observe/abort/恢复，补完整有效参数转换。\n- [x] 完成与 B03 的原命令、核验对象与媒体/VAD 消费者接线及提前拒绝回归（#140 已合入，限组件与隔离回归范围）。\n- [ ] 完成生产旧入口封锁、真实完成/停止/释放与 A 原事务预算联验；隔离整代次链已有，单请求取消及生产准入/发布仍待。\n- [ ] 补确认丢失、取消/过期/改写及原身份恢复的隔离 PG/InnoDB/MinIO 回归。\n\n## 验收标准（AC）\n\n- [ ] AC1：完整有效命令与 canonical digest 持久化后才事务外 dispatch；同意图只返回原执行，确认丢失不重复外发。\n- [ ] AC2：语言/prompt/温度/切段/期限从同源固定命令及 binding/策略身份解析；未实现参数在对象读取或外发前明确拒绝。\n- [ ] AC3：实际旧入口被封锁且在途协调有证据；取消接受、断线、TTL 或请求消失不能签发停止/释放证明。\n- [ ] AC4：unknown 仅查询原身份并保留占用；未外发失败可证明 not_required 而不伪造 stop，A 原事务凭可信双证据仅退预算一次。\n- [ ] AC5：网关事务/查询及 command redact 的许可、版本与 tombstone 行为可由真实消费者验证，清理不删除最小协调/计量/停止事实。\n\n## 依赖与参考\n\n[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19)；纯规则/fake 可先行，PG 联调 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)/[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)\n\n阶段验收：#13、#14。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "7649eaff9c22d0ebb57e5cda810e5b3da7fd7667382b09583005b024e0b1c443",
+      "updated_at": "2026-10-26T11:28:04Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6370794219",
+          "body_sha256": "93466ad9a4de391d28f532f282973fa48587738b7b45baf08b5589b2a96d95b7"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6371281868",
+          "body_sha256": "2169f7e3495ad2081965825a224b6056497b87280f69ca800c2f5363c5f694b6"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6371302042",
+          "body_sha256": "660db924c7e2574b3f7858644a5a26a755c37aabca319d4757e357c53fb5bb06"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6371642859",
+          "body_sha256": "62d1b67bb72a46f794a57f8f4727bd48776462214b83a6102328a7977d73ec03"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6372264432",
+          "body_sha256": "6ef5a2eae55c9e1f386118846863ad025c597c553a43f96fd6cc4114cbb044cb"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6373596642",
+          "body_sha256": "2e8e6bbec61713d5059bdcb3d97cea7738829322d3c8357f70a613cfc2703fc5"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6374168002",
+          "body_sha256": "2b839eee97f065558bd60bbac5ca837050670acc3db33a05cb6f2700fbf860f9"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6374618057",
+          "body_sha256": "8615017ff2d0be8350f3a9222004b4004896b13d1d0b96d6ef2d05ab4682a586"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6375036216",
+          "body_sha256": "e90ea2fd1ae0a2222eead153ccea31ef4c691db19755c7389167b255d2c7dd04"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6375272119",
+          "body_sha256": "34fa1cebeed4971c679bca751c7b58a6feadd0154103f8b7119f2a0285776828"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6375928950",
+          "body_sha256": "9353bda1764301744b261aba5b9aa9138085a1cbead8a9381ea35e1d729dece0"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6376668735",
+          "body_sha256": "b0243ac4c453bdb631b291ed00ce018b325e96fe47d21a25a4083f3b8d288848"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6376944850",
+          "body_sha256": "3640a4a7ba7b770cd70d920736ed7552309379409535e1c8acf1c20148ffeeba"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/28#issuecomment-6377537502",
+          "body_sha256": "9d1ea44367c0759084f6001c1f4f8e28cbb27d6c453a3fcd5388fe6df1663162"
+        }
+      ]
+    },
+    {
+      "number": 29,
+      "title": "[B02] 受限节点控制器与实例生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/29",
+      "body": "<!-- speechnexus-implementation:B02:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n让受限节点控制器按批准模板管理实例，可靠完成 prepare/预热、generation、peak→steady、drain 与停止/释放恢复。\n\n## 进展总结\n\n受限模板、generation/凭据、实际目标核验和真实预热组件已集成；#163 修复总期限及重复预热，#168/ff224d9装配默认工厂，#178/0c45de4保留整代停止与原 lease/base 结算的隔离 ASR 证据。\n\n#218/d49aac7补真实 CustomVoice 两次鉴权预热、取消/重放预算不变及整代双事实→默认登记→A 原 lease 幂等结算；195.564秒就绪、11.839秒停止只属该实验。fixture 准入/资格/stop 意图、未结 TTS base、持续 ready、peak→steady/drain、控制器故障/多代竞争和单请求释放仍待。收尾#220已合入8b1466d，后续由新负责人排期，原失败和35B保护保留。\n\n## 任务清单\n\n- [x] 修复累计请求总期限和多 IP 重复 warmup 风险：连接/响应头/正文受同一 wall-clock deadline 限制；slow-trickle 超期不得成功；失败后同一 prepare 不向下一 IP 重复 POST；增加慢速持续回包与多 IP 故障回归（随 #163 已集成）。\n- [x] 交付受限模板、持久回执/generation、真实 ASR 预热与停止恢复的分段组件（#116/#119/#121/#123 及对应验证；不代表完整生产资格）。\n- [x] 集成 #163 原生鉴权、预热身份与网关目标校验，完成精确 PR/合后 CI；generation/barrier 反例使用实际目标，保持严格生产校验。\n- [x] 在旧 `997bd46` 完成真实受控代次、默认网关及控制器停止实验；错误 Bearer 为 401，未做真实旧代次 key，未登记网关停止或退预算。旧版本与失败见 docs/audits/2026-10-25-b03-default-real-asr-probe.md。\n- [x] 在 `5f72b20` 联验真实整代次停止→默认网关恢复→A 原租约/base 结算，证据前不释放、先清 lease 再退 base、重复结算幂等；报告 #178 保留 fixture 边界及清理。\n- [ ] 将已集成默认工厂/受控实例接到 A 生产准入与完整执行/lease/预算链；隔离整代次链已有，正式就绪来源及单请求取消仍待。\n- [ ] 补 ready 持续监控、controller 崩溃重启、真实故障与多 generation 竞争。\n- [ ] 完成 peak→steady、drain、停止/释放及原任期恢复联验；实际屏障/停止结算不替代其余条件。\n\n## 验收标准（AC）\n\n- [ ] AC1：只接受批准模板与固定 node/instance/generation/配置摘要，不接受任意镜像/挂载/shell；重复或迟到 prepare/stop 不误停替代实例。\n- [ ] AC2：原意图与检查点可在重启后恢复；readiness/停止事实由节点可信生产者核实，外部诊断快照不获得事实权威。\n- [ ] AC3：固定容器 IP/路径的真实预热通过前保持 loading/峰值预算；503/重定向/超时不算 ready，不走环境代理。\n- [ ] AC4：Memory/MemorySwap 上限被 host/统一内存 peak 覆盖；资格通过后才转 steady，独立 GPU 显存不冒充 cgroup 保证。\n- [ ] AC5：drain 拒绝新提交；实例退出、资源释放、执行终结和 lease 清理均成立后才退基线，unknown 保持 quarantine；控制器不共写 A 预算。\n\n## 依赖与参考\n\n生产联调依赖 [A01 #20](https://github.com/hrygo/SpeechNexus/issues/20)/[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22) 的 runtime 端口、[B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)。需要明确接口/样例/迁移/绑定制品，不要求关联工作包全部先 closed；不得制造假依赖循环。key 不替代 TLS、fencing 或网络隔离。\n\n阶段验收：#13、#14、#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "5114d6960ab7b3e8deb8507eb793e41026440f911e4e0ed5d7f6186c9d96d476",
+      "updated_at": "2026-10-26T11:28:08Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6371302425",
+          "body_sha256": "777e21a16fe0a0a627b39694b61d6e06be73789b50627431d02998f3079b8e69"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6372136751",
+          "body_sha256": "b884587fec8859028a05cb590b21cef236d45d1972c195ed1c39f46ba57f716b"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6372757284",
+          "body_sha256": "61e9e99ab585a31556114c1ac1156be9ef06541f691161d450df8df416ab3d2a"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6375867269",
+          "body_sha256": "5c455a1c5e207e5cf49de74c9e5a09aeacd0748dc1ca90dc32586b4ff1a57ca6"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6376075381",
+          "body_sha256": "e3732dff27126ec07eef7a61345bfda795fe2e4287b6be4660ccd9159d188d2b"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6376745803",
+          "body_sha256": "48a8f376a05a38764838c5fb7e3c578a4c7e72d61ce7a56dffe4005662f238d5"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6377256524",
+          "body_sha256": "a1e9e2b5dcb3e77cc9c24eb317f0ef97a44e7d1f1c3d37b07c5d0e3cda7db674"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6377564051",
+          "body_sha256": "f75fa03ee4c5cc3eeb033d6360a15b0d28bce81df1fd6a9ac87c7f6d35f47f68"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6377742954",
+          "body_sha256": "242890e234c6b8ae418c2cc0cc9abc9f1b1497571c4b5c4d495ed508ce7e3c7e"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6378145713",
+          "body_sha256": "931cd8ffe898a1a81ddbf7fee144d09a87be4592fcc68c984c1237c90223bc76"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6380281816",
+          "body_sha256": "00cd31d04392191617d7684ebb583885479ff1ae0feea3998033add669fc03e4"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/29#issuecomment-6404606658",
+          "body_sha256": "9581e08b992d54bf9d838f4df59dbbf85dc063cb66cd5e2806a6e684fa9f1af1"
+        }
+      ]
+    },
+    {
+      "number": 30,
+      "title": "[B03] 真实文件 ASR/TTS 与有界媒体流水线",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/30",
+      "body": "<!-- speechnexus-implementation:B03:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n交付真实文件 ASR 与 CustomVoice/Base TTS 的有界媒体流水线，以固定命令和受控输入/输出对接网关、A 发布与 C 消费。\n\n## 进展总结\n\n#140/#147/#152/#154/#158/#163/#168 已集成命令/输入、媒体/VAD、私有结果、回执及默认 ASR 工厂；#188/#199/#203接 CustomVoice staging/命令/默认工厂，#209/681dc37在固定1.7B镜像和隔离PG/MinIO上验证真实合成，并修复 zh→Chinese 厂商边界。\n\n原三格式实验为WAV311084、MP352460、PCM311040字节，源155520样本/6480ms；首次WAV307244字节/153600样本，均保留各自版本。#218补鉴权/取消/整代停止及原lease结算，fixture准入、未结base/单请求释放不变；#219固定制品/注册输入已合54daef6。\n\n公开ready/权威配置→生产Job/准入→A 生产发布数据→SDK/C两链、Base/长文本/planner/完整参数矩阵、真实故障与物理多机仍缺。#203 请求 `max_output_audio_ms` 未收紧 policy 的缺陷已由 #234（`be3aafc`）修复：执行网关按请求时长收紧 `max_audio_ms`/PCM 上界，超限结果不发布（`tests/unit/gateway/test_file_tts_command.py:355-404`）；恰好上限、超一帧、编码制品与重放的完整矩阵仍未全部覆盖。原报告与失败按版本保留；收尾#220已合入8b1466d，后续由新负责人安排。\n\n## 任务清单\n\n- [x] 集成 CustomVoice 固定制品/许可/参数与完整草稿注册交接（#219，`54daef6`；原受检候选 `f3e67b7`），验证现有生产者、原键重放/冲突和重新装配；不代替权威注册或资格。\n- [x] 完成原命令到核验输入、媒体/VAD 与 ASR 的参数映射和提前拒绝回归（#140 已合入，组件范围）。\n- [x] 完成 #147 私有结果组件、审查修复、精确 PR/合后 CI、六份报告与同树核验并交接；已合入 `360bb81`，仅组件范围。\n- [x] 完成 #152 结果回执登记/查询的验证、共享接收、主线集成与合后 CI；真实发布按 #142 另验。\n- [x] 完成输入异步总期限候选的实现/旧测试迁移、静态检查、真实 TCP/MinIO、完整六分片及精确 head CI/报告核验，提交 PR #154；仅组件候选范围。\n- [x] 完成 #152→#154 的串行评审、最新主线组合验证、管理集成与合后交接；业务 AC 仍待真实链证据。\n- [x] 交付 CustomVoice 音频 staging 组件（#188，`821aa4c`）与文件命令消费者（#199，`805a2c1`）：单次合成、私有回执与参数冻结；真实引擎合成见 #209；第二条公开下载链仍待接。\n- [x] 装配文件 TTS 默认私有执行（#203，`4edc838`）：真实音频身份、受控目标、共享 worker、生成区间与回执；不含真实模型或公开链。\n- [x] 以固定镜像与真实 1.7B CustomVoice 验证 #203 默认工厂的持久提交、音频回执、完整生成区间、重启重放和预算不变（#209，`681dc37`）；仅隔离单机与私有 staging 范围，公开链/停止/物理集群未验。\n- [x] 以真实 CustomVoice 验证 WAV/MP3/PCM 三种交付的实际格式、对象字节、样本/时长与回执区间（同镜像 run `20261026T051302Z-bf1ec5c0`；MP3 解码 155520 样本）。\n- [x] 交付原生 worker 观察组件（#196）：契约、源码 pin、正负例与固定镜像无网探针；组合核心接收/顺序和调度器资源后才谈停止资格。\n- [ ] 接真实 ASR 持久执行，向 A 交付固定结果身份及可信停止/释放事实；#168 默认工厂已集成，生产链仍待，不重复外发，unknown 不释放。\n- [ ] 联合 A/C 走通 ASR 发布/SDK/工作台下载及重放、取消、确认丢失、重启与双逻辑节点竞争。\n- [ ] 补 ASR vendor 时钟、源区间、交叠合并与正文/辅助 revision。\n- [ ] 修复请求 `max_output_audio_ms` / PCM 硬上限向执行 policy 的传播，覆盖恰好上限、超一帧、低于binding、重放及编码制品；保留100ms请求接受200ms的合成反例。**部分完成**：#234/`be3aafc` 已按请求时长收紧 policy（100ms→4800 bytes，超限不发布；`tests/unit/gateway/test_file_tts_command.py:355-404`），但恰好上限、超一帧、编码制品与重放的完整矩阵仍未覆盖。补 Base TTS、planner/长文本及完整参数矩阵，完成其余 B03 AC。\n\n## 验收标准（AC）\n\n- [ ] AC1：同源命令、完整摘要、binding/策略身份与固定输入一致；未实现参数在对象读取/外发前拒绝，取消/过期/改写防护生效。\n- [ ] AC2：长文件、尾部和无语音输入有有界解码/重采样/切块行为，源/模型/wire 样本映射与真实时间戳一致，交叠不重复正文，辅助只挂匹配 revision。\n- [ ] AC3：CustomVoice 与 Base 分别验收；固定文本/voice/config，MP3/WAV/PCM 和 planner/长文本行为符合支持矩阵。\n- [ ] AC4：输入/输出仅经受控 Asset/Artifact 和私有 staging，最终发布由 A 裁决；发布/取消竞争不泄露未提交制品。\n- [ ] AC5：真实执行的取消、停止、资源硬上限与稳定错误有证据；request cleanup、ID 消失或 unfinished=0 不代替 GPU 停止/释放。\n- [ ] AC6：固定输入→持久准入→唯一外发→发布→SDK 下载/C 消费在同一场景可恢复，覆盖重放、取消与重启。\n\n## 依赖与参考\n\n[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)/[B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)；首条真实闭环联调 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)/[A03 #22](https://github.com/hrygo/SpeechNexus/issues/22)/[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)\n\n阶段验收：#14。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n\n",
+      "body_sha256": "5fff0fa9b5230e09c03fb76df6ba3303d79e2729cc648efbb3ac316aa00d7f3c",
+      "updated_at": "2026-10-27T23:06:12Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/30#issuecomment-6373715617",
+          "body_sha256": "692a5060d08547d050cc431d3b4a921fc6383d0179cb66c9e0f46d7ea9b6d308"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/30#issuecomment-6408665003",
+          "body_sha256": "8b2cf913b0589bee7366a95669e2a5b98a158bad6cfce3d54c1ee9c3db162bb6"
+        }
+      ]
+    },
+    {
+      "number": 31,
+      "title": "[B04] 流式 ASR/TTS、PCM 背压与输出区间账本",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/31",
+      "body": "<!-- speechnexus-implementation:B04:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n交付真实流式 ASR/TTS 与双工媒体通道，以 PCM framing、credit、冻结文本及权威区间账本保证有界处理和计量。\n\n## 进展总结\n\nappend_interval 的流权威锁、重叠拒绝及精确重放组件已交（#71）；真实流生产者、PCM/WS、双工背压和完整计量尚未实现，保持 in-progress/open。文件切段或完整文件合成不能替代实时流。\n\n后续需与 A05/C04/B02 固定 seq/epoch、credit/水位、冻结文本、输出硬上界和停止恢复，再接1.7B full_segment/required完整配方。收尾#220已合入8b1466d，旧阶段顺序不再自动执行，原实时与集群范围交新负责人安排。\n\n## 任务清单\n\n- [x] 交付 append_interval 的流权威锁、重叠拒绝及精确重放组件（#71）；真实流生产者与计量联验仍待。\n- [ ] 实现内部 WS/二进制 PCM framing、seq/epoch/descriptor 与错误信封。\n- [ ] 接 credit、有界缓冲、冻结文本顺序及真实流式 ASR/TTS。\n- [ ] 接 full_segment 1.7B/required 辅助与双工配方，和 A05/C04/B02 联验。\n\n## 验收标准（AC）\n\n- [ ] AC1：控制与 PCM 可按身份/seq/epoch 关联，旧帧、迟到/越界帧被拒绝，冻结文本顺序保持。\n- [ ] AC2：credit/背压与 PCM 缓冲和硬输出上界在真实流中生效，不以文件切片冒充流式。\n- [ ] AC3：append_interval 使用流权威锁，部分重叠拒绝，精确重放不重复计量；区间事实与真实生产者相符。\n- [ ] AC4：1.7B full_segment 和 required 辅助随完整配方在准入时可服务，双工/停止/恢复联验通过。\n- [ ] AC5：首生成 PCM、网络接收与播放结束分别计量，输出区间事实不被直接冒充 A 业务计费。\n\n## 依赖与参考\n\n[B01 #28](https://github.com/hrygo/SpeechNexus/issues/28)/[B03 #30](https://github.com/hrygo/SpeechNexus/issues/30)；[B06 #33](https://github.com/hrygo/SpeechNexus/issues/33) 的 VAD 先行；联调 [A05 #24](https://github.com/hrygo/SpeechNexus/issues/24)/[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)\n\n阶段验收：#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "437da87bc9497a1d8d64cc6a8f511b9f4844ac74b6a1b0d028d6a320057af132",
+      "updated_at": "2026-10-26T11:28:14Z",
+      "comments": []
+    },
+    {
+      "number": 32,
+      "title": "[B05] VoiceDesign/Base、克隆与声音材料恢复",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/32",
+      "body": "<!-- speechnexus-implementation:B05:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n分别打通 VoiceDesign→Base 与样本克隆的新文本复用，并通过持久声音材料实现受控加载、重启重建及回收。\n\n## 进展总结\n\nVoiceDesign→Base、样本克隆、固定声音材料和重启复用尚未实施，保持 planned/open。CustomVoice 的真实文件合成不覆盖设计、克隆、新文本复用或声音发布资格，不能据此勾选本包。\n\n后续分别冻结设计/克隆输入与材料、候选→换文复用→显式发布，联合A06/C03/B02验证重建和预算；#149属于助手后续依赖，不增加首条G1前置。收尾#220已合入8b1466d，owner及窗口由新负责人安排。\n\n## 任务清单\n\n- [ ] 分别实现 VoiceDesign→Base 与样本克隆的候选/再生成/试听路径。\n- [ ] 接固定材料/来源/参考文本/绑定持久化与重启重建。\n- [ ] 与 A06/C03/B02 联验换文复用、显式发布及受控加载/回收。\n\n## 验收标准（AC）\n\n- [ ] AC1：设计与样本克隆分别经新文本复用验证，发布后的声音能被真实 Base TTS 固定引用使用。\n- [ ] AC2：候选试听与可复用资格明确分开，未通过模式不宣称可用。\n- [ ] AC3：固定声音材料/来源/参考文本/绑定版本足以在实例重启后重建；缓存/内存 handle 仅派生，材料缺失/不兼容报不可用而不重新设计。\n- [ ] AC4：加载/热身/回收覆盖完整峰值预算；未知清理不归还预算，并与声音生命周期消费者一致。\n\n## 依赖与参考\n\n[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)/[B03 #30](https://github.com/hrygo/SpeechNexus/issues/30)；联调 [A06 #25](https://github.com/hrygo/SpeechNexus/issues/25)/[C03 #38](https://github.com/hrygo/SpeechNexus/issues/38)\n\n阶段验收：#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "3b91b7405175f4c4faa46dfe326bea263a232dc645a0a6041605bda750f9c8bb",
+      "updated_at": "2026-10-26T11:28:17Z",
+      "comments": []
+    },
+    {
+      "number": 33,
+      "title": "[B06] VAD、对齐与匿名分人能力",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/33",
+      "body": "<!-- speechnexus-implementation:B06:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S3 #10](https://github.com/hrygo/SpeechNexus/issues/10)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n交付可逐绑定验证的 CPU VAD、版本化切段/词级对齐与匿名分人，保持有界会话、正文版本关联和 required 语义。\n\n## 进展总结\n\nCPU VAD、隔离会话/版本化切段与文件消费者已有 #78/#80/#83/#140 分段交付；真实实时 VAD、词级对齐、匿名分人与完整 required 配方资格仍缺。部署内语料存在不代表已完成来源/去重/阈值冻结或质量评估，替身用例只证明接线。\n\n后续按匹配正文 revision 验证源样本、跨块连续/重叠/reset和至多八位说话人的有界状态；required缺失明确拒绝，不降级best_effort。收尾#220已合入8b1466d，原范围和质量要求保留，具体制品/窗口交新负责人。\n\n## 任务清单\n\n- [x] 交付 CPU VAD、隔离会话/版本化切段与文件消费者的分段实现（#78/#80/#83/#140）；不替代实时/对齐/分人资格。\n- [ ] 保障文件无语音门禁、源样本映射与实时 VAD 消费。\n- [ ] 实现词级对齐和匿名分人有界状态/恢复边界。\n- [ ] 接 required/best_effort 配方并逐绑定验证质量/支持矩阵。\n\n## 验收标准（AC）\n\n- [ ] AC1：VAD 会话隔离、前缀缓冲、版本化切段与源样本映射可被文件/实时消费者正确使用。\n- [ ] AC2：对齐/分人只关联匹配正文 revision，不用旧辅助结果覆盖新正文。\n- [ ] AC3：匿名分人在至多八位说话人、跨块连续、重叠与 reset 场景保持有界状态；不能恢复时显式标明连续性边界。\n- [ ] AC4：required 能力纳入完整资源配方和终态，不隐式降级为 best_effort；逐 binding 支持范围和实际质量有记录。\n\n## 依赖与参考\n\nVAD 在 [B04 #31](https://github.com/hrygo/SpeechNexus/issues/31) 前交付；对齐/分人随 ASR 结果与 [C05 #40](https://github.com/hrygo/SpeechNexus/issues/40) 场景联调\n\n阶段验收：#14、#15、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "79918f7590d578e92932cc0c548347e7cbc068886f581c54455ead506b2fc4d4",
+      "updated_at": "2026-10-26T11:28:20Z",
+      "comments": []
+    },
+    {
+      "number": 34,
+      "title": "[B07] 模型部署、混合负载与目标拓扑资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/34",
+      "body": "<!-- speechnexus-implementation:B07:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S5 #12](https://github.com/hrygo/SpeechNexus/issues/12)；主责：**Team B**；环境：**MegaCube Linux / GPU**。\n\n## 目标\n\n在明确 binding/版本/物理拓扑下验证真实质量、容量、混合负载、故障与长时行为，并交付可追溯的模型部署/发布材料。\n\n## 进展总结\n\n[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 集成部署规划与模型/实例/资源池拓扑（`b1d6193`），图示为目标布局，容量与资格仍待实测。ASR/CustomVoice/VAD 有分段实测与固定输入，完整部署、质量/容量、混合负载和目标拓扑资格尚未开展，保持 planned/open。#219输入与#218隔离整代停止不授予manifest、峰值/稳态或物理多机资格；语料数量不等于独立样本量。\n\n仍需按binding/模型/镜像/许可/拓扑/语料冻结模板、门槛、时钟/冷/热口径与P95，再验真实停止、kill/分区/节点丢失和长时。缺第二GPU主机不降低原集群要求，35B保护不变。收尾#220已合入8b1466d，实验owner与窗口由新负责人确定。\n\n## 任务清单\n\n- [ ] 冻结逐 binding/模型/镜像/拓扑/语料的资格模板、门槛与部署观测。\n- [ ] 按文件→实时/音色→混合负载补真实测量。\n- [ ] 完成真实停止、kill/分区/节点丢失、多主机与长时故障演练。\n- [ ] 交付镜像/权重/许可锁、manifest、告警与发布证据。\n\n## 验收标准（AC）\n\n- [ ] AC1：每项资格绑定明确版本/拓扑/语料/负载/时钟/门槛，质量与容量结论只覆盖实际测量范围。\n- [ ] AC2：同时 1 路实时 ASR+1 路实时 TTS，并测 VoiceDesign 冷加载/热身/执行/回收影响；首预览 P95≤1000ms、首 PCM P95≤800ms 按冻结口径验证。\n- [ ] AC3：真实 stop、旧入口封锁、进程 kill、网络分区/节点丢失及长时资源曲线均有目标拓扑证据，负载不超预算。\n- [ ] AC4：物理多主机/备用 GPU 接管独立验证；缺第二主机明确为条件缺口，单 GPU 逻辑集群不作为替代。\n- [ ] AC5：镜像/权重/许可/manifest 与告警交付可追溯，日志和遥测不含业务内容。\n\n## 依赖与参考\n\n[B00 #27](https://github.com/hrygo/SpeechNexus/issues/27) 起建模板；每个实际能力持续补证；最终与 [A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)/[C08 #43](https://github.com/hrygo/SpeechNexus/issues/43) 合并\n\n阶段验收：#13、#14、#15、#16、#18。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "2aa861b6c35e5031d577dbc0e6bd0a1c9b741404596b58c381bdadad333ea345",
+      "updated_at": "2026-10-26T16:42:32Z",
+      "comments": []
+    },
+    {
+      "number": 35,
+      "title": "[C00] 工作台版本骨架、契约客户端与开发 fake",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/35",
+      "body": "<!-- speechnexus-implementation:C00:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S0 #7](https://github.com/hrygo/SpeechNexus/issues/7)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n为工作台提供同源契约客户端、项目/稿件版本、独立存储/迁移及共享交互基础，支持开发 fake 与真实业务消费者分层验收。\n\n## 进展总结\n\n#153已集成项目/稿件revision与CAS、同源客户端、fake和能力三态；v1语义保留，需模型绑定/纪要配置的消费者使用v2。#189验收映射与#192/#195/#208操作识别已交，当前机器清单52项（42 bound/10 consumer_pending），收尾PR #222已合入fe4a825，同步旧Markdown并交项目经理基线；接线数不是完成率。#177两条二进制下载已接，导出SSE仍缺。\n\n清理事故丢失82份原件，影响278子条件中的214个引用，全部278仍not_run；[事故记录](https://github.com/hrygo/SpeechNexus/blob/main/docs/audits/2026-10-26-team-c-evidence-retention.md)和重建要求保留。后续需恢复可复核证据、核准扫描范围/10项操作处置，接公开实时/真实结果及A07迁移/独立存储与恢复水位。详细交接与核对见已合入的#222；新负责人重新安排实施，历史步骤不补勾AC。\n\n## 任务清单\n\n- [x] 集成验收映射/操作覆盖清单及 #192/#195 分段识别修正；当前机器清单 52/42/10，不代表语义全部通过。\n- [x] 覆盖摘要修正、完整交接和项目经理基线已随#222合入fe4a825；52/42/10守卫无findings，文档集成不结算业务AC。\n- [ ] 在仓库外稳定根重建缺失原件并复核 SHA/源码/映射；核对扫描范围/未决审查。\n\n- [ ] 接剩余生成客户端、事件 validator、双工状态机及公开 realtime。\n- [ ] 集成生产对象区/迁移、公开消费者与跨模块独立副本/恢复水位。\n- [ ] 冻结字幕导出格式/语义及候选契约，接剩余公开导出消费者（两条二进制下载已由#177接入，SSE仍待）。\n\n- [x] 状态文档按真实装配上报能力三态（五项能力 × available/disabled/unavailable），未配置部署如实报 disabled 而非空数组；隔离 PG 三项（未配置部署、内网 LLM+语音底座、导出台账）已钉住；证据见评论。\n\n- [x] 项目改名按元数据版本 CAS：客户端断言 `id` 一致且 `metadata_revision` 前进（未前进=修改未应用）；界面用服务端返回值更新、冲突保留请求键且不显示被拒名字；真实浏览器含\"带外推进修订后旧修订改名被 409 拒绝\"场景，HTTP 复核部署存的是带外名字、`metadata_revision=3`；证据见评论。\n## 验收标准（AC）\n\n- [ ] AC1：计划范围的请求/响应/事件由同源生成入口消费，wire 默认值不另行维护，开发 fake 不注入真实遥测或标 ready。\n- [ ] AC2：项目/稿件 revision 不可变，并发 CAS、原键恢复与历史读取一致；独立 schema/对象区及最小运行角色在真实部署装配可用。\n- [ ] AC3：工作台不导入 speech 内部或共写底座表，共享 Token/交互语义保持一致。\n- [ ] AC4：与 A07 对齐独立副本/对象删除及恢复水位；恢复后才开放相应读取，公开导出格式和消费者按冻结契约工作。\n\n## 依赖与参考\n\n[A00 #19](https://github.com/hrygo/SpeechNexus/issues/19) 相关接口冻结；可直接基于已有契约起步\n\n阶段验收：#13。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "d82acc5cb91821c7cdea04d6576528391967ba4dfda18d9693fff9d04a7d32ba",
+      "updated_at": "2026-10-26T11:32:14Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6375127386",
+          "body_sha256": "3091a338b81efb4fc915d91709a2b829a182ea342d8add3c73783180e37d5fcf"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6377743646",
+          "body_sha256": "120b490c06550585a5fce7115ae8a8ad0d5dc734caa03ed27ec2776473ea523b"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6393137667",
+          "body_sha256": "890b01717ef6d1fb7e08fcb42148a1ead32ab26871136e7b70074dfb4563d972"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6394069180",
+          "body_sha256": "e37c4dbd693abe91d1eca78daf8a62a24f01201ac481e757c3979187fc66dad2"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/35#issuecomment-6394419879",
+          "body_sha256": "64cf28768044d35a06f1e93c0a1e08e03f276df569fea55c8e0a63ec4d50c9a5"
+        }
+      ]
+    },
+    {
+      "number": 36,
+      "title": "[C01] AdminUI 与持久任务中心",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/36",
+      "body": "<!-- speechnexus-implementation:C01:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S3 #10](https://github.com/hrygo/SpeechNexus/issues/10)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n交付反映真实能力、绑定/实例/预算/策略与诊断的 AdminUI，以及可恢复的持久任务中心。\n\n## 进展总结\n\n#153集成Workspace只读、任务/事件恢复和部署诊断，#165补预设草稿写入、固定修订/完整确认及原键恢复；隔离PG/Chromium覆盖丢回执、CAS、迟到、存储失败及未知诚实态。诊断只消费能力投影，不虚构队列/预算/GPU。\n\n实际模型/实例/预算/策略、Workspace/策略/音色管理写入、预设发布/回滚/激活/退役及任务分页/筛选、真实故障恢复仍缺，需A04/A06/B02同版联验。历史证据重建见#35；原AC保留，后续交新负责人安排。\n\n## 任务清单\n\n- [ ] 接模型/资格/就绪、绑定/实例/预算及 Workspace 创建/修改/配额。\n- [ ] 补预设/策略/音色管理写入与版本确认。\n- [ ] 接真实任务列表/分页/筛选/重试、SSE 恢复和诊断观测。\n- [ ] 与 A04/A06/B02 完成同版浏览器联合验收。\n\n- [x] AdminUI 部署诊断：只读消费 `/v1/workbench/status`，逐条呈现服务端能力三态、内网模型绑定与本地化的共享部署声明，并列出尚未接入的队列/预算/租约/outbox/计量/GPU；打开不发请求；证据见评论。\n\n- [x] 任务事件与恢复探针接入门禁：两个 Admin 孤儿探针纳入 `--browser`，钉住历史过期重读、大游标续读、不自动重连、未知不显示成功、过期游标清理与键盘确认；证据见评论。\n## 验收标准（AC）\n\n- [ ] AC1：界面展示实际模型/资格/就绪及资源预算事实，能力仅使用 ready/contract/planned，不以 fake 填充真实状态。\n- [ ] AC2：管理写入遵守版本 CAS 和明确确认；预设发布/回滚/退役及冲突有可操作结果，不伪装用户权限边界。\n- [ ] AC3：任务详情/进度/取消/重试与持久后端一致，刷新、SSE 断线或历史过期后重读权威状态，未知不显示成功。\n- [ ] AC4：列表分页/筛选及恢复有真实浏览器证据，诊断/观测有界且不包含业务内容。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；真实联调 [A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)，逐步接 [A06 #25](https://github.com/hrygo/SpeechNexus/issues/25)/[B02 #29](https://github.com/hrygo/SpeechNexus/issues/29)\n\n阶段验收：#14、#16。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "4dee819265a00128ac4851ca1a64ea3e3ad351f0758bd79488109e203f66a5fb",
+      "updated_at": "2026-10-26T10:03:43Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/36#issuecomment-6393138266",
+          "body_sha256": "f1e3218bad163e2f4c132b326150fd354ef427c1fab318b13c3209f2e59b2e87"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/36#issuecomment-6394419702",
+          "body_sha256": "64cf28768044d35a06f1e93c0a1e08e03f276df569fea55c8e0a63ec4d50c9a5"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/36#issuecomment-6394536760",
+          "body_sha256": "c7f2f14ac060c3156534ad0b9dbafd3ef1cc7acee97c2428624f51e52190b26c"
+        }
+      ]
+    },
+    {
+      "number": 37,
+      "title": "[C02] 转写校对导出与文本配音闭环",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/37",
+      "body": "<!-- speechnexus-implementation:C02:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S1 #8](https://github.com/hrygo/SpeechNexus/issues/8)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n打通文件转写→独立校对→文本/字幕导出，以及固定版本文本配音→试听/下载两条真实基础闭环。\n\n## 进展总结\n\n#153交付稿件版本/CAS和校对，#167固定voice/profile及首次model，#170接ASR引用→原稿封存/独立校对→固定TXT及Transcription JSON；合成HTTP/Chromium和隔离PG只证明相应消费者。\n\nB #162/#219注册输入和默认真实工厂已交；A音频ready、权威配置/声音、完整Job/准入/发布及公开SDK/C两链仍缺。首条CustomVoice一次intent≤400 codepoints；指令Nexus2000、标准/内部4096与引擎默认500的有效映射待验，不静默截断。字幕时间轴、Range/格式、取消/迟到和长时恢复按原AC取证，证据重建见#35，后续交新负责人。\n\n## 任务清单\n\n- [ ] 接真实 ASR→稿件导入/校对→文本/字幕导出。\n- [ ] 接模型/声音发现和真实 TTS，补试听/下载。\n- [ ] 补真实持久语音服务的失败/取消未知/长时恢复及 Range/格式联验。\n\n- [x] 修正手工稿件创建的消费者断言：契约与领域规则是手工稿件为 `draft` 修订（上一版按 `sealed` 判定，真实后端 201 却被显示为“结果未确认”）；真实浏览器作者/校对流程重跑通过；证据见评论。\n\n## 验收标准（AC）\n\n- [ ] AC1：原始转写与追加校对 revision 分层，原稿/历史保留；真实 ASR 结果可导入、校对并按固定版本导出文本/字幕。\n- [ ] AC2：TTS 固定文本、voice/profile/model revision，真实结果可试听/下载，重试不重复发布。\n- [ ] AC3：同键重放、取消未知、冲突、刷新/断线和事件过期保持原身份恢复，迟到结果不覆盖新上下文。\n- [ ] AC4：Range、MP3/WAV/PCM 及 Asset/Artifact 过期边界符合契约，浏览器不持有引擎/数据库/组件凭据。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；真实依赖 [A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)/[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)/[B03 #30](https://github.com/hrygo/SpeechNexus/issues/30)\n\n阶段验收：#14。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "98520db620369695d64a3b1b9f31ec7ac9b76257046bdf3613d2022cc0bd6343",
+      "updated_at": "2026-10-26T10:03:52Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/37#issuecomment-6393138868",
+          "body_sha256": "cddfd67f9dfb1d173c447d5e28233eeb1497b0b577683c9c2b1c124cb1905fd7"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/37#issuecomment-6394542709",
+          "body_sha256": "dfd0d14742ef6d191798886d7eb4cdb740d2c414c2ece0819a13990e261ecbcb"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/37#issuecomment-6394755234",
+          "body_sha256": "a14a42701dca06353dd1f665febed20889b3ccec73b255a92c9ae5218d87d376"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/37#issuecomment-6394821825",
+          "body_sha256": "b578d01a4dbac572adb8e85f269cd38998528f3b044f960643a7202f0493e97d"
+        }
+      ]
+    },
+    {
+      "number": 38,
+      "title": "[C03] 音色创作、校验发布与复用工作室",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/38",
+      "body": "<!-- speechnexus-implementation:C03:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n交付设计/克隆、候选、再生成、试听、复用校验、显式发布及后续 TTS 复用的音色工作室。\n\n## 进展总结\n\n#153集成声音工作室任务/修订，#180接公开目录完整校验与精确voice_id/revision映射，保留能力、退役/disabled及完整原因，正式Web使用兼容v2；10项实际C/PG/HTTP/生产浏览器用例通过，上游仍为合成事实。\n\n真实材料上传、设计/克隆各自资格、preview_only屏障、换文复用、不可变发布/TTS和退役/禁用/删除竞争仍待A06/B05同版制品；目录读取不证明发布。证据重建见#35，原AC与模式边界保留，后续由新负责人安排。\n\n## 任务清单\n\n- [ ] 补新增材料上传、候选/再生成/试听/换文复用与失败状态。\n- [ ] 接 preview_only 发布屏障及不可变 VoiceRevision 显式发布。\n- [ ] 接发布后 TTS、退役/禁用/删除并与 A06/B05 联验。\n\n- [x] 音色单修订核对：按完整公开源读取并匹配voice_id/revision，映射嵌套能力、退役/禁用事实；[PR #180](https://github.com/hrygo/SpeechNexus/pull/180) 的v2保留2000字符原因且冻结v1。生产bundle键盘读取显示完整事实，错身份503并清除旧记录；未点击不读取、404/503反馈保留既有断言。只读修复不结算草稿/发布/生命周期操作。\n- [x] 音色创作探针接入门禁：`workbench-voice-create-probe` 纳入 `--browser`，钉住原键重放/取消、CAS 阻止取消、配额阻止提交、恢复语义、360px 与焦点，并断言 `physical_device=false`、`model_execution=false`；证据见评论。\n## 验收标准（AC）\n\n- [ ] AC1：设计/克隆输入与材料确认分别处理，材料改变后必须重新确认，真实声音模式分别有资格证据。\n- [ ] AC2：候选、再生成、试听和复用校验状态可观察，失败原因明确；preview_only 不能发布。\n- [ ] AC3：只有复用资格通过并显式确认才发布不可变 VoiceRevision，后续真实 TTS 使用该已发布引用。\n- [ ] AC4：退役/禁用/删除结果及共享部署文案与实际生命周期一致，合成页面证据不作为真实复用资格。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；页面可先 fake，真实依赖 [A06 #25](https://github.com/hrygo/SpeechNexus/issues/25)/[B05 #32](https://github.com/hrygo/SpeechNexus/issues/32)\n\n阶段验收：#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "83e7b97d1ed6d360dd6ab8370496750bf42c344cd50b6bc5c0be0c7bd907abd2",
+      "updated_at": "2026-10-26T10:03:55Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/38#issuecomment-6393139351",
+          "body_sha256": "300cc13f03608802a2233473983bc63280d632b11341df5c6c0b1453079b2d1d"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/38#issuecomment-6394132788",
+          "body_sha256": "df7dbfb0451c4a8e04e9b255d7f3071664058898f10d3a41ab3c2e13217e4132"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/38#issuecomment-6394417957",
+          "body_sha256": "9315bb15fb3611b216a095fdc24329ffa95d2c8cc1dd43b21f60b955daf945e5"
+        }
+      ]
+    },
+    {
+      "number": 39,
+      "title": "[C04] 浏览器采集播放、实时字幕与媒体生命周期",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/39",
+      "body": "<!-- speechnexus-implementation:C04:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S2 #9](https://github.com/hrygo/SpeechNexus/issues/9)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n交付 AudioWorklet、有界 PCM、实时字幕和双工消费者，确保采集/播放、generation、设备与页面生命周期正确。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：本工作包中的工作台实时字幕功能后移，在其他功能完成后再推进；共享实时 ASR/TTS、采集/播放、媒体生命周期和其他非延期消费者按自身优先级推进。原完整范围与 AC 保留，取证须区分延期字幕与共享能力。详见 #6。\n\n#153已交采集/播放、PCM/credit/epoch及合成ASR/TTS；#182/#183补发送水位/终态和释放确认，#184接手动设备选择/显式续接与重复取消修复，#186/32386fa补失效控件及取消下载的焦点归属。Worklet/原生枚举搭配fake设备和合成REST/WS，不能升级为物理设备或真实流资格。\n\n公开双工/生产背压与硬上界、批准HTTPS/WSS、真实权限/设备切换、后台/断网、跨浏览器/长时及完整无障碍仍缺。创建后焦点及全部所有权边界按现有审查继续核实，不据旧单元合并消项；取消路径缺生产bundle探针。历史原件重建见#35，后续由新负责人安排。\n\n## 任务清单\n\n- [ ] 补双工状态机、生产背压/硬上界、停止与恢复接线。\n- [ ] 验真实设备、权限/切换、后台/休眠、断网重连及支持浏览器。\n- [ ] 接批准 HTTPS/WSS 同源入口/系统音频矩阵，补长时和完整无障碍。\n- [ ] 处理其余既有 Minor；#182/#183修复发送水位和本地释放，#184修复释放后重复取消，#186修复失效控件焦点与取消下载焦点归属；全状态辅助技术、物理设备与真实服务资格仍待验证。\n\n- [x] 实时字幕页真实浏览器取证（无麦克风）：`getUserMedia` 计数器证明打开页面与请求会话被拒后均为 0 次、未连接不提供采集控件、拒绝被公开表达、创建表单键盘可达、360px 无横向滚动；证据见评论。\n- [x] 两份既有合成实时探针接入门禁：ASR（3 个合成会话、10 次已确认写入）与 TTS（收到 48000 样本、渲染 48000，无丢失）；此前无包装、无门禁，证据不可追溯；证据见评论。\n- [x] 采集图与离线音频探针接入门禁：capture/media 两个孤儿探针纳入 `--browser`，断言其合成边界与自曝的 autoplay 绕过；三个 live 声明必须为 false；证据见评论。\n- [x] TTS 工作流探针接入门禁：`workbench-tts-probe` 纳入 `--browser`，钉住原生 WAV 解码、卸载时撤销 blob URL、清理不被假定、原键重放与零出站；证据见评论。\n- [x] TTS host 探针修复并接入门禁：错误消息带方法+路径以定位缺口，按契约样例建模 `GET /v1/workbench/projects`；钉住迟到音频丢弃、原生 WAV 预览/下载、切换时撤销 URL 与自述不具备真实后端资格；证据见评论。\n## 验收标准（AC）\n\n- [ ] AC1：真实双向流中 credit/gap/epoch、水位、文本冻结与连续 PCM 一致，采集/播放缓冲和输出上界有界，PCM 不进入 React 查询缓存。\n- [ ] AC2：旧 generation/迟到音频不串播，停止、离开、异常或迟到授权后本地设备/AudioContext 均正确释放。\n- [ ] AC3：支持浏览器下权限拒绝/撤销、设备切换、后台/休眠及断网重连均有实际结果，无法无缝恢复时明确 gap。\n- [ ] AC4：真实远端通过批准 HTTPS/WSS 同源入口工作；麦克风/系统音频按支持矩阵开放，合成、物理设备及 GPU 证据分别记录。\n- [ ] AC5：完整键盘/焦点/小窗口/读屏和长时媒体行为可验证；已知 Minor 有明确处理结果，不能由合成样本播放数代替完整资格。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)；真实依赖 [A05 #24](https://github.com/hrygo/SpeechNexus/issues/24)/[B04 #31](https://github.com/hrygo/SpeechNexus/issues/31)/[B06 #33](https://github.com/hrygo/SpeechNexus/issues/33).VAD\n\n阶段验收：#13、#15。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "e2acd385eb8619a7dac6f3363190684b7f3a52ce282b4a1e87fadc01cf9e70e6",
+      "updated_at": "2026-11-02T02:17:57Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6393140002",
+          "body_sha256": "e13f6bd56470623d4a02c9de42576249b800ce2ad07fb67f93d2d04e00b2470f"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6394273683",
+          "body_sha256": "d3720ba01a77c8590f16038710800e2a1abfeaa37eab269ef00fea9f686ea094"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6394334858",
+          "body_sha256": "4e9ec4ed3d30c69de6322d1d013b96359696069f6a510a0d45b6d07b9e1a97ad"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6394417285",
+          "body_sha256": "9315bb15fb3611b216a095fdc24329ffa95d2c8cc1dd43b21f60b955daf945e5"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6394536155",
+          "body_sha256": "c7f2f14ac060c3156534ad0b9dbafd3ef1cc7acee97c2428624f51e52190b26c"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/39#issuecomment-6394754980",
+          "body_sha256": "7e7aae79d81e02624f87ad84254b2d7059c8633e820d0bf881bfa784c5fa76ae"
+        }
+      ]
+    },
+    {
+      "number": 40,
+      "title": "[C05] 会议封存、校对与提词跟随",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/40",
+      "body": "<!-- speechnexus-implementation:C05:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S4 #11](https://github.com/hrygo/SpeechNexus/issues/11)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n交付保留来源/版本的会议保存、封存、校对、要点与导出，以及可手动接管的真实提词跟随。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：工作台会议助手、会议业务和提词器后移，在其他功能完成后再推进；原范围、现有成果和未完成 AC 保留。共享实时语音能力按自身优先级推进；普通会议/提词不新增 LLM 依赖。详见 #6。\n\n#153已交会议持久化/封存/修订、纪要派发和提词状态/CAS，生产页面与隔离PG覆盖保存冲突/手动接管及会议删除账本。部署内提词读取404不当成位置0，写入固定版本/请求键并拒绝旧修订。\n\n真实speech session/采集gap、匹配正文的分人/对齐、真实声音跟随、要点/固定版本导出和持久提词稿/音频范围联验仍缺。普通会议/提词不新增LLM依赖，当前LLM资格和旧证据原件另验（#35）；后续交新负责人，原AC保持开放。\n\n## 任务清单\n\n- [ ] 接公开 speech session、实时采集/gap 和匹配 revision 的分人/对齐。\n- [ ] 补会议要点标记、关联版本保存、封存/固定版本导出。\n- [ ] 接提词稿件持久化、公开实时消费和真实语音跟随。\n- [ ] 补会议并发/故障待办及真实音频保存范围验证。\n\n- [x] 部署内提词状态的生产消费者：同源读取将 404 如实报为“尚未保存”（不当作位置 0），显式写入修订/位置/手动接管并带请求键，冲突保留上次读取且不重试；真实浏览器写入后由 HTTP 复核存储行未被子集更旧修订移动；证据见评论。\n\n## 验收标准（AC）\n\n- [ ] AC1：会议保留 session/转写来源与缺口，preview/final/辅助 revision 匹配；封存原文不被后续校对改写。\n- [ ] AC2：要点可关联相应会话/转写版本保存，会议按固定版本封存/导出；未保存音频不承诺会后重新识别。\n- [ ] AC3：提词固定稿件 revision、有限跟随窗口，低置信时暂缓，旧稿/旧 epoch 不推动位置。\n- [ ] AC4：真实语音跟随可被键盘/手动接管，普通会议和提词不依赖 LLM；实时来源/分人/对齐消费者有联合证据。\n\n## 依赖与参考\n\n[C02 #37](https://github.com/hrygo/SpeechNexus/issues/37)/[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)；分人/对齐依赖 [B06 #33](https://github.com/hrygo/SpeechNexus/issues/33)；普通会议不依赖 LLM\n\n阶段验收：#17。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "e8f361b43b83075332793da6e85e9c34835802cce48f747c76bd310fa620cf91",
+      "updated_at": "2026-11-02T02:17:41Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/40#issuecomment-6393140531",
+          "body_sha256": "8b0df0b157fa4d962482fe35473dbe4cc38be5aef811339ce6e3f000318c8455"
+        }
+      ]
+    },
+    {
+      "number": 41,
+      "title": "[C06] 内网 LLM、会议纪要与语音助手",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/41",
+      "body": "<!-- speechnexus-implementation:C06:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S4 #11](https://github.com/hrygo/SpeechNexus/issues/11)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n在受控内网 LLM 边界内交付固定来源的会议纪要，以及具备持久 turn、插话/取消和迟到隔离的语音助手。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：工作台语音助手、会议助手及会议纪要后移，在其他功能完成后再推进；现有成果及未完成 AC 保留，共享语音 Job、音色和停止/释放能力仍按自身优先级推进。详见 #6。\n\n#153交付默认关闭的内网LLM纪要、持久助手turn及能力三态；原命令/键在外发前持久保存，刷新只显式重放原意图。隔离PG/真实组合根/生产浏览器验证disabled/unavailable、派发与恢复边界；3项真实LLM资格本轮未执行，严格入口缺批准模型/私有PG时拒绝。\n\n助手成功链仍缺A真实可查询Speech Job与已发布声音（#149），并需插话/可信停止、generation、独立保存导出、质量、出站与父预算联验。历史实测不升级为当前组合资格，证据恢复见#35；后续由新负责人安排，默认关闭/无公有云回退要求不变。\n\n## 任务清单\n\n- [ ] 接 A 的真实 speech_job_id 与已发布音色，打通助手启用态成功路径。\n- [ ] 补 LLM Job/取消/结果生命周期、生产部署与远端停止对账。\n- [ ] 接文本冻结、TTS/播放器 generation、插话及迟到音频隔离。\n- [ ] 补纪要独立保存/导出、质量、内容出站及父预算/混合负载验收。\n\n- [x] 助手诚实消费面：严格按服务端能力三态决定能否提交，未启用/缺依赖时创建表单不出现；契约断言（failed 必有 error、非 failed 必为空、succeeded 必有 speech_job_id、携带 job 必有非空文本）；证据见评论。\n- [x] 助手诚实态的真实浏览器资格：生产包+真实组合根+隔离 PG 下确认 disabled 与 unavailable 两态（无表单、`/assistant-turns` 请求 0、重载后不变）；证据见评论。\n\n## 验收标准（AC）\n\n- [ ] AC1：LLM 默认关闭，仅允许服务端批准本机/内网端点且无公有云回退；关闭时在事务前拒绝，不留下已受理 turn/回执。\n- [ ] AC2：纪要固定 sealed 转写、模板/模型/绑定版本，失败不改成功转写，任务由受控派发器完成并保留原意图恢复。\n- [ ] AC3：助手 turn 以真实 speech_job_id 和已发布声音推进冻结状态机，启用态成功、取消、失败和重放均有真实 HTTP/持久化证据。\n- [ ] AC4：插话先停旧播放，旧计算按底座停止/释放事实协调；文本/TTS/播放器 generation 固定关联，迟到音频不串播。\n- [ ] AC5：独立保存/导出及实际质量可验；应用/代理/浏览器/观测无越界内容出站，同设备占用纳入父预算，HTTP 取消不代替远端停止。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35) 可做 fake；纪要依赖 [C05 #40](https://github.com/hrygo/SpeechNexus/issues/40)；助手还依赖 [C02 #37](https://github.com/hrygo/SpeechNexus/issues/37)/[C04 #39](https://github.com/hrygo/SpeechNexus/issues/39)/[A05 #24](https://github.com/hrygo/SpeechNexus/issues/24)/[B04 #31](https://github.com/hrygo/SpeechNexus/issues/31)，启用需部署出站资格\n\n阶段验收：#17。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "1f35fae052f094bf357e0c7127637dc0fe2332646691122abc5ec2361f792c83",
+      "updated_at": "2026-11-02T02:17:46Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/41#issuecomment-6393141111",
+          "body_sha256": "4054d12198c4d41eb96eb8e6c6fc94a8025baeb7ffdbb628b42c6b35e57991e1"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/41#issuecomment-6393535500",
+          "body_sha256": "40c08d64b65e81fdd80affbe0dc16b1496c7e014c926be703160ac90c2942dd5"
+        }
+      ]
+    },
+    {
+      "number": 42,
+      "title": "[C07] 有声书局部重做、保存副本与独立导出",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/42",
+      "body": "<!-- speechnexus-implementation:C07:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S4 #11](https://github.com/hrygo/SpeechNexus/issues/11)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n交付版本化有声书稿件/章节/角色与 render_unit 局部重做、独立保存副本及可恢复的有界独立导出。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：有声书制作及本工作包专属修复、接线和验收后移，在其他功能完成后再推进；现有成果与原 AC 保留，本包仍独立于助手验收。共享底座能力按自身优先级推进。详见 #6。\n\n书籍/章节/单元、pin/指纹/stale已交；#174验证导出前完整媒体/ZIP/限额及取消，#177/#179接公开下载/Range/416和副本保存。#197/#198/#200补v2派发/终态CAS与默认关闭的扫描，#202/#206/#211补副本/待补和进程内分类，#208/#213/#214/#216/#217补最近100条历史/ARIA及limit转发。隔离PG/MinIO、合成和fake证据分别保留，参数转发不证明SQL有界或公平。\n\n未决审查包括先外发后落库、同键异体/可变快照、锁前读及CAS/source一致性，保存键仅useRef/跨刷新丢失、确认后读取失败误报未知，SpeechSourceError分类不匹配、最老LIMIT批次饥饿/无持久退避，以及SQL全读后切片、页面乱序/加载态/焦点。#215只登记缺口，不能算修复。\n\n真实Job/Artifact/receipt→副本→完整导出、固定清单/检查点/续作、预算及质量/试听/匿名确认仍缺；#212入口页a11y不替代全体验。原件事故和278子条件未验见#35。收尾、A/B联审接收与经理基线已随#222合入fe4a825；新负责人重排后续，本包独立于助手验收。\n\n## 任务清单\n\n- [x] 集成 #197–#217 生成派发、终态结算/扫描、副本消费者/待补扫描、最近100条历史及 limit 参数转发分段；限定合成/fake/一次性PG范围。\n- [ ] 修复上述持久化/幂等、分类/饥饿、真实数据库读取边界、请求键与页面异步/焦点问题，补正反例并复审。\n\n- [ ] 补 TXT/章节/角色持久映射、权威 pin/资格及生成历史的持久读取边界/公平性；历史GET与页面分段已接。\n- [ ] generateRenderUnit 路由/页面已接；修复持久意图/重放/CAS，再接真实 Job/Artifact/receipt 与局部重做。\n- [ ] 完成独立副本真实结果生产者与 export worker；公开下载已接通，完整恢复/预算仍待补。\n- [ ] 补固定清单/检查点、staging 发布/恢复及独立质量/试听/匿名确认。\n\n- [x] 导出 worker/`ExportProducer` 预接真实组合根，默认关闭；缺 producer/对象区/validator 时不领取。已补完整进度、真实媒体/ZIP/限额校验及取消复核，非法输出零写入意图/零对象；MinIO字节回读与持久交错验证见 [PR #174](https://github.com/hrygo/SpeechNexus/pull/174)。\n\n- [x] 公开下载与正式页面由 [#177](https://github.com/hrygo/SpeechNexus/pull/177) 接通；[#179](https://github.com/hrygo/SpeechNexus/pull/179) 验证副本/导出页面键盘保存、源离线副本、queued409/过期410/删除与其他workspace404，拒绝后原MinIO字节仍存在。合成render result fixture不证明真实生成。\n- [x] 已保存副本回读生产消费者：按 id 显式读取并展示服务端记录（媒体类型/字节数/sha256/来源），404 与未确认分别如实报告且不自动重试；真实 PG+MinIO 集成证明回读不再向底座取产物、未知 id 与另一 workspace 均为 not-found；证据见评论。\n- [x] 章节创建补线：客户端 `createChapter` 断言返回 `book_id` 与请求一致；界面新增章节表单并在失败时保留请求键；真实浏览器（生产包+真实组合根+隔离 PG）建书→建章节后由真实 HTTP 复读同一章节（`GET /chapters/{id}` 与列表逐字段相等）；证据见评论。\n- [x] 渲染单元创建补线：客户端 `createRenderUnit` 断言 `chapter_id` 一致；面板新增登记表单（显式 pin + 目录可用时填入），失败保留请求键；真实浏览器同一流程建书→建章节→建单元后由真实 HTTP 复读（`voice`/`model`/`model_binding` 逐字段相等、`status=pending`、`GET /render-units/{id}` 与列表相等）；证据见评论。\n- [x] 书籍页新增表单的真实键盘/焦点/窄屏核查：键盘专用流程创建单元成功且 Tab 顺序逐一断言、焦点不丢失；360px 无横向滚动；修复\"清空表单导致焦点掉回 body\"；证据见评论。\n- [x] 提词页活区域可访问名称修复 + 单测固化：第三个活区域补 `aria-label=\"部署提词快照\"`；`TeleprompterPanel.test.tsx` 断言两个活区域各自可按名称寻址；陈旧探针改为指名断言后实跑通过并接入门禁（`microphone_calls=0`、`api_requests=0`、资格自述 `manual-browser-reading-only`）；证据见评论。\n## 验收标准（AC）\n\n- [ ] AC1：render_unit 固定稿件/章节/角色/声音/词典/模型/profile/规划版本与 UTF-8 指纹，CAS 和生成历史关联可核对。\n- [ ] AC2：改文仅影响目标单元、换声仅影响同角色，无关单元保留；旧/错 unit、Job、代次或指纹结果被拒绝。\n- [ ] AC3：底座结果及独立保存副本按摘要/非空 source receipt 校验，可通过公开非 JSON 下载读取，不能以领域 ready 代替可导出。\n- [ ] AC4：独立 export worker 不调用推理引擎，CPU/内存/磁盘/并发有界并计入预算；固定清单/检查点，先 staging 校验再原子发布。\n- [ ] AC5：取消/重试/续作不重复发布，缺章/空成品/局部失败可被识别，质量/试听/匿名确认记录固定关联版本。\n- [ ] AC6：关闭工作台不影响底座，本包可独立于 C06 助手验收。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35)/[C02 #37](https://github.com/hrygo/SpeechNexus/issues/37)、[A02 #21](https://github.com/hrygo/SpeechNexus/issues/21)/[A04 #23](https://github.com/hrygo/SpeechNexus/issues/23)；音色创作消费依赖 [C03 #38](https://github.com/hrygo/SpeechNexus/issues/38)；与 [C06 #41](https://github.com/hrygo/SpeechNexus/issues/41) 无依赖\n\n阶段验收：#17。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "4d1fa89aca57893ef99e4a28daf546389ce415771836503ce753d16087ce2162",
+      "updated_at": "2026-11-02T02:17:50Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393141708",
+          "body_sha256": "23c3cedbdf65efe66a0c810361811574c9432db60e5f9842118bb767754ea669"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393307232",
+          "body_sha256": "34083a5eaed958778dedca460bf778d2fe5c8db6fd77cc9840d45594a21ff22a"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393338528",
+          "body_sha256": "b687dbb66218590c46f6df8d597a79b66cea7992ccbc702189ec843f65e3fa26"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393404141",
+          "body_sha256": "de07f952909782484591a3acf27bbd7fd0c904d7022b7bb6564acdc4bdfd5432"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6393997645",
+          "body_sha256": "daac4823e1c706dd522619505323731409da005a4e5ffe990d82104f9296fb1e"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6394187058",
+          "body_sha256": "34a9bd2aada4cb701a8d41714b7ff171c4af3ec6bf8f3b83886251eb974e63ca"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6394542872",
+          "body_sha256": "60a711fab349b9710f6799f3439aed9152125d2184ab2b086591c0df7f1af73d"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6394632379",
+          "body_sha256": "cfb9f567ef442df865a364f53568dedbacbaff2096df45eec55c6e6ccb7274d1"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6400819092",
+          "body_sha256": "c52daec9132b3ec282f52b38139a03eab4e49a3ed484ad69feb253405ae90505"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6404467405",
+          "body_sha256": "1365b0dc1bae727494822576fe51b50d8fb398b926509bdc3575174a6dcf8414"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/42#issuecomment-6405666522",
+          "body_sha256": "ceec0e1faf4cf78cbb586a0e6231d19fd6cf2e9bc47e9b4cb6384b741edf9bae"
+        }
+      ]
+    },
+    {
+      "number": 43,
+      "title": "[C08] 浏览器、业务删除恢复与应用交付资格",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/43",
+      "body": "<!-- speechnexus-implementation:C08:v1 -->\n总控：[PROGRAM #6](https://github.com/hrygo/SpeechNexus/issues/6)；唯一主史诗：[S5 #12](https://github.com/hrygo/SpeechNexus/issues/12)；主责：**Team C**；环境：**MacBook / 浏览器；Linux 后端另验**。\n\n## 目标\n\n验证实际浏览器业务、媒体生命周期、无障碍和工作台删除恢复，交付与目标部署一致的支持矩阵、用户文档和运维资格。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：助手、会议、有声书、实时字幕和提词器专属页面及其验收后移，在其他功能完成后再推进；与其他功能共用的浏览器、设备、删除恢复、内容网络与交付资格按自身优先级推进。原完整范围与 AC 保留。详见 #6。\n\n#153已集成版本化删除预检/确认、账本/对象擦除、sweeper和启动重放；隔离PG/MinIO/最小角色及生产浏览器覆盖对象失败/重启、迟到写入、未知PUT和会议取消，独立副本保留，行/对象均清理且重放完成后才开放内容。#166/eef6c54修复三处内容日志，原反例与合前14检查保留。\n\n#212只交52项入口页a11y摘要，精确checkout/build和原件需核验；#214历史ARIA不替代面板360px/减少动态/VoiceOver。A07受控迁移/恢复水位、Linux镜像/物理拓扑、设备/网络/跨浏览器/长时和运维交接仍缺；证据遗失/重建见#35，真实LLM资格仍未执行。收尾交接、全量issue核对及经理基线已随#222合入fe4a825；后续由新负责人安排，原AC不补勾。\n\n## 任务清单\n\n- [ ] 为各 Gate 补同版生产页面闭环与真实浏览器证据。\n- [ ] 完成设备/网络/跨浏览器、长时及完整无障碍矩阵。\n- [ ] 与 A07 联验独立副本、删除图与恢复水位，集成生产清理身份/迁移。\n- [ ] 与 B07 完成目标 Linux/镜像/拓扑、内容网络及文档运维交接。\n\n- [x] 助手诚实态与 Admin 部署诊断的真实浏览器资格，以及提词状态“更旧修订 409 且位置不变”的真实 HTTP 复核；证据见评论。\n\n## 验收标准（AC）\n\n- [ ] AC1：实际页面覆盖相应 Gate 的业务闭环；物理设备采集/播放、权限、断网/重连、取消迟到、长时及完整键盘/焦点/小窗口/读屏有支持矩阵证据。\n- [ ] AC2：版本化预检/确认、账本、对象擦除、启动重放和运行 sweeper 一致；未配置清理身份时返回 deletions_unavailable（503），不受理无法履行的删除。\n- [ ] AC3：独立副本不误删，对象/依赖图和 A07 恢复账本水位一致，重放完成后开放内容；恢复查询不承诺撤销已擦除内容。\n- [ ] AC4：LLM 关闭/不可用、内容出站/代理/观测及共享部署文案真实一致，日志不包含业务内容。\n- [ ] AC5：生产清理 DSN/角色/迁移、Linux 后端/镜像与目标拓扑实际验证；支持矩阵、用户文档、运维/恢复交接齐备，既有 Minor/浏览器抖动的处理与未验证项明确。\n\n## 依赖与参考\n\n[C00 #35](https://github.com/hrygo/SpeechNexus/issues/35) 起建用例；各闭环持续补证；最终汇入 [A07 #26](https://github.com/hrygo/SpeechNexus/issues/26)/[B07 #34](https://github.com/hrygo/SpeechNexus/issues/34)\n\n阶段验收：#13、#14、#15、#16、#17、#18。通用完成与证据要求见 #6；依据对应验收证据勾选 AC。\n",
+      "body_sha256": "21387a399236b23190b19b064d3d56d433b9ebe6ee1c87410062621e050f8817",
+      "updated_at": "2026-11-02T02:18:00Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/43#issuecomment-6393142389",
+          "body_sha256": "972cb041012e3f6068b5b64a5dd0296749ca990a444b2d61baa8a3c3c96a45dd"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/43#issuecomment-6394471234",
+          "body_sha256": "2915a9ff10f29999a84df92c4a95a5bde92073b5a05ae531c2a1f7dad96008dd"
+        }
+      ]
+    },
+    {
+      "number": 142,
+      "title": "[B-G1] 真实文件 ASR/TTS 持久执行与制品交接",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/142",
+      "body": "## 目标\n\n交付团队 B 在 G1 的最小真实执行链：先文件 ASR，再 CustomVoice TTS。两条链均从 A 已持久化、已原子准入的完整命令开始，经真实引擎、原身份恢复和私有 staging，向 A 交付可核验的结果及停止/释放事实；A 发布后由标准 SDK 和 C 工作台下载消费。\n\n这是 #30 的阶段子任务，联动 #28/#29；不替代 B00–B07 全范围。集群支持不降级，单机仍使用同一持久协议；无物理多机证据时保持对应资格未通过。不引入 etcd、第二预算权威或额外协调服务。\n\n## 进展总结\n\n#140/#147/#152/#154/#158/#163/#168已交原命令、固定输入、私有结果/回执和默认ASR工厂；#162给注册输入，#178保留旧版ASR取消partial及整代停止→原lease/base结算，fixture边界不变。\n\n#203/#209/#210覆盖固定CustomVoice默认工厂、三格式/样本区间及重启重放；#218补鉴权、取消零结果和原lease结算，TTS base未结。#219/54daef6交固定revision/11制品/镜像/许可/默认，注册输入不等于权威发布。#221私有媒体已合41e29b6，收尾#220已合8b1466d，B实际兼容接收仍待。\n\n仍缺公开ready/权威配置与声音、生产Job/准入、A 生产发布数据/SDK/C 两链，及单请求释放、故障/质量/容量/物理多机。#203 请求音频上限未收紧 policy 的缺陷已由 #234（`be3aafc`）修复（`tests/unit/gateway/test_file_tts_command.py:355-404`）；指令 2000/4096/默认 500 映射仍待，不静默截断。#266（`12873cf`）已接生产 Transcriber，但真实网关端到端仍未验；#270（`a904efa`）发布路径与 #271（`c435908`）证据落库/如实投影已落地。原 AC/35B 保护保留，经理重排。\n\n## 任务清单\n\n- [ ] 修复#203请求 `max_output_audio_ms` 只校验≤binding却未收紧policy的缺陷：经理以真实命令/pipeline和合成器复现100ms请求→600000ms policy→200ms结果；时长/PCM上界传播及恰好/超一帧/重放仍需回归。另核实指令Nexus2000、标准/内部4096、pipeline默认500的实际校验及2001–4096准入，不静默截断；指令上界实验仍未执行。（`max_output_audio_ms` 部分已由 #234/`be3aafc` 修复，见 `tests/unit/gateway/test_file_tts_command.py:355-404`。）\n\n- [x] 集成 CustomVoice 固定制品/许可/参数与完整草稿注册交接（#219，`54daef6`；原受检候选 `f3e67b7`），验证现有生产者、原键重放/冲突和重新装配；不代替权威注册或资格。\n- [x] 集成 #140 原命令和 #147 私有结果组件，完成各自契约、故障与精确版本交接；详细测试和六报告证据见对应 PR。\n- [x] 集成 #152 回执登记/查询及 #154 输入异步总期限，完成迁移/权限串行接收、真实 TCP/存储、确认丢失与原身份恢复、精确 PR/合后验证；保持原执行和预算权威。\n- [x] 集成 #158 提交后文件执行组件；验证启动重复取消、工厂/open 线程 join/迟到关闭、线程创建失败清理，以及 PG/InnoDB 资格/屏障/租约/代次/期限和实际锁等待后重检。\n- [x] 验证 #158 的真实接收/结果 commit 确认丢失和双消费者两方胜出顺序：原身份重放不重复 fake 推理或真实对象 PUT，预算不变；不扩为真实引擎或物理集群资格。\n- [x] 提交 #162 的固定 ASR 制品、离线工具、完整草稿注册输入与显式默认；`d83e420` 本机 196 项定向回归无跳过，精确 CI 全绿。工具复用实际生产者准备入口，不分配 revision/资格；已随 #162 合入 `6472daa`；尚未注册已发布 binding。\n- [x] 集成 #163 代次凭据、目标校验与预热，完成实际消费者回归、精确 PR/合后 CI；真实默认实验见下项，生产执行链待接通。\n- [x] 创建并校验三个 SpeechNexus 旧 skill 草稿；10 份未提交文件与分支历史已核验归档，旧 worktree/分支已清理；未提交/集成，不计入业务 AC。\n- [x] 交付并集成 #168 默认文件 ASR 工厂，复用固定代次/VAD/对象和原 worker，覆盖默认入口、启动失败/重复取消、重放/重启及私有结果；最终 PR/合后 CI 见上。旧 `21129b4` 的 69 单元、104 双库/MinIO 无跳过与 CI462 重试成功保留，首次 Chromium 安装 443 秒及超时不改写。\n- [x] 以固定镜像、受控代次凭据和真实 CPU VAD，在隔离 PG/MinIO 验证默认入口的合成语音/无语音、原身份重放与重启；各一个结果版本、成功推理计数未因重放/重启增加，预算不变。控制器停止双事实及清理已记录，不能作为 A 准入/预算或公开链资格；完整证据见 #168 的 docs/audits/2026-10-25-b03-default-real-asr-probe.md。\n- [x] 修复 #168 审查的首次 step 前取消槽位泄漏：唯一槽位 RED/GREEN、重复取消及数据库 writer 等待回归成立，原阶段 61 项单元和 104 项隔离双库/MinIO 无跳过，复审及对应候选 CI 成功。只清理本地票据，不伪造停止或释放预算。\n- [x] 在 `5f72b20` 联验真实整代次停止、默认恢复与 A 原租约/base 幂等结算，保留原回执；模型十文件校验一致，失败和清理有记录。报告已提交 #178，限定 fixture 就绪/准入及单机范围；修正文档时态并完成新 head 文档 CI，未改写原报告。\n- [x] 将 #178 同步到 main `046ae7f`，移除父分支产品提交，确认仅四份文档、原报告与14项证据摘要不变，推送 `73f7146` 并核对精确文档 CI；后随 #178 合入 `0c45de4`。\n- [ ] 完成其余恢复身份/取消观察复审及生产接入验证；组件与真实资格仍分别验收。\n- [ ] 冻结首条 ASR 的权威 binding/模型/镜像、显式默认、有效参数和输入输出上界；CustomVoice 单独冻结。\n- [x] 在 `21129b4` 完成取消实验预检和真实安全链：原身份取消/重放保持 unknown、零结果、预算不变；整代次双证据后由默认恢复及 A 原事务幂等结算。三轮失败/partial、指标反例和清理见 #178 的 docs/audits/2026-10-25-b03-real-cancel-settlement.md；不授予单请求停止资格。\n- [ ] 接通真实 ASR 的生产 submit/observe/abort/恢复，补关联原生身份的取消观察及可信单请求停止/释放事实；确认丢失查询原身份，不把 abort 指标当必要回执。\n- [ ] 在真实持久执行中验证确认丢失、真实引擎/控制器重启和重复消费者不二次外发/写入/发布；网关重启及组件测试不替代这些剩余场景。\n- [ ] 将可信停止与释放事实接入生产链，由 A 原事务一次性处理预算；隔离整代次链已验证，unknown 保持占用，不借取消/超时推断释放。\n- [ ] 与 A/C 完成首条 ASR 的真实上传→任务→执行→发布→SDK/工作台下载，以及正常/无语音、取消、迟到、确认丢失、重放、重启、两个逻辑节点竞争和基础删除。\n- [x] 复用上述持久边界接 CustomVoice TTS 固定文本/声音与音频 staging；#203 默认工厂、真实音频身份、生成区间与回执接线，#209 在真实 1.7B CustomVoice + 隔离 PG/MinIO 上完成 WAV/MP3/PCM 合成、重启重放和预算不变；不扩为 Base/VoiceDesign 或实时资格。\n- [ ] 将真实 CustomVoice 结果接入 A 发布、SDK/C 下载的第二条公开链，并补取消/停止/资源释放双证据。 #218 已有隔离整代次停止/租约结算证据；正式接入和单请求释放仍待。\n- [ ] 汇集同一集成版本的两链与故障证据，提交 #14 联合验收，并补 B07 的实际版本/质量/容量输入。\n\n## 验收标准（AC）\n\n- [ ] AC1：同一集成版本上，公开 SDK 上传音频获得真实转写、提交固定文本/声音获得真实合成音频；发布后的结果可下载且由 C 消费，未发布对象不可读。\n- [ ] AC2：同键重放、提交/发布确认丢失、网关/控制器重启均沿原执行和对象身份恢复，无重复外发或重复发布。\n- [ ] AC3：取消、期限、绑定漂移和迟到完成不会发布无效结果；unknown 继续占用，停止与资源释放双证据可被 A 原事务核验且只退预算一次。\n- [ ] AC4：两个逻辑节点/多 worker 竞争、旧任期与恢复均有证据；单机逻辑集群和物理多机资格明确分列，不放宽原集群要求。\n- [ ] AC5：输入输出经对象存储传递，本地缓冲有界；模型/镜像/许可、实际语料、支持参数和未验证项可追溯，内容不出部署网络，受保护的 35B 服务不被停止。\n\n## 依赖与参考\n\n总控 #6；父包 #30；协作 #21/#22/#23/#28/#29/#34/#37；阶段验收 #14。尚需将固定部署配置、原私有结果及已联验停止链接到 A 的权威准入/发布，并补 B 自有取消、故障及 TTS 参数边界；交由新负责人重新安排，不以等待整个父包关闭为前提。阶段完成不关闭父包或完整 Goal，也不替代 G0/G1 的三队确认和用户放行。\n",
+      "body_sha256": "0674959a9c628c16592d2ff6451bab996455ea7eaa7c55e9ddb790fe54561087",
+      "updated_at": "2026-10-27T23:06:14Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/142#issuecomment-6411923009",
+          "body_sha256": "d41603e6dc9c451bd082bab7b507018485f343cec6a6e8f0bb771b2873d72de4"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/142#issuecomment-6444056428",
+          "body_sha256": "3c72ad875857169e4f862dc4e6b87c5d6b720b3aa15c5fbb0f4882761d9b2737"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/142#issuecomment-6446482117",
+          "body_sha256": "e7ba52e123ea3c45cc85aaa0ee319c22b96888025ddf15a814bd09eb75d70eec"
+        }
+      ]
+    },
+    {
+      "number": 149,
+      "title": "[A→C06] 提供真实 Speech Job 与已发布音色，解除助手成功路径阻塞",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/149",
+      "body": "## 目标\n\n解除C06 #41的具名上游阻塞：由A提供真实可查询的Speech Job和已发布声音，使助手succeeded携带真实speech_job_id与非空output_text，不使用fake ID。\n\n## 进展总结\n\n**排期决定（2026-11-02）**：本 issue 的助手专属接线和验收在其他功能完成后再推进；其依赖的共享 Speech Job、已发布 voice 和可信停止/释放按自身优先级推进。原范围与 AC 保留。详见 #6。\n\n真实 Speech Job 公开创建/查询已由 #241（`9a94a8a`）落地（`POST /v1/jobs`、`GET /v1/jobs/{job_id}`）；部署装配、真实执行、已发布声音及助手成功链仍待实施，保持planned/open；C06的turn/页面和诚实能力消费已随#153集成，不能再称未集成候选，也不能当成真实成功。\n\n本项依赖A04/A06提供固定Job/voice身份与资格、批准部署配置及成功/失败样例；同turn文本/语音关联、原键未知恢复、取消HTTP200/202与可信stop/release须先按契约冻结。公开目录/注册草稿不解除发布依赖。本项不增加25主包分母，原顺序/日期不再承诺，后续由新负责人安排。\n\n## 任务清单\n\n- [ ] 明确真实Speech Job创建/查询API、部署访问配置与隔离环境，返回可查询的真实job ID；首期不引入用户身份体系。**API 已落地 #241（`9a94a8a`）；部署装配与真实执行仍未验。**\n- [ ] 提供已发布voice ID、固定revision与使用资格，给出可复现成功/失败请求。\n- [ ] 冻结原键幂等、超时/丢回执恢复、取消与远端stop/release对账语义，不通过新键重做。\n- [ ] 核对assistant-turn cancellations的实际HTTP 200/202与OpenAPI，一致后补契约/消费者测试，不悄改客户端语义。\n- [ ] 提供真实HTTP+隔离PG的turn/job/voice对应、版本SHA、脱敏回执及故障证据；日志不含业务正文或凭据。\n\n## 验收标准（AC）\n\n- [ ] AC1：C在批准的本机/内网LLM配置下执行POST assistant-turns→GET succeeded，output_text非空，speech_job_id可在真实Job API查询且对应同一turn。\n- [ ] AC2：使用已发布且版本/资格明确的voice引用；目录/草稿/候选或合成ID不能替代发布事实。\n- [ ] AC3：同键重放与创建回执丢失不产生第二个Job；按原身份恢复，不轮换键。\n- [ ] AC4：取消、超时和重启保持冻结语义，200/202与契约一致，不伪造远端已停止/释放。\n- [ ] AC5：默认关闭时零落库，无公有云回退；真实HTTP/PG/浏览器与失败注入证据可复核，C未集成候选和共同版本验收分列。\n\n## 依赖与参考\n\n总控#6；接收C06 #41/C04 #39；实施A04 #23/A06 #25，协作B04 #31/B05 #32；阶段Gate #17。\n本issue为交接项，不新增原25主工作包的完成分母。当前不声称真实助手成功或生产资格。\n",
+      "body_sha256": "648e4e70af9d9e97cfd50d7995b13513fbeef8c9043088a2e82332b602e1b2d5",
+      "updated_at": "2026-11-02T02:17:53Z",
+      "comments": []
+    },
+    {
+      "number": 225,
+      "title": "按部署单元裁剪运行依赖并交付明确的服务启动清单",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/225",
+      "body": "## 目标\n\n让业务/控制服务可在干净环境独立安装、启动和配置，不因共享仓库携带其他服务、GPU runtime 或容器管理权限。交付现有生产入口的服务清单与按能力裁剪的安装/镜像制品；允许共用基础层，不要求每个角色另建 Python 包。\n\n## 进展总结\n\n依据：2026-10-26 用户确认“松耦合、尽量跨平台”。[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 合入 main（`b1d6193`），交付部署规划、ADR 0011、审查与终态拓扑图。本项服务启动制品、依赖裁剪与装配验证仍待实施和验收。\n\n[Python 镜像](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/deploy/images/python.Dockerfile)执行 `uv sync --all-packages`；[backend](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/backend/pyproject.toml)把 `av` 放在基础依赖。已有命令和 Workbench 工厂不等于全部 Scheduler/Job/Realtime 生产角色已交付。本项只负责入口、依赖与部署装配，缺失业务循环仍由 #22/#24/#42 等负责。\n\n\n2026-11-02 静态盘点：Delegra 机动岗按 main `7753c559` 提交[入口与依赖交接](http://127.0.0.1:3100/DEL/issues/DEL-453#document-deployment-entry-dependency-handoff)（revision `c5b6c740-e054-4107-9ca6-370d38d48807`），列出当前工厂、后台命令、依赖与配置边界及未实现角色。当前共享镜像仍安装全部包/extra；Speech 转写与 Workbench 导出均引用 `av`，裁剪前须确定媒体能力边界。Workbench API 的部署入口与就绪观察点仍待确认；错角色拒绝、干净安装和分机启动均待实现及实测。报告仅为静态交接，未执行本项 AC，不结算产品或 G5 验收。\n\n2026-11-02 node-controller：[PR #310](https://github.com/hrygo/SpeechNexus/pull/310) 已合入 main（`0ce397c8689352e96cafcbc53f1f1a8f50f2fc62`），交付生产节点身份校验、独立镜像与固定构建输入；跨节点 ID 唯一分配仍由部署方负责。最终候选的 [CI](https://github.com/hrygo/SpeechNexus/actions/runs/41438840421) 全部通过：Linux amd64/arm64 均实际构建，覆盖构建依赖哈希负例、合成 CA 正反例和镜像层扫描，六个数据库集成分片及必需 Gate 通过。此前的 [r2 交接](http://127.0.0.1:3100/DEL/issues/DEL-454#document-node-controller-image-revision-handoff)、[非作者复审](http://127.0.0.1:3100/DEL/issues/DEL-455#document-node-controller-image-r2-independent-review)、[66 项配置行为验证](http://127.0.0.1:3100/DEL/issues/DEL-456#document-node-controller-r2-settings-behavior-verification)、[构建闭包研究](http://127.0.0.1:3100/DEL/issues/DEL-459#document-node-controller-build-closure-research)、[镜像元数据](http://127.0.0.1:3100/DEL/issues/DEL-460#document-del-460-public-image-metadata)和[构建后端元数据](http://127.0.0.1:3100/DEL/issues/DEL-461#document-controller-build-backend-public-metadata)保留各自时点与验证范围。上述 CI 使用合成 CA；真实部署 PKI、正式节点与 socket 权限、停止恢复及物理多机仍待验证。本项其他服务的干净安装、分机启动和 AC 仍未完成，不能据此结算 #225 或 G5。\n\n## 任务清单\n\n- [ ] 列出 Speech API、Workbench API、已有后台命令、Gateway、Controller 的真实启动方式、角色/实例身份、端点、最小凭据、持久/临时目录、健康/就绪条件；未实现角色显式列为待交付。\n- [ ] 按实际能力提供应用与节点执行的依赖选择和构建目标；把媒体原生依赖限定到实际消费者，使用包管理器维护锁文件，复用现有契约/媒体包。\n- [ ] 给出业务、数据、算力分机的配置样例及迁移步骤；业务启动不执行 DDL、不使用 bootstrap owner；节点凭据与 Docker socket 仅进入获准节点组件。\n- [ ] 为制品增加干净安装、真实入口选择、错误角色/缺配置与关闭可选 Workbench 的装配验证；更新部署说明。\n\n## 验收标准（AC）\n\n- [ ] AC1：清单中的已交付入口与实际启动的工厂/职责一致，`process_role` 不能被误当自动服务分派；必需角色尚未实现时明确缺口。\n- [ ] AC2：独立应用制品在无 Gateway/Controller 包、无 GPU runtime、无 Docker socket 的环境可安装和启动；媒体能力仅按其声明依赖安装。共享基础层不改变权限边界。\n- [ ] AC3：服务地址显式配置，分机样例无隐式 localhost 回退；各服务只拿自身所需凭据，迁移身份与运行身份分离。\n- [ ] AC4：关闭可选 Workbench 不影响 Speech 的启动和适用行为；缺少必须依赖的能力有可定位的就绪失败，不能靠模块导入或静态页面返回 200 判为通过。\n\n关联 #26/#34；CI 实施另列平台矩阵任务，生产业务与物理多机资格仍按既有工作包及 G5 #18。模块归属：平台/后端制品主责，Workbench 与节点组件分别提供自身入口清单。",
+      "body_sha256": "7e0c00c601cdceeb9b8408fbf1445a1932ebe2d5f4d73844f1e12e03d7f2aeed",
+      "updated_at": "2026-11-02T11:50:11Z",
+      "comments": []
+    },
+    {
+      "number": 226,
+      "title": "为 Workbench API 配置独立上游并验证与 Speech API 分开部署",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/226",
+      "body": "## 目标\n\n修正 Web 入口把 Workbench API 请求统一发送到 Speech API 的装配耦合。交付可配置的独立 Workbench 上游和部署样例，使两个正式 API 可分别运行，保持同源访问与既有路径语义。\n\n## 进展总结\n\n依据：2026-10-26 用户确认“松耦合、尽量跨平台”。[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 合入 main（`b1d6193`），交付部署规划、ADR 0011、审查与终态拓扑图。本项独立 API 上游与真实服务装配仍待实施和验收。\n\n[nginx 配置](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/deploy/web/nginx.conf)将 `/v2/workbench/`、`/v1/` 和实时路径都发往 `api:8000`；[Compose](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/deploy/compose.yaml)没有 Workbench API 服务。独立工厂已存在。未实施本项，静态前端可打开不证明 Workbench 业务已接通。\n\n## 任务清单\n\n- [ ] 使用现有 Workbench 工厂补独立服务配置，明确其数据库、对象区、公开 Speech 端点及可选内网 LLM 配置。\n- [ ] 模板化 Speech 与 Workbench 上游，并保留已有请求路径、错误、流式响应和 Host/Origin 约束；分机内部链路使用批准的 TLS 配置。\n- [ ] 用不同监听地址的真实 API 入口验证同源路由、Workbench 持久读取和 Speech 独立性，记录关闭/不可达上游的行为。\n- [ ] 文档标明实时 owner 路由仍由 #24 提供；本项不把任意轮询负载均衡当作会话 owner 路由。\n\n## 验收标准（AC）\n\n- [ ] AC1：`/v2/workbench/` 到达 Workbench 工厂，`/v1/` 到达 Speech 工厂；上游无需同机或使用相同端口，原路径和契约错误不被 SPA fallback 吞掉。\n- [ ] AC2：停止 Workbench 不影响 Speech 的适用请求；Workbench 不可达时返回明确失败，不能误发到 Speech 或隐式本地服务。\n- [ ] AC3：真实入口及隔离 PG/对象存储完成至少一个 Workbench 写入后读取；路由 fake、健康检查和浏览器静态页分别只计其覆盖范围。\n- [ ] AC4：可选 LLM 默认关闭，仍只经公开语音协议消费 Speech，未引入跨模块写表、引擎凭据或容器管理权限。\n\n关联 #35/#43/#26/#225；完整公开 ASR/TTS、实时 owner、多主机和故障资格分别沿用 #14/#15/#18。本项可由一个部署装配 PR 完整交付，主责为 Web/Workbench 装配。",
+      "body_sha256": "7bf3531a206b015ce3f050a728b872f43b2e6b690a0e3ce85a1a6265672f1b9e",
+      "updated_at": "2026-10-26T16:42:18Z",
+      "comments": []
+    },
+    {
+      "number": 227,
+      "title": "冻结 Linux 音频检查的部署适配边界与消费者交接方案",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/227",
+      "body": "## 目标\n\n为音频安全检查选定满足隔离、限额、取消和恢复要求的最小部署形态，让 macOS/Linux 业务服务不直接运行 Linux 沙箱。交付可实施的边界设计、必要机器契约及生产者/消费者交接输入；公开音频 ready 的实现与资格继续由 A02 #21 负责。\n\n## 进展总结\n\n依据：2026-10-26 用户确认“松耦合、尽量跨平台”。[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 合入 main（`b1d6193`），交付部署规划、ADR 0011、审查与终态拓扑图。本项媒体部署形态选择、机器契约与消费者交接仍待实施和验收。\n\n[当前检查进程](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/backend/src/speechnexus_backend/speech/infrastructure/audio_inspection_process.py)依赖 pidfd/seccomp/bubblewrap 等 Linux 能力，现有接口接收本地流/文件描述符；[默认 AssetRuntime](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/backend/src/speechnexus_backend/asset_runtime.py)仍装配 TextAssetInspector。代码已存在不表示远程检查协议或公开音频装配已交付。\n\n## 任务清单\n\n- [ ] 比较复用受控 Linux 检查 worker 与新增独立服务，按现有恢复/容量机制选定一种并记录理由、权限与回退；不因平台迁出默认增加常驻服务。\n- [ ] 固定调用双方、检查/对象版本、摘要/长度、限额、原操作身份、持久意图/回执、查询、取消与停止/释放事实；跨机只用受控对象引用，不传任意路径/URL/命令或文件描述符。\n- [ ] 如需新增协议，按契约技能冻结 canonical 源与生成消费者；沿用既有机制可覆盖时说明映射，不维护独立状态/错误副本。\n- [ ] 提交故障窗口表与可运行合成消费者样例：外发前后崩溃、提交后丢回执、同键异体、超限、取消完成竞争、节点/对象不可用；明确接入 #21/#30 的输入输出。\n\n## 验收标准（AC）\n\n- [ ] AC1：方案明确部署形态、所有者及平台边界，业务接口不会导入/启动 Linux 监督器；Linux 隔离与限额要求没有降级。\n- [ ] AC2：生产者和真实消费者对同一固定版本的接口/生成类型及正反例达成可复核交接；必要协议先于新业务路由实现。\n- [ ] AC3：结果未知只沿原身份查询/恢复，取消或超时不当作已停止/已释放；若新增受预算约束阶段，仍在完整配方同一 PG 事务准入。\n- [ ] AC4：设计和合成样例的证据明确标注范围，列出 Linux 实际沙箱、跨机调用、公开音频 ready 的后续验证条件；关闭本设计项不自动勾选 #21 或产品 Gate。\n\n关联 #21/#30/#26。模块归属：资产检查主责，节点执行/媒体消费者协作；不重复实施现有沙箱或完整资产发布。",
+      "body_sha256": "a2f4305b0434c3caffd23aeccb4bdef1257aa555ca3aa8ecdbba5d03a89de108",
+      "updated_at": "2026-10-26T16:42:21Z",
+      "comments": []
+    },
+    {
+      "number": 228,
+      "title": "按部署单元建立 macOS/Linux 原生 CI 与平台依赖隔离检查",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/228",
+      "body": "## 目标\n\n把“尽量跨平台”落实为可失败的检查：通用应用在 macOS 与 Linux 原生环境验证，Linux 沙箱、节点 daemon 和 GPU 资格保留各自范围。交付服务能力矩阵、相应 CI 路由与汇总门禁。\n\n## 进展总结\n\n依据：2026-10-26 用户确认“松耦合、尽量跨平台”。[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 合入 main（`b1d6193`），交付部署规划、ADR 0011、审查与终态拓扑图。本项 macOS/Linux 原生矩阵与平台依赖隔离仍待实施和验收。\n\n[现有 CI](https://github.com/hrygo/SpeechNexus/blob/96d2e55b3e7da1faac656cfcfcab1c1c49f5eda5/.github/workflows/ci.yml)使用 Ubuntu runner；macOS 上四个模块的导入结果只证明导入。全仓 mypy 涉及 Linux 专属 API，`--platform linux` 不提供 macOS 资格。CI 资源分组已由 #230 合入 `59f23bb`；本项实施须沿用其覆盖与资源预算，原生平台矩阵仍待交付。\n\n## 任务清单\n\n- [ ] 定义“单元/启用能力/原生平台/制品/检查命令/结果”的矩阵，首批为 macOS、Linux；Windows 等保留未验证。\n- [ ] 对通用 Speech/Workbench/调度与任务逻辑执行干净锁定安装、类型/依赖边界检查、真实工厂启动及适用的隔离 PG/对象存储行为测试；必需角色未装配时显式待验证。\n- [ ] 把平台特定实现及其测试按真实部署边界隔离，加入应用不会导入/启动 Linux 沙箱或安装 GPU runtime 的反例；保留 Linux 真沙箱及全仓严格检查。\n- [ ] 将两平台的所需检查接入路径路由与必需汇总，不复制整套 GPU/浏览器/全库任务；缺服务、跳过、超时与未运行必须在结果中区分。\n- [ ] 更新 CI/验证说明、能力支持声明和取证模板；不自动下载模型或操作已有引擎。\n\n## 验收标准（AC）\n\n- [ ] AC1：适用改动触发 macOS 原生和 Linux 原生的必需应用检查，任一失败使汇总失败；Mac 上的 Linux 容器不充当 macOS 原生结果。\n- [ ] AC2：至少覆盖独立 Speech API、Workbench API 的实际启动及持久行为；必需 Scheduler/Job 等缺口不得通过改成未声明、关闭能力或跳过伪装兼容。\n- [ ] AC3：非 Linux 应用检查不依靠全局 ignore/exclude 或改成 `mypy --platform linux` 消除错误；排除平台专属执行范围须有明确组件归属及对应 Linux 必需验证。\n- [ ] AC4：报告绑定同一集成版本、制品、Python/OS/架构及启用能力，安装/导入/启动/行为分列；失败、跳过和 not_run 不计为通过。\n- [ ] AC5：现有契约、数据库行为、Linux 隔离与资源清理门禁保持有效；真实 GPU、物理多机、HA 仍单独取证。\n\n关联 #26/#34 和部署制品 #225、独立上游 #226、媒体边界 #227；本项实现检查，不据 CI 绿灯授予 G5 #18。主责为平台/CI，Workbench 与节点适配器各自提供适用测试。",
+      "body_sha256": "2631d9118e722043e5246cc0fb6d5c20ef52858a2dd9ff4668411b19156390c3",
+      "updated_at": "2026-10-26T16:42:24Z",
+      "comments": []
+    },
+    {
+      "number": 229,
+      "title": "[Gate D1] 松耦合部署与 macOS/Linux 原生平台资格验收",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/229",
+      "body": "## 目标\n\n作为 G5 #18 的补充技术关口，核验“松耦合、尽量跨平台”的服务制品、配置和原生运行证据。业务/控制面首批验证 macOS、Linux；当前 Linux 节点执行与安全沙箱单独验收，不将所有组件绑定到推理主机。\n\n## 进展总结\n\n2026-10-26 部署方案审查发现独立上游、按能力依赖制品、Linux 检查适配边界及原生平台 CI 缺口，已拆为 #225/#226/#227/#228，均未实施或验收。现有模块导入、Ubuntu CI 和单节点 Compose 不构成本 Gate 放行证据。[PR #231](https://github.com/hrygo/SpeechNexus/pull/231) 已于 2026-10-27 合入 main（`b1d6193`），规划、ADR、审查及两张终态拓扑图已集成；14 项 PR CI 成功只覆盖既有回归，未提供原生平台矩阵或物理多机资格。\n\n本 Gate 不复制物理多主机、备用 GPU、HA/RPO/RTO 或完整业务资格；这些仍归 G5 #18 与 #26/#34/#43。补充任务不改原 25 主工作包范围和分母，不绕过 G0–G4。\n\n## 任务清单\n\n- [ ] 接收 #225 的服务/能力清单和依赖制品、#226 的独立上游、#227 的媒体适配决定与交接输入、#228 的原生平台必需检查。\n- [ ] 汇集同一集成版本的逐单元证据，明确已实现、未实现、通过、失败、跳过、not_run；核对现有协调/内容/权限边界未被放宽。\n- [ ] 由平台、Workbench、节点组件维护者确认各自范围与联合结论，提交用户决定放行。\n\n## 验收标准（AC）\n\n- [ ] AC1：版本化清单对每个必要服务列明入口、角色/实例身份、依赖、端点、权限、持久状态、临时区、健康/就绪与目标平台。产品必需角色尚未装配时保留缺口，不能通过不声明或关闭能力规避。\n- [ ] AC2：Speech API、Workbench API 和通用调度/任务逻辑不依赖本机 GPU、Docker socket 或 Linux 沙箱；节点适配器权限与依赖不泄漏到应用。PG 完整配方的原子事务与模块表所有权保持。\n- [ ] AC3：macOS 原生、Linux 原生分别提供干净安装、严格类型/依赖检查、实际工厂启动和适用持久行为证据，覆盖独立 Speech/Workbench API。Scheduler/Job 等必要角色随生产装配补证，不以全局忽略、Linux 类型模式或跳过替代。\n- [ ] AC4：两个 API 上游可独立配置，Workbench 停止/不可达不误路由、不使 Speech 相应能力失效；服务发现无隐式本地回退。真实配置/入口结果与代理 fake 分列。\n- [ ] AC5：Linux 媒体检查的部署形态和消费者已固定，业务进程不直接启动沙箱；现有隔离/限额及取消未知保护有 Linux 对应验证。#227 设计交付不替代 #21 的公开音频 ready，真实引擎和多机资格不在此处冒领。\n- [ ] AC6：所需 macOS/Linux 检查已接入必需汇总，任一失败不能绿灯；每条证据绑定版本、制品、OS/架构和启用能力。相关维护者确认且用户明确放行后才关闭；子 issue 关闭或 CI 绿色不自动放行。\n\n## 依赖与参考\n\n实施输入：#225/#226/#227/#228；已有职责：#21/#22/#24/#26/#34/#42/#43。\n发布关口：G5 #18；程序总控：#6。\n本关口可与已有 Gate 并行准备；它只增加服务边界与原生平台的具名证据，不替代原有业务、停止/释放、物理拓扑及发布前置。",
+      "body_sha256": "96d6b712d7fc573efc6455a3391f52678884149ae0104ae1a40c134f9d20656e",
+      "updated_at": "2026-10-26T16:42:27Z",
+      "comments": []
+    },
+    {
+      "number": 235,
+      "title": "公开配置解析与发布目录（公开语音 API 共同前置）",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/235",
+      "body": "## 目标\n\n补齐公开语音 API 的共同前置：**按 workspace + 逻辑模型解析出可执行的有效配置**，并让该解析结果有权威、可发布、可审计的目录来源。没有它，Job / Transcription / Speech / Models / Capabilities 全部无法truthful实现。\n\n## 当前状态（2026-10-28，main `c435908`）\n\n- 公开读面：`GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/capabilities` 均已注册；三者支持 ETag/304。`/v1/models/{model}` 的遗漏已由 [#274](https://github.com/hrygo/SpeechNexus/pull/274) 修复，见 [#272 验收记录](https://github.com/hrygo/SpeechNexus/issues/272#issuecomment-6456855204)；2026-11-02 核对 main `7753c559` 仍有该实现。\n- 公开写面：`POST /v1/jobs`、`GET /v1/jobs/{job_id}`（#241/`9a94a8a`）、binding 发布 CLI（#270/`a904efa`）、发布证据落库与 admin 如实投影（#271/`c435908`）已落地。\n- 仍未闭环：生产 planner 未装配，`build_dispatch_dependencies()` 继续 fail-closed（`job_dispatch_runtime.py:244-255`），因此 AC3 的执行命令 revision 不变式仍无生产证据。\n- AC1 仍缺独立 `resolve(workspace, model)` 入口，binding 选择仍是全局最新、无 workspace 过滤（`public_jobs_postgres.py:71-92`）。\n- AC4 的 `engine_ready` / `quality_qualified` 仍无真实测量来源，默认 `False` / `unavailable`（`model_catalog.py:54-66`）。\n- 下方 2026-10-27 的“现状 / 进展总结”保留为历史记录；其中“capabilities 未实现”“Job 路由未实现”“T3/T4 仍在修”等已被后续提交推翻，以本节与 AC 段为准。\n\n## 为什么必须先做\n\n现状实测（2026-10-27）：\n\n- 冻结契约 `contracts/speech-openapi.yaml` 共 35 个操作，后端只实现 3 个资产操作。\n- `Job` 文档的 `effective_configuration` 为必填，`Model.nexus.readiness` 必填；后端目前**没有任何** effective-configuration 解析函数（`grep \"effective_config\"` 为空）。\n- 绑定只有“草稿 revision”（`speech_binding_revisions.definition_json`），没有公开目录与发布态；`/v1/models`、`/v1/nexus/capabilities` 因此不能如实返回。\n- 工作台已按契约调用 `/v1/nexus/jobs`、`/v1/nexus/artifacts/{id}`，得到 404。\n\n## 进展总结（2026-10-27，PR #236 已合并 `b4e8149`）\n\n**已落地**\n- 发布事实持久化：`speech_publications`（迁移 `0015_publications`）+ 域/服务/PG 适配器，发布状态从此有权威来源，不再用\"绑定草稿存在\"冒充可用。\n- 有效配置投影：`speech/application/effective_configuration.py`，只重述已发布事实，**不选默认值、不回落草稿、缺发布即失败**。\n- 公开目录读路径：`GET /v1/models`、`GET /v1/models/{model}`（`503 model_catalogue_unavailable` / `404 model_not_found`，`Cache-Control: no-store`），配只读数据库角色校验（非属主、禁写、仅 SELECT 两张表）。\n- 公开 Job 读模型 DDL 预埋：`speech_jobs` / `speech_job_events`（迁移 `0016_public_jobs`，含状态互斥 CHECK、幂等唯一键、downgrade 拒绝），**尚无路由**。\n- 隔离 PostgreSQL 集成测试：`tests/integration/test_publications_storage.py`（7 项，CI 六分片执行）。\n\n**当时仍未落地（2026-10-27；下方后续进展已推翻部分条目）**\n- `GET /v1/nexus/capabilities` 完全未实现。\n- `/v1/models` 缺 `ETag` / `If-None-Match` / `304`；目录没有 revision 计数器来源。\n- 按 `workspace_id + 模型` 的解析入口未接线：现在只是\"输入已发布文档 → 投影\"的纯函数，谁来按 workspace 取发布、policy/catalog revision 从哪计数，均未实现。\n- Job 的 `effective_configuration` 尚未产生（Job 路由未实现），AC3 的不变式无法成立。\n\n**验证边界**：以上\"已落地\"以 CI 六分片 + 非作者独立验收（候选 `eb77caf`）为据；`/v1/models` 在未配置只读 DSN 时返回 503，**路由存在不等于可用**。\n\n## 进展总结（2026-10-27 18:20，PR #241 / #242 已合并）\n\n**本轮补上的缺口**\n\n- **`GET /v1/nexus/capabilities` 已实现**（PR #242 → `38c808b`）：能力快照由已发布事实与显式部署策略合成，含 `policy_revision` 与各项上界（音频字节、文本码点、分段、实时会话、排队等待）。\n- **`/v1/models` 与 capabilities 都有 `ETag` / `If-None-Match` / `304`**（同上）：ETag 由规范化 JSON 摘要得出，不含请求时间，同一 revision 下字节稳定。\n- **目录 revision 有权威来源**（同上）：`SELECT COUNT(*) + 1 FROM speech_publications`，`speech_publications` 为只追加表（运行角色无 UPDATE/DELETE），因此计数单调；空目录也为合法 `Revision`（从 1 起）。\n- **Jobs 提交与读取已实现**（PR #241 → `9a94a8a`）：`POST /v1/jobs`、`GET /v1/jobs/{job_id}`，迁移 `0017_job_submissions` 固化提交时的有效配置与请求关联；幂等键在 workspace 内唯一。\n\n**仍然诚实的缺口（2026-10-27 19:45 更新）**\n\n- `policy_revision` 是部署声明值（`settings.capability_policy_revision`，默认 1），由运维手动递增，**不是派生计数**。谁负责推、推错会怎样尚未写成运行约定。\n- `engine_ready` 仍**没有真实测量来源**，默认 false；`quality_qualified` 同理。AC3 需要它。\n- Job 的 `effective_configuration` 已能在提交时固化，但\"解析与执行共用同一 revision\"的不变式仍缺测试锁定。\n\n**已在主干落地的部分（截至 `a47b68c`）**\n\n| 能力 | 落地提交 |\n| --- | --- |\n| 发布事实 + 有效配置投影 | `b4e8149` (#236) |\n| 公开 Job 提交与读取 | `9a94a8a` (#241) |\n| 能力快照 + 目录 ETag/304 | `38c808b` (#242) |\n| 同步 TTS 链 | `2b16b75` (#246) |\n| 目录健壮性与只读审计（F1–F6） | `bb70970` (#247) |\n| `/v1/models` 条件请求进契约 | `a47b68c` (#249) |\n\n**反向审查的后续**：F1–F6 已修（#240 关闭）；对修复本身的复核又发现 T1–T6（#248 跟踪），其中 T3（`_verify_read_only` 漏拒 `pg_read_server_files` 等内建角色）与 T4（reader 可读未发布修订）已由 #250（`24f3b04`）修复（见当前状态）。\n\n**当时的公开面缺口**：`POST /v1/audio/transcriptions`（#243 已由 #253（`5cabf65`）落地实现；AC5 真实网关端到端仍未满足）、`GET /v1/nexus/artifacts/{id}`（已由 #264（`7fefeb3`）落地）。\n\n---\n\n## 范围 / 非目标 / 验收标准 / 依赖（自 2026-10-27T10:21:10Z 版本恢复）\n\n> 这四段在 `2026-10-27T11:42:29Z` 的一次正文编辑中被删除，导致看板与读者无法复现本 issue 的验收口径。\n> 以下为**原文照录**（未改写），来源为该时间点的历史版本，副本同时保存在 DEL-67 的证据台账中。\n\n## 范围\n\n1. **解析**：给定 `workspace_id` + 逻辑模型/任务，返回固定的有效配置（profile revision、binding revision、采样率、语言、限额、端点能力），纯读、无副作用、不加载模型。\n2. **目录**：公开可发现的已发布集合及其 revision（profile、binding、默认指针），带 ETag 所需的目录/policy revision。\n3. **就绪与准入事实**：`configured` / `engine_ready` / `quality_qualified` / `admission_state` 四个字段各自的数据来源与不可用语义（缺失即 `unavailable`，不猜测、不默认可用）。\n4. **一致性**：解析结果进入 Job 的 `effective_configuration` 与执行命令的固定 revision；解析与执行使用同一 revision，不允许解析后漂移。\n\n## 非目标\n\n- 不实现实时、声音克隆/设计、会议/助手/有声书。\n- 不在本 issue 内改公共契约；如需变更走契约变更技能与 ADR。\n- 不把\"绑定草稿存在\"当作\"已发布可用\"。\n\n## 验收标准（AC）\n\n- [ ] AC1（部分）：给定 workspace + 模型，解析函数对已发布配置返回完整有效配置；对未发布/不存在返回明确的 `unavailable`/`not_found`，不返回猜测值。\n      - 已有：`effective_configuration.py:28-71` 投影；`public_jobs.py:152-217` 提交时解析；真 PG `test_binding_publication_cli.py:134-152`、`test_public_jobs_http.py:179-238`。\n      - 缺：**没有独立的公开 `resolve(workspace, model)` 入口**，解析只存在于 `PublicJobs.submit`；binding 选择是全局最新、**无 workspace 过滤**（`public_jobs_postgres.py:71-92`）。\n- [ ] AC2（部分）：`GET /v1/models`、`GET /v1/models/{model}`、`GET /v1/nexus/capabilities` 按契约返回，`ETag` 随目录/policy revision 变化，`If-None-Match` 命中返回 304。\n      - 已有：`/v1/models` 与 `/v1/nexus/capabilities` 均有 ETag/304（`models.py:41-61,79-111`；`capability_snapshot.py:82-136`）。\n      - [#274](https://github.com/hrygo/SpeechNexus/pull/274) 修复单模型的 ETag / `If-None-Match`；[#272 验收记录](https://github.com/hrygo/SpeechNexus/issues/272#issuecomment-6456855204)报告当时真实 PG + HTTP 条件请求测试通过。该历史证据不代表当前部署已复验；AC2 整体仍待按本 issue 范围验收。\n- [ ] AC3：解析结果与 Job 的 `effective_configuration`、执行命令的 binding/profile revision 一致，并有测试固定该不变式。\n- [ ] AC4：`readiness` 四个字段各有明确数据来源，缺失时返回 `unavailable`；quality 与 engine 事实不得由配置存在推导。\n- [x] AC5：隔离 PostgreSQL 上的读写路径有集成测试；不引入新的跨库双写或进程内全局锁。\n\n## 依赖与顺序\n\n前置：无（这是其他公开端点的前置）。\n后续：公开 Job 提交/读取 → 制品下载 → `/v1/audio/transcriptions`、`/v1/audio/speech`。\n\n不计入 #6 的 25 个工作包分母；作为公开 API 面的共同前置单独跟踪。\n\n",
+      "body_sha256": "7637ef07ce02efbe9695749d4a28c5c0e6f0dadfecfed188d547300d9f330060",
+      "updated_at": "2026-11-02T05:12:13Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/235#issuecomment-6454331883",
+          "body_sha256": "cc1fbe483f358ee40cceb8733db0855d079d79d3082643267a9521f97cc6f743"
+        }
+      ]
+    },
+    {
+      "number": 259,
+      "title": "上线验收清单：已证 / 未证与解除条件（单一事实源）",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/259",
+      "body": "## 目的\n\n2026-11-03 15:09:28（北京时间）集成核验：[PR #333](https://github.com/hrygo/SpeechNexus/pull/333) 已合入 main `2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb`，合并树与受检 head `7b1167c` 完全一致。分支CI41592275181及[合后CI41594450271](https://github.com/hrygo/SpeechNexus/actions/runs/41594450271)均成功。同步TTS最小Goal已接收；生产/物理集群资格及其他未完成AC保持原要求。\n\n首发上线判断的**单一事实源**。只写有证据的结论；未证的一律标注并写明解除条件。\n\n历史快照：2026-10-28 13:30 CST（主干 `817370e`；本轮 6 个 PR #284–#289 均已合入）。缺口表于 2026-11-02 对照 main `1f3c4b3` 更新；#317 的合并树与验收候选 `a2a7395` 一致，公开同步 ASR JSON 文本链已有真实隔离部署证据。其他历史测试仍以各自版本及范围为准，不代签当前部署。\n\n## 一、已验证（有可执行证据）\n\n| 能力 | 证据 |\n|---|---|\n| 公开契约面完整（12 类资源、OpenAI 兼容子集 + `nexus` 扩展） | CI 14/14；`check-openai-contract-compat`、`contracts-http-changes` 通过 |\n| 契约与生成消费者不漂移 | `make contracts-drift` → up to date |\n| **TTS同步最小链：正式默认工厂、标准SDK与完整关联** | 生产`67f8943`/工具`cb681f0`的第六窗口取得唯一标准SDK200、2秒PCM16/24kHz/mono WAV；完整原请求/有效命令/网关原回执/固定版本PCM关联、正常stop先存后发、两lease结算/重放和预算全零，经非作者接收。临时资源含目录358.950秒全清，18共享基线不变。唯一证据见[第六窗口](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/evidence/2026-11-03-tts-window-6.json)，历次失败和接收限制见[审计报告](https://github.com/hrygo/SpeechNexus/blob/2bf6f54bb6d8c8f2ca480e65f153d45e2c8ebbfb/docs/audits/2026-11-03-controlled-tts-prepare.md)。 PR #333已合入main `2bf6f54`，分支与合后CI通过。不覆盖生产或物理集群资格。 |\n| Job 派发器：并发领取只执行一次 | 真实 PG 18：`claimed==1`、`succeeded==1`、`submit_calls==1`、`publisher.calls==1` |\n| Job 错误语义（unknown ≠ failed） | 10 条单测：超时/越界/身份不符/领取上限/凭据拒绝 |\n| 网关执行客户端（submit/query/staging、五类错误、有界重试） | PR #257，14/14 + 14 passed；**全仓仅此一份 HTTP 实现**（#262 删除重复实现） |\n| 网关 ASR 结果字段（language/segments 仅在引擎返回时出现；duration_ms 为实测） | PR #261，真实 MinIO 3 passed |\n| 制品读路径（真 PG + 真 MinIO） | `test_artifact_http_real_storage.py` 1 passed |\n| 真实 Qwen3-ASR 引擎推理（英文，直连引擎） | GB10 实测：`0.303s` / 3.44s 音频，真实转写文本；见 #243 |\n| **binding 发布路径**（此前完全没有） | `a904efa`（#270）：`speechnexus-publish-binding` + `find_binding_revision` 同事务校验三元组；17 单测 + 5 真 PG 集成；重复发布行数不变、同 revision 异 id 明确冲突 |\n| **发布证据落库 + admin GET 如实投影** | `c435908`（#271）：证据表 `0021`；发布命令证据必填（缺参 exit 2）；admin GET 三态（draft / published / 无证据 503），不再硬编码 draft |\n| **真实引擎中文能力（真人录音）** | GB10：FLEURS 25 段逐字正确、AISHELL-4 远场 0–4.6% 字错、ASCEND 中英混说拉丁词保形、279.5 s 长音频无截断；见 #243 comment 6453106316 |\n| 只读审计与 reader 可见面收紧 | #248 T3/T4 已合 `24f3b04` |\n| **catalog revision 随可见集合推进** | `3cd9b26`（#285）：真实 PG 退役 `revision 2→3`、ETag 变化；并发写拿到 `2/3`；迁移 `4→4`；22 integration + 4516 unit，CI 14/14 |\n| **公开同步 ASR JSON 文本与原生终态** | [#317](https://github.com/hrygo/SpeechNexus/pull/317) 已合入 `1f3c4b3`；候选 `a2a7395` 的 5.36 秒合成英文音频经公开 API/真实网关/受控 Qwen3-ASR generation 3 返回 200（1.237 秒），文本正确；唯一执行 succeeded/complete，engine_terminal_response，正式租约/配额释放，held/quarantined=0。非作者复核、完整 CI run823 通过；原始响应和哈希见 [#243 AC5](https://github.com/hrygo/SpeechNexus/issues/243)。不证明真实时间戳、静音、中文公开链、生产资格或物理集群。 |\n| **最小同步部署面** | `3dc9ee0`（#287）：compose base 恰好 5 服务 `postgres/minio/minio-init/api/gateway`；C9 PASS；api/gateway `healthz/readyz` 200。⚠️ 仅装配与探针，不代表模型/GPU/业务验收 |\n| **门禁 C4** | `4fa15f6`（#286）：C4 要求 `record_stop(...ExecutionState.SUCCEEDED)`；当前实跑 `[PASS] production_calls=1 first=.../execution_completion.py:55`，回退到 #284 前 FAIL。只证明判据有效，不代表公开链路可用 |\n\n**文档基线**：本地端到端 runbook 已由 `1a9a115`（#276）合入，`a708dba`（#278）更正 r8/r9 区分、458 次轮询与人工驱动者；`053c36e`（#284）后补成功终态驱动者，当时公开请求为 504；该历史失败保留。2026-11-02 #317 已补公开 ASR 200 与原生终态证据，见 #243 AC5；它不解决缺口 9 的通用现场恢复入口。`817370e`（#288）修正 5 个文件的裸文件名引用与 1 处行号漂移。\n\n**运维工具**：`896d7fc`（#289）合入只读 `scripts/dev-env/fleet-status.sh`（221 行，CI 14/14）；只用于团队排障，不改变语音底座能力，不计入上线 AC。\n\n## 二、未验证（阻断上线判断）\n\n| # | 缺口 | 归属 | 解除条件 |\n|---|---|---|---|\n| 1 | ~~**worker 入口**~~ ✅ `057fbfd`（#260） | DEL-98 | 独立入口、续租与 fencing 已合；结果 publisher 有组装函数，但生产 planner 未装配，worker 仍 fail-closed，异步链未闭环（见缺口 3）。 |\n| 2 | ~~**结果外部化**~~ ✅ `7fefeb3`（#264） | DEL-100 | #264 合并基线的真实 PG + 版本化 MinIO CHECK 1–5 是结果发布与读回的历史组件证据；不等于当前部署或完整 Job 链验收。 |\n| 3 | **异步 Job 派发 planner 未装配** | 契约集成（`DEL-102` 已 done，本项与它无关） | 当前 `build_dispatch_dependencies` 仍以 `DispatchDependenciesUnavailableError` fail-closed；生产 worker 无完整派发执行路径。Job 提交和终态须分别验证。 |\n| 4 | ~~**后端同步 ASR 生产实现**~~ ✅ `12873cf`（#266） | DEL-102 | 生产同步 ASR 构造已合，仍依赖有效配置；历史单测与隔离 PG 准入证据不能替代真实公开端到端，#243 AC5 已由 #317 的真实公开 JSON 文本验收满足；完整生产资格不因此完成。 |\n| 5 | ~~**网关与真实引擎的头部校验冲突**~~ ✅ `4785229`（#265） | DEL-101 | 已合入 `require_correlation_echo` 配置；GB10 false/true 对照为历史单点引擎验证，不代签当前部署或公开链端到端。 |\n| 6 | **发布生命周期（退役/回滚/激活）** | [#273](https://github.com/hrygo/SpeechNexus/issues/273) | [#296](https://github.com/hrygo/SpeechNexus/pull/296) 已合入 `ab740baa`；#273 的 AC1、AC2、AC5 有真实隔离 PG 证据并已勾选。AC3 的真实引擎停止与预算释放、AC4 的冲突期望值、AC6 的契约变更 ADR 仍未完成；不得将组件验证当作完整生命周期或上线验收。 |\n| 7 | **部署私有装配**（网关 file-ASR 配置、node controller） | DEL-104 / DEL-109 | `3dc9ee0`（#287）基础 compose 为 5 服务，仍有意排除 node-controller、runtime-delivery-worker、job-dispatch-worker 和 asset-maintain；#296 的 binding-disable-worker 需显式启用 profile。ASR 隔离部署的正式控制器、注册/发布和公开端到端已验（#317/#243）；默认部署打包和 TTS 私有装配仍待，disable/recovery 见 #273。 |\n| 8 | **capacity manifest / qualification report：格式已产出，生产资格未完成** | DEL-114 / 证据文档 + GPU 执行 | `66f57a7` 提供格式与 GB10 样例；样例为 `experimental`、`incomplete`，3 个 required 场景 skipped，不构成生产资格。[#280](https://github.com/hrygo/SpeechNexus/pull/280) 的 `0deeb732` 已补 binding definition 语义检查；仍需同版、完整的生产容量与资格证据。 |\n| 9 | **`reconciliation_required` 无产品内运维入口** | 对账恢复 | [#282](https://github.com/hrygo/SpeechNexus/pull/282) 的 `9840bc3a` 已提供只读对账 runbook（`docs/operations/reconciliation-recovery.md`）；恢复扫描须取得同实例代次的可信停止证据，不能据此直接归还预算。`record_stop` / `release_lease` 仍无受支持运维 HTTP 入口；测试脚本不是通用现场恢复入口。 |\n| 10 | ~~**公开同步 ASR 成功终态与 API 一跳未验**~~ ✅ #317 | DEL-104（done） | #243 AC5 已通过并随 #317 合入 `1f3c4b3`；真实公开 200、原生终态、正式租约释放及独立复核证据完整。旧 458 次轮询/504 为历史失败，静音/零请求仍见缺口 12。 |\n| 11 | ~~**同步TTS最小链完整关联**~~ ✅ #333 | 语音底座 / 执行 | 正式SDK200、2秒完整WAV、原请求/有效命令/原网关回执/固定PCM、可信停止/释放及非作者接收均通过，已合入main `2bf6f54`；证据见上方TTS已验证行。原第五窗口关联丢失的历史保持，不再视为当前缺口。 |\n| 12 | **静音/零引擎请求的可信终态与释放未完成** | 本会话PO；前置 #334 已完成 | 历史DEL-128静音进入unknown/quarantine、0字节probe400；当前VAD空结果单测不代替正式成功/结算。[#334](https://github.com/hrygo/SpeechNexus/issues/334)取消先持久接收与独立只读恢复已形成[PR #335](https://github.com/hrygo/SpeechNexus/pull/335)候选 `d5ca1b6`，完整[CI877](https://github.com/hrygo/SpeechNexus/actions/runs/41603913078)及非作者Sol源码复核通过，已合入main `3ac2bfc`，#334已关闭。后续仍需可信gate/受管外发、完整处理关闭/固定对象与成功结算，最后同版正式SDK验收。当前切片不启用seal/permit/正向释放，缺口保持未完成。 |\n| 13 | **voice最小隔离资格已取得，完整生产资格未完成** | 语音底座 / PO | #322/#329/#330已合入main。第六窗口固定来源/Vivian完成原生预资格、正式声音probe/发布及标准SDK完整关联，见缺口11；来源截止2026-11-03T23:33:12Z未延长，隔离部署已清理。单预设/短英文不等于完整声音生产资格，#316公共Job范围仍独立。 |\n| 14 | **`/v1/models` 已发布内容读取待验证** | GPU 执行 DEL-130 / 独立验收 DEL-117 | 历史部署曾因 revision 投影字段缺失返回 503；该诊断不证明当前部署仍为 503。须在当前合入版本针对真实已发布 revision 形状回归，并以真实部署请求证明 200；未合入候选不算完成。 |\n\n## 三、明确不可宣称的事项\n\n在下列条件全部满足前，**不得**对外宣称：\n\n- ❌「异步任务链已闭环」（AC3 部分、AC5 未完成）\n- ❌「`/v1/audio/*` 全部可用」（同步TTS与ASR JSON最小链仅在显式配置的隔离部署验收；其余场景与生产资格仍未完成）\n- ❌「ASR 全场景或生产资格已通过」（公开 JSON 文本已验；真实时间戳、静音、中文公开链及目标拓扑仍未验证。引擎直连中文证据不能替代公开链）\n- ❌「可上线」（上述未完成项未清零）\n\n## 四、中文能力\n\n**基础解码已验证，复杂场景未验证**（2026-10-28 00:05 CST）。\n\n用 macOS 内建中文语音（真实语音，非 espeak 拼接音）在 GB10 上实测两条样本，全部一字不差：\n\n- 口语句 6.17 s → `今天天气很好，我们下午三点在会议室讨论产品上线计划。`（0.440 s）\n- 数字/百分比 6.93 s → `第四季度营收同比增长百分之十八，其中海外市场贡献了约三分之一。`（0.402 s）\n\n**边界**：语音合成为台湾口音，**非真人录音**。能证明中文音素与数字表达解码能力，**不能**证明口音、噪声、远场、方言、中英混说、超长分片。详见 #243。\n\n## 五、验收方式\n\n本清单只接受两类证据：\n\n1. **可重复执行的命令 + 原始输出**（不接受\"看起来改好了\"）；\n2. **真实组件**（真 PG / 真 MinIO / 真引擎 / 真网关）。fake 只能证明契约形状，不能证明装配。\n\n横切断言类（新增表/授权/契约时必查）：`test_asset_http_contract.py`、`test_operational_contract.py`、`test_coordination_foundation.py`（精确关系集合）、单一 alembic head、授权列清单。\n\n## 六、流程记录（非能力结论，截至 2026-10-28 14:06 CST；主干 `6909576`）\n\n> 本节只记事实与证据，不勾 AC、不改变上文能力结论。\n\n### 6.1 面板说谎的两个方向（`scripts/dev-env/fleet-status.sh`）\n\n- **方向 A——第一版把 `backlog` 当\"有活没动\"**：`896d7fc`（#289）初版面板把 backlog 状态的卡计入\"空闲但卡没动\"，一次误报 4 个正常 Agent。原始面板输出未附，本岗未复跑；来源 DEL-152 描述。\n- **方向 B——第二版被独立验收抓出 3 条 P0**：SQL 报错时 exit 0（错误被吞）、`paused` Agent 算可派活、最近 run 失败仍算空闲。已在 `7f6965e`（#292）修复并合并：`psql -X -v ON_ERROR_STOP=1` + 只读事务，SQL 错 exit 2；`paused` 单独标\"已暂停(需人工恢复)\"；最近失败 <60 min 且无 active 卡标\"上次失败·可疑\"。证据：commit `7f6965e`（`scripts/dev-env/fleet-status.sh` 344 行增删）+ 脚本头部三条设计原则注释。\n- 面板为只读运维工具，不改变语音底座能力，不计入上线 AC（与上文\"运维工具\"行一致）。\n\n### 6.2 `/v1/models` 503 两次失败修复的流程经验\n\n- **DEL-133**（修 /v1/models 503 + 新增 /v1/nexus/voices）与 **DEL-143**（单一缺陷、先红后绿、每步回报）两张卡均被取消，无合并提交。运行记录（`heartbeat_runs`，本岗只读查询 2026-10-28）：DEL-133 有 2 次 run（19 min interrupted + 2 min interrupted）；DEL-143 有 1 次 run（cancelled，无 finished_at）。\n- 改为只出诊断的 **DEL-149**（done）：真实部署 `curl /v1/models` → `HTTP:503 {\"error\":{\"code\":\"model_catalogue_unavailable\",\"type\":\"service_unavailable_error\",\"message\":\"The model catalogue is unavailable.\",...}}`（request_id `1fecedd174c8464f8f702b963d4810b0` / `edc47f2addfc445e98a10838ba16dfa3`）。证据：DEL-149 issue 评论 2026-10-28 13:57/14:00 CST。\n- 事实：把\"诊断 + 修复 + 验证\"压成一张卡时，两张卡均零代码产出、被取消；拆出\"只做诊断\"的卡后，2 次 run 即完成并产出可复核证据。\n\n### 6.3 平台侧唤醒失败（环境事实）\n\n- 最近 24 h `agent_wakeup_requests`（本岗只读 SQL，2026-10-28 14:06 CST）：failed 共 65 条；其中 `issue_assigned` failed 21 条、`transient_failure_retry` failed 16 条。\n- 原始错误原文（提供方上游失败，非本地）：\n  - `Claude run failed: subtype=success: API Error: 422 Upstream request failed: Endpoint is unavailable.`（`transient_failure_retry` 2 条 + `issue_assigned` 1 条）\n  - `unexpected status 422 Unprocessable Entity: Upstream request failed: Endpoint is unavailable., url: http://127.0.0.1:8317/v1/responses`（`issue_assigned` 1 条）\n  - 共 4 条 422 上游失败。\n",
+      "body_sha256": "442db431010a7578cea456c8e35049341be074cdfab875c15e776ce8ebd361eb",
+      "updated_at": "2026-11-03T10:45:09Z",
+      "comments": [
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6446729846",
+          "body_sha256": "c17a6d4d52c1a2a75d4cfb9c37a6a3022f77b3701069d1ad344f855fd16d7afa"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6450423713",
+          "body_sha256": "8019d710bbe57041ab67926d542cbfd4d238c1c98717c0090d61c354a0a8d330"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6450666795",
+          "body_sha256": "14048294c6f5d98ee861a484192349eafe87177b8e3c9d710374ccf042c09ab8"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6451361993",
+          "body_sha256": "97941b020d6520f105506b3e83d7895e4eaa9b3c36b6928a01d36d1168960f71"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6451658266",
+          "body_sha256": "86db75826dc13b62a72620237f1146b105b6b4af6a10a892e15e9db428954733"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6453733018",
+          "body_sha256": "a13fc8d7a7c86eba2f014ac2833ced810cdd3a9eacad1e85e9b1fabad1f7b545"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6454176629",
+          "body_sha256": "5a73f7a661e7a5b5d0be97e2fc81eb9374c37ecfb293517f31339cfac0b57d15"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6455307351",
+          "body_sha256": "27d8486cb928ff34347a2047aee32f5293963cda227caba6e5f2c38657d65708"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6455760392",
+          "body_sha256": "20ba881c5443b0b95991ec5efe0b06fb1ca01c9f7f16dc0ab9454fd48910f830"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6455814735",
+          "body_sha256": "440e22e5c70afa093a4e66f2dd8a8258e553605160344b5b09ac3c0750ab3eb8"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6456156809",
+          "body_sha256": "4bd0b1ad53f81696d117ac88f4f65cbf6034a19770bffa8dcbfcdc174ab4fe00"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6457362186",
+          "body_sha256": "3843610156ec92426d704c53f735fff4dda0e14496a0019cb9ae446c5dbc8838"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6458425844",
+          "body_sha256": "27971761b8a8015180a588354623f2dcce8c13b0f241229a85cba2873cc0dd55"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6458505850",
+          "body_sha256": "884eb78b2764f34646ce7fdb69ca0d2aad7f115ef28353b35b787f65d508ccbb"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6458658063",
+          "body_sha256": "2f8ef334549684e754b699fb607347e723c81106f7f0271ad1cdf808f23f5394"
+        },
+        {
+          "url": "https://github.com/hrygo/SpeechNexus/issues/259#issuecomment-6459414571",
+          "body_sha256": "86dd28d20e548ffb42f7ffd18b79e7da614f6a2bb4d9f1a106c3911f9aee7f98"
+        }
+      ]
+    },
+    {
+      "number": 273,
+      "title": "发布生命周期：退役/激活/回滚（且 catalog revision 必须计入生命周期事件）",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/273",
+      "body": "## 背景（历史问题；当前状态见进展总结）\n\n`a904efa`（#270）给了受支持的发布入口，`c435908`（#271）让已发布状态如实可读。**但发布只能\"往前发\"，不能撤回。**\n\n`docs/operations/publish-binding-revision.md:67` 写明：「不可撤回、不可回滚：没有删除 / retire / 激活指针；只能发布更大的 revision，已发布事实保持不可变。」\n\n## 为什么不能直接照 DEL-107 设计做 retire\n\nDEL-107 的设计（任务文档 `b-plus-design` r2）建议：不删行、不改不可变 publication 行，用独立生命周期事件表记 `retired_at` / `disabled_at`，再用可空 current head 指针停止新引用。\n\n方向对，但**有一个前置问题没解决**：\n\n> `catalog_revision = SELECT COUNT(*) + 1 FROM speech_publications`（`model_catalog_sql.py:52-56`）\n\n退役/激活如果**只写事件、不新增 publication 行**，这个值不变 → `/v1/models` 的 ETag 不变 → **客户端永远不知道目录变了**。\n\n也就是说：**先做 retire 而不改 revision 计数，退役对消费者是不可见的。**\n\n## 原计划顺序（当前状态见进展总结）\n\n1. 先让 catalog revision 把**生命周期事件**算进去（或改用单调序列/事务内计数器），并有测试固定\"退役后 ETag 必须变化\"；\n   - **2026-10-28 状态：前置已完成**。`3cd9b26`（#285）合入后，退役真实 PG 实测 `revision 2→3`、ETag 变化；并发写拿到 `2/3`；迁移 `4→4`。该前置解决 catalog revision 机制；后续生命周期实现与验收见下方进展。\n2. 再做 `current head` 指针 + retire / disable / activate；**主要实现已由 #296 合入，完整行为仍按下方 AC 验证**；\n3. `expected_current_revision` 必须基于 head 指针做**同一事务内的比较**，不能用 `MAX(revision)` 聚合——**聚合查询不是 CAS**：两个并发发布都读到 max=2，各插 3 和 4，后提交者赢。\n\n## 进展总结\n\n[PR #296](https://github.com/hrygo/SpeechNexus/pull/296) 于 2026-10-29 合入 main（`ab740baa`），[最终 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40733764186) 全部通过。真实隔离 PostgreSQL 测试覆盖退役后的目录/ETag、精确历史读取、回滚和并发激活；旧发布按升级前数值最大 revision 回填。\n\n剩余事项：AC3 的网关在记录取消派发后、实际调用引擎前崩溃时，取消可能尚未发出；系统保持 unknown/quarantine 并保留预算，真实引擎停止尚未验收。\n\n2026-11-02 对 main `7753c559` 和对应固定版本上游源码的静态核查：ASR 与 CustomVoice 存在内部 abort 路径，但当前部署是否提供合格的请求级接口、按原身份恢复查询以及真实停止和资源释放证据仍未证明；普通 CustomVoice HTTP 在上游生成请求 ID，不能假设网关关联 ID 即原生 ID。参考 [ASR 请求处理](https://github.com/vllm-project/vllm/blob/2cf0a6915ce544dc493a0990f2ea38d81601128a/vllm/entrypoints/speech_to_text/base/serving.py#L492)、[CustomVoice 请求身份](https://github.com/vllm-project/vllm-omni/blob/da572cddb38383deae9caef33b8d490e292ef071/vllm_omni/entrypoints/openai/serving_speech.py#L2780) 和 [当前网关](https://github.com/hrygo/SpeechNexus/blob/7753c559c1b68c5a9805c27bc39b5a089171af03/execution-gateway/src/speechnexus_gateway/infrastructure/file_execution_worker.py#L415)。这些是源码证据，本轮未实测引擎，不能解除 AC3。\n\n[PR #311](https://github.com/hrygo/SpeechNexus/pull/311) 于 2026-11-02 合入 main（`f5e39e8`）：激活冲突提示持锁时观察到的当前版本可作为新的 `expected_current_revision`，并明确原结果重放和 no-op；[最终 CI](https://github.com/hrygo/SpeechNexus/actions/runs/41435747218) 及隔离 PostgreSQL 测试通过，AC4 已覆盖。AC6 已补录 [ADR 0013](https://github.com/hrygo/SpeechNexus/blob/f5e39e8e7d80ec029c2ae0204fd437f541bf9a4c/docs/decisions/0013-binding-lifecycle-admin-http.md)，其状态仍为 `proposed`，契约流程状态待决定，故暂不勾选 AC6。\n\n## 验收标准\n\n- [x] AC1：`/v1/models` 的 `catalog_revision` 在**退役**后发生变化，有测试断言（ETag 不得保持不变）；\n- [x] AC2：`retire` 保留历史：被退役 revision 仍可按精确 revision 读回，但不再出现在默认/最新解析中；\n- [ ] AC3：`disable` 额外取消已确认在途使用，未知清理保持隔离（不谎报成功）；\n- [x] AC4：激活指针可回滚到旧 revision，且 `expected_current_revision` 不匹配时拒绝并说明期望值；\n- [x] AC5：并发两个 activate，**只有一个成功**（锁 head + 同事务比较），有真实 PG 并发测试；\n- [ ] AC6：迁移纯增量；冻结契约如需变更（binding 激活路由）单独走契约变更流程。\n\n## 非目标\n\n- 不删除已发布事实行；\n- 不在本 issue 内做 HTTP 发布/激活路由（如需，走契约变更 ADR）。\n\n## 依赖\n\n- 前置：`a904efa`（发布入口）、`c435908`（证据与如实投影）、`3cd9b26`（catalog revision 随可见集合推进）均已合入；\n- 与 #272（`/{model}` 条件请求）无冲突，可并行。\n\n## 归属\n\nDEL-107 阶段 2（Paperclip）。设计文档 `b-plus-design` r2 已确认四项决策。\n\n",
+      "body_sha256": "99dd7493b944fc9a40e847e7930aff6ebb80e19ea149b0b34d846a8ae1c5835e",
+      "updated_at": "2026-11-02T12:04:02Z",
+      "comments": []
+    },
+    {
+      "number": 316,
+      "title": "修复声音退役与新 TTS Job 引用的并发竞态",
+      "url": "https://github.com/hrygo/SpeechNexus/issues/316",
+      "body": "## 目标\n\n消除声音版本退役与新 TTS Job 引用之间的并发竞态，确保退役提交后不能再产生新的引用；保留已有请求重放和合法在途任务的契约语义。\n\n## 进展总结\n\n2026-11-02 对 [#312](https://github.com/hrygo/SpeechNexus/pull/312) 候选 `9c5f92aea89948a3cfc5c90dca4cb7bf7544b79c` 和既有主干的静态审查发现：Job 在事务外读取 voice 可用后，voice 可先退役并提交，而 Job 创建事务没有共同的 voice 提交屏障或锁后资格复核，仍可能保存新引用。该问题已在较大工作包 [#25](https://github.com/hrygo/SpeechNexus/issues/25) 中记录，现拆出独立修复；尚未在 PostgreSQL 中复现，也没有证据证明生产中已发生。。该候选已通过 #312 合入 main `0184b91279b1d7edfb78fe2609a3b4f94aab3740`，本问题仍未修复。\n\n原执行任务 DEL-443 被 Paperclip 隔离，尚无修复交付。安全接续前需核实原执行和未决操作状态，并按平台支持的方式解除隔离或完成移交。受影响的生产链路启用前须解决并验收本问题；#312 的现有 CI 不覆盖此竞态。\n\n## 任务清单\n\n- [ ] 梳理 voice 发布、退役与 Job 新引用的权威写入路径及一致锁序，在同一数据库事务内建立共同屏障并锁后复核引用资格。\n- [ ] 保留同一幂等键的已提交结果重放、历史精确读取和持有效依赖凭据的在途任务语义。\n- [ ] 使用隔离数据库的独立连接补充真实并发及失败测试，覆盖退役先提交、新引用先提交、不同 binding 共用 voice 和同键重放。\n- [ ] 对最终候选完成独立审查与适用的数据库协调验证。\n\n## 验收标准（AC）\n\n- [ ] 退役先提交时，新引用被按现有契约拒绝，Job、operation 和 outbox 无部分写入，也不产生多余预算或租约。\n- [ ] 新引用先提交时，只允许符合契约且持有效依赖凭据的在途任务继续；普通排队记录不能冒充有效依赖。\n- [ ] 退役后同键同意图重放返回已提交结果，不创建新 Job 或重复执行；同键不同意图仍按现有契约冲突。\n- [ ] 以上竞争、回滚和恢复行为有隔离 PostgreSQL 双连接实测证据，关键协调路径按项目要求验证 MySQL/InnoDB；未装配的生产入口和未测试拓扑不宣称通过。\n",
+      "body_sha256": "2dd1662e01054526b8d7065becacd3b7527e2affb824b06729380328b41962f4",
+      "updated_at": "2026-11-02T12:23:29Z",
+      "comments": []
+    }
+  ],
+  "comment_policy": "原讨论保留在原GitHub URL；实质未结要求另以DISC条目承接，历史报告不复制为新待办。"
+}

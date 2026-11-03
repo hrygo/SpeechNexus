@@ -1,8 +1,10 @@
 # SpeechNexus 实施计划
 
-当前接管与后续管理先读[项目经理基线](2026-10-26-project-manager-baseline.md)，
-结合[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)核对远端进度。
-原目标保留完整范围与历史记录，旧排期停止自动执行；
+当前接管与后续管理先读[完整交付跟踪矩阵](delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)。
+[稳定映射](delivery-baseline.json)记录产品目标、独立交付、必要制品依赖及全部原要求的去向；
+[2026-11-03 原文迁移基线](2026-11-03-issue-migration.json)保留旧 open issue 原文、散列和讨论来源。
+用 `python3 scripts/dev-env/refresh-implementation-tracker.py` 只读刷新当前视图；远端失败保留旧输出，离线视图不作为实时状态。
+原目标保留完整范围与历史记录，旧卡只因重组替代而关闭，不表示业务验收通过；
 [原项目交接](../audits/2026-10-26-project-handoff.md)保留三队交接时点快照，
 团队 B 详细记录见[收尾交接](../audits/2026-10-26-team-b-handoff.md)。
 
@@ -20,9 +22,9 @@
 - [2026-10-24 团队 C 项目与稿件版本工作台](2026-10-24-team-c-c1-editor-handoff.md)：正式生成客户端/页面、草稿与原键恢复、历史/冲突校对；53项针对性、Web940及4个Chromium合成上下文，一次终审两项Important已TDD修复，生产装配与完整资格继续。步骤见[实施计划](2026-10-24-team-c-c1-editor-plan.md)。
 - [2026-10-24 团队 C C1列表、状态与删除HTTP](2026-10-24-team-c-c1-management-handoff.md)：3b8052安全集成、完整13项C1操作、作用域游标与版本化删除；Python2414/PG269/Web891，生产装配及完整资格待接入。步骤见[实施计划](2026-10-24-team-c-c1-management-plan.md)。
 
-- [整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：GitHub 原生 Epic/工作包/Gate 层级与整体派工入口。
-- [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：原规划 38 个 issue，另列 #142/#149 阶段交接、具名制品依赖、联合验收与分段证据；由[编排清单](2026-10-23-implementation-issues.json)和只读刷新脚本生成状态快照。
-- [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：agent 整体实施调度入口；三环境责任、25 个工作包、开工/联调依赖、六波次关口与同步规则。
+- [原整体实施总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)：已迁移的历史 Epic/工作包/Gate 结构，不作为当前派工入口。
+- [2026-10-23 实施跟踪矩阵](2026-10-23-implementation-tracking.md)：历史快照；原规划及 #142/#149 的范围由新矩阵完整承接。显式选择[旧编排清单](2026-10-23-implementation-issues.json)才读取旧结构，不覆盖当前矩阵。
+- [2026-10-23 三团队整体实施计划](2026-10-23-three-team-delivery-plan.md)：三环境责任、25 个工作包及六阶段关口的历史规划；当前执行按新总控和矩阵。
 - [2026-10-23 agent 三队启动指令](2026-10-23-agent-team-startup-briefs.md)：可直接下发至云环境、MegaCube、MacBook 的首轮任务与统一交接模板。
 - [2026-10-23 团队 A 执行目标](2026-10-23-team-a-goal.md)：A00–A07 的历史目标、KR 和完整范围；已转交新负责人重新安排，不再作为当前排期。
 - [2026-10-23 团队 B 执行目标](2026-10-23-team-b-goal.md)：B00–B07 的持续目标、MegaCube 环境与停止证据探针、网关/控制器首个单元与阻塞条件；应用 Goal 是否启用单独核验。

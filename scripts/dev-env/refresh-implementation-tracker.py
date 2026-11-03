@@ -11,8 +11,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MANIFEST = ROOT / "docs/plans/2026-10-23-implementation-issues.json"
-DEFAULT_OUTPUT = ROOT / "docs/plans/2026-10-23-implementation-tracking.md"
+DEFAULT_MANIFEST = ROOT / "docs/plans/delivery-baseline.json"
+DEFAULT_OUTPUT = ROOT / "docs/plans/delivery-tracking.md"
 STATUS_NAMES = {
     "ready": "可开工",
     "planned": "待实施",
@@ -317,22 +317,60 @@ def render(manifest: dict[str, Any], issues: list[dict[str, Any]], mode: str) ->
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--output", type=Path, help="Output path; defaults to the selected schema's matrix"
+    )
     parser.add_argument("--snapshot", type=Path, help="Use a saved GitHub response without network")
     parser.add_argument(
         "--root-body", type=Path, help="Also write a body for explicit root issue update"
     )
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text())
+    is_v2 = manifest.get("schema_version") == 2
+    output = args.output or (
+        DEFAULT_OUTPUT if is_v2 else ROOT / "docs/plans/2026-10-23-implementation-tracking.md"
+    )
+    if is_v2 and args.root_body:
+        raise SystemExit("--root-body is not supported for delivery tracker v2")
+    if is_v2:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "delivery_tracker", Path(__file__).with_name("delivery_tracker.py")
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Cannot load delivery tracker")
+        delivery = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(delivery)
+        source_path = args.manifest.parent / manifest["migration_source"]
+        source = json.loads(source_path.read_text())
+        delivery.validate_v2(manifest, source)
     try:
         issues = load_issues(manifest["repository"], args.snapshot)
     except subprocess.CalledProcessError as error:
         raise SystemExit(f"GitHub read failed: {error.stderr.strip()}") from error
-    body = render(manifest, issues, "保存的 GitHub 快照" if args.snapshot else "实时读取 GitHub")
-    args.output.write_text(body)
+    if is_v2:
+        timestamp = (
+            None
+            if args.snapshot
+            else datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
+        )
+        body = delivery.render_v2(
+            manifest,
+            issues,
+            "离线 GitHub 快照" if args.snapshot else "实时读取 GitHub",
+            source,
+            manifest["migration_source"],
+            timestamp,
+        )
+    else:
+        body = render(
+            manifest, issues, "保存的 GitHub 快照" if args.snapshot else "实时读取 GitHub"
+        )
+    output.write_text(body)
     if args.root_body:
         args.root_body.write_text(body)
-    print(f"Refreshed {len(manifest['entries'])} issue references: {args.output}")
+    print(f"Refreshed {len(manifest['entries'])} issue references: {output}")
 
 
 if __name__ == "__main__":

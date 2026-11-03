@@ -70,7 +70,7 @@ Repository delivery summary as of **2026-10-26**. Independently verified modules
 | Asset upload and download | Available with explicit configuration; UTF-8 text handling verified | Object credentials disabled by default; audio inspection integration pending |
 | Real models and production operation | Partial ASR, VAD, and CustomVoice TTS probes and modules verified | Complete recognition/synthesis, quality, capacity, recovery, and cluster operation still need acceptance |
 
-Implementation details and evidence are linked from the [architecture documents (Chinese)](docs/architecture/README.md), [implementation tracking (Chinese)](docs/plans/2026-10-23-implementation-tracking.md), and [audit records (Chinese)](docs/audits/README.md).
+Implementation details and evidence are linked from the [architecture documents (Chinese)](docs/architecture/README.md), [complete delivery matrix (Chinese)](docs/plans/delivery-tracking.md), and [audit records (Chinese)](docs/audits/README.md). [Program #336](https://github.com/hrygo/SpeechNexus/issues/336) organizes current product outcomes and deliveries. Original requirements, acceptance criteria, historical evidence, and old-to-new issue mappings remain traceable; migration closure does not count as product completion.
 
 ## Quick start
 

@@ -1,6 +1,6 @@
 # SpeechNexus 文档
 
-[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.5。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[项目经理基线](plans/2026-10-26-project-manager-baseline.md)和[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
+[产品与架构设计](speechnexus-product-architecture.md)是本独立项目的主文档，当前文档版本为 0.5.5。设计规定目标行为；仓库已有持久事务、语音执行和工作台消费者的分段实现，文件 ASR、CustomVoice 与 CPU VAD 已有真实隔离实验。完整公开业务链、生产准入发布和目标拓扑资格仍须分别验收；契约或组件检查通过不能代替这些证据。当前组合与管理先读[完整交付矩阵](plans/delivery-tracking.md)和[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)；[原项目交接](audits/2026-10-26-project-handoff.md)保留三队交接时点，团队 B 的详细证据见[收尾交接](audits/2026-10-26-team-b-handoff.md)。文档版本独立于软件版本。
 
 | 文档                                                                                                | 职责                                                                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -38,8 +38,9 @@
 | [预设声音资格与发布](operations/builtin-voice-qualification.md) | 独立受信审批、不可变发布、精确准入及撤销入口；真实资格 producer 待实现 |
 | [本地最小可运行装配](operations/local-end-to-end.md) | 迁移→API→目录/发布/admin→网关/引擎的实跑步骤；含公开转写实测 504（worker 只登记 staging、不写终态；120s 是 API 轮询）、11.2.2 的人工 `record_stop` 字段/命令与限制，以及随附 ASR 定义缺真实容量/资格证据的边界 |
 | [agent 环境准备与验收](operations/paperclip/environment-readiness.md) | 三机工具链、隔离服务、Harness 与源码回传的实际证据、限制和启用门禁 |
-| [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 整体实施调度入口：团队分工、任务依赖、阶段关口、集成节奏与产能估算              |
-| [整体实施跟踪矩阵](plans/2026-10-23-implementation-tracking.md)                                     | GitHub 总控 #6、6 Epic、25 工作包与 6 Gate 的状态、依赖和证据矩阵               |
+| [三团队整体实施计划](plans/2026-10-23-three-team-delivery-plan.md)                                  | 历史规划：团队分工、任务依赖、原阶段关口、集成节奏与产能估算              |
+| [完整交付跟踪矩阵](plans/delivery-tracking.md) | 当前产品目标、独立交付、原要求承接、状态、依赖和证据；GitHub 只读刷新 |
+| [原文迁移基线](plans/2026-11-03-issue-migration.json) | 原49个open issue正文及散列、讨论来源；历史快照，不作为执行队列 |
 | [分阶段实施计划](plans/2026-10-22-speechnexus-implementation-plan.md)                               | P0–P5、退出条件、工作包、交接产物与预算假设                                     |
 | [集群协调重构计划](plans/2026-10-23-cluster-coordination-refactor.md)                               | 精简 DDL/契约/双库原型的交付与生产接入、集群故障资格的剩余验收                  |
 | [架构与契约修复闭环](audits/2026-10-23-architecture-contract-repair-closure.md)                     | 初验与终审补充的修复映射、验证证据及未验证运行边界                              |

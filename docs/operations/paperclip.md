@@ -11,7 +11,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 按[交付 SOP](agent-delivery-sop.md)选择 Codex 会话、subagent 与 Delegra：一项切片一位交付负责人，普通局部工作直接完成；需要持久接续或专用环境时才使用军团任务。技术负责人不增加产品排序权，所有执行共用一条队列和资源额度；本页维护岗位、平台与环境边界。
 
-产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
+产品实施围绕同版公开业务链和 AC 交付，当前阶段、链路状态及关键路径以最新明确授权、[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)和当期候选证据为准，不由长期规则固化。2026-10-27 的默认语音装配 503 与 Job 缺消费者记录见 [#254](https://github.com/hrygo/SpeechNexus/issues/254)及[事故记录](paperclip/runtime-incidents.md)；它们是历史发现，不证明当前状态。[闭环整改计划](../plans/2026-10-27-delegra-legion-closed-loop.md)与[旧环境报告](paperclip/environment-readiness.md)保留原时点事实，已移除的旧项目及任务编号不再承担当前队列、环境配置或门禁入口。
 
 ## 唯一决策方与执行结构
 
@@ -19,7 +19,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 原产品总控会话转为按需独立架构 / 风险审查与备用接管，不保留第二产品队列；接管必须有新的明确安排。同一时刻只有一个 SM+PO。实际会话、平台对象、权限和环境入口由私有部署记录映射，公开源不使用“主聊天”或历史“经理”来猜测身份。此次基础设施整改的授权不自动扩成产品实施或投产放行。
 
-首轮 [#30](https://github.com/hrygo/SpeechNexus/issues/30) / [#142](https://github.com/hrygo/SpeechNexus/issues/142) 的 TTS 硬上限切片另已有本用户 goal 的实施授权，持续有效；底座修复及所需岗位 / 资源准入后按该目标推进，无需再次确认。其他产品范围与投产放行不因此扩权。
+原 #30/#142 的 TTS 硬上限范围现由[文件合成限额 #398](https://github.com/hrygo/SpeechNexus/issues/398)及[文件闭环 #351](https://github.com/hrygo/SpeechNexus/issues/351)承接；既有授权与已交付证据保留，后续只按新总控的当期切片推进。迁移引用不恢复旧运行、隔离任务或整体调度，投产放行仍由用户决定。
 
 | 成员 | 主要职责 | 使用方式 |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ GitHub 保存产品需求、原始验收条件、代码审查和合并事实；D
 
 ## 一条执行队列与独立接收
 
-GitHub [总控 #6](https://github.com/hrygo/SpeechNexus/issues/6)及原 issue 保留完整产品范围与 AC。唯一 SM+PO 在当前项目维护一条执行队列，只接入已批准目标的当期切片，不镜像创建全部长期工作包，不额外维护产品 backlog。计划和报告解释版本、依赖及证据，不成为第二份排序权威。
+GitHub [总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)及新交付 issue 保留完整产品范围与 AC；[本地矩阵](../plans/delivery-tracking.md)可只读刷新全部原要求去向，旧卡和旧执行描述保留历史而不承担新派工。唯一 SM+PO 在当前项目维护一条执行队列，只接入已批准目标的当期切片，不镜像创建全部长期工作包，不额外维护产品 backlog。计划和报告解释版本、依赖及证据，不成为第二份排序权威。
 
 任务就绪前写清：
 

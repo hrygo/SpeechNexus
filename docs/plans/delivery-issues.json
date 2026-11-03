@@ -453,7 +453,7 @@
         "docs/architecture/runtime-governance.md",
         "docs/architecture/technical-blueprint.md"
       ],
-      "implementation": "已有 disable 协调与持久目标；派发取消后、引擎调用前崩溃的恢复和真实停止仍待验收。",
+      "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
       "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
@@ -480,9 +480,9 @@
         "docs/architecture/technical-blueprint.md"
       ],
       "implementation": "已有取消先持久接收、只读恢复和防伪释放边界；可信 gate 和受管外发未启用。；现有释放防护拒绝调用方伪造零外发；正向静音 seal 与成功结算未实现。",
-      "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；从 gate 获可信事实，固定对象版本并由原执行/租约事务裁决。",
+      "integration": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
-      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；从 gate 获可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
+      "gap": "须由持久权威唯一写者控制实际生产外发，并接入组合根和生成消费者。；须从 gate 获取可信事实，固定对象版本并由原执行/租约事务裁决。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "evidence": [
         {
           "url": "https://github.com/hrygo/SpeechNexus/blob/3ac2bfc5da2442305ba05be53c8a8cde17668a6f/contracts/internal/zero-dispatch.schema.json",
@@ -1450,7 +1450,7 @@
         "docs/operations/capacity-manifest.md",
         "docs/operations/file-tts-binding-handoff.md"
       ],
-      "implementation": "已有 disable 协调与持久目标；派发取消后、引擎调用前崩溃的恢复和真实停止仍待验收。",
+      "implementation": "已有 disable 协调与持久目标；dispatch 标记提交后、实际外发前崩溃时不能保证自动补发取消，真实停止仍待验收。",
       "integration": "网关按原身份查询和请求级 abort，租约由原事务处理。",
       "verification": "组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",
       "gap": "网关按原身份查询和请求级 abort，租约由原事务处理。 组件和隔离证据各有边界；完整验收按本卡列出的真实条件取证。",

@@ -87,6 +87,22 @@ def test_inconsistent_storage_fails_closed(error: Exception) -> None:
     assert pool.calls == 1
 
 
+def test_storage_failure_diagnostic_excludes_exception_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "synthetic-private-input-and-connection-secret"
+    pool = FaultPool(psycopg.errors.InsufficientPrivilege(secret))
+    result = _port(pool).admit_recipe(COMMAND)
+    assert result.error_code == "reconciliation_required" and pool.calls == 1
+    records = [record for record in caplog.records if record.name.endswith("admission_postgres")]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert COMMAND.request.identity.operation_id in message
+    assert "42501" in message
+    assert "InsufficientPrivilege" in message
+    assert secret not in caplog.text
+
+
 def test_invalid_or_oversize_private_context_never_checks_out_a_connection() -> None:
     pool = FaultPool(AssertionError("No SQL may run"))
     port = PostgresAdmissionTransactions(cast(SpeechPool, pool), max_command_bytes=1)

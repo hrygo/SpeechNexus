@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import uuid
+import wave
 from collections.abc import Iterator
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -71,14 +73,14 @@ def _recipe(path: Path, expiry_us: int) -> None:
     path.chmod(0o600)
 
 
-def _voice(admission: AdmissionDatabase) -> None:
+def _voice(admission: AdmissionDatabase, *, audio_format: str = "pcm") -> None:
     db = admission.runtime.foundation.database
     _seed(admission)
     expiry = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=1)
     digest = "sha256:" + "1" * 64
     caps = {
         "languages": ["en", "fr"],
-        "audio_formats": ["pcm"],
+        "audio_formats": [audio_format],
         "sample_rates_hz": [24000],
         "modes": ["complete"],
         "max_input_codepoints": 400,
@@ -91,7 +93,7 @@ def _voice(admission: AdmissionDatabase) -> None:
         "display_name": "Vivian",
         "capabilities": {
             "languages": ["en"],
-            "audio_formats": ["pcm"],
+            "audio_formats": [audio_format],
             "sample_rates_hz": [24000],
             "modes": ["complete"],
             "max_input_codepoints": 400,
@@ -162,7 +164,7 @@ def _voice(admission: AdmissionDatabase) -> None:
         "parameter_domains": {
             "tts": {
                 "languages": ["en", "fr"],
-                "audio_formats": ["pcm"],
+                "audio_formats": [audio_format],
                 "sample_rates_hz": [24000],
                 "text_commit_modes": ["explicit"],
                 "audio_delivery_modes": ["complete"],
@@ -227,13 +229,15 @@ def settlement_database_url(admission_database: AdmissionDatabase) -> Iterator[s
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("audio_format", ["pcm", "wav"])
 async def test_factory_http_uses_real_postgres_qualification_and_admission(
     admission_database: AdmissionDatabase,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     settlement_database_url: str,
+    audio_format: str,
 ) -> None:
-    _voice(admission_database)
+    _voice(admission_database, audio_format=audio_format)
     db = admission_database.runtime.foundation.database
     path = tmp_path / "tts.json"
     _recipe(path, admission_database.runtime.now() + 60_000_000)
@@ -249,6 +253,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             "database_schema": db.schema,
             "speech_recipe_file": path,
             "speech_default_language": "en",
+            "speech_max_output_audio_ms": 10000,
             "speech_settlement_database_url": SecretStr(settlement_database_url),
             "execution_gateway_base_url": "http://127.0.0.1:9",
             "execution_gateway_component_credential": SecretStr("synthetic-gateway-token"),
@@ -256,7 +261,16 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             "object_storage_secret_key": SecretStr("synthetic"),
         }
     )
-    payload = b"\0\0" * 2400
+    pcm = b"\0\0" * 2400
+    payload = pcm
+    if audio_format == "wav":
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as encoder:
+            encoder.setnchannels(1)
+            encoder.setsampwidth(2)
+            encoder.setframerate(24000)
+            encoder.writeframes(pcm)
+        payload = buffer.getvalue()
 
     class Gateway:
         request: dict[str, Any] | None = None
@@ -297,7 +311,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                     "request_digest": digest,
                     "reference": {"workspace_id": "workspace-test", "byte_length": len(payload)},
                     "storage_version": "synthetic-version",
-                    "media_type": "audio/pcm",
+                    "media_type": "audio/wav" if audio_format == "wav" else "audio/pcm",
                     "audio": {"sample_rate_hz": 24000, "channels": 1, "duration_ms": 100},
                 },
             }
@@ -350,7 +364,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                 "model": "asr-quality",
                 "voice": "voice-vivian",
                 "input": "synthetic",
-                "response_format": "pcm",
+                "response_format": audio_format,
                 "nexus": {"workspace_id": "workspace-test"},
             },
         )
@@ -394,7 +408,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                 "model": "asr-quality",
                 "voice": "voice-vivian",
                 "input": "synthetic two",
-                "response_format": "pcm",
+                "response_format": audio_format,
                 "nexus": {
                     "workspace_id": "workspace-test",
                     "overrides": {"tts": {"language": "fr"}},
@@ -414,7 +428,7 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
                 "model": "asr-quality",
                 "voice": "voice-vivian",
                 "input": "synthetic three",
-                "response_format": "pcm",
+                "response_format": audio_format,
                 "nexus": {"workspace_id": "workspace-test"},
             },
         )
@@ -469,8 +483,28 @@ async def test_factory_http_uses_real_postgres_qualification_and_admission(
             == 1
         )
     assert response.status_code == 200, response.text
-    assert response.content == payload
+    if audio_format == "pcm":
+        assert response.content == payload
+    else:
+        with wave.open(io.BytesIO(response.content), "rb") as audio:
+            assert (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) == (
+                1,
+                2,
+                24000,
+            )
+            assert audio.getnframes() == 2400
+            assert audio.readframes(audio.getnframes()) == pcm
+            assert audio.readframes(1) == b""
     assert gateway.request is not None
+    assert gateway.request["max_output_audio_ms"] == 10000
+    assert gateway.request["command"]["parameters"]["response_format"] == audio_format
+    assert gateway.request["command"]["parameters"]["language"] == "en"
+    stored = db.query(
+        "SELECT request_document::jsonb->'plan' AS plan FROM admission_operations "
+        "WHERE request_document::jsonb->>'kind'='tts_file'"
+    )[0]["plan"]
+    assert stored["gateway_policy_digest"] == "sha256:" + "1" * 64
+    assert stored["max_audio_ms"] == 10000
     assert db.query("SELECT count(*) AS n FROM admission_operations")[0]["n"] == 1
     assert db.query("SELECT count(*) AS n FROM coordination_jobs")[0]["n"] == 1
 

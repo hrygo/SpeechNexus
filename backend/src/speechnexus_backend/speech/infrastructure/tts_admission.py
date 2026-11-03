@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
@@ -40,6 +41,27 @@ from speechnexus_backend.speech.infrastructure.transcription_admission import (
 )
 from speechnexus_backend.speech.infrastructure.transcription_recipe import TranscriptionRecipe
 from speechnexus_backend.speech.infrastructure.tts_submit import build_tts_submit
+
+_LOGGER = logging.getLogger(__name__)
+# A diagnostic projection only; this does not validate or change transaction results.
+_DIAGNOSTIC_CODES = frozenset(
+    {
+        "policy_or_resource_disabled",
+        "reconciliation_required",
+        "invalid_execution_request",
+        "recipe_mismatch",
+        "outcome_unknown",
+        "version_conflict",
+        "idempotency_conflict",
+        "capacity_exhausted",
+        "quota_exceeded",
+        "instance_draining",
+        "instance_generation_mismatch",
+        "lease_not_active",
+        "stale_fencing_token",
+        "stale_instance_generation",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +169,14 @@ class PostgresTtsAdmission:
 
     def admit(self, plan: SpeechPlan) -> SubmitExecutionRequest:
         identity, job_id, event_id, event_digest, submit_id = _identities(plan.request_id)
-        original = self._originals.read(identity)
+        try:
+            original = self._originals.read(identity)
+        except SpeechUnavailableError:
+            _LOGGER.warning(
+                "Speech admission unavailable: operation=%s stage=original_read",
+                identity.operation_id,
+            )
+            raise
         if original is not None:
             if plan.language is None:
                 try:
@@ -173,8 +202,19 @@ class PostgresTtsAdmission:
             plan.model_id != recipe.model_id
             or plan.binding_revision_id != recipe.approved.binding_revision_id
         ):
+            _LOGGER.warning(
+                "Speech admission unavailable: operation=%s stage=recipe_mismatch",
+                identity.operation_id,
+            )
             raise SpeechUnavailableError("Speech binding does not match admission recipe")
-        facts = self._facts.read(plan, recipe)
+        try:
+            facts = self._facts.read(plan, recipe)
+        except SpeechUnavailableError:
+            _LOGGER.warning(
+                "Speech admission unavailable: operation=%s stage=facts_read",
+                identity.operation_id,
+            )
+            raise
         binding = recipe.approved.stages[0].runtime_plan.binding
         deadline = min(
             facts.now_us + max(1, round(plan.timeout_seconds * 1000000)),
@@ -248,6 +288,16 @@ class PostgresTtsAdmission:
         if result.outcome == "unknown":
             result = self._service.query(identity)
         if result.outcome not in ("committed", "replayed") or result.fact is None:
+            _LOGGER.warning(
+                "Speech admission unavailable: operation=%s outcome=%s code=%s",
+                identity.operation_id,
+                result.outcome
+                if result.outcome in ("conflict", "rejected", "unknown")
+                else "other",
+                result.error_code
+                if isinstance(result.error_code, str) and result.error_code in _DIAGNOSTIC_CODES
+                else "unknown_code",
+            )
             raise SpeechUnavailableError("Speech admission outcome is unavailable")
         # Reload after commit so the returned command is exactly the stored body.
         original = self._originals.read(identity)

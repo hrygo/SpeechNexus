@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from collections.abc import Callable
 from typing import Any
@@ -45,6 +46,8 @@ from speechnexus_backend.speech.domain.speech_synthesis import (
     identifier,
 )
 from speechnexus_backend.speech.interfaces.http.speech_errors import speech_error
+
+_LOGGER = logging.getLogger(__name__)
 
 PREFIX = "/v1/audio/speech"
 
@@ -386,7 +389,18 @@ async def _create(
         SpeechEngineError,
         SpeechUnavailableError,
         PublicationUnavailableError,
-    ):
+    ) as error:
+        category = (
+            "engine_unavailable"
+            if isinstance(error, SpeechEngineError)
+            else "speech_unavailable"
+            if isinstance(error, SpeechUnavailableError)
+            else "publication_unavailable"
+        )
+        # The execution UUID is generated here; client headers and exception text are private.
+        _LOGGER.warning(
+            "Speech backend unavailable: execution=%s category=%s", execution_id, category
+        )
         return speech_error("backend_unavailable", request_id)
     except ValueError, TypeError, KeyError, RecursionError, UnicodeError, OverflowError:
         # A malformed adapter result is not a client error; never a 500 either.

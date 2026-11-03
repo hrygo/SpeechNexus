@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：九份 issue 正文按当前现实整理（证据移入评论）"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：九份 issue 正文按当前现实整理（证据移入评论）
+
+> 本文记录当时的 issue 整理及回读，不代表当前 issue 状态；现行入口见[交付跟踪矩阵](delivery-tracking.md)。
 
 根因不是"issue 格式不对"，而是**issue 与工作区脱节**：九份工作包正文停留在开工时的计划（0 个已勾选子项、0 条证据记录），而工作区里已有十个冻结单元、394 项隔离 PG 探针与五份真实浏览器制品。任何人只看 issue 会以为这些包还没开始。本轮按 AGENTS.md 的 issue 约定把正文拉回现实。
 

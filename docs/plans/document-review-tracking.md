@@ -126,7 +126,7 @@
 | `docs/design/ui-ux-design-framework-and-tokens.md` | 部分核对 | 全文阅读，对照 CI 路由与独立 Token 门禁、基础及语义 Token、主题选择和品牌色、共享外壳、诊断三态映射、文案及静态扫描范围；记录状态标签与目标的差距，其他细节待核对 |
 | `docs/development-environment.md` | 已核对 | 对照锁定版本、初始化与服务脚本、检查和冒烟入口；修正安装、权限及端口边界，未实测参考宿主运行状态 |
 | `docs/operations/README.md` | 已核对 | 核对目录定位、索引说明及所有本地链接目标；历史快照已标识 |
-| `docs/operations/agent-delivery-sop.md` | 部分核对 | 全文阅读并对照根规约的授权与工作区收尾、验证指南入口；平台实际能力及需求关联待核对 |
+| `docs/operations/agent-delivery-sop.md` | 已核对 | 全文对照根规约、军团协作和验证指南入口，核对 7 个本地链接；平台能力、部署与运行状态须按任务实测 |
 | `docs/operations/backfill-binding-publication-evidence.md` | 已核对 | 对照 CLI、映射约束与去重计数、回填事务、授权声明及 0021 回退锁；未连接生产库或运行回填 |
 | `docs/operations/binding-activation-verification.md` | 已核对 | 对照 PG 并发矩阵、跨操作 ASGI 测试与故障清理 fixture；澄清测试设计不等于实际运行通过，未运行 PG |
 | `docs/operations/binding-disable-worker.md` | 已核对 | 对照配置范围、角色授权列、URL 策略、处理循环、异常分支及原租约结算入口；未连接部署或执行停用 |
@@ -296,7 +296,7 @@
 | `docs/plans/delivery-tracking.md` | 部分核对 | 核对生成入口、结构化来源和快照标记；逐项事实与证据仍待核对 |
 | `docs/po-sm-operating-playbook.md` | 部分核对 | 核对 fleet-status 参数及退出码；其他章节与数据库行为待核对 |
 | `docs/prd.md` | 部分核对 | 核对 65 个需求 ID、锚点和 Epic 与结构化清单一致；逐项验收语义待核对 |
-| `docs/project-manager-guide.md` | 部分核对 | 全文阅读，对照根规约、交付入口和矩阵刷新方式；平台运行与其余引用细节待核对 |
+| `docs/project-manager-guide.md` | 已核对 | 全文对照根规约、交付 SOP、军团职责及矩阵刷新入口；15 个本地链接目标存在，未核验平台实际部署与权限 |
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；其余内容待核对 |
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
 | `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、镜像及最终门禁、制品下载、浏览器预取、Design Token、无障碍规则、栅格对比度和真实模型资格入口；其余脚本细节待核对，历史性能按原时点保留 |

@@ -36,6 +36,10 @@ date: 2026-10-25
 对象凭据不写入 JSON；使用只对批准输入和私有结果范围授权的身份。
 文件执行配置不能与测试注入的工厂或控制/提交/中止服务混用。
 可同时配置原有恢复驱动，两者复用原 ledger、进程入口和关闭顺序。
+同时启用文件 TTS 时，两份配置的 `max_command_bytes`、`max_pending` 和
+`shutdown_seconds` 必须一致，否则拒绝启动。两条路径共用一个文件 worker，
+`max_pending` 是共同的本地待处理上限，不是各自独享的调度或容量预算；
+结果字节上限可分别设置。
 
 ASR 配置位于[配置与装配模块](../../execution-gateway/src/speechnexus_gateway/file_asr_runtime.py)，
 与 TTS 共用 worker 的组合根见[文件语音装配](../../execution-gateway/src/speechnexus_gateway/file_speech_runtime.py)。

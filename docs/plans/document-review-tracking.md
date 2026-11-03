@@ -153,9 +153,9 @@
 | `docs/operations/production-coordination-storage.md` | 部分核对 | 核对 0002 迁移、head、基础 DDL 和授权生成器，补充释放守卫视图；全部字段与测试证据待核对 |
 | `docs/operations/production-runtime-delivery.md` | 部分核对 | 核对配置、租约、unknown 路径、0008 迁移、最小授权和 ACK 事务；测试证据与部署接线待核对 |
 | `docs/operations/publish-binding-revision.md` | 部分核对 | 全文阅读并核对 CLI 观察、退出分类、发布意图与部分授权；事务全部分支及数据库实测待核对 |
-| `docs/operations/qualification-report.md` | 部分核对 | 已核对示例校验命令；其余内容待核对 |
+| `docs/operations/qualification-report.md` | 部分核对 | 核对示例命令、场景状态、有效期及 limitations 校验边界，澄清报告本身不代表通过；其余内容待核对 |
 | `docs/operations/reconciliation-recovery.md` | 部分核对 | 核对 abort 恢复查询、unknown 停止证据规则及查询 2、3 所涉主要表字段与证据标志类型；修正资源释放与预算归还顺序及代码锚点描述；查询执行及其余内容待核对 |
-| `docs/operations/register-engine.md` | 部分核对 | 已核对健康探测与注册事务；其余内容待核对 |
+| `docs/operations/register-engine.md` | 部分核对 | 核对健康探测、注册事务及验证查询的表字段，补齐 schema 限定并收窄输出；其余内容待核对 |
 | `docs/operations/release-preflight.md` | 已核对 | 对照脚本检查入口、配置加载和 C0–C12 判断；修正版本、身份、临时文件、资格场景、Compose 文本匹配及固定快照边界，未执行会访问服务或写入的检查 |
 | `docs/operations/release-readiness.md` | 部分核对 | 全文阅读并抽核固定候选 planner、文件及提交关系；其余历史证据待复核 |
 | `docs/operations/synchronous-transcription.md` | 部分核对 | 核对配置、上游参数检查、提交与轮询路径；配方权限和全部错误分支待核对 |

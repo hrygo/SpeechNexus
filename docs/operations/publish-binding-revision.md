@@ -13,6 +13,10 @@ date: 2026-10-28
 
 数据库使用当前迁移 head（包括 `0024_binding_publish_intents`）。发布角色是独立的非 owner 角色，具备 `binding_draft_grants`、`publication_grants` 和 `publication_evidence_grants`；升级后须重新按声明配置新增表的最小权限。观察和提交必须访问同一权威主库及同一 schema，不使用缓存或副本。配置 `SPEECHNEXUS_PUBLICATION_WRITER_DATABASE_URL` 和可选的 `SPEECHNEXUS_DATABASE_SCHEMA`；凭据通过部署的秘密配置提供，不写入命令参数、日志或工单。
 
+可通过 `SPEECHNEXUS_PUBLICATION_TRANSACTION_TIMEOUT_SECONDS` 设置观察和发布事务的超时，
+默认 3 秒，须为大于 0 且不超过 30 的有限数。提交阶段超时或连接中断不能证明事务回滚，
+应按下文的结果未知流程使用原意图恢复。
+
 切换前必须停止或隔离旧版本发布者和可直接写 head 的旁路 SQL，并核实角色权限。新应用内的 CAS 不约束绕过该代码的写者；未完成切换前不能保证并发安全。克隆或恢复数据库会复制 installation UUID，因此 UUID、数据库名与 schema 相同也不能证明是同一实际环境；还须由运维核对原部署及数据库实例的非秘密身份。
 
 ## 观察并形成意图

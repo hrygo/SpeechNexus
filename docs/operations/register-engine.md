@@ -86,6 +86,10 @@ speechnexus-register-engine \
 | `--health-timeout-seconds` | 健康探测超时，默认 5 秒，大于 0 且不超过 30 秒 |
 | `--transaction-timeout-seconds` | 数据库事务超时，默认 10 秒 |
 
+配方模式以配方中的 plan 和 policy revision 为准：`--node`、`--pool`、`--gateway`、
+`--instance`、`--model` 若显式提供，必须与配方一致；其他手动 plan 字段不会覆盖配方，
+不要依靠这些参数调整已加载的 plan。`--host-capacity` 是可单独指定的容量输入。
+
 命令成功时输出 JSON，包含 `outcome`、实例身份、fencing token、readiness 摘要，以及
 `engine_instances` / `runtime_instance_heads` / `runtime_instance_intents` /
 `resource_pools` / `workspace_quotas` 的实际行。输出还包含健康检查 URL；保存或分享前须按部署的敏感信息规则处理。

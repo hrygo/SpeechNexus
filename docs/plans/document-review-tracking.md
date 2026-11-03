@@ -299,7 +299,7 @@
 | `docs/project-manager-guide.md` | 部分核对 | 全文阅读，对照根规约、交付入口和矩阵刷新方式；平台运行与其余引用细节待核对 |
 | `docs/speechnexus-product-architecture.md` | 部分核对 | 局部对照代码、契约或历史证据；对照实时、音色与工作台入口、文件 ASR 分段汇总、共享密钥、导出组合根、默认值快照、预设生命周期、绑定停用 / 数据删除、Job 派发及故障矩阵；其余内容待核对 |
 | `docs/validation/README.md` | 已核对 | 全文核对四个索引链接目标；不代表各目标正文已审阅 |
-| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、制品下载边界、浏览器预取策略、Design Token 规则和无障碍规则标签及上传条件；图像对比度等其余细节待核对，历史性能按原时点保留 |
+| `docs/validation/ci-validation.md` | 部分核对 | 对照路由、两进程覆盖率及六分片分配与证据校验、制品下载、浏览器预取、Design Token、无障碍规则和栅格对比度；其余工作流及脚本细节待核对，历史性能按原时点保留 |
 | `docs/validation/coordination-request-change-checks.md` | 已核对 | 全文对照 Make/CI、检查器及共享比较和引用解析内核、请求/结果正反例与 Python/JS fixture；不代表事务语义或部署已验收 |
 | `docs/validation/http-contract-change-checks.md` | 已核对 | 全文对照 CI、脚本、比较与引用解析内核及正反例；澄清源校验、JSON 报告与 Python 解析器的覆盖边界，不代表完整协议兼容 |
 | `docs/validation/realtime-contract-change-checks.md` | 已核对 | 全文对照 CI、Make 目标、检查脚本、绑定配置及正反例测试；结构检查不证明实时行为或生产互通 |

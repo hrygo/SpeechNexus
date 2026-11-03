@@ -47,7 +47,7 @@ date: 2026-10-26
 ├── web/
 │   ├── admin/                   AdminUI Vite 应用
 │   ├── workbench/               个人语音工作台 Vite 应用
-│   └── shared/                  React 组件、设计 Token 与后续 SDK
+│   └── shared/                  共享组件、设计 Token 与 SSE 分帧工具
 ├── deploy/                      Compose、镜像与环境变量模板
 ├── tests/
 │   ├── contract/               契约与实现一致性
@@ -96,7 +96,7 @@ composition root ──> any layer
 根 `pnpm-workspace.yaml` 管理 `web/*` 和 `packages/contracts`，当前包括 Admin、Workbench、共享组件与契约包。共享 React 版本、Vite、TypeScript、测试库集中在 catalog，相关依赖通过 `catalog:` 引用。
 
 - `web/admin` 与 `web/workbench` 各自构建、预览与部署，输出独立 `dist/`。
-- `web/shared` 只包含跨入口稳定复用、无业务所有权的组件与视觉 Token。
+- `web/shared` 包含跨入口复用的组件、视觉 Token 与 SSE 分帧工具；事件语义校验由契约包负责。
 - 工作台业务代码不得进入共享包，除非已确认它被两个入口以相同语义消费。
 - 当前 UI 明确显示共享部署边界与未实现状态，不展示虚构任务、用户、容量或模型数据。
 

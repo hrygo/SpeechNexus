@@ -68,7 +68,7 @@
 | `docs/audits/2026-10-26-team-c-realtime-integrity.md` | 历史保留 | 全文阅读，固定基线的实时发送和本地停止修复及合成验证；未重跑测试 |
 | `docs/audits/2026-10-26-team-c-remaining-gaps.md` | 历史保留 | 全文阅读，固定收尾基线的团队 C 缺口及交接条件；由历史交接引用，未将其作为当前进度 |
 | `docs/audits/2026-10-26-team-c-render-loop-status.md` | 历史保留 | 全文阅读，固定收尾基线的有声书实现与证据矩阵；由历史交接引用，未重验当时证据 |
-| `docs/audits/2026-11-03-controlled-tts-prepare.md` | 部分核对 | 全文阅读并对照第六窗口证据文件及摘要，修正最新结论；各窗口原始事实尚未逐项核验 |
+| `docs/audits/2026-11-03-controlled-tts-prepare.md` | 历史保留 | 2026-11-03 各窗口验收与清理快照，已区分第六窗口结论和第五窗口历史缺口；各窗口原始事实未逐项重验 |
 | `docs/audits/README.md` | 已核对 | 对照选编记录的标题、摘要和证据边界，明确历史 UI/UX 评级限制与选编范围；未逐项重验原始证据 |
 | `docs/components/README.md` | 已核对 | 核对索引中各目标文件、标题与候选状态；不代表目标正文已审 |
 | `docs/components/audio-asset-inspection.md` | 历史保留 | 2026-10-26 候选与资格记录，保留原时点事实；当前入口的 TextAssetInspector 装配已对照源码，历史证据未重验 |
@@ -333,12 +333,12 @@
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 历史保留 | 全文阅读并对照最终交接的版本、计数与资格边界；原始日志和制品未复验 |
 | `docs/audits/2026-10-26-team-a-issue-handoff.json` | 历史保留 | 核对快照时间、来源、交接引用及 40 个唯一编号；未重查历史远端状态 |
 | `docs/audits/2026-10-26-team-c-operation-coverage.json` | 历史保留 | 对照固定 head 的报告核对 52 项及 42/10 状态；不代表当前操作覆盖 |
-| `docs/audits/evidence/2026-11-03-tts-prepare.json` | 部分核对 | 核对审计报告引用及候选版本；原始记录和验证语义待复核 |
-| `docs/audits/evidence/2026-11-03-tts-window-2.json` | 部分核对 | 核对审计报告引用、版本及 SDK 闭环未通过标记；原始记录待复核 |
-| `docs/audits/evidence/2026-11-03-tts-window-3.json` | 部分核对 | 核对审计报告引用、版本及 SDK 503 失败标记；原始记录待复核 |
-| `docs/audits/evidence/2026-11-03-tts-window-4.json` | 部分核对 | 核对审计报告引用、版本及 SDK 503 失败标记；原始记录待复核 |
-| `docs/audits/evidence/2026-11-03-tts-window-5.json` | 部分核对 | 核对报告引用及 SDK 成功但关联未证明的边界；原始记录待复核 |
-| `docs/audits/evidence/2026-11-03-tts-window-6.json` | 部分核对 | 核对审计报告引用及固定版本；原始记录和验证语义待复核 |
+| `docs/audits/evidence/2026-11-03-tts-prepare.json` | 历史保留 | 首次窗口的结构化证据；核对报告引用及候选版本，原始记录未逐项重验 |
+| `docs/audits/evidence/2026-11-03-tts-window-2.json` | 历史保留 | 第二窗口的结构化证据；核对报告引用、版本及 SDK 闭环未通过标记，原始记录未逐项重验 |
+| `docs/audits/evidence/2026-11-03-tts-window-3.json` | 历史保留 | 第三窗口的结构化证据；核对报告引用、版本及 SDK 503 标记，原始记录未逐项重验 |
+| `docs/audits/evidence/2026-11-03-tts-window-4.json` | 历史保留 | 第四窗口的结构化证据；核对报告引用、版本及 SDK 503 标记，原始记录未逐项重验 |
+| `docs/audits/evidence/2026-11-03-tts-window-5.json` | 历史保留 | 第五窗口的结构化证据；核对 SDK 成功但关联未证明的边界，原始记录未逐项重验 |
+| `docs/audits/evidence/2026-11-03-tts-window-6.json` | 历史保留 | 第六窗口的结构化证据；核对报告引用及固定版本，原始记录未逐项重验 |
 | `docs/operations/release-evidence-verification-output.txt` | 历史保留 | 2026-10-28 固定版本的合成数据验证输出；不代表当前发布资格，原始运行未重做 |
 | `docs/plans/2026-10-23-implementation-issues.json` | 历史保留 | 核对原基线、索引引用及 38 个唯一编号；旧编排不代表当前状态 |
 | `docs/plans/2026-10-24-team-c-c02-download-contract-candidate.yaml` | 历史保留 | 全文阅读，核对计划、交接及候选测试引用；该候选路径未出现在当前工作台 canonical 契约中 |

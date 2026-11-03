@@ -112,7 +112,7 @@
 | `docs/decisions/0001-product-boundaries-and-authentication-scope.md` | 已核对 | 逐项对照当前 PRD 与产品架构的底座、工作台、身份和硬件边界；ADR 限定产品决定，不代表实现或部署已验收 |
 | `docs/decisions/0002-speech-models-engines-and-loading.md` | 部分核对 | 全文阅读并对照产品架构与资格边界，明确首个硬件验证目标的历史时点；模型运行资格仍需按目标部署取证 |
 | `docs/decisions/0003-workbench-llm-network-boundary.md` | 已核对 | 逐项对照 PRD、产品架构和技术方案的默认关闭、内容网络与资源边界，并抽核配置和 HTTP 投影；未实测部署出站限制 |
-| `docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md` | 部分核对 | 全文阅读并核对历史表名及当前协调 schema；其他细节待核对 |
+| `docs/decisions/0004-cluster-ready-architecture-and-single-node-mvp.md` | 部分核对 | 核对历史表名、协调 schema 和部署入口，澄清旧高可用迁移示意；其他细节待核对 |
 | `docs/decisions/0005-complete-execution-and-data-lifecycle-contracts.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
 | `docs/decisions/0006-cluster-coordination-and-storage-portability.md` | 部分核对 | 全文阅读并核对历史边界与后续引用；其余事实及消费者待逐项核对 |
 | `docs/decisions/0007-legacy-coordination-retirement.md` | 部分核对 | 全文阅读并核对历史边界、旧 fixture 与验证入口，限定旧运行态结论时点并更新当前跟踪入口；规则迁移覆盖待核对 |

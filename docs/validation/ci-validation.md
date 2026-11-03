@@ -9,7 +9,7 @@ CI 使用[工作流](../../.github/workflows/ci.yml)和[标准库路由](../../s
 
 | 触发或变更 | 范围 |
 | --- | --- |
-| PR 仅修改根 README / AGENTS、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、Design Token 静态门禁、差异检查与最终门禁；不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
+| PR 仅修改根 `README.md` / `README.en.md` / `AGENTS.md`、`docs/` 内 Markdown、`.agents/skills/<skill>/` 内 Markdown / JSON / YAML | 路由回归、Design Token 静态门禁、差异检查、Node Controller 镜像范围检查与其门禁、最终门禁；镜像构建按独立范围判定，通常跳过。不安装项目依赖、不启动业务测试服务。差异检查以取得准确基线为前提；否则回退全量 |
 | PR 仅修改已知 Web 源码/静态资产，可混合上述文档 | Python 静态/单元及完整 Web 检查；双数据库与部署检查不适用 |
 | PR 仅修改已知独立引擎目录或明确列出的引擎单元测试，可混合上述 Web/文档 | `no-db`：保留 Python 静态/契约/覆盖率、完整 Web、构建和部署检查；六个数据库分片及其汇总不适用 |
 | CI、脚本、测试、依赖、配置、契约、迁移、部署、其他路径或空/不确定差异 | 完整 Python/Web/部署检查，六个 PG/InnoDB/MinIO 分片及证据汇总 |

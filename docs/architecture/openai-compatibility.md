@@ -46,7 +46,7 @@ REST `verbose_json.usage` 只使用 `{"type":"duration","seconds":...}`，与官
 
 TTS 的 `response_format` 基线为 `mp3`、`wav`、`pcm`。REST `pcm` 固定为无头、24 kHz、单声道、signed 16-bit little-endian。`speed`、`instructions` 和格式按绑定能力域收窄；契约中的 `instructions` 上界保持官方 4096 字符，绑定只能在该标准域内进一步收窄。请求超出实际域时返回 `422 unsupported_parameter`，不静默 clamp 或忽略。
 
-当前合成入口先校验请求结构：未识别的 `response_format` 或类型错误返回 `400 invalid_request`；已声明格式通过入口校验后，若不在所选 binding 的能力域内，才返回 `422 unsupported_parameter`。调用方不能把这两类错误视为同一检查阶段。
+当前合成服务已装配时，入口先校验请求结构：未识别的 `response_format` 或类型错误返回 `400 invalid_request`；已声明格式通过入口校验后，若不在所选 binding 的能力域内，才返回 `422 unsupported_parameter`。服务未装配时路由先返回 `503 backend_unavailable`，不进行请求校验。调用方不能把这些结果视为同一检查阶段。
 
 ## 2. 官方 SDK 调用
 

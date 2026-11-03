@@ -79,6 +79,9 @@ SpeechCommand
 
 ### 1.3 同步 REST 子集
 
+以下当前入口的参数和限额错误以服务已装配为前提；路由先检查服务是否可用，未装配时返回
+`503 backend_unavailable`，不会先执行这些请求校验。
+
 文件转写支持 `file`、`model`、`language`、`prompt`、`response_format` 及快照声明的 `timestamp_granularities[]`。`response_format` 默认 `json`，基线为 `json`、`text`；`verbose_json`、`srt`、`vtt` 仅在具备相应时间边界证据时开放。`timestamp_granularities[]` 只接受已声明支持的 `segment` / `word`，且必须与 `response_format=verbose_json` 同用，不伪造词级时间戳。当前入口对非法或重复粒度以及与其他格式的组合返回 400 `invalid_request`；通过入口校验但当前执行链不支持的粒度返回 422 `unsupported_parameter`。标准 language 省略表示自动检测，内部规范化为 `asr.language=auto`，不要求标准客户端发送字面值 auto。`prompt` 是有界术语提示；不具备提示能力的绑定明确拒绝。增强结果返回实际语言或 unknown，兼容 JSON 保持所声明的字段形状。
 
 上述时间戳参数是契约范围；当前生产文件 ASR 规划器在准入前拒绝所有非空 `timestamp_granularities[]`。具体装配和结果证据要求见[同步转写](../operations/synchronous-transcription.md)。
@@ -102,7 +105,7 @@ TTS 支持 `model`、`input`、`voice`、`response_format`、`speed`、`instruct
 
 增强参数放在 TTS JSON 的 `nexus` 对象或 ASR multipart 的 `nexus` JSON 字符串中。两者共同接受 `workspace_id`、`client_reference`、`profile_id`、`profile_revision`、`overrides` 和 `deadline_ms`；TTS 另接受 `voice_revision`、`pronunciation_revision`，ASR 的 `overrides` 只能包含 `asr` 策略，不借用 TTS 字段。同步 REST 的标准 `speed`、`instructions` 与 `nexus.pronunciation_revision` 是唯一字段来源，`nexus.overrides.tts` 不重复定义它们。完全省略 nexus 时，使用部署发布的默认工作空间、预设和音色版本解析规则，保证标准客户端能直接调用；nexus 为可选扩展，不能成为兼容路径的必填包装。
 
-普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端检查输入与执行上限，不在超时后偷偷转成后台作业。当前 ASR 上传超限返回 `413 payload_too_large`，音频时长超出同步上限返回 `422 async_required`；TTS 文本超出入口长度限制返回 `400 invalid_request`，生成结果超出音频上限返回 `503 speech_output_limit_exceeded`。不能把所有限额错误都视为 `async_required`；需要 Job 时由客户端明确发起。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
+普通同步 ASR/TTS 不自动建立供用户浏览的永久业务内容记录，也不自动保存源文件或音频；执行和恢复所需的私有持久事实按具体链路保留。服务端检查输入与执行上限，不在超时后偷偷转成后台作业。当前 ASR 上传超限返回 `413 payload_too_large`，音频时长超出同步上限返回 `422 async_required`；TTS 请求体或文本超出入口限制返回 `400 invalid_request`，生成结果超出音频上限返回 `503 speech_output_limit_exceeded`。不能把所有限额错误都视为 `async_required`；需要 Job 时由客户端明确发起。已经开始同步执行但超时的请求不保证得到结果，不能盲目新建相同意图；当前同步入口尚不支持客户端幂等键恢复，TTS 的原身份恢复按[内部恢复入口](../components/synchronous-speech.md)处理。
 
 OpenAI Audio 的字段与兼容范围分别对照[转写接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)及[语音接口](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create)；SpeechNexus 只承诺本文列出的子集和 P0 冻结的 SDK 兼容测试，不声称支持 OpenAI 的全部模型、格式或事件。
 

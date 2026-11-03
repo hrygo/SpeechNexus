@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：项目改名（元数据版本 CAS）与一处诚实性修正"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：项目改名（元数据版本 CAS）与一处诚实性修正
+
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 `updateProject`（`PATCH /v1/workbench/projects/{project_id}`）此前没有任何 Web 消费者：项目能创建、能选择，但**不能改名**。本轮补齐，并顺带修掉一个把"明确冲突"报成"结果未确认"的诚实性缺陷。
 

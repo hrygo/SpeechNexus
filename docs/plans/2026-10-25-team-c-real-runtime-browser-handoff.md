@@ -1,11 +1,13 @@
 ---
 title: "团队 C 交接：真实运行时 × 真实 Chromium 交付资格"
-status: active
+status: superseded
 version: "0.1.0"
 date: 2026-10-25
 ---
 
 # 团队 C 交接：真实运行时 × 真实 Chromium 交付资格
+
+> 本文保留交接时的状态与验证事实；当前范围和证据见[交付跟踪矩阵](delivery-tracking.md)。
 
 本轮把浏览器证据的等级从"合成服务集 + 手工装配 ASGI"提升到**部署自己的组合根**：真实生产包、真实 Chromium、真实启动检查、真实删除账本重放、真实隔离 PostgreSQL，且**没有任何一处手工驱动 worker**。
 

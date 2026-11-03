@@ -324,10 +324,10 @@
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/application.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/compute.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/assets/data.png` | 部分核对 | 确认 PNG 格式及构图说明；素材与图面关系待核对 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/build_diagrams.py` | 部分核对 | 核对 SVG、内容清单及模型清单输出入口；未重新生成或逐项审查绘图逻辑 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/image-prompts.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/model-catalog.json` | 部分核对 | 模型、引擎及加载方向与 ADR 0002 对照一致；实际制品和部署资格未验证 |
-| `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 待核对 | 非 Markdown 制品；须按用途核对来源、内容与引用 |
+| `docs/architecture/diagrams/deployment-clusters-v3-4k/render_and_validate.cjs` | 部分核对 | 核对浏览器渲染、布局及素材检查入口；未重跑或逐项审查所有断言 |
 | `docs/architecture/diagrams/deployment-clusters-v3-4k/validation.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-25-team-c-acceptance-map.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |
 | `docs/audits/2026-10-26-team-a-closeout-evidence.json` | 部分核对 | JSON 语法、重复键及非有限数值检查通过；来源与语义待核对 |

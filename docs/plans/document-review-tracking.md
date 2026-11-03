@@ -282,9 +282,9 @@
 | `docs/plans/2026-10-25-web-accessibility-gate.md` | 历史保留 | 全文阅读，为当时门禁实施记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-a02-audio-receipt-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
 | `docs/plans/2026-10-26-a02-media-kernel-handoff.md` | 历史保留 | 全文阅读，为当时交接及证据记录；历史验证未重跑 |
-| `docs/plans/2026-10-26-ci-resource-partitions.md` | 待核对 | — |
-| `docs/plans/2026-10-26-paperclip-bootstrap-plan.md` | 待核对 | — |
-| `docs/plans/2026-10-26-project-manager-baseline.md` | 待核对 | — |
+| `docs/plans/2026-10-26-ci-resource-partitions.md` | 历史保留 | 全文阅读，为当时实施与验证记录；历史验证未重跑 |
+| `docs/plans/2026-10-26-paperclip-bootstrap-plan.md` | 历史保留 | 全文阅读，标明历史状态和现行入口；历史环境未复验 |
+| `docs/plans/2026-10-26-project-manager-baseline.md` | 历史保留 | 全文阅读，修正旧总控被称为当前入口；历史证据未复验 |
 | `docs/plans/2026-10-26-team-a-final-handoff.md` | 待核对 | — |
 | `docs/plans/2026-10-26-team-a-review-and-next-phase.md` | 待核对 | — |
 | `docs/plans/2026-10-26-team-c-final-handoff.md` | 待核对 | — |

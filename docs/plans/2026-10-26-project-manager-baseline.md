@@ -1,13 +1,13 @@
 ---
 title: "SpeechNexus 项目经理接管基线"
-status: active
+status: superseded
 version: "1.0.1"
 date: 2026-10-26
 ---
 
 # SpeechNexus 项目经理接管基线
 
-本文件承接用户任命及三队最终交接，作为后续项目经理的当前入口。核验日期为 **2026-10-26（Asia/Shanghai）**；以远端 `main`、当前 issue 和精确提交的检查为准。原三队的目标、范围、AC 和历史失败继续保留，旧计划不自动恢复执行。
+本文件保留 **2026-10-26（Asia/Shanghai）** 项目经理接管时的事实、风险和证据，文中的当前状态、入口及下一步均属于当时快照。现行交付入口见[总控 #336](https://github.com/hrygo/SpeechNexus/issues/336)与[交付跟踪矩阵](delivery-tracking.md)，管理规则见[项目经理工作约定](../project-manager-guide.md)。原三队的目标、范围、AC 和历史失败继续保留，旧计划不自动恢复执行。
 
 ## 1. 项目处于什么阶段
 
@@ -27,7 +27,7 @@ SpeechNexus 是可信部署网络内的 Linux 语音底座和创作工作台：�
 | A 合后检查 | [main41e29b6 的 CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313468861)首轮分片 2 达到 10 分钟时限，314 项测试通过后作业被取消、汇总失败；浏览器准备约 354 秒。补跑以同一 run 的最新 attempt 为准，首轮失败不改写为成功 |
 | B 的接管修订 | #220 最终 head `4e55041`，合入 `8b1466d`；[精确 PR CI](https://github.com/hrygo/SpeechNexus/actions/runs/40313607678) 2 项适用检查成功、7 项跳过，补请求音频上限风险及原件接收边界 |
 
-三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](../audits/2026-10-26-project-handoff.md)保留交接时点快照；当前组合版本和后续管理以本文件及 #6 为入口。
+三队详细交接继续分别查阅：[A](2026-10-26-team-a-final-handoff.md)、[B](../audits/2026-10-26-team-b-handoff.md)、[C](2026-10-26-team-c-final-handoff.md)。[原项目交接](../audits/2026-10-26-project-handoff.md)保留交接时点快照；当时的组合版本和管理入口为本文件及 #6。
 
 ## 2. 必须掌握的架构与边界
 
@@ -91,7 +91,7 @@ ADR 0001–0010 继续有效。0001–0007 覆盖产品身份/边界、模型与
 
 ## 5. 项目管理规则入口
 
-接管、排期、协作、集成验收、进度维护和证据清理统一见[项目经理工作约定](../project-manager-guide.md)。长期规则在该文档维护；本基线保留接管时点的事实、风险与待决队列，当前进度以 #6 和相关 issue 核实。
+接管、排期、协作、集成验收、进度维护和证据清理统一见[项目经理工作约定](../project-manager-guide.md)。长期规则在该文档维护；本基线保留接管时点的事实、风险与待决队列，当前进度以总控 #336 和相关 issue 核实。
 
 ## 6. 证据接收、清理与恢复
 

@@ -74,7 +74,7 @@
 | `docs/components/audio-asset-inspection.md` | 历史保留 | 2026-10-26 候选与资格记录，保留原时点事实；当前入口的 TextAssetInspector 装配已对照源码，历史证据未重验 |
 | `docs/components/binding-defaults-producer.md` | 部分核对 | 全文阅读并核对配置、Compose 透传、运行入口及契约入口；事务、HTTP 和验证细节待逐项核对 |
 | `docs/components/binding-parameter-defaults.md` | 部分核对 | 定位 schema、HTTP 生产者与运行时装配；字段语义待逐项核对 |
-| `docs/components/controlled-asr-generation.md` | 部分核对 | 全文阅读，核对私有描述装配及离线生成参数、权限和不覆盖；控制器鉴权及停止细节待核对 |
+| `docs/components/controlled-asr-generation.md` | 部分核对 | 全文阅读，核对凭据派生、模板约束、私有描述及成功终态停止证据；更新真实实例和整代次结算的历史证据，其他停止与运行资格待核对 |
 | `docs/components/cpu-vad.md` | 部分核对 | 对照策略、缓冲、CPU 适配器和 Compose 静态配置；实时链及实际模型资格待核对 |
 | `docs/components/execution-gateway.md` | 部分核对 | 核对 HTTP/装配章节与 drain 组合根；其余提交、屏障、恢复及清理事务待逐节核对 |
 | `docs/components/execution-staging-results.md` | 已核对 | 对照回执契约、迁移、列授权、登记 CAS/重放、覆盖检查、HTTP 查询及测试入口；未运行集成测试 |

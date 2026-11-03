@@ -160,8 +160,8 @@ PY
 
 `SPEECHNEXUS_REGISTRATION_DATABASE_URL` 与 `SPEECHNEXUS_MIGRATION_DATABASE_URL` 是
 一次性 operator 身份；本机示例沿用 bootstrap owner。它们不会传给 `api` 或 `gateway`，
-后者只使用 `sn_api` / `sn_gateway`。生产部署必须把这两项换成独立、受审计的迁移/注册
-operator 凭据，不能复用运行角色。
+API 使用 `sn_api`，gateway 分别使用 `sn_gateway` 写入和 `sn_gateway_query` 只读查询。
+生产部署必须把这两项换成独立、受审计的迁移/注册 operator 凭据，不能复用运行角色。
 
 ## 3. 准备私有文件
 

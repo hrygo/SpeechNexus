@@ -22,7 +22,7 @@
 
 `speechnexus-run-builtin-qualification` 是独立资格操作员入口，使用 `SPEECHNEXUS_QUALIFICATION_ADMISSION_DATABASE_URL` 受限身份、已有私有 recipe 以及 owner-only 原意图文件。该端口核对预先独立批准的一次性 probe authorization、来源批准、binding publication/预备报告、目标 installation 与固定实例 generation，执行正常完整配方预算准入；普通业务角色不得获得该端口所需权限。固定探针文本、单槽、WAV/24 kHz 和十秒上限不能用作任意合成入口。新准入在预算和结算锁等待结束后、提交前再次检查来源与一次性授权的有效期；既有回执重放不受当前过期或撤销阻断。同键只按原意图恢复，未知结果不得创建新身份。
 
-准入会核对当前 controller READY 观察中的镜像、模板及控制器制品摘要、native auth、实例 generation 和 fencing；缺失或过期即回滚。`--issue` 使用独立资格 writer 和可信操作员提供的模板、controller 清单、模型 pin 与 release 原文件，核对来源批准和实读模型字节后签发一次性授权。`--execute` 根据已保存的原身份通过网关提交或恢复，并读取版本固定的输出和停止证据；加 `--approval-id` 由程序核验并写入资格批准。原始输入或执行结果不完整时不得写批准；`qualification=pending` 不代表音色已获资格。结果未知时重放同一 approval、authorization、原意图、recipe 和四份原文件，系统先查询原回执，输入变化则冲突。真实模型/引擎运行还需单独批准。
+准入会核对当前 controller READY 观察中的镜像、模板及控制器制品摘要、native auth、实例 generation 和 fencing；缺失或过期即回滚。`--issue` 使用独立资格 writer 和可信操作员提供的授权文件、模板、controller 清单、模型 pin、模型目录与 release 原文件，核对来源批准和实读模型字节后签发一次性授权。`--execute` 根据已保存的原身份通过网关提交或恢复，并读取版本固定的输出和停止证据；加 `--approval-id` 由程序核验并写入资格批准。原始输入或执行结果不完整时不得写批准；`qualification=pending` 不代表音色已获资格。结果未知时保留并重放原 approval、authorization、意图和 recipe；批准恢复还需原 pin、manifest、report 和 scenario 文件，重新执行 `--issue` 时还须保留原授权文件、模板、controller 清单和模型目录。系统先查询适用的原回执，输入变化则冲突。真实模型/引擎运行还需单独批准。
 
 不加 `--execute` 时，命令仍可执行准入并返回 `qualification=pending`，不会执行探针或写资格批准；`--approval-id` 必须配合 `--execute`。已分类的非 unknown 准入结果返回退出码 `4`，unknown 或执行阶段异常返回 `5`。输入处理阶段的部分异常返回 `2`，但 `--issue` 可能已在此前提交授权，因此任何未明确完成的运行都须核对原授权和准入身份，再按原输入恢复，不能仅凭退出码认定没有持久化。
 

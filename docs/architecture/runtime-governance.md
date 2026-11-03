@@ -53,6 +53,8 @@ MySQL/InnoDB 仅用于关键协调路径验证；不采用 etcd，Redis 不承�
 
 配额包括活跃实时会话、在途同步请求、后台并发、排队数量、每日输入音频时长、TTS 字符 / 输出时长、存储与导出速率。请求中的 max_queue_wait_ms 只能收紧管理策略；普通推理参数不能增大这些配额。
 
+以下实时 credit、累计额度和双工准入描述目标协议与计量规则；当前生产组合根尚未装配公开 Realtime WebSocket 路由及真实实时执行链，不能据此认为这些实时控制已经端到端生效。当前入口边界见[语音接口](speech-api.md#2-实时协议与状态机)。
+
 实时累计额度与缓冲 credit 分开管理。每次发放音频 / 文本 credit 前，以原子事务在部署、工作空间和执行类别的适用层级预留相应累计输入额度。ASR 在样本验证并 accepted 时将该区间从预留转为累计使用；缓冲消费、预览结束、clear 或取消不退还已接受音频额度。TTS append 被 accepted 时继续保留文本额度，只在首次冻结该文本区间时转累计使用；取消 / 关闭释放尚未冻结的尾部和未使用 credit，冻结部分不退还。ack 后再次发放缓冲 credit 时仍须核对累计账本，不能凭释放内存重复透支。长连接拿不到新额度时停止发 credit，发送 quota_exceeded 与剩余已接受工作的处理方式；不接受超额输入，有限 drain 后关闭。
 
 计量固定为：ASR input_audio_ms 按验证后 accepted 的 canonical samples 计算；TTS input_text_codepoints 按首次冻结的文本区间计算，未冻结尾部撤销不计入；TTS output_audio_ms 按各 attempt 实际 generated 的 PCM samples 计算，包含取消前已生成但未交付的音频；delivered / played 只作独立诊断，不用于退还生成额度。重复 event、重复 commit 和重试回放不重复记同一输入区间，重试实际重新生成的输出仍是资源消耗。

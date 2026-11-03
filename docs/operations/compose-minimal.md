@@ -579,6 +579,8 @@ http=200
 调整运行授权前，使用独立迁移身份升级到当前唯一迁移 head；应从实际发布版本确定并核对
 head，不套用其他发布版本的值。在 `sn_api` 和 `sn_gateway` 所在 PostgreSQL 数据库中
 准备两个不同的非 owner LOGIN 角色，此处为 `sn_disable_scan` 和 `sn_disable_settle`。
+worker 要求 PostgreSQL 16 或更新版本，并在启动时拒绝可切换其他角色、角色管理权限及
+预定义 `pg_*` 角色能力；连接成功本身不代表权限检查通过。
 两个角色均不得继承其他运行角色或 owner 角色、拥有应用表、在 schema 中创建对象，或获得
 超出各自端口声明的权限。扫描角色只授予 `disable_coordinator_grants("speech", "sn_disable_scan")`；
 结算角色只授予 `disable_settlement_grants("speech", "sn_disable_settle")`。worker 会检查登录

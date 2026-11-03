@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus C04 合成播放单元交接"
-status: in-progress
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---

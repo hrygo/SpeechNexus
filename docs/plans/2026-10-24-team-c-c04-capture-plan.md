@@ -1,6 +1,6 @@
 ---
 title: "C04 浏览器采集实施单元"
-status: active
+status: superseded
 date: 2026-10-24
 ---
 

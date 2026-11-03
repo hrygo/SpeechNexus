@@ -1,6 +1,6 @@
 ---
 title: "SpeechNexus C04 浏览器采集单元交接"
-status: in-progress
+status: superseded
 version: "0.1.0"
 date: 2026-10-24
 ---

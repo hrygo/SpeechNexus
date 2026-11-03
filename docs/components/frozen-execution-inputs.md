@@ -121,8 +121,9 @@ DNS/环境代理或重定向。HTTPS 验证证书；传入的 SSLContext 必须�
 并覆盖来源/方法拒绝、环境代理隔离及固定版本读取。原同步 SDK 回归迁到这一实际消费边界。
 `test_execution_object_deadline.py` 使用真实 loopback TCP 的慢 HEAD/GET 响应头和慢正文，
 验证总期限、重复协程取消、取消标志、socket 关闭以及慢请求不阻塞另一读取。
-实际隔离服务入口：`tests/integration/test_gateway_frozen_inputs.py`，使用集成门禁规定的
+实际隔离服务入口：[网关冻结输入集成测试](../../tests/integration/test_gateway_frozen_inputs.py)，使用集成门禁规定的
 PG/InnoDB/MinIO 环境变量，缺服务不算通过，配置见[集成测试说明](../../tests/integration/README.md)。
+仓库中存在测试不代表本次或目标部署已经运行通过。
 
 集成覆盖原网关角色、原命令往返与篡改/清理/版本拒绝，HEAD/GET 之间覆盖时的版本固定，
 以及空格、Unicode、百分号转义等不透明对象键的真实签名与回读，

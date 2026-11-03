@@ -82,7 +82,7 @@
 | `docs/components/file-asr-recognition.md` | 已核对 | 逐节静态对照参数、协议、装配、执行与测试清单；未重新实测 |
 | `docs/components/file-asr-results.md` | 已核对 | 逐节静态对照结果聚合、私有对象、命令与相关测试；未运行服务 |
 | `docs/components/file-tts.md` | 已核对 | 全文静态对照策略、HTTP、命令、编码器、worker 与历史探针记录；未重跑测试或历史探针 |
-| `docs/components/frozen-execution-inputs.md` | 部分核对 | 全文阅读并核对原命令桥失败分类、对象固定版本、摘要与传输期限；ASR 参数及集成证据待核对 |
+| `docs/components/frozen-execution-inputs.md` | 已核对 | 对照命令桥失败分类、对象版本与传输期限、ASR 参数映射及集成测试入口；未运行集成测试或验证部署 |
 | `docs/components/gateway-execution-client.md` | 已核对 | 对照客户端配置、认证、结果查询、停止身份、重试、调用方装配及测试入口；未运行测试或验证目标部署 |
 | `docs/components/model-binding-drafts.md` | 部分核对 | 全文阅读并核对四类显式数据库配置及 0010/0011 迁移，修正发布与默认参数范围描述；生命周期事务及测试待核对 |
 | `docs/components/node-controller.md` | 部分核对 | 全文阅读并核对节点配置默认值，限定历史 warmup 探针的预算结论；容器、协议及恢复细节待核对 |

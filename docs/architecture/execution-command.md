@@ -57,7 +57,9 @@ invalid_execution_request。业务输入内容只经私有命令传输，不写�
 Diarization 的 `min_speakers` 和 `max_speakers` 均非空时，前者不得大于后者；
 当前命令 schema 仅分别约束其范围，不校验两者的大小关系，生产者 / 消费者须另做语义校验。
 TTS/codec 等会输出 PCM 的 stage 与 manifest.emits_audio_pcm、sample_rate_hz 和
-max_output_audio_ms 必须一致。契约级 fake 传递测试只证明协议，不证明真实引擎支持。
+max_output_audio_ms 必须一致。提交 schema 只约束时长和采样率同时为空或同时非空，
+不能单凭它确认 stage 与 manifest 一致；后者须在资源资格和准入边界另行核验。契约级 fake
+传递测试只证明协议，不证明真实引擎支持。
 
 Codec 对象格式 `nexus.codec_tokens.v1` 是 UTF-8 JSON：schema_version 为 1.0.0，
 codebook_count 为正整数，frames 为非空二维非负整数数组，每帧长度等于

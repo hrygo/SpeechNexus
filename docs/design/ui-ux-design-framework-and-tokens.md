@@ -398,6 +398,10 @@ SpeechNexus 的架构原则在 UI/UX 层面必须得到 100% 忠实表达，绝�
    - 全面支持 `@media (prefers-reduced-motion)` 与 `@media (prefers-reduced-transparency)`；
    - 字体与图标加载遵循本地化与零外部网络请求原则，严格贯彻物理不出网要求。
 
+当前共享外壳提供跳过导航链接，共享样式提供 `:focus-visible` 和减少动效规则；
+减少透明度的专门回退目前只覆盖 `.hero-status` 与 `.capability-card`。这些实现不证明
+所有页面和控件均满足上述目标，新增组件仍需在实际渲染状态下检查。
+
 ---
 
 ## 8. CI 自动化门禁与编码规范拦截能力 (CI Automated Guardrails)

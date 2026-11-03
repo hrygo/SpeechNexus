@@ -18,8 +18,9 @@ command_digest；旧 input_asset_ref 被完整命令替代。此变更不兼容�
 当前文件 ASR 消费者要求 `asr_file` / `asr_batch`、server VAD、完整段定稿和
 `rollback_tokens=0`，且 `max_segment_ms` 不小于 `preview_interval_ms`；只接受
 `json` / `text`，拒绝时间戳粒度、alignment、diarization 和词表资源。文件 TTS 消费者要求
-`tts_file` / `tts_connector`、已配置的 builtin voice、完整文本和 `audio_delivery=complete`，
-不接受音色材料、词表或发音资源。两者还分别核对固定 binding、策略和执行目标；具体限制以
+`tts_file` / `tts_connector`、已配置的 builtin voice、完整文本、`text_commit_mode=explicit`
+和 `audio_delivery=complete`，且文本不得超过 `planner.max_chars`；不接受音色材料、词表或
+发音资源。两者还分别核对固定 binding、策略和执行目标；具体限制以
 [ASR 消费说明](../components/file-asr-recognition.md)及[TTS 消费说明](../components/file-tts.md#原命令消费)为准。
 
 各个 command.kind 冻结 ASR、TTS、声音设计/克隆/验证、对齐、说话人分离、VAD 和

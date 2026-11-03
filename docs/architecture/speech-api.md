@@ -247,10 +247,12 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 {
   "workspace_id": "ws_demo",
   "model": "voice-design",
-  "description": "温暖、清晰、节奏舒缓的中文叙述声音",
-  "preview_text": "欢迎来到今天的故事。",
-  "language": "zh",
-  "display_name": "叙述候选"
+  "input": {
+    "description": "温暖、清晰、节奏舒缓的中文叙述声音",
+    "preview_text": "欢迎来到今天的故事。",
+    "language": "zh",
+    "display_name": "叙述候选"
+  }
 }
 ```
 
@@ -260,12 +262,14 @@ preview / validation 的 input 固定 voice_draft_id / draft_revision；preview 
 {
   "workspace_id": "ws_demo",
   "model": "voice-clone",
-  "reference_audio_asset_id": "ast_voice_reference",
-  "reference_text": "这是一段用于创建声音的示例素材。",
-  "preview_text": "这是新的试听文本。",
-  "language": "zh",
-  "display_name": "参考声音候选",
-  "source_use_confirmed": true
+  "input": {
+    "reference_audio_asset_id": "ast_voice_reference",
+    "reference_text": "这是一段用于创建声音的示例素材。",
+    "preview_text": "这是新的试听文本。",
+    "language": "zh",
+    "display_name": "参考声音候选",
+    "source_use_confirmed": true
+  }
 }
 ```
 

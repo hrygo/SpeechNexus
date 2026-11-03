@@ -100,7 +100,7 @@
 | `docs/components/pronunciation-drafts.md` | 已核对 | 逐节静态对照草稿事务、权限、迁移和集成测试定义；区分固定读取与恢复校验，未运行服务 |
 | `docs/components/pronunciation-read-contract.md` | 已核对 | 静态对照读取器权限、HTTP 处理顺序、生成消费者和测试定义；未运行服务 |
 | `docs/components/public-job-model-binding.md` | 已核对 | 逐节静态核对固定 binding 选择、事务期限、恢复、工作台消费者与测试；未运行服务 |
-| `docs/components/repository-layout.md` | 部分核对 | 已对照工作区、迁移目录、接口目录、Compose 与验证入口修正布局；其余内容待核对 |
+| `docs/components/repository-layout.md` | 部分核对 | 已对照工作区、迁移目录、接口目录、Compose、进程配置与验证入口修正布局及配置范围；其余内容待核对 |
 | `docs/components/runtime-controller-client.md` | 已核对 | 逐节静态对照客户端、节点观察循环、持久投递和测试清单；未运行服务 |
 | `docs/components/synchronous-speech.md` | 已核对 | 逐节静态对照 TTS 装配、准入锁序、恢复、结算预检、配置和错误处理；未运行服务 |
 | `docs/components/transcript-import-and-text-export.md` | 已核对 | 逐节静态对照来源校验、导入事务、编辑器、下载和公开契约；未运行服务 |

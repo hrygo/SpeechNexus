@@ -89,7 +89,7 @@ composition root ──> any layer
 
 上层可以依赖下层，下层不得导入上层；interfaces 与 infrastructure 为独立同层，互不导入。speech 与 workbench、backend 与 gateway、node-controller 由 independence 门禁约束；工作台仅使用公开协议客户端，不能导入 speech 内部模块。`app.py` 是例外组合根；它装配接口、readiness 服务和基础设施 adapter，但不承载业务规则。
 
-配置由 `pydantic-settings` 验证。缺少 PostgreSQL、对象存储探针或桶配置时进程启动失败，避免以未声明的本地路径或共享服务地址静默运行。
+各进程的配置由各自的 `pydantic-settings` 设置类验证。语音 API 要求显式提供 PostgreSQL 地址、对象存储端点、健康检查地址和桶名；缺少必填配置时无法创建应用。网关与节点控制器使用各自的配置，不应将语音 API 的必填项套用于所有进程。语音 API 的依赖可用性由 readiness 探针检查，配置存在本身不证明依赖可用。
 
 ## 3. Web 工作区
 
